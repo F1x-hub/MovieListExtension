@@ -1,0 +1,50 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user owns the document
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Movies collection - read/write for authenticated users
+    match /movies/{movieId} {
+      allow read: if true; // Anyone can read cached movies
+      allow write: if isAuthenticated(); // Only authenticated users can cache movies
+    }
+    
+    // Ratings collection
+    match /ratings/{ratingId} {
+      allow read: if true; // Anyone can read ratings
+      allow create: if isAuthenticated(); // Only authenticated users can create ratings
+      allow update, delete: if isAuthenticated() && 
+        (resource.data.userId == request.auth.uid || 
+         request.auth.token.admin == true); // Only owner or admin can update/delete
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      allow read: if true; // Anyone can read user profiles
+      allow write: if isOwner(userId); // Only user can update their own profile
+    }
+    
+    // User ratings subcollection
+    match /users/{userId}/ratings/{ratingId} {
+      allow read: if true; // Anyone can read user ratings
+      allow write: if isOwner(userId); // Only user can write their own ratings
+    }
+    
+    // Movie ratings subcollection
+    match /movies/{movieId}/ratings/{ratingId} {
+      allow read: if true; // Anyone can read movie ratings
+      allow create: if isAuthenticated(); // Authenticated users can create ratings
+      allow update, delete: if isAuthenticated() && 
+        resource.data.userId == request.auth.uid; // Only owner can update/delete
+    }
+  }
+}

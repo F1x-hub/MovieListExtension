@@ -1,0 +1,157 @@
+/* Poster size fixes for Movie Rating Extension */
+
+/* Ensure consistent poster sizing */
+.movie-poster-container {
+    position: relative;
+    aspect-ratio: 2/3;
+    width: 100%;
+    min-height: 200px;
+    max-height: 400px;
+    background: var(--secondary-bg);
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    overflow: hidden;
+}
+
+.movie-poster {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    display: block;
+    background: var(--secondary-bg);
+    transition: transform var(--transition-base);
+}
+
+/* Fallback for missing posters */
+.movie-poster:not([src]),
+.movie-poster[src=""],
+.movie-poster[src*="undefined"],
+.movie-poster[src*="null"],
+.movie-poster[src*="placeholder"] {
+    background: linear-gradient(135deg, var(--accent-color) 0%, var(--accent-hover) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-primary);
+    font-size: var(--font-size-2xl);
+    opacity: 0.8;
+}
+
+.movie-poster:not([src])::after,
+.movie-poster[src=""]::after,
+.movie-poster[src*="undefined"]::after,
+.movie-poster[src*="null"]::after,
+.movie-poster[src*="placeholder"]::after {
+    content: "🎬";
+    font-size: var(--font-size-3xl);
+    opacity: 0.7;
+}
+
+/* Poster placeholder styling */
+.movie-poster-placeholder {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(135deg, var(--accent-color) 0%, var(--accent-hover) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-primary);
+    font-size: var(--font-size-3xl);
+    opacity: 0.8;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    z-index: 1;
+}
+
+/* Ensure proper aspect ratio for all screen sizes */
+@media (max-width: 768px) {
+    .movie-poster-container {
+        min-height: 180px;
+        max-height: 300px;
+    }
+}
+
+@media (max-width: 480px) {
+    .movie-poster-container {
+        min-height: 160px;
+        max-height: 250px;
+    }
+}
+
+@media (max-width: 320px) {
+    .movie-poster-container {
+        min-height: 140px;
+        max-height: 200px;
+    }
+}
+
+/* Fix for grid layout */
+.results-grid .movie-card {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.results-grid .movie-poster-container {
+    flex-shrink: 0;
+}
+
+.results-grid .movie-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.results-grid .movie-actions {
+    flex-shrink: 0;
+    margin-top: auto;
+}
+
+/* Ensure posters don't break layout */
+.movie-card {
+    overflow: hidden;
+}
+
+.movie-card:hover .movie-poster {
+    transform: scale(1.05);
+}
+
+/* Fix for poster loading states */
+.movie-poster[data-loading="true"] {
+    background: var(--secondary-bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.movie-poster[data-loading="true"]::after {
+    content: "⏳";
+    font-size: var(--font-size-lg);
+    opacity: 0.6;
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+}
+
+/* Fix for broken image URLs */
+.movie-poster[src*="broken"],
+.movie-poster[src*="error"],
+.movie-poster[src*="404"] {
+    background: linear-gradient(135deg, var(--accent-color) 0%, var(--accent-hover) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.movie-poster[src*="broken"]::after,
+.movie-poster[src*="error"]::after,
+.movie-poster[src*="404"]::after {
+    content: "🚫";
+    font-size: var(--font-size-2xl);
+    opacity: 0.7;
+}

@@ -285,11 +285,49 @@ class FirebaseManager {
     }
 
     isAuthenticated() {
-        return !!this.user;
+        return !!this.user || !!(this.auth && this.auth.currentUser);
     }
 
     getCurrentUser() {
-        return this.user;
+        // Return cached user or get from auth directly
+        return this.user || (this.auth ? this.auth.currentUser : null);
+    }
+
+    // Initialize service instances
+    initializeServices() {
+        this.movieCacheService = new MovieCacheService(this);
+        this.ratingService = new RatingService(this);
+        this.userService = new UserService(this);
+        this.kinopoiskService = new KinopoiskService();
+    }
+
+    // Get service instances
+    getMovieCacheService() {
+        if (!this.movieCacheService) {
+            this.movieCacheService = new MovieCacheService(this);
+        }
+        return this.movieCacheService;
+    }
+
+    getRatingService() {
+        if (!this.ratingService) {
+            this.ratingService = new RatingService(this);
+        }
+        return this.ratingService;
+    }
+
+    getUserService() {
+        if (!this.userService) {
+            this.userService = new UserService(this);
+        }
+        return this.userService;
+    }
+
+    getKinopoiskService() {
+        if (!this.kinopoiskService) {
+            this.kinopoiskService = new KinopoiskService();
+        }
+        return this.kinopoiskService;
     }
 }
 

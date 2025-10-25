@@ -1,8 +1,13 @@
+/**
+ * PopupManager - Main controller for the Movie Rating Extension popup
+ * Handles authentication, search, and rating feed display
+ */
 class PopupManager {
     constructor() {
         this.elements = this.initializeElements();
-        this.records = [];
-        this.editingRecordId = null;
+        this.ratings = [];
+        this.searchTimeout = null;
+        this.ratingsLoaded = false;
         this.setupEventListeners();
         this.setupAuthStateListener();
         this.initializeUI();
@@ -10,6 +15,8 @@ class PopupManager {
 
     initializeElements() {
         return {
+            // Auth elements
+            initialLoading: document.getElementById('initialLoading'),
             authSection: document.getElementById('authSection'),
             mainContent: document.getElementById('mainContent'),
             authStatus: document.getElementById('authStatus'),
@@ -23,25 +30,43 @@ class PopupManager {
             loginPassword: document.getElementById('loginPassword'),
             registerEmail: document.getElementById('registerEmail'),
             registerPassword: document.getElementById('registerPassword'),
-            addForm: document.getElementById('addForm'),
-            titleInput: document.getElementById('titleInput'),
-            contentInput: document.getElementById('contentInput'),
-            dataList: document.getElementById('dataList'),
-            loading: document.getElementById('loading'),
+            
+            // User elements
+            userAvatar: document.getElementById('userAvatar'),
+            userName: document.getElementById('userName'),
+            settingsBtn: document.getElementById('settingsBtn'),
+            
+            // Search elements
+            searchInput: document.getElementById('searchInput'),
+            searchResults: document.getElementById('searchResults'),
+            advancedSearchBtn: document.getElementById('advancedSearchBtn'),
+            
+            // Feed elements
+            feedContent: document.getElementById('feedContent'),
             refreshBtn: document.getElementById('refreshBtn'),
+            loading: document.getElementById('loading'),
             errorMessage: document.getElementById('errorMessage')
         };
     }
 
     setupEventListeners() {
+        // Auth events
         this.elements.loginBtn.addEventListener('click', () => this.handleGoogleLogin());
         this.elements.logoutBtn.addEventListener('click', () => this.handleLogout());
         this.elements.loginForm.addEventListener('submit', (e) => this.handleEmailLogin(e));
         this.elements.registerForm.addEventListener('submit', (e) => this.handleEmailRegister(e));
-        this.elements.addForm.addEventListener('submit', (e) => this.handleAddRecord(e));
-        this.elements.refreshBtn.addEventListener('click', () => this.loadRecords());
         
+        // Tab switching
         this.setupTabSwitching();
+        
+        // Search events
+        this.elements.searchInput.addEventListener('input', (e) => this.handleSearch(e));
+        this.elements.searchInput.addEventListener('blur', () => this.hideSearchResults());
+        this.elements.advancedSearchBtn.addEventListener('click', () => this.openAdvancedSearch());
+        
+        // Feed events
+        this.elements.refreshBtn.addEventListener('click', () => this.loadRatings());
+        this.elements.settingsBtn.addEventListener('click', () => this.openSettings());
     }
 
     setupTabSwitching() {
@@ -65,24 +90,76 @@ class PopupManager {
         window.addEventListener('authStateChanged', (event) => {
             const { user, isAuthenticated } = event.detail;
             this.updateAuthUI(isAuthenticated, user);
+            
+            // Auto-load ratings when user signs in (only if not already loaded)
+            if (isAuthenticated && user && !this.ratingsLoaded) {
+                this.loadRatings();
+            }
         });
     }
 
-    initializeUI() {
-        const isAuthenticated = firebaseManager.isAuthenticated();
-        this.updateAuthUI(isAuthenticated, firebaseManager.getCurrentUser());
+    async initializeUI() {
+        // Check auth state immediately first
+        let currentUser = firebaseManager.getCurrentUser();
+        let isAuthenticated = firebaseManager.isAuthenticated();
         
-        if (isAuthenticated) {
-            this.loadRecords();
+        // Update UI immediately if user is already authenticated
+        if (isAuthenticated && currentUser) {
+            this.updateAuthUI(true, currentUser);
+            this.loadRatings();
+            return;
+        }
+        
+        // Otherwise wait for auth initialization
+        await this.waitForAuthInit();
+        
+        currentUser = firebaseManager.getCurrentUser();
+        isAuthenticated = firebaseManager.isAuthenticated();
+        
+        this.updateAuthUI(isAuthenticated, currentUser);
+        
+        if (isAuthenticated && currentUser) {
+            this.loadRatings();
         }
     }
 
+    waitForAuthInit() {
+        return new Promise((resolve) => {
+            // Check if already authenticated
+            const user = firebaseManager.getCurrentUser();
+            if (user) {
+                resolve();
+                return;
+            }
+            
+            // Wait for authStateChanged event with shorter timeout
+            const handler = () => {
+                window.removeEventListener('authStateChanged', handler);
+                resolve();
+            };
+            window.addEventListener('authStateChanged', handler);
+            
+            // Shorter fallback timeout for better UX
+            setTimeout(resolve, 300);
+        });
+    }
+
     updateAuthUI(isAuthenticated, user) {
+        // Hide initial loading indicator
+        this.elements.initialLoading.style.display = 'none';
+        
         if (isAuthenticated) {
             this.elements.authSection.style.display = 'none';
             this.elements.mainContent.style.display = 'flex';
             this.elements.statusIndicator.classList.add('authenticated');
             this.elements.statusText.textContent = `Signed in as ${user?.displayName || user?.email || 'User'}`;
+            
+            // Update user info
+            this.elements.userName.textContent = user?.displayName || user?.email || 'User';
+            if (user?.photoURL) {
+                this.elements.userAvatar.src = user.photoURL;
+                this.elements.userAvatar.style.display = 'block';
+            }
         } else {
             this.elements.authSection.style.display = 'block';
             this.elements.mainContent.style.display = 'none';
@@ -96,7 +173,18 @@ class PopupManager {
             this.showLoading(true);
             this.hideError();
             await firebaseManager.signInWithGoogle();
-            this.loadRecords();
+            
+            // Create/update user profile
+            const user = firebaseManager.getCurrentUser();
+            const userService = firebaseManager.getUserService();
+            await userService.createOrUpdateUserProfile(user.uid, {
+                displayName: user.displayName,
+                photoURL: user.photoURL,
+                email: user.email,
+                createdAt: user.metadata.creationTime
+            });
+            
+            this.loadRatings();
         } catch (error) {
             this.showError(`Google login failed: ${error.message}`);
         } finally {
@@ -119,8 +207,19 @@ class PopupManager {
             this.showLoading(true);
             this.hideError();
             await firebaseManager.signInWithEmail(email, password);
+            
+            // Create/update user profile
+            const user = firebaseManager.getCurrentUser();
+            const userService = firebaseManager.getUserService();
+            await userService.createOrUpdateUserProfile(user.uid, {
+                displayName: user.displayName || user.email.split('@')[0],
+                photoURL: user.photoURL,
+                email: user.email,
+                createdAt: user.metadata.creationTime
+            });
+            
             this.elements.loginForm.reset();
-            this.loadRecords();
+            this.loadRatings();
         } catch (error) {
             this.showError(`Email login failed: ${error.message}`);
         } finally {
@@ -148,8 +247,19 @@ class PopupManager {
             this.showLoading(true);
             this.hideError();
             await firebaseManager.createUserWithEmail(email, password);
+            
+            // Create user profile
+            const user = firebaseManager.getCurrentUser();
+            const userService = firebaseManager.getUserService();
+            await userService.createOrUpdateUserProfile(user.uid, {
+                displayName: user.displayName || user.email.split('@')[0],
+                photoURL: user.photoURL,
+                email: user.email,
+                createdAt: user.metadata.creationTime
+            });
+            
             this.elements.registerForm.reset();
-            this.loadRecords();
+            this.loadRatings();
         } catch (error) {
             this.showError(`Registration failed: ${error.message}`);
         } finally {
@@ -162,8 +272,9 @@ class PopupManager {
             this.showLoading(true);
             this.hideError();
             await firebaseManager.signOut();
-            this.records = [];
-            this.renderRecords();
+            this.ratings = [];
+            this.ratingsLoaded = false;
+            this.renderRatings();
         } catch (error) {
             this.showError(`Logout failed: ${error.message}`);
         } finally {
@@ -171,176 +282,193 @@ class PopupManager {
         }
     }
 
-    async handleAddRecord(e) {
-        e.preventDefault();
+    async handleSearch(e) {
+        const query = e.target.value.trim();
         
-        const title = this.elements.titleInput.value.trim();
-        const content = this.elements.contentInput.value.trim();
-
-        if (!title || !content) {
-            this.showError('Please fill in all fields');
+        if (query.length < 2) {
+            this.hideSearchResults();
             return;
         }
 
+        // Debounce search
+        clearTimeout(this.searchTimeout);
+        this.searchTimeout = setTimeout(async () => {
+            await this.performSearch(query);
+        }, 300);
+    }
+
+    async performSearch(query) {
+        try {
+            const movieCacheService = firebaseManager.getMovieCacheService();
+            const movies = await movieCacheService.searchCachedMovies(query, 5);
+            
+            this.displaySearchResults(movies);
+        } catch (error) {
+            console.error('Search error:', error);
+            this.hideSearchResults();
+        }
+    }
+
+    displaySearchResults(movies) {
+        if (movies.length === 0) {
+            this.hideSearchResults();
+            return;
+        }
+
+        const query = this.elements.searchInput.value.toLowerCase().trim();
+        
+        const resultsHTML = movies.map(movie => {
+            const name = movie.name;
+            const nameLower = name.toLowerCase();
+            let relevanceClass = '';
+            
+            // Determine relevance level for styling
+            if (nameLower === query) {
+                relevanceClass = 'exact-match';
+            } else if (nameLower.startsWith(query)) {
+                relevanceClass = 'starts-with';
+            } else if (nameLower.includes(query)) {
+                relevanceClass = 'contains';
+            }
+            
+            return `
+                <div class="search-result-item ${relevanceClass}" data-movie-id="${movie.kinopoiskId}">
+                    <img src="${movie.posterUrl || '/icons/icon48.png'}" alt="${name}" class="search-result-poster">
+                    <div class="search-result-info">
+                        <h4 class="search-result-title">${this.escapeHtml(name)}</h4>
+                        <p class="search-result-meta">${movie.year} • ${movie.genres.slice(0, 2).join(', ')}</p>
+                        ${movie.votes?.kp ? `<span class="search-result-votes">${movie.votes.kp} оценок</span>` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        this.elements.searchResults.innerHTML = resultsHTML;
+        this.elements.searchResults.style.display = 'block';
+
+        // Add click handlers
+        this.elements.searchResults.querySelectorAll('.search-result-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const movieId = item.dataset.movieId;
+                this.openMovieDetails(movieId);
+            });
+        });
+    }
+
+    hideSearchResults() {
+        this.elements.searchResults.style.display = 'none';
+    }
+
+    openAdvancedSearch() {
+        chrome.tabs.create({ url: chrome.runtime.getURL('search.html') });
+    }
+
+    openMovieDetails(movieId) {
+        // For now, open in advanced search page with movie ID
+        chrome.tabs.create({ 
+            url: chrome.runtime.getURL(`search.html?movieId=${movieId}`) 
+        });
+    }
+
+    openSettings() {
+        this.showError('Settings feature coming soon!');
+    }
+
+    async loadRatings() {
         try {
             this.showLoading(true);
             this.hideError();
-            await firebaseManager.addRecord(title, content);
-            this.elements.addForm.reset();
-            this.loadRecords();
+            
+            const ratingService = firebaseManager.getRatingService();
+            const result = await ratingService.getAllRatings(50);
+            this.ratings = result.ratings;
+            
+            // Get movie data for each rating
+            await this.enrichRatingsWithMovieData();
+            
+            this.renderRatings();
+            this.ratingsLoaded = true;
         } catch (error) {
-            this.showError(`Failed to add record: ${error.message}`);
+            this.showError(`Failed to load ratings: ${error.message}`);
         } finally {
             this.showLoading(false);
         }
     }
 
-    async loadRecords() {
+    async enrichRatingsWithMovieData() {
+        const movieCacheService = firebaseManager.getMovieCacheService();
+        const movieIds = [...new Set(this.ratings.map(r => r.movieId))];
+        
         try {
-            this.showLoading(true);
-            this.hideError();
-            this.records = await firebaseManager.getRecords();
-            this.renderRecords();
+            const movies = await movieCacheService.getCachedMoviesByIds(movieIds);
+            const movieMap = new Map(movies.map(m => [m.kinopoiskId, m]));
+            
+            this.ratings.forEach(rating => {
+                rating.movie = movieMap.get(rating.movieId);
+            });
         } catch (error) {
-            this.showError(`Failed to load records: ${error.message}`);
-        } finally {
-            this.showLoading(false);
+            console.error('Error enriching ratings with movie data:', error);
         }
     }
 
-    renderRecords() {
-        this.elements.dataList.innerHTML = '';
+    renderRatings() {
+        this.elements.feedContent.innerHTML = '';
 
-        if (this.records.length === 0) {
-            this.elements.dataList.innerHTML = `
+        if (this.ratings.length === 0) {
+            this.elements.feedContent.innerHTML = `
                 <div class="empty-state">
-                    <p>No records found. Add your first record above.</p>
+                    <div class="empty-state-icon">🎬</div>
+                    <h3 class="empty-state-title">No ratings yet</h3>
+                    <p class="empty-state-text">Start rating movies to see them here!</p>
                 </div>
             `;
             return;
         }
 
-        this.records.forEach(record => {
-            const recordElement = this.createRecordElement(record);
-            this.elements.dataList.appendChild(recordElement);
+        this.ratings.forEach(rating => {
+            const ratingElement = this.createRatingElement(rating);
+            this.elements.feedContent.appendChild(ratingElement);
         });
     }
 
-    createRecordElement(record) {
-        const recordDiv = document.createElement('div');
-        recordDiv.className = 'record-item';
-        recordDiv.dataset.recordId = record.id;
+    createRatingElement(rating) {
+        const ratingDiv = document.createElement('div');
+        ratingDiv.className = 'rating-item';
 
-        const createdAt = firebaseManager.formatTimestamp(record.createdAt);
-        const updatedAt = record.updatedAt ? firebaseManager.formatTimestamp(record.updatedAt) : null;
+        const movie = rating.movie;
+        const posterUrl = movie?.posterUrl || '/icons/icon48.png';
+        const movieTitle = movie?.name || 'Unknown Movie';
+        const movieYear = movie?.year || '';
+        const movieGenres = movie?.genres?.slice(0, 2).join(', ') || '';
+        const kpRating = movie?.kpRating || 0;
+        const imdbRating = movie?.imdbRating || 0;
+        const timestamp = firebaseManager.formatTimestamp(rating.createdAt);
 
-        recordDiv.innerHTML = `
-            <div class="record-header">
-                <div class="record-title">${this.escapeHtml(record.title)}</div>
-                <div class="record-actions">
-                    <button class="btn btn-warning edit-btn" data-record-id="${record.id}">Edit</button>
-                    <button class="btn btn-danger delete-btn" data-record-id="${record.id}">Delete</button>
+        ratingDiv.innerHTML = `
+            <img src="${posterUrl}" alt="${movieTitle}" class="rating-poster" onerror="this.src='/icons/icon48.png'">
+            <div class="rating-content">
+                <div class="rating-header">
+                    <img src="${rating.userPhoto || '/icons/icon48.png'}" alt="${rating.userName}" class="rating-user-avatar" onerror="this.src='/icons/icon48.png'">
+                    <span class="rating-user-name" title="${this.escapeHtml(rating.userName)}">${this.escapeHtml(this.truncateText(rating.userName, 20))}</span>
                 </div>
-            </div>
-            <div class="record-content">${this.escapeHtml(record.content)}</div>
-            <div class="record-meta">
-                Created: ${createdAt}
-                ${updatedAt && updatedAt !== createdAt ? ` • Updated: ${updatedAt}` : ''}
-            </div>
-        `;
-
-        this.attachRecordEventListeners(recordDiv, record);
-        return recordDiv;
-    }
-
-    attachRecordEventListeners(recordElement, record) {
-        const editBtn = recordElement.querySelector('.edit-btn');
-        const deleteBtn = recordElement.querySelector('.delete-btn');
-
-        editBtn.addEventListener('click', () => this.startEditRecord(record));
-        deleteBtn.addEventListener('click', () => this.deleteRecord(record.id));
-    }
-
-    startEditRecord(record) {
-        this.editingRecordId = record.id;
-        
-        const recordElement = document.querySelector(`[data-record-id="${record.id}"]`);
-        const editForm = document.createElement('div');
-        editForm.className = 'edit-form';
-        editForm.innerHTML = `
-            <div class="form-group">
-                <label>Title:</label>
-                <input type="text" class="edit-title-input" value="${this.escapeHtml(record.title)}" required>
-            </div>
-            <div class="form-group">
-                <label>Content:</label>
-                <textarea class="edit-content-input" rows="3" required>${this.escapeHtml(record.content)}</textarea>
-            </div>
-            <div class="edit-actions">
-                <button class="btn btn-success save-edit-btn">Save</button>
-                <button class="btn btn-secondary cancel-edit-btn">Cancel</button>
+                <h3 class="rating-movie-title" title="${this.escapeHtml(movieTitle)}">${this.escapeHtml(this.truncateText(movieTitle, 50))}</h3>
+                <p class="rating-movie-meta">${movieYear} • ${this.truncateText(movieGenres, 30)}</p>
+                <div class="rating-scores">
+                    <div class="rating-user-score">
+                        <span>Your rating:</span>
+                        <span class="rating-badge">${rating.rating}/10</span>
+                    </div>
+                    <div class="rating-average-score">
+                        <span>Average:</span>
+                        <span class="rating-badge">${kpRating.toFixed(1)}/10</span>
+                    </div>
+                </div>
+                ${rating.comment ? `<p class="rating-comment" title="${this.escapeHtml(rating.comment)}">${this.escapeHtml(this.truncateText(rating.comment, 100))}</p>` : ''}
+                <p class="rating-timestamp">${timestamp}</p>
             </div>
         `;
 
-        recordElement.appendChild(editForm);
-
-        const saveBtn = editForm.querySelector('.save-edit-btn');
-        const cancelBtn = editForm.querySelector('.cancel-edit-btn');
-
-        saveBtn.addEventListener('click', () => this.saveEditRecord(record.id));
-        cancelBtn.addEventListener('click', () => this.cancelEditRecord(record.id));
-    }
-
-    async saveEditRecord(recordId) {
-        const recordElement = document.querySelector(`[data-record-id="${recordId}"]`);
-        const titleInput = recordElement.querySelector('.edit-title-input');
-        const contentInput = recordElement.querySelector('.edit-content-input');
-
-        const title = titleInput.value.trim();
-        const content = contentInput.value.trim();
-
-        if (!title || !content) {
-            this.showError('Please fill in all fields');
-            return;
-        }
-
-        try {
-            this.showLoading(true);
-            this.hideError();
-            await firebaseManager.updateRecord(recordId, title, content);
-            this.cancelEditRecord(recordId);
-            this.loadRecords();
-        } catch (error) {
-            this.showError(`Failed to update record: ${error.message}`);
-        } finally {
-            this.showLoading(false);
-        }
-    }
-
-    cancelEditRecord(recordId) {
-        const recordElement = document.querySelector(`[data-record-id="${recordId}"]`);
-        const editForm = recordElement.querySelector('.edit-form');
-        if (editForm) {
-            editForm.remove();
-        }
-        this.editingRecordId = null;
-    }
-
-    async deleteRecord(recordId) {
-        if (!confirm('Are you sure you want to delete this record?')) {
-            return;
-        }
-
-        try {
-            this.showLoading(true);
-            this.hideError();
-            await firebaseManager.deleteRecord(recordId);
-            this.loadRecords();
-        } catch (error) {
-            this.showError(`Failed to delete record: ${error.message}`);
-        } finally {
-            this.showLoading(false);
-        }
+        return ratingDiv;
     }
 
     showLoading(show) {
@@ -358,12 +486,15 @@ class PopupManager {
     }
 
     escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        return Utils.escapeHtml(text);
+    }
+
+    truncateText(text, maxLength = 100) {
+        return Utils.truncateText(text, maxLength);
     }
 }
 
+// Initialize popup when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     new PopupManager();
 });

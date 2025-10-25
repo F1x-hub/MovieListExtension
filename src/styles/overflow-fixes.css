@@ -1,0 +1,221 @@
+/* Overflow fixes for Movie Rating Extension */
+
+/* Ensure all containers respect their boundaries */
+.popup-container * {
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+/* Fix text overflow issues */
+.rating-movie-title,
+.rating-user-name,
+.rating-comment,
+.search-result-title,
+.movie-title {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    hyphens: auto;
+    max-width: 100%;
+}
+
+/* Fix button overflow */
+.btn {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Fix flex container overflow */
+.rating-item,
+.movie-card,
+.search-result-item {
+    min-width: 0;
+    overflow: hidden;
+}
+
+/* Fix header overflow */
+.popup-header {
+    min-width: 0;
+    overflow: hidden;
+}
+
+.popup-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Fix search input overflow */
+.search-input {
+    max-width: 100%;
+    overflow: hidden;
+}
+
+/* Fix feed content overflow */
+.feed-content {
+    min-width: 0;
+    overflow-x: hidden;
+}
+
+/* Fix rating content overflow */
+.rating-content {
+    min-width: 0;
+    overflow: hidden;
+}
+
+/* Fix user actions overflow */
+.user-actions {
+    min-width: 0;
+    overflow: hidden;
+}
+
+.feed-actions {
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+}
+
+/* Fix search actions overflow */
+.search-actions {
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+}
+
+/* Ensure proper text truncation */
+.text-truncate {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Fix long URLs and text */
+.rating-comment,
+.movie-description {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+
+/* Fix modal overflow */
+.modal {
+    max-width: 90vw;
+    max-height: 90vh;
+    overflow: hidden;
+}
+
+.modal-body {
+    overflow-y: auto;
+    max-height: 60vh;
+}
+
+/* Fix search results overflow */
+.search-results {
+    max-width: 100%;
+    overflow: hidden;
+}
+
+.search-result-item {
+    min-width: 0;
+    overflow: hidden;
+}
+
+.search-result-info {
+    min-width: 0;
+    overflow: hidden;
+}
+
+/* Responsive fixes for very small screens */
+@media (max-width: 320px) {
+    .popup-container {
+        width: 100vw;
+        min-width: 320px;
+    }
+    
+    .rating-item {
+        padding: var(--space-sm);
+        gap: var(--space-sm);
+    }
+    
+    .rating-poster {
+        width: 60px;
+        height: 90px;
+    }
+    
+    .btn {
+        padding: var(--space-xs) var(--space-sm);
+        font-size: var(--font-size-xs);
+    }
+    
+    .popup-header {
+        padding: var(--space-sm);
+    }
+    
+    .search-section {
+        padding: var(--space-sm);
+    }
+    
+    .feed-content {
+        padding: var(--space-sm);
+    }
+}
+
+/* Fix for Chrome extension popup specific issues */
+body {
+    width: 400px;
+    min-width: 400px;
+    max-width: 400px;
+    overflow-x: hidden;
+}
+
+/* Ensure proper scrolling */
+.feed-content {
+    scrollbar-width: thin;
+    scrollbar-color: var(--accent-color) var(--secondary-bg);
+}
+
+/* Fix for flex items that might overflow */
+.flex-item {
+    min-width: 0;
+    flex-shrink: 1;
+}
+
+/* Fix for grid items */
+.grid-item {
+    min-width: 0;
+    overflow: hidden;
+}
+
+/* Fix for long movie titles in cards */
+.movie-card .movie-title {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.3;
+    max-height: 2.6em;
+}
+
+/* Fix for rating scores layout */
+.rating-scores {
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+}
+
+.rating-user-score,
+.rating-average-score {
+    flex-shrink: 0;
+    min-width: fit-content;
+}
+
+/* Fix for user info overflow */
+.user-info {
+    min-width: 0;
+    overflow: hidden;
+}
+
+.user-info span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 120px;
+}

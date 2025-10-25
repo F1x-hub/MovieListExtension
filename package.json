@@ -1,0 +1,33 @@
+{
+  "name": "movie-rating-extension",
+  "version": "1.0.0",
+  "description": "Rate and discover movies with community ratings and Kinopoisk integration",
+  "main": "popup.js",
+  "scripts": {
+    "build": "npm run clean && npm run copy-files",
+    "clean": "rimraf dist",
+    "copy-files": "npm run copy-js && npm run copy-html && npm run copy-css && npm run copy-icons && npm run copy-libs && npm run copy-manifest",
+    "copy-js": "copyfiles \"popup.js\" \"background.js\" \"search.js\" \"firestore.js\" \"dist/\"",
+    "copy-html": "copyfiles \"popup.html\" \"search.html\" \"dist/\"",
+    "copy-css": "copyfiles \"popup.css\" \"dist/\" && copyfiles \"src/styles/*.css\" \"dist/src/styles/\"",
+    "copy-icons": "copyfiles \"icons/*\" \"dist/\"",
+    "copy-libs": "copyfiles \"libs/*\" \"dist/\" && copyfiles \"src/**/*.js\" \"dist/\"",
+    "copy-manifest": "copyfiles \"manifest.json\" \"dist/\"",
+    "dev": "npm run build && npm run watch",
+    "watch": "nodemon --watch src --watch popup.js --watch background.js --watch search.js --watch firestore.js --watch popup.html --watch search.html --watch popup.css --watch manifest.json --exec \"npm run build\"",
+    "package": "npm run build && cd dist && zip -r ../movie-rating-extension.zip ."
+  },
+  "keywords": [
+    "chrome-extension",
+    "movie-rating",
+    "kinopoisk",
+    "firebase"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "copyfiles": "^2.4.1",
+    "nodemon": "^3.0.1",
+    "rimraf": "^5.0.1"
+  }
+}

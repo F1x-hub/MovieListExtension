@@ -1,15 +1,16 @@
 {
   "manifest_version": 3,
-  "name": "Firebase Firestore CRUD Extension",
+  "name": "Movie Rating Extension",
   "version": "1.0.0",
-  "description": "Chrome extension for CRUD operations with Firebase Firestore",
+  "description": "Rate and discover movies with community ratings and Kinopoisk integration",
   "permissions": [
-    "storage",
-    "identity"
+    "identity",
+    "tabs"
   ],
   "host_permissions": [
     "https://*.firebaseio.com/*",
-    "https://*.googleapis.com/*"
+    "https://*.googleapis.com/*",
+    "https://api.kinopoisk.dev/*"
   ],
   "oauth2": {
     "client_id": "532518163829-43oc8gh65j8057kpbat252novmofgkut.apps.googleusercontent.com",
@@ -25,7 +26,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Firebase Firestore CRUD",
+    "default_title": "Movie Rating Extension",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
@@ -37,6 +38,19 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "search.html",
+        "src/styles/*.css",
+        "src/services/*.js",
+        "src/config/*.js",
+        "src/utils/*.js",
+        "icons/*.png"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
   }
