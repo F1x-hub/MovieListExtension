@@ -64,39 +64,6 @@
    - В главном окне видна лента всех оценок
    - Нажмите "Refresh" для обновления
 
-## Настройка для разработчиков
-
-### Firebase
-
-1. Создайте проект в [Firebase Console](https://console.firebase.google.com/)
-2. Включите Authentication (Google и Email/Password)
-3. Включите Firestore Database
-4. Примените правила из файла `firestore.rules`:
-
-5. Обновите конфигурацию Firebase в `firestore.js`
-6. Получите API ключ на [kinopoisk.dev](https://kinopoisk.dev/)
-7. Добавьте ключ в `src/config/kinopoisk.config.js`
-
-Подробные инструкции: `FIRESTORE_SETUP.md` и `API_SETUP.md`
-
-## Решение проблем
-
-**Не работает вход:**
-- Проверьте настройки Firebase Authentication
-- Убедитесь, что включен Google Sign-In
-
-**Не работает поиск:**
-- Проверьте API ключ Кинопоиска
-- Убедитесь в наличии интернета
-
-**Не сохраняются оценки:**
-- Примените правила Firestore из `firestore.rules`
-- Проверьте авторизацию
-
-**Расширение не загружается:**
-- Проверьте, что все файлы на месте
-- Откройте консоль Chrome (F12) для просмотра ошибок
-
 ## Технологии
 
 - Chrome Extension Manifest V3
