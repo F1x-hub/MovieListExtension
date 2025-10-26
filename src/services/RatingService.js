@@ -16,9 +16,10 @@ class RatingService {
      * @param {number} movieId - Kinopoisk movie ID
      * @param {number} rating - Rating (1-10)
      * @param {string} comment - Optional comment (max 500 chars)
+     * @param {Object} movieData - Movie data to cache (optional)
      * @returns {Promise<Object>} - Created/updated rating
      */
-    async addOrUpdateRating(userId, userName, userPhoto, movieId, rating, comment = '') {
+    async addOrUpdateRating(userId, userName, userPhoto, movieId, rating, comment = '', movieData = null) {
         try {
             // Validate rating
             if (rating < 1 || rating > 10 || !Number.isInteger(rating)) {
@@ -44,16 +45,33 @@ class RatingService {
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             };
 
+            let result;
             if (existingRating) {
                 // Update existing rating
                 const ratingRef = this.db.collection(this.collection).doc(existingRating.id);
                 await ratingRef.update(ratingData);
-                return { id: existingRating.id, ...ratingData };
+                result = { id: existingRating.id, ...ratingData };
             } else {
                 // Create new rating
                 const docRef = await this.db.collection(this.collection).add(ratingData);
-                return { id: docRef.id, ...ratingData };
+                result = { id: docRef.id, ...ratingData };
+                
+                // Cache movie if it's the first rating and we have movie data
+                if (movieData) {
+                    try {
+                        const movieCacheService = window.firebaseManager?.getMovieCacheService();
+                        if (movieCacheService) {
+                            await movieCacheService.cacheRatedMovie(movieData);
+                            console.log('Movie cached after first rating:', movieData.name);
+                        }
+                    } catch (cacheError) {
+                        console.warn('Failed to cache movie after rating:', cacheError.message);
+                        // Don't fail the rating if caching fails
+                    }
+                }
             }
+
+            return result;
         } catch (error) {
             console.error('Error adding/updating rating:', error);
             throw new Error(`Failed to save rating: ${error.message}`);
@@ -278,6 +296,29 @@ class RatingService {
                 averageRating: 0,
                 ratingDistribution: {}
             };
+        }
+    }
+
+    /**
+     * Get all unique movie IDs that have ratings
+     * @returns {Promise<Array<number>>} - Array of movie IDs with ratings
+     */
+    async getRatedMovieIds() {
+        try {
+            const snapshot = await this.db.collection(this.collection).get();
+            const movieIds = new Set();
+            
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                if (data.movieId) {
+                    movieIds.add(data.movieId);
+                }
+            });
+            
+            return Array.from(movieIds);
+        } catch (error) {
+            console.error('Error getting rated movie IDs:', error);
+            return [];
         }
     }
 

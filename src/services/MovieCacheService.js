@@ -40,19 +40,26 @@ class MovieCacheService {
     }
 
     /**
-     * Cache movie data in Firestore
+     * Cache movie data in Firestore (only for rated movies)
      * @param {Object} movieData - Movie data to cache
+     * @param {boolean} isRated - Whether this movie has ratings (required to cache)
      * @returns {Promise<Object>} - Cached movie data with ID
      */
-    async cacheMovie(movieData) {
+    async cacheMovie(movieData, isRated = false) {
         try {
+            if (!isRated) {
+                console.log('Movie not cached - no user ratings yet:', movieData.name);
+                return movieData;
+            }
+
             const movieId = movieData.kinopoiskId.toString();
             const docRef = this.db.collection(this.collection).doc(movieId);
             
             const cacheData = {
                 ...movieData,
                 lastUpdated: new Date().toISOString(),
-                cachedAt: firebase.firestore.FieldValue.serverTimestamp()
+                cachedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                hasRatings: true
             };
 
             await docRef.set(cacheData, { merge: true });
@@ -229,6 +236,46 @@ class MovieCacheService {
     }
 
     /**
+     * Cache movie when it gets its first rating
+     * @param {Object} movieData - Movie data to cache
+     * @returns {Promise<Object>} - Cached movie data with ID
+     */
+    async cacheRatedMovie(movieData) {
+        return this.cacheMovie(movieData, true);
+    }
+
+    /**
+     * Remove movies from cache that no longer have ratings
+     * @param {Array<number>} ratedMovieIds - Array of movie IDs that have ratings
+     * @returns {Promise<number>} - Number of removed movies
+     */
+    async cleanupUnratedMovies(ratedMovieIds) {
+        try {
+            const snapshot = await this.db.collection(this.collection).get();
+            const batch = this.db.batch();
+            let count = 0;
+            
+            snapshot.forEach(doc => {
+                const movieId = parseInt(doc.data().kinopoiskId);
+                if (!ratedMovieIds.includes(movieId)) {
+                    batch.delete(doc.ref);
+                    count++;
+                }
+            });
+            
+            if (count > 0) {
+                await batch.commit();
+                console.log(`Removed ${count} unrated movies from cache`);
+            }
+            
+            return count;
+        } catch (error) {
+            console.error('Error cleaning up unrated movies:', error);
+            return 0;
+        }
+    }
+
+    /**
      * Get cache statistics
      * @returns {Promise<Object>} - Cache statistics
      */
@@ -241,11 +288,16 @@ class MovieCacheService {
             let totalMovies = 0;
             let expiredMovies = 0;
             let validMovies = 0;
+            let ratedMovies = 0;
             
             snapshot.forEach(doc => {
                 totalMovies++;
                 const data = doc.data();
                 const cacheAge = now - new Date(data.lastUpdated).getTime();
+                
+                if (data.hasRatings) {
+                    ratedMovies++;
+                }
                 
                 if (cacheAge > maxAge) {
                     expiredMovies++;
@@ -258,6 +310,7 @@ class MovieCacheService {
                 totalMovies,
                 validMovies,
                 expiredMovies,
+                ratedMovies,
                 cacheHitRate: totalMovies > 0 ? (validMovies / totalMovies) * 100 : 0
             };
         } catch (error) {
@@ -266,6 +319,7 @@ class MovieCacheService {
                 totalMovies: 0,
                 validMovies: 0,
                 expiredMovies: 0,
+                ratedMovies: 0,
                 cacheHitRate: 0
             };
         }

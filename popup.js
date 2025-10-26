@@ -39,7 +39,7 @@ class PopupManager {
             // Search elements
             searchInput: document.getElementById('searchInput'),
             searchResults: document.getElementById('searchResults'),
-            advancedSearchBtn: document.getElementById('advancedSearchBtn'),
+            searchIconBtn: document.getElementById('searchIconBtn'),
             
             // Feed elements
             feedContent: document.getElementById('feedContent'),
@@ -61,8 +61,16 @@ class PopupManager {
         
         // Search events
         this.elements.searchInput.addEventListener('input', (e) => this.handleSearch(e));
-        this.elements.searchInput.addEventListener('blur', () => this.hideSearchResults());
-        this.elements.advancedSearchBtn.addEventListener('click', () => this.openAdvancedSearch());
+        this.elements.searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                this.openSearchPage();
+            }
+        });
+        this.elements.searchInput.addEventListener('blur', () => {
+            // Delay hiding to allow click events on results
+            setTimeout(() => this.hideSearchResults(), 150);
+        });
+        this.elements.searchIconBtn.addEventListener('click', () => this.openSearchPage());
         
         // Feed events
         this.elements.refreshBtn.addEventListener('click', () => this.loadRatings());
@@ -359,8 +367,16 @@ class PopupManager {
         this.elements.searchResults.style.display = 'none';
     }
 
-    openAdvancedSearch() {
-        chrome.tabs.create({ url: chrome.runtime.getURL('search.html') });
+    openSearchPage() {
+        const query = this.elements.searchInput.value.trim();
+        
+        if (query) {
+            const encodedQuery = encodeURIComponent(query);
+            const url = chrome.runtime.getURL(`search.html?query=${encodedQuery}`);
+            chrome.tabs.create({ url: url });
+        } else {
+            chrome.tabs.create({ url: chrome.runtime.getURL('search.html') });
+        }
     }
 
     openMovieDetails(movieId) {

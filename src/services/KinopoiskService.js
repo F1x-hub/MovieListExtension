@@ -69,10 +69,43 @@ class KinopoiskService {
             }
 
             const data = await response.json();
+            console.log('Full movie API response:', data); // Debug log
             return this.normalizeMovieData(data);
         } catch (error) {
             console.error('Error getting movie details:', error);
             throw new Error(`Failed to get movie details: ${error.message}`);
+        }
+    }
+
+    /**
+     * Get movie images/frames by ID
+     * @param {number} movieId - Kinopoisk movie ID
+     * @returns {Promise<Array>} - Movie images
+     */
+    async getMovieImages(movieId) {
+        try {
+            // Try the images endpoint if it exists
+            const url = `${this.baseUrl}/image?movieId=${movieId}&type=still`;
+            
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'X-API-KEY': this.apiKey,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                console.log('Movie images API response:', data);
+                return data.docs || [];
+            } else {
+                console.log('Images endpoint not available or no images found');
+                return [];
+            }
+        } catch (error) {
+            console.error('Error getting movie images:', error);
+            return [];
         }
     }
 

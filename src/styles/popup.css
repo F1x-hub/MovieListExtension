@@ -40,6 +40,8 @@
     display: flex;
     align-items: center;
     gap: var(--space-sm);
+    flex-shrink: 0;
+    min-width: 0;
 }
 
 .popup-title::before {
@@ -53,10 +55,16 @@
     gap: var(--space-sm);
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
+    min-width: 0;
+    flex: 1;
+    justify-content: flex-end;
+}
+
+#statusText {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 150px;
+    max-width: 180px;
 }
 
 .status-indicator {
@@ -233,7 +241,19 @@
     top: 50%;
     transform: translateY(-50%);
     color: var(--text-muted);
-    pointer-events: none;
+    cursor: pointer;
+    padding: var(--space-xs);
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+    background: transparent;
+    border: none;
+    font-size: var(--font-size-base);
+    z-index: 10;
+}
+
+.search-icon:hover {
+    color: var(--accent-color);
+    background: rgba(233, 69, 96, 0.1);
 }
 
 .search-actions {
@@ -558,6 +578,19 @@
         max-height: none;
         min-width: 100vw;
         max-width: 100vw;
+    }
+    
+    .popup-header {
+        padding: var(--space-md);
+    }
+    
+    .popup-title {
+        font-size: var(--font-size-lg);
+    }
+    
+    #statusText {
+        max-width: 120px;
+        font-size: var(--font-size-xs);
     }
     
     .rating-item {
