@@ -52,6 +52,7 @@ class SearchManager {
             modalClose: document.getElementById('modalClose'),
             closeModalBtn: document.getElementById('closeModalBtn'),
             rateMovieBtn: document.getElementById('rateMovieBtn'),
+            movieDetailBtn: document.getElementById('movieDetailBtn'),
             
             // Rating Modal
             ratingModal: document.getElementById('ratingModal'),
@@ -92,6 +93,11 @@ class SearchManager {
         this.elements.modalClose.addEventListener('click', () => this.closeMovieModal());
         this.elements.closeModalBtn.addEventListener('click', () => this.closeMovieModal());
         this.elements.rateMovieBtn.addEventListener('click', () => this.showRatingModal(this.selectedMovie));
+        this.elements.movieDetailBtn.addEventListener('click', () => {
+            if (this.selectedMovie) {
+                window.location.href = `search.html?movieId=${this.selectedMovie.kinopoiskId}`;
+            }
+        });
         this.elements.ratingModalClose.addEventListener('click', () => this.closeRatingModal());
         this.elements.cancelRatingBtn.addEventListener('click', () => this.closeRatingModal());
         
@@ -356,6 +362,7 @@ class SearchManager {
                     <p class="movie-description">${this.escapeHtml(description)}</p>
                 </div>
                 <div class="movie-actions">
+                    <button class="btn btn-ghost btn-sm movie-detail-btn" data-movie-id="${movie.kinopoiskId}">Movie Detail</button>
                     <button class="btn btn-accent btn-sm rate-movie-btn" data-movie-id="${movie.kinopoiskId}">Rate Movie</button>
                 </div>
             </div>
@@ -454,6 +461,11 @@ class SearchManager {
         
         // Take first 6 frames for display
         const displayFrames = frames.slice(0, 6);
+        
+        // Save displayFrames to movie object for modal navigation
+        if (!movie.displayFrames) {
+            movie.displayFrames = displayFrames;
+        }
         
         const framesHTML = displayFrames.map((frame, index) => {
             // Handle different possible frame data structures
@@ -918,7 +930,13 @@ class SearchManager {
     }
     
     showFrameModal(frameUrl, frameIndex) {
-        // Create modal if it doesn't exist
+        const movie = this.selectedMovie;
+        if (!movie) return;
+        
+        // Use displayFrames (the ones actually shown in grid) instead of all frames
+        const frames = movie.displayFrames || [];
+        if (frames.length === 0) return;
+        
         let frameModal = document.getElementById('frameModal');
         if (!frameModal) {
             frameModal = document.createElement('div');
@@ -931,7 +949,9 @@ class SearchManager {
                         <button class="modal-close" id="frameModalClose">×</button>
                     </div>
                     <div class="modal-body frame-modal-body">
+                        <button class="frame-modal-nav prev" id="frameNavPrev">‹</button>
                         <img id="frameModalImage" src="" alt="Кадр из фильма" class="frame-modal-image">
+                        <button class="frame-modal-nav next" id="frameNavNext">›</button>
                     </div>
                 </div>
             `;
@@ -943,12 +963,71 @@ class SearchManager {
                     frameModal.style.display = 'none';
                 }
             });
+            
+            const prevBtn = document.getElementById('frameNavPrev');
+            const nextBtn = document.getElementById('frameNavNext');
+            
+            prevBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const currentIndex = parseInt(prevBtn.dataset.currentIndex || '0');
+                if (currentIndex > 0) {
+                    this.showFrameAtIndex(frames, currentIndex - 1);
+                }
+            });
+            
+            nextBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const currentIndex = parseInt(nextBtn.dataset.currentIndex || '0');
+                if (currentIndex < frames.length - 1) {
+                    this.showFrameAtIndex(frames, currentIndex + 1);
+                }
+            });
+            
+            document.addEventListener('keydown', (e) => {
+                if (frameModal.style.display !== 'none' && frameModal.style.display) {
+                    if (e.key === 'ArrowLeft') {
+                        e.preventDefault();
+                        prevBtn.click();
+                    } else if (e.key === 'ArrowRight') {
+                        e.preventDefault();
+                        nextBtn.click();
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        frameModal.style.display = 'none';
+                    }
+                }
+            });
         }
         
-        // Update image and show modal
-        const frameImage = document.getElementById('frameModalImage');
-        frameImage.src = frameUrl;
+        this.showFrameAtIndex(frames, frameIndex);
         frameModal.style.display = 'flex';
+    }
+    
+    showFrameAtIndex(frames, index) {
+        if (index < 0 || index >= frames.length) return;
+        
+        const frame = frames[index];
+        const frameUrl = frame.url || frame.previewUrl || (frame.poster && frame.poster.url);
+        if (!frameUrl) return;
+        
+        const frameImage = document.getElementById('frameModalImage');
+        const prevBtn = document.getElementById('frameNavPrev');
+        const nextBtn = document.getElementById('frameNavNext');
+        
+        frameImage.classList.add('fade-out');
+        
+        setTimeout(() => {
+            frameImage.src = frameUrl;
+            frameImage.classList.remove('fade-out');
+            frameImage.classList.add('fade-in');
+            
+            if (prevBtn && nextBtn) {
+                prevBtn.dataset.currentIndex = index;
+                nextBtn.dataset.currentIndex = index;
+                prevBtn.disabled = index === 0;
+                nextBtn.disabled = index === frames.length - 1;
+            }
+        }, 150);
     }
 }
 
@@ -963,7 +1042,16 @@ document.addEventListener('click', (e) => {
         }
     }
     
+    if (e.target.classList.contains('movie-detail-btn')) {
+        e.stopPropagation();
+        const movieId = e.target.dataset.movieId;
+        
+        // Navigate to movie detail page with movieId parameter
+        window.location.href = `search.html?movieId=${movieId}`;
+    }
+    
     if (e.target.classList.contains('rate-movie-btn')) {
+        e.stopPropagation();
         const movieId = e.target.dataset.movieId;
         
         // Try to find movie in search results first

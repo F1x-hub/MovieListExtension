@@ -418,6 +418,10 @@
     border-color: var(--accent-color);
 }
 
+.clickable-rating {
+    cursor: pointer;
+}
+
 .rating-poster {
     width: 50px;
     height: 75px;

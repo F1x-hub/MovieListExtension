@@ -413,11 +413,31 @@ class PopupManager {
 
     async enrichRatingsWithMovieData() {
         const movieCacheService = firebaseManager.getMovieCacheService();
+        const kinopoiskService = firebaseManager.getKinopoiskService();
         const movieIds = [...new Set(this.ratings.map(r => r.movieId))];
         
         try {
-            const movies = await movieCacheService.getCachedMoviesByIds(movieIds);
-            const movieMap = new Map(movies.map(m => [m.kinopoiskId, m]));
+            const cachedMovies = await movieCacheService.getCachedMoviesByIds(movieIds);
+            const movieMap = new Map(cachedMovies.map(m => [m.kinopoiskId, m]));
+            
+            const missingMovieIds = movieIds.filter(id => !movieMap.has(id));
+            
+            if (missingMovieIds.length > 0) {
+                console.log(`Fetching ${missingMovieIds.length} movies from Kinopoisk API...`);
+                
+                for (const movieId of missingMovieIds) {
+                    try {
+                        const movieData = await kinopoiskService.getMovieById(movieId);
+                        if (movieData) {
+                            movieMap.set(movieData.kinopoiskId, movieData);
+                            await movieCacheService.cacheRatedMovie(movieData);
+                            console.log(`Cached movie: ${movieData.name}`);
+                        }
+                    } catch (error) {
+                        console.error(`Failed to fetch movie ${movieId}:`, error);
+                    }
+                }
+            }
             
             this.ratings.forEach(rating => {
                 rating.movie = movieMap.get(rating.movieId);
@@ -449,9 +469,13 @@ class PopupManager {
 
     createRatingElement(rating) {
         const ratingDiv = document.createElement('div');
-        ratingDiv.className = 'rating-item';
-
+        ratingDiv.className = 'rating-item clickable-rating';
+        
         const movie = rating.movie;
+        const movieId = movie?.kinopoiskId || rating.movieId;
+        
+        // Add movie ID as data attribute for navigation
+        ratingDiv.dataset.movieId = movieId;
         const posterUrl = movie?.posterUrl || '/icons/icon48.png';
         const movieTitle = movie?.name || 'Unknown Movie';
         const movieYear = movie?.year || '';
@@ -483,6 +507,15 @@ class PopupManager {
                 <p class="rating-timestamp">${timestamp}</p>
             </div>
         `;
+
+        // Add click handler to navigate to movie detail page
+        ratingDiv.addEventListener('click', () => {
+            if (movieId) {
+                chrome.tabs.create({ 
+                    url: chrome.runtime.getURL(`search.html?movieId=${movieId}`) 
+                });
+            }
+        });
 
         return ratingDiv;
     }
