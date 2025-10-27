@@ -50,3 +50,7 @@ firebase-config.js
 # Build outputs
 dist/
 build/
+
+# Documentation (except README.md)
+*.md
+!README.md
