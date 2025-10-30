@@ -207,7 +207,15 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: var(--space-lg);
-    margin-bottom: var(--space-xl);
+    padding: var(--space-lg);
+}
+
+/* Центрирование для одиночных элементов (лоадинг, пустое состояние) */
+.results-grid.single-item {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding-top: var(--space-2xl);
 }
 
 /* Movie Card */
@@ -644,39 +652,23 @@
     animation: spin 1s linear infinite;
 }
 
-/* Initial Loading Overlay */
-.initial-loading-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: var(--primary-bg);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: var(--z-modal);
-    opacity: 1;
-    transition: opacity 0.3s ease;
-}
-
-.initial-loading-overlay.fade-out {
-    opacity: 0;
-}
-
+/* Initial Loading in Results Area */
 .initial-loading-content {
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     gap: var(--space-lg);
     text-align: center;
     padding: var(--space-2xl);
     background: var(--gradient-card);
     border-radius: var(--radius-lg);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: var(--shadow-xl);
+    box-shadow: var(--shadow-lg);
+    min-height: 300px;
+    margin: var(--space-lg) auto;
     max-width: 400px;
-    margin: var(--space-lg);
+    animation: fadeIn 0.3s ease;
 }
 
 .loading-spinner-large {

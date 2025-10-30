@@ -168,8 +168,13 @@ class SearchManager {
             await this.waitForFirebaseManager();
         }
         
+        // Wait for auth to be ready
+        await firebaseManager.waitForAuthReady();
+        
         // Check authentication
-        if (!firebaseManager.isAuthenticated()) {
+        const isAuth = firebaseManager.isAuthenticated();
+        
+        if (!isAuth) {
             this.showError('Пожалуйста, войдите в систему для поиска фильмов');
             return;
         }
@@ -182,7 +187,7 @@ class SearchManager {
         const query = urlParams.get('query');
         
         if (movieId) {
-            await this.loadMovieById(movieId);
+            await this.loadMovieById(movieId, false);
         } else if (query) {
             this.elements.searchInput.value = query;
             this.currentQuery = query;
@@ -193,8 +198,10 @@ class SearchManager {
         // Initialize filters
         this.initializeFilters();
         
-        // Hide initial loading when everything is ready
-        this.hideInitialLoading();
+        // Hide initial loading only if no movie/query was processed
+        if (!movieId && !query) {
+            this.hideInitialLoading();
+        }
     }
 
     initializeFilters() {
@@ -325,28 +332,41 @@ class SearchManager {
 
     async waitForFirebaseManager() {
         return new Promise((resolve) => {
-            if (window.firebaseManager) {
+            if (window.firebaseManager && window.firebaseManager.isInitialized) {
                 resolve();
                 return;
             }
             
+            const onReady = () => {
+                window.removeEventListener('firebaseManagerReady', onReady);
+                resolve();
+            };
+            window.addEventListener('firebaseManagerReady', onReady);
+            
+            let attempts = 0;
+            const maxAttempts = 50;
+            
             const checkInterval = setInterval(() => {
-                if (window.firebaseManager) {
+                attempts++;
+                
+                if (window.firebaseManager && window.firebaseManager.isInitialized) {
                     clearInterval(checkInterval);
+                    window.removeEventListener('firebaseManagerReady', onReady);
+                    resolve();
+                }
+                
+                if (attempts >= maxAttempts) {
+                    clearInterval(checkInterval);
+                    window.removeEventListener('firebaseManagerReady', onReady);
                     resolve();
                 }
             }, 100);
-            
-            // Timeout after 5 seconds
-            setTimeout(() => {
-                clearInterval(checkInterval);
-                resolve();
-            }, 5000);
         });
     }
 
     displayResults() {
         if (this.currentResults.docs.length === 0) {
+            this.elements.resultsGrid.classList.add('single-item');
             this.elements.resultsGrid.innerHTML = `
                 <div class="empty-state">
                     <div class="empty-state-icon">🔍</div>
@@ -362,6 +382,9 @@ class SearchManager {
         // Show results header
         this.elements.resultsHeader.style.display = 'flex';
         this.elements.resultsInfo.textContent = `Найдено ${this.currentResults.total} фильмов`;
+        
+        // Remove single-item class for grid layout
+        this.elements.resultsGrid.classList.remove('single-item');
         
         // Display movie cards
         this.elements.resultsGrid.innerHTML = this.currentResults.docs.map(movie => this.createMovieCard(movie)).join('');
@@ -411,9 +434,11 @@ class SearchManager {
         `;
     }
 
-    async loadMovieById(movieId) {
+    async loadMovieById(movieId, showLoading = true) {
         try {
-            this.showLoading(true);
+            if (showLoading) {
+                this.showLoading(true);
+            }
             
             const kinopoiskService = firebaseManager.getKinopoiskService();
             const movie = await kinopoiskService.getMovieById(movieId);
@@ -423,14 +448,10 @@ class SearchManager {
                 const images = await kinopoiskService.getMovieImages(movieId);
                 if (images && images.length > 0) {
                     movie.frames = images;
-                    console.log('Added frames to movie:', images.length, 'frames');
                 }
             } catch (imagesError) {
-                console.log('Could not load movie images:', imagesError.message);
+                // Silently handle image loading errors
             }
-            
-            // Note: Movie is no longer cached here to save database quota
-            // It will be cached only when user rates it
             
             this.displaySingleMovieResult(movie);
             
@@ -438,7 +459,9 @@ class SearchManager {
             console.error('Error loading movie:', error);
             this.showError(`Failed to load movie: ${error.message}`);
         } finally {
-            this.showLoading(false);
+            if (showLoading) {
+                this.showLoading(false);
+            }
         }
     }
 
@@ -449,6 +472,9 @@ class SearchManager {
         
         // Create detailed movie card for single movie view
         const movieHTML = this.createDetailedMovieCard(movie);
+        
+        // Remove single-item class for movie display
+        this.elements.resultsGrid.classList.remove('single-item');
         this.elements.resultsGrid.innerHTML = movieHTML;
         
         // Hide pagination for single movie
@@ -460,7 +486,6 @@ class SearchManager {
 
     createMovieFramesSection(movie) {
         // Check if movie has frames/images
-        console.log('Movie data for frames:', movie);
         
         // Try various possible sources for frames/images
         let frames = [];
@@ -841,29 +866,32 @@ class SearchManager {
     }
 
     showInitialLoading() {
-        // Create and show initial loading overlay
-        if (!document.getElementById('initialLoadingOverlay')) {
-            const overlay = document.createElement('div');
-            overlay.id = 'initialLoadingOverlay';
-            overlay.className = 'initial-loading-overlay';
-            overlay.innerHTML = `
+        // Show loading in results area instead of full overlay
+        const resultsGrid = this.elements.resultsGrid;
+        if (resultsGrid) {
+            resultsGrid.classList.add('single-item');
+            resultsGrid.innerHTML = `
                 <div class="initial-loading-content">
                     <div class="loading-spinner-large"></div>
                     <h3 class="loading-title">Инициализация поиска</h3>
                     <p class="loading-text">Подождите, пока загружается система поиска фильмов...</p>
                 </div>
             `;
-            document.body.appendChild(overlay);
         }
     }
 
     hideInitialLoading() {
-        const overlay = document.getElementById('initialLoadingOverlay');
-        if (overlay) {
-            overlay.classList.add('fade-out');
-            setTimeout(() => {
-                overlay.remove();
-            }, 300);
+        // Restore default empty state in results grid
+        const resultsGrid = this.elements.resultsGrid;
+        if (resultsGrid) {
+            resultsGrid.classList.add('single-item');
+            resultsGrid.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">🔍</div>
+                    <h3 class="empty-state-title">Search for movies</h3>
+                    <p class="empty-state-text">Enter a movie title to start searching</p>
+                </div>
+            `;
         }
     }
 

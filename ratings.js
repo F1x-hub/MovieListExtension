@@ -142,23 +142,18 @@ class RatingsPageManager {
 
     async setupFirebase() {
         try {
-            console.log('Setting up Firebase...');
-            
             // Wait for firebaseManager to be available
             let attempts = 0;
             while (typeof firebaseManager === 'undefined' && attempts < 50) {
-                console.log('Waiting for firebaseManager, attempt:', attempts);
                 await new Promise(resolve => setTimeout(resolve, 100));
                 attempts++;
             }
             
             if (typeof firebaseManager !== 'undefined') {
-                console.log('FirebaseManager found, initializing...');
                 await firebaseManager.init();
                 
                 // Check if user is already authenticated
                 const currentUser = firebaseManager.getCurrentUser();
-                console.log('Current user after init:', currentUser ? currentUser.email : 'null');
                 
                 if (currentUser) {
                     this.currentUser = currentUser;
@@ -166,7 +161,6 @@ class RatingsPageManager {
                 }
                 
                 firebaseManager.onAuthStateChanged((user) => {
-                    console.log('Auth state changed, user:', user ? user.email : 'null');
                     this.currentUser = user;
                     if (user) {
                         this.loadMovies();
@@ -178,11 +172,9 @@ class RatingsPageManager {
                 // If still no user after setup, show error
                 setTimeout(() => {
                     if (!this.currentUser) {
-                        console.log('No user found after timeout, checking auth again...');
-                        const user = firebaseManager.getCurrentUser();
-                        if (user) {
-                            console.log('Found user on retry:', user.email);
-                            this.currentUser = user;
+                        const retryUser = firebaseManager.getCurrentUser();
+                        if (retryUser) {
+                            this.currentUser = retryUser;
                             this.loadMovies();
                         } else {
                             this.showError('Please sign in to view your collection');
@@ -190,11 +182,11 @@ class RatingsPageManager {
                     }
                 }, 2000);
             } else {
-                throw new Error('Firebase manager not available after waiting');
+                this.showError('Failed to initialize Firebase');
             }
         } catch (error) {
-            console.error('Firebase setup error:', error);
-            this.showError('Failed to initialize. Please refresh the page.');
+            console.error('Error setting up Firebase:', error);
+            this.showError(`Firebase setup failed: ${error.message}`);
         }
     }
 
@@ -213,10 +205,7 @@ class RatingsPageManager {
     }
 
     async loadMovies() {
-        console.log('loadMovies called, isLoading:', this.isLoading, 'currentUser:', this.currentUser);
-        
         if (this.isLoading || !this.currentUser) {
-            console.log('Skipping loadMovies - isLoading or no user');
             return;
         }
         
@@ -225,29 +214,20 @@ class RatingsPageManager {
         this.hideError();
         
         try {
-            console.log('Getting rating service...');
             const ratingService = firebaseManager.getRatingService();
             const movieCacheService = firebaseManager.getMovieCacheService();
             
             let ratings = [];
             
-            console.log('Loading ratings for mode:', this.currentMode);
-            
             if (this.currentMode === 'my-ratings') {
-                // Get only current user's ratings
                 ratings = await ratingService.getUserRatings(this.currentUser.uid, 100);
-                console.log('Loaded user ratings:', ratings.length);
             } else {
-                // Get all ratings
                 const result = await ratingService.getAllRatings(100);
                 ratings = result.ratings;
-                console.log('Loaded all ratings:', ratings.length);
             }
             
             // Enrich with movie data and average ratings
-            console.log('Enriching ratings with movie data...');
             this.movies = await this.enrichRatingsWithMovieData(ratings);
-            console.log('Enriched movies:', this.movies.length);
             
             // Populate year filter
             this.populateYearFilter();
@@ -271,20 +251,30 @@ class RatingsPageManager {
         
         const enrichedMovies = [];
         
-        for (const rating of ratings) {
+        // Step 1: Batch load average ratings for all movies
+        const movieIds = ratings.map(rating => rating.movieId);
+        const averageRatings = await ratingService.getBatchMovieAverageRatings(movieIds);
+        
+        // Step 2: Batch load cached movies
+        const cachedMovies = await movieCacheService.getBatchCachedMovies(movieIds);
+        
+        // Step 3: Process each rating with movie data
+        for (let i = 0; i < ratings.length; i++) {
+            const rating = ratings[i];
+            
             try {
-                // Get movie data from cache
-                let movieData = await movieCacheService.getCachedMovie(rating.movieId);
+                // Check if movie is in batch cache results
+                let movieData = cachedMovies[rating.movieId];
                 
-                // If not in cache, try to fetch from Kinopoisk
                 if (!movieData) {
+                    // If not in cache, try to fetch from Kinopoisk
                     try {
                         movieData = await kinopoiskService.getMovieById(rating.movieId);
+                        
                         if (movieData) {
-                            await movieCacheService.cacheMovie(movieData);
+                            await movieCacheService.cacheMovie(movieData, true);
                         }
                     } catch (fetchError) {
-                        console.warn('Failed to fetch movie data:', fetchError);
                         // Create minimal movie data
                         movieData = {
                             kinopoiskId: rating.movieId,
@@ -297,8 +287,8 @@ class RatingsPageManager {
                     }
                 }
                 
-                // Get average rating for this movie
-                const averageData = await ratingService.getMovieAverageRating(rating.movieId);
+                // Use pre-loaded average rating
+                const averageData = averageRatings[rating.movieId] || { average: 0, count: 0 };
                 
                 enrichedMovies.push({
                     ...rating,
@@ -464,7 +454,6 @@ class RatingsPageManager {
     }
 
     createMovieCard(movieData) {
-        console.log('Creating movie card for:', movieData);
         const { movie, rating, averageRating, ratingsCount, comment, createdAt } = movieData;
         
         const card = document.createElement('div');

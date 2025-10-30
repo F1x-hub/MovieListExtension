@@ -71,6 +71,18 @@ class RatingService {
                 }
             }
 
+            // Invalidate ratings cache when a new rating is added/updated
+            try {
+                const ratingsCacheService = window.firebaseManager?.getRatingsCacheService();
+                if (ratingsCacheService) {
+                    await ratingsCacheService.clearCache();
+                    console.log('Ratings cache cleared after rating update');
+                }
+            } catch (cacheError) {
+                console.warn('Failed to clear ratings cache after rating update:', cacheError.message);
+                // Don't fail the rating if cache clearing fails
+            }
+
             return result;
         } catch (error) {
             console.error('Error adding/updating rating:', error);
@@ -140,6 +152,71 @@ class RatingService {
     }
 
     /**
+     * Get average ratings for multiple movies in batch (optimized)
+     * @param {Array<number>} movieIds - Array of Kinopoisk movie IDs
+     * @returns {Promise<Object>} - Map of movieId to {average, count}
+     */
+    async getBatchMovieAverageRatings(movieIds) {
+        try {
+            // Check cache first
+            const cacheKey = `averageRatings_${movieIds.sort().join('_')}`;
+            const cached = sessionStorage.getItem(cacheKey);
+            if (cached) {
+                return JSON.parse(cached);
+            }
+            
+            // Load all ratings for these movies in one query
+            const query = this.db.collection(this.collection)
+                .where('movieId', 'in', movieIds);
+
+            const results = await query.get();
+            
+            // Group ratings by movieId and calculate averages
+            const movieRatings = {};
+            
+            results.forEach(doc => {
+                const data = doc.data();
+                const movieId = data.movieId;
+                
+                if (!movieRatings[movieId]) {
+                    movieRatings[movieId] = { ratings: [], count: 0 };
+                }
+                
+                movieRatings[movieId].ratings.push(data.rating);
+                movieRatings[movieId].count++;
+            });
+            
+            // Calculate averages
+            const averages = {};
+            for (const movieId of movieIds) {
+                if (movieRatings[movieId]) {
+                    const ratings = movieRatings[movieId].ratings;
+                    const total = ratings.reduce((sum, rating) => sum + rating, 0);
+                    const average = Math.round((total / ratings.length) * 10) / 10;
+                    averages[movieId] = { average, count: ratings.length };
+                } else {
+                    averages[movieId] = { average: 0, count: 0 };
+                }
+            }
+            
+            // Cache results for this session
+            sessionStorage.setItem(cacheKey, JSON.stringify(averages));
+            
+            return averages;
+            
+        } catch (error) {
+            console.error('Error batch loading average ratings:', error);
+            
+            // Fallback: return empty averages
+            const averages = {};
+            for (const movieId of movieIds) {
+                averages[movieId] = { average: 0, count: 0 };
+            }
+            return averages;
+        }
+    }
+
+    /**
      * Get all ratings chronologically (for feed)
      * @param {number} limit - Maximum number of ratings to return
      * @param {string} lastDocId - Last document ID for pagination
@@ -184,6 +261,13 @@ class RatingService {
      */
     async getUserRatings(userId, limit = 50) {
         try {
+            // Check session cache first
+            const cacheKey = `userRatings_${userId}_${limit}`;
+            const cached = sessionStorage.getItem(cacheKey);
+            if (cached) {
+                return JSON.parse(cached);
+            }
+            
             // Temporary fix: remove orderBy to avoid index requirement
             const query = this.db.collection(this.collection)
                 .where('userId', '==', userId)
@@ -202,6 +286,9 @@ class RatingService {
                 const dateB = b.createdAt?.toDate?.() || new Date(b.createdAt) || new Date(0);
                 return dateB - dateA;
             });
+            
+            // Cache for this session
+            sessionStorage.setItem(cacheKey, JSON.stringify(ratings));
 
             return ratings;
         } catch (error) {
