@@ -44,6 +44,7 @@ class PopupManager {
             // Feed elements
             feedContent: document.getElementById('feedContent'),
             refreshBtn: document.getElementById('refreshBtn'),
+            viewAllRatingsBtn: document.getElementById('viewAllRatingsBtn'),
             loading: document.getElementById('loading'),
             errorMessage: document.getElementById('errorMessage')
         };
@@ -74,6 +75,7 @@ class PopupManager {
         
         // Feed events
         this.elements.refreshBtn.addEventListener('click', () => this.loadRatings());
+        this.elements.viewAllRatingsBtn.addEventListener('click', () => this.openRatingsPage());
         this.elements.settingsBtn.addEventListener('click', () => this.openSettings());
     }
 
@@ -386,6 +388,12 @@ class PopupManager {
         });
     }
 
+    openRatingsPage() {
+        chrome.tabs.create({ 
+            url: chrome.runtime.getURL('ratings.html') 
+        });
+    }
+
     openSettings() {
         this.showError('Settings feature coming soon!');
     }
@@ -402,7 +410,7 @@ class PopupManager {
             // Get movie data for each rating
             await this.enrichRatingsWithMovieData();
             
-            this.renderRatings();
+            await this.renderRatings();
             this.ratingsLoaded = true;
         } catch (error) {
             this.showError(`Failed to load ratings: ${error.message}`);
@@ -447,7 +455,7 @@ class PopupManager {
         }
     }
 
-    renderRatings() {
+    async renderRatings() {
         this.elements.feedContent.innerHTML = '';
 
         if (this.ratings.length === 0) {
@@ -461,13 +469,19 @@ class PopupManager {
             return;
         }
 
-        this.ratings.forEach(rating => {
-            const ratingElement = this.createRatingElement(rating);
-            this.elements.feedContent.appendChild(ratingElement);
-        });
+        // Process ratings asynchronously to get user averages
+        for (const rating of this.ratings) {
+            try {
+                const ratingElement = await this.createRatingElement(rating);
+                this.elements.feedContent.appendChild(ratingElement);
+            } catch (error) {
+                console.error('Error creating rating element:', error);
+                // Continue with other ratings even if one fails
+            }
+        }
     }
 
-    createRatingElement(rating) {
+    async createRatingElement(rating) {
         const ratingDiv = document.createElement('div');
         ratingDiv.className = 'rating-item clickable-rating';
         
@@ -480,9 +494,24 @@ class PopupManager {
         const movieTitle = movie?.name || 'Unknown Movie';
         const movieYear = movie?.year || '';
         const movieGenres = movie?.genres?.slice(0, 2).join(', ') || '';
-        const kpRating = movie?.kpRating || 0;
-        const imdbRating = movie?.imdbRating || 0;
         const timestamp = firebaseManager.formatTimestamp(rating.createdAt);
+
+        // Get user average rating for this movie
+        let userAverageRating = 0;
+        let userRatingCount = 0;
+        try {
+            const ratingService = firebaseManager.getRatingService();
+            const averageData = await ratingService.getMovieAverageRating(movieId);
+            userAverageRating = averageData.average;
+            userRatingCount = averageData.count;
+        } catch (error) {
+            console.warn('Failed to get user average rating:', error);
+        }
+
+        // Display user average or show "No ratings" if no user ratings exist
+        const averageDisplay = userRatingCount > 0 
+            ? `${userAverageRating.toFixed(1)}/10` 
+            : 'No ratings';
 
         ratingDiv.innerHTML = `
             <img src="${posterUrl}" alt="${movieTitle}" class="rating-poster" onerror="this.src='/icons/icon48.png'">
@@ -500,7 +529,7 @@ class PopupManager {
                     </div>
                     <div class="rating-average-score">
                         <span>Average:</span>
-                        <span class="rating-badge">${kpRating.toFixed(1)}/10</span>
+                        <span class="rating-badge">${averageDisplay}</span>
                     </div>
                 </div>
                 ${rating.comment ? `<p class="rating-comment" title="${this.escapeHtml(rating.comment)}">${this.escapeHtml(this.truncateText(rating.comment, 100))}</p>` : ''}

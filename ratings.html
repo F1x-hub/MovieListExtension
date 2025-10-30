@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Collection - Movie Rating Extension</title>
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="src/styles/common.css">
+    <link rel="stylesheet" href="src/styles/components.css">
+    <link rel="stylesheet" href="src/styles/navigation.css">
+    <link rel="stylesheet" href="src/styles/router.css">
+    <link rel="stylesheet" href="src/styles/ratings.css">
+    
+    <!-- Firebase -->
+    <script src="libs/firebase-app-compat.js"></script>
+    <script src="libs/firebase-auth-compat.js"></script>
+    <script src="libs/firebase-firestore-compat.js"></script>
+    
+    <!-- Services -->
+    <script src="firestore.js"></script>
+    <script src="src/config/kinopoisk.config.js"></script>
+    <script src="src/services/RatingService.js"></script>
+    <script src="src/services/MovieCacheService.js"></script>
+    <script src="src/services/KinopoiskService.js"></script>
+    <script src="src/utils/Utils.js"></script>
+    
+    <!-- Components -->
+    <script src="src/components/Navigation.js"></script>
+    <script src="src/components/Router.js"></script>
+</head>
+<body>
+    <!-- Navigation will be inserted here by Navigation.js -->
+    
+    <!-- Main Content -->
+    <main class="ratings-main">
+        <div class="ratings-container">
+            <!-- Page Header -->
+            <div class="ratings-header">
+                <h1 class="ratings-title">My Collection</h1>
+                <p class="ratings-subtitle">Manage and explore your movie ratings</p>
+            </div>
+
+            <!-- View Mode Toggle -->
+            <div class="view-mode-section">
+                <div class="view-mode-toggle">
+                    <button class="toggle-btn active" data-mode="my-ratings" id="myRatingsBtn">
+                        <span class="toggle-icon">⭐</span>
+                        <span>My Ratings Only</span>
+                    </button>
+                    <button class="toggle-btn" data-mode="all-ratings" id="allRatingsBtn">
+                        <span class="toggle-icon">🌟</span>
+                        <span>All Ratings</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Filters Section -->
+            <div class="filters-section">
+                <div class="filters-header">
+                    <h3 class="filters-title">Filters & Search</h3>
+                    <button class="clear-filters-btn" id="clearFiltersBtn">
+                        <span>🗑️</span>
+                        Clear Filters
+                    </button>
+                </div>
+
+                <div class="filters-grid">
+                    <!-- Search -->
+                    <div class="filter-group">
+                        <label class="filter-label">Search Movies</label>
+                        <div class="search-input-wrapper">
+                            <input type="text" class="search-input" id="movieSearchInput" placeholder="Search by title...">
+                            <span class="search-icon">🔍</span>
+                        </div>
+                    </div>
+
+                    <!-- Genre Filter -->
+                    <div class="filter-group">
+                        <label class="filter-label">Genre</label>
+                        <select class="filter-select" id="genreFilter">
+                            <option value="">All Genres</option>
+                            <option value="action">Action</option>
+                            <option value="adventure">Adventure</option>
+                            <option value="animation">Animation</option>
+                            <option value="comedy">Comedy</option>
+                            <option value="crime">Crime</option>
+                            <option value="documentary">Documentary</option>
+                            <option value="drama">Drama</option>
+                            <option value="family">Family</option>
+                            <option value="fantasy">Fantasy</option>
+                            <option value="horror">Horror</option>
+                            <option value="romance">Romance</option>
+                            <option value="sci-fi">Sci-Fi</option>
+                            <option value="thriller">Thriller</option>
+                        </select>
+                    </div>
+
+                    <!-- Year Filter -->
+                    <div class="filter-group">
+                        <label class="filter-label">Year</label>
+                        <select class="filter-select" id="yearFilter">
+                            <option value="">All Years</option>
+                        </select>
+                    </div>
+
+                    <!-- My Rating Filter -->
+                    <div class="filter-group">
+                        <label class="filter-label">My Rating</label>
+                        <select class="filter-select" id="myRatingFilter">
+                            <option value="">Any Rating</option>
+                            <option value="9-10">9-10 ⭐⭐⭐⭐⭐</option>
+                            <option value="7-8">7-8 ⭐⭐⭐⭐</option>
+                            <option value="5-6">5-6 ⭐⭐⭐</option>
+                            <option value="3-4">3-4 ⭐⭐</option>
+                            <option value="1-2">1-2 ⭐</option>
+                        </select>
+                    </div>
+
+                    <!-- Average Rating Filter -->
+                    <div class="filter-group">
+                        <label class="filter-label">Average Rating</label>
+                        <select class="filter-select" id="avgRatingFilter">
+                            <option value="">Any Average</option>
+                            <option value="9-10">9-10 ⭐⭐⭐⭐⭐</option>
+                            <option value="7-8">7-8 ⭐⭐⭐⭐</option>
+                            <option value="5-6">5-6 ⭐⭐⭐</option>
+                            <option value="3-4">3-4 ⭐⭐</option>
+                            <option value="1-2">1-2 ⭐</option>
+                        </select>
+                    </div>
+
+                    <!-- Sort Options -->
+                    <div class="filter-group">
+                        <label class="filter-label">Sort By</label>
+                        <select class="filter-select" id="sortFilter">
+                            <option value="date-desc">Date Added (Newest)</option>
+                            <option value="date-asc">Date Added (Oldest)</option>
+                            <option value="rating-desc">My Rating (High to Low)</option>
+                            <option value="rating-asc">My Rating (Low to High)</option>
+                            <option value="avg-rating-desc">Avg Rating (High to Low)</option>
+                            <option value="avg-rating-asc">Avg Rating (Low to High)</option>
+                            <option value="title-asc">Title (A-Z)</option>
+                            <option value="title-desc">Title (Z-A)</option>
+                            <option value="year-desc">Year (Newest)</option>
+                            <option value="year-asc">Year (Oldest)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results Info -->
+            <div class="results-info" id="resultsInfo">
+                <span class="results-count" id="resultsCount">Loading...</span>
+                <span class="results-mode" id="resultsMode"></span>
+            </div>
+
+            <!-- Loading State -->
+            <div class="loading-section" id="loadingSection">
+                <div class="loading-spinner"></div>
+                <p>Loading your collection...</p>
+            </div>
+
+            <!-- Movies Grid -->
+            <div class="movies-grid" id="moviesGrid">
+                <!-- Movie cards will be inserted here -->
+            </div>
+
+            <!-- Empty State -->
+            <div class="empty-state" id="emptyState" style="display: none;">
+                <div class="empty-state-icon">🎬</div>
+                <h3 class="empty-state-title">No movies found</h3>
+                <p class="empty-state-text">Try adjusting your filters or start rating some movies!</p>
+                <button class="empty-state-btn" onclick="window.navigation?.navigateToPage('search')">
+                    Search Movies
+                </button>
+            </div>
+
+            <!-- Error State -->
+            <div class="error-state" id="errorState" style="display: none;">
+                <div class="error-state-icon">⚠️</div>
+                <h3 class="error-state-title">Something went wrong</h3>
+                <p class="error-state-text" id="errorMessage">Failed to load movies</p>
+                <button class="error-state-btn" id="retryBtn">Try Again</button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Movie Detail Modal -->
+    <div class="modal-overlay" id="movieModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modalTitle">Movie Details</h3>
+                <button class="modal-close" id="modalClose">×</button>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <!-- Movie details will be inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Rating Modal -->
+    <div class="modal-overlay" id="editRatingModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Edit Rating</h3>
+                <button class="modal-close" id="editModalClose">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="edit-rating-form">
+                    <div class="form-group">
+                        <label>Your Rating</label>
+                        <div class="rating-input">
+                            <input type="range" min="1" max="10" value="5" id="editRatingSlider">
+                            <span class="rating-value" id="editRatingValue">5</span>/10
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Comment (Optional)</label>
+                        <textarea id="editRatingComment" placeholder="Share your thoughts about this movie..." maxlength="500"></textarea>
+                        <div class="character-count">
+                            <span id="editCommentCount">0</span>/500
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button class="btn-secondary" id="editCancelBtn">Cancel</button>
+                        <button class="btn-primary" id="editSaveBtn">Save Changes</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Script -->
+    <script src="ratings.js"></script>
+</body>
+</html>

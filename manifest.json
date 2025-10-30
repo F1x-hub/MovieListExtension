@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Movie Rating Extension",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "description": "Rate and discover movies with community ratings and Kinopoisk integration",
   "permissions": [
     "identity",
@@ -13,7 +13,7 @@
     "https://api.kinopoisk.dev/*"
   ],
   "oauth2": {
-    "client_id": "532518163829-43oc8gh65j8057kpbat252novmofgkut.apps.googleusercontent.com",
+    "client_id": "532518163829-t60hfab5q5vinfdhpci6ctli17kb5thv.apps.googleusercontent.com",
     "scopes": [
       "profile",
       "email",
@@ -42,10 +42,13 @@
     {
       "resources": [
         "search.html",
+        "ratings.html",
+        "ratings.js",
         "src/styles/*.css",
         "src/services/*.js",
         "src/config/*.js",
         "src/utils/*.js",
+        "src/components/*.js",
         "icons/*.png"
       ],
       "matches": ["<all_urls>"]

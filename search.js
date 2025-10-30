@@ -72,51 +72,91 @@ class SearchManager {
     }
 
     setupEventListeners() {
-        // Navigation
-        this.elements.backBtn.addEventListener('click', () => this.goBack());
-        this.elements.settingsBtn.addEventListener('click', () => this.openSettings());
+        // Navigation (optional elements for router compatibility)
+        if (this.elements.backBtn) {
+            this.elements.backBtn.addEventListener('click', () => this.goBack());
+        }
+        if (this.elements.settingsBtn) {
+            this.elements.settingsBtn.addEventListener('click', () => this.openSettings());
+        }
         
         // Search
-        this.elements.searchInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') this.performSearch();
-        });
-        this.elements.searchBtn.addEventListener('click', () => this.performSearch());
-        this.elements.toggleFiltersBtn.addEventListener('click', () => this.toggleFilters());
-        this.elements.clearFiltersBtn.addEventListener('click', () => this.clearFilters());
-        this.elements.applyFiltersBtn.addEventListener('click', () => this.applyFilters());
+        if (this.elements.searchInput) {
+            this.elements.searchInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') this.performSearch();
+            });
+        }
+        if (this.elements.searchBtn) {
+            this.elements.searchBtn.addEventListener('click', () => this.performSearch());
+        }
+        if (this.elements.toggleFiltersBtn) {
+            this.elements.toggleFiltersBtn.addEventListener('click', () => this.toggleFilters());
+        }
+        if (this.elements.clearFiltersBtn) {
+            this.elements.clearFiltersBtn.addEventListener('click', () => this.clearFilters());
+        }
+        if (this.elements.applyFiltersBtn) {
+            this.elements.applyFiltersBtn.addEventListener('click', () => this.applyFilters());
+        }
         
         // Pagination
-        this.elements.prevPageBtn.addEventListener('click', () => this.previousPage());
-        this.elements.nextPageBtn.addEventListener('click', () => this.nextPage());
+        if (this.elements.prevPageBtn) {
+            this.elements.prevPageBtn.addEventListener('click', () => this.previousPage());
+        }
+        if (this.elements.nextPageBtn) {
+            this.elements.nextPageBtn.addEventListener('click', () => this.nextPage());
+        }
         
         // Modals
-        this.elements.modalClose.addEventListener('click', () => this.closeMovieModal());
-        this.elements.closeModalBtn.addEventListener('click', () => this.closeMovieModal());
-        this.elements.rateMovieBtn.addEventListener('click', () => this.showRatingModal(this.selectedMovie));
-        this.elements.movieDetailBtn.addEventListener('click', () => {
-            if (this.selectedMovie) {
-                window.location.href = `search.html?movieId=${this.selectedMovie.kinopoiskId}`;
-            }
-        });
-        this.elements.ratingModalClose.addEventListener('click', () => this.closeRatingModal());
-        this.elements.cancelRatingBtn.addEventListener('click', () => this.closeRatingModal());
+        if (this.elements.modalClose) {
+            this.elements.modalClose.addEventListener('click', () => this.closeMovieModal());
+        }
+        if (this.elements.closeModalBtn) {
+            this.elements.closeModalBtn.addEventListener('click', () => this.closeMovieModal());
+        }
+        if (this.elements.rateMovieBtn) {
+            this.elements.rateMovieBtn.addEventListener('click', () => this.showRatingModal(this.selectedMovie));
+        }
+        if (this.elements.movieDetailBtn) {
+            this.elements.movieDetailBtn.addEventListener('click', () => {
+                if (this.selectedMovie) {
+                    window.location.href = `search.html?movieId=${this.selectedMovie.kinopoiskId}`;
+                }
+            });
+        }
+        if (this.elements.ratingModalClose) {
+            this.elements.ratingModalClose.addEventListener('click', () => this.closeRatingModal());
+        }
+        if (this.elements.cancelRatingBtn) {
+            this.elements.cancelRatingBtn.addEventListener('click', () => this.closeRatingModal());
+        }
         
         // Rating
-        this.elements.ratingSlider.addEventListener('input', (e) => {
-            this.elements.ratingValue.textContent = e.target.value;
-        });
-        this.elements.ratingComment.addEventListener('input', (e) => {
-            this.elements.charCount.textContent = e.target.value.length;
-        });
-        this.elements.saveRatingBtn.addEventListener('click', () => this.saveRating());
+        if (this.elements.ratingSlider && this.elements.ratingValue) {
+            this.elements.ratingSlider.addEventListener('input', (e) => {
+                this.elements.ratingValue.textContent = e.target.value;
+            });
+        }
+        if (this.elements.ratingComment && this.elements.charCount) {
+            this.elements.ratingComment.addEventListener('input', (e) => {
+                this.elements.charCount.textContent = e.target.value.length;
+            });
+        }
+        if (this.elements.saveRatingBtn) {
+            this.elements.saveRatingBtn.addEventListener('click', () => this.saveRating());
+        }
         
         // Modal overlays
-        this.elements.movieModal.addEventListener('click', (e) => {
-            if (e.target === this.elements.movieModal) this.closeMovieModal();
-        });
-        this.elements.ratingModal.addEventListener('click', (e) => {
-            if (e.target === this.elements.ratingModal) this.closeRatingModal();
-        });
+        if (this.elements.movieModal) {
+            this.elements.movieModal.addEventListener('click', (e) => {
+                if (e.target === this.elements.movieModal) this.closeMovieModal();
+            });
+        }
+        if (this.elements.ratingModal) {
+            this.elements.ratingModal.addEventListener('click', (e) => {
+                if (e.target === this.elements.ratingModal) this.closeRatingModal();
+            });
+        }
     }
 
     async initializeUI() {
@@ -341,6 +381,7 @@ class SearchManager {
         const imdbRating = movie.imdbRating || 0;
         const description = movie.description || '';
         const votes = movie.votes?.kp || 0;
+        const imdbVotes = movie.votes?.imdb || 0;
         
         return `
             <div class="movie-card" data-movie-id="${movie.kinopoiskId}">
@@ -358,6 +399,7 @@ class SearchManager {
                         <span class="rating-badge kp">KP: ${kpRating.toFixed(1)}</span>
                         <span class="rating-badge imdb">IMDb: ${imdbRating.toFixed(1)}</span>
                         ${votes > 0 ? `<span class="rating-badge votes">${votes} оценок</span>` : ''}
+                        ${imdbVotes > 0 ? `<span class="rating-badge votes">${imdbVotes} оценок</span>` : ''}
                     </div>
                     <p class="movie-description">${this.escapeHtml(description)}</p>
                 </div>
@@ -515,6 +557,7 @@ class SearchManager {
         const duration = movie.duration || 0;
         const description = movie.description || 'Описание отсутствует';
         const votes = movie.votes?.kp || 0;
+        const imdbVotes = movie.votes?.imdb || 0;
         
         return `
             <div class="movie-detail-page">
@@ -558,7 +601,7 @@ class SearchManager {
                             <div class="rating-item-large imdb">
                                 <span class="rating-label">IMDb</span>
                                 <span class="rating-value">${imdbRating.toFixed(1)}</span>
-                                <span class="rating-votes">&nbsp;</span>
+                                ${imdbVotes > 0 ? `<span class="rating-votes">${imdbVotes} оценок</span>` : '<span class="rating-votes">&nbsp;</span>'}
                             </div>` : ''}
                         </div>
                         
@@ -1073,3 +1116,6 @@ let searchManager;
 document.addEventListener('DOMContentLoaded', () => {
     searchManager = new SearchManager();
 });
+
+// Alias for router compatibility
+window.SearchPageManager = SearchManager;

@@ -6,6 +6,7 @@
     <title>Movie Rating Extension</title>
     <link rel="stylesheet" href="src/styles/common.css">
     <link rel="stylesheet" href="src/styles/components.css">
+    <link rel="stylesheet" href="src/styles/navigation.css">
     <link rel="stylesheet" href="src/styles/popup.css">
     <link rel="stylesheet" href="src/styles/overflow-fixes.css">
 </head>
@@ -95,6 +96,7 @@
                 <div class="feed-header">
                     <h2 class="feed-title">Recent Ratings</h2>
                     <div class="feed-actions">
+                        <button id="viewAllRatingsBtn" class="btn btn-primary btn-sm">View All Ratings</button>
                         <button id="refreshBtn" class="btn btn-ghost btn-sm">Refresh</button>
                     </div>
                 </div>
@@ -128,6 +130,8 @@
     <script src="src/services/RatingService.js"></script>
     <script src="src/services/UserService.js"></script>
     <script src="src/utils/helpers.js"></script>
+    <script src="src/utils/Utils.js"></script>
+    <script src="src/components/Navigation.js"></script>
     <script src="firestore.js"></script>
     <script src="popup.js"></script>
 </body>

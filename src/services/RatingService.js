@@ -184,9 +184,9 @@ class RatingService {
      */
     async getUserRatings(userId, limit = 50) {
         try {
+            // Temporary fix: remove orderBy to avoid index requirement
             const query = this.db.collection(this.collection)
                 .where('userId', '==', userId)
-                .orderBy('createdAt', 'desc')
                 .limit(limit);
 
             const results = await query.get();
@@ -194,6 +194,13 @@ class RatingService {
 
             results.forEach(doc => {
                 ratings.push({ id: doc.id, ...doc.data() });
+            });
+
+            // Sort in memory by createdAt desc
+            ratings.sort((a, b) => {
+                const dateA = a.createdAt?.toDate?.() || new Date(a.createdAt) || new Date(0);
+                const dateB = b.createdAt?.toDate?.() || new Date(b.createdAt) || new Date(0);
+                return dateB - dateA;
             });
 
             return ratings;

@@ -6,24 +6,15 @@
     <title>Movie Search - Movie Rating Extension</title>
     <link rel="stylesheet" href="src/styles/common.css">
     <link rel="stylesheet" href="src/styles/components.css">
+    <link rel="stylesheet" href="src/styles/navigation.css">
+    <link rel="stylesheet" href="src/styles/router.css">
     <link rel="stylesheet" href="src/styles/search.css">
     <link rel="stylesheet" href="src/styles/poster-fixes.css">
 </head>
 <body>
+    <!-- Navigation will be inserted here by Navigation.js -->
+    
     <div class="search-container">
-        <!-- Header -->
-        <header class="search-header">
-            <div class="header-content">
-                <button id="backBtn" class="btn btn-ghost">
-                    <span>←</span> Back
-                </button>
-                <h1 class="search-title">Movie Search</h1>
-                <div class="header-actions">
-                    <button id="settingsBtn" class="btn btn-ghost btn-sm">Settings</button>
-                </div>
-            </div>
-        </header>
-
         <!-- Search Section -->
         <div class="search-section">
             <div class="search-form">
@@ -202,6 +193,9 @@
     <script src="src/services/RatingService.js"></script>
     <script src="src/services/UserService.js"></script>
     <script src="src/utils/helpers.js"></script>
+    <script src="src/utils/Utils.js"></script>
+    <script src="src/components/Navigation.js"></script>
+    <script src="src/components/Router.js"></script>
     <script src="firestore.js"></script>
     <script src="search.js"></script>
 </body>
