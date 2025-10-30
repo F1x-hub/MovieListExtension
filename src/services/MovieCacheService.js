@@ -40,6 +40,58 @@ class MovieCacheService {
     }
 
     /**
+     * Get multiple cached movies by Kinopoisk IDs (batch operation)
+     * @param {Array<number>} kinopoiskIds - Array of Kinopoisk movie IDs
+     * @returns {Promise<Object>} - Map of movieId to cached movie data
+     */
+    async getBatchCachedMovies(kinopoiskIds) {
+        try {
+            // Check session cache first
+            const cacheKey = `movieCache_${kinopoiskIds.sort().join('_')}`;
+            const sessionCached = sessionStorage.getItem(cacheKey);
+            if (sessionCached) {
+                return JSON.parse(sessionCached);
+            }
+            
+            const docIds = kinopoiskIds.map(id => id.toString());
+            
+            // Use where 'in' query instead of individual gets (more efficient)
+            const query = this.db.collection(this.collection)
+                .where(firebase.firestore.FieldPath.documentId(), 'in', docIds);
+            
+            const querySnapshot = await query.get();
+            
+            const cachedMovies = {};
+            
+            querySnapshot.forEach(doc => {
+                const kinopoiskId = parseInt(doc.id);
+                const data = doc.data();
+                
+                // Check if cache is still valid (24 hours)
+                const cacheAge = Date.now() - new Date(data.lastUpdated).getTime();
+                const maxAge = KINOPOISK_CONFIG.CACHE_DURATION;
+                
+                if (cacheAge < maxAge) {
+                    cachedMovies[kinopoiskId] = { id: doc.id, ...data };
+                } else {
+                    // Cache expired, mark for deletion (don't await to keep it fast)
+                    doc.ref.delete()
+                        .catch(err => console.warn('Failed to delete expired cache:', err));
+                }
+            });
+            
+            // Cache results in session storage
+            sessionStorage.setItem(cacheKey, JSON.stringify(cachedMovies));
+            
+            return cachedMovies;
+            
+        } catch (error) {
+            console.error('Error batch checking cache:', error);
+            return {};
+        }
+    }
+
+    /**
      * Cache movie data in Firestore (only for rated movies)
      * @param {Object} movieData - Movie data to cache
      * @param {boolean} isRated - Whether this movie has ratings (required to cache)

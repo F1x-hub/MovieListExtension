@@ -1,11 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Movie Rating Extension",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Rate and discover movies with community ratings and Kinopoisk integration",
   "permissions": [
     "identity",
-    "tabs"
+    "tabs",
+    "storage"
   ],
   "host_permissions": [
     "https://*.firebaseio.com/*",

@@ -8,6 +8,7 @@ class PopupManager {
         this.ratings = [];
         this.searchTimeout = null;
         this.ratingsLoaded = false;
+        this.isLoadingRatings = false; // Add flag to prevent multiple simultaneous loads
         this.setupEventListeners();
         this.setupAuthStateListener();
         this.initializeUI();
@@ -74,7 +75,7 @@ class PopupManager {
         this.elements.searchIconBtn.addEventListener('click', () => this.openSearchPage());
         
         // Feed events
-        this.elements.refreshBtn.addEventListener('click', () => this.loadRatings());
+        this.elements.refreshBtn.addEventListener('click', () => this.forceRefreshRatings());
         this.elements.viewAllRatingsBtn.addEventListener('click', () => this.openRatingsPage());
         this.elements.settingsBtn.addEventListener('click', () => this.openSettings());
     }
@@ -101,8 +102,9 @@ class PopupManager {
             const { user, isAuthenticated } = event.detail;
             this.updateAuthUI(isAuthenticated, user);
             
-            // Auto-load ratings when user signs in (only if not already loaded)
-            if (isAuthenticated && user && !this.ratingsLoaded) {
+            // Auto-load ratings when user signs in (only if not already loaded or loading)
+            if (isAuthenticated && user && !this.ratingsLoaded && !this.isLoadingRatings) {
+                console.log('PopupManager: Auth state changed, loading ratings');
                 this.loadRatings();
             }
         });
@@ -128,7 +130,8 @@ class PopupManager {
         
         this.updateAuthUI(isAuthenticated, currentUser);
         
-        if (isAuthenticated && currentUser) {
+        // Only load ratings if not already loaded and user is authenticated
+        if (isAuthenticated && currentUser && !this.ratingsLoaded && !this.isLoadingRatings) {
             this.loadRatings();
         }
     }
@@ -281,9 +284,15 @@ class PopupManager {
         try {
             this.showLoading(true);
             this.hideError();
+            
+            // Clear ratings cache on logout
+            const ratingsCacheService = firebaseManager.getRatingsCacheService();
+            await ratingsCacheService.clearCache();
+            
             await firebaseManager.signOut();
             this.ratings = [];
             this.ratingsLoaded = false;
+            this.isLoadingRatings = false; // Reset loading flag
             this.renderRatings();
         } catch (error) {
             this.showError(`Logout failed: ${error.message}`);
@@ -399,63 +408,135 @@ class PopupManager {
     }
 
     async loadRatings() {
+        // Prevent multiple simultaneous calls
+        if (this.isLoadingRatings) {
+            console.log('PopupManager: loadRatings already in progress, skipping');
+            return;
+        }
+
         try {
+            this.isLoadingRatings = true;
+            const startTime = performance.now();
+            console.log('⏱️ PopupManager: Starting loadRatings()');
             this.showLoading(true);
             this.hideError();
             
-            const ratingService = firebaseManager.getRatingService();
-            const result = await ratingService.getAllRatings(50);
+            // Check if chrome.storage is available
+            if (!chrome || !chrome.storage || !chrome.storage.local) {
+                console.error('PopupManager: chrome.storage.local is not available');
+                throw new Error('Storage not available');
+            }
+            
+            const ratingsCacheService = firebaseManager.getRatingsCacheService();
+            console.log('PopupManager: Got RatingsCacheService instance');
+            
+            const cacheStartTime = performance.now();
+            const result = await ratingsCacheService.getCachedRatingsWithBackgroundRefresh(50);
+            const cacheEndTime = performance.now();
+            const cacheLoadTime = Math.round(cacheEndTime - cacheStartTime);
+            
+            console.log(`⚡ PopupManager: Got result from cache service in ${cacheLoadTime}ms:`, { 
+                ratingsCount: result.ratings.length, 
+                isFromCache: result.isFromCache,
+                loadTime: `${cacheLoadTime}ms`
+            });
+            
             this.ratings = result.ratings;
             
-            // Get movie data for each rating
-            await this.enrichRatingsWithMovieData();
-            
+            // Render ratings (both cached and fresh data)
+            const renderStartTime = performance.now();
             await this.renderRatings();
+            const renderEndTime = performance.now();
+            const renderTime = Math.round(renderEndTime - renderStartTime);
+            
             this.ratingsLoaded = true;
+            
+            const totalTime = Math.round(performance.now() - startTime);
+            
+            // Show cache status in console
+            if (result.isFromCache) {
+                const cacheStats = await ratingsCacheService.getCacheStats();
+                console.log(`🎯 Cached ratings displayed in ${totalTime}ms total (cache: ${cacheLoadTime}ms, render: ${renderTime}ms):`, {
+                    count: this.ratings.length,
+                    cacheAge: `${cacheStats.age} minutes`,
+                    cacheValid: cacheStats.isValid,
+                    performance: {
+                        cacheLoad: `${cacheLoadTime}ms`,
+                        render: `${renderTime}ms`,
+                        total: `${totalTime}ms`
+                    }
+                });
+            } else {
+                console.log(`🌐 Fresh ratings displayed in ${totalTime}ms total (fetch: ${cacheLoadTime}ms, render: ${renderTime}ms):`, {
+                    count: this.ratings.length,
+                    performance: {
+                        fetch: `${cacheLoadTime}ms`,
+                        render: `${renderTime}ms`,
+                        total: `${totalTime}ms`
+                    }
+                });
+            }
         } catch (error) {
             this.showError(`Failed to load ratings: ${error.message}`);
         } finally {
             this.showLoading(false);
+            this.isLoadingRatings = false; // Reset flag
         }
     }
 
-    async enrichRatingsWithMovieData() {
-        const movieCacheService = firebaseManager.getMovieCacheService();
-        const kinopoiskService = firebaseManager.getKinopoiskService();
-        const movieIds = [...new Set(this.ratings.map(r => r.movieId))];
-        
+    async forceRefreshRatings() {
+        // Prevent multiple simultaneous calls
+        if (this.isLoadingRatings) {
+            console.log('PopupManager: Ratings loading already in progress, skipping refresh');
+            return;
+        }
+
         try {
-            const cachedMovies = await movieCacheService.getCachedMoviesByIds(movieIds);
-            const movieMap = new Map(cachedMovies.map(m => [m.kinopoiskId, m]));
+            this.isLoadingRatings = true;
+            const startTime = performance.now();
+            this.showLoading(true);
+            this.hideError();
             
-            const missingMovieIds = movieIds.filter(id => !movieMap.has(id));
+            console.log('🔄 PopupManager: Force refreshing ratings...');
             
-            if (missingMovieIds.length > 0) {
-                console.log(`Fetching ${missingMovieIds.length} movies from Kinopoisk API...`);
-                
-                for (const movieId of missingMovieIds) {
-                    try {
-                        const movieData = await kinopoiskService.getMovieById(movieId);
-                        if (movieData) {
-                            movieMap.set(movieData.kinopoiskId, movieData);
-                            await movieCacheService.cacheRatedMovie(movieData);
-                            console.log(`Cached movie: ${movieData.name}`);
-                        }
-                    } catch (error) {
-                        console.error(`Failed to fetch movie ${movieId}:`, error);
-                    }
+            // Clear cache and fetch fresh data
+            const ratingsCacheService = firebaseManager.getRatingsCacheService();
+            await ratingsCacheService.clearCache();
+            
+            const fetchStartTime = performance.now();
+            const ratings = await ratingsCacheService.fetchAndCacheRatings(50);
+            const fetchEndTime = performance.now();
+            const fetchTime = Math.round(fetchEndTime - fetchStartTime);
+            
+            this.ratings = ratings;
+            
+            const renderStartTime = performance.now();
+            await this.renderRatings();
+            const renderEndTime = performance.now();
+            const renderTime = Math.round(renderEndTime - renderStartTime);
+            
+            this.ratingsLoaded = true;
+            
+            const totalTime = Math.round(performance.now() - startTime);
+            
+            console.log(`🔄 Ratings force refreshed in ${totalTime}ms total (fetch: ${fetchTime}ms, render: ${renderTime}ms):`, {
+                count: this.ratings.length,
+                performance: {
+                    fetch: `${fetchTime}ms`,
+                    render: `${renderTime}ms`,
+                    total: `${totalTime}ms`
                 }
-            }
-            
-            this.ratings.forEach(rating => {
-                rating.movie = movieMap.get(rating.movieId);
             });
         } catch (error) {
-            console.error('Error enriching ratings with movie data:', error);
+            this.showError(`Failed to refresh ratings: ${error.message}`);
+        } finally {
+            this.showLoading(false);
+            this.isLoadingRatings = false; // Reset flag
         }
     }
 
     async renderRatings() {
+        console.log('PopupManager: Rendering ratings, clearing existing content');
         this.elements.feedContent.innerHTML = '';
 
         if (this.ratings.length === 0) {
@@ -469,24 +550,75 @@ class PopupManager {
             return;
         }
 
-        // Process ratings asynchronously to get user averages
+        console.log(`PopupManager: Rendering ${this.ratings.length} ratings`);
+        
+        // Pre-load all average ratings in batch to avoid multiple Firebase calls
+        const averageRatingsStartTime = performance.now();
+        const averageRatingsMap = await this.preloadAverageRatings();
+        const averageRatingsTime = Math.round(performance.now() - averageRatingsStartTime);
+        console.log(`⚡ Pre-loaded average ratings in ${averageRatingsTime}ms`);
+        
+        // Process ratings synchronously now that we have all data
         for (const rating of this.ratings) {
             try {
-                const ratingElement = await this.createRatingElement(rating);
+                // Check if element already exists to prevent duplicates
+                const existingElement = document.getElementById(`rating-${rating.id}`);
+                if (existingElement) {
+                    console.warn(`Skipping duplicate rating element: rating-${rating.id}`);
+                    continue;
+                }
+                
+                const ratingElement = this.createRatingElementSync(rating, averageRatingsMap);
                 this.elements.feedContent.appendChild(ratingElement);
             } catch (error) {
                 console.error('Error creating rating element:', error);
                 // Continue with other ratings even if one fails
             }
         }
+        console.log('PopupManager: Finished rendering ratings');
     }
 
-    async createRatingElement(rating) {
+    async preloadAverageRatings() {
+        const movieIds = [...new Set(this.ratings.map(r => r.movie?.kinopoiskId || r.movieId))];
+        const averageRatingsMap = new Map();
+        
+        try {
+            const ratingService = firebaseManager.getRatingService();
+            
+            // Load all average ratings in parallel
+            const promises = movieIds.map(async (movieId) => {
+                try {
+                    const averageData = await ratingService.getMovieAverageRating(movieId);
+                    return { movieId, averageData };
+                } catch (error) {
+                    console.warn(`Failed to get average rating for movie ${movieId}:`, error);
+                    return { movieId, averageData: { average: 0, count: 0 } };
+                }
+            });
+            
+            const results = await Promise.all(promises);
+            
+            // Build map for quick lookup
+            results.forEach(({ movieId, averageData }) => {
+                averageRatingsMap.set(movieId, averageData);
+            });
+            
+        } catch (error) {
+            console.error('Error preloading average ratings:', error);
+        }
+        
+        return averageRatingsMap;
+    }
+
+    createRatingElementSync(rating, averageRatingsMap) {
         const ratingDiv = document.createElement('div');
         ratingDiv.className = 'rating-item clickable-rating';
         
         const movie = rating.movie;
         const movieId = movie?.kinopoiskId || rating.movieId;
+        
+        // Add unique ID to prevent duplicates
+        ratingDiv.id = `rating-${rating.id}`;
         
         // Add movie ID as data attribute for navigation
         ratingDiv.dataset.movieId = movieId;
@@ -496,21 +628,10 @@ class PopupManager {
         const movieGenres = movie?.genres?.slice(0, 2).join(', ') || '';
         const timestamp = firebaseManager.formatTimestamp(rating.createdAt);
 
-        // Get user average rating for this movie
-        let userAverageRating = 0;
-        let userRatingCount = 0;
-        try {
-            const ratingService = firebaseManager.getRatingService();
-            const averageData = await ratingService.getMovieAverageRating(movieId);
-            userAverageRating = averageData.average;
-            userRatingCount = averageData.count;
-        } catch (error) {
-            console.warn('Failed to get user average rating:', error);
-        }
-
-        // Display user average or show "No ratings" if no user ratings exist
-        const averageDisplay = userRatingCount > 0 
-            ? `${userAverageRating.toFixed(1)}/10` 
+        // Get pre-loaded average rating
+        const averageData = averageRatingsMap.get(movieId) || { average: 0, count: 0 };
+        const averageDisplay = averageData.count > 0 
+            ? `${averageData.average.toFixed(1)}/10` 
             : 'No ratings';
 
         ratingDiv.innerHTML = `
@@ -548,6 +669,7 @@ class PopupManager {
 
         return ratingDiv;
     }
+
 
     showLoading(show) {
         this.elements.loading.style.display = show ? 'flex' : 'none';

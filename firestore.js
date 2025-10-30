@@ -293,12 +293,32 @@ class FirebaseManager {
         return this.user || (this.auth ? this.auth.currentUser : null);
     }
 
+    async waitForAuthReady() {
+        return new Promise((resolve) => {
+            if (this.user !== null) {
+                resolve();
+                return;
+            }
+
+            const unsubscribe = this.auth.onAuthStateChanged((user) => {
+                unsubscribe();
+                resolve();
+            });
+
+            setTimeout(() => {
+                unsubscribe();
+                resolve();
+            }, 3000);
+        });
+    }
+
     // Initialize service instances
     initializeServices() {
         this.movieCacheService = new MovieCacheService(this);
         this.ratingService = new RatingService(this);
         this.userService = new UserService(this);
         this.kinopoiskService = new KinopoiskService();
+        this.ratingsCacheService = new RatingsCacheService(this);
     }
 
     // Get service instances
@@ -329,6 +349,20 @@ class FirebaseManager {
         }
         return this.kinopoiskService;
     }
+
+    getRatingsCacheService() {
+        if (!this.ratingsCacheService) {
+            this.ratingsCacheService = new RatingsCacheService(this);
+        }
+        return this.ratingsCacheService;
+    }
 }
 
 const firebaseManager = new FirebaseManager();
+window.firebaseManager = firebaseManager;
+
+setTimeout(() => {
+    if (window.firebaseManager && window.firebaseManager.isInitialized) {
+        window.dispatchEvent(new CustomEvent('firebaseManagerReady'));
+    }
+}, 100);
