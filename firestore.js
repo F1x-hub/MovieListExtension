@@ -37,7 +37,25 @@ class FirebaseManager {
         }
     }
 
-    onAuthStateChanged(user) {
+    async onAuthStateChanged(user) {
+        // Sync auth state to chrome.storage for cross-page consistency
+        try {
+            if (typeof chrome !== 'undefined' && chrome.storage) {
+                await chrome.storage.local.set({
+                    user: user ? {
+                        uid: user.uid,
+                        email: user.email,
+                        displayName: user.displayName,
+                        photoURL: user.photoURL
+                    } : null,
+                    isAuthenticated: !!user,
+                    authTimestamp: Date.now()
+                });
+            }
+        } catch (error) {
+            console.log('Could not sync auth state to storage:', error);
+        }
+
         const event = new CustomEvent('authStateChanged', { 
             detail: { user: user, isAuthenticated: !!user } 
         });

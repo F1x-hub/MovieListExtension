@@ -27,27 +27,21 @@
 .nav-logo {
     display: flex;
     align-items: center;
-    gap: 10px;
     color: white;
     text-decoration: none;
-    font-weight: 600;
-    font-size: 18px;
-    transition: opacity 0.3s ease;
+    transition: all 0.3s ease;
 }
 
 .nav-logo:hover {
     opacity: 0.8;
+    transform: scale(1.05);
 }
 
-.nav-logo-icon {
+.nav-logo-image {
     width: 32px;
     height: 32px;
-    background: rgba(255, 255, 255, 0.2);
     border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 16px;
+    object-fit: contain;
 }
 
 /* Navigation Menu */
@@ -111,22 +105,48 @@
     display: flex;
     align-items: center;
     gap: 12px;
+    position: relative;
 }
 
-.nav-user-info {
+/* User Profile Dropdown */
+.nav-user-profile {
+    position: relative;
+}
+
+.nav-user-trigger {
     display: flex;
     align-items: center;
     gap: 8px;
+    background: none;
+    border: none;
     color: white;
+    cursor: pointer;
+    padding: 8px 12px;
+    border-radius: 8px;
+    transition: all 0.3s ease;
     font-size: 14px;
+    font-weight: 500;
+}
+
+.nav-user-trigger:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.nav-user-trigger.active {
+    background: rgba(255, 255, 255, 0.15);
 }
 
 .nav-user-avatar {
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
     border: 2px solid rgba(255, 255, 255, 0.3);
     object-fit: cover;
+    transition: all 0.3s ease;
+}
+
+.nav-user-trigger:hover .nav-user-avatar {
+    border-color: rgba(255, 255, 255, 0.5);
 }
 
 .nav-user-name {
@@ -137,32 +157,108 @@
     white-space: nowrap;
 }
 
-.nav-settings-btn,
-.nav-logout-btn {
-    padding: 8px 12px;
+.nav-dropdown-arrow {
+    font-size: 10px;
+    transition: transform 0.3s ease;
+    opacity: 0.7;
+}
+
+.nav-user-trigger.active .nav-dropdown-arrow {
+    transform: rotate(180deg);
+}
+
+/* Dropdown Menu */
+.nav-user-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background: var(--gradient-card);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(10px);
+    min-width: 180px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.3s ease;
+    z-index: 1000;
+    margin-top: 8px;
+}
+
+.nav-user-dropdown.active {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.nav-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    color: white;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.nav-dropdown-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.nav-dropdown-item:first-child {
+    border-radius: 8px 8px 0 0;
+}
+
+.nav-dropdown-item:last-child {
+    border-radius: 0 0 8px 8px;
+}
+
+.nav-dropdown-icon {
+    font-size: 16px;
+    width: 20px;
+    text-align: center;
+}
+
+.nav-dropdown-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.1);
+    margin: 4px 0;
+}
+
+.nav-dropdown-logout {
+    color: #ff6b6b;
+}
+
+.nav-dropdown-logout:hover {
+    background: rgba(255, 107, 107, 0.1);
+}
+
+/* Sign In Button */
+.nav-signin-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
     background: rgba(255, 255, 255, 0.1);
     border: 1px solid rgba(255, 255, 255, 0.2);
     color: white;
-    border-radius: 6px;
-    font-size: 12px;
+    border-radius: 8px;
+    font-size: 14px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.3s ease;
 }
 
-.nav-settings-btn:hover,
-.nav-logout-btn:hover {
+.nav-signin-btn:hover {
     background: rgba(255, 255, 255, 0.2);
     transform: translateY(-1px);
 }
 
-.nav-logout-btn {
-    background: rgba(220, 53, 69, 0.3);
-    border-color: rgba(220, 53, 69, 0.5);
-}
-
-.nav-logout-btn:hover {
-    background: rgba(220, 53, 69, 0.5);
+.nav-signin-icon {
+    font-size: 16px;
 }
 
 /* Mobile Navigation */
@@ -188,14 +284,9 @@
         padding: 10px 16px;
     }
     
-    .nav-logo {
-        font-size: 16px;
-    }
-    
-    .nav-logo-icon {
+    .nav-logo-image {
         width: 28px;
         height: 28px;
-        font-size: 14px;
     }
     
     .nav-menu {
@@ -233,6 +324,15 @@
     .nav-user {
         gap: 8px;
     }
+    
+    .nav-user-dropdown {
+        right: -16px;
+        min-width: 160px;
+    }
+    
+    .nav-signin-btn span:not(.nav-signin-icon) {
+        display: none;
+    }
 }
 
 @media (max-width: 480px) {
@@ -240,8 +340,9 @@
         padding: 8px 12px;
     }
     
-    .nav-logo {
-        font-size: 14px;
+    .nav-logo-image {
+        width: 24px;
+        height: 24px;
     }
     
     .nav-settings-btn,
@@ -288,9 +389,14 @@
 
 /* Focus states for accessibility */
 .nav-link:focus,
-.nav-settings-btn:focus,
-.nav-logout-btn:focus,
+.nav-user-trigger:focus,
+.nav-dropdown-item:focus,
+.nav-signin-btn:focus,
 .nav-mobile-toggle:focus {
     outline: 2px solid rgba(255, 255, 255, 0.5);
     outline-offset: 2px;
+}
+
+.nav-dropdown-item:focus {
+    background: rgba(255, 255, 255, 0.1);
 }

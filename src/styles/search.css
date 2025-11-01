@@ -1134,6 +1134,7 @@
     display: flex;
     gap: var(--space-lg);
     align-items: center;
+    width: fit-content;
 }
 
 .rating-item-large {
@@ -1181,16 +1182,22 @@
     display: flex;
     gap: var(--space-md);
     align-items: center;
+    /* Match the width of the ratings container exactly */
+    width: fit-content;
 }
 
 .movie-actions-container .btn {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: var(--space-sm);
     font-size: var(--font-size-lg);
     font-weight: 600;
     padding: var(--space-md) var(--space-xl);
     box-shadow: var(--shadow-glow);
+    /* Match exact measured width of ratings container */
+    width: 285px; /* Exact measured width from console: 285px */
+    min-width: 285px;
 }
 
 .movie-actions-container .btn:hover {
