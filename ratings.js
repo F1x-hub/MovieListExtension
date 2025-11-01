@@ -11,12 +11,14 @@ class RatingsPageManager {
             year: '',
             myRating: '',
             avgRating: '',
+            user: '',
             sort: 'date-desc'
         };
         this.movies = [];
         this.filteredMovies = [];
         this.currentUser = null;
         this.isLoading = false;
+        this.allUsers = []; // Store all users who have rated movies
         
         this.init();
     }
@@ -25,6 +27,10 @@ class RatingsPageManager {
         this.initializeElements();
         this.setupEventListeners();
         this.loadFiltersFromStorage();
+        
+        // Initialize user filter visibility based on current mode
+        this.updateUserFilterVisibility();
+        
         await this.setupFirebase();
         await this.loadMovies();
     }
@@ -41,6 +47,8 @@ class RatingsPageManager {
             yearFilter: document.getElementById('yearFilter'),
             myRatingFilter: document.getElementById('myRatingFilter'),
             avgRatingFilter: document.getElementById('avgRatingFilter'),
+            userFilter: document.getElementById('userFilter'),
+            userFilterGroup: document.getElementById('userFilterGroup'),
             sortFilter: document.getElementById('sortFilter'),
             clearFiltersBtn: document.getElementById('clearFiltersBtn'),
             
@@ -100,6 +108,11 @@ class RatingsPageManager {
         
         this.elements.avgRatingFilter?.addEventListener('change', (e) => {
             this.filters.avgRating = e.target.value;
+            this.applyFilters();
+        });
+        
+        this.elements.userFilter?.addEventListener('change', (e) => {
+            this.filters.user = e.target.value;
             this.applyFilters();
         });
         
@@ -190,12 +203,35 @@ class RatingsPageManager {
         }
     }
 
+    updateUserFilterVisibility() {
+        // Ensure user filter is hidden in my-ratings mode and shown in all-ratings mode
+        if (this.elements.userFilterGroup) {
+            const shouldShow = this.currentMode === 'all-ratings';
+            if (shouldShow) {
+                this.elements.userFilterGroup.classList.add('visible');
+            } else {
+                this.elements.userFilterGroup.classList.remove('visible');
+            }
+        }
+    }
+
     setMode(mode) {
         this.currentMode = mode;
         
         // Update button states
         this.elements.myRatingsBtn?.classList.toggle('active', mode === 'my-ratings');
         this.elements.allRatingsBtn?.classList.toggle('active', mode === 'all-ratings');
+        
+        // Show/hide user filter based on mode
+        this.updateUserFilterVisibility();
+        
+        // Reset user filter when switching to my-ratings
+        if (mode === 'my-ratings') {
+            this.filters.user = '';
+            if (this.elements.userFilter) {
+                this.elements.userFilter.value = '';
+            }
+        }
         
         // Save to storage
         localStorage.setItem('ratingsPageMode', mode);
@@ -228,6 +264,11 @@ class RatingsPageManager {
             
             // Enrich with movie data and average ratings
             this.movies = await this.enrichRatingsWithMovieData(ratings);
+            
+            // Extract and populate users if in all-ratings mode
+            if (this.currentMode === 'all-ratings') {
+                this.extractAndPopulateUsers(ratings);
+            }
             
             // Populate year filter
             this.populateYearFilter();
@@ -290,12 +331,15 @@ class RatingsPageManager {
                 // Use pre-loaded average rating
                 const averageData = averageRatings[rating.movieId] || { average: 0, count: 0 };
                 
-                enrichedMovies.push({
+                const enrichedMovie = {
                     ...rating,
                     movie: movieData,
                     averageRating: averageData.average,
                     ratingsCount: averageData.count
-                });
+                };
+                
+                
+                enrichedMovies.push(enrichedMovie);
                 
             } catch (error) {
                 console.error('Error enriching rating:', error);
@@ -343,6 +387,40 @@ class RatingsPageManager {
         }
     }
 
+    extractAndPopulateUsers(ratings) {
+        // Extract unique users from ratings
+        const usersMap = new Map();
+        
+        ratings.forEach(rating => {
+            if (rating.userId && (rating.userEmail || rating.userName)) {
+                usersMap.set(rating.userId, {
+                    id: rating.userId,
+                    email: rating.userEmail,
+                    displayName: rating.userDisplayName || rating.userName || rating.userEmail?.split('@')[0] || 'Unknown User'
+                });
+            }
+        });
+        
+        // Convert to array and sort by display name
+        this.allUsers = Array.from(usersMap.values()).sort((a, b) => 
+            a.displayName.localeCompare(b.displayName)
+        );
+        
+        // Populate user filter dropdown
+        const userFilter = this.elements.userFilter;
+        if (userFilter) {
+            // Clear existing options except "All Users"
+            userFilter.innerHTML = '<option value="">All Users</option>';
+            
+            this.allUsers.forEach(user => {
+                const option = document.createElement('option');
+                option.value = user.id;
+                option.textContent = user.displayName;
+                userFilter.appendChild(option);
+            });
+        }
+    }
+
     applyFilters() {
         let filtered = [...this.movies];
         
@@ -383,6 +461,13 @@ class RatingsPageManager {
             const [min, max] = this.filters.avgRating.split('-').map(Number);
             filtered = filtered.filter(movie => 
                 movie.averageRating >= min && movie.averageRating <= max
+            );
+        }
+        
+        // User filter (only in all-ratings mode)
+        if (this.filters.user && this.currentMode === 'all-ratings') {
+            filtered = filtered.filter(movie => 
+                movie.userId === this.filters.user
             );
         }
         
@@ -454,7 +539,7 @@ class RatingsPageManager {
     }
 
     createMovieCard(movieData) {
-        const { movie, rating, averageRating, ratingsCount, comment, createdAt } = movieData;
+        const { movie, rating, averageRating, ratingsCount, comment, createdAt, userEmail, userDisplayName, userId, userName, userPhoto } = movieData;
         
         const card = document.createElement('div');
         card.className = 'movie-card fade-in';
@@ -465,7 +550,6 @@ class RatingsPageManager {
         const genres = movie?.genres?.slice(0, 3) || [];
         const description = movie?.description || '';
         
-        console.log('Movie data:', { title, year, genres, rating, averageRating });
         
         const truncatedDescription = description.length > 150 
             ? description.substring(0, 150) + '...' 
@@ -489,9 +573,16 @@ class RatingsPageManager {
                     <div class="movie-description">${truncatedDescription}</div>
                 ` : ''}
                 
+                ${this.currentMode === 'all-ratings' && (userDisplayName || userEmail || userName) ? `
+                    <div class="movie-user-info">
+                        <span class="user-icon">👤</span>
+                        <span class="user-name">${userDisplayName || userName || userEmail?.split('@')[0] || 'Unknown User'}</span>
+                    </div>
+                ` : ''}
+                
                 <div class="movie-ratings">
                     <div class="rating-item">
-                        <div class="rating-label">My Rating</div>
+                        <div class="rating-label">${this.currentMode === 'all-ratings' ? 'User Rating' : 'My Rating'}</div>
                         <div class="rating-value my-rating">⭐ ${rating}/10</div>
                     </div>
                     <div class="rating-item">
@@ -612,6 +703,7 @@ class RatingsPageManager {
             year: '',
             myRating: '',
             avgRating: '',
+            user: '',
             sort: 'date-desc'
         };
         
@@ -621,6 +713,9 @@ class RatingsPageManager {
         this.elements.yearFilter.value = '';
         this.elements.myRatingFilter.value = '';
         this.elements.avgRatingFilter.value = '';
+        if (this.elements.userFilter) {
+            this.elements.userFilter.value = '';
+        }
         this.elements.sortFilter.value = 'date-desc';
         
         this.applyFilters();
@@ -675,6 +770,11 @@ class RatingsPageManager {
         const savedMode = localStorage.getItem('ratingsPageMode');
         if (savedMode) {
             this.currentMode = savedMode;
+            // Update button states based on loaded mode
+            this.elements.myRatingsBtn?.classList.toggle('active', savedMode === 'my-ratings');
+            this.elements.allRatingsBtn?.classList.toggle('active', savedMode === 'all-ratings');
+            // Update user filter visibility after loading mode
+            this.updateUserFilterVisibility();
         }
         
         const savedFilters = localStorage.getItem('ratingsPageFilters');
@@ -694,6 +794,7 @@ class RatingsPageManager {
         if (this.elements.yearFilter) this.elements.yearFilter.value = this.filters.year;
         if (this.elements.myRatingFilter) this.elements.myRatingFilter.value = this.filters.myRating;
         if (this.elements.avgRatingFilter) this.elements.avgRatingFilter.value = this.filters.avgRating;
+        if (this.elements.userFilter) this.elements.userFilter.value = this.filters.user;
         if (this.elements.sortFilter) this.elements.sortFilter.value = this.filters.sort;
     }
 

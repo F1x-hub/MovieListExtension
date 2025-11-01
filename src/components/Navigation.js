@@ -6,6 +6,7 @@ class Navigation {
     constructor(currentPage = '') {
         this.currentPage = currentPage;
         this.user = null;
+        this.authCheckInterval = null;
         this.init();
     }
 
@@ -21,8 +22,7 @@ class Navigation {
                 <div class="nav-container">
                     <!-- Logo Section -->
                     <a href="#" class="nav-logo" id="navLogo">
-                        <div class="nav-logo-icon">🎬</div>
-                        <span>Movie Ratings</span>
+                        <img src="/icons/icon48.png" alt="Movie Ratings" class="nav-logo-image">
                     </a>
 
                     <!-- Mobile Toggle -->
@@ -44,22 +44,37 @@ class Navigation {
                                 <span>My Collection</span>
                             </a>
                         </div>
-                        <div class="nav-item">
-                            <a href="#" class="nav-link" data-page="settings" id="navSettings">
-                                <span class="nav-icon">⚙️</span>
-                                <span>Settings</span>
-                            </a>
-                        </div>
                     </nav>
 
                     <!-- User Section -->
                     <div class="nav-user" id="navUser">
-                        <div class="nav-user-info" id="navUserInfo" style="display: none;">
-                            <img src="/icons/icon48.png" alt="User" class="nav-user-avatar" id="navUserAvatar">
-                            <span class="nav-user-name" id="navUserName">User</span>
+                        <!-- User Profile Dropdown -->
+                        <div class="nav-user-profile" id="navUserProfile" style="display: none;">
+                            <button class="nav-user-trigger" id="navUserTrigger">
+                                <img src="/icons/icon48.png" alt="User" class="nav-user-avatar" id="navUserAvatar">
+                                <span class="nav-user-name" id="navUserName">User</span>
+                                <span class="nav-dropdown-arrow">▼</span>
+                            </button>
+                            
+                            <!-- Dropdown Menu -->
+                            <div class="nav-user-dropdown" id="navUserDropdown">
+                                <div class="nav-dropdown-item" id="navDropdownSettings">
+                                    <span class="nav-dropdown-icon">⚙️</span>
+                                    <span>Settings</span>
+                                </div>
+                                <div class="nav-dropdown-divider"></div>
+                                <div class="nav-dropdown-item nav-dropdown-logout" id="navDropdownLogout">
+                                    <span class="nav-dropdown-icon">🚪</span>
+                                    <span>Log Out</span>
+                                </div>
+                            </div>
                         </div>
-                        <button class="nav-settings-btn" id="navSettingsBtn" style="display: none;">Settings</button>
-                        <button class="nav-logout-btn" id="navLogoutBtn" style="display: none;">Sign Out</button>
+                        
+                        <!-- Sign In Button (for non-authenticated users) -->
+                        <button class="nav-signin-btn" id="navSignInBtn" style="display: none;">
+                            <span class="nav-signin-icon">👤</span>
+                            <span>Sign In</span>
+                        </button>
                     </div>
                 </div>
             </header>
@@ -102,19 +117,14 @@ class Navigation {
             });
         }
 
-        // Settings button
-        const settingsBtn = document.getElementById('navSettingsBtn');
-        if (settingsBtn) {
-            settingsBtn.addEventListener('click', () => {
-                this.navigateToPage('settings');
-            });
-        }
+        // User dropdown functionality
+        this.setupUserDropdown();
 
-        // Logout button
-        const logoutBtn = document.getElementById('navLogoutBtn');
-        if (logoutBtn) {
-            logoutBtn.addEventListener('click', () => {
-                this.handleLogout();
+        // Sign In button
+        const signInBtn = document.getElementById('navSignInBtn');
+        if (signInBtn) {
+            signInBtn.addEventListener('click', () => {
+                this.handleSignIn();
             });
         }
 
@@ -126,48 +136,216 @@ class Navigation {
         });
     }
 
+    setupUserDropdown() {
+        const userTrigger = document.getElementById('navUserTrigger');
+        const userDropdown = document.getElementById('navUserDropdown');
+        const dropdownSettings = document.getElementById('navDropdownSettings');
+        const dropdownLogout = document.getElementById('navDropdownLogout');
+
+        if (userTrigger && userDropdown) {
+            // Toggle dropdown on user trigger click
+            userTrigger.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isOpen = userDropdown.classList.contains('active');
+                
+                // Close all other dropdowns first
+                this.closeAllDropdowns();
+                
+                if (!isOpen) {
+                    userDropdown.classList.add('active');
+                    userTrigger.classList.add('active');
+                }
+            });
+
+            // Settings dropdown item
+            if (dropdownSettings) {
+                dropdownSettings.addEventListener('click', () => {
+                    this.closeAllDropdowns();
+                    this.navigateToPage('settings');
+                });
+            }
+
+            // Logout dropdown item
+            if (dropdownLogout) {
+                dropdownLogout.addEventListener('click', () => {
+                    this.closeAllDropdowns();
+                    this.handleLogout();
+                });
+            }
+
+            // Close dropdown when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!userTrigger.contains(e.target) && !userDropdown.contains(e.target)) {
+                    this.closeAllDropdowns();
+                }
+            });
+
+            // Close dropdown on escape key
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    this.closeAllDropdowns();
+                }
+            });
+        }
+    }
+
+    closeAllDropdowns() {
+        const userDropdown = document.getElementById('navUserDropdown');
+        const userTrigger = document.getElementById('navUserTrigger');
+        
+        if (userDropdown && userTrigger) {
+            userDropdown.classList.remove('active');
+            userTrigger.classList.remove('active');
+        }
+    }
+
     setupAuthListener() {
-        // Listen for auth state changes
+        // Listen for auth state changes via firebaseManager
         if (typeof firebaseManager !== 'undefined') {
+            console.log('Navigation: Firebase Manager available, setting up auth listener');
             firebaseManager.onAuthStateChanged((user) => {
+                console.log('Navigation: Firebase auth state changed:', user ? (user.displayName || user.email) : 'No user');
                 this.updateUserDisplay(user);
             });
+            
+            // Also check current user immediately
+            const currentUser = firebaseManager.getCurrentUser();
+            if (currentUser) {
+                console.log('Navigation: Found current Firebase user:', currentUser.displayName || currentUser.email);
+                this.updateUserDisplay(currentUser);
+            }
         } else {
             // Fallback for pages without firebaseManager
+            console.log('Navigation: Firebase Manager not available, setting up fallback');
             setTimeout(() => {
                 if (typeof firebaseManager !== 'undefined') {
+                    console.log('Navigation: Firebase Manager became available');
                     firebaseManager.onAuthStateChanged((user) => {
+                        console.log('Navigation: Firebase auth state changed (delayed):', user ? (user.displayName || user.email) : 'No user');
                         this.updateUserDisplay(user);
                     });
+                    
+                    // Check current user
+                    const currentUser = firebaseManager.getCurrentUser();
+                    if (currentUser) {
+                        console.log('Navigation: Found current Firebase user (delayed):', currentUser.displayName || currentUser.email);
+                        this.updateUserDisplay(currentUser);
+                    }
+                } else {
+                    // If no firebaseManager, check chrome.storage periodically
+                    console.log('Navigation: Firebase Manager still not available, using storage fallback');
+                    this.startStorageAuthCheck();
                 }
             }, 1000);
+        }
+
+        // Also check chrome.storage for auth state
+        this.checkStorageAuth();
+        
+        // Listen for storage changes to sync auth state across pages
+        this.setupStorageListener();
+        
+        // Listen for firebaseManagerReady event
+        window.addEventListener('firebaseManagerReady', () => {
+            console.log('Navigation: Received firebaseManagerReady event');
+            if (typeof firebaseManager !== 'undefined') {
+                const currentUser = firebaseManager.getCurrentUser();
+                if (currentUser) {
+                    console.log('Navigation: Found user after firebaseManagerReady:', currentUser.displayName || currentUser.email);
+                    this.updateUserDisplay(currentUser);
+                }
+            }
+        });
+    }
+
+    async checkStorageAuth() {
+        try {
+            if (typeof chrome !== 'undefined' && chrome.storage) {
+                const result = await chrome.storage.local.get(['user', 'isAuthenticated', 'authTimestamp']);
+                
+                if (result.isAuthenticated && result.user) {
+                    // Check if auth data is not too old (max 24 hours)
+                    const authAge = Date.now() - (result.authTimestamp || 0);
+                    const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+                    
+                    if (authAge < maxAge) {
+                        // User is authenticated according to storage
+                        console.log('Navigation: Found valid auth in storage:', result.user.displayName || result.user.email);
+                        this.updateUserDisplay(result.user);
+                        return;
+                    } else {
+                        // Auth data is too old, clear it
+                        await chrome.storage.local.set({
+                            user: null,
+                            isAuthenticated: false,
+                            authTimestamp: null
+                        });
+                    }
+                }
+                
+                // Not authenticated or auth expired
+                console.log('Navigation: No valid auth found in storage');
+                this.updateUserDisplay(null);
+            }
+        } catch (error) {
+            console.log('Chrome storage not available or error:', error);
+        }
+    }
+
+    setupStorageListener() {
+        // Listen for chrome.storage changes to sync auth state across pages
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+            chrome.storage.onChanged.addListener((changes, namespace) => {
+                if (namespace === 'local' && (changes.user || changes.isAuthenticated)) {
+                    console.log('Navigation: Storage auth state changed, updating display');
+                    this.checkStorageAuth();
+                }
+            });
+        }
+    }
+
+    startStorageAuthCheck() {
+        // Check auth state every 5 seconds if firebaseManager is not available
+        this.authCheckInterval = setInterval(() => {
+            this.checkStorageAuth();
+        }, 5000);
+    }
+
+    stopStorageAuthCheck() {
+        if (this.authCheckInterval) {
+            clearInterval(this.authCheckInterval);
+            this.authCheckInterval = null;
         }
     }
 
     updateUserDisplay(user) {
         this.user = user;
-        const userInfo = document.getElementById('navUserInfo');
+        const userProfile = document.getElementById('navUserProfile');
         const userAvatar = document.getElementById('navUserAvatar');
         const userName = document.getElementById('navUserName');
-        const settingsBtn = document.getElementById('navSettingsBtn');
-        const logoutBtn = document.getElementById('navLogoutBtn');
+        const signInBtn = document.getElementById('navSignInBtn');
 
-        if (user && userInfo && userName && settingsBtn && logoutBtn) {
-            // Show user info
-            userInfo.style.display = 'flex';
-            settingsBtn.style.display = 'block';
-            logoutBtn.style.display = 'block';
+        console.log('Navigation: Updating user display:', user ? (user.displayName || user.email) : 'No user');
+
+        if (user && userProfile && userName) {
+            // Show user profile dropdown
+            userProfile.style.display = 'block';
+            if (signInBtn) signInBtn.style.display = 'none';
 
             // Update user data
             userName.textContent = user.displayName || user.email || 'User';
-            if (userAvatar && user.photoURL) {
-                userAvatar.src = user.photoURL;
+            if (userAvatar) {
+                if (user.photoURL) {
+                    userAvatar.src = user.photoURL;
+                } else {
+                    // Use default avatar if no photo
+                    userAvatar.src = '/icons/icon48.png';
+                }
             }
-        } else if (userInfo && settingsBtn && logoutBtn) {
-            // Hide user info
-            userInfo.style.display = 'none';
-            settingsBtn.style.display = 'none';
-            logoutBtn.style.display = 'none';
+        } else {
+            // Hide user profile, show sign in button
+            if (userProfile) userProfile.style.display = 'none';
+            if (signInBtn) signInBtn.style.display = 'flex';
         }
     }
 
@@ -289,6 +467,16 @@ class Navigation {
         });
     }
 
+    handleSignIn() {
+        // Redirect to popup for sign in
+        if (!window.location.pathname.includes('popup.html')) {
+            window.location.href = chrome.runtime.getURL('popup.html');
+        } else {
+            // If already on popup, just reload
+            window.location.reload();
+        }
+    }
+
     async handleLogout() {
         try {
             if (typeof firebaseManager !== 'undefined') {
@@ -321,6 +509,12 @@ class Navigation {
                 navHeader.classList.remove('nav-loading');
             }
         }
+    }
+
+    // Cleanup method
+    destroy() {
+        this.stopStorageAuthCheck();
+        this.closeAllDropdowns();
     }
 }
 

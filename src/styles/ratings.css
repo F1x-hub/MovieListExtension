@@ -132,20 +132,52 @@
 
 .filters-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(2, auto);
     gap: 20px;
+    align-items: stretch;
 }
 
 .filter-group {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    align-items: stretch;
+    justify-content: flex-start;
+}
+
+/* Ensure user filter group maintains proper layout */
+#userFilterGroup {
+    display: none; /* Hidden by default, shown only in all-ratings mode */
+    flex-direction: column !important;
+    gap: 8px !important;
+}
+
+/* Show user filter only when it should be visible */
+#userFilterGroup.visible {
+    display: flex !important;
 }
 
 .filter-label {
     font-weight: 500;
     color: var(--text-primary);
     font-size: 14px;
+    margin-bottom: 0;
+    display: block;
+    width: 100%;
+}
+
+/* Specific styles for user filter label */
+#userFilterGroup .filter-label {
+    display: block !important;
+    width: 100% !important;
+}
+
+/* Specific styles for user filter select */
+#userFilter {
+    width: 100% !important;
+    display: block !important;
+    margin-top: 0 !important;
 }
 
 .search-input-wrapper {
@@ -408,6 +440,33 @@
     background: #138496;
 }
 
+/* User Info in Cards */
+.movie-user-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: linear-gradient(135deg, rgba(233, 69, 96, 0.2), rgba(233, 69, 96, 0.1));
+    border: 1px solid rgba(233, 69, 96, 0.3);
+    border-radius: 8px;
+    margin: 12px 0;
+    font-size: 14px;
+    color: var(--text-primary);
+    box-shadow: 0 2px 8px rgba(233, 69, 96, 0.1);
+}
+
+.user-icon {
+    font-size: 16px;
+    color: var(--accent-color);
+    opacity: 1;
+}
+
+.user-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
 /* Empty State */
 .empty-state {
     text-align: center;
@@ -632,9 +691,15 @@
 }
 
 /* Responsive Design */
+@media (max-width: 1024px) {
+    .filters-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
 @media (max-width: 768px) {
     .ratings-container {
-        padding: 20px 16px;
+        padding: 20px 15px;
     }
     
     .ratings-title {
