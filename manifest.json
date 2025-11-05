@@ -11,7 +11,9 @@
   "host_permissions": [
     "https://*.firebaseio.com/*",
     "https://*.googleapis.com/*",
-    "https://api.kinopoisk.dev/*"
+    "https://api.kinopoisk.dev/*",
+    "https://firebasestorage.googleapis.com/*",
+    "https://*.firebasestorage.app/*"
   ],
   "oauth2": {
     "client_id": "532518163829-t60hfab5q5vinfdhpci6ctli17kb5thv.apps.googleusercontent.com",

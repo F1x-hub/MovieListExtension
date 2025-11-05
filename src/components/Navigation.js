@@ -60,7 +60,7 @@ class Navigation {
                             <div class="nav-user-dropdown" id="navUserDropdown">
                                 <div class="nav-dropdown-item" id="navDropdownSettings">
                                     <span class="nav-dropdown-icon">⚙️</span>
-                                    <span>Settings</span>
+                                    <span>Edit Profile</span>
                                 </div>
                                 <div class="nav-dropdown-divider"></div>
                                 <div class="nav-dropdown-item nav-dropdown-logout" id="navDropdownLogout">
@@ -381,8 +381,8 @@ class Navigation {
                 case 'ratings':
                     url = chrome.runtime.getURL('ratings.html');
                     break;
-                case 'settings':
-                    this.showSettingsModal();
+            case 'settings':
+                    this.showProfileModal();
                     return;
                 default:
                     return;
@@ -405,7 +405,7 @@ class Navigation {
                 url = chrome.runtime.getURL('ratings.html');
                 break;
             case 'settings':
-                this.showSettingsModal();
+                this.showProfileModal();
                 return;
             default:
                 return;
@@ -417,8 +417,7 @@ class Navigation {
         }
     }
 
-    showSettingsModal() {
-        // Simple settings modal for now
+    showProfileModal() {
         const modal = document.createElement('div');
         modal.style.cssText = `
             position: fixed;
@@ -433,36 +432,157 @@ class Navigation {
             z-index: 10000;
         `;
 
+        const user = (typeof firebaseManager !== 'undefined') ? firebaseManager.getCurrentUser() : null;
+        const email = user ? (user.email || '') : '';
+        const displayName = user ? (user.displayName || '') : '';
+        const firstName = displayName.includes(' ') ? displayName.split(' ')[0] : displayName;
+        const lastName = displayName.includes(' ') ? displayName.split(' ').slice(1).join(' ') : '';
+        const photoURL = user && user.photoURL ? user.photoURL : '';
+        const isGoogle = user && Array.isArray(user.providerData) && user.providerData.some(p => p.providerId === 'google.com');
+
         modal.innerHTML = `
             <div style="
-                background: white;
-                padding: 30px;
+                background: #0f172a;
+                padding: 24px;
                 border-radius: 12px;
-                max-width: 400px;
-                width: 90%;
-                text-align: center;
-                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+                max-width: 560px;
+                width: 92%;
+                color: #e2e8f0;
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
             ">
-                <h3 style="margin: 0 0 20px 0; color: #333;">Settings</h3>
-                <p style="color: #666; margin-bottom: 20px;">Settings feature coming soon!</p>
-                <button onclick="this.closest('div').remove()" style="
-                    background: #667eea;
-                    color: white;
-                    border: none;
-                    padding: 10px 20px;
-                    border-radius: 6px;
-                    cursor: pointer;
-                    font-weight: 500;
-                ">Close</button>
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+                    <h3 style="margin:0; font-size:20px;">Edit Profile</h3>
+                    <button id="profileCloseBtn" style="background:#334155; color:#e2e8f0; border:none; padding:8px 12px; border-radius:8px; cursor:pointer;">Close</button>
+                </div>
+
+                <form id="profileForm" style="display:flex; flex-direction:column; gap:12px;">
+                    <div style="display:flex; gap:16px; align-items:center;">
+                        <div style="width:84px; height:84px; border-radius:50%; overflow:hidden; background:#1f2937; display:flex; align-items:center; justify-content:center;">
+                            <img id="avatarPreview" src="${photoURL || ''}" alt="avatar" style="width:100%; height:100%; object-fit:cover; display:${photoURL ? 'block' : 'none'};">
+                            <div id="avatarPlaceholder" style="display:${photoURL ? 'none' : 'flex'}; width:100%; height:100%; align-items:center; justify-content:center; font-weight:600; color:#94a3b8;">${(firstName||'U').slice(0,1)}${(lastName||'').slice(0,1)}</div>
+                        </div>
+                        <div>
+                            <input id="avatarInput" type="file" accept="image/png,image/jpeg,image/webp" style="display:none;">
+                            <button id="uploadAvatarBtn" type="button" style="background:#6366f1; color:#fff; border:none; padding:8px 12px; border-radius:8px; cursor:pointer;">Upload Avatar</button>
+                            <span style="margin-left:8px; color:#94a3b8; font-size:12px;">JPG/PNG/WEBP · max 5MB</span>
+                        </div>
+                    </div>
+
+                    <div style="display:flex; gap:12px;">
+                        <input id="firstNameInput" type="text" placeholder="First Name" value="${firstName}" style="flex:1; padding:10px 12px; border-radius:8px; border:1px solid #334155; background:#0b1220; color:#e2e8f0;">
+                        <input id="lastNameInput" type="text" placeholder="Last Name" value="${lastName}" style="flex:1; padding:10px 12px; border-radius:8px; border:1px solid #334155; background:#0b1220; color:#e2e8f0;">
+                    </div>
+
+                    <input id="emailInput" type="email" value="${email}" ${user ? 'disabled' : ''} style="padding:10px 12px; border-radius:8px; border:1px solid #334155; background:#111827; color:#9ca3af;">
+
+                    <div id="passwordSection" style="display:${isGoogle ? 'none' : 'block'}; border-top:1px solid #1f2937; padding-top:8px; margin-top:8px;">
+                        <button id="togglePasswordChange" type="button" style="background:#334155; color:#e2e8f0; border:none; padding:8px 12px; border-radius:8px; cursor:pointer;">Change Password</button>
+                        <div id="passwordFields" style="display:none; margin-top:8px; display:flex; flex-direction:column; gap:8px;">
+                            <input id="currentPasswordInput" type="password" placeholder="Current Password" style="padding:10px 12px; border-radius:8px; border:1px solid #334155; background:#0b1220; color:#e2e8f0;">
+                            <input id="newPasswordInput" type="password" placeholder="New Password (min 6 chars)" minlength="6" style="padding:10px 12px; border-radius:8px; border:1px solid #334155; background:#0b1220; color:#e2e8f0;">
+                            <input id="confirmPasswordInput" type="password" placeholder="Confirm New Password" minlength="6" style="padding:10px 12px; border-radius:8px; border:1px solid #334155; background:#0b1220; color:#e2e8f0;">
+                        </div>
+                    </div>
+
+                    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:8px;">
+                        <button type="button" id="cancelProfileBtn" style="background:#334155; color:#e2e8f0; border:none; padding:10px 16px; border-radius:8px; cursor:pointer;">Cancel</button>
+                        <button type="submit" id="saveProfileBtn" style="background:#22c55e; color:#062e0f; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-weight:600;">Save Changes</button>
+                    </div>
+                </form>
+                <div id="profileNotice" style="margin-top:8px; font-size:12px; color:#94a3b8; ${isGoogle ? 'display:block' : 'display:none'};">Email and password are managed by Google.</div>
+                <div id="profileToast" style="display:none; margin-top:8px; padding:8px 12px; border-radius:8px;"></div>
             </div>
         `;
 
         document.body.appendChild(modal);
 
-        // Close on background click
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                modal.remove();
+        const close = () => modal.remove();
+        modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+        modal.querySelector('#profileCloseBtn').addEventListener('click', close);
+        modal.querySelector('#cancelProfileBtn').addEventListener('click', close);
+
+        const avatarInput = modal.querySelector('#avatarInput');
+        const avatarPreview = modal.querySelector('#avatarPreview');
+        const avatarPlaceholder = modal.querySelector('#avatarPlaceholder');
+        const uploadBtn = modal.querySelector('#uploadAvatarBtn');
+
+        uploadBtn.addEventListener('click', () => avatarInput.click());
+        avatarInput.addEventListener('change', () => {
+            const file = avatarInput.files && avatarInput.files[0];
+            if (!file) return;
+            const valid = ['image/jpeg','image/png','image/webp'].includes(file.type) && file.size <= 5 * 1024 * 1024;
+            if (!valid) { alert('Invalid file. Use JPG/PNG/WEBP up to 5MB.'); avatarInput.value=''; return; }
+            const reader = new FileReader();
+            reader.onload = () => {
+                avatarPreview.src = reader.result;
+                avatarPreview.style.display = 'block';
+                avatarPlaceholder.style.display = 'none';
+            };
+            reader.readAsDataURL(file);
+        });
+
+        const toggleBtn = modal.querySelector('#togglePasswordChange');
+        const fields = modal.querySelector('#passwordFields');
+        if (toggleBtn) toggleBtn.addEventListener('click', () => { fields.style.display = fields.style.display === 'none' ? 'flex' : 'none'; });
+
+        modal.querySelector('#profileForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (typeof firebaseManager !== 'undefined' && firebaseManager.waitForAuthReady) {
+                await firebaseManager.waitForAuthReady();
+            }
+            const first = modal.querySelector('#firstNameInput').value.trim();
+            const last = modal.querySelector('#lastNameInput').value.trim();
+            let name = [first, last].filter(Boolean).join(' ');
+            if (!name) {
+                const current = firebaseManager.getCurrentUser();
+                name = current && (current.displayName || current.email || 'User');
+            }
+
+            let photo = photoURL;
+            const file = avatarInput.files && avatarInput.files[0];
+            if (file) {
+                try {
+                    photo = await firebaseManager.uploadAvatar(file);
+                } catch (err) {
+                    alert('Avatar upload failed');
+                    return;
+                }
+            }
+
+            const toast = modal.querySelector('#profileToast');
+            const setToast = (ok, msg) => {
+                toast.style.display = 'block';
+                toast.style.background = ok ? '#16a34a' : '#dc2626';
+                toast.style.color = '#fff';
+                toast.textContent = msg;
+            };
+
+            try {
+                await firebaseManager.updateAuthProfile({ displayName: name, photoURL: photo });
+                const userNow = firebaseManager.getCurrentUser();
+                if (typeof UserService !== 'undefined') {
+                    const userService = firebaseManager.getUserService();
+                    await userService.updateUserProfile(userNow.uid, { displayName: name, photoURL: photo, email: userNow.email });
+                }
+
+                if (!isGoogle && fields.style.display !== 'none') {
+                    const currentPw = modal.querySelector('#currentPasswordInput').value;
+                    const newPw = modal.querySelector('#newPasswordInput').value;
+                    const confirmPw = modal.querySelector('#confirmPasswordInput').value;
+                    if (newPw && newPw === confirmPw) {
+                        await firebaseManager.changePasswordWithReauth(currentPw, newPw);
+                    } else if (newPw || confirmPw) {
+                        setToast(false, 'Password confirmation does not match');
+                        return;
+                    }
+                }
+
+                setToast(true, 'Profile saved');
+                setTimeout(close, 600);
+                this.updateUserDisplay(firebaseManager.getCurrentUser());
+            } catch (error) {
+                console.error('Profile save failed:', error);
+                setToast(false, (error && error.message) ? `Save failed: ${error.message}` : 'Save failed');
             }
         });
     }

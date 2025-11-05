@@ -25,6 +25,7 @@ class RatingsPageManager {
 
     async init() {
         this.initializeElements();
+        this.initializeCustomDropdowns();
         this.setupEventListeners();
         this.loadFiltersFromStorage();
         
@@ -78,6 +79,126 @@ class RatingsPageManager {
             editSaveBtn: document.getElementById('editSaveBtn'),
             editCancelBtn: document.getElementById('editCancelBtn')
         };
+    }
+
+    initializeCustomDropdowns() {
+        this.dropdowns = {};
+        const dropdownElements = document.querySelectorAll('.custom-dropdown');
+        
+        dropdownElements.forEach(dropdown => {
+            const dropdownId = dropdown.getAttribute('data-dropdown');
+            const trigger = dropdown.querySelector('.dropdown-trigger');
+            const list = dropdown.querySelector('.dropdown-list');
+            const hiddenSelect = dropdown.querySelector('.filter-select-hidden');
+            const options = list.querySelectorAll('.dropdown-option');
+            
+            if (!dropdownId || !trigger || !list || !hiddenSelect) return;
+            
+            this.dropdowns[dropdownId] = {
+                element: dropdown,
+                trigger: trigger,
+                list: list,
+                hiddenSelect: hiddenSelect,
+                isOpen: false
+            };
+            
+            trigger.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.toggleDropdown(dropdownId);
+            });
+            
+            options.forEach(option => {
+                option.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const value = option.getAttribute('data-value');
+                    const text = option.textContent.trim();
+                    this.selectDropdownOption(dropdownId, value, text);
+                });
+            });
+        });
+        
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.custom-dropdown')) {
+                this.closeAllDropdowns();
+            }
+        });
+    }
+
+    toggleDropdown(dropdownId) {
+        const dropdown = this.dropdowns[dropdownId];
+        if (!dropdown) return;
+        
+        const isCurrentlyOpen = dropdown.isOpen;
+        
+        this.closeAllDropdowns();
+        
+        if (!isCurrentlyOpen) {
+            dropdown.element.classList.add('open');
+            dropdown.isOpen = true;
+        }
+    }
+
+    closeAllDropdowns() {
+        Object.keys(this.dropdowns).forEach(dropdownId => {
+            const dropdown = this.dropdowns[dropdownId];
+            if (dropdown && dropdown.isOpen) {
+                dropdown.element.classList.remove('open');
+                dropdown.isOpen = false;
+            }
+        });
+    }
+
+    selectDropdownOption(dropdownId, value, text) {
+        const dropdown = this.dropdowns[dropdownId];
+        if (!dropdown) return;
+        
+        const valueElement = dropdown.trigger.querySelector('.dropdown-value');
+        if (valueElement) {
+            valueElement.textContent = text;
+        }
+        
+        if (dropdown.hiddenSelect) {
+            dropdown.hiddenSelect.value = value;
+            const changeEvent = new Event('change', { bubbles: true });
+            dropdown.hiddenSelect.dispatchEvent(changeEvent);
+        }
+        
+        const options = dropdown.list.querySelectorAll('.dropdown-option');
+        options.forEach(option => {
+            option.classList.remove('selected');
+            if (option.getAttribute('data-value') === value) {
+                option.classList.add('selected');
+            }
+        });
+        
+        this.closeAllDropdowns();
+    }
+
+    updateDropdownValue(dropdownId, value) {
+        const dropdown = this.dropdowns[dropdownId];
+        if (!dropdown) return;
+        
+        const options = dropdown.list.querySelectorAll('.dropdown-option');
+        let selectedText = '';
+        
+        options.forEach(option => {
+            option.classList.remove('selected');
+            if (option.getAttribute('data-value') === value) {
+                option.classList.add('selected');
+                selectedText = option.textContent.trim();
+            }
+        });
+        
+        if (selectedText) {
+            const valueElement = dropdown.trigger.querySelector('.dropdown-value');
+            if (valueElement) {
+                valueElement.textContent = selectedText;
+            }
+        }
+        
+        if (dropdown.hiddenSelect) {
+            dropdown.hiddenSelect.value = value;
+        }
     }
 
     setupEventListeners() {
@@ -375,7 +496,6 @@ class RatingsPageManager {
         const yearFilter = this.elements.yearFilter;
         
         if (yearFilter) {
-            // Clear existing options except "All Years"
             yearFilter.innerHTML = '<option value="">All Years</option>';
             
             sortedYears.forEach(year => {
@@ -384,11 +504,27 @@ class RatingsPageManager {
                 option.textContent = year;
                 yearFilter.appendChild(option);
             });
+            
+            if (this.dropdowns?.yearFilter) {
+                const dropdownList = this.dropdowns.yearFilter.list;
+                dropdownList.innerHTML = '<div class="dropdown-option" data-value="">All Years</div>';
+                
+                sortedYears.forEach(year => {
+                    const option = document.createElement('div');
+                    option.className = 'dropdown-option';
+                    option.setAttribute('data-value', year);
+                    option.textContent = year;
+                    option.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.selectDropdownOption('yearFilter', year, year);
+                    });
+                    dropdownList.appendChild(option);
+                });
+            }
         }
     }
 
     extractAndPopulateUsers(ratings) {
-        // Extract unique users from ratings
         const usersMap = new Map();
         
         ratings.forEach(rating => {
@@ -401,15 +537,12 @@ class RatingsPageManager {
             }
         });
         
-        // Convert to array and sort by display name
         this.allUsers = Array.from(usersMap.values()).sort((a, b) => 
             a.displayName.localeCompare(b.displayName)
         );
         
-        // Populate user filter dropdown
         const userFilter = this.elements.userFilter;
         if (userFilter) {
-            // Clear existing options except "All Users"
             userFilter.innerHTML = '<option value="">All Users</option>';
             
             this.allUsers.forEach(user => {
@@ -418,6 +551,23 @@ class RatingsPageManager {
                 option.textContent = user.displayName;
                 userFilter.appendChild(option);
             });
+            
+            if (this.dropdowns?.userFilter) {
+                const dropdownList = this.dropdowns.userFilter.list;
+                dropdownList.innerHTML = '<div class="dropdown-option" data-value="">All Users</div>';
+                
+                this.allUsers.forEach(user => {
+                    const option = document.createElement('div');
+                    option.className = 'dropdown-option';
+                    option.setAttribute('data-value', user.id);
+                    option.textContent = user.displayName;
+                    option.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.selectDropdownOption('userFilter', user.id, user.displayName);
+                    });
+                    dropdownList.appendChild(option);
+                });
+            }
         }
     }
 
@@ -707,7 +857,6 @@ class RatingsPageManager {
             sort: 'date-desc'
         };
         
-        // Reset form elements
         this.elements.movieSearchInput.value = '';
         this.elements.genreFilter.value = '';
         this.elements.yearFilter.value = '';
@@ -717,6 +866,13 @@ class RatingsPageManager {
             this.elements.userFilter.value = '';
         }
         this.elements.sortFilter.value = 'date-desc';
+        
+        this.updateDropdownValue('genreFilter', '');
+        this.updateDropdownValue('yearFilter', '');
+        this.updateDropdownValue('myRatingFilter', '');
+        this.updateDropdownValue('avgRatingFilter', '');
+        this.updateDropdownValue('userFilter', '');
+        this.updateDropdownValue('sortFilter', 'date-desc');
         
         this.applyFilters();
     }
@@ -790,12 +946,30 @@ class RatingsPageManager {
 
     restoreFilterUI() {
         if (this.elements.movieSearchInput) this.elements.movieSearchInput.value = this.filters.search;
-        if (this.elements.genreFilter) this.elements.genreFilter.value = this.filters.genre;
-        if (this.elements.yearFilter) this.elements.yearFilter.value = this.filters.year;
-        if (this.elements.myRatingFilter) this.elements.myRatingFilter.value = this.filters.myRating;
-        if (this.elements.avgRatingFilter) this.elements.avgRatingFilter.value = this.filters.avgRating;
-        if (this.elements.userFilter) this.elements.userFilter.value = this.filters.user;
-        if (this.elements.sortFilter) this.elements.sortFilter.value = this.filters.sort;
+        if (this.elements.genreFilter) {
+            this.elements.genreFilter.value = this.filters.genre;
+            this.updateDropdownValue('genreFilter', this.filters.genre);
+        }
+        if (this.elements.yearFilter) {
+            this.elements.yearFilter.value = this.filters.year;
+            this.updateDropdownValue('yearFilter', this.filters.year);
+        }
+        if (this.elements.myRatingFilter) {
+            this.elements.myRatingFilter.value = this.filters.myRating;
+            this.updateDropdownValue('myRatingFilter', this.filters.myRating);
+        }
+        if (this.elements.avgRatingFilter) {
+            this.elements.avgRatingFilter.value = this.filters.avgRating;
+            this.updateDropdownValue('avgRatingFilter', this.filters.avgRating);
+        }
+        if (this.elements.userFilter) {
+            this.elements.userFilter.value = this.filters.user;
+            this.updateDropdownValue('userFilter', this.filters.user);
+        }
+        if (this.elements.sortFilter) {
+            this.elements.sortFilter.value = this.filters.sort;
+            this.updateDropdownValue('sortFilter', this.filters.sort);
+        }
     }
 
     escapeHtml(text) {

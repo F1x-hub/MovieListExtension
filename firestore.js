@@ -62,6 +62,55 @@ class FirebaseManager {
         window.dispatchEvent(event);
     }
 
+    async updateAuthProfile({ displayName, photoURL }) {
+        const user = this.getCurrentUser();
+        if (!user) throw new Error('No authenticated user');
+        await user.updateProfile({ displayName, photoURL });
+        await user.reload();
+        this.user = this.auth.currentUser;
+        await this.onAuthStateChanged(this.user);
+        return this.user;
+    }
+
+    async changePasswordWithReauth(currentPassword, newPassword) {
+        const user = this.getCurrentUser();
+        if (!user || !user.email) throw new Error('No email user');
+        const credential = firebase.auth.EmailAuthProvider.credential(user.email, currentPassword);
+        await user.reauthenticateWithCredential(credential);
+        await user.updatePassword(newPassword);
+        return true;
+    }
+
+    async uploadAvatar(file) {
+        const user = this.getCurrentUser();
+        if (!user) throw new Error('No authenticated user');
+
+        try {
+            const token = await user.getIdToken();
+            const bucket = 'movielistdb-13208.firebasestorage.app';
+            const objectPath = `avatars/${user.uid}/profile.jpg`;
+            const url = `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o?name=${encodeURIComponent(objectPath)}`;
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Authorization': `Firebase ${token}`, 'Content-Type': file.type || 'application/octet-stream' },
+                body: file
+            });
+            if (!res.ok) throw new Error('upload failed');
+            const info = await res.json();
+            if (info && info.downloadTokens) {
+                return `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(objectPath)}?alt=media&token=${info.downloadTokens}`;
+            }
+            return `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(objectPath)}?alt=media`;
+        } catch (e) {
+            const dataUrl = await new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.readAsDataURL(file);
+            });
+            return dataUrl;
+        }
+    }
+
     async signInWithGoogle() {
         try {
             if (!this.isInitialized) {

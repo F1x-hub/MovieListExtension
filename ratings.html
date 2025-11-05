@@ -23,6 +23,7 @@
     <script src="src/services/RatingService.js"></script>
     <script src="src/services/MovieCacheService.js"></script>
     <script src="src/services/KinopoiskService.js"></script>
+    <script src="src/services/UserService.js"></script>
     <script src="src/utils/Utils.js"></script>
     
     <!-- Components -->
@@ -78,81 +79,167 @@
                     <!-- Genre Filter -->
                     <div class="filter-group">
                         <label class="filter-label">Genre</label>
-                        <select class="filter-select" id="genreFilter">
-                            <option value="">All Genres</option>
-                            <option value="action">Action</option>
-                            <option value="adventure">Adventure</option>
-                            <option value="animation">Animation</option>
-                            <option value="comedy">Comedy</option>
-                            <option value="crime">Crime</option>
-                            <option value="documentary">Documentary</option>
-                            <option value="drama">Drama</option>
-                            <option value="family">Family</option>
-                            <option value="fantasy">Fantasy</option>
-                            <option value="horror">Horror</option>
-                            <option value="romance">Romance</option>
-                            <option value="sci-fi">Sci-Fi</option>
-                            <option value="thriller">Thriller</option>
-                        </select>
+                        <div class="custom-dropdown" data-dropdown="genreFilter">
+                            <button type="button" class="dropdown-trigger" id="genreFilterTrigger">
+                                <span class="dropdown-value">All Genres</span>
+                                <span class="dropdown-arrow">▼</span>
+                            </button>
+                            <div class="dropdown-list" id="genreFilterList">
+                                <div class="dropdown-option" data-value="">All Genres</div>
+                                <div class="dropdown-option" data-value="action">Action</div>
+                                <div class="dropdown-option" data-value="adventure">Adventure</div>
+                                <div class="dropdown-option" data-value="animation">Animation</div>
+                                <div class="dropdown-option" data-value="comedy">Comedy</div>
+                                <div class="dropdown-option" data-value="crime">Crime</div>
+                                <div class="dropdown-option" data-value="documentary">Documentary</div>
+                                <div class="dropdown-option" data-value="drama">Drama</div>
+                                <div class="dropdown-option" data-value="family">Family</div>
+                                <div class="dropdown-option" data-value="fantasy">Fantasy</div>
+                                <div class="dropdown-option" data-value="horror">Horror</div>
+                                <div class="dropdown-option" data-value="romance">Romance</div>
+                                <div class="dropdown-option" data-value="sci-fi">Sci-Fi</div>
+                                <div class="dropdown-option" data-value="thriller">Thriller</div>
+                            </div>
+                            <select class="filter-select-hidden" id="genreFilter">
+                                <option value="">All Genres</option>
+                                <option value="action">Action</option>
+                                <option value="adventure">Adventure</option>
+                                <option value="animation">Animation</option>
+                                <option value="comedy">Comedy</option>
+                                <option value="crime">Crime</option>
+                                <option value="documentary">Documentary</option>
+                                <option value="drama">Drama</option>
+                                <option value="family">Family</option>
+                                <option value="fantasy">Fantasy</option>
+                                <option value="horror">Horror</option>
+                                <option value="romance">Romance</option>
+                                <option value="sci-fi">Sci-Fi</option>
+                                <option value="thriller">Thriller</option>
+                            </select>
+                        </div>
                     </div>
 
                     <!-- Year Filter -->
                     <div class="filter-group">
                         <label class="filter-label">Year</label>
-                        <select class="filter-select" id="yearFilter">
-                            <option value="">All Years</option>
-                        </select>
+                        <div class="custom-dropdown" data-dropdown="yearFilter">
+                            <button type="button" class="dropdown-trigger" id="yearFilterTrigger">
+                                <span class="dropdown-value">All Years</span>
+                                <span class="dropdown-arrow">▼</span>
+                            </button>
+                            <div class="dropdown-list" id="yearFilterList">
+                                <div class="dropdown-option" data-value="">All Years</div>
+                            </div>
+                            <select class="filter-select-hidden" id="yearFilter">
+                                <option value="">All Years</option>
+                            </select>
+                        </div>
                     </div>
 
                     <!-- My Rating Filter -->
                     <div class="filter-group">
                         <label class="filter-label">My Rating</label>
-                        <select class="filter-select" id="myRatingFilter">
-                            <option value="">Any Rating</option>
-                            <option value="9-10">9-10 ⭐⭐⭐⭐⭐</option>
-                            <option value="7-8">7-8 ⭐⭐⭐⭐</option>
-                            <option value="5-6">5-6 ⭐⭐⭐</option>
-                            <option value="3-4">3-4 ⭐⭐</option>
-                            <option value="1-2">1-2 ⭐</option>
-                        </select>
+                        <div class="custom-dropdown" data-dropdown="myRatingFilter">
+                            <button type="button" class="dropdown-trigger" id="myRatingFilterTrigger">
+                                <span class="dropdown-value">Any Rating</span>
+                                <span class="dropdown-arrow">▼</span>
+                            </button>
+                            <div class="dropdown-list" id="myRatingFilterList">
+                                <div class="dropdown-option" data-value="">Any Rating</div>
+                                <div class="dropdown-option" data-value="9-10">9-10 ⭐⭐⭐⭐⭐</div>
+                                <div class="dropdown-option" data-value="7-8">7-8 ⭐⭐⭐⭐</div>
+                                <div class="dropdown-option" data-value="5-6">5-6 ⭐⭐⭐</div>
+                                <div class="dropdown-option" data-value="3-4">3-4 ⭐⭐</div>
+                                <div class="dropdown-option" data-value="1-2">1-2 ⭐</div>
+                            </div>
+                            <select class="filter-select-hidden" id="myRatingFilter">
+                                <option value="">Any Rating</option>
+                                <option value="9-10">9-10 ⭐⭐⭐⭐⭐</option>
+                                <option value="7-8">7-8 ⭐⭐⭐⭐</option>
+                                <option value="5-6">5-6 ⭐⭐⭐</option>
+                                <option value="3-4">3-4 ⭐⭐</option>
+                                <option value="1-2">1-2 ⭐</option>
+                            </select>
+                        </div>
                     </div>
 
                     <!-- Average Rating Filter -->
                     <div class="filter-group">
                         <label class="filter-label">Average Rating</label>
-                        <select class="filter-select" id="avgRatingFilter">
-                            <option value="">Any Average</option>
-                            <option value="9-10">9-10 ⭐⭐⭐⭐⭐</option>
-                            <option value="7-8">7-8 ⭐⭐⭐⭐</option>
-                            <option value="5-6">5-6 ⭐⭐⭐</option>
-                            <option value="3-4">3-4 ⭐⭐</option>
-                            <option value="1-2">1-2 ⭐</option>
-                        </select>
+                        <div class="custom-dropdown" data-dropdown="avgRatingFilter">
+                            <button type="button" class="dropdown-trigger" id="avgRatingFilterTrigger">
+                                <span class="dropdown-value">Any Average</span>
+                                <span class="dropdown-arrow">▼</span>
+                            </button>
+                            <div class="dropdown-list" id="avgRatingFilterList">
+                                <div class="dropdown-option" data-value="">Any Average</div>
+                                <div class="dropdown-option" data-value="9-10">9-10 ⭐⭐⭐⭐⭐</div>
+                                <div class="dropdown-option" data-value="7-8">7-8 ⭐⭐⭐⭐</div>
+                                <div class="dropdown-option" data-value="5-6">5-6 ⭐⭐⭐</div>
+                                <div class="dropdown-option" data-value="3-4">3-4 ⭐⭐</div>
+                                <div class="dropdown-option" data-value="1-2">1-2 ⭐</div>
+                            </div>
+                            <select class="filter-select-hidden" id="avgRatingFilter">
+                                <option value="">Any Average</option>
+                                <option value="9-10">9-10 ⭐⭐⭐⭐⭐</option>
+                                <option value="7-8">7-8 ⭐⭐⭐⭐</option>
+                                <option value="5-6">5-6 ⭐⭐⭐</option>
+                                <option value="3-4">3-4 ⭐⭐</option>
+                                <option value="1-2">1-2 ⭐</option>
+                            </select>
+                        </div>
                     </div>
 
                     <!-- User Filter (only visible in All Ratings mode) -->
                     <div class="filter-group" id="userFilterGroup" style="display: none;">
                         <label class="filter-label">User</label>
-                        <select class="filter-select" id="userFilter">
-                            <option value="">All Users</option>
-                        </select>
+                        <div class="custom-dropdown" data-dropdown="userFilter">
+                            <button type="button" class="dropdown-trigger" id="userFilterTrigger">
+                                <span class="dropdown-value">All Users</span>
+                                <span class="dropdown-arrow">▼</span>
+                            </button>
+                            <div class="dropdown-list" id="userFilterList">
+                                <div class="dropdown-option" data-value="">All Users</div>
+                            </div>
+                            <select class="filter-select-hidden" id="userFilter">
+                                <option value="">All Users</option>
+                            </select>
+                        </div>
                     </div>
 
                     <!-- Sort Options -->
                     <div class="filter-group">
                         <label class="filter-label">Sort By</label>
-                        <select class="filter-select" id="sortFilter">
-                            <option value="date-desc">Date Added (Newest)</option>
-                            <option value="date-asc">Date Added (Oldest)</option>
-                            <option value="rating-desc">My Rating (High to Low)</option>
-                            <option value="rating-asc">My Rating (Low to High)</option>
-                            <option value="avg-rating-desc">Avg Rating (High to Low)</option>
-                            <option value="avg-rating-asc">Avg Rating (Low to High)</option>
-                            <option value="title-asc">Title (A-Z)</option>
-                            <option value="title-desc">Title (Z-A)</option>
-                            <option value="year-desc">Year (Newest)</option>
-                            <option value="year-asc">Year (Oldest)</option>
-                        </select>
+                        <div class="custom-dropdown" data-dropdown="sortFilter">
+                            <button type="button" class="dropdown-trigger" id="sortFilterTrigger">
+                                <span class="dropdown-value">Date Added (Newest)</span>
+                                <span class="dropdown-arrow">▼</span>
+                            </button>
+                            <div class="dropdown-list" id="sortFilterList">
+                                <div class="dropdown-option" data-value="date-desc">Date Added (Newest)</div>
+                                <div class="dropdown-option" data-value="date-asc">Date Added (Oldest)</div>
+                                <div class="dropdown-option" data-value="rating-desc">My Rating (High to Low)</div>
+                                <div class="dropdown-option" data-value="rating-asc">My Rating (Low to High)</div>
+                                <div class="dropdown-option" data-value="avg-rating-desc">Avg Rating (High to Low)</div>
+                                <div class="dropdown-option" data-value="avg-rating-asc">Avg Rating (Low to High)</div>
+                                <div class="dropdown-option" data-value="title-asc">Title (A-Z)</div>
+                                <div class="dropdown-option" data-value="title-desc">Title (Z-A)</div>
+                                <div class="dropdown-option" data-value="year-desc">Year (Newest)</div>
+                                <div class="dropdown-option" data-value="year-asc">Year (Oldest)</div>
+                            </div>
+                            <select class="filter-select-hidden" id="sortFilter">
+                                <option value="date-desc">Date Added (Newest)</option>
+                                <option value="date-asc">Date Added (Oldest)</option>
+                                <option value="rating-desc">My Rating (High to Low)</option>
+                                <option value="rating-asc">My Rating (Low to High)</option>
+                                <option value="avg-rating-desc">Avg Rating (High to Low)</option>
+                                <option value="avg-rating-asc">Avg Rating (Low to High)</option>
+                                <option value="title-asc">Title (A-Z)</option>
+                                <option value="title-desc">Title (Z-A)</option>
+                                <option value="year-desc">Year (Newest)</option>
+                                <option value="year-asc">Year (Oldest)</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
             </div>
