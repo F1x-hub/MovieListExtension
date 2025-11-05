@@ -242,7 +242,25 @@ const RouteLoaders = {
                 <div class="search-section">
                     <div class="search-form">
                         <div class="search-input-container">
-                            <input type="text" id="searchInput" class="search-input" placeholder="Search for movies...">
+                            <div class="search-input-wrapper">
+                                <input type="text" id="searchInput" class="search-input" placeholder="Search for movies...">
+                                <!-- Search History Dropdown -->
+                                <div id="searchHistoryDropdown" class="search-history-dropdown" style="display: none;">
+                                    <div class="search-history-header">
+                                        <span class="history-title">Recent Searches</span>
+                                        <button id="clearHistoryBtn" class="clear-history-btn" title="Clear all history">
+                                            <span class="clear-icon">🗑️</span>
+                                        </button>
+                                    </div>
+                                    <div id="searchHistoryList" class="search-history-list">
+                                        <!-- History items will be populated here -->
+                                    </div>
+                                    <div id="searchHistoryEmpty" class="search-history-empty" style="display: none;">
+                                        <span class="empty-icon">🔍</span>
+                                        <span class="empty-text">No recent searches</span>
+                                    </div>
+                                </div>
+                            </div>
                             <button id="searchBtn" class="btn btn-accent">Search</button>
                         </div>
                         

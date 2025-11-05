@@ -18,16 +18,23 @@ class KinopoiskService {
      */
     async searchMovies(query, page = 1, limit = this.defaultLimit) {
         try {
+            // Clean and normalize the query
+            const cleanQuery = this.normalizeQuery(query);
+            console.log(`KinopoiskService: Searching for "${query}" (normalized: "${cleanQuery}")`);
+            
             const url = `${this.baseUrl}${KINOPOISK_CONFIG.ENDPOINTS.SEARCH}`;
             const params = new URLSearchParams({
-                query: query,
+                query: cleanQuery,
                 page: page.toString(),
                 limit: limit.toString(),
                 sortField: 'name', // Sort by name first
                 sortType: '1' // Ascending order for alphabetical sorting
             });
 
-            const response = await fetch(`${url}?${params}`, {
+            const fullUrl = `${url}?${params}`;
+            console.log(`KinopoiskService: Request URL: ${fullUrl}`);
+
+            const response = await fetch(fullUrl, {
                 method: 'GET',
                 headers: {
                     'X-API-KEY': this.apiKey,
@@ -35,7 +42,14 @@ class KinopoiskService {
                 }
             });
 
+            console.log(`KinopoiskService: Response status: ${response.status}`);
+
             if (!response.ok) {
+                // Try alternative search strategies for failed requests
+                if (response.status === 500 && this.hasCyrillic(query)) {
+                    console.log('KinopoiskService: Trying alternative search for Cyrillic query...');
+                    return await this.searchMoviesAlternative(query, page, limit);
+                }
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
 
@@ -227,6 +241,229 @@ class KinopoiskService {
             configured: this.isConfigured(),
             endpoints: KINOPOISK_CONFIG.ENDPOINTS
         };
+    }
+
+    /**
+     * Normalize search query for better API compatibility
+     * @param {string} query - Original query
+     * @returns {string} - Normalized query
+     */
+    normalizeQuery(query) {
+        if (!query) return '';
+        
+        // Trim whitespace
+        let normalized = query.trim();
+        
+        // Replace multiple spaces with single space
+        normalized = normalized.replace(/\s+/g, ' ');
+        
+        // For Cyrillic queries, try some common normalizations
+        if (this.hasCyrillic(normalized)) {
+            // Convert to lowercase for consistency
+            normalized = normalized.toLowerCase();
+            
+            // Replace common alternative spellings
+            const cyrillicReplacements = {
+                'ё': 'е',  // Replace ё with е
+                'й': 'и',  // Sometimes й causes issues
+            };
+            
+            for (const [from, to] of Object.entries(cyrillicReplacements)) {
+                normalized = normalized.replace(new RegExp(from, 'g'), to);
+            }
+        }
+        
+        return normalized;
+    }
+
+    /**
+     * Check if string contains Cyrillic characters
+     * @param {string} str - String to check
+     * @returns {boolean} - True if contains Cyrillic
+     */
+    hasCyrillic(str) {
+        return /[а-яё]/i.test(str);
+    }
+
+    /**
+     * Alternative search method for problematic queries
+     * @param {string} query - Original query
+     * @param {number} page - Page number
+     * @param {number} limit - Results limit
+     * @returns {Promise<Object>} - Search results
+     */
+    async searchMoviesAlternative(query, page = 1, limit = this.defaultLimit) {
+        const alternatives = [
+            // Try without sortField and sortType
+            {
+                query: this.normalizeQuery(query),
+                page: page.toString(),
+                limit: limit.toString()
+            },
+            // Try with different sort parameters
+            {
+                query: this.normalizeQuery(query),
+                page: page.toString(),
+                limit: limit.toString(),
+                sortField: 'year',
+                sortType: '-1'
+            }
+        ];
+
+        // Add Cyrillic-specific alternatives
+        if (this.hasCyrillic(query)) {
+            const cyrillicAlternatives = this.getCyrillicAlternatives(query);
+            cyrillicAlternatives.forEach(altQuery => {
+                alternatives.push({
+                    query: altQuery,
+                    page: page.toString(),
+                    limit: limit.toString()
+                });
+            });
+        }
+
+        for (let i = 0; i < alternatives.length; i++) {
+            try {
+                console.log(`KinopoiskService: Trying alternative ${i + 1}:`, alternatives[i]);
+                
+                // Add delay between requests to avoid throttling
+                if (i > 0) {
+                    console.log(`KinopoiskService: Waiting 1 second to avoid throttling...`);
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+                
+                const url = `${this.baseUrl}${KINOPOISK_CONFIG.ENDPOINTS.SEARCH}`;
+                const params = new URLSearchParams(alternatives[i]);
+                
+                const response = await fetch(`${url}?${params}`, {
+                    method: 'GET',
+                    headers: {
+                        'X-API-KEY': this.apiKey,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log(`KinopoiskService: Alternative ${i + 1} succeeded`);
+                    return this.normalizeSearchResults(data, query);
+                }
+                
+                console.log(`KinopoiskService: Alternative ${i + 1} failed with status:`, response.status);
+                
+                // If we get 429 (Too Many Requests), wait longer
+                if (response.status === 429) {
+                    console.log('KinopoiskService: Rate limited, waiting 3 seconds...');
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                }
+                
+            } catch (error) {
+                console.log(`KinopoiskService: Alternative ${i + 1} error:`, error.message);
+                
+                // If throttled, wait before next attempt
+                if (error.message.includes('throttled') || error.message.includes('Failed to fetch')) {
+                    console.log('KinopoiskService: Request throttled, waiting 2 seconds...');
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+            }
+        }
+
+        // If all alternatives fail, return empty results
+        console.log('KinopoiskService: All alternatives failed, returning empty results');
+        return {
+            docs: [],
+            total: 0,
+            limit: limit,
+            page: page,
+            pages: 0
+        };
+    }
+
+    /**
+     * Simple transliteration for Cyrillic to Latin
+     * @param {string} str - Cyrillic string
+     * @returns {string} - Transliterated string
+     */
+    transliterate(str) {
+        const translitMap = {
+            'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'e',
+            'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
+            'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+            'ф': 'f', 'х': 'h', 'ц': 'c', 'ч': 'ch', 'ш': 'sh', 'щ': 'sch',
+            'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+            ' ': ' '
+        };
+
+        return str.toLowerCase().split('').map(char => 
+            translitMap[char] || char
+        ).join('');
+    }
+
+    /**
+     * Get alternative search queries for Cyrillic text
+     * @param {string} query - Original Cyrillic query
+     * @returns {Array<string>} - Array of alternative queries
+     */
+    getCyrillicAlternatives(query) {
+        const alternatives = [];
+        const lowerQuery = query.toLowerCase().trim();
+
+        // Common movie title translations
+        const movieTranslations = {
+            'человек паук': ['spider man', 'spiderman'],
+            'железный человек': ['iron man'],
+            'темный рыцарь': ['dark knight'],
+            'матрица': ['matrix'],
+            'терминатор': ['terminator'],
+            'бэтмен': ['batman'],
+            'супермен': ['superman'],
+            'мстители': ['avengers'],
+            'звездные войны': ['star wars'],
+            'звёздные войны': ['star wars'],
+            'властелин колец': ['lord of the rings'],
+            'гарри поттер': ['harry potter'],
+            'джеймс бонд': ['james bond'],
+            'форсаж': ['fast and furious', 'fast furious'],
+            'пираты карибского моря': ['pirates of the caribbean'],
+            'трансформеры': ['transformers'],
+            'люди икс': ['x-men', 'xmen'],
+            'фантастические твари': ['fantastic beasts'],
+            'миссия невыполнима': ['mission impossible'],
+            'крепкий орешек': ['die hard'],
+            'назад в будущее': ['back to the future'],
+            'индиана джонс': ['indiana jones'],
+            'джуманджи': ['jumanji'],
+            'кинг конг': ['king kong'],
+            'годзилла': ['godzilla']
+        };
+
+        // Check for direct translations
+        if (movieTranslations[lowerQuery]) {
+            alternatives.push(...movieTranslations[lowerQuery]);
+        }
+
+        // Try transliteration
+        const transliterated = this.transliterate(query);
+        if (transliterated !== query) {
+            alternatives.push(transliterated);
+        }
+
+        // Try partial matches for compound queries
+        const words = lowerQuery.split(' ');
+        if (words.length > 1) {
+            for (const word of words) {
+                if (movieTranslations[word]) {
+                    // Try combining translated word with transliterated others
+                    const translatedWords = words.map(w => 
+                        movieTranslations[w] ? movieTranslations[w][0] : this.transliterate(w)
+                    );
+                    alternatives.push(translatedWords.join(' '));
+                }
+            }
+        }
+
+        // Remove duplicates and return
+        return [...new Set(alternatives)];
     }
 }
 

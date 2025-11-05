@@ -10,6 +10,8 @@ class SearchManager {
         this.currentResults = [];
         this.selectedMovie = null;
         this.currentUser = null;
+        this.searchHistoryService = new SearchHistoryService();
+        this.isHistoryDropdownOpen = false;
         this.setupEventListeners();
         this.setupImageErrorHandlers();
         this.initializeUI();
@@ -27,6 +29,13 @@ class SearchManager {
             toggleFiltersBtn: document.getElementById('toggleFiltersBtn'),
             filters: document.getElementById('filters'),
             clearFiltersBtn: document.getElementById('clearFiltersBtn'),
+            
+            // Search History
+            searchInputWrapper: document.querySelector('.search-input-wrapper'),
+            searchHistoryDropdown: document.getElementById('searchHistoryDropdown'),
+            searchHistoryList: document.getElementById('searchHistoryList'),
+            searchHistoryEmpty: document.getElementById('searchHistoryEmpty'),
+            clearHistoryBtn: document.getElementById('clearHistoryBtn'),
             
             // Filters
             yearFromFilter: document.getElementById('yearFromFilter'),
@@ -85,10 +94,27 @@ class SearchManager {
             this.elements.searchInput.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') this.performSearch();
             });
+            this.elements.searchInput.addEventListener('focus', () => this.showSearchHistory());
+            this.elements.searchInput.addEventListener('input', (e) => this.handleSearchInput(e));
         }
         if (this.elements.searchBtn) {
             this.elements.searchBtn.addEventListener('click', () => this.performSearch());
         }
+        
+        // Search History
+        if (this.elements.clearHistoryBtn) {
+            this.elements.clearHistoryBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.clearSearchHistory();
+            });
+        }
+        
+        // Click outside to close dropdown
+        document.addEventListener('click', (e) => {
+            if (!this.elements.searchInputWrapper?.contains(e.target)) {
+                this.hideSearchHistory();
+            }
+        });
         if (this.elements.toggleFiltersBtn) {
             this.elements.toggleFiltersBtn.addEventListener('click', () => this.toggleFilters());
         }
@@ -279,6 +305,12 @@ class SearchManager {
             return;
         }
         
+        // Hide search history dropdown
+        this.hideSearchHistory();
+        
+        // Add to search history
+        await this.searchHistoryService.addToHistory(query);
+        
         this.currentQuery = query;
         this.currentPage = 1;
         await this.searchMovies();
@@ -324,7 +356,25 @@ class SearchManager {
             
         } catch (error) {
             console.error('Search error:', error);
-            this.showError(`Ошибка поиска: ${error.message}`);
+            
+            // Provide more user-friendly error messages
+            let errorMessage = 'Произошла ошибка при поиске фильмов';
+            
+            if (error.message.includes('500')) {
+                if (this.hasCyrillic(this.currentQuery)) {
+                    errorMessage = `Проблема с поиском на кириллице "${this.currentQuery}". Попробуйте английское название или другие ключевые слова.`;
+                } else {
+                    errorMessage = 'Сервер временно недоступен. Попробуйте позже или измените запрос.';
+                }
+            } else if (error.message.includes('404')) {
+                errorMessage = 'По вашему запросу ничего не найдено. Попробуйте другие ключевые слова.';
+            } else if (error.message.includes('403')) {
+                errorMessage = 'Проблема с доступом к API. Проверьте настройки.';
+            } else if (error.message.includes('network') || error.message.includes('fetch')) {
+                errorMessage = 'Проблема с подключением к интернету. Проверьте соединение.';
+            }
+            
+            this.showError(errorMessage);
         } finally {
             this.showLoading(false);
         }
@@ -1099,6 +1149,118 @@ class SearchManager {
                 nextBtn.disabled = index === frames.length - 1;
             }
         }, 150);
+    }
+
+    // Search History Methods
+    async showSearchHistory() {
+        if (!this.elements.searchHistoryDropdown) return;
+
+        const history = await this.searchHistoryService.getFormattedHistory();
+        
+        if (history.length === 0) {
+            this.elements.searchHistoryList.style.display = 'none';
+            this.elements.searchHistoryEmpty.style.display = 'block';
+        } else {
+            this.elements.searchHistoryEmpty.style.display = 'none';
+            this.elements.searchHistoryList.style.display = 'block';
+            this.renderSearchHistory(history);
+        }
+
+        this.elements.searchHistoryDropdown.style.display = 'block';
+        this.elements.searchInputWrapper?.classList.add('dropdown-open');
+        this.isHistoryDropdownOpen = true;
+    }
+
+    hideSearchHistory() {
+        if (!this.elements.searchHistoryDropdown) return;
+
+        this.elements.searchHistoryDropdown.style.display = 'none';
+        this.elements.searchInputWrapper?.classList.remove('dropdown-open');
+        this.isHistoryDropdownOpen = false;
+    }
+
+    renderSearchHistory(history) {
+        if (!this.elements.searchHistoryList) return;
+
+        this.elements.searchHistoryList.innerHTML = '';
+
+        history.forEach(item => {
+            const historyItem = document.createElement('div');
+            historyItem.className = 'search-history-item';
+            historyItem.innerHTML = `
+                <div class="history-item-content">
+                    <div class="history-item-query">${this.escapeHtml(item.query)}</div>
+                    <div class="history-item-time">${item.timeAgo}</div>
+                </div>
+                <div class="history-item-actions">
+                    <button class="history-item-delete" data-item-id="${item.id}" title="Remove from history">
+                        <span class="delete-icon">×</span>
+                    </button>
+                </div>
+            `;
+
+            // Click on item to select it
+            historyItem.addEventListener('click', (e) => {
+                if (!e.target.closest('.history-item-delete')) {
+                    this.selectHistoryItem(item.query);
+                }
+            });
+
+            // Delete item
+            const deleteBtn = historyItem.querySelector('.history-item-delete');
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.removeHistoryItem(item.id);
+            });
+
+            this.elements.searchHistoryList.appendChild(historyItem);
+        });
+    }
+
+    async selectHistoryItem(query) {
+        this.elements.searchInput.value = query;
+        this.hideSearchHistory();
+        
+        // Automatically perform search
+        await this.performSearch();
+    }
+
+    async removeHistoryItem(itemId) {
+        await this.searchHistoryService.removeFromHistory(itemId);
+        
+        // Refresh the dropdown if it's open
+        if (this.isHistoryDropdownOpen) {
+            await this.showSearchHistory();
+        }
+    }
+
+    async clearSearchHistory() {
+        await this.searchHistoryService.clearHistory();
+        
+        // Refresh the dropdown if it's open
+        if (this.isHistoryDropdownOpen) {
+            await this.showSearchHistory();
+        }
+    }
+
+    handleSearchInput(e) {
+        // Optional: Filter history based on current input
+        // For now, just show all history when focused
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    /**
+     * Check if string contains Cyrillic characters
+     * @param {string} str - String to check
+     * @returns {boolean} - True if contains Cyrillic
+     */
+    hasCyrillic(str) {
+        return /[а-яё]/i.test(str);
     }
 }
 
