@@ -70,14 +70,20 @@ class RatingsPageManager {
             modalTitle: document.getElementById('modalTitle'),
             modalBody: document.getElementById('modalBody'),
             
-            editRatingModal: document.getElementById('editRatingModal'),
-            editModalClose: document.getElementById('editModalClose'),
-            editRatingSlider: document.getElementById('editRatingSlider'),
-            editRatingValue: document.getElementById('editRatingValue'),
-            editRatingComment: document.getElementById('editRatingComment'),
-            editCommentCount: document.getElementById('editCommentCount'),
-            editSaveBtn: document.getElementById('editSaveBtn'),
-            editCancelBtn: document.getElementById('editCancelBtn')
+            // Rating Modal (new beautiful one from search.html)
+            ratingModal: document.getElementById('ratingModal'),
+            ratingModalTitle: document.getElementById('ratingModalTitle'),
+            ratingModalClose: document.getElementById('ratingModalClose'),
+            ratingSlider: document.getElementById('ratingSlider'),
+            ratingValue: document.getElementById('ratingValue'),
+            ratingComment: document.getElementById('ratingComment'),
+            charCount: document.getElementById('charCount'),
+            saveRatingBtn: document.getElementById('saveRatingBtn'),
+            cancelRatingBtn: document.getElementById('cancelRatingBtn'),
+            movieRatingInfo: document.getElementById('movieRatingInfo'),
+            currentRatingInfo: document.getElementById('currentRatingInfo'),
+            existingRatingValue: document.getElementById('existingRatingValue'),
+            existingRatingComment: document.getElementById('existingRatingComment')
         };
     }
 
@@ -247,30 +253,41 @@ class RatingsPageManager {
         // Retry button
         this.elements.retryBtn?.addEventListener('click', () => this.loadMovies());
         
+        // Event delegation for dynamically created Edit Rating buttons
+        this.elements.moviesGrid?.addEventListener('click', (e) => {
+            const editBtn = e.target.closest('.edit-btn');
+            if (editBtn) {
+                const movieId = parseInt(editBtn.dataset.movieId);
+                const rating = parseInt(editBtn.dataset.rating);
+                const comment = editBtn.dataset.comment || '';
+                this.editRating(movieId, rating, comment);
+            }
+        });
+        
         // Modal close buttons
         this.elements.modalClose?.addEventListener('click', () => this.closeModal());
-        this.elements.editModalClose?.addEventListener('click', () => this.closeEditModal());
+        this.elements.ratingModalClose?.addEventListener('click', () => this.closeRatingModal());
         
-        // Edit rating modal
-        this.elements.editRatingSlider?.addEventListener('input', (e) => {
-            this.elements.editRatingValue.textContent = e.target.value;
+        // Rating modal
+        this.elements.ratingSlider?.addEventListener('input', (e) => {
+            this.elements.ratingValue.textContent = e.target.value;
         });
         
-        this.elements.editRatingComment?.addEventListener('input', (e) => {
+        this.elements.ratingComment?.addEventListener('input', (e) => {
             const count = e.target.value.length;
-            this.elements.editCommentCount.textContent = count;
+            this.elements.charCount.textContent = count;
         });
         
-        this.elements.editSaveBtn?.addEventListener('click', () => this.saveEditedRating());
-        this.elements.editCancelBtn?.addEventListener('click', () => this.closeEditModal());
+        this.elements.saveRatingBtn?.addEventListener('click', () => this.saveRating());
+        this.elements.cancelRatingBtn?.addEventListener('click', () => this.closeRatingModal());
         
         // Close modals on background click
         this.elements.movieModal?.addEventListener('click', (e) => {
             if (e.target === this.elements.movieModal) this.closeModal();
         });
         
-        this.elements.editRatingModal?.addEventListener('click', (e) => {
-            if (e.target === this.elements.editRatingModal) this.closeEditModal();
+        this.elements.ratingModal?.addEventListener('click', (e) => {
+            if (e.target === this.elements.ratingModal) this.closeRatingModal();
         });
     }
 
@@ -686,6 +703,18 @@ class RatingsPageManager {
             const card = this.createMovieCard(movieData);
             grid.appendChild(card);
         });
+        
+        // Add event listeners for View Details buttons
+        const viewDetailsButtons = grid.querySelectorAll('.action-btn.btn-primary');
+        viewDetailsButtons.forEach(button => {
+            button.addEventListener('click', (e) => {
+                const movieId = button.getAttribute('data-movie-id');
+                if (movieId) {
+                    const url = chrome.runtime.getURL(`search.html?movieId=${movieId}`);
+                    window.location.href = url;
+                }
+            });
+        });
     }
 
     createMovieCard(movieData) {
@@ -742,11 +771,14 @@ class RatingsPageManager {
                 </div>
                 
                 <div class="movie-actions">
-                    <button class="action-btn btn-primary" onclick="ratingsPage.showMovieDetails(${movie?.kinopoiskId})">
+                    <button class="action-btn btn-primary" data-movie-id="${movie?.kinopoiskId}">
                         View Details
                     </button>
                     ${this.currentMode === 'my-ratings' ? `
-                        <button class="action-btn edit-btn" onclick="ratingsPage.editRating(${movie?.kinopoiskId}, ${rating}, '${comment || ''}')">
+                        <button class="action-btn edit-btn" 
+                                data-movie-id="${movie?.kinopoiskId}" 
+                                data-rating="${rating}" 
+                                data-comment="${this.escapeHtml(comment || '')}">
                             Edit Rating
                         </button>
                     ` : ''}
@@ -799,37 +831,81 @@ class RatingsPageManager {
         this.elements.movieModal.style.display = 'flex';
     }
 
-    editRating(movieId, currentRating, currentComment) {
-        this.currentEditMovieId = movieId;
+    async editRating(movieId, currentRating, currentComment) {
+        this.selectedMovie = { kinopoiskId: movieId };
         
-        this.elements.editRatingSlider.value = currentRating;
-        this.elements.editRatingValue.textContent = currentRating;
-        this.elements.editRatingComment.value = currentComment || '';
-        this.elements.editCommentCount.textContent = (currentComment || '').length;
+        // Find movie data
+        const movieData = this.filteredMovies.find(m => m.movie?.kinopoiskId === movieId);
+        if (!movieData) return;
         
-        this.elements.editRatingModal.style.display = 'flex';
+        const movie = movieData.movie;
+        this.selectedMovie = movie;
+        
+        // Update modal title
+        this.elements.ratingModalTitle.textContent = `Edit Rating: ${movie.name}`;
+        
+        // Show movie info in rating modal
+        this.elements.movieRatingInfo.innerHTML = `
+            <div class="movie-detail">
+                <img src="${movie.posterUrl || '/icons/icon48.png'}" alt="${movie.name}" class="movie-detail-poster">
+                <div class="movie-detail-info">
+                    <h3 class="movie-detail-title">${this.escapeHtml(movie.name)}</h3>
+                    <p class="movie-detail-meta">${movie.year} • ${movie.genres?.slice(0, 3).join(', ')}</p>
+                    <div class="movie-detail-ratings">
+                        <span class="rating-badge kp">КП: ${movie.kpRating?.toFixed(1) || 'N/A'}</span>
+                        ${movie.imdbRating ? `<span class="rating-badge imdb">IMDb: ${movie.imdbRating.toFixed(1)}</span>` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Show current rating info
+        this.elements.currentRatingInfo.style.display = 'block';
+        this.elements.existingRatingValue.textContent = `${currentRating}/10`;
+        this.elements.existingRatingComment.textContent = currentComment || 'No comment';
+        
+        // Set form values
+        this.elements.ratingSlider.value = currentRating;
+        this.elements.ratingValue.textContent = currentRating;
+        this.elements.ratingComment.value = currentComment || '';
+        this.elements.charCount.textContent = (currentComment || '').length;
+        
+        this.elements.ratingModal.style.display = 'flex';
     }
 
-    async saveEditedRating() {
-        if (!this.currentEditMovieId || !this.currentUser) return;
+    async saveRating() {
+        if (!this.selectedMovie || !this.currentUser) return;
         
         try {
-            const rating = parseInt(this.elements.editRatingSlider.value);
-            const comment = this.elements.editRatingComment.value.trim();
+            const rating = parseInt(this.elements.ratingSlider.value);
+            const comment = this.elements.ratingComment.value.trim();
+            
+            // Validation
+            if (rating < 1 || rating > 10) {
+                alert('Rating must be between 1 and 10');
+                return;
+            }
             
             const ratingService = firebaseManager.getRatingService();
+            const userService = firebaseManager.getUserService();
+            
+            // Get fresh user profile
+            const userProfile = await userService.getUserProfile(this.currentUser.uid);
             
             await ratingService.addOrUpdateRating(
                 this.currentUser.uid,
-                this.currentUser.displayName || this.currentUser.email,
-                this.currentUser.photoURL || '',
-                this.currentEditMovieId,
+                userProfile?.displayName || this.currentUser.displayName || this.currentUser.email,
+                userProfile?.photoURL || this.currentUser.photoURL || '',
+                this.selectedMovie.kinopoiskId,
                 rating,
-                comment
+                comment,
+                this.selectedMovie
             );
             
-            this.closeEditModal();
-            await this.loadMovies(); // Reload to show updated data
+            this.closeRatingModal();
+            
+            // Reload to show updated data
+            await this.loadMovies();
             
         } catch (error) {
             console.error('Error saving rating:', error);
@@ -841,9 +917,9 @@ class RatingsPageManager {
         this.elements.movieModal.style.display = 'none';
     }
 
-    closeEditModal() {
-        this.elements.editRatingModal.style.display = 'none';
-        this.currentEditMovieId = null;
+    closeRatingModal() {
+        this.elements.ratingModal.style.display = 'none';
+        this.selectedMovie = null;
     }
 
     clearFilters() {

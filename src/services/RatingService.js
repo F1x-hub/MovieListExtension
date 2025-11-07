@@ -333,9 +333,7 @@ class RatingService {
     async getMovieRatings(movieId, limit = 20) {
         try {
             const query = this.db.collection(this.collection)
-                .where('movieId', '==', movieId)
-                .orderBy('createdAt', 'desc')
-                .limit(limit);
+                .where('movieId', '==', movieId);
 
             const results = await query.get();
             const ratings = [];
@@ -344,7 +342,15 @@ class RatingService {
                 ratings.push({ id: doc.id, ...doc.data() });
             });
 
-            return ratings;
+            // Sort by createdAt descending in memory (to avoid index requirement)
+            ratings.sort((a, b) => {
+                const dateA = a.createdAt?.toDate?.() || new Date(a.createdAt) || new Date(0);
+                const dateB = b.createdAt?.toDate?.() || new Date(b.createdAt) || new Date(0);
+                return dateB - dateA;
+            });
+
+            // Apply limit after sorting
+            return ratings.slice(0, limit);
         } catch (error) {
             console.error('Error getting movie ratings:', error);
             return [];
@@ -413,6 +419,60 @@ class RatingService {
         } catch (error) {
             console.error('Error getting rated movie IDs:', error);
             return [];
+        }
+    }
+
+    /**
+     * Update user profile data in all their ratings
+     * @param {string} userId - User ID
+     * @param {string} userName - New user display name
+     * @param {string} userPhoto - New user photo URL
+     * @returns {Promise<number>} - Number of ratings updated
+     */
+    async updateUserProfileInRatings(userId, userName, userPhoto) {
+        try {
+            const query = this.db.collection(this.collection)
+                .where('userId', '==', userId);
+
+            const results = await query.get();
+            
+            if (results.empty) {
+                return 0;
+            }
+
+            const batch = this.db.batch();
+            let updateCount = 0;
+
+            results.forEach(doc => {
+                const updateData = {
+                    userName: userName,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+                
+                if (userPhoto) {
+                    updateData.userPhoto = userPhoto;
+                }
+                
+                batch.update(doc.ref, updateData);
+                updateCount++;
+            });
+
+            await batch.commit();
+
+            // Clear ratings cache after update
+            try {
+                const ratingsCacheService = window.firebaseManager?.getRatingsCacheService();
+                if (ratingsCacheService) {
+                    await ratingsCacheService.clearCache();
+                }
+            } catch (cacheError) {
+                console.warn('Failed to clear ratings cache after profile update:', cacheError.message);
+            }
+
+            return updateCount;
+        } catch (error) {
+            console.error('Error updating user profile in ratings:', error);
+            throw new Error(`Failed to update user profile in ratings: ${error.message}`);
         }
     }
 
