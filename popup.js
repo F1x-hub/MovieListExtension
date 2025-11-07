@@ -108,6 +108,12 @@ class PopupManager {
                 this.loadRatings();
             }
         });
+        
+        // Listen for profile updates to refresh ratings
+        window.addEventListener('profileUpdated', () => {
+            console.log('PopupManager: Profile updated, refreshing ratings');
+            this.forceRefreshRatings();
+        });
     }
 
     async initializeUI() {
@@ -634,12 +640,40 @@ class PopupManager {
             ? `${averageData.average.toFixed(1)}/10` 
             : 'No ratings';
 
+        // Get current user photo if this is current user's rating and photo is missing/outdated
+        let userPhoto = rating.userPhoto || '/icons/icon48.png';
+        const currentUser = firebaseManager.getCurrentUser();
+        if (currentUser && rating.userId === currentUser.uid) {
+            if (currentUser.photoURL && (!rating.userPhoto || rating.userPhoto !== currentUser.photoURL)) {
+                userPhoto = currentUser.photoURL;
+            }
+        }
+
+        const isCurrentUser = currentUser && rating.userId === currentUser.uid;
+        
         ratingDiv.innerHTML = `
             <img src="${posterUrl}" alt="${movieTitle}" class="rating-poster" onerror="this.src='/icons/icon48.png'">
             <div class="rating-content">
                 <div class="rating-header">
-                    <img src="${rating.userPhoto || '/icons/icon48.png'}" alt="${rating.userName}" class="rating-user-avatar" onerror="this.src='/icons/icon48.png'">
+                    <img src="${userPhoto}" alt="${rating.userName}" class="rating-user-avatar" onerror="this.src='/icons/icon48.png'">
                     <span class="rating-user-name" title="${this.escapeHtml(rating.userName)}">${this.escapeHtml(this.truncateText(rating.userName, 20))}</span>
+                    ${isCurrentUser ? `
+                        <div class="rating-menu">
+                            <button class="rating-menu-btn" data-rating-id="${rating.id}" aria-label="Меню отзыва">
+                                <span>⋮</span>
+                            </button>
+                            <div class="rating-menu-dropdown" id="popup-menu-${rating.id}" style="display: none;">
+                                <button class="menu-item edit-item" data-rating-id="${rating.id}" data-action="edit">
+                                    <span class="menu-icon">✏️</span>
+                                    <span>Редактировать</span>
+                                </button>
+                                <button class="menu-item delete-item" data-rating-id="${rating.id}" data-action="delete">
+                                    <span class="menu-icon">🗑️</span>
+                                    <span>Удалить</span>
+                                </button>
+                            </div>
+                        </div>
+                    ` : ''}
                 </div>
                 <h3 class="rating-movie-title" title="${this.escapeHtml(movieTitle)}">${this.escapeHtml(this.truncateText(movieTitle, 50))}</h3>
                 <p class="rating-movie-meta">${movieYear} • ${this.truncateText(movieGenres, 30)}</p>
@@ -658,8 +692,11 @@ class PopupManager {
             </div>
         `;
 
-        // Add click handler to navigate to movie detail page
-        ratingDiv.addEventListener('click', () => {
+        // Add click handler to navigate to movie detail page (but not if clicking menu)
+        ratingDiv.addEventListener('click', (e) => {
+            if (e.target.closest('.rating-menu')) {
+                return;
+            }
             if (movieId) {
                 chrome.tabs.create({ 
                     url: chrome.runtime.getURL(`search.html?movieId=${movieId}`) 
@@ -667,7 +704,277 @@ class PopupManager {
             }
         });
 
+        // Setup menu listeners if this is current user's rating
+        if (isCurrentUser) {
+            this.setupPopupRatingMenu(ratingDiv, rating.id);
+        }
+
         return ratingDiv;
+    }
+
+    setupPopupRatingMenu(ratingDiv, ratingId) {
+        const menuBtn = ratingDiv.querySelector('.rating-menu-btn');
+        let menu = ratingDiv.querySelector(`#popup-menu-${ratingId}`);
+        
+        if (!menuBtn || !menu) return;
+
+        // Move menu to body to avoid parent transform and overflow issues
+        const menuClone = menu.cloneNode(true);
+        menu.remove();
+        document.body.appendChild(menuClone);
+        menu = menuClone;
+        
+        // Store reference for cleanup
+        if (!this.popupMenus) this.popupMenus = new Map();
+        this.popupMenus.set(ratingId, menu);
+
+        menuBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isVisible = menu.style.display === 'block';
+            
+            // Close all other menus
+            document.querySelectorAll('.rating-menu-dropdown').forEach(m => {
+                m.style.display = 'none';
+            });
+            
+            if (isVisible) {
+                menu.style.display = 'none';
+            } else {
+                // Calculate position
+                const btnRect = menuBtn.getBoundingClientRect();
+                const menuWidth = 160; // min-width from CSS
+                
+                menu.style.position = 'fixed';
+                menu.style.top = `${btnRect.bottom + 4}px`;
+                
+                // Position to the left of the button to avoid cutoff
+                const leftPos = btnRect.right - menuWidth;
+                menu.style.left = `${Math.max(8, leftPos)}px`;
+                menu.style.display = 'block';
+            }
+        });
+
+        const menuItems = menu.querySelectorAll('.menu-item');
+        menuItems.forEach(item => {
+            item.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const action = item.getAttribute('data-action');
+                menu.style.display = 'none';
+                
+                if (action === 'edit') {
+                    await this.editPopupRating(ratingId);
+                } else if (action === 'delete') {
+                    await this.deletePopupRating(ratingId);
+                }
+            });
+        });
+
+        // Close menu when clicking outside
+        if (!this.popupMenuClickHandler) {
+            this.popupMenuClickHandler = (e) => {
+                if (!e.target.closest('.rating-menu') && !e.target.closest('.rating-menu-dropdown')) {
+                    document.querySelectorAll('.rating-menu-dropdown').forEach(m => {
+                        m.style.display = 'none';
+                    });
+                }
+            };
+            document.addEventListener('click', this.popupMenuClickHandler);
+        }
+
+        // Close menu on Escape key
+        if (!this.popupMenuEscapeHandler) {
+            this.popupMenuEscapeHandler = (e) => {
+                if (e.key === 'Escape') {
+                    document.querySelectorAll('.rating-menu-dropdown').forEach(m => {
+                        m.style.display = 'none';
+                    });
+                }
+            };
+            document.addEventListener('keydown', this.popupMenuEscapeHandler);
+        }
+
+        // Close menu on scroll
+        if (!this.popupMenuScrollHandler) {
+            this.popupMenuScrollHandler = () => {
+                document.querySelectorAll('.rating-menu-dropdown').forEach(m => {
+                    m.style.display = 'none';
+                });
+            };
+            // Listen to scroll on feed-content container
+            const feedContent = document.querySelector('.feed-content');
+            if (feedContent) {
+                feedContent.addEventListener('scroll', this.popupMenuScrollHandler);
+            }
+            // Also listen to window scroll
+            window.addEventListener('scroll', this.popupMenuScrollHandler, true);
+        }
+    }
+
+    async editPopupRating(ratingId) {
+        try {
+            const currentUser = firebaseManager.getCurrentUser();
+            if (!currentUser) {
+                this.showError('Пожалуйста, войдите в систему');
+                return;
+            }
+            
+            const ratingDoc = await firebaseManager.db.collection('ratings').doc(ratingId).get();
+            if (!ratingDoc.exists) {
+                this.showError('Отзыв не найден');
+                return;
+            }
+            
+            const ratingData = ratingDoc.data();
+            this.showEditRatingModalPopup(ratingId, ratingData);
+            
+        } catch (error) {
+            console.error('Error editing rating:', error);
+            this.showError(`Ошибка при редактировании: ${error.message}`);
+        }
+    }
+
+    showEditRatingModalPopup(ratingId, ratingData) {
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        `;
+        
+        modal.innerHTML = `
+            <div style="
+                background: #0f172a;
+                padding: 24px;
+                border-radius: 12px;
+                max-width: 500px;
+                width: 90%;
+                color: #e2e8f0;
+            ">
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;">
+                    <h3 style="margin:0; font-size:20px;">Редактировать отзыв</h3>
+                    <button id="closeEditModalPopup" style="background:#334155; color:#e2e8f0; border:none; padding:8px 12px; border-radius:8px; cursor:pointer;">✕</button>
+                </div>
+                
+                <form id="editRatingFormPopup">
+                    <div style="margin-bottom:16px;">
+                        <label style="display:block; margin-bottom:8px; color:#94a3b8;">Оценка: <span id="editRatingValuePopup">${ratingData.rating}</span>/10</label>
+                        <input type="range" id="editRatingSliderPopup" min="1" max="10" value="${ratingData.rating}" style="width:100%;">
+                    </div>
+                    
+                    <div style="margin-bottom:16px;">
+                        <label style="display:block; margin-bottom:8px; color:#94a3b8;">Комментарий:</label>
+                        <textarea id="editRatingCommentPopup" rows="4" maxlength="500" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid #334155; background:#0b1220; color:#e2e8f0; resize:vertical;">${this.escapeHtml(ratingData.comment || '')}</textarea>
+                        <div style="text-align:right; margin-top:4px; font-size:12px; color:#94a3b8;">
+                            <span id="editCommentCountPopup">${(ratingData.comment || '').length}</span>/500
+                        </div>
+                    </div>
+                    
+                    <div style="display:flex; gap:8px; justify-content:flex-end;">
+                        <button type="button" id="cancelEditBtnPopup" style="background:#334155; color:#e2e8f0; border:none; padding:10px 16px; border-radius:8px; cursor:pointer;">Отмена</button>
+                        <button type="submit" id="saveEditBtnPopup" style="background:#22c55e; color:#062e0f; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-weight:600;">Сохранить</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        const slider = modal.querySelector('#editRatingSliderPopup');
+        const valueDisplay = modal.querySelector('#editRatingValuePopup');
+        const comment = modal.querySelector('#editRatingCommentPopup');
+        const commentCount = modal.querySelector('#editCommentCountPopup');
+        
+        slider.addEventListener('input', (e) => {
+            valueDisplay.textContent = e.target.value;
+        });
+        
+        comment.addEventListener('input', (e) => {
+            commentCount.textContent = e.target.value.length;
+        });
+        
+        const closeModal = () => modal.remove();
+        
+        modal.querySelector('#closeEditModalPopup').addEventListener('click', closeModal);
+        modal.querySelector('#cancelEditBtnPopup').addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal();
+        });
+        
+        modal.querySelector('#editRatingFormPopup').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const newRating = parseInt(slider.value);
+            const newComment = comment.value.trim();
+            
+            try {
+                const ratingService = firebaseManager.getRatingService();
+                const currentUser = firebaseManager.getCurrentUser();
+                const userService = firebaseManager.getUserService();
+                
+                const userProfile = await userService.getUserProfile(currentUser.uid);
+                
+                await ratingService.addOrUpdateRating(
+                    currentUser.uid,
+                    userProfile?.displayName || currentUser.displayName || currentUser.email,
+                    userProfile?.photoURL || currentUser.photoURL || '',
+                    ratingData.movieId,
+                    newRating,
+                    newComment
+                );
+                
+                closeModal();
+                this.showSuccess('Отзыв обновлен!');
+                await this.forceRefreshRatings();
+                
+            } catch (error) {
+                console.error('Error updating rating:', error);
+                this.showError(`Ошибка при сохранении: ${error.message}`);
+            }
+        });
+    }
+
+    async deletePopupRating(ratingId) {
+        const confirmed = confirm('Вы уверены, что хотите удалить свой отзыв?');
+        
+        if (!confirmed) return;
+        
+        try {
+            const ratingService = firebaseManager.getRatingService();
+            const currentUser = firebaseManager.getCurrentUser();
+            
+            if (!currentUser) {
+                this.showError('Пожалуйста, войдите в систему');
+                return;
+            }
+            
+            await ratingService.deleteRating(currentUser.uid, ratingId);
+            
+            const ratingCard = document.getElementById(`rating-${ratingId}`);
+            if (ratingCard) {
+                ratingCard.style.transition = 'opacity 0.3s, transform 0.3s';
+                ratingCard.style.opacity = '0';
+                ratingCard.style.transform = 'translateX(-20px)';
+                
+                setTimeout(async () => {
+                    ratingCard.remove();
+                    await this.forceRefreshRatings();
+                }, 300);
+            }
+            
+            this.showSuccess('Отзыв удален');
+            
+        } catch (error) {
+            console.error('Error deleting rating:', error);
+            this.showError(`Ошибка при удалении: ${error.message}`);
+        }
     }
 
 
@@ -696,5 +1003,5 @@ class PopupManager {
 
 // Initialize popup when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    new PopupManager();
+    window.popupManager = new PopupManager();
 });

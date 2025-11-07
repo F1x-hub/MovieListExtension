@@ -130,11 +130,62 @@ class RatingsCacheService {
                 }
             }
             
+            // Enrich with user profile data
+            await this.enrichRatingsWithUserData(ratings);
+            
             ratings.forEach(rating => {
                 rating.movie = movieMap.get(rating.movieId);
             });
         } catch (error) {
             console.error('Error enriching ratings with movie data:', error);
+        }
+    }
+
+    /**
+     * Enrich ratings with current user profile data
+     * @param {Array} ratings - Array of ratings to enrich
+     */
+    async enrichRatingsWithUserData(ratings) {
+        try {
+            const userIds = [...new Set(ratings.map(r => r.userId))];
+            const userService = this.firebaseManager.getUserService();
+            const currentUser = this.firebaseManager.getCurrentUser();
+            
+            // Get profiles for all users in batch
+            const userProfiles = await userService.getUserProfilesByIds(userIds);
+            const userProfileMap = new Map(userProfiles.map(u => [u.userId || u.id, u]));
+            
+            // Also check current user from auth
+            if (currentUser) {
+                const currentUserProfile = await userService.getUserProfile(currentUser.uid);
+                if (currentUserProfile) {
+                    userProfileMap.set(currentUser.uid, currentUserProfile);
+                } else if (currentUser.photoURL || currentUser.displayName) {
+                    // Fallback to auth data if profile doesn't exist
+                    userProfileMap.set(currentUser.uid, {
+                        userId: currentUser.uid,
+                        photoURL: currentUser.photoURL,
+                        displayName: currentUser.displayName
+                    });
+                }
+            }
+            
+            // Update ratings with current user data
+            ratings.forEach(rating => {
+                const userProfile = userProfileMap.get(rating.userId);
+                if (userProfile) {
+                    // Update userPhoto if profile has a newer one
+                    if (userProfile.photoURL && (!rating.userPhoto || rating.userPhoto !== userProfile.photoURL)) {
+                        rating.userPhoto = userProfile.photoURL;
+                    }
+                    // Update userName if profile has a newer one
+                    if (userProfile.displayName && (!rating.userName || rating.userName !== userProfile.displayName)) {
+                        rating.userName = userProfile.displayName;
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('Error enriching ratings with user data:', error);
         }
     }
 
