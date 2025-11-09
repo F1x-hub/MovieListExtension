@@ -45,6 +45,20 @@ class RatingService {
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             };
 
+            // Set isFavorite and favoritedAt fields for new ratings
+            if (!existingRating) {
+                ratingData.isFavorite = false;
+                ratingData.favoritedAt = null;
+            } else {
+                // Preserve existing favorite status if updating
+                if (existingRating.isFavorite !== undefined) {
+                    ratingData.isFavorite = existingRating.isFavorite;
+                }
+                if (existingRating.favoritedAt !== undefined) {
+                    ratingData.favoritedAt = existingRating.favoritedAt;
+                }
+            }
+
             let result;
             if (existingRating) {
                 // Update existing rating
@@ -81,6 +95,21 @@ class RatingService {
             } catch (cacheError) {
                 console.warn('Failed to clear ratings cache after rating update:', cacheError.message);
                 // Don't fail the rating if cache clearing fails
+            }
+
+            // Remove from watchlist if movie was in watchlist
+            try {
+                const watchlistService = window.firebaseManager?.getWatchlistService();
+                if (watchlistService) {
+                    const isInWatchlist = await watchlistService.isInWatchlist(userId, movieId);
+                    if (isInWatchlist) {
+                        await watchlistService.removeFromWatchlist(userId, movieId);
+                        console.log('Movie removed from watchlist after rating');
+                    }
+                }
+            } catch (watchlistError) {
+                console.warn('Failed to remove from watchlist after rating:', watchlistError.message);
+                // Don't fail the rating if watchlist removal fails
             }
 
             return result;

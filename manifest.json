@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Movie Rating Extension",
-  "version": "1.0.6",
+  "version": "1.0.8",
   "description": "Rate and discover movies with community ratings and Kinopoisk integration",
   "permissions": [
     "identity",
@@ -46,7 +46,11 @@
       "resources": [
         "search.html",
         "ratings.html",
+        "watchlist.html",
+        "favorites.html",
         "ratings.js",
+        "watchlist.js",
+        "favorites.js",
         "src/styles/*.css",
         "src/services/*.js",
         "src/config/*.js",

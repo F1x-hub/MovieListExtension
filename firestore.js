@@ -386,6 +386,8 @@ class FirebaseManager {
         this.userService = new UserService(this);
         this.kinopoiskService = new KinopoiskService();
         this.ratingsCacheService = new RatingsCacheService(this);
+        this.watchlistService = new WatchlistService(this);
+        this.favoriteService = new FavoriteService(this);
     }
 
     // Get service instances
@@ -422,6 +424,20 @@ class FirebaseManager {
             this.ratingsCacheService = new RatingsCacheService(this);
         }
         return this.ratingsCacheService;
+    }
+
+    getWatchlistService() {
+        if (!this.watchlistService) {
+            this.watchlistService = new WatchlistService(this);
+        }
+        return this.watchlistService;
+    }
+
+    getFavoriteService() {
+        if (!this.favoriteService) {
+            this.favoriteService = new FavoriteService(this);
+        }
+        return this.favoriteService;
     }
 }
 
