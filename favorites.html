@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Favorites - Movie Rating Extension</title>
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="src/styles/common.css">
+    <link rel="stylesheet" href="src/styles/components.css">
+    <link rel="stylesheet" href="src/styles/navigation.css">
+    <link rel="stylesheet" href="src/styles/router.css">
+    <link rel="stylesheet" href="src/styles/search.css">
+    <link rel="stylesheet" href="src/styles/favorites.css">
+    
+    <!-- Firebase -->
+    <script src="libs/firebase-app-compat.js"></script>
+    <script src="libs/firebase-auth-compat.js"></script>
+    <script src="libs/firebase-firestore-compat.js"></script>
+    
+    <!-- Services -->
+    <script src="firestore.js"></script>
+    <script src="src/config/kinopoisk.config.js"></script>
+    <script src="src/services/RatingsCacheService.js"></script>
+    <script src="src/services/RatingService.js"></script>
+    <script src="src/services/MovieCacheService.js"></script>
+    <script src="src/services/KinopoiskService.js"></script>
+    <script src="src/services/UserService.js"></script>
+    <script src="src/services/WatchlistService.js"></script>
+    <script src="src/services/FavoriteService.js"></script>
+    <script src="src/utils/Utils.js"></script>
+    
+    <!-- Components -->
+    <script src="src/components/Navigation.js"></script>
+    <script src="src/components/Router.js"></script>
+</head>
+<body>
+    <!-- Navigation will be inserted here by Navigation.js -->
+    
+    <!-- Main Content -->
+    <main class="favorites-main">
+        <div class="favorites-container">
+            <!-- Page Header -->
+            <div class="favorites-header">
+                <h1 class="favorites-title">❤️ Favorites - Мои любимые фильмы</h1>
+                <p class="favorites-subtitle">Ваши самые любимые фильмы из коллекции</p>
+                <div class="favorites-count" id="favoritesCountDisplay">
+                    <span class="current" id="favoritesCurrentCount">0</span> из <span class="limit">50</span> фильмов
+                </div>
+            </div>
+
+            <!-- Filters Section -->
+            <div class="filters-section">
+                <div class="filters-header">
+                    <h3 class="filters-title">Filters & Search</h3>
+                </div>
+
+                <div class="filters-grid">
+                    <!-- Search -->
+                    <div class="filter-group">
+                        <label class="filter-label">Search in Favorites</label>
+                        <div class="search-input-wrapper">
+                            <input type="text" class="search-input" id="favoritesSearchInput" placeholder="Поиск в избранном...">
+                            <span class="search-icon">🔍</span>
+                        </div>
+                    </div>
+
+                    <!-- Sort Options -->
+                    <div class="filter-group">
+                        <label class="filter-label">Sort By</label>
+                        <div class="custom-dropdown" data-dropdown="sortFilter">
+                            <button type="button" class="dropdown-trigger" id="sortFilterTrigger">
+                                <span class="dropdown-value">Date Added (Newest)</span>
+                                <span class="dropdown-arrow">▼</span>
+                            </button>
+                            <div class="dropdown-list" id="sortFilterList">
+                                <div class="dropdown-option" data-value="favoritedAt-desc">Date Added (Newest)</div>
+                                <div class="dropdown-option" data-value="favoritedAt-asc">Date Added (Oldest)</div>
+                                <div class="dropdown-option" data-value="rating-desc">My Rating (High to Low)</div>
+                                <div class="dropdown-option" data-value="rating-asc">My Rating (Low to High)</div>
+                                <div class="dropdown-option" data-value="watchedDate-desc">Watched Date (Newest)</div>
+                                <div class="dropdown-option" data-value="watchedDate-asc">Watched Date (Oldest)</div>
+                                <div class="dropdown-option" data-value="movieTitle-asc">Title (A-Z)</div>
+                                <div class="dropdown-option" data-value="movieTitle-desc">Title (Z-A)</div>
+                                <div class="dropdown-option" data-value="releaseYear-desc">Year (Newest)</div>
+                                <div class="dropdown-option" data-value="releaseYear-asc">Year (Oldest)</div>
+                            </div>
+                            <select class="filter-select-hidden" id="sortFilter">
+                                <option value="favoritedAt-desc">Date Added (Newest)</option>
+                                <option value="favoritedAt-asc">Date Added (Oldest)</option>
+                                <option value="rating-desc">My Rating (High to Low)</option>
+                                <option value="rating-asc">My Rating (Low to High)</option>
+                                <option value="watchedDate-desc">Watched Date (Newest)</option>
+                                <option value="watchedDate-asc">Watched Date (Oldest)</option>
+                                <option value="movieTitle-asc">Title (A-Z)</option>
+                                <option value="movieTitle-desc">Title (Z-A)</option>
+                                <option value="releaseYear-desc">Year (Newest)</option>
+                                <option value="releaseYear-asc">Year (Oldest)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results Info -->
+            <div class="results-info" id="resultsInfo">
+                <span class="results-count" id="resultsCount">Loading...</span>
+            </div>
+
+            <!-- Loading State -->
+            <div class="loading-section" id="loadingSection">
+                <div class="loading-spinner"></div>
+                <p>Loading your favorites...</p>
+            </div>
+
+            <!-- Movies Grid -->
+            <div class="movies-grid" id="moviesGrid">
+                <!-- Movie cards will be inserted here -->
+            </div>
+
+            <!-- Empty State -->
+            <div class="empty-state" id="emptyState" style="display: none;">
+                <div class="empty-state-icon">❤️</div>
+                <h3 class="empty-state-title">Избранное пусто</h3>
+                <p class="empty-state-text">Отметьте сердечком самые любимые фильмы из вашей коллекции!</p>
+                <button class="empty-state-btn" onclick="window.navigation?.navigateToPage('ratings')">
+                    Перейти к коллекции
+                </button>
+            </div>
+
+            <!-- Error State -->
+            <div class="error-state" id="errorState" style="display: none;">
+                <div class="error-state-icon">⚠️</div>
+                <h3 class="error-state-title">Something went wrong</h3>
+                <p class="error-state-text" id="errorMessage">Failed to load favorites</p>
+                <button class="error-state-btn" id="retryBtn">Try Again</button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Limit Modal -->
+    <div id="limitModal" class="modal-overlay" style="display: none;">
+        <div class="modal-content limit-modal">
+            <button class="modal-close" id="limitModalClose">×</button>
+            <div class="modal-icon">⚠️</div>
+            <h2>Достигнут лимит избранного</h2>
+            <p>
+                Вы можете добавить максимум 50 фильмов в избранное.
+                <br />
+                Удалите один из фильмов, чтобы добавить новый.
+            </p>
+            <div class="modal-actions">
+                <button class="btn btn-primary" id="manageFavoritesBtn">
+                    Управлять избранным
+                </button>
+                <button class="btn btn-secondary" id="cancelLimitBtn">
+                    Отмена
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rating Modal (Edit Rating from Favorites) -->
+    <div id="ratingModal" class="modal-overlay" style="display: none;">
+        <div class="modal rating-modal">
+            <div class="modal-header rating-header">
+                <div class="rating-header-content">
+                    <div class="rating-header-icon">⭐</div>
+                    <h2 class="modal-title" id="ratingModalTitle">Edit Rating</h2>
+                </div>
+                <button class="modal-close" id="ratingModalClose">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="movie-rating-card" id="movieRatingInfo">
+                    <!-- Movie info for rating -->
+                </div>
+                
+                <div class="rating-section">
+                    <div class="current-rating-display" id="currentRatingInfo" style="display: none;">
+                        <div class="current-rating-header">
+                            <h4>Your Current Rating</h4>
+                        </div>
+                        <div class="current-rating-content">
+                            <div class="current-rating-score">
+                                <span class="current-score-label">Rating:</span>
+                                <span id="existingRatingValue" class="current-score-value"></span>
+                            </div>
+                            <div class="current-rating-comment" id="existingRatingComment"></div>
+                        </div>
+                    </div>
+                    
+                    <form id="ratingForm" class="rating-form-modern">
+                        <div class="rating-input-section">
+                            <div class="rating-score-container">
+                                <label class="rating-main-label">Your Rating</label>
+                                <div class="rating-controls-modern">
+                                    <div class="rating-slider-container">
+                                        <input type="range" id="ratingSlider" class="rating-slider-modern" min="1" max="10" value="5">
+                                        <div class="rating-scale">
+                                            <span>1</span>
+                                            <span>2</span>
+                                            <span>3</span>
+                                            <span>4</span>
+                                            <span>5</span>
+                                            <span>6</span>
+                                            <span>7</span>
+                                            <span>8</span>
+                                            <span>9</span>
+                                            <span>10</span>
+                                        </div>
+                                    </div>
+                                    <div class="rating-display">
+                                        <span id="ratingValue" class="rating-value-large">5</span>
+                                        <span class="rating-value-suffix">/10</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="rating-comment-section">
+                            <label for="ratingComment" class="comment-label">Share Your Thoughts</label>
+                            <div class="comment-input-container">
+                                <textarea id="ratingComment" class="comment-textarea" rows="4" maxlength="500" placeholder="What did you think about this movie? (Optional)"></textarea>
+                                <div class="comment-footer">
+                                    <div class="char-counter">
+                                        <span id="charCount">0</span><span class="char-limit">/500</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            <div class="modal-footer rating-footer">
+                <button id="cancelRatingBtn" class="btn btn-secondary btn-lg">Cancel</button>
+                <button id="saveRatingBtn" class="btn btn-accent btn-lg rating-save-btn">
+                    <span class="btn-icon">💾</span>
+                    Save Rating
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Script -->
+    <script src="favorites.js"></script>
+</body>
+</html>
+

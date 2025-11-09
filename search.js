@@ -414,7 +414,7 @@ class SearchManager {
         });
     }
 
-    displayResults() {
+    async displayResults() {
         if (this.currentResults.docs.length === 0) {
             this.elements.resultsGrid.classList.add('single-item');
             this.elements.resultsGrid.innerHTML = `
@@ -436,8 +436,38 @@ class SearchManager {
         // Remove single-item class for grid layout
         this.elements.resultsGrid.classList.remove('single-item');
         
-        // Display movie cards
-        this.elements.resultsGrid.innerHTML = this.currentResults.docs.map(movie => this.createMovieCard(movie)).join('');
+        // Load user ratings for movies if user is logged in
+        let userRatingsMap = {};
+        if (this.currentUser) {
+            try {
+                const ratingService = firebaseManager.getRatingService();
+                const movieIds = this.currentResults.docs.map(m => m.kinopoiskId);
+                
+                for (const movieId of movieIds) {
+                    try {
+                        const rating = await ratingService.getRating(this.currentUser.uid, movieId);
+                        if (rating) {
+                            userRatingsMap[movieId] = rating;
+                        }
+                    } catch (error) {
+                        console.warn(`Failed to load rating for movie ${movieId}:`, error);
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading user ratings:', error);
+            }
+        }
+        
+        // Display movie cards with user ratings
+        this.elements.resultsGrid.innerHTML = this.currentResults.docs.map(movie => {
+            const userRating = userRatingsMap[movie.kinopoiskId] || null;
+            return this.createMovieCard(movie, userRating);
+        }).join('');
+        
+        // Update button states
+        if (this.currentUser) {
+            await this.updateButtonStates();
+        }
         
         // Show pagination
         this.elements.pagination.style.display = 'flex';
@@ -446,7 +476,7 @@ class SearchManager {
         this.elements.nextPageBtn.disabled = this.currentPage >= this.currentResults.pages;
     }
 
-    createMovieCard(movie) {
+    createMovieCard(movie, userRating = null) {
         const posterUrl = movie.posterUrl || '';
         const year = movie.year || '';
         const genres = movie.genres?.slice(0, 3).join(', ') || '';
@@ -456,6 +486,10 @@ class SearchManager {
         const votes = movie.votes?.kp || 0;
         const imdbVotes = movie.votes?.imdb || 0;
         
+        const isRated = !!userRating;
+        const isFavorite = userRating?.isFavorite === true;
+        const ratingId = userRating?.id || null;
+        
         return `
             <div class="movie-card" data-movie-id="${movie.kinopoiskId}">
                 <div class="movie-poster-container">
@@ -464,6 +498,14 @@ class SearchManager {
                     <div class="movie-overlay">
                         <div class="movie-rating-badge">${kpRating.toFixed(1)}</div>
                     </div>
+                    ${isRated && ratingId ? `
+                        <button class="favorite-btn-card ${isFavorite ? 'active' : ''}" data-rating-id="${ratingId}" data-is-favorite="${isFavorite}" data-movie-id="${movie.kinopoiskId}" title="${isFavorite ? 'Удалить из Избранного' : 'Добавить в Избранное'}">
+                        </button>
+                    ` : `
+                        <button class="watchlist-btn-card" data-movie-id="${movie.kinopoiskId}" title="Добавить в Watchlist">
+                            🔖
+                        </button>
+                    `}
                 </div>
                 <div class="movie-info">
                     <h3 class="movie-title">${this.escapeHtml(movie.name)}</h3>
@@ -471,8 +513,8 @@ class SearchManager {
                     <div class="movie-ratings">
                         <span class="rating-badge kp">KP: ${kpRating.toFixed(1)}</span>
                         <span class="rating-badge imdb">IMDb: ${imdbRating.toFixed(1)}</span>
-                        ${votes > 0 ? `<span class="rating-badge votes">${votes} оценок</span>` : ''}
-                        ${imdbVotes > 0 ? `<span class="rating-badge votes">${imdbVotes} оценок</span>` : ''}
+                        ${votes > 0 ? `<span class="rating-badge votes">${this.formatVotes(votes)} оценок</span>` : ''}
+                        ${imdbVotes > 0 ? `<span class="rating-badge votes">${this.formatVotes(imdbVotes)} оценок</span>` : ''}
                     </div>
                     <p class="movie-description">${this.escapeHtml(description)}</p>
                 </div>
@@ -515,13 +557,24 @@ class SearchManager {
         }
     }
 
-    displaySingleMovieResult(movie) {
+    async displaySingleMovieResult(movie) {
         // Show results header for single movie
         this.elements.resultsHeader.style.display = 'flex';
         this.elements.resultsInfo.textContent = `Информация о фильме`;
         
-        // Create detailed movie card for single movie view
-        const movieHTML = this.createDetailedMovieCard(movie);
+        // Load user rating if user is logged in
+        let userRating = null;
+        if (this.currentUser) {
+            try {
+                const ratingService = firebaseManager.getRatingService();
+                userRating = await ratingService.getRating(this.currentUser.uid, movie.kinopoiskId);
+            } catch (error) {
+                console.warn('Failed to load user rating:', error);
+            }
+        }
+        
+        // Create detailed movie card for single movie view with user rating
+        const movieHTML = this.createDetailedMovieCard(movie, userRating);
         
         // Remove single-item class for movie display
         this.elements.resultsGrid.classList.remove('single-item');
@@ -529,6 +582,13 @@ class SearchManager {
         
         // Load user ratings after displaying movie
         this.loadAndDisplayUserRatings(movie.kinopoiskId);
+        
+        // Update button states for detail page
+        if (this.currentUser) {
+            setTimeout(() => {
+                this.updateButtonStates().catch(err => console.error('Error updating button states:', err));
+            }, 200);
+        }
         
         // Hide pagination for single movie
         this.elements.pagination.style.display = 'none';
@@ -790,7 +850,7 @@ class SearchManager {
         return 'недель';
     }
 
-    createDetailedMovieCard(movie) {
+    createDetailedMovieCard(movie, userRating = null) {
         const posterUrl = movie.posterUrl || '/icons/icon48.png';
         const year = movie.year || '';
         const genres = movie.genres?.join(', ') || '';
@@ -802,12 +862,24 @@ class SearchManager {
         const votes = movie.votes?.kp || 0;
         const imdbVotes = movie.votes?.imdb || 0;
         
+        const isRated = !!userRating;
+        const isFavorite = userRating?.isFavorite === true;
+        const ratingId = userRating?.id || null;
+        
         return `
             <div class="movie-detail-page">
                 <div class="movie-detail-header">
                     <div class="movie-detail-poster-container">
                         <img src="${posterUrl}" alt="${movie.name}" class="movie-detail-page-poster" data-fallback="detail">
                         <div class="movie-poster-placeholder" style="display: none;">🎬</div>
+                        ${isRated && ratingId ? `
+                            <button class="favorite-btn-card ${isFavorite ? 'active' : ''}" data-rating-id="${ratingId}" data-is-favorite="${isFavorite}" data-movie-id="${movie.kinopoiskId}" title="${isFavorite ? 'Удалить из Избранного' : 'Добавить в Избранное'}">
+                            </button>
+                        ` : `
+                            <button class="watchlist-btn-card watchlist-btn-detail" data-movie-id="${movie.kinopoiskId}" title="Добавить в Watchlist">
+                                🔖
+                            </button>
+                        `}
                     </div>
                     <div class="movie-detail-info-container">
                         <h1 class="movie-detail-page-title">${this.escapeHtml(movie.name)}</h1>
@@ -838,13 +910,13 @@ class SearchManager {
                             <div class="rating-item-large kp">
                                 <span class="rating-label">Кинопоиск</span>
                                 <span class="rating-value">${kpRating.toFixed(1)}</span>
-                                ${votes > 0 ? `<span class="rating-votes">${votes} оценок</span>` : ''}
+                                ${votes > 0 ? `<span class="rating-votes">${this.formatVotes(votes)} оценок</span>` : ''}
                             </div>
                             ${imdbRating > 0 ? `
                             <div class="rating-item-large imdb">
                                 <span class="rating-label">IMDb</span>
                                 <span class="rating-value">${imdbRating.toFixed(1)}</span>
-                                ${imdbVotes > 0 ? `<span class="rating-votes">${imdbVotes} оценок</span>` : '<span class="rating-votes">&nbsp;</span>'}
+                                ${imdbVotes > 0 ? `<span class="rating-votes">${this.formatVotes(imdbVotes)} оценок</span>` : '<span class="rating-votes">&nbsp;</span>'}
                             </div>` : ''}
                         </div>
                         
@@ -1012,6 +1084,18 @@ class SearchManager {
             // Reload user ratings section if on detail page
             if (this.selectedMovie && document.getElementById('userRatingsSection')) {
                 await this.loadAndDisplayUserRatings(this.selectedMovie.kinopoiskId);
+            }
+            
+            // Reload movie detail page to show favorite button if movie is now rated
+            if (this.selectedMovie) {
+                await this.loadMovieById(this.selectedMovie.kinopoiskId, false);
+            }
+            
+            // Update button states to show favorite button if movie is now rated
+            if (this.currentUser) {
+                setTimeout(() => {
+                    this.updateButtonStates().catch(err => console.error('Error updating button states:', err));
+                }, 200);
             }
             
         } catch (error) {
@@ -1410,6 +1494,198 @@ class SearchManager {
         return Utils.escapeHtml(text);
     }
 
+    async toggleFavorite(ratingId, currentStatus, buttonElement, movieId) {
+        if (!this.currentUser) {
+            if (typeof Utils !== 'undefined') {
+                Utils.showToast('Войдите в систему, чтобы добавить фильм в Избранное', 'warning');
+            }
+            return;
+        }
+
+        try {
+            const favoriteService = firebaseManager.getFavoriteService();
+            
+            // Check limit before adding
+            if (!currentStatus) {
+                const limitReached = await favoriteService.isFavoritesLimitReached(this.currentUser.uid, 50);
+                if (limitReached) {
+                    if (typeof Utils !== 'undefined') {
+                        Utils.showToast('Достигнут лимит избранного (50 фильмов)', 'warning');
+                    }
+                    return;
+                }
+            }
+
+            // Add animation
+            if (buttonElement) {
+                buttonElement.classList.add('animating');
+                setTimeout(() => {
+                    buttonElement.classList.remove('animating');
+                }, 600);
+            }
+
+            // Toggle favorite
+            const newStatus = await favoriteService.toggleFavorite(ratingId, currentStatus);
+            
+            // Update button state
+            if (buttonElement) {
+                if (newStatus) {
+                    buttonElement.classList.add('active');
+                    buttonElement.setAttribute('data-is-favorite', 'true');
+                    buttonElement.title = 'Удалить из Избранного';
+                } else {
+                    buttonElement.classList.remove('active');
+                    buttonElement.setAttribute('data-is-favorite', 'false');
+                    buttonElement.title = 'Добавить в Избранное';
+                }
+            }
+            
+            if (typeof Utils !== 'undefined') {
+                if (newStatus) {
+                    Utils.showToast('❤️ Добавлено в Избранное', 'success');
+                } else {
+                    Utils.showToast('Удалено из Избранного', 'success');
+                }
+            }
+            
+            // Update navigation count
+            if (window.navigation && typeof window.navigation.updateFavoritesCount === 'function') {
+                await window.navigation.updateFavoritesCount();
+            }
+        } catch (error) {
+            console.error('Error toggling favorite:', error);
+            if (typeof Utils !== 'undefined') {
+                Utils.showToast('Ошибка. Попробуйте снова', 'error');
+            }
+        }
+    }
+
+    async toggleWatchlist(movie, buttonElement) {
+        if (!this.currentUser) {
+            if (typeof Utils !== 'undefined') {
+                Utils.showToast('Войдите в систему, чтобы добавить фильм в Watchlist', 'warning');
+            }
+            return;
+        }
+
+        try {
+            const watchlistService = firebaseManager.getWatchlistService();
+            const isInWatchlist = await watchlistService.isInWatchlist(this.currentUser.uid, movie.kinopoiskId);
+
+            if (isInWatchlist) {
+                // Remove from watchlist
+                await watchlistService.removeFromWatchlist(this.currentUser.uid, movie.kinopoiskId);
+                
+                // Update button state
+                if (buttonElement) {
+                    buttonElement.classList.remove('active');
+                    buttonElement.title = 'Добавить в Watchlist';
+                }
+                
+                if (typeof Utils !== 'undefined') {
+                    Utils.showToast('Удалено из Watchlist', 'success');
+                }
+            } else {
+                // Check if movie is already rated
+                const ratingService = firebaseManager.getRatingService();
+                const existingRating = await ratingService.getRating(this.currentUser.uid, movie.kinopoiskId);
+                
+                if (existingRating) {
+                    if (typeof Utils !== 'undefined') {
+                        Utils.showToast('Фильм уже оценен. Watchlist только для неоцененных фильмов', 'info');
+                    }
+                    // Refresh to show favorite button instead
+                    await this.displayResults();
+                    return;
+                }
+
+                // Add to watchlist
+                const movieData = {
+                    movieId: movie.kinopoiskId,
+                    movieTitle: movie.name || '',
+                    movieTitleRu: movie.alternativeName || '',
+                    posterPath: movie.posterUrl || '',
+                    releaseYear: movie.year || null,
+                    genres: movie.genres || [],
+                    avgRating: movie.kpRating || 0
+                };
+                
+                await watchlistService.addToWatchlist(this.currentUser.uid, movieData);
+                
+                // Update button state
+                if (buttonElement) {
+                    buttonElement.classList.add('active');
+                    buttonElement.title = 'Удалить из Watchlist';
+                }
+                
+                if (typeof Utils !== 'undefined') {
+                    Utils.showToast('Добавлено в Watchlist ✓', 'success');
+                }
+            }
+
+            // Update count in navigation
+            if (window.navigation && typeof window.navigation.updateWatchlistCount === 'function') {
+                await window.navigation.updateWatchlistCount();
+            }
+        } catch (error) {
+            console.error('Error toggling watchlist:', error);
+            if (typeof Utils !== 'undefined') {
+                Utils.showToast('Ошибка. Попробуйте снова', 'error');
+            }
+        }
+    }
+
+    async updateButtonStates() {
+        if (!this.currentUser) return;
+
+        try {
+            const watchlistService = firebaseManager.getWatchlistService();
+            const favoriteService = firebaseManager.getFavoriteService();
+            
+            // Update watchlist buttons
+            const watchlistButtons = document.querySelectorAll('.watchlist-btn-card');
+            for (const button of watchlistButtons) {
+                const movieId = parseInt(button.getAttribute('data-movie-id'));
+                if (movieId) {
+                    const isInWatchlist = await watchlistService.isInWatchlist(this.currentUser.uid, movieId);
+                    
+                    if (isInWatchlist) {
+                        button.classList.add('active');
+                        button.title = 'Удалить из Watchlist';
+                    } else {
+                        button.classList.remove('active');
+                        button.title = 'Добавить в Watchlist';
+                    }
+                }
+            }
+            
+            // Update favorite buttons
+            const favoriteButtons = document.querySelectorAll('.favorite-btn-card');
+            for (const button of favoriteButtons) {
+                const ratingId = button.getAttribute('data-rating-id');
+                if (ratingId) {
+                    const isFavorite = await favoriteService.isFavoriteById(ratingId);
+                    
+                    if (isFavorite) {
+                        button.classList.add('active');
+                        button.setAttribute('data-is-favorite', 'true');
+                        button.title = 'Удалить из Избранного';
+                    } else {
+                        button.classList.remove('active');
+                        button.setAttribute('data-is-favorite', 'false');
+                        button.title = 'Добавить в Избранное';
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error updating button states:', error);
+        }
+    }
+
+    async updateWatchlistButtonStates() {
+        await this.updateButtonStates();
+    }
+
     setupImageErrorHandlers() {
         // Handle all images with data-fallback attribute
         document.addEventListener('error', (event) => {
@@ -1678,6 +1954,33 @@ class SearchManager {
     hasCyrillic(str) {
         return /[а-яё]/i.test(str);
     }
+
+    /**
+     * Format large numbers to compact format (1.06m, 582k)
+     * @param {number} num - Number to format
+     * @returns {string} - Formatted number string
+     */
+    formatVotes(num) {
+        if (!num || num === 0) return '0';
+        
+        if (num >= 1000000) {
+            const millions = num / 1000000;
+            // Format to 2 decimal places, remove trailing zeros
+            const formatted = millions.toFixed(2);
+            return formatted.replace(/\.?0+$/, '') + 'm';
+        } else if (num >= 100000) {
+            // For numbers >= 100k, show whole thousands only (582k)
+            const thousands = Math.round(num / 1000);
+            return thousands + 'k';
+        } else if (num >= 1000) {
+            // For numbers < 100k, show with 2 decimal places (1.5k, 5.82k)
+            const thousands = num / 1000;
+            const formatted = thousands.toFixed(2);
+            return formatted.replace(/\.?0+$/, '') + 'k';
+        }
+        
+        return num.toString();
+    }
 }
 
 // Add event listeners for movie cards
@@ -1713,6 +2016,34 @@ document.addEventListener('click', (e) => {
         
         if (movie) {
             searchManager.showRatingModal(movie);
+        }
+    }
+    
+    if (e.target.classList.contains('watchlist-btn-card')) {
+        e.stopPropagation();
+        const movieId = e.target.dataset.movieId;
+        
+        // Try to find movie in search results first
+        let movie = searchManager.currentResults.docs?.find(m => m.kinopoiskId == movieId);
+        
+        // If not found in search results, check if it's the selected movie (detail page)
+        if (!movie && searchManager.selectedMovie && searchManager.selectedMovie.kinopoiskId == movieId) {
+            movie = searchManager.selectedMovie;
+        }
+        
+        if (movie) {
+            searchManager.toggleWatchlist(movie, e.target);
+        }
+    }
+    
+    if (e.target.classList.contains('favorite-btn-card')) {
+        e.stopPropagation();
+        const ratingId = e.target.getAttribute('data-rating-id');
+        const isFavorite = e.target.getAttribute('data-is-favorite') === 'true';
+        const movieId = e.target.getAttribute('data-movie-id');
+        
+        if (ratingId) {
+            searchManager.toggleFavorite(ratingId, isFavorite, e.target, movieId);
         }
     }
 });

@@ -715,6 +715,19 @@ class RatingsPageManager {
                 }
             });
         });
+
+        // Add event listeners for Favorite buttons
+        const favoriteButtons = grid.querySelectorAll('.favorite-btn');
+        favoriteButtons.forEach(button => {
+            button.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const ratingId = button.getAttribute('data-rating-id');
+                const isFavorite = button.getAttribute('data-is-favorite') === 'true';
+                if (ratingId) {
+                    await this.toggleFavorite(ratingId, isFavorite, button);
+                }
+            });
+        });
     }
 
     createMovieCard(movieData) {
@@ -736,8 +749,24 @@ class RatingsPageManager {
         
         const avgDisplay = ratingsCount > 0 ? `${averageRating.toFixed(1)}/10` : 'No ratings';
         
+        // Check if movie is rated (only show watchlist button for unrated movies)
+        const isRated = !!rating;
+        const isFavorite = movieData.isFavorite === true;
+        const ratingId = movieData.id;
+        
         card.innerHTML = `
-            <img src="${posterUrl}" alt="${title}" class="movie-poster" onerror="this.src='/icons/icon48.png'">
+            <div class="movie-poster-container-ratings">
+                <img src="${posterUrl}" alt="${title}" class="movie-poster" onerror="this.src='/icons/icon48.png'">
+                ${isRated ? `
+                    <button class="favorite-btn ${isFavorite ? 'active' : ''}" data-rating-id="${ratingId}" data-is-favorite="${isFavorite}" title="${isFavorite ? 'Удалить из Избранного' : 'Добавить в Избранное'}">
+                    </button>
+                ` : ''}
+                ${!isRated ? `
+                    <button class="watchlist-btn-card watchlist-btn-ratings" data-movie-id="${movie?.kinopoiskId}" title="Добавить в Watchlist">
+                        🔖
+                    </button>
+                ` : ''}
+            </div>
             <div class="movie-content">
                 <h3 class="movie-title">${title}</h3>
                 <div class="movie-meta">${year}${year && genres.length ? ' • ' : ''}${genres.join(', ')}</div>
@@ -787,6 +816,174 @@ class RatingsPageManager {
         `;
         
         return card;
+    }
+
+    async toggleFavorite(ratingId, currentStatus, buttonElement) {
+        if (!this.currentUser) {
+            if (typeof Utils !== 'undefined') {
+                Utils.showToast('Войдите в систему, чтобы добавить фильм в Избранное', 'warning');
+            }
+            return;
+        }
+
+        try {
+            const favoriteService = firebaseManager.getFavoriteService();
+            
+            // Check limit before adding
+            if (!currentStatus) {
+                const limitReached = await favoriteService.isFavoritesLimitReached(this.currentUser.uid, 50);
+                if (limitReached) {
+                    if (typeof Utils !== 'undefined') {
+                        Utils.showToast('Достигнут лимит избранного (50 фильмов)', 'warning');
+                    }
+                    if (window.favoritesPage && typeof window.favoritesPage.showLimitModal === 'function') {
+                        window.favoritesPage.showLimitModal();
+                    }
+                    return;
+                }
+            }
+
+            // Add animation
+            if (buttonElement) {
+                buttonElement.classList.add('animating');
+                setTimeout(() => {
+                    buttonElement.classList.remove('animating');
+                }, 600);
+            }
+
+            // Toggle favorite
+            const newStatus = await favoriteService.toggleFavorite(ratingId, currentStatus);
+            
+            // Update button state
+            if (buttonElement) {
+                if (newStatus) {
+                    buttonElement.classList.add('active');
+                    buttonElement.setAttribute('data-is-favorite', 'true');
+                    buttonElement.title = 'Удалить из Избранного';
+                } else {
+                    buttonElement.classList.remove('active');
+                    buttonElement.setAttribute('data-is-favorite', 'false');
+                    buttonElement.title = 'Добавить в Избранное';
+                }
+            }
+            
+            // Update rating data in movies array
+            const movieData = this.movies.find(m => m.id === ratingId);
+            if (movieData) {
+                movieData.isFavorite = newStatus;
+                if (newStatus) {
+                    movieData.favoritedAt = new Date();
+                } else {
+                    movieData.favoritedAt = null;
+                }
+            }
+            
+            if (typeof Utils !== 'undefined') {
+                if (newStatus) {
+                    Utils.showToast('❤️ Добавлено в Избранное', 'success');
+                } else {
+                    Utils.showToast('Удалено из Избранного', 'success');
+                }
+            }
+            
+            // Update navigation count
+            if (window.navigation && typeof window.navigation.updateFavoritesCount === 'function') {
+                await window.navigation.updateFavoritesCount();
+            }
+        } catch (error) {
+            console.error('Error toggling favorite:', error);
+            if (typeof Utils !== 'undefined') {
+                Utils.showToast('Ошибка. Попробуйте снова', 'error');
+            }
+        }
+    }
+
+    async toggleWatchlist(movie, buttonElement) {
+        if (!this.currentUser) {
+            if (typeof Utils !== 'undefined') {
+                Utils.showToast('Войдите в систему, чтобы добавить фильм в Watchlist', 'warning');
+            }
+            return;
+        }
+
+        try {
+            const watchlistService = firebaseManager.getWatchlistService();
+            const isInWatchlist = await watchlistService.isInWatchlist(this.currentUser.uid, movie.kinopoiskId);
+
+            if (isInWatchlist) {
+                // Remove from watchlist
+                await watchlistService.removeFromWatchlist(this.currentUser.uid, movie.kinopoiskId);
+                
+                // Update button state
+                if (buttonElement) {
+                    buttonElement.classList.remove('active');
+                    buttonElement.title = 'Добавить в Watchlist';
+                }
+                
+                if (typeof Utils !== 'undefined') {
+                    Utils.showToast('Удалено из Watchlist', 'success');
+                }
+            } else {
+                // Add to watchlist
+                const movieData = {
+                    movieId: movie.kinopoiskId,
+                    movieTitle: movie.name || '',
+                    movieTitleRu: movie.alternativeName || '',
+                    posterPath: movie.posterUrl || '',
+                    releaseYear: movie.year || null,
+                    genres: movie.genres || [],
+                    avgRating: movie.kpRating || 0
+                };
+                
+                await watchlistService.addToWatchlist(this.currentUser.uid, movieData);
+                
+                // Update button state
+                if (buttonElement) {
+                    buttonElement.classList.add('active');
+                    buttonElement.title = 'Удалить из Watchlist';
+                }
+                
+                if (typeof Utils !== 'undefined') {
+                    Utils.showToast('Добавлено в Watchlist ✓', 'success');
+                }
+            }
+
+            // Update count in navigation
+            if (window.navigation && typeof window.navigation.updateWatchlistCount === 'function') {
+                await window.navigation.updateWatchlistCount();
+            }
+        } catch (error) {
+            console.error('Error toggling watchlist:', error);
+            if (typeof Utils !== 'undefined') {
+                Utils.showToast('Ошибка. Попробуйте снова', 'error');
+            }
+        }
+    }
+
+    async updateWatchlistButtonStates() {
+        if (!this.currentUser) return;
+
+        try {
+            const watchlistService = firebaseManager.getWatchlistService();
+            const watchlistButtons = document.querySelectorAll('.watchlist-btn-card');
+            
+            for (const button of watchlistButtons) {
+                const movieId = parseInt(button.getAttribute('data-movie-id'));
+                if (movieId) {
+                    const isInWatchlist = await watchlistService.isInWatchlist(this.currentUser.uid, movieId);
+                    
+                    if (isInWatchlist) {
+                        button.classList.add('active');
+                        button.title = 'Удалить из Watchlist';
+                    } else {
+                        button.classList.remove('active');
+                        button.title = 'Добавить в Watchlist';
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error updating watchlist button states:', error);
+        }
     }
 
     showMovieDetails(movieId) {

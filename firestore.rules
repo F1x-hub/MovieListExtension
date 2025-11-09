@@ -21,10 +21,22 @@ service cloud.firestore {
     // Ratings collection
     match /ratings/{ratingId} {
       allow read: if true; // Anyone can read ratings
-      allow create: if isAuthenticated(); // Only authenticated users can create ratings
-      allow update, delete: if isAuthenticated() && 
-        (resource.data.userId == request.auth.uid || 
-         request.auth.token.admin == true); // Only owner or admin can update/delete
+      allow create: if isAuthenticated() && 
+                       request.resource.data.userId == request.auth.uid &&
+                       (request.resource.data.isFavorite == null || 
+                        request.resource.data.isFavorite is bool) &&
+                       (request.resource.data.favoritedAt == null || 
+                        request.resource.data.favoritedAt is timestamp); // Only authenticated users can create ratings with valid favorite fields
+      allow update: if isAuthenticated() && 
+                       resource.data.userId == request.auth.uid &&
+                       request.resource.data.userId == request.auth.uid &&
+                       (request.resource.data.isFavorite == null || 
+                        request.resource.data.isFavorite is bool) &&
+                       (request.resource.data.favoritedAt == null || 
+                        request.resource.data.favoritedAt is timestamp); // Only owner can update with valid favorite fields
+      allow delete: if isAuthenticated() && 
+                       (resource.data.userId == request.auth.uid || 
+                        request.auth.token.admin == true); // Only owner or admin can delete
     }
     
     // Users collection
@@ -43,6 +55,14 @@ service cloud.firestore {
     match /movies/{movieId}/ratings/{ratingId} {
       allow read: if true; // Anyone can read movie ratings
       allow create: if isAuthenticated(); // Authenticated users can create ratings
+      allow update, delete: if isAuthenticated() && 
+        resource.data.userId == request.auth.uid; // Only owner can update/delete
+    }
+    
+    // Watchlist collection
+    match /watchlist/{watchlistId} {
+      allow read: if true; // Anyone can read watchlists
+      allow create: if isAuthenticated(); // Only authenticated users can create watchlist entries
       allow update, delete: if isAuthenticated() && 
         resource.data.userId == request.auth.uid; // Only owner can update/delete
     }

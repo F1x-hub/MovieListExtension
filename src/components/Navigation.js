@@ -38,11 +38,28 @@ class Navigation {
                                 <span>Search Movies</span>
                             </a>
                         </div>
-                        <div class="nav-item">
+                        <div class="nav-item nav-item-dropdown">
                             <a href="#" class="nav-link" data-page="ratings" id="navRatings">
                                 <span class="nav-icon">⭐</span>
                                 <span>My Collection</span>
+                                <span class="nav-dropdown-arrow">▼</span>
                             </a>
+                            <div class="collection-dropdown" id="collectionDropdown">
+                                <div class="dropdown-item" data-page="ratings">
+                                    <span class="dropdown-icon">⭐</span>
+                                    <span>All Movies</span>
+                                </div>
+                                <div class="dropdown-item" data-page="watchlist">
+                                    <span class="dropdown-icon">🔖</span>
+                                    <span>Watchlist</span>
+                                    <span class="count" id="watchlistCount">(0)</span>
+                                </div>
+                                <div class="dropdown-item" data-page="favorites">
+                                    <span class="dropdown-icon">❤️</span>
+                                    <span>Favorites</span>
+                                    <span class="count" id="favoritesCount">(0)</span>
+                                </div>
+                            </div>
                         </div>
                     </nav>
 
@@ -107,6 +124,9 @@ class Navigation {
                 this.navigateToPage(page);
             });
         });
+
+        // Collection dropdown functionality
+        this.setupCollectionDropdown();
 
         // Logo click - go to popup/home
         const navLogo = document.getElementById('navLogo');
@@ -192,10 +212,184 @@ class Navigation {
     closeAllDropdowns() {
         const userDropdown = document.getElementById('navUserDropdown');
         const userTrigger = document.getElementById('navUserTrigger');
+        const collectionDropdown = document.getElementById('collectionDropdown');
+        const collectionLink = document.getElementById('navRatings');
         
         if (userDropdown && userTrigger) {
             userDropdown.classList.remove('active');
             userTrigger.classList.remove('active');
+        }
+        
+        if (collectionDropdown && collectionLink) {
+            collectionDropdown.classList.remove('open');
+            collectionLink.classList.remove('dropdown-open');
+        }
+    }
+
+    setupCollectionDropdown() {
+        const collectionLink = document.getElementById('navRatings');
+        const collectionDropdown = document.getElementById('collectionDropdown');
+        const dropdownItems = collectionDropdown ? collectionDropdown.querySelectorAll('.dropdown-item') : [];
+
+        if (!collectionLink || !collectionDropdown) return;
+
+        let hoverTimeout = null;
+        let isHovering = false;
+        let isOpen = false;
+
+        // Show dropdown on hover with delay
+        const showDropdown = () => {
+            if (hoverTimeout) {
+                clearTimeout(hoverTimeout);
+            }
+            hoverTimeout = setTimeout(() => {
+                if (isHovering) {
+                    collectionDropdown.classList.add('open');
+                    collectionLink.classList.add('dropdown-open');
+                    isOpen = true;
+                }
+            }, 200);
+        };
+
+        // Hide dropdown with delay
+        const hideDropdown = () => {
+            if (hoverTimeout) {
+                clearTimeout(hoverTimeout);
+            }
+            hoverTimeout = setTimeout(() => {
+                if (!isHovering) {
+                    collectionDropdown.classList.remove('open');
+                    collectionLink.classList.remove('dropdown-open');
+                    isOpen = false;
+                }
+            }, 150);
+        };
+
+        // Mouse enter on link
+        collectionLink.addEventListener('mouseenter', () => {
+            isHovering = true;
+            showDropdown();
+        });
+
+        // Mouse enter on dropdown
+        collectionDropdown.addEventListener('mouseenter', () => {
+            isHovering = true;
+            if (hoverTimeout) {
+                clearTimeout(hoverTimeout);
+            }
+            collectionDropdown.classList.add('open');
+            collectionLink.classList.add('dropdown-open');
+            isOpen = true;
+        });
+
+        // Mouse leave from link - check if moving to dropdown
+        collectionLink.addEventListener('mouseleave', (e) => {
+            const relatedTarget = e.relatedTarget;
+            // If mouse is moving to dropdown, keep it open
+            if (collectionDropdown.contains(relatedTarget)) {
+                return;
+            }
+            // Otherwise, start hide timer
+            isHovering = false;
+            hideDropdown();
+        });
+
+        // Mouse leave from dropdown
+        collectionDropdown.addEventListener('mouseleave', (e) => {
+            const relatedTarget = e.relatedTarget;
+            // If mouse is moving back to link, keep it open
+            if (collectionLink.contains(relatedTarget)) {
+                return;
+            }
+            // Otherwise, hide it
+            isHovering = false;
+            hideDropdown();
+        });
+
+        // Handle dropdown item clicks
+        dropdownItems.forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const page = item.dataset.page;
+                // Don't hide immediately, let navigation handle it
+                setTimeout(() => {
+                    collectionDropdown.classList.remove('open');
+                    collectionLink.classList.remove('dropdown-open');
+                    isOpen = false;
+                    isHovering = false;
+                }, 100);
+                this.navigateToPage(page);
+            });
+        });
+
+        // Also handle click on the main link
+        collectionLink.addEventListener('click', (e) => {
+            // If dropdown is open, don't navigate immediately
+            if (isOpen) {
+                e.preventDefault();
+                // Let user click on dropdown items
+                return;
+            }
+        });
+
+        // Update watchlist count
+        this.updateWatchlistCount();
+    }
+
+    async updateWatchlistCount() {
+        try {
+            if (typeof firebaseManager === 'undefined') {
+                return;
+            }
+
+            const user = firebaseManager.getCurrentUser();
+            if (!user) {
+                const countElement = document.getElementById('watchlistCount');
+                if (countElement) {
+                    countElement.textContent = '(0)';
+                }
+                return;
+            }
+
+            const watchlistService = firebaseManager.getWatchlistService();
+            if (watchlistService) {
+                const count = await watchlistService.getWatchlistCount(user.uid);
+                const countElement = document.getElementById('watchlistCount');
+                if (countElement) {
+                    countElement.textContent = `(${count})`;
+                }
+            }
+        } catch (error) {
+            console.error('Error updating watchlist count:', error);
+        }
+    }
+
+    async updateFavoritesCount() {
+        try {
+            if (typeof firebaseManager === 'undefined') {
+                return;
+            }
+
+            const user = firebaseManager.getCurrentUser();
+            if (!user) {
+                const countElement = document.getElementById('favoritesCount');
+                if (countElement) {
+                    countElement.textContent = '(0)';
+                }
+                return;
+            }
+
+            const favoriteService = firebaseManager.getFavoriteService();
+            if (favoriteService) {
+                const count = await favoriteService.getFavoritesCount(user.uid);
+                const countElement = document.getElementById('favoritesCount');
+                if (countElement) {
+                    countElement.textContent = `(${count})`;
+                }
+            }
+        } catch (error) {
+            console.error('Error updating favorites count:', error);
         }
     }
 
@@ -342,12 +536,26 @@ class Navigation {
                     userAvatar.src = '/icons/icon48.png';
                 }
             }
-        } else {
-            // Hide user profile, show sign in button
-            if (userProfile) userProfile.style.display = 'none';
-            if (signInBtn) signInBtn.style.display = 'flex';
+
+        // Update watchlist and favorites counts when user is logged in
+        this.updateWatchlistCount();
+        this.updateFavoritesCount();
+    } else {
+        // Hide user profile, show sign in button
+        if (userProfile) userProfile.style.display = 'none';
+        if (signInBtn) signInBtn.style.display = 'flex';
+        
+        // Reset watchlist and favorites counts
+        const watchlistCountElement = document.getElementById('watchlistCount');
+        if (watchlistCountElement) {
+            watchlistCountElement.textContent = '(0)';
+        }
+        const favoritesCountElement = document.getElementById('favoritesCount');
+        if (favoritesCountElement) {
+            favoritesCountElement.textContent = '(0)';
         }
     }
+}
 
     setActivePage(page) {
         // Remove active class from all links
@@ -381,7 +589,13 @@ class Navigation {
                 case 'ratings':
                     url = chrome.runtime.getURL('ratings.html');
                     break;
-            case 'settings':
+                case 'watchlist':
+                    url = chrome.runtime.getURL('watchlist.html');
+                    break;
+                case 'favorites':
+                    url = chrome.runtime.getURL('favorites.html');
+                    break;
+                case 'settings':
                     this.showProfileModal();
                     return;
                 default:
@@ -403,6 +617,12 @@ class Navigation {
                 break;
             case 'ratings':
                 url = chrome.runtime.getURL('ratings.html');
+                break;
+            case 'watchlist':
+                url = chrome.runtime.getURL('watchlist.html');
+                break;
+            case 'favorites':
+                url = chrome.runtime.getURL('favorites.html');
                 break;
             case 'settings':
                 this.showProfileModal();
@@ -647,6 +867,10 @@ if (typeof window !== 'undefined' && !window.location.pathname.includes('popup.h
             currentPage = 'search';
         } else if (window.location.pathname.includes('ratings.html')) {
             currentPage = 'ratings';
+        } else if (window.location.pathname.includes('watchlist.html')) {
+            currentPage = 'watchlist';
+        } else if (window.location.pathname.includes('favorites.html')) {
+            currentPage = 'favorites';
         }
         
         window.navigation = new Navigation(currentPage);
