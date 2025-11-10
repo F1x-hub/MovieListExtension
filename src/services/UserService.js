@@ -16,15 +16,32 @@ class UserService {
      */
     async createOrUpdateUserProfile(userId, userData) {
         try {
+            const displayName = userData.displayName || userData.name || 'Anonymous User';
+            const nameParts = displayName.split(' ');
+            const firstName = userData.firstName || nameParts[0] || '';
+            const lastName = userData.lastName || nameParts.slice(1).join(' ') || '';
+            const username = userData.username || this.generateUsernameFromEmail(userData.email) || 'user';
+
             const userProfile = {
                 userId,
-                displayName: userData.displayName || userData.name || 'Anonymous User',
+                displayName,
+                firstName,
+                lastName,
+                username,
+                usernameLower: username.toLowerCase(),
                 photoURL: userData.photoURL || userData.photo || '',
+                photoPath: userData.photoPath || '',
                 email: userData.email || '',
                 createdAt: userData.createdAt || firebase.firestore.FieldValue.serverTimestamp(),
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-                // Additional profile fields
                 bio: userData.bio || '',
+                displayNameFormat: userData.displayNameFormat || 'fullname',
+                favoriteGenre: userData.favoriteGenre || '',
+                socialLinks: userData.socialLinks || {
+                    twitter: '',
+                    instagram: '',
+                    facebook: ''
+                },
                 preferences: {
                     theme: userData.preferences?.theme || 'dark',
                     language: userData.preferences?.language || 'en',
@@ -33,6 +50,8 @@ class UserService {
                 stats: {
                     totalRatings: 0,
                     averageRating: 0,
+                    favoritesCount: 0,
+                    watchlistCount: 0,
                     joinDate: userData.createdAt || firebase.firestore.FieldValue.serverTimestamp()
                 }
             };
@@ -41,7 +60,7 @@ class UserService {
             const userDoc = await userRef.get();
 
             if (userDoc.exists) {
-                // Update existing user
+                const existingData = userDoc.data();
                 const updateData = {
                     displayName: userProfile.displayName,
                     photoURL: userProfile.photoURL,
@@ -49,19 +68,33 @@ class UserService {
                     updatedAt: userProfile.updatedAt
                 };
 
-                // Only update bio and preferences if they're provided
+                if (userData.firstName !== undefined) updateData.firstName = userData.firstName;
+                if (userData.lastName !== undefined) updateData.lastName = userData.lastName;
+                if (userData.username !== undefined) {
+                    updateData.username = userData.username;
+                    updateData.usernameLower = userData.username.toLowerCase();
+                }
+                if (userData.usernameLower !== undefined) updateData.usernameLower = userData.usernameLower;
                 if (userData.bio !== undefined) updateData.bio = userData.bio;
+                if (userData.displayNameFormat !== undefined) updateData.displayNameFormat = userData.displayNameFormat;
+                if (userData.favoriteGenre !== undefined) updateData.favoriteGenre = userData.favoriteGenre;
+                if (userData.photoPath !== undefined) updateData.photoPath = userData.photoPath;
+                if (userData.socialLinks) {
+                    updateData.socialLinks = {
+                        ...(existingData.socialLinks || {}),
+                        ...userData.socialLinks
+                    };
+                }
                 if (userData.preferences) {
                     updateData.preferences = {
-                        ...userDoc.data().preferences,
+                        ...(existingData.preferences || {}),
                         ...userData.preferences
                     };
                 }
 
                 await userRef.update(updateData);
-                return { id: userId, ...userDoc.data(), ...updateData };
+                return { id: userId, ...existingData, ...updateData };
             } else {
-                // Create new user
                 await userRef.set(userProfile);
                 return { id: userId, ...userProfile };
             }
@@ -69,6 +102,17 @@ class UserService {
             console.error('Error creating/updating user profile:', error);
             throw new Error(`Failed to save user profile: ${error.message}`);
         }
+    }
+
+    /**
+     * Generate username from email
+     * @param {string} email - Email address
+     * @returns {string} - Generated username
+     */
+    generateUsernameFromEmail(email) {
+        if (!email) return 'user';
+        const username = email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '_');
+        return username || 'user';
     }
 
     /**
@@ -110,6 +154,10 @@ class UserService {
                 ...updateData,
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             };
+
+            if (updateData.username && !updateData.usernameLower) {
+                updatePayload.usernameLower = updateData.username.toLowerCase();
+            }
 
             await userRef.update(updatePayload);
             const updatedDoc = await userRef.get();
@@ -251,44 +299,120 @@ class UserService {
                 return null;
             }
 
-            // Get user's rating statistics
-            const ratingsQuery = this.db.collection('ratings')
-                .where('userId', '==', userId);
+            if (!userProfile.firstName && userProfile.displayName) {
+                const nameParts = userProfile.displayName.split(' ');
+                userProfile.firstName = nameParts[0] || '';
+                userProfile.lastName = nameParts.slice(1).join(' ') || '';
+            }
 
-            const ratingsResults = await ratingsQuery.get();
-            
-            let totalRatings = 0;
-            let averageRating = 0;
-            let recentRatings = [];
+            if (!userProfile.username && userProfile.email) {
+                userProfile.username = this.generateUsernameFromEmail(userProfile.email);
+            }
 
-            ratingsResults.forEach(doc => {
-                const data = doc.data();
-                totalRatings++;
-                averageRating += data.rating;
-                
-                if (recentRatings.length < 5) {
-                    recentRatings.push({
-                        id: doc.id,
-                        movieId: data.movieId,
-                        rating: data.rating,
-                        createdAt: data.createdAt
-                    });
-                }
-            });
+            if (userProfile.username && !userProfile.usernameLower) {
+                userProfile.usernameLower = userProfile.username.toLowerCase();
+            }
 
-            averageRating = totalRatings > 0 ? Math.round((averageRating / totalRatings) * 10) / 10 : 0;
+            if (!userProfile.socialLinks) {
+                userProfile.socialLinks = {
+                    twitter: '',
+                    instagram: '',
+                    facebook: ''
+                };
+            }
 
-            return {
-                ...userProfile,
-                computedStats: {
-                    totalRatings,
-                    averageRating,
-                    recentRatings
-                }
-            };
+            return userProfile;
         } catch (error) {
             console.error('Error getting user profile with stats:', error);
             return null;
+        }
+    }
+
+    /**
+     * Check if username is available
+     * @param {string} username - Username to check
+     * @param {string} currentUserId - Current user ID (to exclude from check)
+     * @returns {Promise<boolean>} - True if username is available
+     */
+    async isUsernameAvailable(username, currentUserId) {
+        try {
+            if (!username || username.trim() === '') {
+                return false;
+            }
+
+            const usernameLower = username.toLowerCase().trim();
+            const query = this.db.collection(this.collection)
+                .where('usernameLower', '==', usernameLower);
+
+            const snapshot = await query.get();
+
+            if (snapshot.empty) {
+                return true;
+            }
+
+            if (snapshot.docs.length === 1 && snapshot.docs[0].id === currentUserId) {
+                return true;
+            }
+
+            return false;
+        } catch (error) {
+            console.error('Error checking username availability:', error);
+            return false;
+        }
+    }
+
+    /**
+     * Get user statistics
+     * @param {string} userId - User ID
+     * @returns {Promise<Object>} - Statistics object
+     */
+    async getUserStats(userId) {
+        try {
+            const ratingsQuery = this.db.collection('ratings')
+                .where('userId', '==', userId);
+
+            const favoritesQuery = this.db.collection('ratings')
+                .where('userId', '==', userId)
+                .where('isFavorite', '==', true);
+
+            const watchlistQuery = this.db.collection('watchlist')
+                .where('userId', '==', userId);
+
+            const [ratingsSnapshot, favoritesSnapshot, watchlistSnapshot] = await Promise.all([
+                ratingsQuery.get(),
+                favoritesQuery.get(),
+                watchlistQuery.get()
+            ]);
+
+            let totalRatings = 0;
+            let sumRatings = 0;
+
+            ratingsSnapshot.forEach(doc => {
+                const data = doc.data();
+                if (data.rating) {
+                    totalRatings++;
+                    sumRatings += data.rating;
+                }
+            });
+
+            const averageRating = totalRatings > 0 
+                ? Math.round((sumRatings / totalRatings) * 10) / 10 
+                : 0;
+
+            return {
+                totalRatings,
+                averageRating,
+                favoritesCount: favoritesSnapshot.size,
+                watchlistCount: watchlistSnapshot.size
+            };
+        } catch (error) {
+            console.error('Error getting user stats:', error);
+            return {
+                totalRatings: 0,
+                averageRating: 0,
+                favoritesCount: 0,
+                watchlistCount: 0
+            };
         }
     }
 }

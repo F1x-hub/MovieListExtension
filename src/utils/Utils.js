@@ -375,6 +375,34 @@ class Utils {
         
         return luminance > 0.5 ? 'black' : 'white';
     }
+
+    /**
+     * Get display name based on user profile settings
+     * @param {Object} profile - User profile object
+     * @param {Object} fallbackUser - Fallback user object (from Firebase Auth)
+     * @returns {string} - Display name
+     */
+    static getDisplayName(profile, fallbackUser = null) {
+        if (!profile && !fallbackUser) {
+            return 'Unknown User';
+        }
+
+        const displayNameFormat = profile?.displayNameFormat || 'fullname';
+        
+        if (displayNameFormat === 'username' && profile?.username) {
+            return profile.username;
+        } else {
+            const firstName = profile?.firstName || '';
+            const lastName = profile?.lastName || '';
+            const fullName = [firstName, lastName].filter(Boolean).join(' ');
+            
+            if (fullName) {
+                return fullName;
+            } else {
+                return profile?.displayName || fallbackUser?.displayName || fallbackUser?.email || 'Unknown User';
+            }
+        }
+    }
 }
 
 // Export for use in other modules

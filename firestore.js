@@ -88,7 +88,7 @@ class FirebaseManager {
         try {
             const token = await user.getIdToken();
             const bucket = 'movielistdb-13208.firebasestorage.app';
-            const objectPath = `avatars/${user.uid}/profile.jpg`;
+            const objectPath = `users/${user.uid}/profile.jpg`;
             const url = `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o?name=${encodeURIComponent(objectPath)}`;
             const res = await fetch(url, {
                 method: 'POST',
@@ -97,17 +97,56 @@ class FirebaseManager {
             });
             if (!res.ok) throw new Error('upload failed');
             const info = await res.json();
+            let photoURL;
             if (info && info.downloadTokens) {
-                return `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(objectPath)}?alt=media&token=${info.downloadTokens}`;
+                photoURL = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(objectPath)}?alt=media&token=${info.downloadTokens}`;
+            } else {
+                photoURL = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(objectPath)}?alt=media`;
             }
-            return `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(objectPath)}?alt=media`;
+            
+            return {
+                photoURL,
+                photoPath: objectPath
+            };
         } catch (e) {
+            console.error('Avatar upload error:', e);
             const dataUrl = await new Promise((resolve) => {
                 const reader = new FileReader();
                 reader.onload = () => resolve(reader.result);
                 reader.readAsDataURL(file);
             });
-            return dataUrl;
+            return {
+                photoURL: dataUrl,
+                photoPath: ''
+            };
+        }
+    }
+
+    async deleteProfilePhoto(photoPath) {
+        if (!photoPath) return;
+
+        try {
+            const user = this.getCurrentUser();
+            if (!user) throw new Error('No authenticated user');
+
+            const token = await user.getIdToken();
+            const bucket = 'movielistdb-13208.firebasestorage.app';
+            const encodedPath = encodeURIComponent(photoPath);
+            const url = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodedPath}`;
+            
+            const res = await fetch(url, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Firebase ${token}` }
+            });
+
+            if (!res.ok && res.status !== 404) {
+                throw new Error('Failed to delete photo');
+            }
+
+            return true;
+        } catch (error) {
+            console.error('Error deleting profile photo:', error);
+            throw error;
         }
     }
 

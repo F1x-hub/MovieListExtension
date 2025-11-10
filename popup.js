@@ -574,7 +574,7 @@ class PopupManager {
                     continue;
                 }
                 
-                const ratingElement = this.createRatingElementSync(rating, averageRatingsMap);
+                const ratingElement = await this.createRatingElementSync(rating, averageRatingsMap);
                 this.elements.feedContent.appendChild(ratingElement);
             } catch (error) {
                 console.error('Error creating rating element:', error);
@@ -616,7 +616,7 @@ class PopupManager {
         return averageRatingsMap;
     }
 
-    createRatingElementSync(rating, averageRatingsMap) {
+    async createRatingElementSync(rating, averageRatingsMap) {
         const ratingDiv = document.createElement('div');
         ratingDiv.className = 'rating-item clickable-rating';
         
@@ -643,9 +643,22 @@ class PopupManager {
         // Get current user photo if this is current user's rating and photo is missing/outdated
         let userPhoto = rating.userPhoto || '/icons/icon48.png';
         const currentUser = firebaseManager.getCurrentUser();
+        let displayUserName = rating.userName || 'Unknown User';
+        
         if (currentUser && rating.userId === currentUser.uid) {
             if (currentUser.photoURL && (!rating.userPhoto || rating.userPhoto !== currentUser.photoURL)) {
                 userPhoto = currentUser.photoURL;
+            }
+            
+            // Load current user profile to get correct display name
+            try {
+                const userService = firebaseManager.getUserService();
+                const userProfile = await userService.getUserProfile(currentUser.uid);
+                if (userProfile && typeof Utils !== 'undefined' && Utils.getDisplayName) {
+                    displayUserName = Utils.getDisplayName(userProfile, currentUser);
+                }
+            } catch (error) {
+                console.error('Error loading user profile for display name:', error);
             }
         }
 
@@ -655,8 +668,8 @@ class PopupManager {
             <img src="${posterUrl}" alt="${movieTitle}" class="rating-poster" onerror="this.src='/icons/icon48.png'">
             <div class="rating-content">
                 <div class="rating-header">
-                    <img src="${userPhoto}" alt="${rating.userName}" class="rating-user-avatar" onerror="this.src='/icons/icon48.png'">
-                    <span class="rating-user-name" title="${this.escapeHtml(rating.userName)}">${this.escapeHtml(this.truncateText(rating.userName, 20))}</span>
+                    <img src="${userPhoto}" alt="${displayUserName}" class="rating-user-avatar" onerror="this.src='/icons/icon48.png'">
+                    <span class="rating-user-name" title="${this.escapeHtml(displayUserName)}">${this.escapeHtml(this.truncateText(displayUserName, 20))}</span>
                     ${isCurrentUser ? `
                         <div class="rating-menu">
                             <button class="rating-menu-btn" data-rating-id="${rating.id}" aria-label="Меню отзыва">
@@ -921,9 +934,14 @@ class PopupManager {
                 
                 const userProfile = await userService.getUserProfile(currentUser.uid);
                 
+                // Get display name based on user preference
+                const displayName = typeof Utils !== 'undefined' && Utils.getDisplayName
+                    ? Utils.getDisplayName(userProfile, currentUser)
+                    : (userProfile?.displayName || currentUser.displayName || currentUser.email);
+                
                 await ratingService.addOrUpdateRating(
                     currentUser.uid,
-                    userProfile?.displayName || currentUser.displayName || currentUser.email,
+                    displayName,
                     userProfile?.photoURL || currentUser.photoURL || '',
                     ratingData.movieId,
                     newRating,

@@ -19,6 +19,7 @@ class RatingsPageManager {
         this.currentUser = null;
         this.isLoading = false;
         this.allUsers = []; // Store all users who have rated movies
+        this.userProfilesMap = new Map(); // Store user profiles for display name formatting
         
         this.init();
     }
@@ -400,6 +401,9 @@ class RatingsPageManager {
                 ratings = result.ratings;
             }
             
+            // Load user profiles for display name formatting
+            await this.loadUserProfiles(ratings);
+            
             // Enrich with movie data and average ratings
             this.movies = await this.enrichRatingsWithMovieData(ratings);
             
@@ -420,6 +424,23 @@ class RatingsPageManager {
         } finally {
             this.isLoading = false;
             this.showLoading(false);
+        }
+    }
+
+    async loadUserProfiles(ratings) {
+        try {
+            const userIds = [...new Set(ratings.map(r => r.userId).filter(Boolean))];
+            if (userIds.length === 0) return;
+            
+            const userService = firebaseManager.getUserService();
+            const userProfiles = await userService.getUserProfilesByIds(userIds);
+            
+            this.userProfilesMap.clear();
+            userProfiles.forEach(profile => {
+                this.userProfilesMap.set(profile.userId || profile.id, profile);
+            });
+        } catch (error) {
+            console.error('Error loading user profiles:', error);
         }
     }
 
@@ -541,15 +562,34 @@ class RatingsPageManager {
         }
     }
 
+    getDisplayNameForUser(userId, userDisplayName, userName, userEmail) {
+        if (!userId) {
+            return userDisplayName || userName || userEmail?.split('@')[0] || 'Unknown User';
+        }
+        
+        const userProfile = this.userProfilesMap.get(userId);
+        if (userProfile && typeof Utils !== 'undefined' && Utils.getDisplayName) {
+            return Utils.getDisplayName(userProfile, null);
+        }
+        
+        return userDisplayName || userName || userEmail?.split('@')[0] || 'Unknown User';
+    }
+
     extractAndPopulateUsers(ratings) {
         const usersMap = new Map();
         
         ratings.forEach(rating => {
             if (rating.userId && (rating.userEmail || rating.userName)) {
+                const displayName = this.getDisplayNameForUser(
+                    rating.userId,
+                    rating.userDisplayName,
+                    rating.userName,
+                    rating.userEmail
+                );
                 usersMap.set(rating.userId, {
                     id: rating.userId,
                     email: rating.userEmail,
-                    displayName: rating.userDisplayName || rating.userName || rating.userEmail?.split('@')[0] || 'Unknown User'
+                    displayName: displayName
                 });
             }
         });
@@ -784,7 +824,7 @@ class RatingsPageManager {
                 ${this.currentMode === 'all-ratings' && (userDisplayName || userEmail || userName) ? `
                     <div class="movie-user-info">
                         <span class="user-icon">👤</span>
-                        <span class="user-name">${userDisplayName || userName || userEmail?.split('@')[0] || 'Unknown User'}</span>
+                        <span class="user-name" data-user-id="${userId}">${this.getDisplayNameForUser(userId, userDisplayName, userName, userEmail)}</span>
                     </div>
                 ` : ''}
                 
@@ -1089,9 +1129,14 @@ class RatingsPageManager {
             // Get fresh user profile
             const userProfile = await userService.getUserProfile(this.currentUser.uid);
             
+            // Get display name based on user preference
+            const displayName = typeof Utils !== 'undefined' && Utils.getDisplayName
+                ? Utils.getDisplayName(userProfile, this.currentUser)
+                : (userProfile?.displayName || this.currentUser.displayName || this.currentUser.email);
+            
             await ratingService.addOrUpdateRating(
                 this.currentUser.uid,
-                userProfile?.displayName || this.currentUser.displayName || this.currentUser.email,
+                displayName,
                 userProfile?.photoURL || this.currentUser.photoURL || '',
                 this.selectedMovie.kinopoiskId,
                 rating,
