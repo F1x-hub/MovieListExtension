@@ -759,7 +759,9 @@ class SearchManager {
         
         const ratingsHTML = ratings.map(rating => {
             const userProfile = userProfileMap.get(rating.userId);
-            const userName = userProfile?.displayName || rating.userName || 'Неизвестный пользователь';
+            const userName = typeof Utils !== 'undefined' && Utils.getDisplayName
+                ? Utils.getDisplayName(userProfile, null)
+                : (userProfile?.displayName || rating.userName || 'Неизвестный пользователь');
             const userPhoto = userProfile?.photoURL || rating.userPhoto || '/icons/icon48.png';
             const isCurrentUser = currentUserId && rating.userId === currentUserId;
             
@@ -1068,9 +1070,14 @@ class SearchManager {
             // Get user profile
             const userProfile = await userService.getUserProfile(currentUser.uid);
             
+            // Get display name based on user preference
+            const displayName = typeof Utils !== 'undefined' && Utils.getDisplayName
+                ? Utils.getDisplayName(userProfile, currentUser)
+                : (userProfile?.displayName || currentUser.displayName || currentUser.email);
+            
             await ratingService.addOrUpdateRating(
                 currentUser.uid,
-                userProfile?.displayName || currentUser.displayName || currentUser.email,
+                displayName,
                 userProfile?.photoURL || currentUser.photoURL || '',
                 this.selectedMovie.kinopoiskId,
                 rating,
@@ -1278,9 +1285,14 @@ class SearchManager {
                 
                 const userProfile = await userService.getUserProfile(currentUser.uid);
                 
+                // Get display name based on user preference
+                const displayName = typeof Utils !== 'undefined' && Utils.getDisplayName
+                    ? Utils.getDisplayName(userProfile, currentUser)
+                    : (userProfile?.displayName || currentUser.displayName || currentUser.email);
+                
                 await ratingService.addOrUpdateRating(
                     currentUser.uid,
-                    userProfile?.displayName || currentUser.displayName || currentUser.email,
+                    displayName,
                     userProfile?.photoURL || currentUser.photoURL || '',
                     ratingData.movieId,
                     newRating,

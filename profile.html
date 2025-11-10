@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Profile - Movie Rating Extension</title>
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="src/styles/common.css">
+    <link rel="stylesheet" href="src/styles/components.css">
+    <link rel="stylesheet" href="src/styles/navigation.css">
+    <link rel="stylesheet" href="src/styles/profile.css">
+    
+    <!-- Firebase -->
+    <script src="libs/firebase-app-compat.js"></script>
+    <script src="libs/firebase-auth-compat.js"></script>
+    <script src="libs/firebase-firestore-compat.js"></script>
+    
+    <!-- Services -->
+    <script src="firestore.js"></script>
+    <script src="src/config/kinopoisk.config.js"></script>
+    <script src="src/services/RatingsCacheService.js"></script>
+    <script src="src/services/RatingService.js"></script>
+    <script src="src/services/MovieCacheService.js"></script>
+    <script src="src/services/KinopoiskService.js"></script>
+    <script src="src/services/UserService.js"></script>
+    <script src="src/services/WatchlistService.js"></script>
+    <script src="src/services/FavoriteService.js"></script>
+    <script src="src/services/ProfileService.js"></script>
+    <script src="src/utils/Utils.js"></script>
+    
+    <!-- Components -->
+    <script src="src/components/Navigation.js"></script>
+    <script src="src/components/Router.js"></script>
+</head>
+<body>
+    <!-- Navigation will be inserted here by Navigation.js -->
+    
+    <!-- Main Content -->
+    <main class="profile-main">
+        <div class="profile-container">
+            <!-- Profile Header -->
+            <div class="profile-header" id="profileHeader">
+                <div class="profile-cover"></div>
+                <div class="profile-content">
+                    <div class="profile-photo" id="profilePhoto">
+                        <img id="profilePhotoImg" src="" alt="Profile" style="display: none;">
+                        <div class="profile-photo-placeholder" id="profilePhotoPlaceholder">
+                            <span id="profileInitials">U</span>
+                        </div>
+                    </div>
+                    <div class="profile-info">
+                        <h1 class="profile-name primary-name" id="profileName">Loading...</h1>
+                        <p class="profile-username secondary-name" id="profileUsername">username</p>
+                        <p class="profile-bio" id="profileBio" style="display: none;"></p>
+                        <div class="profile-meta" id="profileMeta">
+                            <span class="meta-item" id="profileJoinDate" style="display: none;">
+                                <span class="meta-icon">📅</span>
+                                <span id="joinDateText"></span>
+                            </span>
+                            <span class="meta-item" id="profileFavoriteGenre" style="display: none;">
+                                <span class="meta-icon">🎭</span>
+                                <span id="favoriteGenreText"></span>
+                            </span>
+                        </div>
+                        <button class="btn-edit-profile" id="editProfileBtn">
+                            <span class="btn-icon">✏️</span>
+                            Edit Profile
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Statistics Section -->
+            <div class="profile-stats" id="profileStats">
+                <div class="stat-card">
+                    <span class="stat-value" id="statTotalRatings">0</span>
+                    <span class="stat-label">Movies Rated</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-value" id="statAverageRating">0.0</span>
+                    <span class="stat-label">Average Rating</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-value" id="statFavorites">0</span>
+                    <span class="stat-label">Favorites</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-value" id="statWatchlist">0</span>
+                    <span class="stat-label">Watchlist</span>
+                </div>
+            </div>
+
+            <!-- Recent Ratings Section -->
+            <div class="recent-ratings-section">
+                <div class="section-header">
+                    <h2 class="section-title">
+                        <span class="section-icon">📊</span>
+                        Recent Ratings
+                    </h2>
+                    <button class="btn-view-all" id="viewAllRatingsBtn">
+                        View All
+                    </button>
+                </div>
+                <div class="recent-ratings-list" id="recentRatingsList">
+                    <div class="loading-spinner-small"></div>
+                </div>
+            </div>
+
+            <!-- Loading State -->
+            <div class="loading-section" id="loadingSection">
+                <div class="loading-spinner"></div>
+                <p>Loading profile...</p>
+            </div>
+
+            <!-- Error State -->
+            <div class="error-state" id="errorState" style="display: none;">
+                <div class="error-state-icon">⚠️</div>
+                <h3 class="error-state-title">Something went wrong</h3>
+                <p class="error-state-text" id="errorMessage">Failed to load profile</p>
+                <button class="error-state-btn" id="retryBtn">Try Again</button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Edit Profile Modal -->
+    <div class="modal-overlay" id="editProfileModal" style="display: none;">
+        <div class="modal-content edit-profile-modal">
+            <div class="modal-header">
+                <h2 class="modal-title">
+                    <span class="modal-icon">✏️</span>
+                    Edit Profile
+                </h2>
+                <button class="modal-close" id="editProfileModalClose">×</button>
+            </div>
+            <form id="editProfileForm" class="modal-body">
+                <!-- Photo Upload -->
+                <div class="form-group photo-upload">
+                    <label>Profile Photo</label>
+                    <div class="photo-upload-container">
+                        <div class="photo-preview" id="photoPreview">
+                            <img id="photoPreviewImg" src="" alt="Preview" style="display: none;">
+                            <div class="photo-placeholder" id="photoPlaceholder">
+                                <span id="photoInitials">U</span>
+                            </div>
+                        </div>
+                        <div class="photo-actions">
+                            <label class="btn-upload" for="photoInput">
+                                <span class="btn-icon">📤</span>
+                                Upload Photo
+                            </label>
+                            <input type="file" id="photoInput" accept="image/png,image/jpeg,image/webp" style="display: none;">
+                            <button type="button" class="btn-remove" id="removePhotoBtn" style="display: none;">
+                                <span class="btn-icon">🗑️</span>
+                                Remove
+                            </button>
+                        </div>
+                    </div>
+                    <p class="photo-hint">JPG/PNG/WEBP · max 5MB</p>
+                </div>
+
+                <!-- First Name -->
+                <div class="form-group">
+                    <label for="firstNameInput">First Name *</label>
+                    <input type="text" id="firstNameInput" name="firstName" maxlength="50" required>
+                    <span class="error-message" id="firstNameError"></span>
+                </div>
+
+                <!-- Last Name -->
+                <div class="form-group">
+                    <label for="lastNameInput">Last Name *</label>
+                    <input type="text" id="lastNameInput" name="lastName" maxlength="50" required>
+                    <span class="error-message" id="lastNameError"></span>
+                </div>
+
+                <!-- Username -->
+                <div class="form-group">
+                    <label for="usernameInput">Username *</label>
+                    <input type="text" id="usernameInput" name="username" minlength="3" maxlength="20" pattern="[a-zA-Z0-9_]+" required>
+                    <span class="error-message" id="usernameError"></span>
+                    <p class="input-hint">3-20 characters, letters, numbers, and underscores only</p>
+                </div>
+
+                <!-- Bio -->
+                <div class="form-group">
+                    <label for="bioInput">Bio / About Me</label>
+                    <textarea id="bioInput" name="bio" rows="3" maxlength="200" placeholder="Tell us about yourself..."></textarea>
+                    <div class="char-count">
+                        <span id="bioCharCount">0</span>/200
+                    </div>
+                    <span class="error-message" id="bioError"></span>
+                </div>
+
+                <!-- Display Name Format -->
+                <div class="form-group">
+                    <label for="displayNameFormatInput">Display Name in Navigation</label>
+                    <select id="displayNameFormatInput" name="displayNameFormat">
+                        <option value="fullname">First Name + Last Name</option>
+                        <option value="username">Username</option>
+                    </select>
+                    <p class="input-hint">Choose what to display in the navigation bar</p>
+                </div>
+
+                <!-- Favorite Genre -->
+                <div class="form-group">
+                    <label for="favoriteGenreInput">Favorite Genre</label>
+                    <select id="favoriteGenreInput" name="favoriteGenre">
+                        <option value="">Select genre...</option>
+                        <option value="Action">Action</option>
+                        <option value="Adventure">Adventure</option>
+                        <option value="Animation">Animation</option>
+                        <option value="Comedy">Comedy</option>
+                        <option value="Crime">Crime</option>
+                        <option value="Documentary">Documentary</option>
+                        <option value="Drama">Drama</option>
+                        <option value="Family">Family</option>
+                        <option value="Fantasy">Fantasy</option>
+                        <option value="Horror">Horror</option>
+                        <option value="Romance">Romance</option>
+                        <option value="Sci-Fi">Sci-Fi</option>
+                        <option value="Thriller">Thriller</option>
+                    </select>
+                </div>
+
+                <!-- Social Links -->
+                <div class="form-section">
+                    <h3 class="form-section-title">Social Links (optional)</h3>
+                    <div class="form-group">
+                        <label for="twitterInput">Twitter</label>
+                        <input type="url" id="twitterInput" name="twitter" placeholder="https://twitter.com/username">
+                    </div>
+                    <div class="form-group">
+                        <label for="instagramInput">Instagram</label>
+                        <input type="url" id="instagramInput" name="instagram" placeholder="https://instagram.com/username">
+                    </div>
+                    <div class="form-group">
+                        <label for="facebookInput">Facebook</label>
+                        <input type="url" id="facebookInput" name="facebook" placeholder="https://facebook.com/username">
+                    </div>
+                </div>
+
+                <!-- Password Section (for email users) -->
+                <div class="form-section" id="passwordSection" style="display: none;">
+                    <h3 class="form-section-title">Change Password</h3>
+                    <button type="button" class="btn-toggle-password" id="togglePasswordBtn">Change Password</button>
+                    <div id="passwordFields" style="display: none;">
+                        <div class="form-group">
+                            <label for="currentPasswordInput">Current Password</label>
+                            <input type="password" id="currentPasswordInput" name="currentPassword">
+                        </div>
+                        <div class="form-group">
+                            <label for="newPasswordInput">New Password</label>
+                            <input type="password" id="newPasswordInput" name="newPassword" minlength="6">
+                        </div>
+                        <div class="form-group">
+                            <label for="confirmPasswordInput">Confirm New Password</label>
+                            <input type="password" id="confirmPasswordInput" name="confirmPassword" minlength="6">
+                        </div>
+                        <span class="error-message" id="passwordError"></span>
+                    </div>
+                </div>
+
+                <!-- Form Footer -->
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="cancelEditBtn">Cancel</button>
+                    <button type="submit" class="btn-primary" id="saveProfileBtn">
+                        <span id="saveBtnText">Save Changes</span>
+                        <span id="saveBtnLoading" style="display: none;">Saving...</span>
+                    </button>
+                </div>
+            </form>
+            <div id="profileToast" class="toast-message" style="display: none;"></div>
+        </div>
+    </div>
+
+    <!-- Main Script -->
+    <script src="profile.js"></script>
+</body>
+</html>
+

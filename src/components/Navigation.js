@@ -76,8 +76,8 @@ class Navigation {
                             <!-- Dropdown Menu -->
                             <div class="nav-user-dropdown" id="navUserDropdown">
                                 <div class="nav-dropdown-item" id="navDropdownSettings">
-                                    <span class="nav-dropdown-icon">⚙️</span>
-                                    <span>Edit Profile</span>
+                                    <span class="nav-dropdown-icon">👤</span>
+                                    <span>View Profile</span>
                                 </div>
                                 <div class="nav-dropdown-divider"></div>
                                 <div class="nav-dropdown-item nav-dropdown-logout" id="navDropdownLogout">
@@ -512,7 +512,7 @@ class Navigation {
         }
     }
 
-    updateUserDisplay(user) {
+    async updateUserDisplay(user) {
         this.user = user;
         const userProfile = document.getElementById('navUserProfile');
         const userAvatar = document.getElementById('navUserAvatar');
@@ -526,8 +526,37 @@ class Navigation {
             userProfile.style.display = 'block';
             if (signInBtn) signInBtn.style.display = 'none';
 
-            // Update user data
-            userName.textContent = user.displayName || user.email || 'User';
+            // Get display name based on user preference
+            let displayText = user.displayName || user.email || 'User';
+            
+            if (typeof firebaseManager !== 'undefined' && firebaseManager.getUserService) {
+                try {
+                    const userService = firebaseManager.getUserService();
+                    const profile = await userService.getUserProfile(user.uid);
+                    
+                    if (profile) {
+                        const displayNameFormat = profile.displayNameFormat || 'fullname';
+                        
+                        if (displayNameFormat === 'username' && profile.username) {
+                            displayText = profile.username;
+                        } else {
+                            const firstName = profile.firstName || '';
+                            const lastName = profile.lastName || '';
+                            const fullName = [firstName, lastName].filter(Boolean).join(' ');
+                            if (fullName) {
+                                displayText = fullName;
+                            } else {
+                                displayText = profile.displayName || user.displayName || user.email || 'User';
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error loading user profile for display:', error);
+                }
+            }
+
+            userName.textContent = displayText;
+            
             if (userAvatar) {
                 if (user.photoURL) {
                     userAvatar.src = user.photoURL;
@@ -595,9 +624,10 @@ class Navigation {
                 case 'favorites':
                     url = chrome.runtime.getURL('favorites.html');
                     break;
+                case 'profile':
                 case 'settings':
-                    this.showProfileModal();
-                    return;
+                    url = chrome.runtime.getURL('profile.html');
+                    break;
                 default:
                     return;
             }
@@ -624,9 +654,10 @@ class Navigation {
             case 'favorites':
                 url = chrome.runtime.getURL('favorites.html');
                 break;
+            case 'profile':
             case 'settings':
-                this.showProfileModal();
-                return;
+                url = chrome.runtime.getURL('profile.html');
+                break;
             default:
                 return;
         }
