@@ -99,6 +99,8 @@ class ProfilePageManager {
         if (this.elements.editProfileBtn) {
             this.elements.editProfileBtn.addEventListener('click', () => this.openEditModal());
         }
+        
+        this.viewingOtherUser = false;
 
         if (this.elements.viewAllRatingsBtn) {
             this.elements.viewAllRatingsBtn.addEventListener('click', () => {
@@ -168,7 +170,11 @@ class ProfilePageManager {
         }
 
         this.currentUser = firebaseManager.getCurrentUser();
-        if (!this.currentUser) {
+        
+        const urlParams = new URLSearchParams(window.location.search);
+        const profileUserId = urlParams.get('userId');
+        
+        if (!profileUserId && !this.currentUser) {
             this.showError('Please sign in to view your profile');
             return;
         }
@@ -179,17 +185,25 @@ class ProfilePageManager {
     }
 
     async loadProfile() {
-        if (!this.currentUser) {
-            this.showError('Please sign in to view your profile');
-            return;
+        const urlParams = new URLSearchParams(window.location.search);
+        const profileUserId = urlParams.get('userId');
+        
+        const targetUserId = profileUserId || (this.currentUser ? this.currentUser.uid : null);
+        
+        if (!targetUserId) {
+            if (!this.currentUser) {
+                this.showError('Please sign in to view your profile');
+                return;
+            }
         }
 
         this.showLoading(true);
+        this.viewingOtherUser = profileUserId && this.currentUser && profileUserId !== this.currentUser.uid;
 
         try {
             const [profile, stats] = await Promise.all([
-                this.userService.getUserProfileWithStats(this.currentUser.uid),
-                this.profileService.getUserStatistics(this.currentUser.uid)
+                this.userService.getUserProfileWithStats(targetUserId),
+                this.profileService.getUserStatistics(targetUserId)
             ]);
 
             if (!profile) {
@@ -200,7 +214,7 @@ class ProfilePageManager {
             this.userProfile = { ...profile, stats };
             this.displayProfile();
             this.displayStatistics(stats);
-            await this.loadRecentRatings();
+            await this.loadRecentRatings(targetUserId);
 
             this.showLoading(false);
         } catch (error) {
@@ -280,6 +294,14 @@ class ProfilePageManager {
         } else if (this.elements.profileFavoriteGenre) {
             this.elements.profileFavoriteGenre.style.display = 'none';
         }
+
+        if (this.elements.editProfileBtn) {
+            if (this.viewingOtherUser) {
+                this.elements.editProfileBtn.style.display = 'none';
+            } else {
+                this.elements.editProfileBtn.style.display = 'block';
+            }
+        }
     }
 
     displayStatistics(stats) {
@@ -299,11 +321,12 @@ class ProfilePageManager {
         }
     }
 
-    async loadRecentRatings() {
-        if (!this.currentUser) return;
+    async loadRecentRatings(userId = null) {
+        const targetUserId = userId || (this.currentUser ? this.currentUser.uid : null);
+        if (!targetUserId) return;
 
         try {
-            const ratings = await this.profileService.getRecentRatings(this.currentUser.uid, 10);
+            const ratings = await this.profileService.getRecentRatings(targetUserId, 10);
             this.displayRecentRatings(ratings);
         } catch (error) {
             console.error('Error loading recent ratings:', error);
@@ -365,6 +388,10 @@ class ProfilePageManager {
 
     openEditModal() {
         if (!this.userProfile) return;
+        
+        if (this.viewingOtherUser) {
+            return;
+        }
 
         this.populateEditForm();
         if (this.elements.editProfileModal) {

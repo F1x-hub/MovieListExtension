@@ -41,7 +41,7 @@ class FirebaseManager {
         // Sync auth state to chrome.storage for cross-page consistency
         try {
             if (typeof chrome !== 'undefined' && chrome.storage) {
-                await chrome.storage.local.set({
+                const storageData = {
                     user: user ? {
                         uid: user.uid,
                         email: user.email,
@@ -50,7 +50,28 @@ class FirebaseManager {
                     } : null,
                     isAuthenticated: !!user,
                     authTimestamp: Date.now()
-                });
+                };
+
+                // If user is authenticated, get and store the auth token
+                if (user) {
+                    try {
+                        const token = await user.getIdToken();
+                        const tokenResult = await user.getIdTokenResult();
+                        // Tokens typically expire in 1 hour, store expiry time
+                        const expiryTime = tokenResult.expirationTime ? new Date(tokenResult.expirationTime).getTime() : Date.now() + (55 * 60 * 1000); // 55 minutes from now
+                        storageData.authToken = token;
+                        storageData.authTokenExpiry = expiryTime;
+                        console.log('[FirebaseManager] Auth token saved to chrome.storage, expires at:', new Date(expiryTime));
+                    } catch (tokenError) {
+                        console.error('[FirebaseManager] Error getting auth token:', tokenError);
+                    }
+                } else {
+                    // Clear token if user is logged out
+                    storageData.authToken = null;
+                    storageData.authTokenExpiry = null;
+                }
+
+                await chrome.storage.local.set(storageData);
             }
         } catch (error) {
             console.log('Could not sync auth state to storage:', error);
@@ -65,8 +86,24 @@ class FirebaseManager {
     async updateAuthProfile({ displayName, photoURL }) {
         const user = this.getCurrentUser();
         if (!user) throw new Error('No authenticated user');
-        await user.updateProfile({ displayName, photoURL });
+        
+        const updateData = {};
+        if (displayName !== undefined) {
+            updateData.displayName = displayName;
+        }
+        if (photoURL !== undefined) {
+            if (photoURL && photoURL.length > 2048) {
+                console.warn('Photo URL is too long for Firebase Auth. Skipping photoURL update in auth profile.');
+            } else {
+                updateData.photoURL = photoURL;
+            }
+        }
+        
+        if (Object.keys(updateData).length > 0) {
+            await user.updateProfile(updateData);
         await user.reload();
+        }
+        
         this.user = this.auth.currentUser;
         await this.onAuthStateChanged(this.user);
         return this.user;
@@ -88,20 +125,57 @@ class FirebaseManager {
         try {
             const token = await user.getIdToken();
             const bucket = 'movielistdb-13208.firebasestorage.app';
-            const objectPath = `users/${user.uid}/profile.jpg`;
-            const url = `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o?name=${encodeURIComponent(objectPath)}`;
-            const res = await fetch(url, {
+            const objectPath = `avatars/${user.uid}/profile.jpg`;
+            
+            const uploadUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o?name=${encodeURIComponent(objectPath)}&uploadType=media`;
+            
+            console.log('Uploading file:', {
+                size: file.size,
+                type: file.type || 'image/jpeg',
+                path: objectPath
+            });
+            
+            const res = await fetch(uploadUrl, {
                 method: 'POST',
-                headers: { 'Authorization': `Firebase ${token}`, 'Content-Type': file.type || 'application/octet-stream' },
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': file.type || 'image/jpeg'
+                },
                 body: file
             });
-            if (!res.ok) throw new Error('upload failed');
+
+            if (!res.ok) {
+                const errorText = await res.text();
+                console.error('Upload error response:', errorText);
+                console.error('Upload URL:', uploadUrl);
+                console.error('User UID:', user.uid);
+                throw new Error(`Upload failed: ${res.status} ${res.statusText}`);
+            }
+
             const info = await res.json();
+            console.log('Upload success, response:', info);
+            
+            if (info.size && parseInt(info.size) !== file.size) {
+                console.warn('File size mismatch! Uploaded:', info.size, 'bytes, Expected:', file.size, 'bytes');
+            }
+            
+            if (info.contentType && info.contentType !== (file.type || 'image/jpeg')) {
+                console.warn('Content type mismatch! Uploaded:', info.contentType, 'Expected:', file.type || 'image/jpeg');
+            }
+            
+            const uploadedPath = info.name || objectPath;
             let photoURL;
-            if (info && info.downloadTokens) {
-                photoURL = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(objectPath)}?alt=media&token=${info.downloadTokens}`;
+            if (info && info.downloadTokens && info.downloadTokens.length > 0) {
+                const tokenParam = Array.isArray(info.downloadTokens) ? info.downloadTokens[0] : info.downloadTokens;
+                photoURL = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(uploadedPath)}?alt=media&token=${tokenParam}`;
+            } else if (info && info.downloadTokens) {
+                photoURL = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(uploadedPath)}?alt=media&token=${info.downloadTokens}`;
             } else {
-                photoURL = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(objectPath)}?alt=media`;
+                photoURL = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(uploadedPath)}?alt=media`;
+            }
+
+            if (photoURL.length > 2048) {
+                console.warn('Photo URL is too long for Firebase Auth. Using Storage URL only.');
             }
             
             return {
@@ -110,15 +184,7 @@ class FirebaseManager {
             };
         } catch (e) {
             console.error('Avatar upload error:', e);
-            const dataUrl = await new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve(reader.result);
-                reader.readAsDataURL(file);
-            });
-            return {
-                photoURL: dataUrl,
-                photoPath: ''
-            };
+            throw e;
         }
     }
 
@@ -136,11 +202,15 @@ class FirebaseManager {
             
             const res = await fetch(url, {
                 method: 'DELETE',
-                headers: { 'Authorization': `Firebase ${token}` }
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
             });
 
             if (!res.ok && res.status !== 404) {
-                throw new Error('Failed to delete photo');
+                const errorText = await res.text();
+                console.error('Delete error response:', errorText);
+                throw new Error(`Failed to delete photo: ${res.status} ${res.statusText}`);
             }
 
             return true;

@@ -1563,6 +1563,18 @@
     max-width: 100%;
 }
 
+.user-rating-name.clickable-username {
+    cursor: pointer;
+    text-decoration: underline;
+    color: var(--accent-color);
+    transition: color var(--transition-base);
+}
+
+.user-rating-name.clickable-username:hover {
+    color: var(--accent-hover);
+    text-decoration: underline;
+}
+
 .user-rating-score {
     font-size: var(--font-size-sm);
     color: var(--accent-color);

@@ -736,6 +736,9 @@ class SearchManager {
             // Setup menu event listeners
             this.setupRatingMenuListeners();
             
+            // Setup username click listeners
+            this.setupUsernameClickListeners();
+            
         } catch (error) {
             console.error('Error loading user ratings:', error);
             contentEl.innerHTML = `
@@ -764,6 +767,7 @@ class SearchManager {
                 : (userProfile?.displayName || rating.userName || 'Неизвестный пользователь');
             const userPhoto = userProfile?.photoURL || rating.userPhoto || '/icons/icon48.png';
             const isCurrentUser = currentUserId && rating.userId === currentUserId;
+            const userId = rating.userId;
             
             const timestamp = rating.createdAt?.toDate ? rating.createdAt.toDate() : new Date(rating.createdAt);
             const formattedDate = this.formatRatingDate(timestamp);
@@ -773,7 +777,7 @@ class SearchManager {
                     <div class="user-rating-header">
                         <img src="${userPhoto}" alt="${this.escapeHtml(userName)}" class="user-rating-avatar" onerror="this.src='/icons/icon48.png'">
                         <div class="user-rating-info">
-                            <div class="user-rating-name">${this.escapeHtml(userName)}</div>
+                            <div class="user-rating-name clickable-username" data-user-id="${userId}">${this.escapeHtml(userName)}</div>
                             <div class="user-rating-score">⭐ ${rating.rating}/10</div>
                         </div>
                         ${isCurrentUser ? `
@@ -1168,6 +1172,19 @@ class SearchManager {
                     menu.style.display = 'none';
                 });
             }
+        });
+    }
+
+    setupUsernameClickListeners() {
+        document.querySelectorAll('.clickable-username').forEach(usernameEl => {
+            usernameEl.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const userId = usernameEl.getAttribute('data-user-id');
+                if (userId) {
+                    const url = chrome.runtime.getURL(`profile.html?userId=${userId}`);
+                    window.location.href = url;
+                }
+            });
         });
     }
 

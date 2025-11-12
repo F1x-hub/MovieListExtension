@@ -575,6 +575,16 @@ class RatingsPageManager {
         return userDisplayName || userName || userEmail?.split('@')[0] || 'Unknown User';
     }
 
+    getUserPhoto(userId, userPhoto) {
+        if (userId) {
+            const userProfile = this.userProfilesMap.get(userId);
+            if (userProfile?.photoURL) {
+                return userProfile.photoURL;
+            }
+        }
+        return userPhoto || '/icons/icon48.png';
+    }
+
     extractAndPopulateUsers(ratings) {
         const usersMap = new Map();
         
@@ -768,6 +778,19 @@ class RatingsPageManager {
                 }
             });
         });
+
+        // Add event listeners for clickable usernames
+        const clickableUsernames = grid.querySelectorAll('.clickable-username');
+        clickableUsernames.forEach(usernameEl => {
+            usernameEl.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const userId = usernameEl.getAttribute('data-user-id');
+                if (userId) {
+                    const url = chrome.runtime.getURL(`profile.html?userId=${userId}`);
+                    window.location.href = url;
+                }
+            });
+        });
     }
 
     createMovieCard(movieData) {
@@ -821,10 +844,13 @@ class RatingsPageManager {
                     <div class="movie-description">${truncatedDescription}</div>
                 ` : ''}
                 
-                ${this.currentMode === 'all-ratings' && (userDisplayName || userEmail || userName) ? `
+                ${this.currentMode === 'all-ratings' && userId && (userDisplayName || userEmail || userName) ? `
                     <div class="movie-user-info">
-                        <span class="user-icon">👤</span>
-                        <span class="user-name" data-user-id="${userId}">${this.getDisplayNameForUser(userId, userDisplayName, userName, userEmail)}</span>
+                        <img src="${this.getUserPhoto(userId, userPhoto)}" 
+                             alt="${this.escapeHtml(this.getDisplayNameForUser(userId, userDisplayName, userName, userEmail))}" 
+                             class="user-avatar" 
+                             onerror="this.src='/icons/icon48.png'; this.onerror=null;">
+                        <span class="user-name clickable-username" data-user-id="${userId}">${this.getDisplayNameForUser(userId, userDisplayName, userName, userEmail)}</span>
                     </div>
                 ` : ''}
                 
