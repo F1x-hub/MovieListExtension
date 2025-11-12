@@ -1,0 +1,140 @@
+/* Watchlist Button on Poster - positioned in top right corner */
+.movieListWatchlistBtn {
+    position: absolute !important;
+    top: 10px !important;
+    right: 10px !important;
+    background: rgba(255, 255, 255, 0.95) !important;
+    border: none !important;
+    border-radius: 50% !important;
+    width: 40px !important;
+    height: 40px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+    transition: all 0.3s ease !important;
+    z-index: 9999 !important;
+    font-size: 20px !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+    color: #666 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    line-height: 1 !important;
+    min-width: 40px !important;
+    min-height: 40px !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+}
+
+.movieListWatchlistBtn:hover:not(:disabled) {
+    transform: scale(1.1) !important;
+    background: white !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+}
+
+.movieListWatchlistBtn:active:not(:disabled) {
+    transform: scale(0.95) !important;
+}
+
+.movieListWatchlistBtn:disabled {
+    opacity: 0.7 !important;
+    cursor: not-allowed !important;
+    transform: none !important;
+}
+
+.movieListWatchlistBtn.added {
+    color: #6366f1 !important;
+    background: rgba(99, 102, 241, 0.25) !important;
+    backdrop-filter: blur(10px) !important;
+    -webkit-backdrop-filter: blur(10px) !important;
+    animation: pulse 0.5s ease !important;
+}
+
+.movieListWatchlistBtn.added:hover:not(:disabled) {
+    background: rgba(99, 102, 241, 0.35) !important;
+    color: #4f46e5 !important;
+}
+
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.15);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* Ensure poster container and image wrapper can have absolute positioned children */
+.FullstoryFormLeft {
+    position: relative !important;
+}
+
+.FullstoryFormLeft img {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+}
+
+/* Wrapper for poster image */
+.movieListPosterWrapper {
+    position: relative !important;
+    display: inline-block !important;
+    margin-bottom: 0 !important;
+}
+
+/* Poster containers for different sites */
+.page__poster {
+    position: relative !important;
+}
+
+.page__poster img {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+}
+
+.b-sidecover {
+    position: relative !important;
+}
+
+.b-sidecover img {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+}
+
+/* Poster containers for kinopoisk.ru */
+.styles_posterContainer__DBJVw {
+    position: relative !important;
+}
+
+.styles_root__d_IJR {
+    position: relative !important;
+}
+
+.styles_posterContainer__DBJVw img,
+.styles_root__d_IJR img {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+}
+
+/* Poster containers for imdb.com */
+.ipc-poster {
+    position: relative !important;
+}
+
+.ipc-poster img {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+}
+
+/* Poster containers for kinogo.inc */
+.fullimg {
+    position: relative !important;
+}
+

@@ -1,19 +1,26 @@
 {
   "manifest_version": 3,
   "name": "Movie Rating Extension",
-  "version": "1.0.8",
+  "version": "1.1.0",
   "description": "Rate and discover movies with community ratings and Kinopoisk integration",
   "permissions": [
     "identity",
     "tabs",
-    "storage"
+    "storage",
+    "scripting"
   ],
   "host_permissions": [
     "https://*.firebaseio.com/*",
     "https://*.googleapis.com/*",
     "https://api.kinopoisk.dev/*",
     "https://firebasestorage.googleapis.com/*",
-    "https://*.firebasestorage.app/*"
+    "https://*.firebasestorage.app/*",
+    "https://ex-fs.net/*",
+    "https://zfilms-hd.by/*",
+    "https://hdrezka.co/*",
+    "https://www.kinopoisk.ru/*",
+    "https://www.imdb.com/*",
+    "https://kinogo.inc/*"
   ],
   "oauth2": {
     "client_id": "532518163829-t60hfab5q5vinfdhpci6ctli17kb5thv.apps.googleusercontent.com",
@@ -58,12 +65,53 @@
         "src/config/*.js",
         "src/utils/*.js",
         "src/components/*.js",
-        "icons/*.png"
+        "icons/*.png",
+        "libs/*.js",
+        "firestore.js",
+        "content-scripts/*.js"
       ],
       "matches": ["<all_urls>"]
     }
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
-  }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://ex-fs.net/*"],
+      "js": ["content-scripts/ex-fs-watchlist.js"],
+      "css": ["src/styles/ex-fs-watchlist.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://zfilms-hd.by/*"],
+      "js": ["content-scripts/zfilms-watchlist.js"],
+      "css": ["src/styles/ex-fs-watchlist.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://hdrezka.co/*"],
+      "js": ["content-scripts/hdrezka-watchlist.js"],
+      "css": ["src/styles/ex-fs-watchlist.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.kinopoisk.ru/*"],
+      "js": ["content-scripts/kinopoisk-watchlist.js"],
+      "css": ["src/styles/ex-fs-watchlist.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.imdb.com/*"],
+      "js": ["content-scripts/imdb-watchlist.js"],
+      "css": ["src/styles/ex-fs-watchlist.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://kinogo.inc/*"],
+      "js": ["content-scripts/kinogo-watchlist.js"],
+      "css": ["src/styles/ex-fs-watchlist.css"],
+      "run_at": "document_idle"
+    }
+  ]
 }
