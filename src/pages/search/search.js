@@ -146,7 +146,7 @@ class SearchManager {
         if (this.elements.movieDetailBtn) {
             this.elements.movieDetailBtn.addEventListener('click', () => {
                 if (this.selectedMovie) {
-                    window.location.href = `search.html?movieId=${this.selectedMovie.kinopoiskId}`;
+                    window.location.href = chrome.runtime.getURL(`src/pages/search/search.html?movieId=${this.selectedMovie.kinopoiskId}`);
                 }
             });
         }
@@ -1181,7 +1181,7 @@ class SearchManager {
                 e.stopPropagation();
                 const userId = usernameEl.getAttribute('data-user-id');
                 if (userId) {
-                    const url = chrome.runtime.getURL(`profile.html?userId=${userId}`);
+                    const url = chrome.runtime.getURL(`src/pages/profile/profile.html?userId=${userId}`);
                     window.location.href = url;
                 }
             });
@@ -2028,7 +2028,7 @@ document.addEventListener('click', (e) => {
         const movieId = e.target.dataset.movieId;
         
         // Navigate to movie detail page with movieId parameter
-        window.location.href = `search.html?movieId=${movieId}`;
+        window.location.href = chrome.runtime.getURL(`src/pages/search/search.html?movieId=${movieId}`);
     }
     
     if (e.target.classList.contains('rate-movie-btn')) {

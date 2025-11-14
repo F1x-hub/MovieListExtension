@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Collection - Movie Rating Extension</title>
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="../../shared/styles/common.css">
+    <link rel="stylesheet" href="../../shared/styles/components.css">
+    <link rel="stylesheet" href="../../shared/styles/navigation.css">
+    <link rel="stylesheet" href="../../shared/styles/router.css">
+    <link rel="stylesheet" href="../../shared/styles/search.css">
+    <link rel="stylesheet" href="../../shared/styles/collection.css">
+    
+    <!-- Firebase -->
+    <script src="../../../libs/firebase-app-compat.js"></script>
+    <script src="../../../libs/firebase-auth-compat.js"></script>
+    <script src="../../../libs/firebase-firestore-compat.js"></script>
+    
+    <!-- Services -->
+    <script src="../../shared/firestore.js"></script>
+    <script src="../../shared/config/kinopoisk.config.js"></script>
+    <script src="../../shared/services/RatingsCacheService.js"></script>
+    <script src="../../shared/services/RatingService.js"></script>
+    <script src="../../shared/services/MovieCacheService.js"></script>
+    <script src="../../shared/services/KinopoiskService.js"></script>
+    <script src="../../shared/services/UserService.js"></script>
+    <script src="../../shared/services/WatchlistService.js"></script>
+    <script src="../../shared/services/FavoriteService.js"></script>
+    <script src="../../shared/services/CollectionService.js"></script>
+    <script src="../../shared/utils/Utils.js"></script>
+    
+    <!-- Components -->
+    <script src="../../shared/components/Navigation.js"></script>
+    <script src="../../shared/components/Router.js"></script>
+</head>
+<body>
+    <!-- Navigation will be inserted here by Navigation.js -->
+    
+    <!-- Main Content -->
+    <main class="collection-main">
+        <div class="collection-container">
+            <!-- Page Header -->
+            <div class="collection-header" id="collectionHeader">
+                <div class="collection-header-content">
+                    <div class="collection-icon-title">
+                        <span class="collection-icon" id="collectionIcon">🎬</span>
+                        <h1 class="collection-title" id="collectionTitle">Loading...</h1>
+                    </div>
+                    <div class="collection-meta">
+                        <span class="collection-count" id="collectionCount">0 фильмов в коллекции</span>
+                    </div>
+                    <div class="collection-actions">
+                        <button class="collection-action-btn edit-btn" id="editCollectionBtn" title="Edit Collection">
+                            ✏️ Редактировать
+                        </button>
+                        <button class="collection-action-btn delete-btn" id="deleteCollectionBtn" title="Delete Collection">
+                            🗑️ Удалить
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filters Section -->
+            <div class="filters-section">
+                <div class="filters-header">
+                    <h3 class="filters-title">Filters & Search</h3>
+                    <button class="clear-filters-btn" id="clearFiltersBtn">
+                        <span>🗑️</span>
+                        Clear Filters
+                    </button>
+                </div>
+
+                <div class="filters-grid">
+                    <!-- Search -->
+                    <div class="filter-group">
+                        <label class="filter-label" id="searchLabel">Search in Collection</label>
+                        <div class="search-input-wrapper">
+                            <input type="text" class="search-input" id="collectionSearchInput" placeholder="Поиск в коллекции...">
+                            <span class="search-icon">🔍</span>
+                        </div>
+                    </div>
+
+                    <!-- Sort Options -->
+                    <div class="filter-group">
+                        <label class="filter-label">Sort By</label>
+                        <div class="custom-dropdown" data-dropdown="sortFilter">
+                            <button type="button" class="dropdown-trigger" id="sortFilterTrigger">
+                                <span class="dropdown-value">Date Added (Newest)</span>
+                                <span class="dropdown-arrow">▼</span>
+                            </button>
+                            <div class="dropdown-list" id="sortFilterList">
+                                <div class="dropdown-option" data-value="date-desc">Date Added (Newest)</div>
+                                <div class="dropdown-option" data-value="date-asc">Date Added (Oldest)</div>
+                                <div class="dropdown-option" data-value="title-asc">Title (A-Z)</div>
+                                <div class="dropdown-option" data-value="title-desc">Title (Z-A)</div>
+                                <div class="dropdown-option" data-value="rating-desc">My Rating (High to Low)</div>
+                                <div class="dropdown-option" data-value="rating-asc">My Rating (Low to High)</div>
+                                <div class="dropdown-option" data-value="year-desc">Year (Newest)</div>
+                                <div class="dropdown-option" data-value="year-asc">Year (Oldest)</div>
+                            </div>
+                            <select class="filter-select-hidden" id="sortFilter">
+                                <option value="date-desc">Date Added (Newest)</option>
+                                <option value="date-asc">Date Added (Oldest)</option>
+                                <option value="title-asc">Title (A-Z)</option>
+                                <option value="title-desc">Title (Z-A)</option>
+                                <option value="rating-desc">My Rating (High to Low)</option>
+                                <option value="rating-asc">My Rating (Low to High)</option>
+                                <option value="year-desc">Year (Newest)</option>
+                                <option value="year-asc">Year (Oldest)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results Info -->
+            <div class="results-info" id="resultsInfo">
+                <span class="results-count" id="resultsCount">Loading...</span>
+            </div>
+
+            <!-- Loading State -->
+            <div class="loading-section" id="loadingSection">
+                <div class="loading-spinner"></div>
+                <p>Loading collection...</p>
+            </div>
+
+            <!-- Movies Grid -->
+            <div class="movies-grid" id="moviesGrid">
+                <!-- Movie cards will be inserted here -->
+            </div>
+
+            <!-- Empty State -->
+            <div class="empty-state" id="emptyState" style="display: none;">
+                <div class="empty-state-icon" id="emptyStateIcon">🎬</div>
+                <h3 class="empty-state-title">Ваша коллекция пуста</h3>
+                <p class="empty-state-text" id="emptyStateText">Начните добавлять фильмы в коллекцию</p>
+                <button class="empty-state-btn" onclick="window.navigation?.navigateToPage('search')">
+                    Перейти к поиску
+                </button>
+            </div>
+
+            <!-- Error State -->
+            <div class="error-state" id="errorState" style="display: none;">
+                <div class="error-state-icon">⚠️</div>
+                <h3 class="error-state-title">Something went wrong</h3>
+                <p class="error-state-text" id="errorMessage">Failed to load collection</p>
+                <button class="error-state-btn" id="retryBtn">Try Again</button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteCollectionModal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Удалить коллекцию?</h3>
+                <button class="modal-close" id="deleteModalClose">×</button>
+            </div>
+            <div class="modal-body">
+                <p>Вы уверены, что хотите удалить коллекцию "<span id="deleteCollectionName"></span>"?</p>
+                <p style="color: #94a3b8; font-size: 14px; margin-top: 8px;">Это действие нельзя отменить. Фильмы не будут удалены из других коллекций.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancelDeleteBtn">Отмена</button>
+                <button class="btn btn-danger" id="confirmDeleteBtn">Удалить коллекцию</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Script -->
+    <script src="collection.js"></script>
+</body>
+</html>

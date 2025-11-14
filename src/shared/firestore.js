@@ -53,7 +53,7 @@ class FirebaseManager {
                 };
 
                 // If user is authenticated, get and store the auth token
-                if (user) {
+                if (user && typeof user.getIdToken === 'function') {
                     try {
                         const token = await user.getIdToken();
                         const tokenResult = await user.getIdTokenResult();
@@ -66,7 +66,7 @@ class FirebaseManager {
                         console.error('[FirebaseManager] Error getting auth token:', tokenError);
                     }
                 } else {
-                    // Clear token if user is logged out
+                    // Clear token if user is logged out or user object is invalid
                     storageData.authToken = null;
                     storageData.authTokenExpiry = null;
                 }

@@ -5,10 +5,10 @@ console.log('[MovieList Extension] Content script loaded for hdrezka.co');
         chrome.runtime.getURL('libs/firebase-app-compat.js'),
         chrome.runtime.getURL('libs/firebase-auth-compat.js'),
         chrome.runtime.getURL('libs/firebase-firestore-compat.js'),
-        chrome.runtime.getURL('src/config/kinopoisk.config.js'),
-        chrome.runtime.getURL('src/services/KinopoiskService.js'),
-        chrome.runtime.getURL('firestore.js'),
-        chrome.runtime.getURL('src/services/WatchlistService.js')
+        chrome.runtime.getURL('src/shared/config/kinopoisk.config.js'),
+        chrome.runtime.getURL('src/shared/services/KinopoiskService.js'),
+        chrome.runtime.getURL('src/shared/firestore.js'),
+        chrome.runtime.getURL('src/shared/services/WatchlistService.js')
     ];
     const injectedScriptUrl = chrome.runtime.getURL('content-scripts/hdrezka-watchlist-injected.js');
 

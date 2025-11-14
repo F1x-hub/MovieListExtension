@@ -56,9 +56,9 @@ class Router {
         // Determine current route based on URL
         const path = window.location.pathname;
         
-        if (path.includes('search.html')) {
+        if (path.includes('search.html') || path.includes('src/pages/search/')) {
             this.currentRoute = 'search';
-        } else if (path.includes('ratings.html')) {
+        } else if (path.includes('ratings.html') || path.includes('src/pages/ratings/')) {
             this.currentRoute = 'ratings';
         } else {
             this.currentRoute = 'search'; // Default to search
@@ -118,11 +118,11 @@ class Router {
         
         switch (routeName) {
             case 'search':
-                return `${baseUrl}/search.html`;
+                return chrome.runtime.getURL('src/pages/search/search.html');
             case 'ratings':
-                return `${baseUrl}/ratings.html`;
+                return chrome.runtime.getURL('src/pages/ratings/ratings.html');
             default:
-                return `${baseUrl}/search.html`;
+                return chrome.runtime.getURL('src/pages/search/search.html');
         }
     }
 
@@ -229,7 +229,7 @@ class Router {
     // Check if router is available
     static isAvailable() {
         // Router is available on extension pages but not in popup
-        return !window.location.pathname.includes('popup.html');
+        return !window.location.pathname.includes('popup.html') && !window.location.pathname.includes('src/popup/');
     }
 }
 

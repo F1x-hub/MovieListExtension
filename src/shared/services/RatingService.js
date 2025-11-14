@@ -283,6 +283,34 @@ class RatingService {
     }
 
     /**
+     * Get user's ratings by movie IDs
+     * @param {string} userId - User ID
+     * @param {Array<number>} movieIds - Array of movie IDs
+     * @returns {Promise<Array>} - User's ratings for specified movies
+     */
+    async getUserRatingsByMovieIds(userId, movieIds) {
+        try {
+            if (!userId || !movieIds || movieIds.length === 0) {
+                return [];
+            }
+
+            const ratings = [];
+            
+            for (const movieId of movieIds) {
+                const rating = await this.getRating(userId, movieId);
+                if (rating) {
+                    ratings.push(rating);
+                }
+            }
+
+            return ratings;
+        } catch (error) {
+            console.error('Error getting user ratings by movie IDs:', error);
+            return [];
+        }
+    }
+
+    /**
      * Get user's ratings
      * @param {string} userId - User ID
      * @param {number} limit - Maximum number of ratings

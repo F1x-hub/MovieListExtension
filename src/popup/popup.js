@@ -389,23 +389,23 @@ class PopupManager {
         
         if (query) {
             const encodedQuery = encodeURIComponent(query);
-            const url = chrome.runtime.getURL(`search.html?query=${encodedQuery}`);
+            const url = chrome.runtime.getURL(`src/pages/search/search.html?query=${encodedQuery}`);
             chrome.tabs.create({ url: url });
         } else {
-            chrome.tabs.create({ url: chrome.runtime.getURL('search.html') });
+            chrome.tabs.create({ url: chrome.runtime.getURL('src/pages/search/search.html') });
         }
     }
 
     openMovieDetails(movieId) {
         // For now, open in advanced search page with movie ID
         chrome.tabs.create({ 
-            url: chrome.runtime.getURL(`search.html?movieId=${movieId}`) 
+            url: chrome.runtime.getURL(`src/pages/search/search.html?movieId=${movieId}`) 
         });
     }
 
     openRatingsPage() {
         chrome.tabs.create({ 
-            url: chrome.runtime.getURL('ratings.html') 
+            url: chrome.runtime.getURL('src/pages/ratings/ratings.html') 
         });
     }
 
@@ -712,7 +712,7 @@ class PopupManager {
             }
             if (movieId) {
                 chrome.tabs.create({ 
-                    url: chrome.runtime.getURL(`search.html?movieId=${movieId}`) 
+                    url: chrome.runtime.getURL(`src/pages/search/search.html?movieId=${movieId}`) 
                 });
             }
         });
