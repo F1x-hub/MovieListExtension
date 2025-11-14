@@ -7,6 +7,7 @@ class Navigation {
         this.currentPage = currentPage;
         this.user = null;
         this.authCheckInterval = null;
+        this.collectionService = null;
         this.init();
     }
 
@@ -14,6 +15,25 @@ class Navigation {
         this.render();
         this.setupEventListeners();
         this.setupAuthListener();
+        
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                this.ensureCollectionsLoaded();
+            });
+        } else {
+            this.ensureCollectionsLoaded();
+        }
+    }
+
+    ensureCollectionsLoaded() {
+        if (typeof CollectionService !== 'undefined') {
+            if (!this.collectionService) {
+                this.collectionService = new CollectionService();
+            }
+            this.loadCustomCollections();
+        } else {
+            setTimeout(() => this.ensureCollectionsLoaded(), 200);
+        }
     }
 
     render() {
@@ -22,7 +42,7 @@ class Navigation {
                 <div class="nav-container">
                     <!-- Logo Section -->
                     <a href="#" class="nav-logo" id="navLogo">
-                        <img src="/icons/icon48.png" alt="Movie Ratings" class="nav-logo-image">
+                        <img src="${chrome.runtime.getURL('icons/icon48.png')}" alt="Movie Ratings" class="nav-logo-image">
                     </a>
 
                     <!-- Mobile Toggle -->
@@ -59,6 +79,13 @@ class Navigation {
                                     <span>Favorites</span>
                                     <span class="count" id="favoritesCount">(0)</span>
                                 </div>
+                                <div class="dropdown-divider"></div>
+                                <div class="dropdown-section-header">Custom Collections</div>
+                                <div class="custom-collections-list" id="customCollectionsList"></div>
+                                <div class="dropdown-item create-collection-item" id="createCollectionBtn">
+                                    <span class="dropdown-icon">➕</span>
+                                    <span>Create Collection</span>
+                                </div>
                             </div>
                         </div>
                     </nav>
@@ -68,7 +95,7 @@ class Navigation {
                         <!-- User Profile Dropdown -->
                         <div class="nav-user-profile" id="navUserProfile" style="display: none;">
                             <button class="nav-user-trigger" id="navUserTrigger">
-                                <img src="/icons/icon48.png" alt="User" class="nav-user-avatar" id="navUserAvatar">
+                                <img src="${chrome.runtime.getURL('icons/icon48.png')}" alt="User" class="nav-user-avatar" id="navUserAvatar">
                                 <span class="nav-user-name" id="navUserName">User</span>
                                 <span class="nav-dropdown-arrow">▼</span>
                             </button>
@@ -127,6 +154,8 @@ class Navigation {
 
         // Collection dropdown functionality
         this.setupCollectionDropdown();
+        this.initializeCollectionService();
+        this.setupCollectionStorageListener();
 
         // Logo click - go to popup/home
         const navLogo = document.getElementById('navLogo');
@@ -323,6 +352,22 @@ class Navigation {
             });
         });
 
+        // Create collection button
+        const createCollectionBtn = document.getElementById('createCollectionBtn');
+        if (createCollectionBtn) {
+            createCollectionBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.showCollectionModal();
+                setTimeout(() => {
+                    collectionDropdown.classList.remove('open');
+                    collectionLink.classList.remove('dropdown-open');
+                    isOpen = false;
+                    isHovering = false;
+                }, 100);
+            });
+        }
+
         // Also handle click on the main link
         collectionLink.addEventListener('click', (e) => {
             // If dropdown is open, don't navigate immediately
@@ -335,6 +380,619 @@ class Navigation {
 
         // Update watchlist count
         this.updateWatchlistCount();
+
+        // Close submenus when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.collection-submenu') && !e.target.closest('.collection-menu-button')) {
+                this.closeAllSubmenus();
+            }
+        });
+    }
+
+    initializeCollectionService() {
+        if (typeof CollectionService !== 'undefined') {
+            this.collectionService = new CollectionService();
+            this.loadCustomCollections();
+        } else {
+            setTimeout(() => {
+                if (typeof CollectionService !== 'undefined') {
+                    this.collectionService = new CollectionService();
+                    this.loadCustomCollections();
+                } else {
+                    setTimeout(() => {
+                        if (typeof CollectionService !== 'undefined') {
+                            this.collectionService = new CollectionService();
+                            this.loadCustomCollections();
+                        }
+                    }, 500);
+                }
+            }, 100);
+        }
+    }
+
+    setupCollectionStorageListener() {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+            chrome.storage.onChanged.addListener((changes, namespace) => {
+                if (namespace === 'sync' && changes.movieCollections) {
+                    this.loadCustomCollections();
+                    
+                    if (typeof window.collectionPage !== 'undefined' && window.collectionPage.collectionId) {
+                        const collectionData = changes.movieCollections.newValue || [];
+                        const currentCollection = collectionData.find(c => c.id === window.collectionPage.collectionId);
+                        
+                        if (currentCollection && window.collectionPage.loadCollection) {
+                            window.collectionPage.loadCollection();
+                        } else if (!currentCollection && window.collectionPage) {
+                            window.location.href = chrome.runtime.getURL('src/pages/ratings/ratings.html');
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    async loadCustomCollections() {
+        if (!this.collectionService) {
+            if (typeof CollectionService !== 'undefined') {
+                this.collectionService = new CollectionService();
+            } else {
+                return;
+            }
+        }
+
+        try {
+            const collections = await this.collectionService.getCollections();
+            this.renderCustomCollections(collections);
+        } catch (error) {
+            console.error('Error loading custom collections:', error);
+        }
+    }
+
+    renderCustomCollections(collections) {
+        const listContainer = document.getElementById('customCollectionsList');
+        if (!listContainer) return;
+
+        listContainer.innerHTML = '';
+
+        if (collections.length === 0) {
+            const emptyState = document.createElement('div');
+            emptyState.className = 'dropdown-empty-state';
+            emptyState.textContent = 'No collections yet';
+            listContainer.appendChild(emptyState);
+            return;
+        }
+
+        collections.forEach(collection => {
+            const item = document.createElement('div');
+            item.className = 'dropdown-item custom-collection-item';
+            item.setAttribute('data-collection-id', collection.id);
+            
+            item.innerHTML = `
+                <div class="collection-info">
+                    <span class="dropdown-icon">${collection.icon}</span>
+                    <span class="collection-name">${this.escapeHtml(collection.name)}</span>
+                    <span class="count">(${collection.movieIds?.length || 0})</span>
+                </div>
+                <button class="collection-menu-button" data-collection-id="${collection.id}" title="Menu">
+                    <span>⋮</span>
+                </button>
+            `;
+            
+            const submenu = document.createElement('div');
+            submenu.className = 'collection-submenu';
+            submenu.id = `submenu-${collection.id}`;
+            submenu.style.display = 'none';
+            submenu.innerHTML = `
+                <div class="submenu-item" data-action="edit" data-collection-id="${collection.id}">
+                    <span>✏️</span> Редактировать
+                </div>
+                <div class="submenu-item delete" data-action="delete" data-collection-id="${collection.id}">
+                    <span>🗑️</span> Удалить
+                </div>
+            `;
+            document.body.appendChild(submenu);
+
+            const collectionInfo = item.querySelector('.collection-info');
+            if (collectionInfo) {
+                collectionInfo.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.navigateToCollection(collection.id);
+                });
+            }
+
+            const menuButton = item.querySelector('.collection-menu-button');
+            if (menuButton) {
+                menuButton.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    this.toggleCollectionSubmenu(e, collection.id);
+                });
+            }
+
+            const editItem = submenu.querySelector('[data-action="edit"]');
+            if (editItem) {
+                editItem.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    this.closeAllSubmenus();
+                    this.editCollection(collection);
+                });
+            }
+
+            const deleteItem = submenu.querySelector('[data-action="delete"]');
+            if (deleteItem) {
+                deleteItem.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    this.closeAllSubmenus();
+                    this.deleteCollection(collection.id);
+                });
+            }
+
+            listContainer.appendChild(item);
+        });
+    }
+
+    navigateToCollection(collectionId) {
+        const url = chrome.runtime.getURL(`src/pages/collection/collection.html?id=${collectionId}`);
+        if (window.location.pathname.includes('popup.html')) {
+            chrome.tabs.create({ url });
+        } else {
+            window.location.href = url;
+        }
+    }
+
+    toggleCollectionSubmenu(event, collectionId) {
+        event.stopPropagation();
+        
+        const submenu = document.getElementById(`submenu-${collectionId}`);
+        if (!submenu) return;
+        
+        const isOpen = submenu.style.display === 'block';
+        
+        this.closeAllSubmenus();
+        
+        if (!isOpen) {
+            submenu.style.display = 'block';
+            this.positionSubmenu(submenu);
+        }
+    }
+
+    closeAllSubmenus() {
+        document.querySelectorAll('.collection-submenu').forEach(menu => {
+            menu.style.display = 'none';
+        });
+    }
+    
+    cleanupSubmenus() {
+        document.querySelectorAll('.collection-submenu').forEach(menu => {
+            if (menu.parentNode) {
+                menu.parentNode.removeChild(menu);
+            }
+        });
+    }
+
+    positionSubmenu(submenu) {
+        const collectionId = submenu.id.replace('submenu-', '');
+        const item = document.querySelector(`.custom-collection-item[data-collection-id="${collectionId}"]`);
+        if (!item) return;
+        
+        const button = item.querySelector('.collection-menu-button');
+        if (!button) return;
+        
+        const dropdown = item.closest('.collection-dropdown');
+        if (!dropdown) return;
+        
+        const itemRect = item.getBoundingClientRect();
+        const dropdownRect = dropdown.getBoundingClientRect();
+        
+        const calculatedTop = itemRect.top;
+        const calculatedLeft = dropdownRect.right + 4;
+        
+        submenu.style.position = 'fixed';
+        submenu.style.top = `${calculatedTop}px`;
+        submenu.style.left = `${calculatedLeft}px`;
+        submenu.style.right = 'auto';
+        submenu.style.marginLeft = '0';
+        submenu.style.marginRight = '0';
+        
+        requestAnimationFrame(() => {
+            const submenuRect = submenu.getBoundingClientRect();
+            
+            if (submenuRect.right > window.innerWidth) {
+                const newLeft = dropdownRect.left - submenuRect.width - 4;
+                submenu.style.left = `${newLeft}px`;
+                submenu.style.right = 'auto';
+            }
+        });
+    }
+
+    async editCollection(collection) {
+        this.showCollectionModal(collection);
+    }
+
+    async deleteCollection(collectionId) {
+        if (!confirm('Are you sure you want to delete this collection? Movies will not be removed.')) {
+            return;
+        }
+
+        try {
+            if (!this.collectionService) {
+                this.initializeCollectionService();
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+
+            await this.collectionService.deleteCollection(collectionId);
+            await this.loadCustomCollections();
+            
+            if (typeof Utils !== 'undefined' && Utils.showToast) {
+                Utils.showToast('Collection deleted', 'success');
+            }
+        } catch (error) {
+            console.error('Error deleting collection:', error);
+            if (typeof Utils !== 'undefined' && Utils.showToast) {
+                Utils.showToast('Failed to delete collection', 'error');
+            }
+        }
+    }
+
+    showCollectionModal(collection = null) {
+        const modal = document.createElement('div');
+        modal.className = 'collection-modal-overlay';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        `;
+
+        const isEdit = !!collection;
+        const defaultIcons = ['🎬', '🎭', '🎨', '🎪', '🎯', '🎲', '🎸', '🎺', '🎻', '🎤', '🎧', '🎮', '🎰', '🎱', '🎳', '🎴', '🎵', '🎶', '🎼', '🎹'];
+
+        modal.innerHTML = `
+            <div class="collection-modal-content" style="
+                background: #1e293b;
+                padding: 24px;
+                border-radius: 12px;
+                max-width: 500px;
+                width: 90%;
+                color: #e2e8f0;
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+            ">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+                    <h3 style="margin: 0; font-size: 20px;">${isEdit ? 'Edit Collection' : 'Create Collection'}</h3>
+                    <button class="modal-close-btn" style="
+                        background: none;
+                        border: none;
+                        color: #94a3b8;
+                        font-size: 24px;
+                        cursor: pointer;
+                        padding: 0;
+                        width: 32px;
+                        height: 32px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                    ">×</button>
+                </div>
+                <form id="collectionForm" style="display: flex; flex-direction: column; gap: 16px;">
+                    <div>
+                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">Collection Name</label>
+                        <input type="text" id="collectionNameInput" 
+                               value="${collection ? this.escapeHtml(collection.name) : ''}" 
+                               placeholder="e.g., Комедии 90-х, Аниме 2025"
+                               maxlength="50"
+                               style="
+                                   width: 100%;
+                                   padding: 10px 12px;
+                                   border-radius: 8px;
+                                   border: 1px solid #334155;
+                                   background: #0f172a;
+                                   color: #e2e8f0;
+                                   font-size: 14px;
+                               ">
+                        <div style="margin-top: 4px; font-size: 12px; color: #94a3b8;">
+                            <span id="nameCharCount">0</span>/50 characters
+                        </div>
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">Icon</label>
+                        <div style="display: flex; flex-wrap: wrap; gap: 8px; max-height: 150px; overflow-y: auto; padding: 8px; background: #0f172a; border-radius: 8px;">
+                            ${defaultIcons.map(icon => `
+                                <button type="button" class="icon-select-btn ${collection && collection.icon === icon ? 'selected' : ''}" 
+                                        data-icon="${icon}" 
+                                        style="
+                                            width: 40px;
+                                            height: 40px;
+                                            font-size: 20px;
+                                            border: 2px solid ${collection && collection.icon === icon ? '#6366f1' : '#334155'};
+                                            background: ${collection && collection.icon === icon ? '#1e293b' : 'transparent'};
+                                            border-radius: 8px;
+                                            cursor: pointer;
+                                            transition: all 0.2s;
+                                        ">${icon}</button>
+                            `).join('')}
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px;">
+                        <button type="button" id="cancelCollectionBtn" style="
+                            background: #334155;
+                            color: #e2e8f0;
+                            border: none;
+                            padding: 10px 16px;
+                            border-radius: 8px;
+                            cursor: pointer;
+                            font-weight: 500;
+                        ">Cancel</button>
+                        <button type="submit" id="saveCollectionBtn" style="
+                            background: #6366f1;
+                            color: #fff;
+                            border: none;
+                            padding: 10px 16px;
+                            border-radius: 8px;
+                            cursor: pointer;
+                            font-weight: 600;
+                        ">${isEdit ? 'Save Changes' : 'Create'}</button>
+                    </div>
+                </form>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        const nameInput = modal.querySelector('#collectionNameInput');
+        const charCount = modal.querySelector('#nameCharCount');
+        let selectedIcon = collection ? collection.icon : defaultIcons[0];
+
+        nameInput.addEventListener('input', () => {
+            charCount.textContent = nameInput.value.length;
+        });
+        charCount.textContent = nameInput.value.length;
+
+        const iconButtons = modal.querySelectorAll('.icon-select-btn');
+        iconButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                iconButtons.forEach(b => {
+                    b.style.borderColor = '#334155';
+                    b.style.background = 'transparent';
+                    b.classList.remove('selected');
+                });
+                btn.style.borderColor = '#6366f1';
+                btn.style.background = '#1e293b';
+                btn.classList.add('selected');
+                selectedIcon = btn.dataset.icon;
+            });
+        });
+
+        const close = () => modal.remove();
+        modal.querySelector('.modal-close-btn').addEventListener('click', close);
+        modal.querySelector('#cancelCollectionBtn').addEventListener('click', close);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) close();
+        });
+
+        modal.querySelector('#collectionForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = nameInput.value.trim();
+
+            if (!name) {
+                alert('Collection name is required');
+                return;
+            }
+
+            try {
+                if (!this.collectionService) {
+                    this.initializeCollectionService();
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+
+                if (isEdit) {
+                    await this.collectionService.updateCollection(collection.id, {
+                        name: name,
+                        icon: selectedIcon
+                    });
+                    if (typeof Utils !== 'undefined' && Utils.showToast) {
+                        Utils.showToast('Collection updated', 'success');
+                    }
+                } else {
+                    await this.collectionService.createCollection(name, selectedIcon);
+                    if (typeof Utils !== 'undefined' && Utils.showToast) {
+                        Utils.showToast('Collection created', 'success');
+                    }
+                }
+
+                await this.loadCustomCollections();
+                
+                if (typeof window.navigation !== 'undefined' && window.navigation.loadCustomCollections) {
+                    await window.navigation.loadCustomCollections();
+                }
+                
+                if (typeof window.collectionPage !== 'undefined' && window.collectionPage.loadCollection) {
+                    await window.collectionPage.loadCollection();
+                }
+                
+                close();
+            } catch (error) {
+                console.error('Error saving collection:', error);
+                alert(error.message || 'Failed to save collection');
+            }
+        });
+    }
+
+    async showCollectionSelector(movieId, buttonElement) {
+        if (!this.collectionService) {
+            this.initializeCollectionService();
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        if (!this.collectionService) {
+            if (typeof Utils !== 'undefined' && Utils.showToast) {
+                Utils.showToast('Collection service not available', 'error');
+            }
+            return;
+        }
+
+        const collections = await this.collectionService.getCollections();
+        const movieCollections = await this.collectionService.getCollectionsForMovie(movieId);
+
+        const modal = document.createElement('div');
+        modal.className = 'collection-selector-modal';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        `;
+
+        modal.innerHTML = `
+            <div style="
+                background: #1e293b;
+                padding: 24px;
+                border-radius: 12px;
+                max-width: 500px;
+                width: 90%;
+                color: #e2e8f0;
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+                max-height: 80vh;
+                overflow-y: auto;
+            ">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+                    <h3 style="margin: 0; font-size: 20px;">Add to Collections</h3>
+                    <button class="modal-close-btn" style="
+                        background: none;
+                        border: none;
+                        color: #94a3b8;
+                        font-size: 24px;
+                        cursor: pointer;
+                        padding: 0;
+                        width: 32px;
+                        height: 32px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                    ">×</button>
+                </div>
+                ${collections.length === 0 ? `
+                    <div style="text-align: center; padding: 20px; color: #94a3b8;">
+                        <p>No collections yet. Create one from the navigation menu!</p>
+                    </div>
+                ` : `
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        ${collections.map(collection => {
+                            const isInCollection = movieCollections.some(c => c.id === collection.id);
+                            return `
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    gap: 12px;
+                                    padding: 12px;
+                                    border-radius: 8px;
+                                    background: ${isInCollection ? '#1e3a5f' : '#0f172a'};
+                                    cursor: pointer;
+                                    transition: background 0.2s;
+                                ">
+                                    <input type="checkbox" 
+                                           ${isInCollection ? 'checked' : ''} 
+                                           data-collection-id="${collection.id}"
+                                           style="width: 18px; height: 18px; cursor: pointer;">
+                                    <span style="font-size: 20px;">${collection.icon}</span>
+                                    <span style="flex: 1; font-weight: 500;">${this.escapeHtml(collection.name)}</span>
+                                    <span style="color: #94a3b8; font-size: 12px;">(${collection.movieIds?.length || 0})</span>
+                                </label>
+                            `;
+                        }).join('')}
+                    </div>
+                `}
+                <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px;">
+                    <button type="button" id="cancelCollectionSelectorBtn" style="
+                        background: #334155;
+                        color: #e2e8f0;
+                        border: none;
+                        padding: 10px 16px;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        font-weight: 500;
+                    ">Close</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        const close = () => modal.remove();
+        modal.querySelector('.modal-close-btn').addEventListener('click', close);
+        modal.querySelector('#cancelCollectionSelectorBtn').addEventListener('click', close);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) close();
+        });
+
+        const checkboxes = modal.querySelectorAll('input[type="checkbox"]');
+        checkboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', async (e) => {
+                const collectionId = checkbox.dataset.collectionId;
+                const isChecked = checkbox.checked;
+
+                try {
+                    if (isChecked) {
+                        await this.collectionService.addMovieToCollection(collectionId, movieId);
+                    } else {
+                        await this.collectionService.removeMovieFromCollection(collectionId, movieId);
+                    }
+
+                    await this.loadCustomCollections();
+                    
+                    if (typeof window.collectionPage !== 'undefined' && window.collectionPage.collectionId === collectionId) {
+                        await window.collectionPage.loadCollection();
+                    }
+
+                    const label = checkbox.closest('label');
+                    if (isChecked) {
+                        label.style.background = '#1e3a5f';
+                    } else {
+                        label.style.background = '#0f172a';
+                    }
+
+                    const countSpan = label.querySelector('span:last-child');
+                    const updatedCollections = await this.collectionService.getCollections();
+                    const collection = updatedCollections.find(c => c.id === collectionId);
+                    if (countSpan && collection) {
+                        countSpan.textContent = `(${collection.movieIds?.length || 0})`;
+                    }
+
+                    if (typeof Utils !== 'undefined' && Utils.showToast) {
+                        Utils.showToast(
+                            isChecked ? 'Фильм добавлен в коллекцию' : 'Фильм удален из коллекции',
+                            'success'
+                        );
+                    }
+                } catch (error) {
+                    console.error('Error toggling movie in collection:', error);
+                    checkbox.checked = !isChecked;
+                    if (typeof Utils !== 'undefined' && Utils.showToast) {
+                        Utils.showToast('Failed to update collection', 'error');
+                    }
+                }
+            });
+        });
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     async updateWatchlistCount() {
@@ -397,7 +1055,8 @@ class Navigation {
         // Listen for auth state changes via firebaseManager
         if (typeof firebaseManager !== 'undefined') {
             console.log('Navigation: Firebase Manager available, setting up auth listener');
-            firebaseManager.onAuthStateChanged((user) => {
+            window.addEventListener('authStateChanged', (e) => {
+                const user = e.detail.user;
                 console.log('Navigation: Firebase auth state changed:', user ? (user.displayName || user.email) : 'No user');
                 this.updateUserDisplay(user);
             });
@@ -414,7 +1073,8 @@ class Navigation {
             setTimeout(() => {
                 if (typeof firebaseManager !== 'undefined') {
                     console.log('Navigation: Firebase Manager became available');
-                    firebaseManager.onAuthStateChanged((user) => {
+                    window.addEventListener('authStateChanged', (e) => {
+                        const user = e.detail.user;
                         console.log('Navigation: Firebase auth state changed (delayed):', user ? (user.displayName || user.email) : 'No user');
                         this.updateUserDisplay(user);
                     });
@@ -562,7 +1222,7 @@ class Navigation {
                     userAvatar.src = user.photoURL;
                 } else {
                     // Use default avatar if no photo
-                    userAvatar.src = '/icons/icon48.png';
+                    userAvatar.src = chrome.runtime.getURL('icons/icon48.png');
                 }
             }
 
@@ -613,20 +1273,20 @@ class Navigation {
                     window.location.reload();
                     return;
                 case 'search':
-                    url = chrome.runtime.getURL('search.html');
+                    url = chrome.runtime.getURL('src/pages/search/search.html');
                     break;
                 case 'ratings':
-                    url = chrome.runtime.getURL('ratings.html');
+                    url = chrome.runtime.getURL('src/pages/ratings/ratings.html');
                     break;
                 case 'watchlist':
-                    url = chrome.runtime.getURL('watchlist.html');
+                    url = chrome.runtime.getURL('src/pages/watchlist/watchlist.html');
                     break;
                 case 'favorites':
-                    url = chrome.runtime.getURL('favorites.html');
+                    url = chrome.runtime.getURL('src/pages/favorites/favorites.html');
                     break;
                 case 'profile':
                 case 'settings':
-                    url = chrome.runtime.getURL('profile.html');
+                    url = chrome.runtime.getURL('src/pages/profile/profile.html');
                     break;
                 default:
                     return;
@@ -643,20 +1303,20 @@ class Navigation {
         
         switch (page) {
             case 'search':
-                url = chrome.runtime.getURL('search.html');
+                url = chrome.runtime.getURL('src/pages/search/search.html');
                 break;
             case 'ratings':
-                url = chrome.runtime.getURL('ratings.html');
+                url = chrome.runtime.getURL('src/pages/ratings/ratings.html');
                 break;
             case 'watchlist':
-                url = chrome.runtime.getURL('watchlist.html');
+                url = chrome.runtime.getURL('src/pages/watchlist/watchlist.html');
                 break;
             case 'favorites':
-                url = chrome.runtime.getURL('favorites.html');
+                url = chrome.runtime.getURL('src/pages/favorites/favorites.html');
                 break;
             case 'profile':
             case 'settings':
-                url = chrome.runtime.getURL('profile.html');
+                url = chrome.runtime.getURL('src/pages/profile/profile.html');
                 break;
             default:
                 return;
@@ -841,7 +1501,7 @@ class Navigation {
     handleSignIn() {
         // Redirect to popup for sign in
         if (!window.location.pathname.includes('popup.html')) {
-            window.location.href = chrome.runtime.getURL('popup.html');
+            window.location.href = chrome.runtime.getURL('src/popup/popup.html');
         } else {
             // If already on popup, just reload
             window.location.reload();
@@ -854,7 +1514,7 @@ class Navigation {
                 await firebaseManager.signOut();
                 // Redirect to popup or refresh
                 if (!window.location.pathname.includes('popup.html')) {
-                    window.location.href = chrome.runtime.getURL('popup.html');
+                    window.location.href = chrome.runtime.getURL('src/popup/popup.html');
                 } else {
                     window.location.reload();
                 }
@@ -894,9 +1554,9 @@ if (typeof window !== 'undefined' && !window.location.pathname.includes('popup.h
     document.addEventListener('DOMContentLoaded', () => {
         // Determine current page from URL
         let currentPage = '';
-        if (window.location.pathname.includes('search.html')) {
+        if (window.location.pathname.includes('search.html') || window.location.pathname.includes('src/pages/search/')) {
             currentPage = 'search';
-        } else if (window.location.pathname.includes('ratings.html')) {
+        } else if (window.location.pathname.includes('ratings.html') || window.location.pathname.includes('src/pages/ratings/')) {
             currentPage = 'ratings';
         } else if (window.location.pathname.includes('watchlist.html')) {
             currentPage = 'watchlist';

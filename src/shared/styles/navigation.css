@@ -177,6 +177,128 @@
     font-weight: 400;
 }
 
+.dropdown-divider {
+    height: 1px;
+    background: #e5e7eb;
+    margin: 8px 0;
+}
+
+.dropdown-section-header {
+    padding: 8px 20px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #6b7280;
+    letter-spacing: 0.5px;
+}
+
+.custom-collections-list {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.custom-collection-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+}
+
+.custom-collection-item:hover {
+    background: rgba(0, 0, 0, 0.02);
+}
+
+.collection-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    cursor: pointer;
+}
+
+.collection-menu-button {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: #94a3b8;
+    cursor: pointer;
+    border-radius: 4px;
+    opacity: 0.6;
+    transition: all 0.2s ease;
+    font-size: 18px;
+    line-height: 1;
+    padding: 0;
+    margin-left: 8px;
+}
+
+.collection-menu-button:hover {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.collection-submenu {
+    position: fixed !important;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    padding: 4px;
+    min-width: 160px;
+    z-index: 1001;
+    margin: 0 !important;
+    transform: none !important;
+}
+
+.submenu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    color: #e2e8f0;
+    transition: background 0.2s ease;
+}
+
+.submenu-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.submenu-item.delete {
+    color: #ef4444;
+}
+
+.submenu-item.delete:hover {
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.create-collection-item {
+    border-top: 1px solid #e5e7eb;
+    margin-top: 4px;
+    padding-top: 12px;
+    font-weight: 600;
+    color: #6366f1;
+}
+
+.create-collection-item:hover {
+    background: #f3f4f6;
+    color: #4f46e5;
+}
+
+.dropdown-empty-state {
+    padding: 12px 20px;
+    text-align: center;
+    color: #9ca3af;
+    font-size: 12px;
+    font-style: italic;
+}
+
 /* User Section */
 .nav-user {
     display: flex;

@@ -213,7 +213,7 @@ class WatchlistPageManager {
         
         if (!this.currentUser) {
             // Redirect to popup for sign in
-            window.location.href = chrome.runtime.getURL('popup.html');
+            window.location.href = chrome.runtime.getURL('src/popup/popup.html');
             return;
         }
     }
@@ -388,7 +388,7 @@ class WatchlistPageManager {
                 e.stopPropagation();
                 const movieId = button.getAttribute('data-movie-id');
                 if (movieId) {
-                    const url = chrome.runtime.getURL(`search.html?movieId=${movieId}`);
+                    const url = chrome.runtime.getURL(`src/pages/search/search.html?movieId=${movieId}`);
                     window.location.href = url;
                 }
             });

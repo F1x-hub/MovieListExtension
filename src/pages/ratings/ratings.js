@@ -20,7 +20,6 @@ class RatingsPageManager {
         this.isLoading = false;
         this.allUsers = []; // Store all users who have rated movies
         this.userProfilesMap = new Map(); // Store user profiles for display name formatting
-        
         this.init();
     }
 
@@ -30,12 +29,20 @@ class RatingsPageManager {
         this.setupEventListeners();
         this.loadFiltersFromStorage();
         
+        const urlParams = new URLSearchParams(window.location.search);
+        const collectionId = urlParams.get('collection');
+        if (collectionId) {
+            window.location.href = chrome.runtime.getURL(`src/pages/collection/collection.html?id=${collectionId}`);
+            return;
+        }
+        
         // Initialize user filter visibility based on current mode
         this.updateUserFilterVisibility();
         
         await this.setupFirebase();
         await this.loadMovies();
     }
+
 
     initializeElements() {
         this.elements = {
@@ -760,7 +767,7 @@ class RatingsPageManager {
             button.addEventListener('click', (e) => {
                 const movieId = button.getAttribute('data-movie-id');
                 if (movieId) {
-                    const url = chrome.runtime.getURL(`search.html?movieId=${movieId}`);
+                    const url = chrome.runtime.getURL(`src/pages/search/search.html?movieId=${movieId}`);
                     window.location.href = url;
                 }
             });
@@ -786,8 +793,20 @@ class RatingsPageManager {
                 e.stopPropagation();
                 const userId = usernameEl.getAttribute('data-user-id');
                 if (userId) {
-                    const url = chrome.runtime.getURL(`profile.html?userId=${userId}`);
+                    const url = chrome.runtime.getURL(`src/pages/profile/profile.html?userId=${userId}`);
                     window.location.href = url;
+                }
+            });
+        });
+
+        // Add event listeners for collection buttons
+        const collectionButtons = grid.querySelectorAll('.collection-btn');
+        collectionButtons.forEach(button => {
+            button.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const movieId = parseInt(button.getAttribute('data-movie-id'));
+                if (movieId && window.navigation && window.navigation.showCollectionSelector) {
+                    await window.navigation.showCollectionSelector(movieId, button);
                 }
             });
         });
@@ -875,6 +894,9 @@ class RatingsPageManager {
                                 data-rating="${rating}" 
                                 data-comment="${this.escapeHtml(comment || '')}">
                             Edit Rating
+                        </button>
+                        <button class="action-btn collection-btn" data-movie-id="${movie?.kinopoiskId}" title="Add to Collection">
+                            📁
                         </button>
                     ` : ''}
                 </div>

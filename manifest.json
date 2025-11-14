@@ -32,10 +32,10 @@
     ]
   },
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "src/background/background.js"
   },
   "action": {
-    "default_popup": "popup.html",
+    "default_popup": "src/popup/popup.html",
     "default_title": "Movie Rating Extension",
     "default_icon": {
       "16": "icons/icon16.png",
@@ -51,23 +51,25 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "search.html",
-        "ratings.html",
-        "watchlist.html",
-        "favorites.html",
-        "profile.html",
-        "ratings.js",
-        "watchlist.js",
-        "favorites.js",
-        "profile.js",
-        "src/styles/*.css",
-        "src/services/*.js",
-        "src/config/*.js",
-        "src/utils/*.js",
-        "src/components/*.js",
+        "src/pages/search/search.html",
+        "src/pages/ratings/ratings.html",
+        "src/pages/watchlist/watchlist.html",
+        "src/pages/favorites/favorites.html",
+        "src/pages/collection/collection.html",
+        "src/pages/profile/profile.html",
+        "src/pages/ratings/ratings.js",
+        "src/pages/watchlist/watchlist.js",
+        "src/pages/favorites/favorites.js",
+        "src/pages/collection/collection.js",
+        "src/pages/profile/profile.js",
+        "src/shared/styles/*.css",
+        "src/shared/services/*.js",
+        "src/shared/config/*.js",
+        "src/shared/utils/*.js",
+        "src/shared/components/*.js",
         "icons/*.png",
         "libs/*.js",
-        "firestore.js",
+        "src/shared/firestore.js",
         "content-scripts/*.js"
       ],
       "matches": ["<all_urls>"]
@@ -80,37 +82,37 @@
     {
       "matches": ["https://ex-fs.net/*"],
       "js": ["content-scripts/ex-fs-watchlist.js"],
-      "css": ["src/styles/ex-fs-watchlist.css"],
+      "css": ["src/shared/styles/ex-fs-watchlist.css"],
       "run_at": "document_idle"
     },
     {
       "matches": ["https://zfilms-hd.by/*"],
       "js": ["content-scripts/zfilms-watchlist.js"],
-      "css": ["src/styles/ex-fs-watchlist.css"],
+      "css": ["src/shared/styles/ex-fs-watchlist.css"],
       "run_at": "document_idle"
     },
     {
       "matches": ["https://hdrezka.co/*"],
       "js": ["content-scripts/hdrezka-watchlist.js"],
-      "css": ["src/styles/ex-fs-watchlist.css"],
+      "css": ["src/shared/styles/ex-fs-watchlist.css"],
       "run_at": "document_idle"
     },
     {
       "matches": ["https://www.kinopoisk.ru/*"],
       "js": ["content-scripts/kinopoisk-watchlist.js"],
-      "css": ["src/styles/ex-fs-watchlist.css"],
+      "css": ["src/shared/styles/ex-fs-watchlist.css"],
       "run_at": "document_idle"
     },
     {
       "matches": ["https://www.imdb.com/*"],
       "js": ["content-scripts/imdb-watchlist.js"],
-      "css": ["src/styles/ex-fs-watchlist.css"],
+      "css": ["src/shared/styles/ex-fs-watchlist.css"],
       "run_at": "document_idle"
     },
     {
       "matches": ["https://kinogo.inc/*"],
       "js": ["content-scripts/kinogo-watchlist.js"],
-      "css": ["src/styles/ex-fs-watchlist.css"],
+      "css": ["src/shared/styles/ex-fs-watchlist.css"],
       "run_at": "document_idle"
     }
   ]

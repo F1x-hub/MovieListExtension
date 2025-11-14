@@ -107,7 +107,7 @@ class ProfilePageManager {
                 if (window.navigation) {
                     window.navigation.navigateToPage('ratings');
                 } else {
-                    window.location.href = chrome.runtime.getURL('ratings.html');
+                    window.location.href = chrome.runtime.getURL('src/pages/ratings/ratings.html');
                 }
             });
         }
@@ -379,7 +379,7 @@ class ProfilePageManager {
             card.addEventListener('click', () => {
                 const movieId = card.getAttribute('data-movie-id');
                 if (movieId) {
-                    const url = chrome.runtime.getURL(`search.html?movieId=${movieId}`);
+                    const url = chrome.runtime.getURL(`src/pages/search/search.html?movieId=${movieId}`);
                     window.location.href = url;
                 }
             });
