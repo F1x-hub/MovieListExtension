@@ -100,7 +100,9 @@ class PopupManager {
     setupAuthStateListener() {
         window.addEventListener('authStateChanged', (event) => {
             const { user, isAuthenticated } = event.detail;
-            this.updateAuthUI(isAuthenticated, user);
+            // If authenticated, don't show content until ratings are loaded
+            // If not authenticated, show auth section immediately
+            this.updateAuthUI(isAuthenticated, user, !isAuthenticated);
             
             // Auto-load ratings when user signs in (only if not already loaded or loading)
             if (isAuthenticated && user && !this.ratingsLoaded && !this.isLoadingRatings) {
@@ -123,7 +125,7 @@ class PopupManager {
         
         // Update UI immediately if user is already authenticated
         if (isAuthenticated && currentUser) {
-            this.updateAuthUI(true, currentUser);
+            this.updateAuthUI(true, currentUser, false);
             this.loadRatings();
             return;
         }
@@ -134,7 +136,9 @@ class PopupManager {
         currentUser = firebaseManager.getCurrentUser();
         isAuthenticated = firebaseManager.isAuthenticated();
         
-        this.updateAuthUI(isAuthenticated, currentUser);
+        // If authenticated, don't show content until ratings are loaded
+        // If not authenticated, show auth section immediately
+        this.updateAuthUI(isAuthenticated, currentUser, !isAuthenticated);
         
         // Only load ratings if not already loaded and user is authenticated
         if (isAuthenticated && currentUser && !this.ratingsLoaded && !this.isLoadingRatings) {
@@ -163,13 +167,9 @@ class PopupManager {
         });
     }
 
-    updateAuthUI(isAuthenticated, user) {
-        // Hide initial loading indicator
-        this.elements.initialLoading.style.display = 'none';
-        
+    updateAuthUI(isAuthenticated, user, showContent = true) {
         if (isAuthenticated) {
             this.elements.authSection.style.display = 'none';
-            this.elements.mainContent.style.display = 'flex';
             this.elements.statusIndicator.classList.add('authenticated');
             this.elements.statusText.textContent = `Signed in as ${user?.displayName || user?.email || 'User'}`;
             
@@ -179,7 +179,14 @@ class PopupManager {
                 this.elements.userAvatar.src = user.photoURL;
                 this.elements.userAvatar.style.display = 'block';
             }
+            
+            // Only show main content if explicitly requested
+            if (showContent) {
+                this.elements.initialLoading.style.display = 'none';
+                this.elements.mainContent.style.display = 'flex';
+            }
         } else {
+            this.elements.initialLoading.style.display = 'none';
             this.elements.authSection.style.display = 'block';
             this.elements.mainContent.style.display = 'none';
             this.elements.statusIndicator.classList.remove('authenticated');
@@ -189,7 +196,6 @@ class PopupManager {
 
     async handleGoogleLogin() {
         try {
-            this.showLoading(true);
             this.hideError();
             await firebaseManager.signInWithGoogle();
             
@@ -203,11 +209,14 @@ class PopupManager {
                 createdAt: user.metadata.creationTime
             });
             
+            // Hide auth section, show initial loading, prepare for content
+            this.elements.authSection.style.display = 'none';
+            this.elements.initialLoading.style.display = 'flex';
+            this.updateAuthUI(true, user, false);
+            
             this.loadRatings();
         } catch (error) {
             this.showError(`Google login failed: ${error.message}`);
-        } finally {
-            this.showLoading(false);
         }
     }
 
@@ -223,7 +232,6 @@ class PopupManager {
         }
 
         try {
-            this.showLoading(true);
             this.hideError();
             await firebaseManager.signInWithEmail(email, password);
             
@@ -238,11 +246,15 @@ class PopupManager {
             });
             
             this.elements.loginForm.reset();
+            
+            // Hide auth section, show initial loading, prepare for content
+            this.elements.authSection.style.display = 'none';
+            this.elements.initialLoading.style.display = 'flex';
+            this.updateAuthUI(true, user, false);
+            
             this.loadRatings();
         } catch (error) {
             this.showError(`Email login failed: ${error.message}`);
-        } finally {
-            this.showLoading(false);
         }
     }
 
@@ -263,7 +275,6 @@ class PopupManager {
         }
 
         try {
-            this.showLoading(true);
             this.hideError();
             await firebaseManager.createUserWithEmail(email, password);
             
@@ -278,11 +289,15 @@ class PopupManager {
             });
             
             this.elements.registerForm.reset();
+            
+            // Hide auth section, show initial loading, prepare for content
+            this.elements.authSection.style.display = 'none';
+            this.elements.initialLoading.style.display = 'flex';
+            this.updateAuthUI(true, user, false);
+            
             this.loadRatings();
         } catch (error) {
             this.showError(`Registration failed: ${error.message}`);
-        } finally {
-            this.showLoading(false);
         }
     }
 
@@ -424,8 +439,15 @@ class PopupManager {
             this.isLoadingRatings = true;
             const startTime = performance.now();
             console.log('⏱️ PopupManager: Starting loadRatings()');
-            this.showLoading(true);
+            
+            // Hide main content and show initial loading
+            this.elements.mainContent.style.display = 'none';
+            this.elements.initialLoading.style.display = 'flex';
             this.hideError();
+            
+            // Update auth UI without showing content
+            const currentUser = firebaseManager.getCurrentUser();
+            this.updateAuthUI(true, currentUser, false);
             
             // Check if chrome.storage is available
             if (!chrome || !chrome.storage || !chrome.storage.local) {
@@ -437,11 +459,12 @@ class PopupManager {
             console.log('PopupManager: Got RatingsCacheService instance');
             
             const cacheStartTime = performance.now();
+            console.log(`⏱️ [PopupManager] Starting getCachedRatingsWithBackgroundRefresh`);
             const result = await ratingsCacheService.getCachedRatingsWithBackgroundRefresh(50);
             const cacheEndTime = performance.now();
             const cacheLoadTime = Math.round(cacheEndTime - cacheStartTime);
             
-            console.log(`⚡ PopupManager: Got result from cache service in ${cacheLoadTime}ms:`, { 
+            console.log(`✅ [PopupManager] Got result from cache service in ${cacheLoadTime}ms:`, { 
                 ratingsCount: result.ratings.length, 
                 isFromCache: result.isFromCache,
                 loadTime: `${cacheLoadTime}ms`
@@ -456,6 +479,17 @@ class PopupManager {
             const renderTime = Math.round(renderEndTime - renderStartTime);
             
             this.ratingsLoaded = true;
+            
+            // Show main content after all ratings are rendered
+            this.showMainContent();
+            
+            // Show feed content with fade in for smooth appearance
+            if (this.elements.feedContent.style.display !== 'none') {
+                this.elements.feedContent.classList.add('fade-in');
+            }
+            
+            // Background refresh is automatically started in getCachedRatingsWithBackgroundRefresh()
+            // if data was loaded from cache, ensuring fresh data for next time
             
             const totalTime = Math.round(performance.now() - startTime);
             
@@ -483,9 +517,10 @@ class PopupManager {
                 });
             }
         } catch (error) {
+            // Show main content even on error
+            this.showMainContent();
             this.showError(`Failed to load ratings: ${error.message}`);
         } finally {
-            this.showLoading(false);
             this.isLoadingRatings = false; // Reset flag
         }
     }
@@ -500,10 +535,15 @@ class PopupManager {
         try {
             this.isLoadingRatings = true;
             const startTime = performance.now();
-            this.showLoading(true);
             this.hideError();
             
             console.log('🔄 PopupManager: Force refreshing ratings...');
+            
+            // Hide feed content with fade out
+            await this.hideFeedContentWithFade();
+            
+            // Show loader with fade in
+            await this.showLoadingWithFade();
             
             // Clear cache and fetch fresh data
             const ratingsCacheService = firebaseManager.getRatingsCacheService();
@@ -523,6 +563,12 @@ class PopupManager {
             
             this.ratingsLoaded = true;
             
+            // Hide loader with fade out
+            await this.hideLoadingWithFade();
+            
+            // Show updated feed content with fade in
+            await this.showFeedContentWithFade();
+            
             const totalTime = Math.round(performance.now() - startTime);
             
             console.log(`🔄 Ratings force refreshed in ${totalTime}ms total (fetch: ${fetchTime}ms, render: ${renderTime}ms):`, {
@@ -534,18 +580,26 @@ class PopupManager {
                 }
             });
         } catch (error) {
+            // On error, hide loader and show content
+            await this.hideLoadingWithFade();
+            await this.showFeedContentWithFade();
             this.showError(`Failed to refresh ratings: ${error.message}`);
         } finally {
-            this.showLoading(false);
             this.isLoadingRatings = false; // Reset flag
         }
     }
 
     async renderRatings() {
-        console.log('PopupManager: Rendering ratings, clearing existing content');
+        const startTime = performance.now();
+        console.log('⏱️ [PopupManager] Starting renderRatings');
+        
+        const clearStart = performance.now();
         this.elements.feedContent.innerHTML = '';
+        const clearTime = Math.round(performance.now() - clearStart);
+        console.log(`⏱️ [PopupManager] Clear feedContent: ${clearTime}ms`);
 
         if (this.ratings.length === 0) {
+            const emptyStateStart = performance.now();
             this.elements.feedContent.innerHTML = `
                 <div class="empty-state">
                     <div class="empty-state-icon">🎬</div>
@@ -553,70 +607,196 @@ class PopupManager {
                     <p class="empty-state-text">Start rating movies to see them here!</p>
                 </div>
             `;
+            const emptyStateTime = Math.round(performance.now() - emptyStateStart);
+            console.log(`⏱️ [PopupManager] Render empty state: ${emptyStateTime}ms`);
             return;
         }
 
-        console.log(`PopupManager: Rendering ${this.ratings.length} ratings`);
+        console.log(`⏱️ [PopupManager] Rendering ${this.ratings.length} ratings`);
         
         // Pre-load all average ratings in batch to avoid multiple Firebase calls
         const averageRatingsStartTime = performance.now();
         const averageRatingsMap = await this.preloadAverageRatings();
         const averageRatingsTime = Math.round(performance.now() - averageRatingsStartTime);
-        console.log(`⚡ Pre-loaded average ratings in ${averageRatingsTime}ms`);
+        console.log(`⏱️ [PopupManager] Pre-loaded average ratings: ${averageRatingsTime}ms`);
+        
+        // Pre-load current user profile once to avoid multiple calls
+        const currentUserProfileStart = performance.now();
+        let currentUserProfile = null;
+        const currentUser = firebaseManager.getCurrentUser();
+        if (currentUser) {
+            try {
+                const userService = firebaseManager.getUserService();
+                currentUserProfile = await userService.getUserProfile(currentUser.uid);
+                const currentUserProfileTime = Math.round(performance.now() - currentUserProfileStart);
+                console.log(`⏱️ [PopupManager] Pre-loaded current user profile: ${currentUserProfileTime}ms`);
+            } catch (error) {
+                const currentUserProfileTime = Math.round(performance.now() - currentUserProfileStart);
+                console.error(`❌ [PopupManager] Error loading current user profile (${currentUserProfileTime}ms):`, error);
+            }
+        }
         
         // Process ratings synchronously now that we have all data
-        for (const rating of this.ratings) {
+        const renderStart = performance.now();
+        let renderedCount = 0;
+        let skippedCount = 0;
+        let errorCount = 0;
+        
+        for (let i = 0; i < this.ratings.length; i++) {
+            const rating = this.ratings[i];
+            const elementStart = performance.now();
             try {
                 // Check if element already exists to prevent duplicates
                 const existingElement = document.getElementById(`rating-${rating.id}`);
                 if (existingElement) {
-                    console.warn(`Skipping duplicate rating element: rating-${rating.id}`);
+                    console.warn(`⏱️ [PopupManager] Skipping duplicate rating element: rating-${rating.id}`);
+                    skippedCount++;
                     continue;
                 }
                 
-                const ratingElement = await this.createRatingElementSync(rating, averageRatingsMap);
+                const ratingElement = await this.createRatingElementSync(rating, averageRatingsMap, currentUserProfile);
                 this.elements.feedContent.appendChild(ratingElement);
+                renderedCount++;
+                
+                const elementTime = Math.round(performance.now() - elementStart);
+                if (elementTime > 50) {
+                    console.log(`⏱️ [PopupManager] Rating ${i+1}/${this.ratings.length} rendered in ${elementTime}ms (slow)`);
+                }
             } catch (error) {
-                console.error('Error creating rating element:', error);
+                errorCount++;
+                const elementTime = Math.round(performance.now() - elementStart);
+                console.error(`❌ [PopupManager] Error creating rating element ${i+1} (${elementTime}ms):`, error);
                 // Continue with other ratings even if one fails
             }
         }
-        console.log('PopupManager: Finished rendering ratings');
+        
+        const renderTime = Math.round(performance.now() - renderStart);
+        const totalTime = Math.round(performance.now() - startTime);
+        console.log(`✅ [PopupManager] Finished rendering ratings in ${totalTime}ms (render: ${renderTime}ms, avg ratings: ${averageRatingsTime}ms, rendered: ${renderedCount}, skipped: ${skippedCount}, errors: ${errorCount})`);
     }
 
     async preloadAverageRatings() {
+        const startTime = performance.now();
         const movieIds = [...new Set(this.ratings.map(r => r.movie?.kinopoiskId || r.movieId))];
         const averageRatingsMap = new Map();
         
+        console.log(`⏱️ [PopupManager] preloadAverageRatings: ${movieIds.length} unique movies`);
+        
         try {
-            const ratingService = firebaseManager.getRatingService();
+            // First, try to get cached average ratings
+            const cacheReadStart = performance.now();
+            const ratingsCacheService = firebaseManager.getRatingsCacheService();
+            const cachedAverageRatings = await ratingsCacheService.getCachedAverageRatings();
+            const cacheReadTime = Math.round(performance.now() - cacheReadStart);
+            console.log(`⏱️ [PopupManager] Read cached average ratings: ${cacheReadTime}ms`);
             
-            // Load all average ratings in parallel
-            const promises = movieIds.map(async (movieId) => {
+            if (cachedAverageRatings) {
+                const mapStart = performance.now();
+                // Use cached data for movies that are in cache
+                let cachedCount = 0;
+                movieIds.forEach(movieId => {
+                    if (cachedAverageRatings.has(movieId)) {
+                        averageRatingsMap.set(movieId, cachedAverageRatings.get(movieId));
+                        cachedCount++;
+                    }
+                });
+                const mapTime = Math.round(performance.now() - mapStart);
+                console.log(`⏱️ [PopupManager] Mapped cached ratings: ${mapTime}ms (${cachedCount}/${movieIds.length} from cache)`);
+            }
+            
+            // Find movies that are not in cache
+            const missingMovieIds = movieIds.filter(movieId => !averageRatingsMap.has(movieId));
+            
+            if (missingMovieIds.length > 0) {
+                console.log(`⏱️ [PopupManager] Loading average ratings for ${missingMovieIds.length} movies not in cache using batch query`);
+                const ratingService = firebaseManager.getRatingService();
+                
+                // Load missing average ratings using batch query (one request instead of multiple)
+                const fetchStart = performance.now();
                 try {
-                    const averageData = await ratingService.getMovieAverageRating(movieId);
-                    return { movieId, averageData };
+                    const batchResults = await ratingService.getBatchMovieAverageRatings(missingMovieIds);
+                    const fetchTime = Math.round(performance.now() - fetchStart);
+                    console.log(`⏱️ [PopupManager] Fetched ${missingMovieIds.length} average ratings via batch: ${fetchTime}ms`);
+                    
+                    // Add new data to map
+                    const addStart = performance.now();
+                    Object.entries(batchResults).forEach(([movieId, averageData]) => {
+                        const movieIdNum = parseInt(movieId);
+                        averageRatingsMap.set(movieIdNum, averageData);
+                    });
+                    const addTime = Math.round(performance.now() - addStart);
+                    console.log(`⏱️ [PopupManager] Added to map: ${addTime}ms`);
+                    
+                    // Cache the newly loaded average ratings
+                    const cacheWriteStart = performance.now();
+                    const newAverageRatingsMap = new Map();
+                    Object.entries(batchResults).forEach(([movieId, averageData]) => {
+                        const movieIdNum = parseInt(movieId);
+                        newAverageRatingsMap.set(movieIdNum, averageData);
+                    });
+                    
+                    // Merge with cached data and update cache
+                    if (cachedAverageRatings) {
+                        cachedAverageRatings.forEach((value, key) => {
+                            newAverageRatingsMap.set(key, value);
+                        });
+                    }
+                    await ratingsCacheService.cacheAverageRatings(newAverageRatingsMap);
+                    const cacheWriteTime = Math.round(performance.now() - cacheWriteStart);
+                    console.log(`⏱️ [PopupManager] Cached average ratings: ${cacheWriteTime}ms`);
                 } catch (error) {
-                    console.warn(`Failed to get average rating for movie ${movieId}:`, error);
-                    return { movieId, averageData: { average: 0, count: 0 } };
+                    const fetchTime = Math.round(performance.now() - fetchStart);
+                    console.error(`❌ [PopupManager] Error fetching batch average ratings (${fetchTime}ms):`, error);
+                    // Fallback to individual requests if batch fails
+                    console.log(`⏱️ [PopupManager] Fallback to individual requests`);
+                    const fallbackStart = performance.now();
+                    const promises = missingMovieIds.map(async (movieId) => {
+                        try {
+                            const averageData = await ratingService.getMovieAverageRating(movieId);
+                            return { movieId, averageData };
+                        } catch (error) {
+                            console.warn(`❌ [PopupManager] Failed to get average rating for movie ${movieId}:`, error);
+                            return { movieId, averageData: { average: 0, count: 0 } };
+                        }
+                    });
+                    const results = await Promise.all(promises);
+                    results.forEach(({ movieId, averageData }) => {
+                        averageRatingsMap.set(movieId, averageData);
+                    });
+                    const fallbackTime = Math.round(performance.now() - fallbackStart);
+                    console.log(`⏱️ [PopupManager] Fallback completed: ${fallbackTime}ms`);
                 }
-            });
-            
-            const results = await Promise.all(promises);
-            
-            // Build map for quick lookup
-            results.forEach(({ movieId, averageData }) => {
-                averageRatingsMap.set(movieId, averageData);
-            });
+            } else {
+                console.log(`✅ [PopupManager] All average ratings loaded from cache`);
+            }
             
         } catch (error) {
-            console.error('Error preloading average ratings:', error);
+            const totalTime = Math.round(performance.now() - startTime);
+            console.error(`❌ [PopupManager] Error preloading average ratings (${totalTime}ms):`, error);
+            // Fallback: try to load all ratings if cache fails
+            try {
+                console.log(`⏱️ [PopupManager] Fallback: loading all average ratings using batch`);
+                const fallbackStart = performance.now();
+                const ratingService = firebaseManager.getRatingService();
+                const batchResults = await ratingService.getBatchMovieAverageRatings(movieIds);
+                Object.entries(batchResults).forEach(([movieId, averageData]) => {
+                    const movieIdNum = parseInt(movieId);
+                    averageRatingsMap.set(movieIdNum, averageData);
+                });
+                const fallbackTime = Math.round(performance.now() - fallbackStart);
+                console.log(`⏱️ [PopupManager] Fallback completed: ${fallbackTime}ms`);
+            } catch (fallbackError) {
+                const fallbackTime = Math.round(performance.now() - startTime);
+                console.error(`❌ [PopupManager] Error in fallback average ratings loading (${fallbackTime}ms):`, fallbackError);
+            }
         }
         
+        const totalTime = Math.round(performance.now() - startTime);
+        console.log(`✅ [PopupManager] preloadAverageRatings completed in ${totalTime}ms (${averageRatingsMap.size} ratings)`);
         return averageRatingsMap;
     }
 
-    async createRatingElementSync(rating, averageRatingsMap) {
+    async createRatingElementSync(rating, averageRatingsMap, currentUserProfile = null) {
         const ratingDiv = document.createElement('div');
         ratingDiv.className = 'rating-item clickable-rating';
         
@@ -650,15 +830,11 @@ class PopupManager {
                 userPhoto = currentUser.photoURL;
             }
             
-            // Load current user profile to get correct display name
-            try {
-                const userService = firebaseManager.getUserService();
-                const userProfile = await userService.getUserProfile(currentUser.uid);
-                if (userProfile && typeof Utils !== 'undefined' && Utils.getDisplayName) {
-                    displayUserName = Utils.getDisplayName(userProfile, currentUser);
-                }
-            } catch (error) {
-                console.error('Error loading user profile for display name:', error);
+            // Use pre-loaded current user profile instead of fetching it again
+            if (currentUserProfile && typeof Utils !== 'undefined' && Utils.getDisplayName) {
+                displayUserName = Utils.getDisplayName(currentUserProfile, currentUser);
+            } else if (currentUser.displayName) {
+                displayUserName = currentUser.displayName;
             }
         }
 
@@ -998,6 +1174,264 @@ class PopupManager {
 
     showLoading(show) {
         this.elements.loading.style.display = show ? 'flex' : 'none';
+    }
+
+    hideFeedContentWithFade() {
+        return new Promise((resolve) => {
+            const feedContent = this.elements.feedContent;
+            feedContent.classList.remove('fade-in');
+            feedContent.classList.add('fade-out');
+            
+            setTimeout(() => {
+                feedContent.style.display = 'none';
+                feedContent.classList.remove('fade-out');
+                resolve();
+            }, 300);
+        });
+    }
+
+    showFeedContentWithFade() {
+        return new Promise((resolve) => {
+            const feedContent = this.elements.feedContent;
+            // Restore original display (flex from CSS)
+            feedContent.style.display = '';
+            feedContent.classList.remove('fade-out');
+            feedContent.classList.add('fade-in');
+            
+            setTimeout(() => {
+                resolve();
+            }, 50);
+        });
+    }
+
+    showLoadingWithFade() {
+        return new Promise((resolve) => {
+            const loading = this.elements.loading;
+            loading.style.display = 'flex';
+            loading.classList.remove('fade-out');
+            loading.classList.add('fade-in');
+            
+            // Диагностика слоев для определения проблемы с z-index
+            // Используем небольшую задержку, чтобы DOM успел обновиться
+            setTimeout(() => {
+                this.diagnoseLayers(loading);
+                resolve();
+            }, 100);
+        });
+    }
+
+    diagnoseLayers(loadingElement) {
+        console.log('🔍 ========== ДИАГНОСТИКА СЛОЕВ ==========');
+        
+        // Информация о самом loader'е
+        const loadingRect = loadingElement.getBoundingClientRect();
+        const loadingStyles = window.getComputedStyle(loadingElement);
+        console.log('📦 LOADER ELEMENT:');
+        console.log('  ID:', loadingElement.id);
+        console.log('  Class:', loadingElement.className);
+        console.log('  z-index:', loadingStyles.zIndex);
+        console.log('  position:', loadingStyles.position);
+        console.log('  display:', loadingStyles.display);
+        console.log('  visibility:', loadingStyles.visibility);
+        console.log('  opacity:', loadingStyles.opacity);
+        console.log('  rect:', `top:${Math.round(loadingRect.top)} left:${Math.round(loadingRect.left)} width:${Math.round(loadingRect.width)} height:${Math.round(loadingRect.height)}`);
+        console.log('  parent:', loadingElement.parentElement?.tagName + '.' + (loadingElement.parentElement?.className || 'no class'));
+
+        // Проверяем все родительские элементы
+        let parent = loadingElement.parentElement;
+        let level = 1;
+        console.log('\n📚 РОДИТЕЛЬСКИЕ ЭЛЕМЕНТЫ:');
+        while (parent && parent !== document.body) {
+            const parentStyles = window.getComputedStyle(parent);
+            const parentRect = parent.getBoundingClientRect();
+            console.log(`  Level ${level}:`);
+            console.log('    Tag:', parent.tagName);
+            console.log('    ID:', parent.id || '(no id)');
+            console.log('    Class:', parent.className || '(no class)');
+            console.log('    z-index:', parentStyles.zIndex);
+            console.log('    position:', parentStyles.position);
+            console.log('    overflow:', parentStyles.overflow);
+            console.log('    overflowY:', parentStyles.overflowY);
+            console.log('    transform:', parentStyles.transform || 'none');
+            console.log('    rect:', `top:${Math.round(parentRect.top)} left:${Math.round(parentRect.left)} width:${Math.round(parentRect.width)} height:${Math.round(parentRect.height)}`);
+            parent = parent.parentElement;
+            level++;
+        }
+
+        // Проверяем все элементы с z-index в popup-container
+        const popupContainer = document.querySelector('.popup-container');
+        if (popupContainer) {
+            console.log('\n🎯 ЭЛЕМЕНТЫ С Z-INDEX В POPUP:');
+            const allElements = popupContainer.querySelectorAll('*');
+            const elementsWithZIndex = [];
+            
+            allElements.forEach(el => {
+                const styles = window.getComputedStyle(el);
+                const zIndex = styles.zIndex;
+                if (zIndex !== 'auto' && zIndex !== '0') {
+                    const rect = el.getBoundingClientRect();
+                    elementsWithZIndex.push({
+                        element: el,
+                        tag: el.tagName,
+                        id: el.id || '(no id)',
+                        className: el.className || '(no class)',
+                        zIndex: zIndex,
+                        position: styles.position,
+                        display: styles.display,
+                        rect: {
+                            top: Math.round(rect.top),
+                            left: Math.round(rect.left),
+                            width: Math.round(rect.width),
+                            height: Math.round(rect.height)
+                        }
+                    });
+                }
+            });
+
+            // Сортируем по z-index
+            elementsWithZIndex.sort((a, b) => {
+                const zA = parseInt(a.zIndex) || 0;
+                const zB = parseInt(b.zIndex) || 0;
+                return zB - zA;
+            });
+
+            elementsWithZIndex.forEach((item, index) => {
+                console.log(`  ${index + 1}. ${item.tag}${item.id ? '#' + item.id : ''}${item.className ? '.' + item.className.split(' ').join('.') : ''}`);
+                console.log('     z-index:', item.zIndex, '| position:', item.position, '| display:', item.display);
+                console.log('     rect:', `top:${item.rect.top} left:${item.rect.left} width:${item.rect.width} height:${item.rect.height}`);
+            });
+        }
+
+        // Проверяем элементы, которые могут перекрывать loader по координатам
+        console.log('\n📍 ЭЛЕМЕНТЫ, КОТОРЫЕ МОГУТ ПЕРЕКРЫВАТЬ LOADER:');
+        const loadingCenterX = loadingRect.left + loadingRect.width / 2;
+        const loadingCenterY = loadingRect.top + loadingRect.height / 2;
+        console.log('  Центр loader:', `x:${Math.round(loadingCenterX)} y:${Math.round(loadingCenterY)}`);
+        
+        const allElementsInPopup = popupContainer ? popupContainer.querySelectorAll('*') : [];
+        const overlappingElements = [];
+        
+        allElementsInPopup.forEach(el => {
+            if (el === loadingElement || el.contains(loadingElement)) return;
+            
+            const rect = el.getBoundingClientRect();
+            const styles = window.getComputedStyle(el);
+            
+            // Проверяем, перекрывает ли элемент центр loader'а
+            const overlapsX = rect.left <= loadingCenterX && rect.right >= loadingCenterX;
+            const overlapsY = rect.top <= loadingCenterY && rect.bottom >= loadingCenterY;
+            
+            if (overlapsX && overlapsY && styles.display !== 'none' && styles.visibility !== 'hidden') {
+                const zIndex = parseInt(styles.zIndex) || 0;
+                const loadingZIndex = parseInt(loadingStyles.zIndex) || 0;
+                
+                overlappingElements.push({
+                    element: el,
+                    tag: el.tagName,
+                    id: el.id || '(no id)',
+                    className: el.className || '(no class)',
+                    zIndex: styles.zIndex,
+                    zIndexNum: zIndex,
+                    position: styles.position,
+                    display: styles.display,
+                    rect: {
+                        top: Math.round(rect.top),
+                        left: Math.round(rect.left),
+                        width: Math.round(rect.width),
+                        height: Math.round(rect.height)
+                    },
+                    overlapsLoader: zIndex >= loadingZIndex
+                });
+            }
+        });
+
+        overlappingElements.sort((a, b) => {
+            return b.zIndexNum - a.zIndexNum;
+        });
+
+        if (overlappingElements.length > 0) {
+            overlappingElements.forEach((item, index) => {
+                const status = item.overlapsLoader ? '⚠️ ПЕРЕКРЫВАЕТ' : '✅ НИЖЕ';
+                console.log(`  ${index + 1}. ${status} - ${item.tag}${item.id ? '#' + item.id : ''}${item.className ? '.' + item.className.split(' ').join('.') : ''}`);
+                console.log('     z-index:', item.zIndex, `(${item.zIndexNum})`, '| position:', item.position, '| display:', item.display);
+                console.log('     rect:', `top:${item.rect.top} left:${item.rect.left} width:${item.rect.width} height:${item.rect.height}`);
+            });
+        } else {
+            console.log('  ✅ Нет элементов, перекрывающих loader');
+        }
+
+        // Дополнительная проверка: элементы выше loader'а по z-index в той же области
+        console.log('\n🔎 ЭЛЕМЕНТЫ С БОЛЬШИМ Z-INDEX В ОБЛАСТИ LOADER:');
+        const loaderTop = loadingRect.top;
+        const loaderBottom = loadingRect.bottom;
+        const loaderLeft = loadingRect.left;
+        const loaderRight = loadingRect.right;
+        
+        const highZIndexElements = [];
+        allElementsInPopup.forEach(el => {
+            if (el === loadingElement || el.contains(loadingElement)) return;
+            
+            const rect = el.getBoundingClientRect();
+            const styles = window.getComputedStyle(el);
+            const zIndex = parseInt(styles.zIndex) || 0;
+            const loadingZIndex = parseInt(loadingStyles.zIndex) || 0;
+            
+            // Проверяем, пересекается ли элемент с областью loader'а
+            const intersectsX = !(rect.right < loaderLeft || rect.left > loaderRight);
+            const intersectsY = !(rect.bottom < loaderTop || rect.top > loaderBottom);
+            
+            if (intersectsX && intersectsY && zIndex >= loadingZIndex && styles.display !== 'none' && styles.visibility !== 'hidden') {
+                highZIndexElements.push({
+                    element: el,
+                    tag: el.tagName,
+                    id: el.id || '(no id)',
+                    className: el.className || '(no class)',
+                    zIndex: styles.zIndex,
+                    zIndexNum: zIndex,
+                    position: styles.position,
+                    rect: {
+                        top: Math.round(rect.top),
+                        left: Math.round(rect.left),
+                        width: Math.round(rect.width),
+                        height: Math.round(rect.height)
+                    }
+                });
+            }
+        });
+
+        highZIndexElements.sort((a, b) => b.zIndexNum - a.zIndexNum);
+
+        if (highZIndexElements.length > 0) {
+            highZIndexElements.forEach((item, index) => {
+                console.log(`  ⚠️ ${index + 1}. ${item.tag}${item.id ? '#' + item.id : ''}${item.className ? '.' + item.className.split(' ').join('.') : ''}`);
+                console.log('     z-index:', item.zIndex, `(${item.zIndexNum})`, '| position:', item.position);
+                console.log('     rect:', `top:${item.rect.top} left:${item.rect.left} width:${item.rect.width} height:${item.rect.height}`);
+            });
+        } else {
+            console.log('  ✅ Нет элементов с большим z-index в области loader');
+        }
+
+        console.log('🔍 =========================================\n');
+    }
+
+    hideLoadingWithFade() {
+        return new Promise((resolve) => {
+            const loading = this.elements.loading;
+            loading.classList.remove('fade-in');
+            loading.classList.add('fade-out');
+            
+            setTimeout(() => {
+                loading.style.display = 'none';
+                loading.classList.remove('fade-out');
+                resolve();
+            }, 300);
+        });
+    }
+
+    showMainContent() {
+        this.elements.initialLoading.style.display = 'none';
+        this.elements.mainContent.style.display = 'flex';
+        this.elements.loading.style.display = 'none';
     }
 
     showError(message) {

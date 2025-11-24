@@ -101,11 +101,6 @@
                     </div>
                 </div>
                 
-                <div class="loading" id="loading" style="display: none;">
-                    <div class="loading-spinner"></div>
-                    <span>Loading...</span>
-                </div>
-                
                 <div class="feed-content" id="feedContent">
                     <div class="empty-state">
                         <div class="empty-state-icon">🎬</div>
@@ -113,6 +108,12 @@
                         <p class="empty-state-text">Start rating movies to see them here!</p>
                     </div>
                 </div>
+            </div>
+            
+            <!-- Loading overlay - moved outside feed-section to avoid overflow clipping -->
+            <div class="loading" id="loading" style="display: none;">
+                <div class="loading-spinner"></div>
+                <span>Loading...</span>
             </div>
         </div>
 
