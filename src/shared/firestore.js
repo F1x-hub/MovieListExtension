@@ -1,9 +1,14 @@
+// Token validation constants
+const TOKEN_VALIDATION_TTL = 24 * 60 * 60 * 1000; // 24 hours
+const TOKEN_REFRESH_THRESHOLD = 2 * 60 * 60 * 1000; // 2 hours before expiration
+
 class FirebaseManager {
     constructor() {
         this.db = null;
         this.auth = null;
         this.user = null;
         this.isInitialized = false;
+        this.tokenRefreshTimeout = null; // For scheduled token refresh
         this.init();
     }
 
@@ -37,6 +42,67 @@ class FirebaseManager {
         }
     }
 
+    async shouldValidateToken() {
+        // Check if token validation is needed (more than 24 hours since last validation)
+        try {
+            if (typeof chrome !== 'undefined' && chrome.storage) {
+                const result = await chrome.storage.local.get(['tokenValidationTimestamp']);
+                if (!result.tokenValidationTimestamp) {
+                    return true; // No validation timestamp, need to validate
+                }
+                const timeSinceValidation = Date.now() - result.tokenValidationTimestamp;
+                return timeSinceValidation >= TOKEN_VALIDATION_TTL; // More than 24 hours
+            }
+        } catch (error) {
+            console.error('[FirebaseManager] Error checking token validation timestamp:', error);
+        }
+        return true; // Default to validating if we can't check
+    }
+
+    scheduleTokenRefresh(user) {
+        // Clear any existing scheduled refresh
+        if (this.tokenRefreshTimeout) {
+            clearTimeout(this.tokenRefreshTimeout);
+            this.tokenRefreshTimeout = null;
+        }
+
+        // Schedule background token refresh 1-2 hours before 24-hour validation expires
+        if (typeof chrome !== 'undefined' && chrome.storage && user) {
+            chrome.storage.local.get(['tokenValidationTimestamp'], async (result) => {
+                if (result.tokenValidationTimestamp) {
+                    const timeSinceValidation = Date.now() - result.tokenValidationTimestamp;
+                    const timeUntilExpiry = TOKEN_VALIDATION_TTL - timeSinceValidation;
+                    const refreshTime = timeUntilExpiry - TOKEN_REFRESH_THRESHOLD; // 2 hours before expiry
+
+                    if (refreshTime > 0 && refreshTime < TOKEN_VALIDATION_TTL) {
+                        console.log(`[FirebaseManager] Scheduling token refresh in ${Math.round(refreshTime / 1000 / 60)} minutes`);
+                        this.tokenRefreshTimeout = setTimeout(async () => {
+                            try {
+                                // Refresh token in background
+                                const token = await user.getIdToken();
+                                const tokenResult = await user.getIdTokenResult();
+                                const expiryTime = tokenResult.expirationTime ? new Date(tokenResult.expirationTime).getTime() : Date.now() + (55 * 60 * 1000);
+                                
+                                await chrome.storage.local.set({
+                                    authToken: token,
+                                    authTokenExpiry: expiryTime,
+                                    tokenValidationTimestamp: Date.now()
+                                });
+                                
+                                console.log('[FirebaseManager] Token refreshed in background, expires at:', new Date(expiryTime));
+                                
+                                // Schedule next refresh
+                                this.scheduleTokenRefresh(user);
+                            } catch (error) {
+                                console.error('[FirebaseManager] Error refreshing token in background:', error);
+                            }
+                        }, refreshTime);
+                    }
+                }
+            });
+        }
+    }
+
     async onAuthStateChanged(user) {
         // Sync auth state to chrome.storage for cross-page consistency
         try {
@@ -55,13 +121,41 @@ class FirebaseManager {
                 // If user is authenticated, get and store the auth token
                 if (user && typeof user.getIdToken === 'function') {
                     try {
-                        const token = await user.getIdToken();
-                        const tokenResult = await user.getIdTokenResult();
-                        // Tokens typically expire in 1 hour, store expiry time
-                        const expiryTime = tokenResult.expirationTime ? new Date(tokenResult.expirationTime).getTime() : Date.now() + (55 * 60 * 1000); // 55 minutes from now
-                        storageData.authToken = token;
-                        storageData.authTokenExpiry = expiryTime;
-                        console.log('[FirebaseManager] Auth token saved to chrome.storage, expires at:', new Date(expiryTime));
+                        const needsValidation = await this.shouldValidateToken();
+                        const cachedData = await chrome.storage.local.get(['authToken', 'authTokenExpiry']);
+                        const now = Date.now();
+                        
+                        // Check if cached token is still valid (not expired)
+                        const cachedTokenValid = cachedData.authToken && 
+                                                cachedData.authTokenExpiry && 
+                                                now < cachedData.authTokenExpiry;
+                        
+                        if (!needsValidation && cachedTokenValid) {
+                            // Use cached token if validation is not needed and token is still valid
+                            storageData.authToken = cachedData.authToken;
+                            storageData.authTokenExpiry = cachedData.authTokenExpiry;
+                            console.log('[FirebaseManager] Using cached auth token (validation not needed)');
+                        } else if (!needsValidation && !cachedTokenValid) {
+                            // Token expired but validation is still valid, refresh token without server validation
+                            const token = await user.getIdToken(false);
+                            const tokenResult = await user.getIdTokenResult(false);
+                            const expiryTime = tokenResult.expirationTime ? new Date(tokenResult.expirationTime).getTime() : Date.now() + (55 * 60 * 1000);
+                            storageData.authToken = token;
+                            storageData.authTokenExpiry = expiryTime;
+                            console.log('[FirebaseManager] Auth token refreshed (without server validation), expires at:', new Date(expiryTime));
+                        } else {
+                            // Need full validation - call getIdToken() which may check with server
+                            const token = await user.getIdToken();
+                            const tokenResult = await user.getIdTokenResult();
+                            const expiryTime = tokenResult.expirationTime ? new Date(tokenResult.expirationTime).getTime() : Date.now() + (55 * 60 * 1000);
+                            storageData.authToken = token;
+                            storageData.authTokenExpiry = expiryTime;
+                            storageData.tokenValidationTimestamp = Date.now();
+                            console.log('[FirebaseManager] Auth token validated and saved to chrome.storage, expires at:', new Date(expiryTime));
+                            
+                            // Schedule background token refresh
+                            this.scheduleTokenRefresh(user);
+                        }
                     } catch (tokenError) {
                         console.error('[FirebaseManager] Error getting auth token:', tokenError);
                     }
@@ -69,6 +163,12 @@ class FirebaseManager {
                     // Clear token if user is logged out or user object is invalid
                     storageData.authToken = null;
                     storageData.authTokenExpiry = null;
+                    storageData.tokenValidationTimestamp = null;
+                    // Clear scheduled refresh
+                    if (this.tokenRefreshTimeout) {
+                        clearTimeout(this.tokenRefreshTimeout);
+                        this.tokenRefreshTimeout = null;
+                    }
                 }
 
                 await chrome.storage.local.set(storageData);
@@ -240,7 +340,13 @@ class FirebaseManager {
 
                     const credential = firebase.auth.GoogleAuthProvider.credential(null, token);
                     this.auth.signInWithCredential(credential)
-                        .then((userCredential) => {
+                        .then(async (userCredential) => {
+                            // Set tokenValidationTimestamp on successful login
+                            if (typeof chrome !== 'undefined' && chrome.storage) {
+                                await chrome.storage.local.set({
+                                    tokenValidationTimestamp: Date.now()
+                                });
+                            }
                             resolve(userCredential.user);
                         })
                         .catch((error) => {
@@ -257,6 +363,18 @@ class FirebaseManager {
         try {
             await this.auth.signOut();
             chrome.identity.clearAllCachedAuthTokens();
+            
+            // Clear token validation timestamp and cancel scheduled refresh
+            if (typeof chrome !== 'undefined' && chrome.storage) {
+                await chrome.storage.local.set({
+                    tokenValidationTimestamp: null
+                });
+            }
+            
+            if (this.tokenRefreshTimeout) {
+                clearTimeout(this.tokenRefreshTimeout);
+                this.tokenRefreshTimeout = null;
+            }
         } catch (error) {
             throw error;
         }
@@ -269,6 +387,12 @@ class FirebaseManager {
             }
 
             const userCredential = await this.auth.signInWithEmailAndPassword(email, password);
+            // Set tokenValidationTimestamp on successful login
+            if (typeof chrome !== 'undefined' && chrome.storage) {
+                await chrome.storage.local.set({
+                    tokenValidationTimestamp: Date.now()
+                });
+            }
             return userCredential.user;
         } catch (error) {
             throw error;
@@ -282,6 +406,12 @@ class FirebaseManager {
             }
 
             const userCredential = await this.auth.createUserWithEmailAndPassword(email, password);
+            // Set tokenValidationTimestamp on successful registration
+            if (typeof chrome !== 'undefined' && chrome.storage) {
+                await chrome.storage.local.set({
+                    tokenValidationTimestamp: Date.now()
+                });
+            }
             return userCredential.user;
         } catch (error) {
             throw error;

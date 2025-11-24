@@ -152,16 +152,24 @@ class RatingService {
      * @returns {Promise<Object>} - Average rating and count
      */
     async getMovieAverageRating(movieId) {
+        const startTime = performance.now();
         try {
+            const queryStart = performance.now();
             const query = this.db.collection(this.collection)
                 .where('movieId', '==', movieId);
 
             const results = await query.get();
+            const queryTime = Math.round(performance.now() - queryStart);
             
             if (results.empty) {
+                const totalTime = Math.round(performance.now() - startTime);
+                if (totalTime > 50) {
+                    console.log(`⏱️ [RatingService] getMovieAverageRating(${movieId}): ${totalTime}ms (empty)`);
+                }
                 return { average: 0, count: 0 };
             }
 
+            const calcStart = performance.now();
             let totalRating = 0;
             let count = 0;
 
@@ -172,10 +180,17 @@ class RatingService {
             });
 
             const average = count > 0 ? Math.round((totalRating / count) * 10) / 10 : 0;
+            const calcTime = Math.round(performance.now() - calcStart);
+            
+            const totalTime = Math.round(performance.now() - startTime);
+            if (totalTime > 100) {
+                console.log(`⏱️ [RatingService] getMovieAverageRating(${movieId}): ${totalTime}ms (query: ${queryTime}ms, calc: ${calcTime}ms, count: ${count})`);
+            }
 
             return { average, count };
         } catch (error) {
-            console.error('Error getting movie average rating:', error);
+            const totalTime = Math.round(performance.now() - startTime);
+            console.error(`❌ [RatingService] Error getting movie average rating for ${movieId} (${totalTime}ms):`, error);
             return { average: 0, count: 0 };
         }
     }
@@ -187,11 +202,25 @@ class RatingService {
      */
     async getBatchMovieAverageRatings(movieIds) {
         try {
-            // Check cache first
-            const cacheKey = `averageRatings_${movieIds.sort().join('_')}`;
-            const cached = sessionStorage.getItem(cacheKey);
-            if (cached) {
-                return JSON.parse(cached);
+            // Check chrome.storage cache first
+            if (chrome && chrome.storage && chrome.storage.local) {
+                const cacheKey = `averageRatings_${movieIds.sort().join('_')}`;
+                const cacheTimestampKey = `${cacheKey}_timestamp`;
+                const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+                
+                try {
+                    const result = await chrome.storage.local.get([cacheKey, cacheTimestampKey]);
+                    
+                    if (result[cacheKey] && result[cacheTimestampKey]) {
+                        const age = Date.now() - result[cacheTimestampKey];
+                        if (age < CACHE_DURATION) {
+                            console.log('Using cached batch average ratings from chrome.storage');
+                            return result[cacheKey];
+                        }
+                    }
+                } catch (cacheError) {
+                    console.warn('Error reading from chrome.storage cache:', cacheError);
+                }
             }
             
             // Load all ratings for these movies in one query
@@ -228,8 +257,20 @@ class RatingService {
                 }
             }
             
-            // Cache results for this session
-            sessionStorage.setItem(cacheKey, JSON.stringify(averages));
+            // Cache results in chrome.storage
+            if (chrome && chrome.storage && chrome.storage.local) {
+                const cacheKey = `averageRatings_${movieIds.sort().join('_')}`;
+                const cacheTimestampKey = `${cacheKey}_timestamp`;
+                
+                try {
+                    await chrome.storage.local.set({
+                        [cacheKey]: averages,
+                        [cacheTimestampKey]: Date.now()
+                    });
+                } catch (cacheError) {
+                    console.warn('Error caching to chrome.storage:', cacheError);
+                }
+            }
             
             return averages;
             

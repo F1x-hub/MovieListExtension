@@ -8,6 +8,8 @@ class RatingsCacheService {
         this.CACHE_KEY = 'recent_ratings_cache';
         this.CACHE_TIMESTAMP_KEY = 'recent_ratings_timestamp';
         this.CACHE_HASH_KEY = 'recent_ratings_hash';
+        this.AVERAGE_RATINGS_CACHE_KEY = 'average_ratings_cache';
+        this.AVERAGE_RATINGS_TIMESTAMP_KEY = 'average_ratings_timestamp';
         this.CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
         this.MAX_CACHED_RATINGS = 50;
     }
@@ -43,34 +45,70 @@ class RatingsCacheService {
      * @returns {Promise<{ratings: Array, isFromCache: boolean}>}
      */
     async getCachedRatingsWithBackgroundRefresh(limit = 50) {
+        const startTime = performance.now();
         try {
-            console.log('RatingsCacheService: Getting cached ratings with background refresh');
+            console.log('⏱️ [RatingsCacheService] Starting getCachedRatingsWithBackgroundRefresh');
+            
+            const cacheReadStart = performance.now();
             const cachedData = await this.getCacheData();
+            const cacheReadTime = Math.round(performance.now() - cacheReadStart);
+            console.log(`⏱️ [RatingsCacheService] Cache read: ${cacheReadTime}ms`);
             
             if (cachedData && cachedData.ratings.length > 0) {
                 // Check if cache is still valid
                 if (this.isCacheValid(cachedData.timestamp)) {
                     // Return valid cached data immediately
+                    const sliceStart = performance.now();
                     const ratings = cachedData.ratings.slice(0, limit);
-                    console.log(`RatingsCacheService: Found ${ratings.length} valid cached ratings`);
+                    const sliceTime = Math.round(performance.now() - sliceStart);
+                    console.log(`⏱️ [RatingsCacheService] Slice ratings: ${sliceTime}ms`);
+                    console.log(`✅ [RatingsCacheService] Found ${ratings.length} valid cached ratings (total time: ${Math.round(performance.now() - startTime)}ms)`);
+                    
+                    // Start background refresh (non-blocking)
+                    this.refreshCacheInBackground(limit).catch(error => {
+                        console.error('❌ [RatingsCacheService] Error refreshing cache in background:', error);
+                    });
+                    
                     return { ratings, isFromCache: true };
                 } else {
-                    console.log('RatingsCacheService: Cache expired, fetching fresh data');
+                    console.log('⏱️ [RatingsCacheService] Cache expired, fetching fresh data');
                     // Cache expired, fetch fresh data instead of showing stale data
                     const ratings = await this.fetchAndCacheRatings(limit);
+                    console.log(`⏱️ [RatingsCacheService] Fresh data fetched (total time: ${Math.round(performance.now() - startTime)}ms)`);
                     return { ratings, isFromCache: false };
                 }
             }
 
-            console.log('RatingsCacheService: No cache available, fetching from server');
+            console.log('⏱️ [RatingsCacheService] No cache available, fetching from server');
             // No cache available, fetch from server
             const ratings = await this.fetchAndCacheRatings(limit);
+            console.log(`⏱️ [RatingsCacheService] Server data fetched (total time: ${Math.round(performance.now() - startTime)}ms)`);
             return { ratings, isFromCache: false };
         } catch (error) {
-            console.error('Error getting cached ratings with background refresh:', error);
-            console.log('RatingsCacheService: Falling back to server fetch');
+            console.error('❌ [RatingsCacheService] Error getting cached ratings with background refresh:', error);
+            console.log('⏱️ [RatingsCacheService] Falling back to server fetch');
             const ratings = await this.fetchAndCacheRatings(limit);
+            console.log(`⏱️ [RatingsCacheService] Fallback fetch completed (total time: ${Math.round(performance.now() - startTime)}ms)`);
             return { ratings, isFromCache: false };
+        }
+    }
+
+    /**
+     * Refresh cache in background without blocking UI
+     * @param {number} limit - Maximum number of ratings to fetch
+     */
+    async refreshCacheInBackground(limit = 50) {
+        const startTime = performance.now();
+        try {
+            console.log('🔄 [RatingsCacheService] Starting background cache refresh');
+            const ratings = await this.fetchAndCacheRatings(limit);
+            const totalTime = Math.round(performance.now() - startTime);
+            console.log(`✅ [RatingsCacheService] Background cache refresh completed in ${totalTime}ms`);
+            return ratings;
+        } catch (error) {
+            const totalTime = Math.round(performance.now() - startTime);
+            console.error(`❌ [RatingsCacheService] Error refreshing cache in background (${totalTime}ms):`, error);
+            // Don't throw - this is background operation, errors shouldn't affect UI
         }
     }
 
@@ -80,20 +118,36 @@ class RatingsCacheService {
      * @returns {Promise<Array>} - Array of ratings with movie data
      */
     async fetchAndCacheRatings(limit = 50) {
+        const startTime = performance.now();
         try {
+            console.log('⏱️ [RatingsCacheService] Starting fetchAndCacheRatings');
+            
+            const fetchStart = performance.now();
             const ratingService = this.firebaseManager.getRatingService();
             const result = await ratingService.getAllRatings(limit);
             const ratings = result.ratings;
+            const fetchTime = Math.round(performance.now() - fetchStart);
+            console.log(`⏱️ [RatingsCacheService] getAllRatings from Firebase: ${fetchTime}ms (${ratings.length} ratings)`);
 
             // Enrich ratings with movie data
+            const enrichStart = performance.now();
             await this.enrichRatingsWithMovieData(ratings);
+            const enrichTime = Math.round(performance.now() - enrichStart);
+            console.log(`⏱️ [RatingsCacheService] enrichRatingsWithMovieData: ${enrichTime}ms`);
 
             // Cache the enriched ratings
+            const cacheStart = performance.now();
             await this.cacheRatings(ratings);
+            const cacheTime = Math.round(performance.now() - cacheStart);
+            console.log(`⏱️ [RatingsCacheService] cacheRatings: ${cacheTime}ms`);
 
+            const totalTime = Math.round(performance.now() - startTime);
+            console.log(`✅ [RatingsCacheService] fetchAndCacheRatings completed in ${totalTime}ms (fetch: ${fetchTime}ms, enrich: ${enrichTime}ms, cache: ${cacheTime}ms)`);
+            
             return ratings;
         } catch (error) {
-            console.error('Error fetching and caching ratings:', error);
+            const totalTime = Math.round(performance.now() - startTime);
+            console.error(`❌ [RatingsCacheService] Error fetching and caching ratings (${totalTime}ms):`, error);
             throw error;
         }
     }
@@ -103,41 +157,65 @@ class RatingsCacheService {
      * @param {Array} ratings - Array of ratings to enrich
      */
     async enrichRatingsWithMovieData(ratings) {
+        const startTime = performance.now();
         const movieCacheService = this.firebaseManager.getMovieCacheService();
         const kinopoiskService = this.firebaseManager.getKinopoiskService();
         const movieIds = [...new Set(ratings.map(r => r.movieId))];
         
         try {
-            const cachedMovies = await movieCacheService.getCachedMoviesByIds(movieIds);
+            const movieCacheStart = performance.now();
+            // Use getBatchCachedMovies for better performance (uses documentId query)
+            const cachedMoviesObj = await movieCacheService.getBatchCachedMovies(movieIds);
+            // Convert object to array format for compatibility
+            const cachedMovies = Object.values(cachedMoviesObj);
             const movieMap = new Map(cachedMovies.map(m => [m.kinopoiskId, m]));
+            const movieCacheTime = Math.round(performance.now() - movieCacheStart);
+            console.log(`⏱️ [RatingsCacheService] getBatchCachedMovies: ${movieCacheTime}ms (${cachedMovies.length}/${movieIds.length} cached)`);
             
             const missingMovieIds = movieIds.filter(id => !movieMap.has(id));
             
             if (missingMovieIds.length > 0) {
-                console.log(`Fetching ${missingMovieIds.length} movies from Kinopoisk API...`);
+                console.log(`⏱️ [RatingsCacheService] Fetching ${missingMovieIds.length} movies from Kinopoisk API...`);
+                const kinopoiskStart = performance.now();
                 
-                for (const movieId of missingMovieIds) {
+                for (let i = 0; i < missingMovieIds.length; i++) {
+                    const movieId = missingMovieIds[i];
+                    const movieFetchStart = performance.now();
                     try {
                         const movieData = await kinopoiskService.getMovieById(movieId);
+                        const movieFetchTime = Math.round(performance.now() - movieFetchStart);
                         if (movieData) {
                             movieMap.set(movieData.kinopoiskId, movieData);
                             await movieCacheService.cacheRatedMovie(movieData);
-                            console.log(`Cached movie: ${movieData.name}`);
+                            console.log(`⏱️ [RatingsCacheService] Movie ${i+1}/${missingMovieIds.length}: ${movieData.name} (${movieFetchTime}ms)`);
                         }
                     } catch (error) {
-                        console.error(`Failed to fetch movie ${movieId}:`, error);
+                        const movieFetchTime = Math.round(performance.now() - movieFetchStart);
+                        console.error(`❌ [RatingsCacheService] Failed to fetch movie ${movieId} (${movieFetchTime}ms):`, error);
                     }
                 }
+                const kinopoiskTime = Math.round(performance.now() - kinopoiskStart);
+                console.log(`⏱️ [RatingsCacheService] Kinopoisk API fetch: ${kinopoiskTime}ms (${missingMovieIds.length} movies)`);
             }
             
             // Enrich with user profile data
+            const userDataStart = performance.now();
             await this.enrichRatingsWithUserData(ratings);
+            const userDataTime = Math.round(performance.now() - userDataStart);
+            console.log(`⏱️ [RatingsCacheService] enrichRatingsWithUserData: ${userDataTime}ms`);
             
+            const mapStart = performance.now();
             ratings.forEach(rating => {
                 rating.movie = movieMap.get(rating.movieId);
             });
+            const mapTime = Math.round(performance.now() - mapStart);
+            console.log(`⏱️ [RatingsCacheService] Map movies to ratings: ${mapTime}ms`);
+            
+            const totalTime = Math.round(performance.now() - startTime);
+            console.log(`✅ [RatingsCacheService] enrichRatingsWithMovieData completed in ${totalTime}ms`);
         } catch (error) {
-            console.error('Error enriching ratings with movie data:', error);
+            const totalTime = Math.round(performance.now() - startTime);
+            console.error(`❌ [RatingsCacheService] Error enriching ratings with movie data (${totalTime}ms):`, error);
         }
     }
 
@@ -146,17 +224,26 @@ class RatingsCacheService {
      * @param {Array} ratings - Array of ratings to enrich
      */
     async enrichRatingsWithUserData(ratings) {
+        const startTime = performance.now();
         try {
+            const userIdsStart = performance.now();
             const userIds = [...new Set(ratings.map(r => r.userId))];
+            const userIdsTime = Math.round(performance.now() - userIdsStart);
+            console.log(`⏱️ [RatingsCacheService] Extract unique userIds: ${userIdsTime}ms (${userIds.length} users)`);
+            
             const userService = this.firebaseManager.getUserService();
             const currentUser = this.firebaseManager.getCurrentUser();
             
             // Get profiles for all users in batch
+            const profilesStart = performance.now();
             const userProfiles = await userService.getUserProfilesByIds(userIds);
             const userProfileMap = new Map(userProfiles.map(u => [u.userId || u.id, u]));
+            const profilesTime = Math.round(performance.now() - profilesStart);
+            console.log(`⏱️ [RatingsCacheService] getUserProfilesByIds: ${profilesTime}ms (${userProfiles.length} profiles)`);
             
             // Also check current user from auth
             if (currentUser) {
+                const currentUserStart = performance.now();
                 const currentUserProfile = await userService.getUserProfile(currentUser.uid);
                 if (currentUserProfile) {
                     userProfileMap.set(currentUser.uid, currentUserProfile);
@@ -168,9 +255,12 @@ class RatingsCacheService {
                         displayName: currentUser.displayName
                     });
                 }
+                const currentUserTime = Math.round(performance.now() - currentUserStart);
+                console.log(`⏱️ [RatingsCacheService] Get current user profile: ${currentUserTime}ms`);
             }
             
             // Update ratings with current user data
+            const updateStart = performance.now();
             ratings.forEach(rating => {
                 const userProfile = userProfileMap.get(rating.userId);
                 if (userProfile) {
@@ -184,8 +274,14 @@ class RatingsCacheService {
                     }
                 }
             });
+            const updateTime = Math.round(performance.now() - updateStart);
+            console.log(`⏱️ [RatingsCacheService] Update ratings with user data: ${updateTime}ms`);
+            
+            const totalTime = Math.round(performance.now() - startTime);
+            console.log(`✅ [RatingsCacheService] enrichRatingsWithUserData completed in ${totalTime}ms`);
         } catch (error) {
-            console.error('Error enriching ratings with user data:', error);
+            const totalTime = Math.round(performance.now() - startTime);
+            console.error(`❌ [RatingsCacheService] Error enriching ratings with user data (${totalTime}ms):`, error);
         }
     }
 
@@ -314,7 +410,9 @@ class RatingsCacheService {
             await chrome.storage.local.remove([
                 this.CACHE_KEY,
                 this.CACHE_TIMESTAMP_KEY,
-                this.CACHE_HASH_KEY
+                this.CACHE_HASH_KEY,
+                this.AVERAGE_RATINGS_CACHE_KEY,
+                this.AVERAGE_RATINGS_TIMESTAMP_KEY
             ]);
             console.log('Ratings cache cleared');
         } catch (error) {
@@ -346,6 +444,86 @@ class RatingsCacheService {
         } catch (error) {
             console.error('Error getting cache stats:', error);
             return { exists: false, size: 0, age: 0, isValid: false };
+        }
+    }
+
+    /**
+     * Cache average ratings for movies
+     * @param {Map|Object} averageRatingsMap - Map or object with movieId as key and {average, count} as value
+     */
+    async cacheAverageRatings(averageRatingsMap) {
+        try {
+            if (!chrome || !chrome.storage || !chrome.storage.local) {
+                console.error('RatingsCacheService: chrome.storage.local is not available for caching average ratings');
+                return;
+            }
+
+            const timestamp = Date.now();
+            const averageRatingsObj = averageRatingsMap instanceof Map 
+                ? Object.fromEntries(averageRatingsMap)
+                : averageRatingsMap;
+
+            const cacheData = {
+                [this.AVERAGE_RATINGS_CACHE_KEY]: averageRatingsObj,
+                [this.AVERAGE_RATINGS_TIMESTAMP_KEY]: timestamp
+            };
+
+            await chrome.storage.local.set(cacheData);
+            console.log(`RatingsCacheService: Cached average ratings for ${Object.keys(averageRatingsObj).length} movies`);
+        } catch (error) {
+            console.error('Error caching average ratings:', error);
+        }
+    }
+
+    /**
+     * Get cached average ratings
+     * @returns {Promise<Map|null>} - Map of movieId to {average, count} or null
+     */
+    async getCachedAverageRatings() {
+        try {
+            if (!chrome || !chrome.storage || !chrome.storage.local) {
+                console.error('RatingsCacheService: chrome.storage.local is not available');
+                return null;
+            }
+
+            const result = await chrome.storage.local.get([
+                this.AVERAGE_RATINGS_CACHE_KEY,
+                this.AVERAGE_RATINGS_TIMESTAMP_KEY
+            ]);
+
+            if (!result[this.AVERAGE_RATINGS_CACHE_KEY] || !result[this.AVERAGE_RATINGS_TIMESTAMP_KEY]) {
+                console.log('RatingsCacheService: No cached average ratings found');
+                return null;
+            }
+
+            if (!this.isCacheValid(result[this.AVERAGE_RATINGS_TIMESTAMP_KEY])) {
+                console.log('RatingsCacheService: Cached average ratings expired');
+                return null;
+            }
+
+            const averageRatingsObj = result[this.AVERAGE_RATINGS_CACHE_KEY];
+            const averageRatingsMap = new Map(Object.entries(averageRatingsObj));
+            
+            console.log(`RatingsCacheService: Found cached average ratings for ${averageRatingsMap.size} movies`);
+            return averageRatingsMap;
+        } catch (error) {
+            console.error('Error getting cached average ratings:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Clear cached average ratings
+     */
+    async clearAverageRatingsCache() {
+        try {
+            await chrome.storage.local.remove([
+                this.AVERAGE_RATINGS_CACHE_KEY,
+                this.AVERAGE_RATINGS_TIMESTAMP_KEY
+            ]);
+            console.log('Average ratings cache cleared');
+        } catch (error) {
+            console.error('Error clearing average ratings cache:', error);
         }
     }
 }

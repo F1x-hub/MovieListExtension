@@ -13,26 +13,30 @@ async function getFirebaseManagerInExtension() {
 
 async function getIdToken() {
     return new Promise((resolve, reject) => {
-        chrome.storage.local.get(['user', 'authToken', 'authTokenExpiry'], async (result) => {
+        chrome.storage.local.get(['user', 'authToken', 'authTokenExpiry', 'tokenValidationTimestamp'], async (result) => {
             if (!result.user || !result.user.uid) {
                 reject(new Error('User not authenticated'));
                 return;
             }
 
+            // Check if token validation is still valid (less than 24 hours)
+            const TOKEN_VALIDATION_TTL = 24 * 60 * 60 * 1000; // 24 hours
+            const validationValid = result.tokenValidationTimestamp && 
+                                   (Date.now() - result.tokenValidationTimestamp) < TOKEN_VALIDATION_TTL;
+
             // Check if we have a valid cached token
-            if (result.authToken && result.authTokenExpiry) {
+            if (result.authToken && result.authTokenExpiry && validationValid) {
                 const now = Date.now();
                 if (now < result.authTokenExpiry) {
-                    // Token is still valid, use it
+                    // Token is still valid and validation is recent, use it
                     resolve(result.authToken);
                     return;
                 }
             }
 
-            // Token expired or doesn't exist, need to get a new one
-            // For now, we'll reject and let the user know they need to open popup
-            // In a production app, you might want to implement token refresh
-            reject(new Error('Token expired. Please open the extension popup to refresh authentication.'));
+            // Token expired, validation expired, or doesn't exist - need to get a new one
+            // Reject and let the user know they need to open popup to refresh authentication
+            reject(new Error('Token expired or validation expired. Please open the extension popup to refresh authentication.'));
         });
     });
 }
