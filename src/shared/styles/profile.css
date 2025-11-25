@@ -12,11 +12,11 @@
 
 .profile-header {
     position: relative;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     padding: 60px 0 100px;
     margin: 0 -20px 0 -20px;
     margin-bottom: -80px;
     border-radius: 0 0 20px 20px;
+    overflow: hidden; /* Ensure cover doesn't spill out */
 }
 
 .profile-cover {
@@ -24,9 +24,29 @@
     top: 0;
     left: 0;
     right: 0;
-    height: 200px;
+    bottom: 0; /* Fill the entire header */
+    height: auto; /* Remove fixed height */
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    opacity: 0.9;
+    background-size: cover;
+    background-position: center;
+    opacity: 1;
+    z-index: 0;
+}
+
+.profile-cover::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(15, 23, 42, 0.3); /* Dimming overlay */
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.profile-cover.has-banner::after {
+    opacity: 1;
 }
 
 .profile-content {
@@ -501,6 +521,51 @@
     font-weight: 700;
     color: #667eea;
     background: linear-gradient(135deg, #334155 0%, #475569 100%);
+}
+
+/* Banner Upload Styles */
+.banner-upload-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-bottom: 12px;
+}
+
+.banner-preview {
+    width: 100%;
+    height: 150px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #334155;
+    border: 4px solid #475569;
+    position: relative;
+}
+
+.banner-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.banner-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: #94a3b8;
+    background: linear-gradient(135deg, #334155 0%, #475569 100%);
+}
+
+.banner-icon {
+    font-size: 2rem;
+}
+
+.banner-actions {
+    display: flex;
+    gap: 12px;
 }
 
 .photo-actions {

@@ -8,9 +8,12 @@ class ProfilePageManager {
         this.userProfile = null;
         this.profileService = null;
         this.userService = null;
+        this.imageCacheService = window.imageCacheService;
         this.isLoading = false;
         this.photoFile = null;
         this.photoPreview = null;
+        this.bannerFile = null;
+        this.bannerPreview = null;
         
         this.init();
     }
@@ -37,6 +40,7 @@ class ProfilePageManager {
             profileFavoriteGenre: document.getElementById('profileFavoriteGenre'),
             favoriteGenreText: document.getElementById('favoriteGenreText'),
             editProfileBtn: document.getElementById('editProfileBtn'),
+            profileCover: document.querySelector('.profile-cover'),
 
             // Statistics
             statTotalRatings: document.getElementById('statTotalRatings'),
@@ -64,6 +68,11 @@ class ProfilePageManager {
             photoInitials: document.getElementById('photoInitials'),
             photoInput: document.getElementById('photoInput'),
             removePhotoBtn: document.getElementById('removePhotoBtn'),
+            bannerPreview: document.getElementById('bannerPreview'),
+            bannerPreviewImg: document.getElementById('bannerPreviewImg'),
+            bannerPlaceholder: document.getElementById('bannerPlaceholder'),
+            bannerInput: document.getElementById('bannerInput'),
+            removeBannerBtn: document.getElementById('removeBannerBtn'),
             firstNameInput: document.getElementById('firstNameInput'),
             lastNameInput: document.getElementById('lastNameInput'),
             usernameInput: document.getElementById('usernameInput'),
@@ -138,6 +147,14 @@ class ProfilePageManager {
 
         if (this.elements.removePhotoBtn) {
             this.elements.removePhotoBtn.addEventListener('click', () => this.handleRemovePhoto());
+        }
+
+        if (this.elements.bannerInput) {
+            this.elements.bannerInput.addEventListener('change', (e) => this.handleBannerChange(e));
+        }
+
+        if (this.elements.removeBannerBtn) {
+            this.elements.removeBannerBtn.addEventListener('click', () => this.handleRemoveBanner());
         }
 
         if (this.elements.bioInput) {
@@ -262,13 +279,28 @@ class ProfilePageManager {
         }
 
         if (photoURL) {
-            if (this.elements.profilePhotoImg) {
-                this.elements.profilePhotoImg.src = photoURL;
-                this.elements.profilePhotoImg.style.display = 'block';
-            }
-            if (this.elements.profilePhotoPlaceholder) {
-                this.elements.profilePhotoPlaceholder.style.display = 'none';
-            }
+            // Try to get from cache first
+            this.imageCacheService.getCachedImage(profile.uid || this.currentUser.uid, 'avatar').then(cachedAvatar => {
+                if (cachedAvatar) {
+                    if (this.elements.profilePhotoImg) {
+                        this.elements.profilePhotoImg.src = cachedAvatar;
+                        this.elements.profilePhotoImg.style.display = 'block';
+                    }
+                    if (this.elements.profilePhotoPlaceholder) {
+                        this.elements.profilePhotoPlaceholder.style.display = 'none';
+                    }
+                } else {
+                    // Fallback to URL and cache it
+                    if (this.elements.profilePhotoImg) {
+                        this.elements.profilePhotoImg.src = photoURL;
+                        this.elements.profilePhotoImg.style.display = 'block';
+                    }
+                    if (this.elements.profilePhotoPlaceholder) {
+                        this.elements.profilePhotoPlaceholder.style.display = 'none';
+                    }
+                    this.imageCacheService.fetchAndCache(profile.uid || this.currentUser.uid, 'avatar', photoURL);
+                }
+            });
         } else {
             if (this.elements.profilePhotoImg) {
                 this.elements.profilePhotoImg.style.display = 'none';
@@ -300,6 +332,26 @@ class ProfilePageManager {
                 this.elements.editProfileBtn.style.display = 'none';
             } else {
                 this.elements.editProfileBtn.style.display = 'block';
+            }
+        }
+
+        if (this.elements.profileCover) {
+            if (profile.bannerURL) {
+                // Try to get from cache first
+                this.imageCacheService.getCachedImage(profile.uid || this.currentUser.uid, 'banner').then(cachedBanner => {
+                    if (cachedBanner) {
+                        this.elements.profileCover.style.backgroundImage = `url('${cachedBanner}')`;
+                        this.elements.profileCover.classList.add('has-banner');
+                    } else {
+                        // Fallback to URL and cache it
+                        this.elements.profileCover.style.backgroundImage = `url('${profile.bannerURL}')`;
+                        this.elements.profileCover.classList.add('has-banner');
+                        this.imageCacheService.fetchAndCache(profile.uid || this.currentUser.uid, 'banner', profile.bannerURL);
+                    }
+                });
+            } else {
+                this.elements.profileCover.style.backgroundImage = '';
+                this.elements.profileCover.classList.remove('has-banner');
             }
         }
     }
@@ -426,6 +478,7 @@ class ProfilePageManager {
         const displayNameFormat = profile.displayNameFormat || 'fullname';
         const socialLinks = profile.socialLinks || { twitter: '', instagram: '', facebook: '' };
         const photoURL = profile.photoURL || '';
+        const bannerURL = profile.bannerURL || '';
 
         if (this.elements.firstNameInput) {
             this.elements.firstNameInput.value = firstName;
@@ -458,6 +511,9 @@ class ProfilePageManager {
 
         this.photoPreview = photoURL;
         this.updatePhotoPreview();
+
+        this.bannerPreview = bannerURL;
+        this.updateBannerPreview();
     }
 
     updatePhotoPreview() {
@@ -495,9 +551,9 @@ class ProfilePageManager {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
+        const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
         if (!validTypes.includes(file.type)) {
-            this.showToast('Invalid file type. Use JPG, PNG, or WEBP.', 'error');
+            this.showToast('Invalid file type. Use JPG, PNG, WEBP or GIF.', 'error');
             return;
         }
 
@@ -522,6 +578,64 @@ class ProfilePageManager {
             this.elements.photoInput.value = '';
         }
         this.updatePhotoPreview();
+    }
+
+    updateBannerPreview() {
+        if (this.bannerPreview) {
+            if (this.elements.bannerPreviewImg) {
+                this.elements.bannerPreviewImg.src = this.bannerPreview;
+                this.elements.bannerPreviewImg.style.display = 'block';
+            }
+            if (this.elements.bannerPlaceholder) {
+                this.elements.bannerPlaceholder.style.display = 'none';
+            }
+            if (this.elements.removeBannerBtn) {
+                this.elements.removeBannerBtn.style.display = 'block';
+            }
+        } else {
+            if (this.elements.bannerPreviewImg) {
+                this.elements.bannerPreviewImg.style.display = 'none';
+            }
+            if (this.elements.bannerPlaceholder) {
+                this.elements.bannerPlaceholder.style.display = 'flex';
+            }
+            if (this.elements.removeBannerBtn) {
+                this.elements.removeBannerBtn.style.display = 'none';
+            }
+        }
+    }
+
+    handleBannerChange(e) {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+        if (!validTypes.includes(file.type)) {
+            this.showToast('Invalid file type. Use JPG, PNG, WEBP or GIF.', 'error');
+            return;
+        }
+
+        if (file.size > 5 * 1024 * 1024) {
+            this.showToast('File size must be less than 5MB.', 'error');
+            return;
+        }
+
+        this.bannerFile = file;
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            this.bannerPreview = reader.result;
+            this.updateBannerPreview();
+        };
+        reader.readAsDataURL(file);
+    }
+
+    handleRemoveBanner() {
+        this.bannerFile = null;
+        this.bannerPreview = null;
+        if (this.elements.bannerInput) {
+            this.elements.bannerInput.value = '';
+        }
+        this.updateBannerPreview();
     }
 
     updateBioCharCount() {
@@ -587,10 +701,31 @@ class ProfilePageManager {
                 const uploadResult = await firebaseManager.uploadAvatar(this.photoFile);
                 photoURL = uploadResult.photoURL;
                 photoPath = uploadResult.photoPath;
+                // Cache the new avatar immediately
+                await this.imageCacheService.cacheImage(this.currentUser.uid, 'avatar', this.photoFile);
             } else if (!this.photoPreview && this.userProfile.photoPath) {
                 await firebaseManager.deleteProfilePhoto(this.userProfile.photoPath);
                 photoURL = '';
                 photoPath = '';
+                // Invalidate cache
+                await this.imageCacheService.invalidateCache(this.currentUser.uid, 'avatar');
+            }
+
+            let bannerURL = this.userProfile.bannerURL || '';
+            let bannerPath = this.userProfile.bannerPath || '';
+
+            if (this.bannerFile) {
+                const uploadResult = await firebaseManager.uploadBanner(this.bannerFile);
+                bannerURL = uploadResult.bannerURL;
+                bannerPath = uploadResult.bannerPath;
+                // Cache the new banner immediately
+                await this.imageCacheService.cacheImage(this.currentUser.uid, 'banner', this.bannerFile);
+            } else if (!this.bannerPreview && this.userProfile.bannerPath) {
+                await firebaseManager.deleteBanner(this.userProfile.bannerPath);
+                bannerURL = '';
+                bannerPath = '';
+                // Invalidate cache
+                await this.imageCacheService.invalidateCache(this.currentUser.uid, 'banner');
             }
 
             const displayName = [formData.firstName, formData.lastName].filter(Boolean).join(' ') || 
@@ -607,7 +742,9 @@ class ProfilePageManager {
                 favoriteGenre: formData.favoriteGenre,
                 socialLinks: formData.socialLinks,
                 photoURL,
-                photoPath
+                photoPath,
+                bannerURL,
+                bannerPath
             };
 
             await this.userService.updateUserProfile(this.currentUser.uid, updateData);
@@ -718,12 +855,17 @@ class ProfilePageManager {
     resetForm() {
         this.photoFile = null;
         this.photoPreview = this.userProfile?.photoURL || null;
+        this.bannerFile = null;
+        this.bannerPreview = this.userProfile?.bannerURL || null;
         this.clearErrors();
         if (this.elements.passwordFields) {
             this.elements.passwordFields.style.display = 'none';
         }
         if (this.elements.photoInput) {
             this.elements.photoInput.value = '';
+        }
+        if (this.elements.bannerInput) {
+            this.elements.bannerInput.value = '';
         }
     }
 

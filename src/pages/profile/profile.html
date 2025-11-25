@@ -27,6 +27,7 @@
     <script src="../../shared/services/WatchlistService.js"></script>
     <script src="../../shared/services/FavoriteService.js"></script>
     <script src="../../shared/services/CollectionService.js"></script>
+    <script src="../../shared/services/ImageCacheService.js"></script>
     <script src="../../shared/services/ProfileService.js"></script>
     <script src="../../shared/utils/Utils.js"></script>
     
@@ -135,6 +136,32 @@
                 <button class="modal-close" id="editProfileModalClose">×</button>
             </div>
             <form id="editProfileForm" class="modal-body">
+                <!-- Banner Upload -->
+                <div class="form-group banner-upload">
+                    <label>Profile Banner</label>
+                    <div class="banner-upload-container">
+                        <div class="banner-preview" id="bannerPreview">
+                            <img id="bannerPreviewImg" src="" alt="Banner Preview" style="display: none;">
+                            <div class="banner-placeholder" id="bannerPlaceholder">
+                                <span class="banner-icon">🖼️</span>
+                                <span>No Banner Selected</span>
+                            </div>
+                        </div>
+                        <div class="banner-actions">
+                            <label class="btn-upload" for="bannerInput">
+                                <span class="btn-icon">📤</span>
+                                Upload Banner
+                            </label>
+                            <input type="file" id="bannerInput" accept="image/png,image/jpeg,image/webp,image/gif" style="display: none;">
+                            <button type="button" class="btn-remove" id="removeBannerBtn" style="display: none;">
+                                <span class="btn-icon">🗑️</span>
+                                Remove
+                            </button>
+                        </div>
+                    </div>
+                    <p class="photo-hint">Recommended: 1200x400px · JPG/PNG/WEBP/GIF · max 5MB</p>
+                </div>
+
                 <!-- Photo Upload -->
                 <div class="form-group photo-upload">
                     <label>Profile Photo</label>
@@ -150,14 +177,14 @@
                                 <span class="btn-icon">📤</span>
                                 Upload Photo
                             </label>
-                            <input type="file" id="photoInput" accept="image/png,image/jpeg,image/webp" style="display: none;">
+                            <input type="file" id="photoInput" accept="image/png,image/jpeg,image/webp,image/gif" style="display: none;">
                             <button type="button" class="btn-remove" id="removePhotoBtn" style="display: none;">
                                 <span class="btn-icon">🗑️</span>
                                 Remove
                             </button>
                         </div>
                     </div>
-                    <p class="photo-hint">JPG/PNG/WEBP · max 5MB</p>
+                    <p class="photo-hint">JPG/PNG/WEBP/GIF · max 5MB</p>
                 </div>
 
                 <!-- First Name -->
