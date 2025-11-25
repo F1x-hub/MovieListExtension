@@ -278,6 +278,23 @@ class FirebaseManager {
                 console.warn('Photo URL is too long for Firebase Auth. Using Storage URL only.');
             }
             
+            // Update metadata for cache control
+            try {
+                const metadataUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(objectPath)}`;
+                await fetch(metadataUrl, {
+                    method: 'PATCH',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        cacheControl: 'public, max-age=31536000'
+                    })
+                });
+            } catch (metaError) {
+                console.warn('Failed to update metadata:', metaError);
+            }
+
             return {
                 photoURL,
                 photoPath: objectPath
@@ -318,6 +335,83 @@ class FirebaseManager {
             console.error('Error deleting profile photo:', error);
             throw error;
         }
+    }
+
+    async uploadBanner(file) {
+        const user = this.getCurrentUser();
+        if (!user) throw new Error('No authenticated user');
+
+        try {
+            const token = await user.getIdToken();
+            const bucket = 'movielistdb-13208.firebasestorage.app';
+            // Use a fixed name or timestamped name. Fixed name saves space/cleanup logic.
+            const objectPath = `banners/${user.uid}/banner.jpg`;
+            
+            const uploadUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o?name=${encodeURIComponent(objectPath)}&uploadType=media`;
+            
+            console.log('Uploading banner:', {
+                size: file.size,
+                type: file.type || 'image/jpeg',
+                path: objectPath
+            });
+            
+            const res = await fetch(uploadUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': file.type || 'image/jpeg'
+                },
+                body: file
+            });
+
+            if (!res.ok) {
+                const errorText = await res.text();
+                console.error('Upload error response:', errorText);
+                throw new Error(`Upload failed: ${res.status} ${res.statusText}`);
+            }
+
+            const info = await res.json();
+            
+            const uploadedPath = info.name || objectPath;
+            let bannerURL;
+            if (info && info.downloadTokens) {
+                const tokenParam = Array.isArray(info.downloadTokens) ? info.downloadTokens[0] : info.downloadTokens;
+                bannerURL = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(uploadedPath)}?alt=media&token=${tokenParam}`;
+            } else {
+                bannerURL = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(uploadedPath)}?alt=media`;
+            }
+            
+            // Update metadata for cache control
+            try {
+                const metadataUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(objectPath)}`;
+                await fetch(metadataUrl, {
+                    method: 'PATCH',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        cacheControl: 'public, max-age=31536000'
+                    })
+                });
+            } catch (metaError) {
+                console.warn('Failed to update metadata:', metaError);
+            }
+
+            return {
+                bannerURL,
+                bannerPath: objectPath
+            };
+        } catch (e) {
+            console.error('Banner upload error:', e);
+            throw e;
+        }
+    }
+
+    async deleteBanner(bannerPath) {
+        if (!bannerPath) return;
+        // Reuse delete logic as it's just a path
+        return this.deleteProfilePhoto(bannerPath);
     }
 
     async signInWithGoogle() {
