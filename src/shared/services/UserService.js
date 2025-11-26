@@ -37,6 +37,7 @@ class UserService {
                 bio: userData.bio || '',
                 displayNameFormat: userData.displayNameFormat || 'fullname',
                 favoriteGenre: userData.favoriteGenre || '',
+                isAdmin: userData.isAdmin || false, // Admin status, defaults to false
                 socialLinks: userData.socialLinks || {
                     twitter: '',
                     instagram: '',
@@ -79,6 +80,8 @@ class UserService {
                 if (userData.displayNameFormat !== undefined) updateData.displayNameFormat = userData.displayNameFormat;
                 if (userData.favoriteGenre !== undefined) updateData.favoriteGenre = userData.favoriteGenre;
                 if (userData.photoPath !== undefined) updateData.photoPath = userData.photoPath;
+                // Preserve isAdmin status - never override unless explicitly set
+                if (userData.isAdmin !== undefined) updateData.isAdmin = userData.isAdmin;
                 if (userData.socialLinks) {
                     updateData.socialLinks = {
                         ...(existingData.socialLinks || {}),

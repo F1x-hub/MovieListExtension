@@ -424,6 +424,12 @@ class PopupManager {
         });
     }
 
+    openUserProfile(userId) {
+        chrome.tabs.create({ 
+            url: chrome.runtime.getURL(`src/pages/profile/profile.html?userId=${userId}`) 
+        });
+    }
+
     openSettings() {
         this.showError('Settings feature coming soon!');
     }
@@ -844,8 +850,10 @@ class PopupManager {
             <img src="${posterUrl}" alt="${movieTitle}" class="rating-poster" onerror="this.src='/icons/icon48.png'">
             <div class="rating-content">
                 <div class="rating-header">
-                    <img src="${userPhoto}" alt="${displayUserName}" class="rating-user-avatar" onerror="this.src='/icons/icon48.png'">
-                    <span class="rating-user-name" title="${this.escapeHtml(displayUserName)}">${this.escapeHtml(this.truncateText(displayUserName, 20))}</span>
+                    <div class="rating-user-info clickable-user" data-user-id="${rating.userId}">
+                        <img src="${userPhoto}" alt="${displayUserName}" class="rating-user-avatar" onerror="this.src='/icons/icon48.png'">
+                        <span class="rating-user-name" title="${this.escapeHtml(displayUserName)}">${this.escapeHtml(this.truncateText(displayUserName, 20))}</span>
+                    </div>
                     ${isCurrentUser ? `
                         <div class="rating-menu">
                             <button class="rating-menu-btn" data-rating-id="${rating.id}" aria-label="Меню отзыва">
@@ -881,9 +889,9 @@ class PopupManager {
             </div>
         `;
 
-        // Add click handler to navigate to movie detail page (but not if clicking menu)
+        // Add click handler to navigate to movie detail page (but not if clicking menu or user info)
         ratingDiv.addEventListener('click', (e) => {
-            if (e.target.closest('.rating-menu')) {
+            if (e.target.closest('.rating-menu') || e.target.closest('.rating-user-info')) {
                 return;
             }
             if (movieId) {
@@ -896,6 +904,15 @@ class PopupManager {
         // Setup menu listeners if this is current user's rating
         if (isCurrentUser) {
             this.setupPopupRatingMenu(ratingDiv, rating.id);
+        }
+
+        // Add click handler for user info
+        const userInfo = ratingDiv.querySelector('.rating-user-info');
+        if (userInfo) {
+            userInfo.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.openUserProfile(rating.userId);
+            });
         }
 
         return ratingDiv;

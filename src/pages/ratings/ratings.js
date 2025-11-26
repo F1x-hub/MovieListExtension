@@ -309,8 +309,6 @@ class RatingsPageManager {
             }
             
             if (typeof firebaseManager !== 'undefined') {
-                await firebaseManager.init();
-                
                 // Check if user is already authenticated
                 const currentUser = firebaseManager.getCurrentUser();
                 
@@ -319,7 +317,9 @@ class RatingsPageManager {
                     this.loadMovies();
                 }
                 
-                firebaseManager.onAuthStateChanged((user) => {
+                // Listen for auth state changes via window event (dispatched by firestore.js)
+                window.addEventListener('authStateChanged', (e) => {
+                    const user = e.detail.user;
                     this.currentUser = user;
                     if (user) {
                         this.loadMovies();

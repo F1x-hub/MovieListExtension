@@ -492,6 +492,21 @@
     margin: 0;
 }
 
+.clickable-user {
+    cursor: pointer;
+    transition: opacity 0.2s;
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: 2px 4px;
+    margin: -2px -4px;
+    border-radius: var(--radius-sm);
+}
+
+.clickable-user:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
 .rating-movie-title {
     font-size: var(--font-size-base);
     font-weight: 600;

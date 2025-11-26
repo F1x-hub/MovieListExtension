@@ -65,10 +65,17 @@
                                 <span id="favoriteGenreText"></span>
                             </span>
                         </div>
-                        <button class="btn-edit-profile" id="editProfileBtn">
-                            <span class="btn-icon">✏️</span>
-                            Edit Profile
-                        </button>
+                        <div class="profile-menu" id="profileMenu" style="display: none;">
+                            <button class="btn-profile-menu" id="profileMenuBtn">
+                                <span class="menu-icon">⋮</span>
+                            </button>
+                            <div class="profile-dropdown" id="profileDropdown">
+                                <button class="dropdown-item" id="editProfileItem">
+                                    <span class="dropdown-icon">✏️</span>
+                                    Edit Profile
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -288,15 +295,15 @@
                     </div>
                 </div>
 
-                <!-- Form Footer -->
-                <div class="modal-footer">
-                    <button type="button" class="btn-secondary" id="cancelEditBtn">Cancel</button>
-                    <button type="submit" class="btn-primary" id="saveProfileBtn">
-                        <span id="saveBtnText">Save Changes</span>
-                        <span id="saveBtnLoading" style="display: none;">Saving...</span>
-                    </button>
-                </div>
             </form>
+            <!-- Form Footer -->
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" id="cancelEditBtn">Cancel</button>
+                <button type="submit" form="editProfileForm" class="btn-primary" id="saveProfileBtn">
+                    <span id="saveBtnText">Save Changes</span>
+                    <span id="saveBtnLoading" style="display: none;">Saving...</span>
+                </button>
+            </div>
             <div id="profileToast" class="toast-message" style="display: none;"></div>
         </div>
     </div>
