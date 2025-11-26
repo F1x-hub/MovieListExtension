@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - Movie Ratings</title>
+    <link rel="stylesheet" href="../../shared/styles/common.css">
+    <link rel="stylesheet" href="../../shared/styles/components.css">
+    <link rel="stylesheet" href="../../shared/styles/navigation.css">
+    <link rel="stylesheet" href="../../shared/styles/admin.css">
+</head>
+<body>
+    <!-- Navigation will be injected here -->
+    
+    <main class="admin-main">
+        <div class="admin-container">
+            <header class="admin-header">
+                <h1 class="admin-title">
+                    <span class="admin-icon">🛡️</span>
+                    Admin Panel
+                </h1>
+                <p class="admin-subtitle">User Management & Administration</p>
+            </header>
+
+            <!-- Loading State -->
+            <div class="admin-loading" id="adminLoading">
+                <div class="loading-spinner"></div>
+                <p>Loading users...</p>
+            </div>
+
+            <!-- Error Message -->
+            <div class="admin-error" id="adminError" style="display: none;">
+                <span class="error-icon">⚠️</span>
+                <p id="errorText"></p>
+            </div>
+
+            <!-- Users Table -->
+            <div class="admin-content" id="adminContent" style="display: none;">
+                <div class="users-section">
+                    <div class="section-header">
+                        <h2>Registered Users</h2>
+                        <span class="users-count" id="usersCount">0 users</span>
+                    </div>
+
+                    <div class="users-table-container">
+                        <table class="users-table">
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Email</th>
+                                    <th>User ID</th>
+                                    <th>Joined</th>
+                                    <th>Ratings</th>
+                                    <th>Collection</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usersTableBody">
+                                <!-- Users will be inserted here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Ratings Management Section -->
+                <div class="ratings-section">
+                    <div class="section-header">
+                        <h2>Ratings Management</h2>
+                        <span class="ratings-count" id="ratingsCount">0 ratings</span>
+                    </div>
+
+                    <!-- Filters -->
+                    <div class="ratings-filters">
+                        <div class="filter-group">
+                            <label class="filter-label">Search by Movie Title</label>
+                            <input type="text" id="movieSearchFilter" class="filter-input" placeholder="Enter movie title...">
+                        </div>
+                        <div class="filter-group">
+                            <label class="filter-label">Filter by User</label>
+                            <select id="userFilter" class="filter-select">
+                                <option value="">All Users</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label class="filter-label">Date From</label>
+                            <input type="date" id="dateFromFilter" class="filter-input">
+                        </div>
+                        <div class="filter-group">
+                            <label class="filter-label">Date To</label>
+                            <input type="date" id="dateToFilter" class="filter-input">
+                        </div>
+                        <div class="filter-group">
+                            <button id="clearRatingsFilters" class="btn-clear-filters">Clear Filters</button>
+                        </div>
+                    </div>
+
+                    <!-- Ratings Table -->
+                    <div class="ratings-table-container">
+                        <table class="ratings-table">
+                            <thead>
+                                <tr>
+                                    <th>Movie</th>
+                                    <th>User</th>
+                                    <th>Rating</th>
+                                    <th>Comment</th>
+                                    <th>Date</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ratingsTableBody">
+                                <!-- Ratings will be inserted here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Delete Confirmation Modal -->
+    <div class="modal-overlay" id="deleteModal" style="display: none;">
+        <div class="modal-content delete-modal">
+            <div class="modal-header">
+                <h3>⚠️ Confirm Delete User</h3>
+                <button class="modal-close" id="closeDeleteModal">✕</button>
+            </div>
+            <div class="modal-body">
+                <p class="warning-text">You are about to permanently delete this user:</p>
+                <div class="user-preview" id="userPreview">
+                    <!-- User info will be inserted here -->
+                </div>
+                <div class="deletion-stats">
+                    <p><strong>This will delete:</strong></p>
+                    <ul id="deletionStatsList">
+                        <!-- Stats will be inserted here -->
+                    </ul>
+                </div>
+                <p class="irreversible-warning">⚠️ This action is <strong>irreversible</strong>. All data will be permanently deleted.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancelDeleteBtn">Cancel</button>
+                <button class="btn btn-danger" id="confirmDeleteBtn">Delete User</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Rating Confirmation Modal -->
+    <div class="modal-overlay" id="deleteRatingModal" style="display: none;">
+        <div class="modal-content delete-modal">
+            <div class="modal-header">
+                <h3>⚠️ Confirm Delete Rating</h3>
+                <button class="modal-close" id="closeDeleteRatingModal">✕</button>
+            </div>
+            <div class="modal-body">
+                <p class="warning-text">You are about to permanently delete this rating:</p>
+                <div class="rating-preview" id="ratingPreview">
+                    <!-- Rating info will be inserted here -->
+                </div>
+                <div class="deletion-stats">
+                    <p><strong>This will:</strong></p>
+                    <ul id="ratingDeletionStatsList">
+                        <li>Delete the rating from the database</li>
+                        <li>Remove the movie from all user's collections</li>
+                    </ul>
+                </div>
+                <p class="irreversible-warning">⚠️ This action is <strong>irreversible</strong>.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancelDeleteRatingBtn">Cancel</button>
+                <button class="btn btn-danger" id="confirmDeleteRatingBtn">Delete Rating</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="../../../libs/firebase-app-compat.js"></script>
+    <script src="../../../libs/firebase-firestore-compat.js"></script>
+    <script src="../../../libs/firebase-auth-compat.js"></script>
+    <script src="../../shared/services/UserService.js"></script>
+    <script src="../../shared/services/AdminService.js"></script>
+    <script src="../../shared/services/CollectionService.js"></script>
+    <script src="../../shared/services/RatingService.js"></script>
+    <script src="../../shared/services/MovieCacheService.js"></script>
+    <script src="../../shared/utils/helpers.js"></script>
+    <script src="../../shared/utils/Utils.js"></script>
+    <script src="../../shared/components/Navigation.js"></script>
+    <script src="../../shared/firestore.js"></script>
+    <script src="admin.js"></script>
+</body>
+</html>

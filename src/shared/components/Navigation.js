@@ -37,6 +37,14 @@ class Navigation {
     }
 
     render() {
+        // Check if navigation already exists in DOM
+        const existingNav = document.querySelector('.nav-header');
+        if (existingNav) {
+            // Navigation already rendered, just set active page
+            this.setActivePage(this.currentPage);
+            return;
+        }
+
         const navHTML = `
             <header class="nav-header">
                 <div class="nav-container">
@@ -105,6 +113,10 @@ class Navigation {
                                 <div class="nav-dropdown-item" id="navDropdownSettings">
                                     <span class="nav-dropdown-icon">👤</span>
                                     <span>View Profile</span>
+                                </div>
+                                <div class="nav-dropdown-item" id="navDropdownAdmin" style="display: none;">
+                                    <span class="nav-dropdown-icon">🛡️</span>
+                                    <span>Admin Panel</span>
                                 </div>
                                 <div class="nav-dropdown-divider"></div>
                                 <div class="nav-dropdown-item nav-dropdown-logout" id="navDropdownLogout">
@@ -211,6 +223,15 @@ class Navigation {
                 dropdownSettings.addEventListener('click', () => {
                     this.closeAllDropdowns();
                     this.navigateToPage('settings');
+                });
+            }
+
+            // Admin Panel dropdown item
+            const dropdownAdmin = document.getElementById('navDropdownAdmin');
+            if (dropdownAdmin) {
+                dropdownAdmin.addEventListener('click', () => {
+                    this.closeAllDropdowns();
+                    this.navigateToPage('admin');
                 });
             }
 
@@ -1226,6 +1247,28 @@ class Navigation {
                 }
             }
 
+            // Show/hide Admin Panel menu item based on admin status
+            const adminMenuItem = document.getElementById('navDropdownAdmin');
+            if (adminMenuItem) {
+                try {
+                    if (typeof firebaseManager !== 'undefined' && firebaseManager.getUserService) {
+                        const userService = firebaseManager.getUserService();
+                        const profile = await userService.getUserProfile(user.uid);
+                        
+                        if (profile && profile.isAdmin === true) {
+                            adminMenuItem.style.display = 'block';
+                        } else {
+                            adminMenuItem.style.display = 'none';
+                        }
+                    } else {
+                        adminMenuItem.style.display = 'none';
+                    }
+                } catch (error) {
+                    console.error('Error checking admin status:', error);
+                    adminMenuItem.style.display = 'none';
+                }
+            }
+
         // Update watchlist and favorites counts when user is logged in
         this.updateWatchlistCount();
         this.updateFavoritesCount();
@@ -1317,6 +1360,9 @@ class Navigation {
             case 'profile':
             case 'settings':
                 url = chrome.runtime.getURL('src/pages/profile/profile.html');
+                break;
+            case 'admin':
+                url = chrome.runtime.getURL('src/pages/admin/admin.html');
                 break;
             default:
                 return;
@@ -1552,6 +1598,11 @@ class Navigation {
 // Auto-initialize navigation if not in popup
 if (typeof window !== 'undefined' && !window.location.pathname.includes('popup.html')) {
     document.addEventListener('DOMContentLoaded', () => {
+        // Skip auto-initialization if navigation already exists in DOM
+        if (document.querySelector('.nav-header')) {
+            return;
+        }
+        
         // Determine current page from URL
         let currentPage = '';
         if (window.location.pathname.includes('search.html') || window.location.pathname.includes('src/pages/search/')) {
@@ -1562,6 +1613,8 @@ if (typeof window !== 'undefined' && !window.location.pathname.includes('popup.h
             currentPage = 'watchlist';
         } else if (window.location.pathname.includes('favorites.html')) {
             currentPage = 'favorites';
+        } else if (window.location.pathname.includes('admin.html') || window.location.pathname.includes('src/pages/admin/')) {
+            currentPage = 'admin';
         }
         
         window.navigation = new Navigation(currentPage);

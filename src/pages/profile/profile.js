@@ -39,7 +39,11 @@ class ProfilePageManager {
             joinDateText: document.getElementById('joinDateText'),
             profileFavoriteGenre: document.getElementById('profileFavoriteGenre'),
             favoriteGenreText: document.getElementById('favoriteGenreText'),
-            editProfileBtn: document.getElementById('editProfileBtn'),
+            favoriteGenreText: document.getElementById('favoriteGenreText'),
+            profileMenu: document.getElementById('profileMenu'),
+            profileMenuBtn: document.getElementById('profileMenuBtn'),
+            profileDropdown: document.getElementById('profileDropdown'),
+            editProfileItem: document.getElementById('editProfileItem'),
             profileCover: document.querySelector('.profile-cover'),
 
             // Statistics
@@ -105,9 +109,29 @@ class ProfilePageManager {
     }
 
     setupEventListeners() {
-        if (this.elements.editProfileBtn) {
-            this.elements.editProfileBtn.addEventListener('click', () => this.openEditModal());
+        if (this.elements.profileMenuBtn) {
+            this.elements.profileMenuBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.toggleMenu();
+            });
         }
+
+        if (this.elements.editProfileItem) {
+            this.elements.editProfileItem.addEventListener('click', () => {
+                this.closeMenu();
+                this.openEditModal();
+            });
+        }
+
+        // Close menu when clicking outside
+        document.addEventListener('click', (e) => {
+            if (this.elements.profileDropdown && 
+                this.elements.profileDropdown.classList.contains('show') && 
+                !this.elements.profileMenuBtn.contains(e.target) && 
+                !this.elements.profileDropdown.contains(e.target)) {
+                this.closeMenu();
+            }
+        });
         
         this.viewingOtherUser = false;
 
@@ -327,11 +351,11 @@ class ProfilePageManager {
             this.elements.profileFavoriteGenre.style.display = 'none';
         }
 
-        if (this.elements.editProfileBtn) {
+        if (this.elements.profileMenu) {
             if (this.viewingOtherUser) {
-                this.elements.editProfileBtn.style.display = 'none';
+                this.elements.profileMenu.style.display = 'none';
             } else {
-                this.elements.editProfileBtn.style.display = 'block';
+                this.elements.profileMenu.style.display = 'block';
             }
         }
 
@@ -436,6 +460,18 @@ class ProfilePageManager {
                 }
             });
         });
+    }
+
+    toggleMenu() {
+        if (this.elements.profileDropdown) {
+            this.elements.profileDropdown.classList.toggle('show');
+        }
+    }
+
+    closeMenu() {
+        if (this.elements.profileDropdown) {
+            this.elements.profileDropdown.classList.remove('show');
+        }
     }
 
     openEditModal() {
