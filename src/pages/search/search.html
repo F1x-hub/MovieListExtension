@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="../../shared/styles/router.css">
     <link rel="stylesheet" href="../../shared/styles/search.css">
     <link rel="stylesheet" href="../../shared/styles/poster-fixes.css">
+    <link rel="stylesheet" href="../../shared/styles/player.css">
 </head>
 <body>
     <!-- Navigation will be inserted here by Navigation.js -->
@@ -201,6 +202,36 @@
         </div>
     </div>
 
+    <!-- Video Player Modal -->
+    <div id="videoPlayerModal" class="modal-overlay" style="display: none;">
+        <div class="modal video-modal">
+            <div class="modal-header video-header">
+                <h2 class="modal-title" id="videoTitle">Watch Movie</h2>
+                <button class="modal-close" id="closeVideoBtn">×</button>
+            </div>
+            <div class="modal-body video-body">
+                <div class="video-container" id="videoContainer">
+                    <!-- Player iframe will be inserted here -->
+                    <div class="video-placeholder">
+                        <div class="loading-spinner"></div>
+                        <span>Loading player...</span>
+                    </div>
+                </div>
+                <div class="player-controls-panel">
+                    <div class="source-selector">
+                        <label for="sourceSelect">Source:</label>
+                        <select id="sourceSelect" class="form-select">
+                            <option value="" disabled selected>Select a source</option>
+                        </select>
+                    </div>
+                    <button id="refreshPlayerBtn" class="btn btn-secondary btn-sm" title="Reload Player">
+                        🔄 Reload
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script src="../../../libs/firebase-app-compat.js"></script>
     <script src="../../../libs/firebase-firestore-compat.js"></script>
@@ -209,6 +240,7 @@
     <script src="../../shared/services/KinopoiskService.js"></script>
     <script src="../../shared/services/MovieCacheService.js"></script>
     <script src="../../shared/services/RatingService.js"></script>
+    <script src="../../shared/services/StreamingService.js"></script>
     <script src="../../shared/services/UserService.js"></script>
     <script src="../../shared/services/WatchlistService.js"></script>
     <script src="../../shared/services/FavoriteService.js"></script>

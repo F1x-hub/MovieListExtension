@@ -5,8 +5,10 @@
 
 /* Navigation Header */
 .nav-header {
-    position: sticky;
+    position: fixed;
     top: 0;
+    left: 0;
+    width: 100%;
     z-index: 1000;
     background: var(--gradient-dark);
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);

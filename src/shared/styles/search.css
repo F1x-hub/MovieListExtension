@@ -1312,10 +1312,11 @@
 
 .movie-actions-container {
     display: flex;
-    gap: var(--space-md);
-    align-items: center;
-    /* Match the width of the ratings container exactly */
-    width: fit-content;
+    flex-direction: column;
+    gap: 14px;
+    margin-top: 22px;
+    max-width: 450px;
+    width: 100%;
 }
 
 .movie-actions-container .btn {
@@ -1323,18 +1324,41 @@
     align-items: center;
     justify-content: center;
     gap: var(--space-sm);
-    font-size: var(--font-size-lg);
+    font-size: 15px;
     font-weight: 600;
-    padding: var(--space-md) var(--space-xl);
-    box-shadow: var(--shadow-glow);
-    /* Match exact measured width of ratings container */
-    width: 285px; /* Exact measured width from console: 285px */
-    min-width: 285px;
+    padding: 0;
+    height: 52px;
+    width: 100%;
+    border-radius: 10px;
+    transition: all 0.2s ease;
+    border: none;
+    cursor: pointer;
 }
 
-.movie-actions-container .btn:hover {
+/* Watch Button - Blue styling */
+.movie-actions-container .watch-movie-btn {
+    background: #5B7EE5;
+    color: white;
+    box-shadow: 0 4px 12px rgba(91, 126, 229, 0.3);
+}
+
+.movie-actions-container .watch-movie-btn:hover {
+    background: #4a6dd4;
     transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(233, 69, 96, 0.4);
+    box-shadow: 0 6px 16px rgba(91, 126, 229, 0.4);
+}
+
+/* Rate Button - Pink/Red gradient styling */
+.movie-actions-container .rate-movie-btn {
+    background: linear-gradient(135deg, #FF6B9D 0%, #FE5E7E 100%);
+    color: white;
+    box-shadow: 0 4px 12px rgba(255, 107, 157, 0.3);
+}
+
+.movie-actions-container .rate-movie-btn:hover {
+    background: linear-gradient(135deg, #ff5a8c 0%, #ed4d6d 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(255, 107, 157, 0.4);
 }
 
 .movie-detail-description {
@@ -1734,7 +1758,13 @@
     }
     
     .movie-actions-container {
-        justify-content: center;
+        max-width: 100%;
+    }
+    
+    .movie-actions-container .btn {
+        width: 100%;
+        font-size: 14px;
+        height: 48px;
     }
     
     .movie-frames-grid {
