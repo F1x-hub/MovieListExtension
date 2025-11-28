@@ -4,6 +4,11 @@
 @import url('./common.css');
 @import url('./components.css');
 
+body {
+    padding-top: 0 !important;
+    margin: 0 !important;
+}
+
 /* Popup Container */
 .popup-container {
     width: 400px;

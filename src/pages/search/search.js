@@ -11,6 +11,7 @@ class SearchManager {
         this.selectedMovie = null;
         this.currentUser = null;
         this.searchHistoryService = new SearchHistoryService();
+        this.streamingService = new StreamingService();
         this.isHistoryDropdownOpen = false;
         this.setupEventListeners();
         this.setupImageErrorHandlers();
@@ -76,7 +77,17 @@ class SearchManager {
             existingRatingComment: document.getElementById('existingRatingComment'),
             saveRatingBtn: document.getElementById('saveRatingBtn'),
             cancelRatingBtn: document.getElementById('cancelRatingBtn'),
-            ratingModalClose: document.getElementById('ratingModalClose')
+            saveRatingBtn: document.getElementById('saveRatingBtn'),
+            cancelRatingBtn: document.getElementById('cancelRatingBtn'),
+            ratingModalClose: document.getElementById('ratingModalClose'),
+
+            // Video Player Modal
+            videoPlayerModal: document.getElementById('videoPlayerModal'),
+            videoTitle: document.getElementById('videoTitle'),
+            videoContainer: document.getElementById('videoContainer'),
+            closeVideoBtn: document.getElementById('closeVideoBtn'),
+            sourceSelect: document.getElementById('sourceSelect'),
+            refreshPlayerBtn: document.getElementById('refreshPlayerBtn')
         };
     }
 
@@ -182,6 +193,23 @@ class SearchManager {
             this.elements.ratingModal.addEventListener('click', (e) => {
                 if (e.target === this.elements.ratingModal) this.closeRatingModal();
             });
+        }
+
+        
+        // Video Player Modal
+        if (this.elements.closeVideoBtn) {
+            this.elements.closeVideoBtn.addEventListener('click', () => this.closeVideoModal());
+        }
+        if (this.elements.videoPlayerModal) {
+            this.elements.videoPlayerModal.addEventListener('click', (e) => {
+                if (e.target === this.elements.videoPlayerModal) this.closeVideoModal();
+            });
+        }
+        if (this.elements.sourceSelect) {
+            this.elements.sourceSelect.addEventListener('change', (e) => this.changeVideoSource(e.target.value));
+        }
+        if (this.elements.refreshPlayerBtn) {
+            this.elements.refreshPlayerBtn.addEventListener('click', () => this.refreshPlayer());
         }
     }
 
@@ -733,6 +761,12 @@ class SearchManager {
             const ratingsHTML = this.createUserRatingsSection(ratings, userProfileMap, currentUser?.uid);
             contentEl.innerHTML = ratingsHTML;
             
+            // Add event listener for watch button
+            const watchBtn = document.querySelector('.watch-movie-btn');
+            if (watchBtn) {
+                watchBtn.addEventListener('click', () => this.handleWatchClick());
+            }
+
             // Setup menu event listeners
             this.setupRatingMenuListeners();
             
@@ -927,6 +961,10 @@ class SearchManager {
                         </div>
                         
                         <div class="movie-actions-container">
+                            <button class="btn btn-primary btn-lg watch-movie-btn" data-movie-id="${movie.kinopoiskId}">
+                                <span class="btn-icon">▶️</span>
+                                Смотреть
+                            </button>
                             <button class="btn btn-accent btn-lg rate-movie-btn" data-movie-id="${movie.kinopoiskId}">
                                 <span class="btn-icon">⭐</span>
                                 Оценить фильм
@@ -2010,6 +2048,101 @@ class SearchManager {
         
         return num.toString();
     }
+
+
+    async handleWatchClick() {
+        if (!this.selectedMovie) return;
+        
+        try {
+            this.showVideoModal(this.selectedMovie);
+            
+            // Show loading state in player
+            this.elements.videoContainer.innerHTML = `
+                <div class="video-placeholder">
+                    <div class="loading-spinner"></div>
+                    <span>Searching for video sources...</span>
+                </div>
+            `;
+            
+            // Clear previous sources
+            this.elements.sourceSelect.innerHTML = '<option value="" disabled selected>Select a source</option>';
+            
+            // Search for movie on ex-fs.net
+            const searchResult = await this.streamingService.search(
+                this.selectedMovie.name, 
+                this.selectedMovie.year
+            );
+            
+            if (!searchResult) {
+                this.elements.videoContainer.innerHTML = `
+                    <div class="video-placeholder">
+                        <span>Movie not found on streaming service.</span>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Get video sources
+            const sources = await this.streamingService.getVideoSources(searchResult.url);
+            
+            if (sources.length === 0) {
+                this.elements.videoContainer.innerHTML = `
+                    <div class="video-placeholder">
+                        <span>No video sources found.</span>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Populate source selector
+            sources.forEach((source, index) => {
+                const option = document.createElement('option');
+                option.value = source.url;
+                option.textContent = source.name || `Source ${index + 1}`;
+                this.elements.sourceSelect.appendChild(option);
+            });
+            
+            // Select first source automatically
+            if (sources.length > 0) {
+                this.elements.sourceSelect.value = sources[0].url;
+                this.changeVideoSource(sources[0].url);
+            }
+            
+        } catch (error) {
+            console.error('Error in handleWatchClick:', error);
+            this.elements.videoContainer.innerHTML = `
+                <div class="video-placeholder">
+                    <span>Error loading video: ${error.message}</span>
+                </div>
+            `;
+        }
+    }
+
+    showVideoModal(movie) {
+        this.elements.videoTitle.textContent = `Watching: ${movie.name}`;
+        this.elements.videoPlayerModal.style.display = 'flex';
+    }
+
+    closeVideoModal() {
+        this.elements.videoPlayerModal.style.display = 'none';
+        // Stop video by clearing iframe
+        this.elements.videoContainer.innerHTML = '';
+    }
+
+    changeVideoSource(url) {
+        if (!url) return;
+        
+        this.elements.videoContainer.innerHTML = `
+            <iframe src="${url}" allowfullscreen allow="autoplay; encrypted-media"></iframe>
+        `;
+    }
+
+    refreshPlayer() {
+        const currentUrl = this.elements.sourceSelect.value;
+        if (currentUrl) {
+            this.changeVideoSource(currentUrl);
+        }
+    }
 }
 
 // Add event listeners for movie cards
@@ -2045,6 +2178,26 @@ document.addEventListener('click', (e) => {
         
         if (movie) {
             searchManager.showRatingModal(movie);
+        }
+    }
+
+    if (e.target.classList.contains('watch-movie-btn') || e.target.closest('.watch-movie-btn')) {
+        e.stopPropagation();
+        const btn = e.target.classList.contains('watch-movie-btn') ? e.target : e.target.closest('.watch-movie-btn');
+        const movieId = btn.dataset.movieId;
+        
+        // Try to find movie in search results first
+        let movie = searchManager.currentResults.docs?.find(m => m.kinopoiskId == movieId);
+        
+        // If not found in search results, check if it's the selected movie (detail page)
+        if (!movie && searchManager.selectedMovie && searchManager.selectedMovie.kinopoiskId == movieId) {
+            movie = searchManager.selectedMovie;
+        }
+        
+        if (movie) {
+            // Set selected movie if not already set (important for handleWatchClick)
+            searchManager.selectedMovie = movie;
+            searchManager.handleWatchClick();
         }
     }
     
