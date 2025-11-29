@@ -262,3 +262,145 @@ async function searchKinopoiskMovie(kpId, title, year) {
     }
     return null;
 }
+
+// --- Automatic Update System ---
+
+const UPDATE_CONFIG = {
+    githubOwner: 'F1x-hub',
+    githubRepo: 'MovieListExtension',
+    checkInterval: 60, // Check every 60 minutes
+    extensionPath: 'd:\\Programing\\JS\\Projects\\MovieListExstension' // Should match user's path
+};
+
+// Check for updates on startup and periodically
+chrome.runtime.onStartup.addListener(() => {
+    checkForUpdates();
+});
+
+chrome.alarms.create('checkUpdates', { periodInMinutes: UPDATE_CONFIG.checkInterval });
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'checkUpdates') {
+        checkForUpdates();
+    }
+});
+
+async function checkForUpdates() {
+    try {
+        console.log('[Update] Checking for updates...');
+        const manifest = chrome.runtime.getManifest();
+        const currentVersion = manifest.version;
+
+        const response = await fetch(`https://api.github.com/repos/${UPDATE_CONFIG.githubOwner}/${UPDATE_CONFIG.githubRepo}/releases/latest`);
+        if (!response.ok) {
+            throw new Error(`GitHub API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const latestVersion = data.tag_name.replace('v', ''); // Remove 'v' prefix if present
+
+        console.log(`[Update] Current: ${currentVersion}, Latest: ${latestVersion}`);
+
+        if (compareVersions(latestVersion, currentVersion) > 0) {
+            console.log('[Update] Update available!');
+            
+            // Find zip asset
+            const zipAsset = data.assets.find(asset => asset.name.endsWith('.zip')) || 
+                             data.assets[0]; // Fallback to first asset
+            
+            const downloadUrl = zipAsset ? zipAsset.browser_download_url : data.zipball_url;
+
+            if (downloadUrl) {
+                showUpdateNotification(latestVersion, downloadUrl);
+            } else {
+                console.error('[Update] No download URL found');
+            }
+        } else {
+            console.log('[Update] No updates available');
+        }
+    } catch (error) {
+        console.error('[Update] Error checking for updates:', error);
+    }
+}
+
+// Expose for debugging
+self.checkForUpdates = checkForUpdates;
+
+
+function compareVersions(v1, v2) {
+    const parts1 = v1.split('.').map(Number);
+    const parts2 = v2.split('.').map(Number);
+
+    for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+        const p1 = parts1[i] || 0;
+        const p2 = parts2[i] || 0;
+        if (p1 > p2) return 1;
+        if (p1 < p2) return -1;
+    }
+    return 0;
+}
+
+function showUpdateNotification(version, downloadUrl) {
+    chrome.notifications.create('update-available', {
+        type: 'basic',
+        iconUrl: chrome.runtime.getURL('icons/icon128.png'),
+        title: 'Доступно обновление расширения',
+        message: `Версия ${version} готова к установке`,
+        buttons: [
+            { title: 'Обновить сейчас' },
+            { title: 'Позже' }
+        ],
+        requireInteraction: true
+    });
+
+    // Store download URL for button click handler
+    chrome.storage.local.set({ pendingUpdateUrl: downloadUrl, pendingUpdateVersion: version });
+}
+
+chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
+    if (notificationId === 'update-available') {
+        if (buttonIndex === 0) { // "Update Now"
+            chrome.storage.local.get(['pendingUpdateUrl'], (result) => {
+                if (result.pendingUpdateUrl) {
+                    downloadUpdate(result.pendingUpdateUrl);
+                }
+            });
+        }
+        chrome.notifications.clear(notificationId);
+    }
+});
+
+function downloadUpdate(url) {
+    chrome.downloads.download({
+        url: url,
+        filename: 'extension_update.zip',
+        conflictAction: 'overwrite',
+        saveAs: false
+    }, (downloadId) => {
+        if (chrome.runtime.lastError) {
+            console.error('[Update] Download failed:', chrome.runtime.lastError);
+            return;
+        }
+        console.log('[Update] Download started, ID:', downloadId);
+        
+        // Listen for download completion
+        const onDownloadComplete = (delta) => {
+            if (delta.id === downloadId && delta.state && delta.state.current === 'complete') {
+                chrome.downloads.onChanged.removeListener(onDownloadComplete);
+                
+                chrome.downloads.search({ id: downloadId }, (results) => {
+                    if (results && results[0]) {
+                        const filePath = results[0].filename;
+                        console.log('[Update] Download complete:', filePath);
+                        
+                        // Save path and open instructions
+                        chrome.storage.local.set({ updateZipPath: filePath }, () => {
+                            chrome.tabs.create({ url: 'src/pages/update/update_instructions.html' });
+                        });
+                    }
+                });
+            }
+        };
+        chrome.downloads.onChanged.addListener(onDownloadComplete);
+    });
+}
