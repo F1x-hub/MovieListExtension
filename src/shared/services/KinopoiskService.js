@@ -470,6 +470,7 @@ class KinopoiskService {
 // Export for use in other modules
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = KinopoiskService;
-} else {
+}
+if (typeof window !== 'undefined') {
     window.KinopoiskService = KinopoiskService;
 }

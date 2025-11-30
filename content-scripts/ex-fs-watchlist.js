@@ -7,8 +7,14 @@ console.log('[MovieList Extension] Content script loaded for ex-fs.net');
         chrome.runtime.getURL('libs/firebase-firestore-compat.js'),
         chrome.runtime.getURL('src/shared/config/kinopoisk.config.js'),
         chrome.runtime.getURL('src/shared/services/KinopoiskService.js'),
-        chrome.runtime.getURL('src/shared/firestore.js'),
-        chrome.runtime.getURL('src/shared/services/WatchlistService.js')
+        chrome.runtime.getURL('src/shared/services/WatchlistService.js'),
+        chrome.runtime.getURL('src/shared/services/FavoriteService.js'),
+        chrome.runtime.getURL('src/shared/services/RatingService.js'),
+        chrome.runtime.getURL('src/shared/services/CollectionService.js'),
+        chrome.runtime.getURL('src/shared/services/MovieCacheService.js'),
+        chrome.runtime.getURL('src/shared/services/UserService.js'),
+        chrome.runtime.getURL('src/shared/services/RatingsCacheService.js'),
+        chrome.runtime.getURL('src/shared/firestore.js')
     ];
     const injectedScriptUrl = chrome.runtime.getURL('content-scripts/ex-fs-watchlist-injected.js');
 
@@ -89,6 +95,44 @@ console.log('[MovieList Extension] Content script loaded for ex-fs.net');
                         success: false,
                         error: response.error || 'Unknown error',
                         movie: null
+                    }, '*');
+                }
+            });
+        } else if (event.data && event.data.type === 'MOVIELIST_ADD_RATING') {
+            console.log('[MovieList Extension] Received add rating request:', event.data);
+            chrome.runtime.sendMessage({
+                type: 'ADD_RATING',
+                userId: event.data.userId,
+                userName: event.data.userName,
+                userPhoto: event.data.userPhoto,
+                movieId: event.data.movieId,
+                movieTitle: event.data.movieTitle,
+                posterPath: event.data.posterPath,
+                rating: event.data.rating,
+                comment: event.data.comment
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error('[MovieList Extension] Error:', chrome.runtime.lastError);
+                    window.postMessage({
+                        type: 'MOVIELIST_ADD_RATING_RESPONSE',
+                        success: false,
+                        error: chrome.runtime.lastError.message
+                    }, '*');
+                    return;
+                }
+
+                if (response && response.success) {
+                    console.log('[MovieList Extension] Rating added successfully');
+                    window.postMessage({
+                        type: 'MOVIELIST_ADD_RATING_RESPONSE',
+                        success: true
+                    }, '*');
+                } else {
+                    console.error('[MovieList Extension] Failed to add rating:', response?.error);
+                    window.postMessage({
+                        type: 'MOVIELIST_ADD_RATING_RESPONSE',
+                        success: false,
+                        error: response?.error || 'Unknown error'
                     }, '*');
                 }
             });

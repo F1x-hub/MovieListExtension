@@ -310,7 +310,8 @@ class FavoriteService {
 // Export for use in other modules
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = FavoriteService;
-} else {
+}
+if (typeof window !== 'undefined') {
     window.FavoriteService = FavoriteService;
 }
 

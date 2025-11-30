@@ -260,7 +260,8 @@ class WatchlistService {
 // Export for use in other modules
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = WatchlistService;
-} else {
+}
+if (typeof window !== 'undefined') {
     window.WatchlistService = WatchlistService;
 }
 

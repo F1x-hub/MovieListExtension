@@ -379,8 +379,10 @@ class MovieCacheService {
 }
 
 // Export for use in other modules
+// Export for use in other modules
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = MovieCacheService;
-} else {
+}
+if (typeof window !== 'undefined') {
     window.MovieCacheService = MovieCacheService;
 }

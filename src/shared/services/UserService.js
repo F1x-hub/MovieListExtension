@@ -423,6 +423,7 @@ class UserService {
 // Export for use in other modules
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = UserService;
-} else {
+}
+if (typeof window !== 'undefined') {
     window.UserService = UserService;
 }

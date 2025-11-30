@@ -78,61 +78,6 @@ class PopupManager {
         this.elements.refreshBtn.addEventListener('click', () => this.forceRefreshRatings());
         this.elements.viewAllRatingsBtn.addEventListener('click', () => this.openRatingsPage());
         this.elements.settingsBtn.addEventListener('click', () => this.openSettings());
-        
-        // Update notification events
-        const updateNowBtn = document.getElementById('updateNowBtn');
-        const updateLaterBtn = document.getElementById('updateLaterBtn');
-        
-        if (updateNowBtn) {
-            updateNowBtn.addEventListener('click', () => {
-                chrome.storage.local.get(['updateDownloadUrl'], (result) => {
-                    if (result.updateDownloadUrl) {
-                        chrome.runtime.sendMessage({ 
-                            type: 'DOWNLOAD_UPDATE', 
-                            url: result.updateDownloadUrl 
-                        });
-                        // Hide notification after clicking update
-                        document.getElementById('updateNotification').style.display = 'none';
-                    }
-                });
-            });
-        }
-        
-        if (updateLaterBtn) {
-            updateLaterBtn.addEventListener('click', () => {
-                document.getElementById('updateNotification').style.display = 'none';
-            });
-        }
-    }
-
-    checkUpdateStatus() {
-        // Initial check
-        chrome.storage.local.get(['updateAvailable', 'latestVersion'], (result) => {
-            if (result.updateAvailable && result.latestVersion) {
-                this.showUpdateNotification(result.latestVersion);
-            }
-        });
-
-        // Listen for changes
-        chrome.storage.onChanged.addListener((changes, namespace) => {
-            if (namespace === 'local' && changes.updateAvailable && changes.updateAvailable.newValue) {
-                chrome.storage.local.get(['latestVersion'], (result) => {
-                    if (result.latestVersion) {
-                        this.showUpdateNotification(result.latestVersion);
-                    }
-                });
-            }
-        });
-    }
-
-    showUpdateNotification(version) {
-        const notification = document.getElementById('updateNotification');
-        const versionSpan = document.getElementById('updateVersion');
-        
-        if (notification && versionSpan) {
-            versionSpan.textContent = version;
-            notification.style.display = 'flex';
-        }
     }
 
     setupTabSwitching() {
@@ -174,12 +119,6 @@ class PopupManager {
     }
 
     async initializeUI() {
-        // Trigger update check when popup opens
-        chrome.runtime.sendMessage({ type: 'CHECK_FOR_UPDATES' });
-
-        // Check for updates
-        this.checkUpdateStatus();
-
         // Check auth state immediately first
         let currentUser = firebaseManager.getCurrentUser();
         let isAuthenticated = firebaseManager.isAuthenticated();
