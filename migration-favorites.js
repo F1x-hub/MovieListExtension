@@ -26,12 +26,12 @@ async function migrateRatingsForFavorites() {
     
     try {
         const snapshot = await ratingsRef.get();
-        const batch = db.batch();
+        let batch = db.batch();
         let count = 0;
         let batchCount = 0;
         const BATCH_SIZE = 500; // Firestore batch limit
         
-        snapshot.forEach((doc) => {
+        for (const doc of snapshot.docs) {
             const data = doc.data();
             
             // Only update if fields don't exist or are undefined
@@ -54,12 +54,13 @@ async function migrateRatingsForFavorites() {
                     // Commit batch if we reach the limit
                     if (batchCount >= BATCH_SIZE) {
                         await batch.commit();
+                        batch = db.batch(); // Create new batch
                         console.log(`Migrated ${count} ratings...`);
                         batchCount = 0;
                     }
                 }
             }
-        });
+        }
         
         // Commit remaining updates
         if (batchCount > 0) {
@@ -90,14 +91,15 @@ async function migrateRatingsForFavoritesClient() {
     
     try {
         const snapshot = await ratingsRef.get();
-        const batch = db.batch();
+        let batch = db.batch();
         let count = 0;
         let batchCount = 0;
         const BATCH_SIZE = 500;
         
-        snapshot.forEach((doc) => {
+        for (const doc of snapshot.docs) {
             const data = doc.data();
             
+            // Only update if fields don't exist or are undefined
             if (data.isFavorite === undefined || data.favoritedAt === undefined) {
                 const updates = {};
                 
@@ -116,12 +118,13 @@ async function migrateRatingsForFavoritesClient() {
                     
                     if (batchCount >= BATCH_SIZE) {
                         await batch.commit();
+                        batch = db.batch(); // Create new batch
                         console.log(`Migrated ${count} ratings...`);
                         batchCount = 0;
                     }
                 }
             }
-        });
+        }
         
         if (batchCount > 0) {
             await batch.commit();
@@ -144,18 +147,3 @@ if (typeof module !== 'undefined' && module.exports) {
 if (typeof window !== 'undefined') {
     window.migrateRatingsForFavorites = migrateRatingsForFavoritesClient;
 }
-
-// Instructions:
-// 1. For Node.js: Run with Firebase Admin SDK
-//    node migration-favorites.js
-//
-// 2. For browser console:
-//    - Open browser console on any page with Firebase loaded
-//    - Copy and paste the migrateRatingsForFavoritesClient function
-//    - Run: await migrateRatingsForFavoritesClient()
-//
-// 3. For Firebase Console:
-//    - Go to Firestore Database
-//    - Use the data migration tool
-//    - Or create a Cloud Function to run this migration
-
