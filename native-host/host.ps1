@@ -39,9 +39,17 @@ while ($true) {
         $msg = $msgString | ConvertFrom-Json
         
         if ($msg.action -eq "update") {
-            $scriptPath = $msg.scriptPath
+            # Resolve paths relative to this script if not provided
+            $scriptRoot = $PSScriptRoot
+            $projectRoot = Split-Path -Parent $scriptRoot
+            
+            $scriptPath = if ($msg.scriptPath) { $msg.scriptPath } else { Join-Path $projectRoot "Update-Extension.ps1" }
+            $extensionPath = if ($msg.extensionPath) { $msg.extensionPath } else { $projectRoot }
             $zipPath = $msg.zipPath
-            $extensionPath = $msg.extensionPath
+            
+            # Log for debugging (optional, writes to stderr which Chrome captures)
+            # [Console]::Error.WriteLine("Script: $scriptPath")
+            # [Console]::Error.WriteLine("Zip: $zipPath")
             
             # Verify paths exist
             if (-not (Test-Path $scriptPath)) {

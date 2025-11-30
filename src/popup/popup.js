@@ -12,6 +12,9 @@ class PopupManager {
         this.setupEventListeners();
         this.setupAuthStateListener();
         this.initializeUI();
+        
+        // Trigger update check when popup opens
+        chrome.runtime.sendMessage({ type: 'CHECK_FOR_UPDATES' });
     }
 
     initializeElements() {
@@ -119,32 +122,79 @@ class PopupManager {
     }
 
     async initializeUI() {
+        // Check for updates first
+        this.checkPendingUpdate();
+
         // Check auth state immediately first
         let currentUser = firebaseManager.getCurrentUser();
-        let isAuthenticated = firebaseManager.isAuthenticated();
-        
-        // Update UI immediately if user is already authenticated
-        if (isAuthenticated && currentUser) {
-            this.updateAuthUI(true, currentUser, false);
-            this.loadRatings();
-            return;
-        }
-        
-        // Otherwise wait for auth initialization
-        await this.waitForAuthInit();
-        
-        currentUser = firebaseManager.getCurrentUser();
-        isAuthenticated = firebaseManager.isAuthenticated();
-        
-        // If authenticated, don't show content until ratings are loaded
-        // If not authenticated, show auth section immediately
-        this.updateAuthUI(isAuthenticated, currentUser, !isAuthenticated);
-        
-        // Only load ratings if not already loaded and user is authenticated
-        if (isAuthenticated && currentUser && !this.ratingsLoaded && !this.isLoadingRatings) {
-            this.loadRatings();
+        // ... (rest of the function)
+    }
+
+    checkPendingUpdate() {
+        chrome.storage.local.get(['pendingUpdateUrl', 'pendingUpdateVersion', 'updateAvailable'], (result) => {
+            if (result.updateAvailable && result.pendingUpdateUrl && result.pendingUpdateVersion) {
+                // Verify that the pending update is actually newer than current version
+                const manifest = chrome.runtime.getManifest();
+                if (this.compareVersions(result.pendingUpdateVersion, manifest.version) > 0) {
+                    this.showUpdateBanner(result.pendingUpdateVersion, result.pendingUpdateUrl);
+                } else {
+                    // Stale update info, clear it
+                    console.log('PopupManager: Clearing stale update info', result.pendingUpdateVersion);
+                    chrome.storage.local.remove(['pendingUpdateUrl', 'pendingUpdateVersion', 'updateAvailable']);
+                }
+            }
+        });
+
+        // Listen for real-time update messages from background
+        chrome.runtime.onMessage.addListener((message) => {
+            if (message.type === 'UPDATE_AVAILABLE') {
+                const manifest = chrome.runtime.getManifest();
+                if (this.compareVersions(message.version, manifest.version) > 0) {
+                    this.showUpdateBanner(message.version, message.url);
+                }
+            }
+        });
+    }
+
+    showUpdateBanner(version, url) {
+        const banner = document.getElementById('updateBanner');
+        const versionEl = document.getElementById('updateVersion');
+        const updateBtn = document.getElementById('updateBtn');
+        const dismissBtn = document.getElementById('dismissUpdateBtn');
+
+        if (banner && versionEl) {
+            versionEl.textContent = `Version ${version} is ready`;
+            banner.style.display = 'flex';
+
+            // Update button handler
+            updateBtn.onclick = () => {
+                updateBtn.textContent = 'Downloading...';
+                updateBtn.disabled = true;
+                
+                chrome.runtime.sendMessage({ type: 'DOWNLOAD_UPDATE', url: url }, (response) => {
+                    if (response && response.success) {
+                        // Banner will stay until download completes and instructions open
+                        // But we can update text to show progress
+                        updateBtn.textContent = 'Opening...';
+                    } else {
+                        updateBtn.textContent = 'Error';
+                        updateBtn.disabled = false;
+                        console.error('Update download failed:', response?.error);
+                    }
+                });
+            };
+
+            // Dismiss button handler
+            dismissBtn.onclick = () => {
+                banner.style.display = 'none';
+                // Optional: Mark as dismissed for this session? 
+                // For now just hide it. It will reappear next time popup opens if still pending.
+            };
         }
     }
+
+    // ... (rest of the class methods)
+    // ... (rest of the class methods)
 
     waitForAuthInit() {
         return new Promise((resolve) => {
@@ -1459,6 +1509,19 @@ class PopupManager {
 
     hideError() {
         this.elements.errorMessage.style.display = 'none';
+    }
+
+    compareVersions(v1, v2) {
+        const parts1 = v1.split('.').map(Number);
+        const parts2 = v2.split('.').map(Number);
+
+        for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+            const p1 = parts1[i] || 0;
+            const p2 = parts2[i] || 0;
+            if (p1 > p2) return 1;
+            if (p1 < p2) return -1;
+        }
+        return 0;
     }
 
     escapeHtml(text) {
