@@ -252,7 +252,7 @@ class ProfilePageManager {
                 return;
             }
 
-            this.userProfile = { ...profile, stats };
+            this.userProfile = { ...profile, stats, uid: targetUserId };
             this.displayProfile();
             this.displayStatistics(stats);
             await this.loadRecentRatings(targetUserId);

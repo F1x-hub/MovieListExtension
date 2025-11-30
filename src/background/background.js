@@ -523,6 +523,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // This will be handled by popup or content script that has access to Firebase
         sendResponse({ error: 'Not implemented in service worker' });
         return true;
+    } else if (message.type === 'DOWNLOAD_UPDATE') {
+        console.log('[Background] Received DOWNLOAD_UPDATE request');
+        if (message.url) {
+            downloadUpdate(message.url)
+                .then((downloadId) => {
+                    sendResponse({ success: true, downloadId: downloadId });
+                })
+                .catch((error) => {
+                    sendResponse({ success: false, error: error.message || 'Download failed' });
+                });
+        } else {
+            sendResponse({ success: false, error: 'No URL provided' });
+        }
+        return true; // Keep channel open for async response
+    } else if (message.type === 'CHECK_FOR_UPDATES') {
+        console.log('[Background] Received CHECK_FOR_UPDATES request');
+        checkForUpdates()
+            .then(() => {
+                sendResponse({ success: true });
+            })
+            .catch(error => {
+                console.error('[Background] Error checking for updates:', error);
+                sendResponse({ success: false, error: error.message });
+            });
+        return true;
     }
 });
 
@@ -638,6 +663,8 @@ async function checkForUpdates() {
             }
         } else {
             console.log('[Update] No updates available');
+            // Clear any pending update info if version matches or is older
+            chrome.storage.local.remove(['pendingUpdateUrl', 'pendingUpdateVersion', 'updateAvailable']);
         }
     } catch (error) {
         console.error('[Update] Error checking for updates:', error);
@@ -662,66 +689,80 @@ function compareVersions(v1, v2) {
 }
 
 function showUpdateNotification(version, downloadUrl) {
-    chrome.notifications.create('update-available', {
-        type: 'basic',
-        iconUrl: chrome.runtime.getURL('icons/icon128.png'),
-        title: 'Доступно обновление расширения',
-        message: `Версия ${version} готова к установке`,
-        buttons: [
-            { title: 'Обновить сейчас' },
-            { title: 'Позже' }
-        ],
-        requireInteraction: true
+    // Store update info for popup to display
+    chrome.storage.local.set({ 
+        pendingUpdateUrl: downloadUrl, 
+        pendingUpdateVersion: version,
+        updateAvailable: true 
+    }, () => {
+        console.log(`[Update] Update info stored for popup: v${version}`);
+        // Optionally send a message to popup if it's open to update UI immediately
+        chrome.runtime.sendMessage({ 
+            type: 'UPDATE_AVAILABLE', 
+            version: version, 
+            url: downloadUrl 
+        }).catch(() => {
+            // Popup might be closed, which is fine
+        });
     });
-
-    // Store download URL for button click handler
-    chrome.storage.local.set({ pendingUpdateUrl: downloadUrl, pendingUpdateVersion: version });
 }
 
-chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
-    if (notificationId === 'update-available') {
-        if (buttonIndex === 0) { // "Update Now"
-            chrome.storage.local.get(['pendingUpdateUrl'], (result) => {
-                if (result.pendingUpdateUrl) {
-                    downloadUpdate(result.pendingUpdateUrl);
-                }
-            });
-        }
-        chrome.notifications.clear(notificationId);
-    }
-});
+// Removed chrome.notifications.onButtonClicked listener as we moved to popup UI
 
 function downloadUpdate(url) {
-    chrome.downloads.download({
-        url: url,
-        filename: 'extension_update.zip',
-        conflictAction: 'overwrite',
-        saveAs: false
-    }, (downloadId) => {
-        if (chrome.runtime.lastError) {
-            console.error('[Update] Download failed:', chrome.runtime.lastError);
-            return;
-        }
-        console.log('[Update] Download started, ID:', downloadId);
-        
-        // Listen for download completion
-        const onDownloadComplete = (delta) => {
-            if (delta.id === downloadId && delta.state && delta.state.current === 'complete') {
-                chrome.downloads.onChanged.removeListener(onDownloadComplete);
-                
-                chrome.downloads.search({ id: downloadId }, (results) => {
-                    if (results && results[0]) {
-                        const filePath = results[0].filename;
-                        console.log('[Update] Download complete:', filePath);
-                        
-                        // Save path and open instructions
-                        chrome.storage.local.set({ updateZipPath: filePath }, () => {
-                            chrome.tabs.create({ url: 'src/pages/update/update_instructions.html' });
-                        });
-                    }
-                });
+    return new Promise((resolve, reject) => {
+        chrome.downloads.download({
+            url: url,
+            filename: 'extension_update.zip',
+            conflictAction: 'overwrite',
+            saveAs: false
+        }, (downloadId) => {
+            if (chrome.runtime.lastError) {
+                console.error('[Update] Download failed:', chrome.runtime.lastError);
+                reject(chrome.runtime.lastError);
+                return;
             }
-        };
-        chrome.downloads.onChanged.addListener(onDownloadComplete);
+            console.log('[Update] Download started, ID:', downloadId);
+            resolve(downloadId);
+            
+            // Listen for download completion
+            const onDownloadComplete = (delta) => {
+                if (delta.id === downloadId && delta.state && delta.state.current === 'complete') {
+                    chrome.downloads.onChanged.removeListener(onDownloadComplete);
+                    
+                        chrome.downloads.search({ id: downloadId }, (results) => {
+                        if (results && results[0]) {
+                            const filePath = results[0].filename;
+                            console.log('[Update] Download complete:', filePath);
+                            
+                            // Send native message to trigger update
+                            console.log('[Update] Sending update request to native host...');
+                            chrome.runtime.sendNativeMessage('com.movielist.updater', {
+                                action: 'update',
+                                zipPath: filePath
+                            }, (response) => {
+                                if (chrome.runtime.lastError) {
+                                    console.error('[Update] Native host error:', chrome.runtime.lastError);
+                                    // Fallback to manual instructions if native host fails
+                                    chrome.storage.local.set({ updateZipPath: filePath }, () => {
+                                        chrome.tabs.create({ url: 'src/pages/update/update_instructions.html' });
+                                    });
+                                } else if (response && response.success) {
+                                    console.log('[Update] Native host response:', response);
+                                    // Update started successfully
+                                } else {
+                                    console.error('[Update] Native host failed:', response);
+                                    // Fallback
+                                    chrome.storage.local.set({ updateZipPath: filePath }, () => {
+                                        chrome.tabs.create({ url: 'src/pages/update/update_instructions.html' });
+                                    });
+                                }
+                            });
+                        }
+                    });
+                }
+            };
+            chrome.downloads.onChanged.addListener(onDownloadComplete);
+        });
     });
 }

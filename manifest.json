@@ -10,7 +10,8 @@
     "scripting",
     "downloads",
     "alarms",
-    "notifications"
+    "notifications",
+    "nativeMessaging"
   ],
   "host_permissions": [
     "https://*.firebaseio.com/*",
