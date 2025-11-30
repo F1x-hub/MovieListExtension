@@ -667,7 +667,7 @@ class FirebaseManager {
     formatTimestamp(timestamp) {
         if (!timestamp) return 'Unknown';
         
-        const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+        const date = timestamp.toDate ? timestamp.toDate() : (timestamp.seconds ? new Date(timestamp.seconds * 1000) : new Date(timestamp));
         const now = new Date();
         const diffInSeconds = Math.floor((now - date) / 1000);
 

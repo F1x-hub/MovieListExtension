@@ -598,6 +598,7 @@ class RatingService {
 // Export for use in other modules
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = RatingService;
-} else {
+}
+if (typeof window !== 'undefined') {
     window.RatingService = RatingService;
 }

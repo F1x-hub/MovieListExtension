@@ -531,6 +531,7 @@ class RatingsCacheService {
 // Export for use in other modules
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = RatingsCacheService;
-} else {
+}
+if (typeof window !== 'undefined') {
     window.RatingsCacheService = RatingsCacheService;
 }

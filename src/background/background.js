@@ -118,6 +118,279 @@ async function checkWatchlistStatusViaAPI(userId, movieId) {
     }
 }
 
+async function addRatingViaAPI(userId, userName, userPhoto, movieId, movieTitle, posterPath, rating, comment) {
+    try {
+        const token = await getIdToken();
+        const projectId = 'movielistdb-13208';
+        const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/ratings`;
+        
+        const ratingData = {
+            fields: {
+                userId: { stringValue: userId },
+                userName: { stringValue: userName || '' },
+                userPhoto: { stringValue: userPhoto || '' },
+                movieId: { integerValue: movieId.toString() },
+                movieTitle: { stringValue: movieTitle || '' },
+                posterPath: { stringValue: posterPath || '' },
+                rating: { integerValue: rating.toString() },
+                comment: { stringValue: comment || '' },
+                isFavorite: { booleanValue: false },
+                createdAt: { timestampValue: new Date().toISOString() },
+                updatedAt: { timestampValue: new Date().toISOString() }
+            }
+        };
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(ratingData)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Firestore error: ${response.status} ${errorText}`);
+        }
+
+        return true;
+    } catch (error) {
+        console.error('[Background] Error adding rating via API:', error);
+        throw error;
+    }
+}
+
+async function checkFavoriteStatusViaAPI(userId, movieId) {
+    try {
+        const token = await getIdToken();
+        const projectId = 'movielistdb-13208';
+        const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`;
+        
+        const query = {
+            structuredQuery: {
+                from: [{ collectionId: 'ratings' }],
+                where: {
+                    compositeFilter: {
+                        op: 'AND',
+                        filters: [
+                            {
+                                fieldFilter: {
+                                    field: { fieldPath: 'userId' },
+                                    op: 'EQUAL',
+                                    value: { stringValue: userId }
+                                }
+                            },
+                            {
+                                fieldFilter: {
+                                    field: { fieldPath: 'movieId' },
+                                    op: 'EQUAL',
+                                    value: { integerValue: movieId.toString() }
+                                }
+                            },
+                            {
+                                fieldFilter: {
+                                    field: { fieldPath: 'isFavorite' },
+                                    op: 'EQUAL',
+                                    value: { booleanValue: true }
+                                }
+                            }
+                        ]
+                    }
+                },
+                limit: 1
+            }
+        };
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(query)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Firestore error: ${response.status} ${errorText}`);
+        }
+
+        const results = await response.json();
+        return results.length > 0 && results[0].document;
+    } catch (error) {
+        console.error('[Background] Error checking favorite status via API:', error);
+        return false;
+    }
+}
+
+async function addFavoriteViaAPI(userId, movieId, movieTitle, posterPath, rating) {
+    try {
+        const token = await getIdToken();
+        const projectId = 'movielistdb-13208';
+        const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`;
+        
+        // First, find the rating document
+        const query = {
+            structuredQuery: {
+                from: [{ collectionId: 'ratings' }],
+                where: {
+                    compositeFilter: {
+                        op: 'AND',
+                        filters: [
+                            {
+                                fieldFilter: {
+                                    field: { fieldPath: 'userId' },
+                                    op: 'EQUAL',
+                                    value: { stringValue: userId }
+                                }
+                            },
+                            {
+                                fieldFilter: {
+                                    field: { fieldPath: 'movieId' },
+                                    op: 'EQUAL',
+                                    value: { integerValue: movieId.toString() }
+                                }
+                            }
+                        ]
+                    }
+                },
+                limit: 1
+            }
+        };
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(query)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Firestore error: ${response.status} ${errorText}`);
+        }
+
+        const results = await response.json();
+        if (results.length > 0 && results[0].document) {
+            // Update existing rating to favorite
+            const docName = results[0].document.name;
+            const updateUrl = `https://firestore.googleapis.com/v1/${docName}?updateMask.fieldPaths=isFavorite&updateMask.fieldPaths=favoritedAt`;
+            
+            const updateData = {
+                fields: {
+                    isFavorite: { booleanValue: true },
+                    favoritedAt: { timestampValue: new Date().toISOString() }
+                }
+            };
+
+            const updateResponse = await fetch(updateUrl, {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(updateData)
+            });
+
+            if (!updateResponse.ok) {
+                const errorText = await updateResponse.text();
+                throw new Error(`Firestore error: ${updateResponse.status} ${errorText}`);
+            }
+        }
+
+        return true;
+    } catch (error) {
+        console.error('[Background] Error adding favorite via API:', error);
+        throw error;
+    }
+}
+
+async function removeFavoriteViaAPI(userId, movieId) {
+    try {
+        const token = await getIdToken();
+        const projectId = 'movielistdb-13208';
+        const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`;
+        
+        // First, find the rating document
+        const query = {
+            structuredQuery: {
+                from: [{ collectionId: 'ratings' }],
+                where: {
+                    compositeFilter: {
+                        op: 'AND',
+                        filters: [
+                            {
+                                fieldFilter: {
+                                    field: { fieldPath: 'userId' },
+                                    op: 'EQUAL',
+                                    value: { stringValue: userId }
+                                }
+                            },
+                            {
+                                fieldFilter: {
+                                    field: { fieldPath: 'movieId' },
+                                    op: 'EQUAL',
+                                    value: { integerValue: movieId.toString() }
+                                }
+                            }
+                        ]
+                    }
+                },
+                limit: 1
+            }
+        };
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(query)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Firestore error: ${response.status} ${errorText}`);
+        }
+
+        const results = await response.json();
+        if (results.length > 0 && results[0].document) {
+            // Update existing rating to remove favorite
+            const docName = results[0].document.name;
+            const updateUrl = `https://firestore.googleapis.com/v1/${docName}?updateMask.fieldPaths=isFavorite`;
+            
+            const updateData = {
+                fields: {
+                    isFavorite: { booleanValue: false }
+                }
+            };
+
+            const updateResponse = await fetch(updateUrl, {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(updateData)
+            });
+
+            if (!updateResponse.ok) {
+                const errorText = await updateResponse.text();
+                throw new Error(`Firestore error: ${updateResponse.status} ${errorText}`);
+            }
+        }
+
+        return true;
+    } catch (error) {
+        console.error('[Background] Error removing favorite via API:', error);
+        throw error;
+    }
+}
+
 async function removeFromWatchlistViaAPI(userId, movieId) {
     try {
         const token = await getIdToken();
@@ -198,14 +471,57 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 sendResponse({ success: false, error: error.message });
             });
         return true;
+    } else if (message.type === 'ADD_RATING') {
+        console.log('[Background] Received ADD_RATING request for user:', message.userId, 'movie:', message.movieId, 'rating:', message.rating);
+        addRatingViaAPI(message.userId, message.userName, message.userPhoto, message.movieId, message.movieTitle, message.posterPath, message.rating, message.comment)
+            .then(() => {
+                console.log('[Background] Successfully added rating via API');
+                sendResponse({ success: true });
+            })
+            .catch(error => {
+                console.error('[Background] Error adding rating:', error);
+                sendResponse({ success: false, error: error.message });
+            });
+        return true;
+    } else if (message.type === 'CHECK_FAVORITE') {
+        console.log('[Background] Received CHECK_FAVORITE request for user:', message.userId, 'movie:', message.movieId);
+        checkFavoriteStatusViaAPI(message.userId, message.movieId)
+            .then(isFavorite => {
+                console.log('[Background] Favorite status:', isFavorite);
+                sendResponse({ success: true, isFavorite: isFavorite });
+            })
+            .catch(error => {
+                console.error('[Background] Error checking favorite:', error);
+                sendResponse({ success: false, error: error.message, isFavorite: false });
+            });
+        return true;
+    } else if (message.type === 'ADD_FAVORITE') {
+        console.log('[Background] Received ADD_FAVORITE request for user:', message.userId, 'movie:', message.movieId);
+        addFavoriteViaAPI(message.userId, message.movieId, message.movieTitle, message.posterPath, message.rating)
+            .then(() => {
+                console.log('[Background] Successfully added favorite via API');
+                sendResponse({ success: true });
+            })
+            .catch(error => {
+                console.error('[Background] Error adding favorite:', error);
+                sendResponse({ success: false, error: error.message });
+            });
+        return true;
+    } else if (message.type === 'REMOVE_FAVORITE') {
+        console.log('[Background] Received REMOVE_FAVORITE request for user:', message.userId, 'movie:', message.movieId);
+        removeFavoriteViaAPI(message.userId, message.movieId)
+            .then(() => {
+                console.log('[Background] Successfully removed favorite via API');
+                sendResponse({ success: true });
+            })
+            .catch(error => {
+                console.error('[Background] Error removing favorite:', error);
+                sendResponse({ success: false, error: error.message });
+            });
+        return true;
     } else if (message.type === 'GET_ID_TOKEN') {
         // This will be handled by popup or content script that has access to Firebase
         sendResponse({ error: 'Not implemented in service worker' });
-        return true;
-    } else if (message.type === 'CHECK_FOR_UPDATES') {
-        console.log('[Background] Received CHECK_FOR_UPDATES request from popup');
-        checkForUpdates();
-        sendResponse({ success: true });
         return true;
     }
 });
@@ -316,19 +632,12 @@ async function checkForUpdates() {
             const downloadUrl = zipAsset ? zipAsset.browser_download_url : data.zipball_url;
 
             if (downloadUrl) {
-                // Store update info for popup to display
-                chrome.storage.local.set({ 
-                    updateAvailable: true, 
-                    latestVersion: latestVersion, 
-                    updateDownloadUrl: downloadUrl 
-                });
+                showUpdateNotification(latestVersion, downloadUrl);
             } else {
                 console.error('[Update] No download URL found');
             }
         } else {
             console.log('[Update] No updates available');
-            // Clear update info if no update available
-            chrome.storage.local.remove(['updateAvailable', 'latestVersion', 'updateDownloadUrl']);
         }
     } catch (error) {
         console.error('[Update] Error checking for updates:', error);
@@ -352,18 +661,34 @@ function compareVersions(v1, v2) {
     return 0;
 }
 
-// Listen for download request from popup
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.type === 'DOWNLOAD_UPDATE') {
-        if (message.url) {
-            downloadUpdate(message.url);
-            sendResponse({ success: true });
-        } else {
-            sendResponse({ success: false, error: 'No URL provided' });
+function showUpdateNotification(version, downloadUrl) {
+    chrome.notifications.create('update-available', {
+        type: 'basic',
+        iconUrl: chrome.runtime.getURL('icons/icon128.png'),
+        title: 'Доступно обновление расширения',
+        message: `Версия ${version} готова к установке`,
+        buttons: [
+            { title: 'Обновить сейчас' },
+            { title: 'Позже' }
+        ],
+        requireInteraction: true
+    });
+
+    // Store download URL for button click handler
+    chrome.storage.local.set({ pendingUpdateUrl: downloadUrl, pendingUpdateVersion: version });
+}
+
+chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
+    if (notificationId === 'update-available') {
+        if (buttonIndex === 0) { // "Update Now"
+            chrome.storage.local.get(['pendingUpdateUrl'], (result) => {
+                if (result.pendingUpdateUrl) {
+                    downloadUpdate(result.pendingUpdateUrl);
+                }
+            });
         }
-        return true; // Keep channel open
+        chrome.notifications.clear(notificationId);
     }
-    // ... existing listeners ...
 });
 
 function downloadUpdate(url) {

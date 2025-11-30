@@ -1,143 +1,52 @@
-// Конфигурация
+// Конфигурация (должна совпадать с background.js)
 const EXTENSION_PATH = 'd:\\Programing\\JS\\Projects\\MovieListExstension';
-const NATIVE_HOST_NAME = 'com.movielist.updater';
 
-// State
-let updateZipPath = '';
-let updateCommand = '';
-
-// Elements
-const elements = {
-    zipPath: document.getElementById('zipPath'),
-    commandBlock: document.getElementById('commandBlock'),
-    autoUpdateBtn: document.getElementById('autoUpdateBtn'),
-    showManualBtn: document.getElementById('showManualBtn'),
-    copyBtn: document.getElementById('copyBtn'),
-    copyMsg: document.getElementById('copyMsg'),
-    manualInstructions: document.getElementById('manualInstructions'),
-    setupInstructions: document.getElementById('setupInstructions'),
-    statusSection: document.getElementById('statusSection'),
-    autoUpdateStatus: document.getElementById('autoUpdateStatus'),
-    backToAutoBtn: document.getElementById('backToAutoBtn'),
-    backFromSetupBtn: document.getElementById('backFromSetupBtn'),
-    hostPath: document.getElementById('hostPath')
-};
-
-// Initialize
-document.addEventListener('DOMContentLoaded', async () => {
-    await loadUpdateInfo();
-    setupEventListeners();
-});
-
+// Загрузка данных
 async function loadUpdateInfo() {
     const result = await chrome.storage.local.get('updateZipPath');
-    updateZipPath = result.updateZipPath || '%USERPROFILE%\\Downloads\\extension_update.zip';
+    const zipPath = result.updateZipPath || '%USERPROFILE%\\Downloads\\extension_update.zip';
     
-    if (elements.zipPath) elements.zipPath.textContent = updateZipPath;
-    if (elements.hostPath) elements.hostPath.textContent = `${EXTENSION_PATH}\\native-host`;
+    const zipPathElement = document.getElementById('zipPath');
+    if (zipPathElement) {
+        zipPathElement.textContent = zipPath;
+    }
 
-    // Generate command for manual update
+    // Формирование команды
+    // Путь к скрипту Update-Extension.ps1 предполагается внутри папки расширения
     const scriptPath = `${EXTENSION_PATH}\\Update-Extension.ps1`;
-    updateCommand = `powershell -ExecutionPolicy Bypass -File "${scriptPath}" -ZipPath "${updateZipPath}" -ExtensionPath "${EXTENSION_PATH}"`;
     
-    if (elements.commandBlock) elements.commandBlock.textContent = updateCommand;
-}
-
-function setupEventListeners() {
-    elements.autoUpdateBtn?.addEventListener('click', startAutoUpdate);
+    const command = `powershell -ExecutionPolicy Bypass -File "${scriptPath}" -ZipPath "${zipPath}" -ExtensionPath "${EXTENSION_PATH}"`;
     
-    elements.showManualBtn?.addEventListener('click', () => {
-        elements.statusSection.style.display = 'none';
-        elements.manualInstructions.style.display = 'block';
-    });
-    
-    elements.backToAutoBtn?.addEventListener('click', () => {
-        elements.manualInstructions.style.display = 'none';
-        elements.statusSection.style.display = 'block';
-    });
-    
-    elements.backFromSetupBtn?.addEventListener('click', () => {
-        elements.setupInstructions.style.display = 'none';
-        elements.statusSection.style.display = 'block';
-    });
-
-    elements.copyBtn?.addEventListener('click', async () => {
-        await navigator.clipboard.writeText(updateCommand);
-        elements.copyMsg.style.display = 'inline';
-        setTimeout(() => elements.copyMsg.style.display = 'none', 2000);
-    });
-}
-
-function updateStatus(msg, type = 'info') {
-    const statusEl = elements.autoUpdateStatus;
-    statusEl.style.display = 'block';
-    statusEl.textContent = msg;
-    statusEl.className = `status-msg ${type}`;
-    
-    if (type === 'loading') {
-        elements.autoUpdateBtn.disabled = true;
-        elements.autoUpdateBtn.textContent = '⏳ Выполнение...';
-    } else {
-        elements.autoUpdateBtn.disabled = false;
-        elements.autoUpdateBtn.textContent = 'Обновить автоматически';
+    const commandBlockElement = document.getElementById('commandBlock');
+    if (commandBlockElement) {
+        commandBlockElement.textContent = command;
     }
-}
-
-async function startAutoUpdate() {
-    updateStatus('Подключение к Native Host...', 'loading');
     
-    try {
-        // 1. Check if host is installed by sending a ping
-        const response = await sendNativeMessage({ action: 'ping' });
-        
-        if (!response || !response.success) {
-            throw new Error('Native Host not responding');
-        }
-        
-        // 2. Send update command
-        updateStatus('Запуск скрипта обновления (подтвердите права админа)...', 'loading');
-        
-        const updateResponse = await sendNativeMessage({
-            action: 'update',
-            scriptPath: `${EXTENSION_PATH}\\Update-Extension.ps1`,
-            zipPath: updateZipPath,
-            extensionPath: EXTENSION_PATH
-        });
-        
-        if (updateResponse && updateResponse.success) {
-            updateStatus('Обновление успешно! Перезагрузка...', 'success');
-            setTimeout(() => {
-                chrome.runtime.reload();
-            }, 2000);
-        } else {
-            throw new Error(updateResponse?.error || 'Unknown error during update');
-        }
-        
-    } catch (error) {
-        console.error('Auto update failed:', error);
-        
-        if (error.message.includes('Native Host') || error.message.includes('Access to the specified native messaging host is forbidden')) {
-            // Host not installed
-            elements.statusSection.style.display = 'none';
-            elements.setupInstructions.style.display = 'block';
-        } else {
-            updateStatus(`Ошибка: ${error.message}`, 'error');
-        }
-    }
+    return command;
 }
 
-function sendNativeMessage(message) {
-    return new Promise((resolve, reject) => {
-        try {
-            chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, message, (response) => {
-                if (chrome.runtime.lastError) {
-                    reject(new Error(chrome.runtime.lastError.message));
-                } else {
-                    resolve(response);
+let currentCommand = '';
+
+// Initialize when DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    loadUpdateInfo().then(cmd => {
+        currentCommand = cmd;
+    });
+
+    // Копирование в буфер обмена
+    const copyBtn = document.getElementById('copyBtn');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', async () => {
+            if (currentCommand) {
+                await navigator.clipboard.writeText(currentCommand);
+                const msg = document.getElementById('copyMsg');
+                if (msg) {
+                    msg.style.display = 'inline';
+                    setTimeout(() => {
+                        msg.style.display = 'none';
+                    }, 2000);
                 }
-            });
-        } catch (e) {
-            reject(e);
-        }
-    });
-}
+            }
+        });
+    }
+});
