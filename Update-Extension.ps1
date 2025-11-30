@@ -65,11 +65,12 @@ try {
     # Step 5: Replace files
     Write-Color "[5/7] Replacing files..." Cyan
     
-    # Remove old files
-    Get-ChildItem -Path $ExtensionPath -Recurse | Remove-Item -Recurse -Force
+    # Remove old files (excluding native-host)
+    # We use -Exclude on the top level to avoid even listing the native-host folder
+    Get-ChildItem -Path $ExtensionPath -Exclude "native-host" | Remove-Item -Recurse -Force
 
-    # Copy new files
-    Copy-Item -Path "$sourceDir\*" -Destination $ExtensionPath -Recurse -Force
+    # Copy new files (excluding native-host from source)
+    Get-ChildItem -Path $sourceDir -Exclude "native-host" | Copy-Item -Destination $ExtensionPath -Recurse -Force
 
     # Step 6: Restore user data
     Write-Color "[6/7] Restoring user data..." Cyan

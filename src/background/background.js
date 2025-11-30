@@ -202,6 +202,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // This will be handled by popup or content script that has access to Firebase
         sendResponse({ error: 'Not implemented in service worker' });
         return true;
+    } else if (message.type === 'CHECK_FOR_UPDATES') {
+        console.log('[Background] Received CHECK_FOR_UPDATES request from popup');
+        checkForUpdates();
+        sendResponse({ success: true });
+        return true;
     }
 });
 
@@ -311,12 +316,19 @@ async function checkForUpdates() {
             const downloadUrl = zipAsset ? zipAsset.browser_download_url : data.zipball_url;
 
             if (downloadUrl) {
-                showUpdateNotification(latestVersion, downloadUrl);
+                // Store update info for popup to display
+                chrome.storage.local.set({ 
+                    updateAvailable: true, 
+                    latestVersion: latestVersion, 
+                    updateDownloadUrl: downloadUrl 
+                });
             } else {
                 console.error('[Update] No download URL found');
             }
         } else {
             console.log('[Update] No updates available');
+            // Clear update info if no update available
+            chrome.storage.local.remove(['updateAvailable', 'latestVersion', 'updateDownloadUrl']);
         }
     } catch (error) {
         console.error('[Update] Error checking for updates:', error);
@@ -340,34 +352,18 @@ function compareVersions(v1, v2) {
     return 0;
 }
 
-function showUpdateNotification(version, downloadUrl) {
-    chrome.notifications.create('update-available', {
-        type: 'basic',
-        iconUrl: chrome.runtime.getURL('icons/icon128.png'),
-        title: 'Доступно обновление расширения',
-        message: `Версия ${version} готова к установке`,
-        buttons: [
-            { title: 'Обновить сейчас' },
-            { title: 'Позже' }
-        ],
-        requireInteraction: true
-    });
-
-    // Store download URL for button click handler
-    chrome.storage.local.set({ pendingUpdateUrl: downloadUrl, pendingUpdateVersion: version });
-}
-
-chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
-    if (notificationId === 'update-available') {
-        if (buttonIndex === 0) { // "Update Now"
-            chrome.storage.local.get(['pendingUpdateUrl'], (result) => {
-                if (result.pendingUpdateUrl) {
-                    downloadUpdate(result.pendingUpdateUrl);
-                }
-            });
+// Listen for download request from popup
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'DOWNLOAD_UPDATE') {
+        if (message.url) {
+            downloadUpdate(message.url);
+            sendResponse({ success: true });
+        } else {
+            sendResponse({ success: false, error: 'No URL provided' });
         }
-        chrome.notifications.clear(notificationId);
+        return true; // Keep channel open
     }
+    // ... existing listeners ...
 });
 
 function downloadUpdate(url) {

@@ -93,34 +93,121 @@
             margin-left: 10px;
             display: none;
         }
+        .option-card {
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            transition: all 0.2s;
+        }
+        .option-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        .option-card h3 {
+            margin: 0 0 0.5rem 0;
+            font-size: 1rem;
+            color: #2d3748;
+        }
+        .option-card p {
+            margin: 0 0 1rem 0;
+            font-size: 0.9rem;
+        }
+        .btn-primary {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            font-weight: 600;
+        }
+        .btn-primary:hover { background: #5a67d8; }
+        .btn-secondary {
+            background: white;
+            color: #4a5568;
+            border: 1px solid #cbd5e0;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+        }
+        .btn-secondary:hover { background: #f7fafc; }
+        .btn-text {
+            background: none;
+            border: none;
+            color: #667eea;
+            cursor: pointer;
+            padding: 0;
+            margin-top: 1rem;
+            text-decoration: underline;
+        }
+        code {
+            background: #edf2f7;
+            padding: 2px 4px;
+            border-radius: 4px;
+            color: #c53030;
+        }
     </style>
 </head>
 <body>
     <div class="card">
-        <h1>Обновление готово к установке</h1>
+        <h1>Обновление расширения</h1>
         
-        <div class="step">
-            <div class="step-title"><span class="step-number">1</span>Загрузка завершена</div>
-            <p>Файл обновления успешно скачан. Путь к файлу:</p>
-            <div id="zipPath" class="code-block">Определение пути...</div>
+        <!-- Status Section -->
+        <div id="statusSection">
+            <div class="step">
+                <div class="step-title"><span class="step-number">1</span>Загрузка обновления</div>
+                <p>Файл обновления успешно скачан.</p>
+                <div id="zipPath" class="code-block">...</div>
+            </div>
+
+            <div class="step" id="actionStep">
+                <div class="step-title"><span class="step-number">2</span>Установка</div>
+                <p>Выберите способ установки:</p>
+                
+                <!-- Auto Update Option -->
+                <div class="option-card" id="autoUpdateOption">
+                    <h3>🚀 Автоматическая установка</h3>
+                    <p>Требуется одноразовая настройка.</p>
+                    <button id="autoUpdateBtn" class="btn-primary">Обновить автоматически</button>
+                    <div id="autoUpdateStatus" class="status-msg" style="display:none;"></div>
+                </div>
+
+                <!-- Manual Update Option -->
+                <div class="option-card secondary">
+                    <h3>🛠️ Ручная установка</h3>
+                    <p>Если автоматическая не работает.</p>
+                    <button id="showManualBtn" class="btn-secondary">Показать инструкцию</button>
+                </div>
+            </div>
         </div>
 
-        <div class="step">
-            <div class="step-title"><span class="step-number">2</span>Запуск обновления</div>
-            <p>Скопируйте команду ниже и выполните её в <b>PowerShell</b> (запущенном от имени администратора):</p>
-            <div id="commandBlock" class="code-block">Генерация команды...</div>
-            <button id="copyBtn">Скопировать команду</button>
-            <span id="copyMsg" class="success-msg">✅ Скопировано!</span>
+        <!-- Manual Instructions (Hidden by default) -->
+        <div id="manualInstructions" style="display: none;">
+            <div class="step">
+                <p>Скопируйте команду и выполните в <b>PowerShell</b> (от имени администратора):</p>
+                <div id="commandBlock" class="code-block">...</div>
+                <button id="copyBtn">Скопировать команду</button>
+                <span id="copyMsg" class="success-msg">✅ Скопировано!</span>
+            </div>
+            <button id="backToAutoBtn" class="btn-text">← Назад</button>
         </div>
 
-        <div class="step">
-            <div class="step-title"><span class="step-number">3</span>Перезагрузка</div>
-            <p>После завершения скрипта перейдите на страницу расширений и нажмите кнопку обновления:</p>
-            <a href="chrome://extensions" target="_blank">chrome://extensions</a>
-        </div>
-
-        <div class="warning">
-            <strong>Важно:</strong> Для замены файлов расширения требуются права администратора. Скрипт автоматически создаст резервную копию перед обновлением.
+        <!-- Setup Instructions (Hidden by default) -->
+        <div id="setupInstructions" style="display: none;">
+            <div class="warning">
+                <strong>Требуется настройка:</strong> Для автоматического обновления необходимо один раз запустить скрипт настройки.
+            </div>
+            <ol>
+                <li>Откройте папку: <code id="hostPath">native-host</code></li>
+                <li>Запустите файл <b>install_host.bat</b></li>
+                <li>Вернитесь сюда и нажмите "Обновить автоматически" снова.</li>
+            </ol>
+            <button id="openHostFolderBtn" class="btn-secondary">Открыть папку</button>
+            <button id="backFromSetupBtn" class="btn-text">← Назад</button>
         </div>
     </div>
 
