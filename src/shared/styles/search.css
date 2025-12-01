@@ -7,17 +7,17 @@
 /* Search Container */
 .search-container {
     min-height: 100vh;
-    background: var(--gradient-dark);
-    color: var(--text-primary);
+    background: var(--theme-bg-primary);
+    color: var(--theme-text-primary);
     font-family: var(--font-family);
-    padding-top: var(--space-lg);
+    padding: 0;
 }
 
 /* Search Section */
 .search-section {
     padding: var(--space-xl);
     background: var(--gradient-card);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid var(--theme-border);
 }
 
 .search-form {
@@ -39,10 +39,10 @@
 .search-input {
     width: 100%;
     padding: var(--space-md) var(--space-lg);
-    border: 2px solid rgba(255, 255, 255, 0.1);
+    border: 2px solid var(--theme-border);
     border-radius: var(--radius-lg);
-    background: var(--secondary-bg);
-    color: var(--text-primary);
+    background: var(--theme-input-bg);
+    color: var(--theme-text-primary);
     font-size: var(--font-size-lg);
     transition: all var(--transition-base);
 }
@@ -60,9 +60,9 @@
 /* Filters */
 .filters {
     padding: var(--space-lg);
-    background: var(--secondary-bg);
+    background: var(--theme-bg-secondary);
     border-radius: var(--radius-lg);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--theme-border);
     margin-bottom: var(--space-md);
 }
 
@@ -81,7 +81,7 @@
 .filter-label {
     font-size: var(--font-size-base);
     font-weight: 600;
-    color: var(--text-primary);
+    color: var(--theme-text-primary);
     margin-bottom: var(--space-xs);
 }
 
@@ -116,9 +116,9 @@
     max-height: 200px;
     overflow-y: auto;
     padding: var(--space-sm);
-    background: var(--primary-bg);
+    background: var(--theme-bg-primary);
     border-radius: var(--radius-md);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--theme-border);
 }
 
 .checkbox-item {
@@ -133,7 +133,7 @@
 }
 
 .checkbox-item:hover {
-    background: var(--accent-bg);
+    background: var(--theme-hover-bg);
 }
 
 .checkbox-item input[type="checkbox"] {
@@ -145,7 +145,7 @@
 
 .checkbox-item label {
     font-size: var(--font-size-sm);
-    color: var(--text-primary);
+    color: var(--theme-text-primary);
     cursor: pointer;
     line-height: 1.2;
 }
@@ -162,15 +162,15 @@
     align-items: center;
     justify-content: flex-end;
     padding-top: var(--space-md);
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid var(--theme-border);
 }
 
 .form-select {
     padding: var(--space-sm) var(--space-md);
-    border: 2px solid rgba(255, 255, 255, 0.1);
+    border: 2px solid var(--theme-border);
     border-radius: var(--radius-md);
-    background: var(--primary-bg);
-    color: var(--text-primary);
+    background: var(--theme-bg-primary);
+    color: var(--theme-text-primary);
     font-size: var(--font-size-sm);
     transition: all var(--transition-base);
 }
@@ -193,13 +193,13 @@
     justify-content: space-between;
     margin-bottom: var(--space-lg);
     padding-bottom: var(--space-md);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid var(--theme-border);
 }
 
 .results-title {
     font-size: var(--font-size-xl);
     font-weight: 600;
-    color: var(--text-primary);
+    color: var(--theme-text-primary);
     margin: 0;
 }
 
@@ -226,7 +226,7 @@
 /* Movie Card */
 .movie-card {
     background: var(--gradient-card);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--theme-border);
     border-radius: var(--radius-lg);
     overflow: hidden;
     transition: all var(--transition-base);
@@ -453,7 +453,7 @@
 .movie-title {
     font-size: var(--font-size-lg);
     font-weight: 600;
-    color: var(--text-primary);
+    color: var(--theme-text-primary);
     margin: 0 0 var(--space-xs) 0;
     line-height: 1.3;
     display: -webkit-box;
@@ -499,7 +499,7 @@
 
 .rating-badge.votes {
     color: var(--text-secondary);
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--theme-bg-tertiary);
 }
 
 .movie-description {
@@ -516,7 +516,7 @@
 
 .movie-actions {
     padding: var(--space-md);
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid var(--theme-border);
     display: flex;
     gap: var(--space-sm);
     flex-wrap: wrap;
@@ -576,7 +576,7 @@
 .movie-detail-title {
     font-size: var(--font-size-2xl);
     font-weight: 700;
-    color: var(--text-primary);
+    color: var(--theme-text-primary);
     margin: 0 0 var(--space-sm) 0;
 }
 
@@ -787,7 +787,7 @@
     padding: var(--space-2xl);
     background: var(--gradient-card);
     border-radius: var(--radius-lg);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--theme-border);
     box-shadow: var(--shadow-lg);
     min-height: 300px;
     margin: var(--space-lg) auto;
@@ -2103,4 +2103,113 @@
     .history-item-query {
         font-size: var(--font-size-sm);
     }
+}
+
+/* Light theme overrides for movie detail page */
+.light-theme .movie-detail-meta-grid {
+    background: var(--theme-bg-secondary);
+    border: 1px solid var(--theme-border);
+}
+
+.light-theme .movie-detail-page-title {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .meta-value {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .movie-detail-description {
+    background: var(--theme-bg-secondary);
+    border: 1px solid var(--theme-border);
+}
+
+.light-theme .movie-detail-description h3 {
+    color: var(--theme-text-primary);
+    border-bottom: 2px solid var(--theme-stat-color);
+}
+
+.light-theme .movie-frames-section h4 {
+    color: var(--theme-text-primary);
+    border-bottom: 2px solid var(--theme-stat-color);
+}
+
+.light-theme .movie-frame {
+    background: var(--theme-bg-secondary);
+    border: 1px solid var(--theme-border);
+}
+
+.light-theme .movie-frame-image {
+    background: var(--theme-bg-secondary);
+}
+
+/* Watch and Rate buttons for light theme */
+.light-theme .watch-movie-btn {
+    background: var(--theme-stat-color) !important;
+    color: white !important;
+    box-shadow: 0 4px 12px rgba(51, 51, 53, 0.3) !important;
+}
+
+.light-theme .watch-movie-btn:hover {
+    background: #49494b !important;
+    box-shadow: 0 6px 16px rgba(51, 51, 53, 0.4) !important;
+}
+
+.light-theme .rate-movie-btn {
+    background: var(--theme-stat-color) !important;
+    color: white !important;
+    box-shadow: 0 4px 12px rgba(51, 51, 53, 0.3) !important;
+}
+
+.light-theme .rate-movie-btn:hover {
+    background: #49494b !important;
+    box-shadow: 0 6px 16px rgba(51, 51, 53, 0.4) !important;
+}
+
+/* User ratings section for light theme */
+.light-theme .user-ratings-title {
+    color: var(--theme-text-primary);
+    border-bottom: 2px solid var(--theme-stat-color);
+}
+
+.light-theme .user-rating-card {
+    background: var(--theme-bg-secondary);
+    border: 1px solid var(--theme-border);
+}
+
+.light-theme .user-rating-card:hover {
+    border-color: var(--theme-stat-color);
+}
+
+.light-theme .user-rating-card.current-user {
+    border-color: var(--theme-stat-color);
+    background: rgba(51, 51, 53, 0.05);
+}
+
+.light-theme .user-rating-name {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .user-rating-score {
+    color: var(--theme-stat-color);
+}
+
+/* Loading states for light theme */
+.light-theme .loading-spinner {
+    border: 3px solid rgba(0, 0, 0, 0.1);
+    border-top: 3px solid var(--theme-stat-color);
+}
+
+.light-theme .loading-spinner-large {
+    border: 4px solid rgba(0, 0, 0, 0.1);
+    border-top: 4px solid var(--theme-stat-color);
+}
+
+.light-theme .loading-title {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .initial-loading-content {
+    background: var(--theme-bg-secondary);
+    border: 1px solid var(--theme-border);
 }

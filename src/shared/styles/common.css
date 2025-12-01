@@ -94,7 +94,7 @@ body {
     background: var(--primary-bg);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    padding-top: 70px;
+    padding-top: 60px;
 }
 
 /* Typography */

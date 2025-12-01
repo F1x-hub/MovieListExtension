@@ -12,7 +12,9 @@ class Navigation {
     }
 
     init() {
+        this.applyTheme(this.getCurrentTheme());
         this.render();
+        this.updateThemeButton(this.getCurrentTheme()); // Update UI after render
         this.setupEventListeners();
         this.setupAuthListener();
         
@@ -117,6 +119,14 @@ class Navigation {
                                 <div class="nav-dropdown-item" id="navDropdownAdmin" style="display: none;">
                                     <span class="nav-dropdown-icon">🛡️</span>
                                     <span>Admin Panel</span>
+                                </div>
+                                <div class="nav-dropdown-item" id="navDropdownTheme">
+                                    <span class="nav-dropdown-icon" id="navThemeIcon">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20" style="width: 16px; height: 16px;">
+                                            <path fill-rule="evenodd" d="M10.606 1.987a.75.75 0 0 1-.217.835 5.795 5.795 0 0 0 6.387 9.58.75.75 0 0 1 1.031.965A8.502 8.502 0 0 1 1.5 10a8.5 8.5 0 0 1 8.395-8.5.75.75 0 0 1 .711.487M8.004 3.288a7 7 0 1 0 7.421 11.137A7.295 7.295 0 0 1 8.004 3.288" clip-rule="evenodd"></path>
+                                        </svg>
+                                    </span>
+                                    <span id="navThemeText">Theme (Dark)</span>
                                 </div>
                                 <div class="nav-dropdown-divider"></div>
                                 <div class="nav-dropdown-item nav-dropdown-logout" id="navDropdownLogout">
@@ -232,6 +242,15 @@ class Navigation {
                 dropdownAdmin.addEventListener('click', () => {
                     this.closeAllDropdowns();
                     this.navigateToPage('admin');
+                });
+            }
+
+            // Theme dropdown item
+            const dropdownTheme = document.getElementById('navDropdownTheme');
+            if (dropdownTheme) {
+                dropdownTheme.addEventListener('click', () => {
+                    this.closeAllDropdowns();
+                    this.showThemeModal();
                 });
             }
 
@@ -659,6 +678,42 @@ class Navigation {
     }
 
     showCollectionModal(collection = null) {
+        // Detect current theme
+        const isLightTheme = document.body.classList.contains('light-theme');
+        
+        // Define theme colors
+        const themeColors = isLightTheme ? {
+            overlay: 'rgba(0, 0, 0, 0.5)',
+            background: '#ededed',
+            text: '#333335',
+            textSecondary: '#495057',
+            border: 'rgba(0, 0, 0, 0.1)',
+            inputBg: '#ffffff',
+            inputBorder: '#ced4da',
+            iconBg: '#e9ecef',
+            selectedIconBorder: '#333335',
+            selectedIconBg: '#ededed',
+            cancelBg: '#e9ecef',
+            cancelText: '#333335',
+            saveBg: '#333335',
+            saveText: '#ffffff'
+        } : {
+            overlay: 'rgba(0, 0, 0, 0.7)',
+            background: '#1e293b',
+            text: '#e2e8f0',
+            textSecondary: '#94a3b8',
+            border: '#334155',
+            inputBg: '#0f172a',
+            inputBorder: '#334155',
+            iconBg: '#0f172a',
+            selectedIconBorder: '#6366f1',
+            selectedIconBg: '#1e293b',
+            cancelBg: '#334155',
+            cancelText: '#e2e8f0',
+            saveBg: '#6366f1',
+            saveText: '#ffffff'
+        };
+        
         const modal = document.createElement('div');
         modal.className = 'collection-modal-overlay';
         modal.style.cssText = `
@@ -667,7 +722,7 @@ class Navigation {
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0, 0, 0, 0.7);
+            background: ${themeColors.overlay};
             display: flex;
             align-items: center;
             justify-content: center;
@@ -679,20 +734,20 @@ class Navigation {
 
         modal.innerHTML = `
             <div class="collection-modal-content" style="
-                background: #1e293b;
+                background: ${themeColors.background};
                 padding: 24px;
                 border-radius: 12px;
                 max-width: 500px;
                 width: 90%;
-                color: #e2e8f0;
-                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+                color: ${themeColors.text};
+                box-shadow: 0 20px 40px rgba(0, 0, 0, ${isLightTheme ? '0.15' : '0.5'});
             ">
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
                     <h3 style="margin: 0; font-size: 20px;">${isEdit ? 'Edit Collection' : 'Create Collection'}</h3>
                     <button class="modal-close-btn" style="
                         background: none;
                         border: none;
-                        color: #94a3b8;
+                        color: ${themeColors.textSecondary};
                         font-size: 24px;
                         cursor: pointer;
                         padding: 0;
@@ -714,18 +769,18 @@ class Navigation {
                                    width: 100%;
                                    padding: 10px 12px;
                                    border-radius: 8px;
-                                   border: 1px solid #334155;
-                                   background: #0f172a;
-                                   color: #e2e8f0;
+                                   border: 1px solid ${themeColors.inputBorder};
+                                   background: ${themeColors.inputBg};
+                                   color: ${themeColors.text};
                                    font-size: 14px;
                                ">
-                        <div style="margin-top: 4px; font-size: 12px; color: #94a3b8;">
+                        <div style="margin-top: 4px; font-size: 12px; color: ${themeColors.textSecondary};">
                             <span id="nameCharCount">0</span>/50 characters
                         </div>
                     </div>
                     <div>
                         <label style="display: block; margin-bottom: 8px; font-weight: 500;">Icon</label>
-                        <div style="display: flex; flex-wrap: wrap; gap: 8px; max-height: 150px; overflow-y: auto; padding: 8px; background: #0f172a; border-radius: 8px;">
+                        <div style="display: flex; flex-wrap: wrap; gap: 8px; max-height: 150px; overflow-y: auto; padding: 8px; background: ${themeColors.iconBg}; border-radius: 8px;">
                             ${defaultIcons.map(icon => `
                                 <button type="button" class="icon-select-btn ${collection && collection.icon === icon ? 'selected' : ''}" 
                                         data-icon="${icon}" 
@@ -733,8 +788,8 @@ class Navigation {
                                             width: 40px;
                                             height: 40px;
                                             font-size: 20px;
-                                            border: 2px solid ${collection && collection.icon === icon ? '#6366f1' : '#334155'};
-                                            background: ${collection && collection.icon === icon ? '#1e293b' : 'transparent'};
+                                            border: 2px solid ${collection && collection.icon === icon ? themeColors.selectedIconBorder : themeColors.border};
+                                            background: ${collection && collection.icon === icon ? themeColors.selectedIconBg : 'transparent'};
                                             border-radius: 8px;
                                             cursor: pointer;
                                             transition: all 0.2s;
@@ -744,8 +799,8 @@ class Navigation {
                     </div>
                     <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px;">
                         <button type="button" id="cancelCollectionBtn" style="
-                            background: #334155;
-                            color: #e2e8f0;
+                            background: ${themeColors.cancelBg};
+                            color: ${themeColors.cancelText};
                             border: none;
                             padding: 10px 16px;
                             border-radius: 8px;
@@ -753,8 +808,8 @@ class Navigation {
                             font-weight: 500;
                         ">Cancel</button>
                         <button type="submit" id="saveCollectionBtn" style="
-                            background: #6366f1;
-                            color: #fff;
+                            background: ${themeColors.saveBg};
+                            color: ${themeColors.saveText};
                             border: none;
                             padding: 10px 16px;
                             border-radius: 8px;
@@ -781,12 +836,12 @@ class Navigation {
         iconButtons.forEach(btn => {
             btn.addEventListener('click', () => {
                 iconButtons.forEach(b => {
-                    b.style.borderColor = '#334155';
+                    b.style.borderColor = themeColors.border;
                     b.style.background = 'transparent';
                     b.classList.remove('selected');
                 });
-                btn.style.borderColor = '#6366f1';
-                btn.style.background = '#1e293b';
+                btn.style.borderColor = themeColors.selectedIconBorder;
+                btn.style.background = themeColors.selectedIconBg;
                 btn.classList.add('selected');
                 selectedIcon = btn.dataset.icon;
             });
@@ -1542,6 +1597,221 @@ class Navigation {
                 setToast(false, (error && error.message) ? `Save failed: ${error.message}` : 'Save failed');
             }
         });
+    }
+
+    getCurrentTheme() {
+        try {
+            const savedTheme = localStorage.getItem('movieExtensionTheme');
+            return savedTheme || 'dark';
+        } catch (error) {
+            console.error('Error reading theme from localStorage:', error);
+            return 'dark';
+        }
+    }
+
+    applyTheme(theme) {
+        try {
+            // Apply theme class to document root
+            if (theme === 'light') {
+                document.documentElement.classList.add('light-theme');
+            } else {
+                document.documentElement.classList.remove('light-theme');
+            }
+
+            // Save theme to localStorage
+            localStorage.setItem('movieExtensionTheme', theme);
+
+            // Update theme button text and icon
+            this.updateThemeButton(theme);
+        } catch (error) {
+            console.error('Error applying theme:', error);
+        }
+    }
+
+    updateThemeButton(theme) {
+        const themeText = document.getElementById('navThemeText');
+        const themeIcon = document.getElementById('navThemeIcon');
+        
+        if (themeText) {
+            themeText.textContent = theme === 'dark' ? 'Theme (Dark)' : 'Theme (Light)';
+        }
+
+        if (themeIcon) {
+            if (theme === 'dark') {
+                // Moon icon for dark theme
+                themeIcon.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20" style="width: 16px; height: 16px;">
+                        <path fill-rule="evenodd" d="M10.606 1.987a.75.75 0 0 1-.217.835 5.795 5.795 0 0 0 6.387 9.58.75.75 0 0 1 1.031.965A8.502 8.502 0 0 1 1.5 10a8.5 8.5 0 0 1 8.395-8.5.75.75 0 0 1 .711.487M8.004 3.288a7 7 0 1 0 7.421 11.137A7.295 7.295 0 0 1 8.004 3.288" clip-rule="evenodd"></path>
+                    </svg>
+                `;
+            } else {
+                // Sun icon for light theme
+                themeIcon.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" style="width: 16px; height: 16px;">
+                        <path d="M12.002 1a.9.9 0 0 1 .9.9v2.2a.9.9 0 0 1-1.8 0V1.9a.9.9 0 0 1 .9-.9m.002 18a.9.9 0 0 1 .9.9v2.2a.9.9 0 0 1-1.8 0v-2.2a.9.9 0 0 1 .9-.9M4.661 8.884a.9.9 0 0 0 .9-1.559L3.355 6.128a.9.9 0 0 0-.9 1.559zm17.223 8.663a.9.9 0 0 1-1.23.33l-2.205-1.193a.9.9 0 1 1 .9-1.56l2.205 1.193a.9.9 0 0 1 .33 1.23m-3.43-10.23a.9.9 0 1 0 .9 1.56l2.198-1.197a.9.9 0 1 0-.9-1.558zM2.128 17.547a.9.9 0 0 1 .33-1.23l2.191-1.2a.9.9 0 0 1 .9 1.559l-2.19 1.2a.9.9 0 0 1-1.23-.33ZM12.004 7a5 5 0 0 0-3.536 1.464A4.98 4.98 0 0 0 7.003 12c0 1.38.56 2.63 1.465 3.536A4.99 4.99 0 0 0 12.004 17c1.382 0 2.632-.56 3.537-1.464A4.98 4.98 0 0 0 17.006 12c0-1.38-.56-2.63-1.465-3.536A4.99 4.99 0 0 0 12.004 7M9.741 9.737a3.19 3.19 0 0 1 2.263-.937c.885 0 1.683.356 2.264.937s.938 1.379.938 2.263-.357 1.682-.938 2.263a3.19 3.19 0 0 1-2.264.937 3.19 3.19 0 0 1-2.263-.937A3.18 3.18 0 0 1 8.803 12c0-.884.357-1.682.938-2.263" clip-rule="evenodd"></path>
+                    </svg>
+                `;
+            }
+        }
+    }
+
+    showThemeModal() {
+        const currentTheme = this.getCurrentTheme();
+        const isDark = currentTheme === 'dark';
+        
+        // Define colors based on theme
+        const colors = {
+            bg: isDark ? '#1e293b' : '#ffffff',
+            text: isDark ? '#e2e8f0' : '#333335',
+            closeBtn: isDark ? '#94a3b8' : '#64748b',
+            optionBg: isDark ? '#0f172a' : '#f8fafc',
+            optionHover: isDark ? '#334155' : '#e2e8f0',
+            accent: isDark ? '#6366f1' : '#333335',
+            border: isDark ? 'rgba(255, 255, 255, 0.1)' : '#e2e8f0'
+        };
+        
+        const modal = document.createElement('div');
+        modal.className = 'theme-modal-overlay';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            animation: fadeIn 0.2s ease;
+        `;
+
+        modal.innerHTML = `
+            <div class="theme-modal-content" style="
+                background: ${colors.bg};
+                padding: 24px;
+                border-radius: 12px;
+                min-width: 280px;
+                color: ${colors.text};
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+                animation: scaleIn 0.2s ease;
+                border: 1px solid ${colors.border};
+            ">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+                    <h3 style="margin: 0; font-size: 18px; font-weight: 600;">Select Theme</h3>
+                    <button class="modal-close-btn" style="
+                        background: none;
+                        border: none;
+                        color: ${colors.closeBtn};
+                        font-size: 24px;
+                        cursor: pointer;
+                        padding: 0;
+                        width: 32px;
+                        height: 32px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        transition: color 0.2s;
+                    ">×</button>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <div class="theme-option" data-theme="dark" style="
+                        display: flex;
+                        align-items: center;
+                        gap: 12px;
+                        padding: 14px 16px;
+                        border-radius: 8px;
+                        background: ${currentTheme === 'dark' ? colors.optionHover : colors.optionBg};
+                        cursor: pointer;
+                        transition: all 0.2s;
+                        border: 2px solid ${currentTheme === 'dark' ? colors.accent : 'transparent'};
+                    ">
+                        <span class="theme-option-icon" style="font-size: 24px;">🌙</span>
+                        <span style="flex: 1; font-weight: 500;">Dark Theme</span>
+                        <span class="theme-checkmark" style="
+                            font-size: 18px;
+                            color: ${colors.accent};
+                            display: ${currentTheme === 'dark' ? 'block' : 'none'};
+                        ">✓</span>
+                    </div>
+                    <div class="theme-option" data-theme="light" style="
+                        display: flex;
+                        align-items: center;
+                        gap: 12px;
+                        padding: 14px 16px;
+                        border-radius: 8px;
+                        background: ${currentTheme === 'light' ? colors.optionHover : colors.optionBg};
+                        cursor: pointer;
+                        transition: all 0.2s;
+                        border: 2px solid ${currentTheme === 'light' ? colors.accent : 'transparent'};
+                    ">
+                        <span class="theme-option-icon" style="font-size: 24px;">☀️</span>
+                        <span style="flex: 1; font-weight: 500;">Light Theme</span>
+                        <span class="theme-checkmark" style="
+                            font-size: 18px;
+                            color: ${colors.accent};
+                            display: ${currentTheme === 'light' ? 'block' : 'none'};
+                        ">✓</span>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        const close = () => {
+            modal.style.animation = 'fadeOut 0.2s ease';
+            setTimeout(() => modal.remove(), 200);
+        };
+
+        // Close button
+        modal.querySelector('.modal-close-btn').addEventListener('click', close);
+        
+        // Close on overlay click
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) close();
+        });
+
+        // Close on escape key
+        const handleEscape = (e) => {
+            if (e.key === 'Escape') {
+                close();
+                document.removeEventListener('keydown', handleEscape);
+            }
+        };
+        document.addEventListener('keydown', handleEscape);
+
+        // Theme option selection
+        const themeOptions = modal.querySelectorAll('.theme-option');
+        themeOptions.forEach(option => {
+            option.addEventListener('mouseenter', () => {
+                option.style.background = colors.optionHover;
+            });
+            option.addEventListener('mouseleave', () => {
+                const theme = option.dataset.theme;
+                option.style.background = currentTheme === theme ? colors.optionHover : colors.optionBg;
+            });
+            option.addEventListener('click', () => {
+                const selectedTheme = option.dataset.theme;
+                this.applyTheme(selectedTheme);
+                close();
+                
+                // Show toast notification
+                if (typeof Utils !== 'undefined' && Utils.showToast) {
+                    Utils.showToast(`Theme changed to ${selectedTheme}`);
+                }
+            });
+        });
+
+        // Add fadeOut animation
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes fadeOut {
+                from { opacity: 1; }
+                to { opacity: 0; }
+            }
+        `;
+        document.head.appendChild(style);
     }
 
     handleSignIn() {

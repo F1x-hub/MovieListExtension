@@ -1,0 +1,219 @@
+/**
+ * Theme System - Light and Dark Theme Support
+ * Defines CSS variables for both light and dark themes
+ */
+
+/* Default Dark Theme Variables */
+:root {
+    /* Background Colors */
+    --theme-bg-primary: #1a1a2e;
+    --theme-bg-secondary: #16213e;
+    --theme-bg-tertiary: #0f3460;
+    --theme-bg-card: rgba(255, 255, 255, 0.05);
+    
+    /* Text Colors */
+    --theme-text-primary: #ffffff;
+    --theme-text-secondary: #a8a8a8;
+    --theme-text-muted: #6c757d;
+    --theme-stat-color: #667eea;
+    
+    /* Border Colors */
+    --theme-border: rgba(255, 255, 255, 0.1);
+    --theme-border-hover: rgba(255, 255, 255, 0.2);
+    
+    /* Input Colors */
+    --theme-input-bg: rgba(255, 255, 255, 0.05);
+    --theme-input-border: rgba(255, 255, 255, 0.1);
+    --theme-input-text: #ffffff;
+    
+    /* Hover & Active States */
+    --theme-hover-bg: rgba(255, 255, 255, 0.1);
+    --theme-active-bg: rgba(255, 255, 255, 0.15);
+}
+
+/* Light Theme Variables */
+.light-theme {
+    /* Background Colors */
+    --theme-bg-primary: #cecece;
+    --theme-bg-secondary: #ededed;
+    --theme-bg-tertiary: #e9ecef;
+    --theme-bg-card: #ededed;
+    
+    /* Text Colors */
+    --theme-text-primary: #333335;
+    --theme-text-secondary: #495057;
+    --theme-text-muted: #6c757d;
+    --theme-stat-color: #333335;
+    
+    /* Border Colors */
+    --theme-border: rgba(0, 0, 0, 0.1);
+    --theme-border-hover: rgba(0, 0, 0, 0.2);
+    
+    /* Input Colors */
+    --theme-input-bg: #ffffff;
+    --theme-input-border: #ced4da;
+    --theme-input-text: #333335;
+    
+    /* Hover & Active States */
+    --theme-hover-bg: rgba(0, 0, 0, 0.05);
+    --theme-active-bg: rgba(0, 0, 0, 0.1);
+    
+    /* Update existing common variables for light theme */
+    --primary-bg: #cecece;
+    --secondary-bg: #ededed;
+    --accent-bg: #e9ecef;
+    
+    --text-primary: #333335;
+    --text-secondary: #495057;
+    --text-muted: #6c757d;
+    
+    /* Card backgrounds */
+    --gradient-card: linear-gradient(135deg, rgba(0, 0, 0, 0.03) 0%, rgba(0, 0, 0, 0.01) 100%);
+    
+    /* Shadows for light theme */
+    --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.08);
+    --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.12);
+    --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.15);
+    --shadow-xl: 0 12px 24px rgba(0, 0, 0, 0.18);
+}
+
+/* Smooth theme transitions */
+body,
+.nav-header,
+.nav-user-dropdown,
+.collection-dropdown,
+.theme-card,
+.movie-card,
+.filter-section {
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* Light theme body styles */
+.light-theme body {
+    background: var(--theme-bg-primary);
+    color: var(--theme-text-primary);
+}
+
+/* Light theme navigation */
+.light-theme .nav-header {
+    background: rgba(255, 255, 255, 0.3);
+    border-bottom: 1px solid var(--theme-border);
+    backdrop-filter: blur(20px);
+}
+
+.light-theme .nav-link {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .nav-link:hover {
+    background: var(--theme-hover-bg);
+    color: var(--theme-text-primary);
+}
+
+.light-theme .nav-link.active {
+    background: var(--theme-active-bg);
+    color: var(--theme-text-primary);
+}
+
+.light-theme .nav-user-trigger {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .nav-user-trigger:hover {
+    background: var(--theme-hover-bg);
+}
+
+.light-theme .nav-user-dropdown {
+    background: var(--theme-bg-secondary);
+    border: 1px solid var(--theme-border);
+    box-shadow: var(--shadow-lg);
+}
+
+.light-theme .nav-dropdown-item {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .nav-dropdown-item:hover {
+    background: var(--theme-hover-bg);
+}
+
+.light-theme .nav-dropdown-divider {
+    background: var(--theme-border);
+}
+
+/* Light theme collection dropdown */
+.light-theme .collection-dropdown {
+    background: var(--theme-bg-secondary);
+    border: 1px solid var(--theme-border);
+    box-shadow: var(--shadow-md);
+}
+
+.light-theme .dropdown-item {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .dropdown-item:hover {
+    background: var(--theme-hover-bg);
+}
+
+.light-theme .dropdown-divider {
+    background: var(--theme-border);
+}
+
+/* Light theme forms and inputs */
+.light-theme input,
+.light-theme textarea,
+.light-theme select {
+    background: var(--theme-input-bg);
+    border-color: var(--theme-input-border);
+    color: var(--theme-input-text);
+}
+
+.light-theme input:focus,
+.light-theme textarea:focus,
+.light-theme select:focus {
+    border-color: var(--accent-color);
+}
+
+/* Light theme cards */
+.light-theme .theme-card,
+.light-theme .movie-card,
+.light-theme .filter-section {
+    background: var(--theme-bg-card);
+    border: 1px solid var(--theme-border);
+    box-shadow: var(--shadow-sm);
+}
+
+/* Light theme scrollbar */
+.light-theme ::-webkit-scrollbar-track {
+    background: var(--theme-bg-tertiary);
+}
+
+.light-theme ::-webkit-scrollbar-thumb {
+    background: #838080;
+    border-radius: 4px;
+}
+
+.light-theme ::-webkit-scrollbar-thumb:hover {
+    background: #666666;
+}
+
+/* Ensure text contrast in light theme */
+.light-theme h1,
+.light-theme h2,
+.light-theme h3,
+.light-theme h4,
+.light-theme h5,
+.light-theme h6 {
+    color: var(--theme-text-primary);
+}
+
+.light-theme p {
+    color: var(--theme-text-secondary);
+}
+
+/* Light theme modal overlays */
+.light-theme .modal-overlay,
+.light-theme .theme-modal-overlay {
+    background: rgba(0, 0, 0, 0.5);
+}

@@ -659,3 +659,235 @@
     }
 }
 
+/* Light Theme Overrides */
+.light-theme .favorites-main {
+    background: var(--theme-bg-primary);
+}
+
+.light-theme .favorites-title {
+    background: none;
+    -webkit-text-fill-color: initial;
+    color: var(--theme-text-primary);
+}
+
+.light-theme .favorites-subtitle,
+.light-theme .favorites-count {
+    color: var(--theme-text-secondary);
+}
+
+.light-theme .filters-section {
+    background: var(--theme-bg-secondary);
+    border-color: var(--theme-border);
+    box-shadow: var(--shadow-sm);
+}
+
+.light-theme .filters-title,
+.light-theme .filter-label {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .search-input,
+.light-theme .dropdown-trigger {
+    background: var(--theme-bg-tertiary);
+    border-color: var(--theme-border);
+    color: var(--theme-text-primary);
+}
+
+.light-theme .search-input:focus,
+.light-theme .dropdown-trigger:hover {
+    background: var(--theme-bg-primary);
+    border-color: var(--theme-stat-color);
+}
+
+.light-theme .dropdown-list {
+    background: var(--theme-bg-secondary);
+    border-color: var(--theme-border);
+}
+
+.light-theme .dropdown-option {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .dropdown-option:hover {
+    background: var(--theme-hover-bg);
+}
+
+.light-theme .movie-card {
+    background: var(--theme-bg-secondary);
+    border-color: var(--theme-border);
+}
+
+.light-theme .movie-card:hover {
+    border-color: var(--theme-stat-color);
+    box-shadow: var(--shadow-md);
+}
+
+.light-theme .movie-poster-container {
+    background: var(--theme-bg-tertiary);
+}
+
+.light-theme .movie-title {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .movie-title-ru,
+.light-theme .movie-meta,
+.light-theme .rating-label,
+.light-theme .favorited-date {
+    color: var(--theme-text-secondary);
+}
+
+.light-theme .rating-value {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .genre-tag {
+    background: var(--theme-bg-tertiary);
+    color: var(--theme-text-secondary);
+}
+
+.light-theme .btn-primary {
+    background: var(--theme-stat-color);
+    color: white;
+}
+
+.light-theme .btn-primary:hover {
+    background: #49494b;
+}
+
+.light-theme .edit-btn {
+    background: var(--theme-bg-tertiary);
+    color: var(--theme-text-primary);
+    border-color: var(--theme-border);
+}
+
+.light-theme .edit-btn:hover {
+    background: var(--theme-hover-bg);
+    border-color: var(--theme-stat-color);
+}
+
+.light-theme .empty-state-title,
+.light-theme .error-state-title,
+.light-theme .limit-modal h2 {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .empty-state-text,
+.light-theme .error-state-text,
+.light-theme .limit-modal p {
+    color: var(--theme-text-secondary);
+}
+
+.light-theme .modal-content {
+    background: var(--theme-bg-secondary);
+    border-color: var(--theme-border);
+}
+
+.light-theme .modal-title {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .modal-close {
+    color: var(--theme-text-secondary);
+}
+
+.light-theme .modal-close:hover {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .rating-modal {
+    background: var(--theme-bg-secondary);
+    border-color: var(--theme-border);
+}
+
+.light-theme .rating-header {
+    background: var(--theme-bg-tertiary);
+    border-bottom-color: var(--theme-border);
+}
+
+.light-theme .movie-rating-card {
+    background: var(--theme-bg-tertiary);
+}
+
+.light-theme .movie-rating-info h3 {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .movie-rating-info p {
+    color: var(--theme-text-secondary);
+}
+
+.light-theme .rating-score-container {
+    background: var(--theme-bg-tertiary);
+    border-color: var(--theme-border);
+}
+
+.light-theme .rating-display {
+    background: var(--theme-bg-secondary);
+    border-color: var(--theme-border);
+}
+
+.light-theme .rating-value-large {
+    color: var(--theme-stat-color);
+}
+
+.light-theme .comment-textarea {
+    background: var(--theme-bg-tertiary);
+    border-color: var(--theme-border);
+    color: var(--theme-text-primary);
+}
+
+.light-theme .comment-textarea:focus {
+    background: var(--theme-bg-secondary);
+    border-color: var(--theme-stat-color);
+}
+
+.light-theme .rating-footer {
+    background: var(--theme-bg-tertiary);
+    border-top-color: var(--theme-border);
+}
+
+.light-theme .rating-slider-modern {
+    background: var(--theme-border);
+}
+
+.light-theme .rating-slider-modern::-webkit-slider-thumb {
+    background: var(--theme-stat-color);
+    box-shadow: 0 0 0 4px rgba(51, 51, 53, 0.2);
+}
+
+.light-theme .rating-slider-modern::-webkit-slider-thumb:hover {
+    box-shadow: 0 0 0 6px rgba(51, 51, 53, 0.3);
+}
+
+.light-theme .btn-secondary {
+    background: var(--theme-bg-tertiary);
+    color: var(--theme-text-primary);
+    border-color: var(--theme-border);
+}
+
+.light-theme .btn-secondary:hover {
+    background: var(--theme-hover-bg);
+    border-color: var(--theme-stat-color);
+}
+
+.light-theme .error-state-btn {
+    background: var(--theme-stat-color);
+    color: white;
+}
+
+.light-theme .error-state-btn:hover {
+    background: #49494b;
+}
+
+.light-theme *:focus {
+    outline-color: var(--theme-stat-color);
+}
+
+.light-theme .action-btn:focus,
+.light-theme .btn-primary:focus,
+.light-theme .btn-secondary:focus {
+    outline: 2px solid var(--theme-stat-color);
+    outline-offset: 2px;
+}
+
