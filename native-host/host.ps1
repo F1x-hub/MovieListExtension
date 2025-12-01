@@ -57,11 +57,11 @@ while ($true) {
                 continue
             }
             
-            # Start the update script as Admin and WAIT for it to finish
-            # We use -Wait to ensure we only send success after it's done
-            $process = Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -File `"$scriptPath`" -ZipPath `"$zipPath`" -ExtensionPath `"$extensionPath`"" -Verb RunAs -PassThru -Wait
+            # Start the update script silently
+            $argsList = "-WindowStyle Hidden -ExecutionPolicy Bypass -File `"$scriptPath`" -ZipPath `"$zipPath`" -ExtensionPath `"$extensionPath`""
+            $process = Start-Process powershell -ArgumentList $argsList -PassThru -Wait -WindowStyle Hidden
             
-            # Check exit code if possible (Start-Process -Wait returns process object but ExitCode might be available)
+            # Check exit code
             if ($process.ExitCode -eq 0) {
                 Write-Message (ConvertTo-Json @{ success = $true })
             }
