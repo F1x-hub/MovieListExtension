@@ -999,3 +999,290 @@ body {
 .feed-content::-webkit-scrollbar-thumb:hover {
     background: var(--accent-hover);
 }
+
+/* Light Theme Overrides for Popup */
+.light-theme .popup-container {
+    background: var(--theme-bg-primary);
+}
+
+.light-theme .popup-header {
+    background: var(--theme-bg-secondary);
+    border-bottom-color: var(--theme-border);
+}
+
+.light-theme .popup-title {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .auth-status {
+    color: var(--theme-text-secondary);
+}
+
+.light-theme .auth-tabs {
+    background: var(--theme-bg-tertiary);
+    border-color: var(--theme-border);
+}
+
+.light-theme .tab-btn {
+    color: var(--theme-text-secondary);
+}
+
+.light-theme .tab-btn.active {
+    background: var(--theme-stat-color);
+    color: white;
+}
+
+.light-theme .auth-form {
+    background: var(--theme-bg-secondary);
+    border-color: var(--theme-border);
+}
+
+.light-theme .auth-form h3 {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .auth-divider::before {
+    background: var(--theme-border);
+}
+
+.light-theme .auth-divider span {
+    background: var(--theme-bg-primary);
+    color: var(--theme-text-secondary);
+}
+
+.light-theme .main-content {
+    background: var(--theme-bg-primary);
+}
+
+.light-theme .user-actions {
+    background: var(--theme-bg-secondary);
+    border-bottom-color: var(--theme-border);
+}
+
+.light-theme .user-info {
+    color: var(--theme-text-secondary);
+}
+
+.light-theme .search-section {
+    background: var(--theme-bg-secondary);
+    border-bottom-color: var(--theme-border);
+}
+
+.light-theme .search-input {
+    background: var(--theme-input-bg);
+    border-color: var(--theme-input-border);
+    color: var(--theme-text-primary);
+}
+
+.light-theme .search-input::placeholder {
+    color: var(--theme-text-muted);
+}
+
+.light-theme .search-input:focus {
+    border-color: var(--theme-stat-color);
+    box-shadow: 0 0 0 3px rgba(51, 51, 53, 0.1);
+}
+
+.light-theme .search-icon {
+    color: var(--theme-text-muted);
+}
+
+.light-theme .search-icon:hover {
+    color: var(--theme-stat-color);
+    background: var(--theme-hover-bg);
+}
+
+.light-theme .search-results {
+    background: var(--theme-bg-secondary);
+    border-color: var(--theme-border);
+}
+
+.light-theme .search-result-item {
+    border-bottom-color: var(--theme-border);
+}
+
+.light-theme .search-result-item:hover {
+    background: var(--theme-hover-bg);
+}
+
+.light-theme .search-result-title {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .search-result-meta {
+    color: var(--theme-text-muted);
+}
+
+.light-theme .feed-header {
+    background: var(--theme-bg-secondary);
+    border-bottom-color: var(--theme-border);
+}
+
+.light-theme .feed-title {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .rating-item {
+    background: var(--theme-bg-secondary);
+    border-color: var(--theme-border);
+}
+
+.light-theme .rating-item:hover {
+    border-color: var(--theme-stat-color);
+}
+
+.light-theme .rating-user-name,
+.light-theme .rating-movie-title {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .rating-movie-meta,
+.light-theme .rating-average-score {
+    color: var(--theme-text-secondary);
+}
+
+.light-theme .rating-user-score {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .rating-comment {
+    background: var(--theme-bg-tertiary);
+    color: var(--theme-text-secondary);
+    border-left-color: var(--theme-stat-color);
+}
+
+.light-theme .rating-timestamp {
+    color: var(--theme-text-muted);
+}
+
+.light-theme .rating-menu-btn {
+    color: var(--theme-text-secondary);
+}
+
+.light-theme .rating-menu-btn:hover {
+    background: var(--theme-hover-bg);
+    color: var(--theme-text-primary);
+}
+
+.light-theme .rating-menu-dropdown {
+    background: var(--theme-bg-secondary);
+    border-color: var(--theme-border);
+}
+
+.light-theme .rating-menu-dropdown .menu-item {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .rating-menu-dropdown .menu-item:hover {
+    background: var(--theme-hover-bg);
+}
+
+.light-theme .empty-state-title {
+    color: var(--theme-text-secondary);
+}
+
+.light-theme .empty-state-text {
+    color: var(--theme-text-muted);
+}
+
+.light-theme .loading {
+    background: rgba(237, 237, 237, 0.95);
+}
+
+.light-theme .loading::before {
+    background: linear-gradient(135deg, rgba(51, 51, 53, 0.05), rgba(51, 51, 53, 0.08));
+}
+
+.light-theme .loading span {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .form-input {
+    background: var(--theme-input-bg);
+    border-color: var(--theme-input-border);
+    color: var(--theme-text-primary);
+}
+
+.light-theme .form-input::placeholder {
+    color: var(--theme-text-muted);
+}
+
+.light-theme .form-input:focus {
+    border-color: var(--theme-stat-color);
+}
+
+.light-theme .btn-primary {
+    background: var(--theme-stat-color);
+    color: white;
+}
+
+.light-theme .btn-primary:hover {
+    background: #49494b;
+}
+
+.light-theme .btn-secondary {
+    background: var(--theme-bg-tertiary);
+    color: var(--theme-text-primary);
+    border-color: var(--theme-border);
+}
+
+.light-theme .btn-secondary:hover {
+    background: var(--theme-hover-bg);
+    border-color: var(--theme-stat-color);
+}
+
+.light-theme .btn-ghost {
+    color: var(--theme-text-secondary);
+}
+
+.light-theme .btn-ghost:hover {
+    background: var(--theme-hover-bg);
+    color: var(--theme-text-primary);
+}
+
+.light-theme .update-banner {
+    background: var(--theme-bg-secondary);
+    border-bottom-color: var(--theme-border);
+}
+
+.light-theme .update-title {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .update-version {
+    color: var(--theme-text-secondary);
+}
+
+.light-theme .btn-update {
+    background: var(--theme-stat-color);
+    color: white;
+}
+
+.light-theme .btn-update:hover {
+    background: #49494b;
+}
+
+.light-theme .btn-dismiss {
+    color: var(--theme-text-secondary);
+}
+
+.light-theme .btn-dismiss:hover {
+    background: var(--theme-hover-bg);
+    color: var(--theme-text-primary);
+}
+
+.light-theme *:focus {
+    outline-color: var(--theme-stat-color);
+}
+
+.light-theme .feed-content::-webkit-scrollbar-track {
+    background: var(--theme-bg-tertiary);
+}
+
+.light-theme .feed-content::-webkit-scrollbar-thumb {
+    background: var(--theme-stat-color);
+}
+
+.light-theme .feed-content::-webkit-scrollbar-thumb:hover {
+    background: #49494b;
+}

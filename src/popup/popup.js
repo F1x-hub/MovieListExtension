@@ -4,6 +4,11 @@
  */
 class PopupManager {
     constructor() {
+        console.log('🎨 PopupManager: Initializing...');
+        
+        // Initialize theme first
+        this.initializeTheme();
+        
         this.elements = this.initializeElements();
         this.ratings = [];
         this.searchTimeout = null;
@@ -15,6 +20,52 @@ class PopupManager {
         
         // Trigger update check when popup opens
         chrome.runtime.sendMessage({ type: 'CHECK_FOR_UPDATES' });
+    }
+
+    initializeTheme() {
+        console.log('🎨 PopupManager: Initializing theme...');
+        
+        // Get current theme from localStorage (same as Navigation.js)
+        const theme = localStorage.getItem('movieExtensionTheme') || 'dark';
+        console.log('🎨 PopupManager: Retrieved theme from localStorage:', theme);
+        
+        this.applyTheme(theme);
+        
+        // Listen for storage events (when theme changes in other windows/tabs)
+        window.addEventListener('storage', (e) => {
+            if (e.key === 'movieExtensionTheme' && e.newValue) {
+                console.log('🎨 PopupManager: Theme changed via storage event:', e.newValue);
+                this.applyTheme(e.newValue);
+            }
+        });
+        
+        // Also check periodically for theme changes (since storage events don't work in popups)
+        setInterval(() => {
+            const currentTheme = localStorage.getItem('movieExtensionTheme') || 'dark';
+            const bodyHasLight = document.body.classList.contains('light-theme');
+            const shouldBeLight = currentTheme === 'light';
+            
+            if (bodyHasLight !== shouldBeLight) {
+                console.log('🎨 PopupManager: Theme mismatch detected, applying:', currentTheme);
+                this.applyTheme(currentTheme);
+            }
+        }, 500); // Check every 500ms
+    }
+
+    applyTheme(theme) {
+        console.log('🎨 PopupManager: Applying theme:', theme);
+        
+        if (theme === 'light') {
+            console.log('🎨 PopupManager: Adding light-theme class to body');
+            document.body.classList.add('light-theme');
+            document.body.classList.remove('dark-theme');
+        } else {
+            console.log('🎨 PopupManager: Adding dark-theme class to body');
+            document.body.classList.add('dark-theme');
+            document.body.classList.remove('light-theme');
+        }
+        
+        console.log('🎨 PopupManager: Body classes after theme application:', document.body.className);
     }
 
     initializeElements() {

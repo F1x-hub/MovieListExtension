@@ -94,7 +94,7 @@ body:has(.nav-header) .app-container {
 /* Route-specific adjustments */
 .app-container .search-container,
 .app-container .ratings-main {
-    min-height: calc(100vh - 70px); /* Account for navigation height */
+    min-height: calc(100vh - 60px); /* Account for navigation height */
 }
 
 /* Smooth content transitions */

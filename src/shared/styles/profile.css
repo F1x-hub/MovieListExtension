@@ -1,6 +1,7 @@
 .profile-main {
     min-height: 100vh;
-    background: #0f172a;
+    background: var(--theme-bg-primary);
+    color: var(--theme-text-primary);
     padding-bottom: 60px;
 }
 
@@ -13,7 +14,6 @@
 .profile-header {
     position: relative;
     padding: 60px 0 100px;
-    margin: 0 -20px 0 -20px;
     margin-bottom: -80px;
     border-radius: 0 0 20px 20px;
     overflow: hidden; /* Ensure cover doesn't spill out */
@@ -64,9 +64,9 @@
     width: 200px;
     height: 200px;
     border-radius: 50%;
-    border: 6px solid #0f172a;
+    border: 6px solid var(--theme-bg-primary);
     overflow: hidden;
-    background: white;
+    background: var(--theme-bg-card);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
     flex-shrink: 0;
 }
@@ -100,6 +100,7 @@
     font-weight: 700;
     margin: 0 0 8px 0;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    color: white; /* Keep white for header over cover */
 }
 
 .profile-username {
@@ -187,8 +188,8 @@
     top: 100%;
     right: 0;
     margin-top: 8px;
-    background: #1e293b;
-    border: 1px solid #334155;
+    background: var(--theme-bg-secondary);
+    border: 1px solid var(--theme-border);
     border-radius: 12px;
     padding: 8px;
     min-width: 180px;
@@ -210,7 +211,7 @@
     padding: 10px 16px;
     background: transparent;
     border: none;
-    color: #e2e8f0;
+    color: var(--theme-text-primary);
     font-size: 0.95rem;
     text-align: left;
     cursor: pointer;
@@ -219,8 +220,8 @@
 }
 
 .dropdown-item:hover {
-    background: #334155;
-    color: white;
+    background: var(--theme-hover-bg);
+    color: var(--theme-text-primary);
 }
 
 .dropdown-icon {
@@ -235,11 +236,11 @@
 }
 
 .stat-card {
-    background: #1e293b;
+    background: var(--theme-bg-card);
     border-radius: 12px;
     padding: 24px;
     text-align: center;
-    border: 1px solid #334155;
+    border: 1px solid var(--theme-border);
     transition: all 0.3s;
 }
 
@@ -253,14 +254,14 @@
     display: block;
     font-size: 2.5rem;
     font-weight: 700;
-    color: #667eea;
+    color: var(--theme-stat-color);
     margin-bottom: 8px;
 }
 
 .stat-label {
     display: block;
     font-size: 1rem;
-    color: #94a3b8;
+    color: var(--theme-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
@@ -278,7 +279,7 @@
 
 .section-title {
     font-size: 1.75rem;
-    color: white;
+    color: var(--theme-text-primary);
     display: flex;
     align-items: center;
     gap: 12px;
@@ -291,8 +292,8 @@
 
 .btn-view-all {
     background: transparent;
-    color: #667eea;
-    border: 2px solid #667eea;
+    color: var(--theme-stat-color);
+    border: 2px solid var(--theme-stat-color);
     padding: 8px 20px;
     border-radius: 8px;
     font-size: 0.95rem;
@@ -302,8 +303,8 @@
 }
 
 .btn-view-all:hover {
-    background: #667eea;
-    color: white;
+    background: var(--theme-stat-color);
+    color: #ffffff;
 }
 
 .recent-ratings-list {
@@ -313,13 +314,13 @@
 }
 
 .recent-rating-card {
-    background: #1e293b;
+    background: var(--theme-bg-card);
     border-radius: 12px;
     padding: 20px;
     display: flex;
     gap: 20px;
     align-items: center;
-    border: 1px solid #334155;
+    border: 1px solid var(--theme-border);
     transition: all 0.3s;
     cursor: pointer;
 }
@@ -362,13 +363,13 @@
 .recent-rating-card .title {
     font-size: 1.25rem;
     font-weight: 600;
-    color: white;
+    color: var(--theme-text-primary);
     margin-bottom: 8px;
 }
 
 .recent-rating-card .genres {
     font-size: 0.9rem;
-    color: #94a3b8;
+    color: var(--theme-text-secondary);
     margin-bottom: 8px;
 }
 
@@ -380,7 +381,7 @@
 .recent-rating-card .rating {
     font-size: 1.5rem;
     font-weight: 700;
-    color: #fbbf24;
+    color: #333335;
     display: flex;
     align-items: center;
     gap: 4px;
@@ -393,7 +394,7 @@
     align-items: center;
     justify-content: center;
     min-height: 60vh;
-    color: white;
+    color: var(--theme-text-primary);
 }
 
 .loading-spinner {
@@ -424,7 +425,7 @@
 .error-state {
     text-align: center;
     padding: 60px 20px;
-    color: white;
+    color: var(--theme-text-primary);
 }
 
 .error-state-icon {
@@ -466,8 +467,8 @@
     max-height: 90vh;
     display: flex;
     flex-direction: column;
-    background: #1e293b;
-    color: #e2e8f0;
+    background: var(--theme-bg-secondary);
+    color: var(--theme-text-primary);
 }
 
 .modal-overlay {
@@ -486,7 +487,7 @@
 }
 
 .modal-content {
-    background: #1e293b;
+    background: var(--theme-bg-secondary);
     border-radius: 16px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
     animation: slideUp 0.3s;
@@ -500,7 +501,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 24px;
-    border-bottom: 1px solid #334155;
+    border-bottom: 1px solid var(--theme-border);
 }
 
 .modal-title {
@@ -508,7 +509,7 @@
     align-items: center;
     gap: 12px;
     font-size: 1.5rem;
-    color: white;
+    color: var(--theme-text-primary);
     margin: 0;
 }
 
@@ -534,8 +535,8 @@
 }
 
 .modal-close:hover {
-    background: #334155;
-    color: white;
+    background: var(--theme-hover-bg);
+    color: var(--theme-text-primary);
 }
 
 .modal-body {
@@ -682,7 +683,7 @@
 
 .form-group label {
     display: block;
-    color: #e2e8f0;
+    color: var(--theme-text-primary);
     font-weight: 600;
     margin-bottom: 8px;
     font-size: 0.95rem;
@@ -692,9 +693,9 @@
 .form-group textarea,
 .form-group select {
     width: 100%;
-    background: #0f172a;
-    border: 2px solid #334155;
-    color: white;
+    background: var(--theme-input-bg);
+    border: 2px solid var(--theme-input-border);
+    color: var(--theme-input-text);
     padding: 12px 16px;
     border-radius: 8px;
     font-size: 1rem;
@@ -740,11 +741,11 @@
 .form-section {
     margin: 32px 0;
     padding-top: 24px;
-    border-top: 1px solid #334155;
+    border-top: 1px solid var(--theme-border);
 }
 
 .form-section-title {
-    color: white;
+    color: var(--theme-text-primary);
     font-size: 1.1rem;
     margin-bottom: 16px;
 }
@@ -771,9 +772,9 @@
     gap: 12px;
     justify-content: flex-end;
     padding: 24px;
-    border-top: 1px solid #334155;
+    border-top: 1px solid var(--theme-border);
     flex-shrink: 0;
-    background: #1e293b; /* Ensure background covers content behind it */
+    background: var(--theme-bg-secondary); /* Ensure background covers content behind it */
 }
 
 .btn-primary {
