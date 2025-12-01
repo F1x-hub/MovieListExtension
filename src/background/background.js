@@ -633,7 +633,6 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
 async function checkForUpdates() {
     try {
-        console.log('[Update] Checking for updates...');
         const manifest = chrome.runtime.getManifest();
         const currentVersion = manifest.version;
 
@@ -645,10 +644,8 @@ async function checkForUpdates() {
         const data = await response.json();
         const latestVersion = data.tag_name.replace('v', ''); // Remove 'v' prefix if present
 
-        console.log(`[Update] Current: ${currentVersion}, Latest: ${latestVersion}`);
-
         if (compareVersions(latestVersion, currentVersion) > 0) {
-            console.log('[Update] Update available!');
+            console.log(`[Update] Update available: ${currentVersion} -> ${latestVersion}`);
             
             // Find zip asset
             const zipAsset = data.assets.find(asset => asset.name.endsWith('.zip')) || 
@@ -662,7 +659,6 @@ async function checkForUpdates() {
                 console.error('[Update] No download URL found');
             }
         } else {
-            console.log('[Update] No updates available');
             // Clear any pending update info if version matches or is older
             chrome.storage.local.remove(['pendingUpdateUrl', 'pendingUpdateVersion', 'updateAvailable']);
         }
@@ -722,7 +718,6 @@ function downloadUpdate(url) {
                 reject(chrome.runtime.lastError);
                 return;
             }
-            console.log('[Update] Download started, ID:', downloadId);
             resolve(downloadId);
             
             // Listen for download completion
@@ -733,29 +728,22 @@ function downloadUpdate(url) {
                         chrome.downloads.search({ id: downloadId }, (results) => {
                         if (results && results[0]) {
                             const filePath = results[0].filename;
-                            console.log('[Update] Download complete:', filePath);
                             
-                            // Send native message to trigger update
-                            console.log('[Update] Sending update request to native host...');
                             chrome.runtime.sendNativeMessage('com.movielist.updater', {
                                 action: 'update',
                                 zipPath: filePath
                             }, (response) => {
                                 if (chrome.runtime.lastError) {
-                                    console.error('[Update] Native host error:', chrome.runtime.lastError);
-                                    // Fallback to manual instructions if native host fails
-                                    chrome.storage.local.set({ updateZipPath: filePath }, () => {
-                                        chrome.tabs.create({ url: 'src/pages/update/update_instructions.html' });
-                                    });
+                                    console.error('[Update] Failed to communicate with native host:', chrome.runtime.lastError.message);
                                 } else if (response && response.success) {
-                                    console.log('[Update] Native host response:', response);
-                                    // Update started successfully
+                                    console.log('[Update] Update started successfully');
+                                    // Reload extension after a brief delay to allow file operations to complete
+                                    setTimeout(() => {
+                                        console.log('[Update] Reloading extension...');
+                                        chrome.runtime.reload();
+                                    }, 2000);
                                 } else {
-                                    console.error('[Update] Native host failed:', response);
-                                    // Fallback
-                                    chrome.storage.local.set({ updateZipPath: filePath }, () => {
-                                        chrome.tabs.create({ url: 'src/pages/update/update_instructions.html' });
-                                    });
+                                    console.error('[Update] Update failed:', response?.error || 'Unknown error');
                                 }
                             });
                         }
