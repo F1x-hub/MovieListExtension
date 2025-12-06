@@ -1,6 +1,6 @@
 .collection-main {
     min-height: 100vh;
-    background: var(--gradient-dark);
+    background: var(--theme-bg-primary);
     padding: 20px;
     padding-top: 80px;
 }

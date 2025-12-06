@@ -224,7 +224,7 @@ class CollectionPageManager {
     setupStorageListener() {
         if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
             chrome.storage.onChanged.addListener((changes, namespace) => {
-                if (namespace === 'sync' && changes.movieCollections && this.collectionId) {
+                if (namespace === 'local' && changes.movieCollections && this.collectionId) {
                     this.loadCollection();
                 }
             });
@@ -312,7 +312,14 @@ class CollectionPageManager {
         if (!this.collection) return;
         
         if (this.elements.collectionIcon) {
-            this.elements.collectionIcon.textContent = this.collection.icon || '🎬';
+            const icon = this.collection.icon || '🎬';
+            const isCustomIcon = icon.startsWith('data:') || icon.startsWith('https://') || icon.startsWith('http://');
+            
+            if (isCustomIcon) {
+                this.elements.collectionIcon.innerHTML = `<img src="${icon}" style="width: 32px; height: 32px; object-fit: cover; border-radius: 6px;" alt="Collection icon">`;
+            } else {
+                this.elements.collectionIcon.textContent = icon;
+            }
         }
         
         if (this.elements.collectionTitle) {
@@ -706,7 +713,14 @@ class CollectionPageManager {
             this.elements.emptyStateText.textContent = `Начните добавлять фильмы в "${this.collection.name}"`;
         }
         if (this.collection && this.elements.emptyStateIcon) {
-            this.elements.emptyStateIcon.textContent = this.collection.icon || '🎬';
+            const icon = this.collection.icon || '🎬';
+            const isCustomIcon = icon.startsWith('data:') || icon.startsWith('https://') || icon.startsWith('http://');
+            
+            if (isCustomIcon) {
+                this.elements.emptyStateIcon.innerHTML = `<img src="${icon}" style="width: 48px; height: 48px; object-fit: cover; border-radius: 8px;" alt="Collection icon">`;
+            } else {
+                this.elements.emptyStateIcon.textContent = icon;
+            }
         }
     }
 

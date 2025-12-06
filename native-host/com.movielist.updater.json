@@ -1,9 +1,0 @@
-{
-    "name": "com.movielist.updater",
-    "description": "Movie List Extension Updater",
-    "path": "host.bat",
-    "type": "stdio",
-    "allowed_origins": [
-        "chrome-extension://eedcgknijhecfpnpenleikmadfkahnfc/"
-    ]
-}

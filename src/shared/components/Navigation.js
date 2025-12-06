@@ -52,7 +52,7 @@ class Navigation {
                 <div class="nav-container">
                     <!-- Logo Section -->
                     <a href="#" class="nav-logo" id="navLogo">
-                        <img src="${chrome.runtime.getURL('icons/icon48.png')}" alt="Movie Ratings" class="nav-logo-image">
+                        <img src="${chrome.runtime.getURL(typeof IconUtils !== 'undefined' ? IconUtils.getIconPath(this.getCurrentTheme(), 48) : 'icons/icon48-white.png')}" alt="Movie Ratings" class="nav-logo-image">
                     </a>
 
                     <!-- Mobile Toggle -->
@@ -453,7 +453,7 @@ class Navigation {
     setupCollectionStorageListener() {
         if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
             chrome.storage.onChanged.addListener((changes, namespace) => {
-                if (namespace === 'sync' && changes.movieCollections) {
+                if (namespace === 'local' && changes.movieCollections) {
                     this.loadCustomCollections();
                     
                     if (typeof window.collectionPage !== 'undefined' && window.collectionPage.collectionId) {
@@ -507,9 +507,15 @@ class Navigation {
             item.className = 'dropdown-item custom-collection-item';
             item.setAttribute('data-collection-id', collection.id);
             
+            // Check if icon is a custom image (base64 or Firebase Storage URL) or emoji
+        const isCustomIcon = collection.icon && (collection.icon.startsWith('data:') || collection.icon.startsWith('https://') || collection.icon.startsWith('http://'));
+            const iconHtml = isCustomIcon 
+                ? `<img src="${collection.icon}" style="width: 22px; height: 22px; object-fit: cover; border-radius: 4px; vertical-align: middle;">`
+                : collection.icon;
+            
             item.innerHTML = `
                 <div class="collection-info">
-                    <span class="dropdown-icon">${collection.icon}</span>
+                    <span class="dropdown-icon">${iconHtml}</span>
                     <span class="collection-name">${this.escapeHtml(collection.name)}</span>
                     <span class="count">(${collection.movieIds?.length || 0})</span>
                 </div>
@@ -731,6 +737,9 @@ class Navigation {
 
         const isEdit = !!collection;
         const defaultIcons = ['🎬', '🎭', '🎨', '🎪', '🎯', '🎲', '🎸', '🎺', '🎻', '🎤', '🎧', '🎮', '🎰', '🎱', '🎳', '🎴', '🎵', '🎶', '🎼', '🎹'];
+        
+        // Check if current icon is a custom image (base64 or Firebase Storage URL)
+        const isCustomIcon = collection && collection.icon && (collection.icon.startsWith('data:') || collection.icon.startsWith('https://') || collection.icon.startsWith('http://'));
 
         modal.innerHTML = `
             <div class="collection-modal-content" style="
@@ -741,6 +750,8 @@ class Navigation {
                 width: 90%;
                 color: ${themeColors.text};
                 box-shadow: 0 20px 40px rgba(0, 0, 0, ${isLightTheme ? '0.15' : '0.5'});
+                max-height: 90vh;
+                overflow-y: auto;
             ">
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
                     <h3 style="margin: 0; font-size: 20px;">${isEdit ? 'Edit Collection' : 'Create Collection'}</h3>
@@ -780,21 +791,59 @@ class Navigation {
                     </div>
                     <div>
                         <label style="display: block; margin-bottom: 8px; font-weight: 500;">Icon</label>
-                        <div style="display: flex; flex-wrap: wrap; gap: 8px; max-height: 150px; overflow-y: auto; padding: 8px; background: ${themeColors.iconBg}; border-radius: 8px;">
-                            ${defaultIcons.map(icon => `
-                                <button type="button" class="icon-select-btn ${collection && collection.icon === icon ? 'selected' : ''}" 
-                                        data-icon="${icon}" 
-                                        style="
-                                            width: 40px;
-                                            height: 40px;
-                                            font-size: 20px;
-                                            border: 2px solid ${collection && collection.icon === icon ? themeColors.selectedIconBorder : themeColors.border};
-                                            background: ${collection && collection.icon === icon ? themeColors.selectedIconBg : 'transparent'};
-                                            border-radius: 8px;
-                                            cursor: pointer;
-                                            transition: all 0.2s;
-                                        ">${icon}</button>
-                            `).join('')}
+                        
+                        <!-- Custom Icon Upload Section -->
+                        <div style="margin-bottom: 12px;">
+                            <input type="file" id="customIconInput" accept="image/png,image/jpeg,image/jpg,image/gif" style="display: none;">
+                            <button type="button" id="uploadIconBtn" style="
+                                background: ${themeColors.saveBg};
+                                color: ${themeColors.saveText};
+                                border: none;
+                                padding: 8px 12px;
+                                border-radius: 6px;
+                                cursor: pointer;
+                                font-size: 13px;
+                                font-weight: 500;
+                                display: flex;
+                                align-items: center;
+                                gap: 6px;
+                            ">
+                                <span>📁</span> Upload Custom Icon
+                            </button>
+                            <div id="customIconPreview" style="
+                                margin-top: 8px;
+                                display: ${isCustomIcon ? 'flex' : 'none'};
+                                align-items: center;
+                                gap: 8px;
+                                padding: 8px;
+                                background: ${themeColors.iconBg};
+                                border-radius: 8px;
+                            ">
+                                <img id="customIconImg" src="${isCustomIcon ? collection.icon : ''}" style="
+                                    width: 40px;
+                                    height: 40px;
+                                    object-fit: cover;
+                                    border-radius: 6px;
+                                    border: 2px solid ${themeColors.selectedIconBorder};
+                                ">
+                                <span style="flex: 1; font-size: 13px; color: ${themeColors.textSecondary};">Custom icon</span>
+                                <button type="button" id="removeCustomIconBtn" style="
+                                    background: none;
+                                    border: none;
+                                    color: ${themeColors.textSecondary};
+                                    cursor: pointer;
+                                    font-size: 18px;
+                                    padding: 4px;
+                                ">×</button>
+                            </div>
+                            <div style="margin-top: 4px; font-size: 11px; color: ${themeColors.textSecondary};">
+                                Max 500KB • PNG, JPG, GIF
+                            </div>
+                        </div>
+                        
+                        <!-- Emoji Icons Grid -->
+                        <div id="iconsGrid" style="display: flex; flex-wrap: wrap; gap: 8px; max-height: 150px; overflow-y: auto; padding: 8px; background: ${themeColors.iconBg}; border-radius: 8px;">
+                            <!-- Icons will be populated dynamically -->
                         </div>
                     </div>
                     <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px;">
@@ -825,27 +874,265 @@ class Navigation {
 
         const nameInput = modal.querySelector('#collectionNameInput');
         const charCount = modal.querySelector('#nameCharCount');
+        const customIconInput = modal.querySelector('#customIconInput');
+        const uploadIconBtn = modal.querySelector('#uploadIconBtn');
+        const customIconPreview = modal.querySelector('#customIconPreview');
+        const customIconImg = modal.querySelector('#customIconImg');
+        const removeCustomIconBtn = modal.querySelector('#removeCustomIconBtn');
+        
         let selectedIcon = collection ? collection.icon : defaultIcons[0];
+        let customIconData = isCustomIcon ? collection.icon : null;
 
         nameInput.addEventListener('input', () => {
             charCount.textContent = nameInput.value.length;
         });
         charCount.textContent = nameInput.value.length;
 
-        const iconButtons = modal.querySelectorAll('.icon-select-btn');
-        iconButtons.forEach(btn => {
-            btn.addEventListener('click', () => {
-                iconButtons.forEach(b => {
-                    b.style.borderColor = themeColors.border;
-                    b.style.background = 'transparent';
-                    b.classList.remove('selected');
-                });
-                btn.style.borderColor = themeColors.selectedIconBorder;
-                btn.style.background = themeColors.selectedIconBg;
-                btn.classList.add('selected');
-                selectedIcon = btn.dataset.icon;
-            });
+        // Custom icon upload handler
+        uploadIconBtn.addEventListener('click', () => {
+            customIconInput.click();
         });
+
+        customIconInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // Validate file type
+            const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif'];
+            if (!validTypes.includes(file.type)) {
+                alert('Please select a valid image file (PNG, JPG, or GIF)');
+                return;
+            }
+
+            // Validate file size (500KB)
+            if (file.size > 500 * 1024) {
+                alert('Image size must be less than 500KB');
+                return;
+            }
+
+            try {
+                // Convert image to base64
+                const reader = new FileReader();
+                reader.onload = async (event) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const width = img.width;
+                        const height = img.height;
+                        const aspectRatio = width / height;
+
+                        // Validate aspect ratio (prevent too wide or too tall)
+                        // Allow some flexibility (e.g., between 1:1.5 and 1.5:1), but reject extreme wide/tall
+                        if (aspectRatio > 1.5) {
+                            alert('Image is too wide. Please use a square or near-square image.');
+                            customIconInput.value = ''; // Clear input
+                            return;
+                        }
+                        if (aspectRatio < 0.67) {
+                            alert('Image is too tall. Please use a square or near-square image.');
+                            customIconInput.value = ''; // Clear input
+                            return;
+                        }
+
+                        // Create canvas to resize and crop
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        
+                        // Set fixed standard size for all icons
+                        const standardSize = 128;
+                        canvas.width = standardSize;
+                        canvas.height = standardSize;
+
+                        // Calculate center crop
+                        let sourceX = 0;
+                        let sourceY = 0;
+                        let sourceSize = 0;
+
+                        if (width > height) {
+                            // Landscape: crop center square based on height
+                            sourceSize = height;
+                            sourceX = (width - height) / 2;
+                            sourceY = 0;
+                        } else {
+                            // Portrait: crop center square based on width
+                            sourceSize = width;
+                            sourceX = 0;
+                            sourceY = (height - width) / 2;
+                        }
+
+                        // Draw cropped and resized image
+                        ctx.drawImage(
+                            img, 
+                            sourceX, sourceY, sourceSize, sourceSize, // Source crop
+                            0, 0, standardSize, standardSize          // Destination resize
+                        );
+                        
+                        // Upload to Firebase Storage if authenticated, otherwise use base64
+                        canvas.toBlob(async (blob) => {
+                            if (!blob) return;
+
+                            // Show loading state
+                            const originalBtnContent = uploadIconBtn.innerHTML;
+                            uploadIconBtn.textContent = 'Uploading...';
+                            uploadIconBtn.disabled = true;
+
+                            try {
+                                let iconUrl;
+                                const user = (typeof firebaseManager !== 'undefined') ? firebaseManager.getCurrentUser() : null;
+
+                                if (user && typeof firebaseManager !== 'undefined' && firebaseManager.uploadCollectionIcon) {
+                                    // Authenticated: Upload to Storage
+                                    try {
+                                        const result = await firebaseManager.uploadCollectionIcon(blob);
+                                        iconUrl = result.iconURL;
+                                    } catch (uploadError) {
+                                        console.error('Upload failed, falling back to base64:', uploadError);
+                                        iconUrl = canvas.toDataURL(file.type, 0.9);
+                                    }
+                                } else {
+                                    // Unauthenticated: Use base64
+                                    iconUrl = canvas.toDataURL(file.type, 0.9);
+                                }
+
+                                customIconData = iconUrl;
+                                selectedIcon = customIconData;
+                                
+                                // Show preview
+                                customIconImg.src = customIconData;
+                                customIconPreview.style.display = 'flex';
+                                
+                                // Deselect all grid icons
+                                const iconButtons = modal.querySelectorAll('.icon-select-btn');
+                                iconButtons.forEach(btn => {
+                                    btn.style.borderColor = themeColors.border;
+                                    btn.style.background = 'transparent';
+                                    btn.classList.remove('selected');
+                                });
+
+                                // Save the new custom icon
+                                if (this.collectionService) {
+                                    this.collectionService.saveCustomIcon(customIconData).then(() => {
+                                        // Refresh grid to show new icon
+                                        renderIconsGrid();
+                                    });
+                                }
+                            } catch (error) {
+                                console.error('Error processing icon:', error);
+                                alert('Failed to process icon');
+                            } finally {
+                                uploadIconBtn.innerHTML = originalBtnContent;
+                                uploadIconBtn.disabled = false;
+                            }
+                        }, file.type, 0.9);
+                    };
+                    img.src = event.target.result;
+                };
+                reader.readAsDataURL(file);
+            } catch (error) {
+                console.error('Error processing image:', error);
+                alert('Failed to process image');
+            }
+        });
+
+        // Remove custom icon handler
+        removeCustomIconBtn.addEventListener('click', () => {
+            customIconData = null;
+            selectedIcon = defaultIcons[0];
+            customIconPreview.style.display = 'none';
+            customIconInput.value = '';
+            
+            // Select first emoji by default
+            const firstIconBtn = modal.querySelector('.icon-select-btn');
+            if (firstIconBtn) {
+                firstIconBtn.style.borderColor = themeColors.selectedIconBorder;
+                firstIconBtn.style.background = themeColors.selectedIconBg;
+                firstIconBtn.classList.add('selected');
+            }
+        });
+
+        // Function to render icons grid
+        const renderIconsGrid = async () => {
+            const iconsGrid = modal.querySelector('#iconsGrid');
+            if (!iconsGrid) return;
+
+            // Get saved custom icons
+            let savedIcons = [];
+            if (this.collectionService) {
+                savedIcons = await this.collectionService.getSavedIcons();
+            } else {
+                // Fallback if service not ready
+                const result = await chrome.storage.local.get(['savedCustomIcons']);
+                savedIcons = result.savedCustomIcons || [];
+            }
+
+            let html = '';
+
+            // Render saved custom icons
+            if (savedIcons.length > 0) {
+                html += savedIcons.map(icon => `
+                    <button type="button" class="icon-select-btn custom-icon-btn ${collection && collection.icon === icon ? 'selected' : ''}" 
+                            data-icon="${icon}" 
+                            style="
+                                width: 40px;
+                                height: 40px;
+                                padding: 0;
+                                border: 2px solid ${collection && collection.icon === icon ? themeColors.selectedIconBorder : themeColors.border};
+                                background: ${collection && collection.icon === icon ? themeColors.selectedIconBg : 'transparent'};
+                                border-radius: 8px;
+                                cursor: pointer;
+                                transition: all 0.2s;
+                                overflow: hidden;
+                                position: relative;
+                            ">
+                        <img src="${icon}" style="width: 100%; height: 100%; object-fit: cover;">
+                    </button>
+                `).join('');
+            }
+
+            // Render default emoji icons
+            html += defaultIcons.map(icon => `
+                <button type="button" class="icon-select-btn emoji-icon-btn ${collection && collection.icon === icon ? 'selected' : ''}" 
+                        data-icon="${icon}" 
+                        style="
+                            width: 40px;
+                            height: 40px;
+                            font-size: 20px;
+                            border: 2px solid ${collection && collection.icon === icon ? themeColors.selectedIconBorder : themeColors.border};
+                            background: ${collection && collection.icon === icon ? themeColors.selectedIconBg : 'transparent'};
+                            border-radius: 8px;
+                            cursor: pointer;
+                            transition: all 0.2s;
+                        ">${icon}</button>
+            `).join('');
+
+            iconsGrid.innerHTML = html;
+
+            // Add event listeners
+            const iconButtons = iconsGrid.querySelectorAll('.icon-select-btn');
+            iconButtons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    // Clear custom icon preview/input
+                    customIconData = null;
+                    customIconPreview.style.display = 'none';
+                    customIconInput.value = '';
+                    
+                    // Update selection UI
+                    iconButtons.forEach(b => {
+                        b.style.borderColor = themeColors.border;
+                        b.style.background = 'transparent';
+                        b.classList.remove('selected');
+                    });
+                    
+                    btn.style.borderColor = themeColors.selectedIconBorder;
+                    btn.style.background = themeColors.selectedIconBg;
+                    btn.classList.add('selected');
+                    
+                    selectedIcon = btn.dataset.icon;
+                });
+            });
+        };
+
+        // Initial render
+        renderIconsGrid();
 
         const close = () => modal.remove();
         modal.querySelector('.modal-close-btn').addEventListener('click', close);
@@ -969,6 +1256,10 @@ class Navigation {
                     <div style="display: flex; flex-direction: column; gap: 8px;">
                         ${collections.map(collection => {
                             const isInCollection = movieCollections.some(c => c.id === collection.id);
+                            const isCustomIcon = collection.icon && (collection.icon.startsWith('data:') || collection.icon.startsWith('https://') || collection.icon.startsWith('http://'));
+                            const iconHtml = isCustomIcon 
+                                ? `<img src="${collection.icon}" style="width: 22px; height: 22px; object-fit: cover; border-radius: 4px; vertical-align: middle;">`
+                                : collection.icon;
                             return `
                                 <label style="
                                     display: flex;
@@ -984,7 +1275,7 @@ class Navigation {
                                            ${isInCollection ? 'checked' : ''} 
                                            data-collection-id="${collection.id}"
                                            style="width: 18px; height: 18px; cursor: pointer;">
-                                    <span style="font-size: 20px;">${collection.icon}</span>
+                                    <span style="font-size: 20px; display: flex; align-items: center; justify-content: center;">${iconHtml}</span>
                                     <span style="flex: 1; font-weight: 500;">${this.escapeHtml(collection.name)}</span>
                                     <span style="color: #94a3b8; font-size: 12px;">(${collection.movieIds?.length || 0})</span>
                                 </label>
@@ -1342,6 +1633,9 @@ class Navigation {
             favoritesCountElement.textContent = '(0)';
         }
     }
+
+    // Reload collections to ensure we show the correct ones (Firestore vs Local)
+    this.loadCustomCollections();
 }
 
     setActivePage(page) {
@@ -1620,6 +1914,22 @@ class Navigation {
 
             // Save theme to localStorage
             localStorage.setItem('movieExtensionTheme', theme);
+            
+            // Sync to chrome.storage.local for background script access
+            if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+                chrome.storage.local.set({ theme: theme });
+            }
+
+            // Update extension icon
+            if (typeof IconUtils !== 'undefined') {
+                IconUtils.updateExtensionIcon(theme);
+                
+                // Update internal logo if it exists
+                const navLogoImg = document.querySelector('#navLogo img');
+                if (navLogoImg) {
+                    navLogoImg.src = chrome.runtime.getURL(IconUtils.getIconPath(theme, 48));
+                }
+            }
 
             // Update theme button text and icon
             this.updateThemeButton(theme);
@@ -1661,12 +1971,12 @@ class Navigation {
         
         // Define colors based on theme
         const colors = {
-            bg: isDark ? '#1e293b' : '#ffffff',
-            text: isDark ? '#e2e8f0' : '#333335',
-            closeBtn: isDark ? '#94a3b8' : '#64748b',
-            optionBg: isDark ? '#0f172a' : '#f8fafc',
-            optionHover: isDark ? '#334155' : '#e2e8f0',
-            accent: isDark ? '#6366f1' : '#333335',
+            bg: isDark ? '#262627' : '#ffffff',
+            text: isDark ? '#ffffff' : '#333335',
+            closeBtn: isDark ? '#C0C0C0' : '#64748b',
+            optionBg: isDark ? '#3a3a3a' : '#f8fafc',
+            optionHover: isDark ? '#454545' : '#e2e8f0',
+            accent: isDark ? '#C0C0C0' : '#333335',
             border: isDark ? 'rgba(255, 255, 255, 0.1)' : '#e2e8f0'
         };
         

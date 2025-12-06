@@ -1,19 +1,19 @@
 /* Common styles and CSS variables for Movie Rating Extension */
 
 :root {
-    /* Color Palette - Cinema Theme */
-    --primary-bg: #1a1a2e;
-    --secondary-bg: #16213e;
-    --accent-bg: #0f3460;
-    --accent-color: #e94560;
-    --accent-hover: #d6334a;
-    --accent-light: #ff6b7a;
+    /* Color Palette - Dark Theme */
+    --primary-bg: #262627;
+    --secondary-bg: #3a3a3a;
+    --accent-bg: #3a3a3a;
+    --accent-color: #c0c0c0;
+    --accent-hover: #a8a8a8;
+    --accent-light: #d2d2d2;
     
     /* Text Colors */
     --text-primary: #ffffff;
-    --text-secondary: #a8a8a8;
-    --text-muted: #6c757d;
-    --text-accent: #e94560;
+    --text-secondary: #ffffff;
+    --text-muted: #ffffff;
+    --text-accent: #c0c0c0;
     
     /* Status Colors */
     --success: #28a745;
@@ -277,10 +277,10 @@ a:hover {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: var(--accent-color);
+    background: var(--text-primary);
     border-radius: var(--radius-md);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: var(--accent-hover);
+    background: var(--text-secondary);
 }

@@ -6,23 +6,23 @@
 /* Default Dark Theme Variables */
 :root {
     /* Background Colors */
-    --theme-bg-primary: #1a1a2e;
-    --theme-bg-secondary: #16213e;
-    --theme-bg-tertiary: #0f3460;
-    --theme-bg-card: rgba(255, 255, 255, 0.05);
+    --theme-bg-primary: #262627;
+    --theme-bg-secondary: #3a3a3a;
+    --theme-bg-tertiary: #3a3a3a;
+    --theme-bg-card: #3a3a3a;
     
     /* Text Colors */
     --theme-text-primary: #ffffff;
-    --theme-text-secondary: #a8a8a8;
-    --theme-text-muted: #6c757d;
-    --theme-stat-color: #667eea;
+    --theme-text-secondary: #ffffff;
+    --theme-text-muted: #ffffff;
+    --theme-stat-color: #ffffff;
     
     /* Border Colors */
     --theme-border: rgba(255, 255, 255, 0.1);
     --theme-border-hover: rgba(255, 255, 255, 0.2);
     
     /* Input Colors */
-    --theme-input-bg: rgba(255, 255, 255, 0.05);
+    --theme-input-bg: #3a3a3a;
     --theme-input-border: rgba(255, 255, 255, 0.1);
     --theme-input-text: #ffffff;
     
@@ -35,7 +35,7 @@
 .light-theme {
     /* Background Colors */
     --theme-bg-primary: #cecece;
-    --theme-bg-secondary: #ededed;
+    --theme-bg-secondary: #CECECE;
     --theme-bg-tertiary: #e9ecef;
     --theme-bg-card: #ededed;
     
@@ -63,9 +63,15 @@
     --secondary-bg: #ededed;
     --accent-bg: #e9ecef;
     
+    /* Accent colors for light theme - dark/black */
+    --accent-color: #333335;
+    --accent-hover: #1a1a1a;
+    --accent-light: #4a4a4a;
+    
     --text-primary: #333335;
     --text-secondary: #495057;
     --text-muted: #6c757d;
+    --text-accent: #333335;
     
     /* Card backgrounds */
     --gradient-card: linear-gradient(135deg, rgba(0, 0, 0, 0.03) 0%, rgba(0, 0, 0, 0.01) 100%);

@@ -3,6 +3,7 @@
   "name": "Movie Rating Extension",
   "version": "1.1.9",
   "description": "Rate and discover movies with community ratings and Kinopoisk integration",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAn9oH6UpxDe3c/EWktNAbNvu9I9EOVjEW4VsEvSYgmEEmWb9Bn2NyMpWyUkG5QsEOHEO+3DQfCS5XN81BKOvsnHJst/1od7ZBp2lXS0Sr0QAAQY0FDZvQ6hnSamDPcw81y6q2NNNnynjLB9z9+AoyW3bEo/DRhBpbqOGHJgOD+rNbOTClSoreH1TggttLyEcDgN/nI7rc3QCSiE7helDgZLOOgmjBdILPZIDxg1XQM5SmPOOry0gcawh2B4Pp2ciQ3p5OuUzVYNG503+rlPUIoZ1BIZkTCnx8ezYJCXXhmMxXQwcpMVnNwmShr/Kzf+J3OehTusS0S332mk3tQAqvlwIDAQAB",
   "permissions": [
     "identity",
     "tabs",
@@ -29,7 +30,7 @@
     "https://github.com/*"
   ],
   "oauth2": {
-    "client_id": "532518163829-t60hfab5q5vinfdhpci6ctli17kb5thv.apps.googleusercontent.com",
+    "client_id": "532518163829-vb9oqal09sofhhtem6qbgd6d7lgk6som.apps.googleusercontent.com",
     "scopes": [
       "profile",
       "email",
@@ -44,15 +45,15 @@
     "default_popup": "src/popup/popup.html",
     "default_title": "Movie Rating Extension",
     "default_icon": {
-      "16": "icons/icon16.png",
-      "48": "icons/icon48.png",
-      "128": "icons/icon128.png"
+      "16": "icons/icon16-black.png",
+      "48": "icons/icon48-black.png",
+      "128": "icons/icon128-black.png"
     }
   },
   "icons": {
-    "16": "icons/icon16.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
+    "16": "icons/icon16-black.png",
+    "48": "icons/icon48-black.png",
+    "128": "icons/icon128-black.png"
   },
   "web_accessible_resources": [
     {

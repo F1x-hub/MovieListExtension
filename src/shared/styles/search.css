@@ -1548,7 +1548,7 @@
 
 .user-rating-card.current-user {
     border-color: var(--accent-color);
-    background: rgba(233, 69, 96, 0.05);
+    background: var(--secondary-bg);
 }
 
 .user-rating-header {
@@ -2183,7 +2183,7 @@
 
 .light-theme .user-rating-card.current-user {
     border-color: var(--theme-stat-color);
-    background: rgba(51, 51, 53, 0.05);
+    background: var(--theme-bg-secondary);
 }
 
 .light-theme .user-rating-name {
@@ -2209,7 +2209,190 @@
     color: var(--theme-text-primary);
 }
 
-.light-theme .initial-loading-content {
+
+/* Light Theme Overrides for Rating Modal */
+.light-theme .rating-modal .modal-content {
+    background: var(--theme-bg-card);
+    border: 1px solid var(--theme-border);
+}
+
+.light-theme .rating-header {
+    background: var(--theme-stat-color);
+    border-bottom: 1px solid var(--theme-border);
+}
+
+.light-theme .rating-header .modal-title {
+    color: #ffffff;
+}
+
+.light-theme .rating-header .modal-close {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.light-theme .rating-header .modal-close:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.light-theme .movie-rating-card {
     background: var(--theme-bg-secondary);
     border: 1px solid var(--theme-border);
+}
+
+.light-theme .rating-input-section,
+.light-theme .rating-comment-section {
+    background: var(--theme-bg-secondary);
+    border: 1px solid var(--theme-border);
+}
+
+.light-theme .rating-main-label,
+.light-theme .comment-label {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .rating-slider-modern::-webkit-slider-thumb {
+    background: #ffffff;
+    border-color: var(--theme-stat-color);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.light-theme .rating-display {
+    background: var(--theme-stat-color);
+    box-shadow: var(--shadow-md);
+}
+
+.light-theme .rating-value-large {
+    color: #ffffff;
+}
+
+.light-theme .rating-value-suffix {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.light-theme .comment-textarea {
+    background: var(--theme-bg-primary);
+    color: var(--theme-text-primary);
+    border: 1px solid var(--theme-border);
+}
+
+.light-theme .comment-textarea:focus {
+    background: var(--theme-bg-secondary);
+    border-color: var(--theme-stat-color);
+}
+
+.light-theme .rating-footer {
+    background: var(--theme-bg-secondary);
+    border-top: 1px solid var(--theme-border);
+}
+
+.light-theme .rating-save-btn {
+    background: var(--theme-stat-color);
+    color: #ffffff;
+    box-shadow: var(--shadow-sm);
+}
+
+.light-theme .rating-save-btn:hover {
+    background: #49494b;
+    box-shadow: var(--shadow-md);
+}
+
+.light-theme .current-rating-display {
+    background: var(--theme-bg-secondary);
+    border: 1px solid var(--theme-stat-color);
+}
+
+.light-theme .current-rating-header h4 {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .current-score-value {
+    color: var(--theme-stat-color);
+}
+
+
+.light-theme .meta-label {
+    color: var(--theme-text-secondary);
+}
+
+.light-theme .movie-detail-description p {
+    color: var(--theme-text-secondary);
+}
+
+/* Light Theme Overrides for Search History */
+.light-theme .search-history-dropdown {
+    background: var(--theme-bg-secondary);
+    border: 2px solid var(--theme-border);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.light-theme .search-history-header {
+    background: var(--theme-bg-tertiary);
+    border-bottom: 1px solid var(--theme-border);
+}
+
+.light-theme .history-title {
+    color: var(--theme-text-secondary);
+}
+
+.light-theme .clear-history-btn {
+    color: var(--theme-text-secondary);
+}
+
+.light-theme .clear-history-btn:hover {
+    background: rgba(233, 69, 96, 0.1);
+    color: #e94560;
+}
+
+.light-theme .search-history-item {
+    border-bottom: 1px solid var(--theme-border);
+    color: var(--theme-text-primary);
+}
+
+.light-theme .search-history-item:hover {
+    background: var(--theme-hover-bg);
+}
+
+.light-theme .history-item-query {
+    color: var(--theme-text-primary);
+}
+
+.light-theme .history-item-time {
+    color: var(--theme-text-muted);
+}
+
+.light-theme .history-item-delete {
+    color: var(--theme-text-secondary);
+}
+
+.light-theme .history-item-delete:hover {
+    background: rgba(233, 69, 96, 0.1);
+    color: #e94560;
+}
+
+.light-theme .search-history-empty {
+    color: var(--theme-text-muted);
+}
+
+/* Dark Theme Search Button Override */
+html:not(.light-theme) #searchBtn {
+    background: #C0C0C0;
+    color: #000000;
+    box-shadow: none;
+    border: none;
+}
+
+html:not(.light-theme) #searchBtn:hover {
+    background: #a0a0a0;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Light Theme Text Overrides for User Ratings */
+.light-theme .user-rating-comment {
+    color: var(--theme-text-secondary);
+    background: rgba(0, 0, 0, 0.03);
+}
+
+.light-theme .user-rating-date {
+    color: var(--theme-text-muted);
 }
