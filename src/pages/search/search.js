@@ -1084,7 +1084,8 @@ class SearchManager {
 
     closeRatingModal() {
         this.elements.ratingModal.style.display = 'none';
-        this.selectedMovie = null;
+        // Do not clear selectedMovie here, as the parent movie modal might still be open
+        // and relying on it. selectedMovie is cleared when the main movie modal is closed.
     }
 
     async saveRating() {

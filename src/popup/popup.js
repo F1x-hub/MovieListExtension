@@ -64,6 +64,16 @@ class PopupManager {
             document.body.classList.add('dark-theme');
             document.body.classList.remove('light-theme');
         }
+
+        // Sync to chrome.storage.local
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            chrome.storage.local.set({ theme: theme });
+        }
+
+        // Update extension icon
+        if (typeof IconUtils !== 'undefined') {
+            IconUtils.updateExtensionIcon(theme);
+        }
         
         console.log('🎨 PopupManager: Body classes after theme application:', document.body.className);
     }
@@ -77,14 +87,50 @@ class PopupManager {
             authStatus: document.getElementById('authStatus'),
             statusIndicator: document.getElementById('statusIndicator'),
             statusText: document.getElementById('statusText'),
-            loginBtn: document.getElementById('loginBtn'),
+            loginBtn: document.getElementById('loginBtn'), // May not exist anymore, need to check if we renamed it. We used googleLoginBtn
+            googleLoginBtn: document.getElementById('googleLoginBtn'),
             logoutBtn: document.getElementById('logoutBtn'),
-            loginForm: document.getElementById('loginForm'),
-            registerForm: document.getElementById('registerForm'),
+            
+            // Login Forms (Step 1 & 2)
+            loginEmailForm: document.getElementById('loginEmailForm'),
+            loginPasswordForm: document.getElementById('loginPasswordForm'),
+            
+            // Login Inputs & Containers
             loginEmail: document.getElementById('loginEmail'),
             loginPassword: document.getElementById('loginPassword'),
+            staticEmail: document.getElementById('staticEmail'),
+            loginStep1: document.getElementById('loginStep1'),
+            loginStep2: document.getElementById('loginStep2'),
+            loginFooter: document.getElementById('loginFooter'),
+            backToEmailBtn: document.getElementById('backToEmailBtn'),
+            
+            // Registration Forms
+            registerInfoForm: document.getElementById('registerInfoForm'),
+            registerPasswordForm: document.getElementById('registerPasswordForm'),
+            
+            // Registration Inputs & Containers
+            registerForm: document.getElementById('registerForm'), // Might be unused if we removed it from HTML, let's keep it if I missed removing references or check logic
             registerEmail: document.getElementById('registerEmail'),
             registerPassword: document.getElementById('registerPassword'),
+            registerConfirmPassword: document.getElementById('registerConfirmPassword'),
+            registerFirstName: document.getElementById('registerFirstName'),
+            registerLastName: document.getElementById('registerLastName'),
+            
+            staticRegisterEmail: document.getElementById('staticRegisterEmail'),
+            staticName: document.getElementById('staticName'),
+            staticSurname: document.getElementById('staticSurname'),
+            
+            registerStep1: document.getElementById('registerStep1'),
+            registerStep2: document.getElementById('registerStep2'),
+            registerFooter: document.getElementById('registerFooter'),
+            backToRegisterInfoBtn: document.getElementById('backToRegisterInfoBtn'),
+            googleRegisterBtn: document.getElementById('googleRegisterBtn'), // New button
+            
+            // Auth Switchers
+            showRegisterLink: document.getElementById('showRegisterLink'),
+            showLoginLink: document.getElementById('showLoginLink'),
+            loginFormSection: document.getElementById('loginFormSection'),
+            registerFormSection: document.getElementById('registerFormSection'),
             
             // User elements
             userAvatar: document.getElementById('userAvatar'),
@@ -107,14 +153,42 @@ class PopupManager {
 
     setupEventListeners() {
         // Auth events
-        this.elements.loginBtn.addEventListener('click', () => this.handleGoogleLogin());
+        if (this.elements.googleLoginBtn) {
+            this.elements.googleLoginBtn.addEventListener('click', () => this.handleGoogleLogin());
+        }
         this.elements.logoutBtn.addEventListener('click', () => this.handleLogout());
-        this.elements.loginForm.addEventListener('submit', (e) => this.handleEmailLogin(e));
-        this.elements.registerForm.addEventListener('submit', (e) => this.handleEmailRegister(e));
         
-        // Tab switching
-        this.setupTabSwitching();
+        // Two-step login listeners
+        if (this.elements.loginEmailForm) {
+            this.elements.loginEmailForm.addEventListener('submit', (e) => this.handleEmailStep(e));
+        }
+        if (this.elements.loginPasswordForm) {
+            this.elements.loginPasswordForm.addEventListener('submit', (e) => this.handleEmailLogin(e));
+        }
+        if (this.elements.backToEmailBtn) {
+            this.elements.backToEmailBtn.addEventListener('click', (e) => this.goToStep1(e));
+        }
         
+        // Two-step registration listeners
+        if (this.elements.registerInfoForm) {
+            this.elements.registerInfoForm.addEventListener('submit', (e) => this.handleRegisterStep1(e));
+        }
+        if (this.elements.registerPasswordForm) {
+            this.elements.registerPasswordForm.addEventListener('submit', (e) => this.handleRegisterFinal(e));
+        }
+        if (this.elements.backToRegisterInfoBtn) {
+            this.elements.backToRegisterInfoBtn.addEventListener('click', (e) => this.goToRegisterStep1(e));
+        }
+        if (this.elements.googleRegisterBtn) {
+            this.elements.googleRegisterBtn.addEventListener('click', () => this.handleGoogleLogin());
+        }
+        
+        // Replaced old register listener
+        // this.elements.registerForm.addEventListener('submit', (e) => this.handleEmailRegister(e));
+        
+        // Auth Switching
+        this.setupAuthSwitching();
+         
         // Search events
         this.elements.searchInput.addEventListener('input', (e) => this.handleSearch(e));
         this.elements.searchInput.addEventListener('keypress', (e) => {
@@ -132,21 +206,71 @@ class PopupManager {
         this.elements.refreshBtn.addEventListener('click', () => this.forceRefreshRatings());
         this.elements.viewAllRatingsBtn.addEventListener('click', () => this.openRatingsPage());
         this.elements.settingsBtn.addEventListener('click', () => this.openSettings());
+        
+        // Password toggle
+        this.setupPasswordToggles();
     }
 
-    setupTabSwitching() {
-        const tabBtns = document.querySelectorAll('.tab-btn');
-        const tabContents = document.querySelectorAll('.tab-content');
+    setupAuthSwitching() {
+        if (this.elements.showRegisterLink) {
+            this.elements.showRegisterLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.switchAuthForm('register');
+            });
+        }
 
-        tabBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                const targetTab = btn.dataset.tab;
+        if (this.elements.showLoginLink) {
+            this.elements.showLoginLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.switchAuthForm('login');
+            });
+        }
+    }
+
+    switchAuthForm(target) {
+        if (target === 'register') {
+            this.elements.loginFormSection.classList.remove('active');
+            setTimeout(() => {
+                this.elements.loginFormSection.style.display = 'none';
+                this.elements.registerFormSection.style.display = 'block';
+                // Trigger reflow
+                void this.elements.registerFormSection.offsetWidth;
+                this.elements.registerFormSection.classList.add('active');
                 
-                tabBtns.forEach(b => b.classList.remove('active'));
-                tabContents.forEach(c => c.classList.remove('active'));
+                // Reset registration steps to 1 just in case
+                this.goToRegisterStep1();
                 
-                btn.classList.add('active');
-                document.getElementById(targetTab + 'Tab').classList.add('active');
+            }, 300); // Wait for fade out
+        } else {
+            this.elements.registerFormSection.classList.remove('active');
+            setTimeout(() => {
+                this.elements.registerFormSection.style.display = 'none';
+                this.elements.loginFormSection.style.display = 'block';
+                // Trigger reflow
+                void this.elements.loginFormSection.offsetWidth;
+                this.elements.loginFormSection.classList.add('active');
+                
+                // Reset login steps to 1
+                this.goToStep1();
+                
+            }, 300);
+        }
+    }
+
+    setupPasswordToggles() {
+        document.querySelectorAll('.toggle-password').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault(); // Prevent focus loss or form submit
+                const input = btn.previousElementSibling;
+                if (input && input.tagName === 'INPUT') {
+                    if (input.type === 'password') {
+                        input.type = 'text';
+                        btn.textContent = '🙈'; // basic icon swap
+                    } else {
+                        input.type = 'password';
+                        btn.textContent = '👁️';
+                    }
+                }
             });
         });
     }
@@ -321,6 +445,105 @@ class PopupManager {
         }
     }
 
+    handleRegisterStep1(e) {
+        e.preventDefault();
+        const firstName = this.elements.registerFirstName.value.trim();
+        const lastName = this.elements.registerLastName.value.trim();
+        const email = this.elements.registerEmail.value.trim();
+        
+        if (!firstName || !lastName || !email) {
+            this.showError('Please fill in all fields');
+            return;
+        }
+        
+        if (!this.isValidEmail(email)) {
+            this.showError('Please enter a valid email address');
+            return;
+        }
+        
+        this.hideError();
+        
+        // Populate static fields
+        this.elements.staticName.textContent = firstName;
+        this.elements.staticSurname.textContent = lastName;
+        this.elements.staticRegisterEmail.textContent = email;
+        
+        // Switch views
+        this.elements.registerStep1.style.display = 'none';
+        
+        // Hide Step 1 elements
+        const dividers = document.getElementById('registerFormSection').querySelectorAll('.auth-divider');
+        dividers.forEach(d => d.style.display = 'none');
+        if (this.elements.registerFooter) this.elements.registerFooter.style.display = 'none';
+        
+        this.elements.registerStep2.style.display = 'block';
+        this.elements.registerPassword.focus();
+    }
+    
+    goToRegisterStep1(e) {
+        if (e) e.preventDefault();
+        
+        this.elements.registerStep2.style.display = 'none';
+        this.elements.registerStep1.style.display = 'block';
+        
+        const dividers = document.getElementById('registerFormSection').querySelectorAll('.auth-divider');
+        dividers.forEach(d => d.style.display = 'block');
+        if (this.elements.registerFooter) this.elements.registerFooter.style.display = 'block';
+    }
+
+    goToStep1(e) {
+        if (e) e.preventDefault();
+        
+        this.elements.loginStep2.style.display = 'none';
+        this.elements.loginStep1.style.display = 'block';
+        
+        // Show Google button and footer again
+        if (this.elements.googleLoginBtn) this.elements.googleLoginBtn.style.display = 'flex';
+        // Re-show divider if it was hidden (it's a sibling usually, handled by parent visibility but if we hid specific elements we need to show them)
+        const dividers = document.querySelectorAll('.auth-divider');
+        dividers.forEach(d => d.style.display = 'block');
+        
+        if (this.elements.loginFooter) this.elements.loginFooter.style.display = 'block';
+        
+        // Focus email
+        this.elements.loginEmail.focus();
+    }
+
+    handleEmailStep(e) {
+        e.preventDefault();
+        const email = this.elements.loginEmail.value.trim();
+        
+        if (!email) {
+            this.showError('Please enter your email');
+            return;
+        }
+        
+        if (!this.isValidEmail(email)) {
+            this.showError('Please enter a valid email address');
+            return;
+        }
+        
+        this.hideError();
+        this.elements.staticEmail.textContent = email;
+        
+        // Switch to Step 2
+        this.elements.loginStep1.style.display = 'none';
+        
+        // Hide Google button and specific footer for clean look in step 2
+        if (this.elements.googleLoginBtn) this.elements.googleLoginBtn.style.display = 'none';
+        const dividers = document.querySelectorAll('.auth-divider');
+        dividers.forEach(d => d.style.display = 'none');
+        
+        if (this.elements.loginFooter) this.elements.loginFooter.style.display = 'none';
+        
+        this.elements.loginStep2.style.display = 'block';
+        this.elements.loginPassword.focus();
+    }
+
+    isValidEmail(email) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    }
+
     async handleEmailLogin(e) {
         e.preventDefault();
         
@@ -346,7 +569,9 @@ class PopupManager {
                 createdAt: user.metadata.creationTime
             });
             
-            this.elements.loginForm.reset();
+            // Reset forms
+            if (this.elements.loginEmailForm) this.elements.loginEmailForm.reset();
+            if (this.elements.loginPasswordForm) this.elements.loginPasswordForm.reset();
             
             // Hide auth section, show initial loading, prepare for content
             this.elements.authSection.style.display = 'none';
@@ -359,19 +584,25 @@ class PopupManager {
         }
     }
 
-    async handleEmailRegister(e) {
+    async handleRegisterFinal(e) {
         e.preventDefault();
         
         const email = this.elements.registerEmail.value.trim();
         const password = this.elements.registerPassword.value;
+        const confirmPassword = this.elements.registerConfirmPassword.value;
 
-        if (!email || !password) {
-            this.showError('Please fill in all fields');
+        if (!password || !confirmPassword) {
+            this.showError('Please fill in all password fields');
             return;
         }
 
         if (password.length < 6) {
             this.showError('Password must be at least 6 characters long');
+            return;
+        }
+        
+        if (password !== confirmPassword) {
+            this.showError('Passwords do not match');
             return;
         }
 
@@ -382,14 +613,26 @@ class PopupManager {
             // Create user profile
             const user = firebaseManager.getCurrentUser();
             const userService = firebaseManager.getUserService();
+            
+            const firstName = this.elements.registerFirstName.value.trim();
+            const lastName = this.elements.registerLastName.value.trim();
+            const displayName = `${firstName} ${lastName}`.trim() || user.email.split('@')[0];
+
             await userService.createOrUpdateUserProfile(user.uid, {
-                displayName: user.displayName || user.email.split('@')[0],
+                displayName: displayName,
+                firstName: firstName,
+                lastName: lastName,
                 photoURL: user.photoURL,
                 email: user.email,
                 createdAt: user.metadata.creationTime
             });
             
-            this.elements.registerForm.reset();
+            // Reset forms
+            if (this.elements.registerInfoForm) this.elements.registerInfoForm.reset();
+            if (this.elements.registerPasswordForm) this.elements.registerPasswordForm.reset();
+            if (this.elements.registerForm) this.elements.registerForm.reset();
+            
+            this.goToRegisterStep1(); // Reset UI state
             
             // Hide auth section, show initial loading, prepare for content
             this.elements.authSection.style.display = 'none';
@@ -474,7 +717,7 @@ class PopupManager {
             
             return `
                 <div class="search-result-item ${relevanceClass}" data-movie-id="${movie.kinopoiskId}">
-                    <img src="${movie.posterUrl || '/icons/icon48.png'}" alt="${name}" class="search-result-poster">
+                    <img src="${movie.posterUrl || (typeof IconUtils !== 'undefined' ? IconUtils.getIconPath(document.body.classList.contains('light-theme') ? 'light' : 'dark', 48) : '/icons/icon48-white.png')}" alt="${name}" class="search-result-poster">
                     <div class="search-result-info">
                         <h4 class="search-result-title">${this.escapeHtml(name)}</h4>
                         <p class="search-result-meta">${movie.year} • ${movie.genres.slice(0, 2).join(', ')}</p>

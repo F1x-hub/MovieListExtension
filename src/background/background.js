@@ -1,6 +1,35 @@
+try {
+    importScripts('../shared/utils/IconUtils.js');
+} catch (e) {
+    console.error('Failed to import IconUtils:', e);
+}
+
 chrome.runtime.onInstalled.addListener(() => {
     console.log('Movie Rating Extension installed');
+    updateIconFromStorage();
 });
+
+chrome.runtime.onStartup.addListener(() => {
+    updateIconFromStorage();
+});
+
+// Listen for theme changes from other parts of the extension
+chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local' && changes.theme) {
+        if (typeof IconUtils !== 'undefined') {
+            IconUtils.updateExtensionIcon(changes.theme.newValue);
+        }
+    }
+});
+
+function updateIconFromStorage() {
+    chrome.storage.local.get(['theme'], (result) => {
+        if (typeof IconUtils !== 'undefined') {
+            const theme = result.theme || 'dark';
+            IconUtils.updateExtensionIcon(theme);
+        }
+    });
+}
 
 let firebaseManagerInstance = null;
 
@@ -706,51 +735,21 @@ function showUpdateNotification(version, downloadUrl) {
 // Removed chrome.notifications.onButtonClicked listener as we moved to popup UI
 
 function downloadUpdate(url) {
+    console.log('[Update] Downloading repository from:', url);
     return new Promise((resolve, reject) => {
         chrome.downloads.download({
             url: url,
-            filename: 'extension_update.zip',
+            filename: 'MovieListExtension-update.zip',
             conflictAction: 'overwrite',
             saveAs: false
         }, (downloadId) => {
             if (chrome.runtime.lastError) {
                 console.error('[Update] Download failed:', chrome.runtime.lastError);
                 reject(chrome.runtime.lastError);
-                return;
+            } else {
+                console.log('[Update] Download started, ID:', downloadId);
+                resolve(downloadId);
             }
-            resolve(downloadId);
-            
-            // Listen for download completion
-            const onDownloadComplete = (delta) => {
-                if (delta.id === downloadId && delta.state && delta.state.current === 'complete') {
-                    chrome.downloads.onChanged.removeListener(onDownloadComplete);
-                    
-                        chrome.downloads.search({ id: downloadId }, (results) => {
-                        if (results && results[0]) {
-                            const filePath = results[0].filename;
-                            
-                            chrome.runtime.sendNativeMessage('com.movielist.updater', {
-                                action: 'update',
-                                zipPath: filePath
-                            }, (response) => {
-                                if (chrome.runtime.lastError) {
-                                    console.error('[Update] Failed to communicate with native host:', chrome.runtime.lastError.message);
-                                } else if (response && response.success) {
-                                    console.log('[Update] Update started successfully');
-                                    // Reload extension after a brief delay to allow file operations to complete
-                                    setTimeout(() => {
-                                        console.log('[Update] Reloading extension...');
-                                        chrome.runtime.reload();
-                                    }, 2000);
-                                } else {
-                                    console.error('[Update] Update failed:', response?.error || 'Unknown error');
-                                }
-                            });
-                        }
-                    });
-                }
-            };
-            chrome.downloads.onChanged.addListener(onDownloadComplete);
         });
     });
 }

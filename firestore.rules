@@ -12,59 +12,87 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
     
+    // Helper function to check if user is admin
+    function isAdmin() {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+    
     // Movies collection - read/write for authenticated users
     match /movies/{movieId} {
       allow read: if true; // Anyone can read cached movies
       allow write: if isAuthenticated(); // Only authenticated users can cache movies
+      allow delete: if isAdmin(); // Only admins can delete movies
     }
     
-    // Ratings collection
+    // Ratings collection (Top-level)
     match /ratings/{ratingId} {
       allow read: if true; // Anyone can read ratings
-      allow create: if isAuthenticated() && 
-                       request.resource.data.userId == request.auth.uid &&
-                       (request.resource.data.isFavorite == null || 
-                        request.resource.data.isFavorite is bool) &&
-                       (request.resource.data.favoritedAt == null || 
-                        request.resource.data.favoritedAt is timestamp); // Only authenticated users can create ratings with valid favorite fields
-      allow update: if isAuthenticated() && 
-                       resource.data.userId == request.auth.uid &&
-                       request.resource.data.userId == request.auth.uid &&
-                       (request.resource.data.isFavorite == null || 
-                        request.resource.data.isFavorite is bool) &&
-                       (request.resource.data.favoritedAt == null || 
-                        request.resource.data.favoritedAt is timestamp); // Only owner can update with valid favorite fields
-      allow delete: if isAuthenticated() && 
-                       (resource.data.userId == request.auth.uid || 
-                        request.auth.token.admin == true); // Only owner or admin can delete
-    }
-    
-    // Users collection
-    match /users/{userId} {
-      allow read: if true; // Anyone can read user profiles
-      allow write: if isOwner(userId); // Only user can update their own profile
-    }
-    
-    // User ratings subcollection
-    match /users/{userId}/ratings/{ratingId} {
-      allow read: if true; // Anyone can read user ratings
-      allow write: if isOwner(userId); // Only user can write their own ratings
-    }
-    
-    // Movie ratings subcollection
-    match /movies/{movieId}/ratings/{ratingId} {
-      allow read: if true; // Anyone can read movie ratings
-      allow create: if isAuthenticated(); // Authenticated users can create ratings
+      allow create: if isAuthenticated(); // Only authenticated users can create ratings
       allow update, delete: if isAuthenticated() && 
-        resource.data.userId == request.auth.uid; // Only owner can update/delete
+        (resource.data.userId == request.auth.uid || isAdmin()); // Owner or admin can update/delete
     }
     
-    // Watchlist collection
+    // Watchlist collection (Top-level)
     match /watchlist/{watchlistId} {
       allow read: if true; // Anyone can read watchlists
       allow create: if isAuthenticated(); // Only authenticated users can create watchlist entries
       allow update, delete: if isAuthenticated() && 
-        resource.data.userId == request.auth.uid; // Only owner can update/delete
+        (resource.data.userId == request.auth.uid || isAdmin()); // Owner or admin can update/delete
+    }
+
+    // Collections (Top-level)
+    // REQUIRED: AdminService queries this top-level collection to count user collections
+    match /collections/{collectionId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && 
+        (resource.data.userId == request.auth.uid || isAdmin());
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      // Allow authenticated users to read any profile
+      allow read: if isAuthenticated();
+      
+      // Allow users to create/update their own profile
+      allow create, update: if isOwner(userId);
+      
+      // Allow admins to delete users (except themselves)
+      allow delete: if isAdmin() && request.auth.uid != userId;
+      
+      // Prevent users from making themselves admin (security rule)
+      allow update: if isOwner(userId) && 
+        (!request.resource.data.keys().hasAny(['isAdmin']) || 
+         resource.data.isAdmin == request.resource.data.isAdmin);
+         
+      // --- Subcollections ---
+      
+      // User Collections Subcollection (if app uses nested structure)
+      match /collections/{collectionId} {
+        allow read: if true; 
+        allow write: if isOwner(userId) || isAdmin();
+      }
+      
+      // User Settings Subcollection
+      match /settings/{settingId} {
+        allow read: if isOwner(userId); 
+        allow write: if isOwner(userId); 
+      }
+      
+      // User ratings subcollection (Legacy)
+      match /ratings/{ratingId} {
+        allow read: if true;
+        allow write: if isOwner(userId) || isAdmin();
+      }
+    }
+    
+    // Movie ratings subcollection (Legacy)
+    match /movies/{movieId}/ratings/{ratingId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && 
+        (resource.data.userId == request.auth.uid || isAdmin());
     }
   }
 }

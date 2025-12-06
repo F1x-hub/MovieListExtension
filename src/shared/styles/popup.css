@@ -15,8 +15,7 @@ body {
     min-width: 400px;
     max-width: 400px;
     min-height: 500px;
-    max-height: 600px;
-    background: var(--gradient-dark);
+    background: var(--primary-bg);
     color: var(--text-primary);
     font-family: var(--font-family);
     overflow-x: hidden;
@@ -30,7 +29,7 @@ body {
     align-items: center;
     justify-content: space-between;
     padding: var(--space-lg);
-    background: var(--gradient-card);
+    background: #1B1B1B; /* Dark theme specific color */
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     box-sizing: border-box;
     width: 100%;
@@ -85,83 +84,275 @@ body {
 }
 
 /* Auth Section */
+/* Auth Section */
 .auth-section {
     padding: var(--space-xl);
-    text-align: center;
-}
-
-.auth-tabs {
     display: flex;
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: var(--radius-lg);
-    padding: 4px;
-    margin-bottom: var(--space-lg);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    align-items: center;
+    justify-content: center;
+    min-height: 450px;
 }
 
-.tab-btn {
-    flex: 1;
-    padding: var(--space-sm) var(--space-md);
-    border: none;
-    background: transparent;
-    color: var(--text-secondary);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    transition: all var(--transition-base);
-    font-size: var(--font-size-sm);
-    font-weight: 500;
+.auth-container {
+    width: 100%;
+    max-width: 320px;
+    animation: fadeIn 0.4s ease;
 }
 
-.tab-btn.active {
-    background: var(--accent-color);
+/* Google Button */
+.btn-google {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-md);
+    width: 100%;
+    background: rgba(255, 255, 255, 0.05); /* Transparent dark style */
     color: var(--text-primary);
+    padding: var(--space-md);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    margin-bottom: 0;
+    transition: all var(--transition-base);
+    font-family: var(--font-family);
+}
+
+.btn-google:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.light-theme .btn-google {
+    background: #fff;
+    color: #333;
+    border-color: #ddd;
     box-shadow: var(--shadow-sm);
 }
+.light-theme .btn-google:hover {
+    background: #f8f8f8;
+    border-color: #ccc;
+}
 
-.tab-content {
+/* Divider */
+.auth-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.1);
+    margin: var(--space-lg) 0;
+    width: 100%;
+}
+
+.light-theme .auth-divider {
+    background: rgba(0, 0, 0, 0.1);
+}
+
+/* Form Content Animation */
+.auth-content {
     display: none;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
 }
 
-.tab-content.active {
+.auth-content.active {
     display: block;
+    opacity: 1;
+    transform: translateY(0);
+    animation: fadeInUp 0.3s ease forwards;
 }
 
+/* Forms */
 .auth-form {
-    background: var(--gradient-card);
-    border-radius: var(--radius-lg);
-    padding: var(--space-lg);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: transparent;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    width: 100%;
 }
 
-.auth-form h3 {
-    color: var(--text-primary);
+.auth-form .form-group {
     margin-bottom: var(--space-md);
-    font-size: var(--font-size-lg);
+    text-align: left;
+}
+
+.auth-form label {
+    display: block;
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    margin-bottom: 6px;
     font-weight: 600;
 }
 
-.auth-divider {
-    text-align: center;
-    margin: var(--space-lg) 0;
-    position: relative;
+.auth-form .form-input {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--theme-input-bg);
+    border: 1px solid var(--theme-input-border);
+    border-radius: var(--radius-md);
+    color: var(--theme-input-text);
+    font-size: 13px; /* Slightly larger for readability */
+    box-sizing: border-box;
+    transition: all 0.2s ease;
 }
 
-.auth-divider::before {
-    content: '';
+.light-theme .auth-form .form-input {
+    background: #ffffff;
+    border-color: rgba(0,0,0,0.1); /* Optional: adjust border if background matches page */
+}
+
+.auth-form .form-input:focus {
+    border-color: var(--accent-color);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.05);
+}
+
+.light-theme .auth-form .form-input:focus {
+    background: #eeeeee; /* Slightly darker on focus? or keep CECECE */
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.05);
+}
+
+.auth-form .form-input::placeholder {
+    color: var(--text-muted);
+    opacity: 0.7;
+}
+
+/* Form Row (First/Last name) */
+.form-row {
+    display: flex;
+    gap: var(--space-md);
+}
+.form-row .form-group {
+    flex: 1;
+    min-width: 0;
+}
+
+/* Password Field */
+.label-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+.label-row label {
+    margin-bottom: 0;
+}
+
+.forgot-password-link {
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: color 0.2s;
+}
+.forgot-password-link:hover {
+    color: var(--text-primary);
+}
+
+.password-input-wrapper {
+    position: relative;
+}
+.toggle-password {
     position: absolute;
-    top: 50%;
-    left: 0;
     right: 0;
-    height: 1px;
-    background: rgba(255, 255, 255, 0.2);
+    top: 0;
+    bottom: 0;
+    background: transparent;
+    border: none;
+    padding: 0 10px;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    font-size: 14px;
+    outline: none;
+}
+.toggle-password:hover {
+    color: var(--text-primary);
 }
 
-.auth-divider span {
-    background: var(--primary-bg);
-    color: var(--text-secondary);
-    padding: 0 var(--space-md);
+/* Buttons */
+.btn-block {
+    width: 100%;
+    padding: 10px;
+    margin-top: var(--space-sm);
+    font-weight: 600;
+}
+
+.btn-gradient {
+    background: var(--gradient-primary);
+    color: white;
+    border: none;
+    box-shadow: var(--shadow-glow);
+    transition: all 0.3s ease;
+}
+
+.btn-gradient:hover {
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-1px);
+    opacity: 0.95;
+}
+
+/* Static Input Text (for Email in Step 2) */
+.static-input-text {
+    width: 100%;
+    padding: 10px 12px;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-md);
+    color: var(--text-muted); /* Slightly muted to indicate read-only */
+    font-size: 13px;
+    box-sizing: border-box;
+    cursor: default;
+    display: flex;
+    align-items: center;
+    user-select: none;
+}
+.light-theme .static-input-text {
+    border-color: #e0e0e0;
+    color: #666;
+}
+
+/* Back Link */
+.back-nav {
+    margin-top: var(--space-md) !important;
+}
+
+.back-nav a {
     font-size: var(--font-size-sm);
-    position: relative;
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: color 0.2s;
+    display: inline-flex; /* improved alignment */
+    align-items: center;
+    gap: 4px;
+}
+
+.back-nav a:hover {
+    color: var(--text-primary);
+}
+
+/* Switcher (Login <-> Register) */
+.auth-switch {
+    margin-top: var(--space-lg);
+    text-align: center;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
+
+.auth-switch p {
+    margin: 0;
+}
+
+.auth-switch a {
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-weight: 500;
+    margin-left: 4px;
+    transition: color 0.2s;
+}
+.auth-switch a:hover {
+    color: var(--text-primary);
+    text-decoration: underline;
 }
 
 /* Main Content */
@@ -663,7 +854,7 @@ body {
     right: 0;
     bottom: 0;
     z-index: 10000;
-    background: rgba(15, 23, 42, 0.95);
+    background: var(--theme-bg-primary); /* Theme aware background */
     backdrop-filter: blur(8px);
     pointer-events: none;
     width: 100%;
@@ -671,15 +862,7 @@ body {
 }
 
 .loading::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(59, 130, 246, 0.1));
-    pointer-events: none;
-    z-index: -1;
+    display: none;
 }
 
 .loading > * {
@@ -701,43 +884,31 @@ body {
 .loading-spinner {
     width: 56px;
     height: 56px;
-    border: 5px solid rgba(139, 92, 246, 0.2);
-    border-top: 5px solid transparent;
-    border-right: 5px solid transparent;
     border-radius: 50%;
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(59, 130, 246, 0.15));
+    /* Default Dark Theme: White/transparent fade */
+    border: 5px solid transparent;
+    border-top-color: #ffffff;
+    border-right-color: rgba(255, 255, 255, 0.7);
+    border-bottom-color: rgba(255, 255, 255, 0.4);
+    border-left-color: rgba(255, 255, 255, 0.1);
     position: relative;
     z-index: 10000;
-    animation: spin 1s linear infinite, pulse 2s ease-in-out infinite;
-    box-shadow: 0 0 20px rgba(139, 92, 246, 0.3);
+    animation: spin 1s linear infinite;
+    background: transparent;
+    box-shadow: none;
 }
 
-.loading-spinner::before {
-    content: '';
-    position: absolute;
-    top: -5px;
-    left: -5px;
-    right: -5px;
-    bottom: -5px;
-    border-radius: 50%;
-    border: 5px solid transparent;
-    border-top-color: #8b5cf6;
-    border-right-color: #3b82f6;
-    animation: spin 0.8s linear infinite;
-    z-index: 10001;
+.light-theme .loading-spinner {
+    /* Light Theme: Gray fade requested */
+    border-top-color: #333335;
+    border-right-color: #4a4a4c;
+    border-bottom-color: #6b6b6d;
+    border-left-color: #8e8e90;
 }
 
+.loading-spinner::before,
 .loading-spinner::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 12px;
-    height: 12px;
-    margin: -6px 0 0 -6px;
-    background: linear-gradient(135deg, #8b5cf6, #3b82f6);
-    border-radius: 50%;
-    animation: pulse 1.5s ease-in-out infinite;
+    display: none;
 }
 
 .loading span {
@@ -1006,8 +1177,8 @@ body {
 }
 
 .light-theme .popup-header {
-    background: var(--theme-bg-secondary);
-    border-bottom-color: var(--theme-border);
+    background: #DDDDDD;
+    border-bottom-color: rgba(0, 0, 0, 0.1);
 }
 
 .light-theme .popup-title {
@@ -1123,7 +1294,7 @@ body {
 }
 
 .light-theme .rating-item {
-    background: var(--theme-bg-secondary);
+    background: var(--theme-bg-tertiary);
     border-color: var(--theme-border);
 }
 
@@ -1185,14 +1356,6 @@ body {
     color: var(--theme-text-muted);
 }
 
-.light-theme .loading {
-    background: rgba(237, 237, 237, 0.95);
-}
-
-.light-theme .loading::before {
-    background: linear-gradient(135deg, rgba(51, 51, 53, 0.05), rgba(51, 51, 53, 0.08));
-}
-
 .light-theme .loading span {
     color: var(--theme-text-primary);
 }
@@ -1219,6 +1382,27 @@ body {
 .light-theme .btn-primary:hover {
     background: #49494b;
 }
+
+/* View All Ratings Button Customization */
+#viewAllRatingsBtn {
+    background: #C0C0C0;
+    color: #000000;
+}
+
+#viewAllRatingsBtn:hover {
+    background: #a0a0a0;
+}
+
+.light-theme #viewAllRatingsBtn {
+    /* Reset to default light theme btn-primary styles */
+    background: var(--theme-stat-color);
+    color: white;
+}
+
+.light-theme #viewAllRatingsBtn:hover {
+    background: #49494b;
+}
+
 
 .light-theme .btn-secondary {
     background: var(--theme-bg-tertiary);
@@ -1285,4 +1469,31 @@ body {
 
 .light-theme .feed-content::-webkit-scrollbar-thumb:hover {
     background: #49494b;
+}
+
+/* Dark Theme Auth Buttons Override */
+html:not(.light-theme) .auth-form .btn-primary,
+html:not(.light-theme) .auth-form .btn-gradient {
+    background: #C0C0C0;
+    color: #000000;
+    box-shadow: none;
+    border: none;
+}
+
+html:not(.light-theme) .auth-form .btn-primary:hover,
+html:not(.light-theme) .auth-form .btn-gradient:hover {
+    background: #a0a0a0;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Ensure Google button remains distinct */
+html:not(.light-theme) .auth-form .btn-google {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+html:not(.light-theme) .auth-form .btn-google:hover {
+    background: rgba(255, 255, 255, 0.1);
 }

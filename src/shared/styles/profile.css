@@ -246,8 +246,8 @@
 
 .stat-card:hover {
     transform: translateY(-4px);
-    border-color: #667eea;
-    box-shadow: 0 8px 24px rgba(102, 126, 234, 0.15);
+    border-color: var(--theme-text-primary);
+    box-shadow: 0 8px 24px rgba(255, 255, 255, 0.15);
 }
 
 .stat-value {
@@ -304,7 +304,7 @@
 
 .btn-view-all:hover {
     background: var(--theme-stat-color);
-    color: #ffffff;
+    color: var(--theme-bg-primary);
 }
 
 .recent-ratings-list {
@@ -326,9 +326,9 @@
 }
 
 .recent-rating-card:hover {
-    border-color: #667eea;
+    border-color: var(--theme-text-primary);
     transform: translateX(4px);
-    box-shadow: 0 4px 16px rgba(102, 126, 234, 0.15);
+    box-shadow: 0 4px 16px rgba(255, 255, 255, 0.15);
 }
 
 .recent-rating-card .poster {
@@ -381,7 +381,7 @@
 .recent-rating-card .rating {
     font-size: 1.5rem;
     font-weight: 700;
-    color: #333335;
+    color: var(--theme-text-primary);
     display: flex;
     align-items: center;
     gap: 4px;
