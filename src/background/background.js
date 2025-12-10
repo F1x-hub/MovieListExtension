@@ -86,6 +86,9 @@ async function addToWatchlistViaAPI(userId, movieData) {
                 posterPath: { stringValue: movieData.posterPath || '' },
                 releaseYear: movieData.releaseYear ? { integerValue: movieData.releaseYear.toString() } : { nullValue: null },
                 genres: { arrayValue: { values: (movieData.genres || []).map(g => ({ stringValue: g.name || g })) } },
+                description: { stringValue: movieData.description || '' },
+                kpRating: { doubleValue: movieData.kpRating || 0 },
+                imdbRating: { doubleValue: movieData.imdbRating || 0 },
                 avgRating: { doubleValue: movieData.avgRating || 0 },
                 notes: { stringValue: movieData.notes || '' },
                 addedAt: { timestampValue: new Date().toISOString() }
@@ -753,3 +756,45 @@ function downloadUpdate(url) {
         });
     });
 }
+
+// --- Display Mode Logic ---
+
+// Initialize display mode on startup
+chrome.runtime.onStartup.addListener(() => {
+    initializeDisplayMode();
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+    initializeDisplayMode();
+});
+
+function initializeDisplayMode() {
+    chrome.storage.local.get(['displayMode'], (result) => {
+        const mode = result.displayMode || 'popup';
+        updateExtensionAction(mode);
+    });
+}
+
+function updateExtensionAction(mode) {
+    console.log('[Background] Updating extension action for mode:', mode);
+    if (mode === 'popup') {
+        // Enable popup mode
+        chrome.action.setPopup({ popup: 'src/popup/popup.html' });
+        // Disable side panel opening on click
+        chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false })
+            .catch(error => console.error('[Background] Error disabling side panel:', error));
+    } else if (mode === 'sidepanel') {
+        // Disable popup so side panel can open
+        chrome.action.setPopup({ popup: '' });
+        // Enable side panel opening on click
+        chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
+            .catch(error => console.error('[Background] Error enabling side panel:', error));
+    }
+}
+
+// Listen for settings updates from settings page
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'SETTINGS_UPDATED' && message.settings.displayMode) {
+        updateExtensionAction(message.settings.displayMode);
+    }
+});

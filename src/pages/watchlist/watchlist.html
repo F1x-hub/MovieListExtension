@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="../../shared/styles/navigation.css">
     <link rel="stylesheet" href="../../shared/styles/router.css">
     <link rel="stylesheet" href="../../shared/styles/search.css">
+    <link rel="stylesheet" href="../../shared/styles/movie-card.css">
     <link rel="stylesheet" href="../../shared/styles/watchlist.css">
     
     <!-- Firebase -->
@@ -31,8 +32,10 @@
     <script src="../../shared/services/CollectionService.js"></script>
     <script src="../../shared/utils/Utils.js"></script>
     <script src="../../shared/utils/IconUtils.js"></script>
+    <script src="../../shared/utils/Icons.js"></script>
     
     <!-- Components -->
+    <script src="../../shared/components/MovieCard.js"></script>
     <script src="../../shared/components/Navigation.js"></script>
     <script src="../../shared/components/Router.js"></script>
 </head>
@@ -44,7 +47,7 @@
         <div class="watchlist-container">
             <!-- Page Header -->
             <div class="watchlist-header">
-                <h1 class="watchlist-title">🔖 Watchlist - Хочу посмотреть</h1>
+                <h1 class="watchlist-title"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 8px; vertical-align: middle;"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg> Watchlist - Хочу посмотреть</h1>
                 <p class="watchlist-subtitle">Фильмы, которые вы планируете посмотреть</p>
             </div>
 
@@ -60,7 +63,7 @@
                         <label class="filter-label">Search in Watchlist</label>
                         <div class="search-input-wrapper">
                             <input type="text" class="search-input" id="watchlistSearchInput" placeholder="Поиск в Watchlist...">
-                            <span class="search-icon">🔍</span>
+                            <span class="search-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></span>
                         </div>
                     </div>
 
@@ -70,7 +73,7 @@
                         <div class="custom-dropdown" data-dropdown="sortFilter">
                             <button type="button" class="dropdown-trigger" id="sortFilterTrigger">
                                 <span class="dropdown-value">Date Added (Newest)</span>
-                                <span class="dropdown-arrow">▼</span>
+                                <span class="dropdown-arrow"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
                             </button>
                             <div class="dropdown-list" id="sortFilterList">
                                 <div class="dropdown-option" data-value="addedAt-desc">Date Added (Newest)</div>
@@ -115,7 +118,7 @@
 
             <!-- Empty State -->
             <div class="empty-state" id="emptyState" style="display: none;">
-                <div class="empty-state-icon">🔖</div>
+                <div class="empty-state-icon"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg></div>
                 <h3 class="empty-state-title">Ваш Watchlist пуст</h3>
                 <p class="empty-state-text">Добавьте фильмы, которые хотите посмотреть!</p>
                 <button class="empty-state-btn" onclick="window.navigation?.navigateToPage('search')">
@@ -125,7 +128,7 @@
 
             <!-- Error State -->
             <div class="error-state" id="errorState" style="display: none;">
-                <div class="error-state-icon">⚠️</div>
+                <div class="error-state-icon"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #ef4444;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></div>
                 <h3 class="error-state-title">Something went wrong</h3>
                 <p class="error-state-text" id="errorMessage">Failed to load watchlist</p>
                 <button class="error-state-btn" id="retryBtn">Try Again</button>
@@ -138,7 +141,7 @@
         <div class="modal rating-modal">
             <div class="modal-header rating-header">
                 <div class="rating-header-content">
-                    <div class="rating-header-icon">⭐</div>
+                    <div class="rating-header-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #eab308;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></div>
                     <h2 class="modal-title" id="ratingModalTitle">Rate This Movie</h2>
                 </div>
                 <button class="modal-close" id="ratingModalClose">×</button>
@@ -194,7 +197,7 @@
             <div class="modal-footer rating-footer">
                 <button id="cancelRatingBtn" class="btn btn-secondary btn-lg">Cancel</button>
                 <button id="saveRatingBtn" class="btn btn-accent btn-lg rating-save-btn">
-                    <span class="btn-icon">💾</span>
+                    <span class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg></span>
                     Save Rating
                 </button>
             </div>

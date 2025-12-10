@@ -407,86 +407,15 @@ class FavoritesPageManager {
     }
 
     createMovieCard(favorite) {
-        const card = document.createElement('div');
-        card.className = 'movie-card fade-in';
-        
-        const movie = favorite.movie;
-        const posterUrl = movie?.posterUrl || '/icons/icon48.png';
-        const title = movie?.name || favorite.movieTitle || 'Unknown Movie';
-        const year = movie?.year || favorite.releaseYear || '';
-        const genres = movie?.genres || [];
-        const rating = favorite.rating || 0;
-        const favoritedAt = favorite.favoritedAt;
-        const createdAt = favorite.createdAt;
-        const avgRating = favorite.averageRating || 0;
-        const ratingsCount = favorite.ratingsCount || 0;
-        
-        // Format favorited date
-        let favoritedDateStr = '';
-        if (favoritedAt) {
-            const date = favoritedAt.toDate ? favoritedAt.toDate() : new Date(favoritedAt);
-            favoritedDateStr = this.formatDate(date);
-        }
-        
-        // Format watched date
-        let watchedDateStr = '';
-        if (createdAt) {
-            const date = createdAt.toDate ? createdAt.toDate() : new Date(createdAt);
-            watchedDateStr = this.formatDate(date);
-        }
-        
-        card.innerHTML = `
-            <div class="movie-poster-container">
-                <img src="${posterUrl}" alt="${title}" class="movie-poster" onerror="this.src='/icons/icon48.png'">
-                <button class="favorite-btn-remove" data-rating-id="${favorite.id}" title="Удалить из Избранного">
-                    ❤️
-                </button>
-            </div>
-            <div class="movie-content">
-                <h3 class="movie-title">${this.escapeHtml(title)}</h3>
-                <div class="movie-meta">${year}${year && genres.length ? ' • ' : ''}${genres.slice(0, 3).join(', ')}</div>
-                
-                ${genres.length > 0 ? `
-                    <div class="movie-genres">
-                        ${genres.slice(0, 3).map(genre => `<span class="genre-tag">${genre}</span>`).join('')}
-                    </div>
-                ` : ''}
-                
-                <div class="movie-ratings">
-                    <div class="rating-item">
-                        <div class="rating-label">My Rating</div>
-                        <div class="rating-value my-rating">⭐ ${rating}/10</div>
-                    </div>
-                    <div class="rating-item">
-                        <div class="rating-label">Avg Rating</div>
-                        <div class="rating-value avg-rating">${ratingsCount > 0 ? avgRating.toFixed(1) : 'N/A'}${ratingsCount > 0 ? '/10' : ''}</div>
-                    </div>
-                </div>
-                
-                ${favoritedDateStr ? `
-                    <div class="favorited-date">
-                        Добавлено: ${favoritedDateStr}
-                    </div>
-                ` : ''}
-                
-                ${watchedDateStr ? `
-                    <div class="favorited-date" style="margin-top: 4px;">
-                        Просмотрено: ${watchedDateStr}
-                    </div>
-                ` : ''}
-                
-                <div class="movie-actions">
-                    <button class="action-btn btn-primary" data-movie-id="${favorite.movieId}">
-                        👁️ View Details
-                    </button>
-                    <button class="action-btn edit-btn edit-rating-btn" data-rating-id="${favorite.id}" data-movie-id="${favorite.movieId}">
-                        ✏️ Edit Rating
-                    </button>
-                </div>
-            </div>
-        `;
-        
-        return card;
+        // Use the new MovieCard component
+        return MovieCard.create(favorite, {
+            showFavorite: true,  // Show favorite toggle (to remove from favorites)
+            showWatchlist: false,
+            showUserInfo: false,
+            showEditRating: true,  // Show edit rating in menu
+            showAddToCollection: false,
+            showThreeDotMenu: true
+        });
     }
 
     attachCardEventListeners() {

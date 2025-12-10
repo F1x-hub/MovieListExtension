@@ -37,20 +37,10 @@ class CollectionService {
 
     async getSavedIcons() {
         try {
-            const user = this.getCurrentUser();
-            if (user) {
-                // Firestore: users/{userId}/settings/icons
-                const docRef = window.firebaseManager.db.collection('users').doc(user.uid).collection('settings').doc('icons');
-                const doc = await docRef.get();
-                if (doc.exists) {
-                    return doc.data().customIcons || [];
-                }
-                return [];
-            } else {
-                // Local storage fallback
-                const result = await chrome.storage.local.get([this.savedIconsKey]);
-                return result[this.savedIconsKey] || [];
-            }
+            // Local storage fallback (or just return empty if user wants to disable history completely)
+            // Keeping local storage for now as it doesn't affect Firestore settings
+            const result = await chrome.storage.local.get([this.savedIconsKey]);
+            return result[this.savedIconsKey] || [];
         } catch (error) {
             console.error('Error getting saved icons:', error);
             return [];
@@ -68,15 +58,8 @@ class CollectionService {
                     icons.pop();
                 }
 
-                const user = this.getCurrentUser();
-                if (user) {
-                    // Firestore
-                    const docRef = window.firebaseManager.db.collection('users').doc(user.uid).collection('settings').doc('icons');
-                    await docRef.set({ customIcons: icons }, { merge: true });
-                } else {
-                    // Local storage
-                    await chrome.storage.local.set({ [this.savedIconsKey]: icons });
-                }
+                // Local storage only
+                await chrome.storage.local.set({ [this.savedIconsKey]: icons });
             }
             return true;
         } catch (error) {
@@ -90,15 +73,8 @@ class CollectionService {
             const icons = await this.getSavedIcons();
             const newIcons = icons.filter(icon => icon !== iconData);
             
-            const user = this.getCurrentUser();
-            if (user) {
-                // Firestore
-                const docRef = window.firebaseManager.db.collection('users').doc(user.uid).collection('settings').doc('icons');
-                await docRef.set({ customIcons: newIcons }, { merge: true });
-            } else {
-                // Local storage
-                await chrome.storage.local.set({ [this.savedIconsKey]: newIcons });
-            }
+            // Local storage only
+            await chrome.storage.local.set({ [this.savedIconsKey]: newIcons });
             return true;
         } catch (error) {
             console.error('Error deleting saved icon:', error);
@@ -171,33 +147,14 @@ class CollectionService {
                 }, { merge: true });
             }
 
-            // Migrate icons
-            if (localIcons.length > 0) {
-                const iconsRef = window.firebaseManager.db.collection('users').doc(userId).collection('settings').doc('icons');
-                // We need to get existing firestore icons to merge, but batch writes are write-only.
-                // So we'll do a separate transaction or just overwrite/append via arrayUnion if possible, 
-                // but arrayUnion with large base64 strings might be tricky. 
-                // Simplest strategy: Read Firestore icons first, merge, then write.
-                // Since we are inside migrate, let's just do a direct set for icons outside the batch or before.
-                
-                const currentIconsDoc = await iconsRef.get();
-                let currentIcons = currentIconsDoc.exists ? currentIconsDoc.data().customIcons || [] : [];
-                
-                // Merge unique
-                const newIcons = [...new Set([...localIcons, ...currentIcons])].slice(0, 50);
-                batch.set(iconsRef, { customIcons: newIcons }, { merge: true });
-            }
+            // Icons migration removed as per user request (icons stored in Storage, not Settings)
 
             await batch.commit();
             console.log('Migration to Firestore complete.');
 
             // Clear local storage after successful migration
-            // We keep them in local storage as a cache? No, user wants them in Firestore.
-            // But if we clear them, offline access is lost unless we implement caching.
-            // For now, let's clear them to avoid confusion/duplication, assuming online-first.
-            // Or better, we just stop using local storage when logged in.
-            // Let's clear to be clean.
-            await chrome.storage.local.remove([this.storageKey, this.savedIconsKey]);
+            // Only clear collections, keep icons locally if needed (though they are not synced now)
+            await chrome.storage.local.remove([this.storageKey]);
 
         } catch (error) {
             console.error('Error migrating to Firestore:', error);
@@ -349,7 +306,27 @@ class CollectionService {
             const user = this.getCurrentUser();
             if (user) {
                 // Firestore
-                await window.firebaseManager.db.collection('users').doc(user.uid).collection('collections').doc(collectionId).delete();
+                const docRef = window.firebaseManager.db.collection('users').doc(user.uid).collection('collections').doc(collectionId);
+                
+                // Get collection to check for custom icon
+                const doc = await docRef.get();
+                if (doc.exists) {
+                    const collection = doc.data();
+                    
+                    // If icon is custom (not in default list/has storage path), try to delete it
+                    if (collection.icon && 
+                        window.firebaseManager && 
+                        typeof window.firebaseManager.deleteCollectionIcon === 'function') {
+                        
+                        // We rely on deleteCollectionIcon to safe-check if it's a storage URL
+                        await window.firebaseManager.deleteCollectionIcon(collection.icon).catch(err => {
+                            console.warn('Failed to delete collection icon from storage:', err);
+                            // Continue with collection deletion even if icon deletion fails
+                        });
+                    }
+
+                    await docRef.delete();
+                }
             } else {
                 // Local Storage
                 const collections = await this.getCollections();

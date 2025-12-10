@@ -206,7 +206,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 12px;
+
 }
 
 .custom-collection-item:hover {
@@ -283,16 +283,24 @@
 }
 
 .create-collection-item {
-    border-top: 1px solid #e5e7eb;
+    border-top: 1px solid var(--theme-border);
     margin-top: 4px;
     padding-top: 12px;
     font-weight: 600;
-    color: #6366f1;
+    color: var(--accent-color-primary);
 }
 
 .create-collection-item:hover {
-    background: #f3f4f6;
-    color: #4f46e5;
+    background: var(--theme-hover-bg);
+    color: var(--accent-hover);
+}
+
+.create-collection-item .dropdown-icon {
+    color: var(--accent-color);
+}
+
+.create-collection-item:hover .dropdown-icon {
+    color: var(--accent-hover);
 }
 
 .dropdown-empty-state {

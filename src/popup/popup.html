@@ -24,7 +24,7 @@
         <!-- Update Banner -->
         <div id="updateBanner" class="update-banner" style="display: none;">
             <div class="update-content">
-                <span class="update-icon">🚀</span>
+                <span class="update-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"></path><path d="M12 15l-3-3a22 22 0 0 1 2-9 20.66 20.66 0 0 1 7 7 22 22 0 0 1-9 2z"></path><path d="M5 21c.5-.5 2.5-1.5 5-1.5 2.5 0 4.5 1 5 1.5"></path></svg></span>
                 <div class="update-text">
                     <span class="update-title">Update Available</span>
                     <span class="update-version" id="updateVersion">New version ready</span>
@@ -93,7 +93,7 @@
                                 </div>
                                 <div class="password-input-wrapper">
                                     <input type="password" id="loginPassword" class="form-input" placeholder="Ваш пароль" required>
-                                    <button type="button" class="toggle-password" title="Show password">👁️</button>
+                                    <button type="button" class="toggle-password" title="Show password"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
                                 </div>
                             </div>
                             <button type="submit" class="btn btn-gradient btn-block">Войти</button>
@@ -167,14 +167,14 @@
                                 <label for="registerPassword">Пароль</label>
                                 <div class="password-input-wrapper">
                                     <input type="password" id="registerPassword" class="form-input" placeholder="Придумайте пароль" required minlength="6">
-                                    <button type="button" class="toggle-password" title="Show password">👁️</button>
+                                    <button type="button" class="toggle-password" title="Show password"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
                                 </div>
                             </div>
                             <div class="form-group">
                                 <label for="registerConfirmPassword">Повторите пароль</label>
                                 <div class="password-input-wrapper">
                                     <input type="password" id="registerConfirmPassword" class="form-input" placeholder="Повторите пароль" required minlength="6">
-                                    <button type="button" class="toggle-password" title="Show password">👁️</button>
+                                    <button type="button" class="toggle-password" title="Show password"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
                                 </div>
                             </div>
 
@@ -211,7 +211,7 @@
             <div class="search-section">
                 <div class="search-container">
                     <input type="text" id="searchInput" class="search-input" placeholder="Search movies...">
-                    <button id="searchIconBtn" class="search-icon">🔍</button>
+                    <button id="searchIconBtn" class="search-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></button>
                     <div id="searchResults" class="search-results" style="display: none;"></div>
                 </div>
             </div>
@@ -228,7 +228,7 @@
                 
                 <div class="feed-content" id="feedContent">
                     <div class="empty-state">
-                        <div class="empty-state-icon">🎬</div>
+                        <div class="empty-state-icon"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="2" ry="2"></rect><path d="M16 6 22 2"></path><path d="M22 6 2 6"></path><path d="M7 6 2 2"></path><path d="M12 6 7 2"></path><path d="M17 6 12 2"></path></svg></div>
                         <h3 class="empty-state-title">No ratings yet</h3>
                         <p class="empty-state-text">Start rating movies to see them here!</p>
                     </div>
@@ -258,9 +258,12 @@
     <script src="../shared/services/UserService.js"></script>
     <script src="../shared/utils/helpers.js"></script>
     <script src="../shared/utils/Utils.js"></script>
+    <script src="../shared/utils/Icons.js"></script>
     <script src="../shared/utils/IconUtils.js"></script>
+    <script src="../shared/utils/auth.js"></script>
     <script src="../shared/components/Navigation.js"></script>
     <script src="../shared/firestore.js"></script>
     <script src="popup.js"></script>
+
 </body>
 </html>

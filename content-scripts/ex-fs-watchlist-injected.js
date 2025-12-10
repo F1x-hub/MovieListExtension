@@ -430,6 +430,16 @@
             opacity: 0.5 !important;
             cursor: not-allowed !important;
         }
+
+        .spin {
+            animation: spin 1s linear infinite;
+            transform-origin: center;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
     `;
 
     function injectStyles() {
@@ -622,7 +632,10 @@
                             posterPath: movie.poster?.url || movie.posterUrl || '',
                             releaseYear: movie.year || null,
                             genres: (movie.genres || []).map(g => typeof g === 'string' ? g : (g.name || g)),
-                            avgRating: movie.rating?.kp || movie.kpRating || 0
+                            avgRating: movie.rating?.kp || movie.kpRating || 0,
+                            description: movie.description || '',
+                            kpRating: movie.rating?.kp || movie.kpRating || 0,
+                            imdbRating: movie.rating?.imdb || movie.imdbRating || 0,
                         });
                     } else {
                         resolve(null);
@@ -671,11 +684,7 @@
             const btn = document.createElement('button');
             btn.id = 'movieListMenuBtn';
             btn.className = 'movie-list-menu-btn';
-            btn.innerHTML = `
-                <svg viewBox="0 0 24 24">
-                    <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
-                </svg>
-            `;
+            btn.innerHTML = Icons.MORE_VERTICAL;
             btn.title = 'Меню действий';
             
             // Create Dropdown
@@ -717,7 +726,7 @@
     
     async function renderMenuContent(dropdown) {
         console.log('[MovieList Extension] renderMenuContent called');
-        dropdown.innerHTML = '<div style="padding:10px;text-align:center;color:#94a3b8;">Загрузка...</div>';
+        dropdown.innerHTML = `<div style="padding:10px;text-align:center;color:#94a3b8;">${Icons.LOADING}</div>`;
         
         try {
             console.log('[MovieList Extension] Loading Firebase scripts...');
@@ -766,20 +775,35 @@
             // Watchlist Item
             const watchlistItem = createMenuItem(
                 inWatchlist ? 'Удалить из Watchlist' : 'Добавить в Watchlist',
-                inWatchlist ? '✓' : '🔖',
+                inWatchlist ? Icons.CHECK : Icons.BOOKMARK,
                 inWatchlist
             );
             watchlistItem.onclick = async () => {
-                if (inWatchlist) await watchlistService.removeFromWatchlist(user.uid, movieData.movieId);
-                else await watchlistService.addToWatchlist(user.uid, movieData);
                 dropdown.classList.remove('active');
+                
+                if (inWatchlist) {
+                    window.postMessage({
+                        type: 'MOVIELIST_REMOVE_FROM_WATCHLIST',
+                        movieId: movieData.movieId
+                    }, '*');
+                } else {
+                    window.postMessage({
+                        type: 'MOVIELIST_ADD_TO_WATCHLIST',
+                        movieData: movieData
+                    }, '*');
+                }
+                
+                setTimeout(async () => {
+                    await renderMenuContent(dropdown);
+                    dropdown.classList.add('active');
+                }, 1000);
             };
             dropdown.appendChild(watchlistItem);
             
             // Favorite Item
             const favoriteItem = createMenuItem(
                 isFavorite ? 'Удалить из Избранного' : 'Добавить в Избранное',
-                isFavorite ? '❤️' : '🤍',
+                isFavorite ? Icons.HEART_FILLED : Icons.HEART,
                 isFavorite
             );
             favoriteItem.onclick = async () => {
@@ -797,7 +821,7 @@
             // Rating Item
             const ratingItem = createMenuItem(
                 userRating ? `Ваша оценка: ${userRating.rating}` : 'Оценить фильм',
-                '⭐',
+                '',
                 !!userRating
             );
             ratingItem.onclick = () => {
@@ -836,7 +860,7 @@
         modal.innerHTML = `
             <div class="movie-list-modal-header">
                 <h3 class="movie-list-modal-title">
-                    <span style="font-size: 28px;">⭐</span>
+                    <span style="font-size: 28px;"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></span>
                     Rate This Movie
                 </h3>
                 <button class="movie-list-close-btn">✕</button>

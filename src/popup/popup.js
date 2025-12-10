@@ -205,7 +205,9 @@ class PopupManager {
         // Feed events
         this.elements.refreshBtn.addEventListener('click', () => this.forceRefreshRatings());
         this.elements.viewAllRatingsBtn.addEventListener('click', () => this.openRatingsPage());
-        this.elements.settingsBtn.addEventListener('click', () => this.openSettings());
+        this.elements.settingsBtn.addEventListener('click', () => {
+            chrome.tabs.create({ url: 'src/pages/settings/settings.html' });
+        });
         
         // Password toggle
         this.setupPasswordToggles();
@@ -265,10 +267,10 @@ class PopupManager {
                 if (input && input.tagName === 'INPUT') {
                     if (input.type === 'password') {
                         input.type = 'text';
-                        btn.textContent = '🙈'; // basic icon swap
+                        btn.innerHTML = Icons.EYE_OFF;
                     } else {
                         input.type = 'password';
-                        btn.textContent = '👁️';
+                        btn.innerHTML = Icons.EYE;
                     }
                 }
             });
@@ -297,12 +299,56 @@ class PopupManager {
     }
 
     async initializeUI() {
+        console.log('🚀 PopupManager: Initializing UI...');
+        
         // Check for updates first
         this.checkPendingUpdate();
 
-        // Check auth state immediately first
-        let currentUser = firebaseManager.getCurrentUser();
-        // ... (rest of the function)
+        // ===== FAST PATH: Check stored auth data FIRST =====
+        // This allows instant loading when user is already authenticated
+        const authData = await AuthManager.getAuthData();
+        
+        if (authData && authData.user && AuthManager.isTokenValid(authData)) {
+            console.log('✅ PopupManager: Found valid auth data, showing UI immediately');
+            
+            // Show authenticated UI immediately (NO loading spinner!)
+            this.updateAuthUI(true, authData.user, false);
+            this.elements.authSection.style.display = 'none';
+            this.elements.initialLoading.style.display = 'none';
+            this.elements.mainContent.style.display = 'flex';
+            
+            // Load ratings in background (non-blocking)
+            this.loadRatings().catch(err => {
+                console.error('Background ratings load failed:', err);
+                this.showError('Failed to load ratings');
+            });
+            
+            return; // Early exit - we're done!
+        }
+        
+        // ===== SLOW PATH: No valid stored auth, need to check Firebase =====
+        console.log('⏳ PopupManager: No valid stored auth, checking Firebase...');
+        
+        // Check if Firebase already has a user (edge case: just logged in)
+        const currentUser = firebaseManager.getCurrentUser();
+        
+        if (currentUser) {
+            console.log('✅ PopupManager: Firebase user found, showing authenticated UI');
+            this.updateAuthUI(true, currentUser, false);
+            this.elements.authSection.style.display = 'none';
+            this.elements.initialLoading.style.display = 'flex';
+            
+            // Load ratings (with loading spinner this time)
+            this.loadRatings().catch(err => {
+                console.error('Ratings load failed:', err);
+                this.showError('Failed to load ratings');
+                this.updateAuthUI(false, null, true);
+            });
+        } else {
+            // No auth anywhere - show login form
+            console.log('❌ PopupManager: No authentication found, showing login form');
+            this.updateAuthUI(false, null, true);
+        }
     }
 
     checkPendingUpdate() {
@@ -392,6 +438,55 @@ class PopupManager {
         });
     }
 
+    async loadUserDisplayPreferences(userId) {
+        try {
+            // Check if we have cached profile data first to avoid flickering
+            const cachedProfile = await this.getCachedProfile(userId);
+            if (cachedProfile) {
+                this.applyDisplayName(cachedProfile);
+            }
+
+            // Fetch fresh data
+            if (firebaseManager && firebaseManager.getUserService) {
+                const userService = firebaseManager.getUserService();
+                const profile = await userService.getUserProfile(userId);
+                
+                if (profile) {
+                    this.cacheProfile(userId, profile);
+                    this.applyDisplayName(profile);
+                }
+            }
+        } catch (error) {
+            console.error('Error loading user display preferences:', error);
+        }
+    }
+
+    applyDisplayName(profile) {
+        if (!this.elements.userName || !profile) return;
+
+        const format = profile.displayNameFormat || 'fullname';
+        let displayText = profile.displayName || 'User';
+
+        if (format === 'username' && profile.username) {
+            displayText = profile.username;
+        }
+
+        this.elements.userName.textContent = displayText;
+    }
+
+    async getCachedProfile(userId) {
+        return new Promise((resolve) => {
+            chrome.storage.local.get([`user_profile_${userId}`], (result) => {
+                resolve(result[`user_profile_${userId}`] || null);
+            });
+        });
+    }
+
+    cacheProfile(userId, profile) {
+        const key = `user_profile_${userId}`;
+        chrome.storage.local.set({ [key]: profile });
+    }
+
     updateAuthUI(isAuthenticated, user, showContent = true) {
         if (isAuthenticated) {
             this.elements.authSection.style.display = 'none';
@@ -403,6 +498,11 @@ class PopupManager {
             if (user?.photoURL) {
                 this.elements.userAvatar.src = user.photoURL;
                 this.elements.userAvatar.style.display = 'block';
+            }
+
+            // Fetch and apply profile preferences (display name format)
+            if (user?.uid) {
+                this.loadUserDisplayPreferences(user.uid);
             }
             
             // Only show main content if explicitly requested
@@ -653,6 +753,9 @@ class PopupManager {
             // Clear ratings cache on logout
             const ratingsCacheService = firebaseManager.getRatingsCacheService();
             await ratingsCacheService.clearCache();
+            
+            // Clear AuthManager data (chrome.storage.local)
+            await AuthManager.clearAuthData();
             
             await firebaseManager.signOut();
             this.ratings = [];
@@ -1205,11 +1308,11 @@ class PopupManager {
                             </button>
                             <div class="rating-menu-dropdown" id="popup-menu-${rating.id}" style="display: none;">
                                 <button class="menu-item edit-item" data-rating-id="${rating.id}" data-action="edit">
-                                    <span class="menu-icon">✏️</span>
+                                    <span class="menu-icon">${Icons.EDIT}</span>
                                     <span>Редактировать</span>
                                 </button>
                                 <button class="menu-item delete-item" data-rating-id="${rating.id}" data-action="delete">
-                                    <span class="menu-icon">🗑️</span>
+                                    <span class="menu-icon">${Icons.TRASH}</span>
                                     <span>Удалить</span>
                                 </button>
                             </div>

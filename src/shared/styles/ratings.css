@@ -748,6 +748,10 @@
     text-align: center;
     padding: 60px 20px;
     color: var(--theme-text-primary);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
 }
 
 .empty-state-icon {

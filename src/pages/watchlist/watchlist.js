@@ -314,67 +314,40 @@ class WatchlistPageManager {
     }
 
     createMovieCard(item) {
-        const card = document.createElement('div');
-        card.className = 'movie-card fade-in';
-        
-        const posterUrl = item.posterPath || '/icons/icon48.png';
-        const title = item.movieTitle || 'Unknown Movie';
-        const titleRu = item.movieTitleRu || '';
-        const year = item.releaseYear || '';
-        const genres = item.genres || [];
-        const avgRating = item.avgRating || 0;
-        const addedAt = item.addedAt;
-        
-        // Format added date
-        let addedDateStr = '';
-        if (addedAt) {
-            const date = addedAt.toDate ? addedAt.toDate() : new Date(addedAt);
-            addedDateStr = this.formatDate(date);
-        }
-        
-        card.innerHTML = `
-            <div class="movie-poster-container">
-                <img src="${posterUrl}" alt="${title}" class="movie-poster" onerror="this.src='/icons/icon48.png'">
-                <button class="watchlist-btn watchlist-btn-remove" data-movie-id="${item.movieId}" title="Удалить из Watchlist">
-                    🔖
-                </button>
-            </div>
-            <div class="movie-content">
-                <h3 class="movie-title">${this.escapeHtml(title)}</h3>
-                ${titleRu ? `<div class="movie-title-ru">${this.escapeHtml(titleRu)}</div>` : ''}
-                <div class="movie-meta">${year}${year && genres.length ? ' • ' : ''}${genres.slice(0, 3).join(', ')}</div>
-                
-                ${genres.length > 0 ? `
-                    <div class="movie-genres">
-                        ${genres.slice(0, 3).map(genre => `<span class="genre-tag">${genre}</span>`).join('')}
-                    </div>
-                ` : ''}
-                
-                <div class="movie-ratings">
-                    <div class="rating-item">
-                        <div class="rating-label">Avg Rating</div>
-                        <div class="rating-value avg-rating">⭐ ${avgRating.toFixed(1)}/10</div>
-                    </div>
-                </div>
-                
-                ${addedDateStr ? `
-                    <div class="movie-added-date">
-                        <span class="date-label">Добавлено:</span>
-                        <span class="date-value">${addedDateStr}</span>
-                    </div>
-                ` : ''}
-                
-                <div class="movie-actions">
-                    <button class="action-btn btn-primary" data-movie-id="${item.movieId}">
-                        👁️ View Details
-                    </button>
-                    <button class="action-btn btn-accent rate-movie-btn" data-movie-id="${item.movieId}" data-movie-data='${JSON.stringify(item)}'>
-                        ⭐ Оценить
-                    </button>
-                </div>
-            </div>
-        `;
-        
+        // Transform watchlist item to movie data format for MovieCard
+        const movieData = {
+            movie: {
+                kinopoiskId: item.movieId,
+                name: item.movieTitle,
+                posterUrl: item.posterPath,
+                year: item.releaseYear,
+                genres: item.genres || [],
+                description: item.description || '',
+                kpRating: item.kpRating || 0,
+                imdbRating: item.imdbRating || 0
+            },
+            movieId: item.movieId,
+            averageRating: item.avgRating || 0,
+            ratingsCount: item.ratingsCount || 0,
+            rating: 0  // Watchlist items are not rated yet
+        };
+
+        // Use the new MovieCard component - no ratings yet, simple card
+        const card = MovieCard.create(movieData, {
+            showFavorite: false,
+            showWatchlist: false,  // Don't show watchlist button since already in watchlist
+            showUserInfo: false,
+            showEditRating: false,
+            showAddToCollection: false,
+            showThreeDotMenu: true,
+            showRemoveFromWatchlist: true,
+            showAverageRating: false // Don't show average rating in watchlist
+        });
+
+        // Add watchlist-specific data attributes
+        card.setAttribute('data-watchlist-id', item.id || item.movieId);
+        card.setAttribute('data-added-at', item.addedAt?.toDate?.().toISOString() || '');
+
         return card;
     }
 
@@ -382,45 +355,29 @@ class WatchlistPageManager {
         const grid = this.elements.moviesGrid;
         if (!grid) return;
 
-        // View Details buttons
-        grid.querySelectorAll('.action-btn.btn-primary').forEach(button => {
-            button.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const movieId = button.getAttribute('data-movie-id');
-                if (movieId) {
-                    const url = chrome.runtime.getURL(`src/pages/search/search.html?movieId=${movieId}`);
-                    window.location.href = url;
-                }
-            });
-        });
-
-        // Rate Movie buttons
-        grid.querySelectorAll('.rate-movie-btn').forEach(button => {
-            button.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                const movieId = button.getAttribute('data-movie-id');
-                const movieDataStr = button.getAttribute('data-movie-data');
-                
-                if (movieId && movieDataStr) {
-                    try {
-                        const movieData = JSON.parse(movieDataStr);
-                        await this.showRatingModal(movieData);
-                    } catch (error) {
-                        console.error('Error parsing movie data:', error);
+        // Add event listeners using event delegation for MovieCard actions
+        grid.addEventListener('click', (e) => {
+            const target = e.target.closest('[data-action]');
+            if (!target) return;
+            
+            const action = target.getAttribute('data-action');
+            const movieId = target.getAttribute('data-movie-id');
+            
+            switch (action) {
+                case 'view-details':
+                    if (movieId) {
+                        const url = chrome.runtime.getURL(`src/pages/search/search.html?movieId=${movieId}`);
+                        window.location.href = url;
                     }
-                }
-            });
-        });
-
-        // Remove from Watchlist buttons
-        grid.querySelectorAll('.watchlist-btn-remove').forEach(button => {
-            button.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                const movieId = button.getAttribute('data-movie-id');
-                if (movieId) {
-                    await this.removeFromWatchlist(parseInt(movieId));
-                }
-            });
+                    break;
+                case 'remove-from-watchlist':
+                    if (movieId) {
+                        if (confirm('Вы уверены, что хотите удалить этот фильм из списка просмотра?')) {
+                            this.removeFromWatchlist(movieId);
+                        }
+                    }
+                    break;
+            }
         });
     }
 
