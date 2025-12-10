@@ -14,9 +14,10 @@ class KinopoiskService {
      * @param {string} query - Search query
      * @param {number} page - Page number (default: 1)
      * @param {number} limit - Results per page (default: 20)
+     * @param {Object} filters - Optional filters object {yearFrom, yearTo, genresInclude, genresExclude, countriesInclude, countriesExclude}
      * @returns {Promise<Object>} - Search results
      */
-    async searchMovies(query, page = 1, limit = this.defaultLimit) {
+    async searchMovies(query, page = 1, limit = this.defaultLimit, filters = null) {
         try {
             // Clean and normalize the query
             const cleanQuery = this.normalizeQuery(query);
@@ -30,6 +31,11 @@ class KinopoiskService {
                 sortField: 'name', // Sort by name first
                 sortType: '1' // Ascending order for alphabetical sorting
             });
+
+            // Add year range filters if provided
+            if (filters && filters.yearFrom) {
+                params.append('year', `${filters.yearFrom}-${filters.yearTo || new Date().getFullYear()}`);
+            }
 
             const fullUrl = `${url}?${params}`;
             console.log(`KinopoiskService: Request URL: ${fullUrl}`);
@@ -45,6 +51,17 @@ class KinopoiskService {
             console.log(`KinopoiskService: Response status: ${response.status}`);
 
             if (!response.ok) {
+                // Check for daily limit reached (403 or 402 or 429)
+                if (response.status === 403 || response.status === 402) {
+                    const errorData = await response.json();
+                    if (errorData.message && errorData.message.includes('суточный лимит')) {
+                         if (typeof Utils !== 'undefined' && Utils.showToast) {
+                            Utils.showToast('⚠️ Вы израсходовали ваш суточный лимит запросов. Обновите тариф или попробуйте завтра.', 'error', 5000);
+                        }
+                        throw new Error('DAILY_LIMIT_REACHED');
+                    }
+                }
+
                 // Try alternative search strategies for failed requests
                 if (response.status === 500 && this.hasCyrillic(query)) {
                     console.log('KinopoiskService: Trying alternative search for Cyrillic query...');
@@ -57,6 +74,19 @@ class KinopoiskService {
             return this.normalizeSearchResults(data, query);
         } catch (error) {
             console.error('Error searching movies:', error);
+            
+            // Re-throw limit error to let caller handle it if needed, but we already showed toast
+            if (error.message === 'DAILY_LIMIT_REACHED') {
+                 // Return empty result to prevent crashing UI
+                 return {
+                    docs: [],
+                    total: 0,
+                    page: 1,
+                    limit: limit,
+                    pages: 0
+                };
+            }
+            
             throw new Error(`Failed to search movies: ${error.message}`);
         }
     }
@@ -109,19 +139,53 @@ class KinopoiskService {
                 }
             });
 
-            if (response.ok) {
-                const data = await response.json();
-                console.log('Movie images API response:', data);
-                return data.docs || [];
-            } else {
-                console.log('Images endpoint not available or no images found');
+            if (!response.ok) {
+                // Images are not critical, just return empty array on failure
+                console.warn(`Failed to get images: ${response.status}`);
                 return [];
             }
+
+            const data = await response.json();
+            return data.items || data.docs || [];
         } catch (error) {
             console.error('Error getting movie images:', error);
             return [];
         }
     }
+
+    /**
+     * Get movie awards by ID
+     * @param {number} movieId - Kinopoisk movie ID
+     * @returns {Promise<Array>} - Movie awards
+     */
+    async getMovieAwards(movieId) {
+        try {
+            // Correct endpoint for kinopoisk.dev is /movie/awards?movieId={id}
+            const url = `${this.baseUrl}/movie/awards?movieId=${movieId}&limit=250`;
+            console.log('Fetching awards from:', url);
+
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'X-API-KEY': this.apiKey,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                console.warn(`Failed to get awards: ${response.status}`);
+                return [];
+            }
+
+            const data = await response.json();
+            return data.items || data.docs || [];
+        } catch (error) {
+            console.error('Error getting movie awards:', error);
+            return [];
+        }
+    }
+
+
 
     /**
      * Normalize search results to consistent format
@@ -209,18 +273,133 @@ class KinopoiskService {
             kpRating: movie.rating?.kp || movie.kpRating || 0,
             imdbRating: movie.rating?.imdb || movie.imdbRating || 0,
             description: movie.description || movie.shortDescription || '',
+            slogan: movie.slogan || '',
             genres: movie.genres?.map(g => g.name) || movie.genre || [],
             countries: movie.countries?.map(c => c.name) || movie.country || [],
             duration: movie.movieLength || movie.duration || 0,
             ageRating: movie.ageRating || 0,
+            ratingMpaa: movie.ratingMpaa || '',
             type: movie.type || 'movie',
             votes: {
                 kp: movie.votes?.kp || 0,
                 imdb: movie.votes?.imdb || 0
             },
+            
+            // Crew and cast (persons)
+            persons: movie.persons || [],
+            
+            // Box office and budget
+            budget: movie.budget || null,
+            fees: {
+                world: movie.fees?.world || null,
+                usa: movie.fees?.usa || null,
+                russia: movie.fees?.russia || null
+            },
+            
+            // Audience stats
+            audience: movie.audience || [],
+            
+            // Premieres
+            premiere: {
+                world: movie.premiere?.world || null,
+                russia: movie.premiere?.russia || null,
+                digital: movie.premiere?.digital || null
+            },
+            
+            // Release information
+            distributors: movie.distributors || null,
+            
             // Additional fields for caching
             lastUpdated: new Date().toISOString()
         };
+    }
+    
+    /**
+     * Get persons by profession from movie data
+     * @param {Array} persons - Array of person objects from movie
+     * @param {string} profession - Profession to filter by (e.g., 'DIRECTOR', 'ACTOR', 'WRITER')
+     * @param {number} limit - Max number of persons to return
+     * @returns {Array} - Filtered persons
+     */
+    getPersonsByProfession(persons, profession, limit = null) {
+        if (!persons || !Array.isArray(persons)) return [];
+        
+        const targetProf = profession.toString().toLowerCase();
+        
+        const filtered = persons.filter(person => {
+            const enProf = person.enProfession ? person.enProfession.toString().toLowerCase() : '';
+            // If checking localized profession, strict match might be needed, but usually we search by EN key
+            // The search.js passes 'DIRECTOR' etc.
+            return enProf === targetProf;
+        });
+        
+        return limit ? filtered.slice(0, limit) : filtered;
+    }
+    
+    /**
+     * Format persons list as comma-separated names
+     * @param {Array} persons - Array of person objects
+     * @returns {string} - Formatted names
+     */
+    formatPersonNames(persons) {
+        if (!persons || persons.length === 0) return '';
+        
+        return persons
+            .map(person => person.name || person.enName || 'Unknown')
+            .filter(name => name !== 'Unknown')
+            .join(', ');
+    }
+    
+    /**
+     * Format currency value with proper separators
+     * @param {Object|number} value - Budget/fees object or number
+     * @returns {string} - Formatted currency string
+     */
+    formatCurrency(value) {
+        if (!value) return '';
+        
+        const amount = typeof value === 'object' ? value.value : value;
+        const currency = typeof value === 'object' ? value.currency : 'USD';
+        
+        if (!amount) return '';
+        
+        // Format with spaces as thousand separators
+        const formatted = amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+        
+        // Add currency symbol
+        const symbols = {
+            'USD': '$',
+            'RUB': '₽',
+            'EUR': '€'
+        };
+        
+        const symbol = symbols[currency] || currency;
+        
+        return `${symbol}${formatted}`;
+    }
+    
+    /**
+     * Format date to readable format
+     * @param {string} dateStr - ISO date string
+     * @returns {string} - Formatted date
+     */
+    formatDate(dateStr) {
+        if (!dateStr) return '';
+        
+        try {
+            const date = new Date(dateStr);
+            const day = date.getDate();
+            const months = [
+                'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+                'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'
+            ];
+            const month = months[date.getMonth()];
+            const year = date.getFullYear();
+            
+            return `${day} ${month} ${year}`;
+        } catch (e) {
+            return dateStr;
+        }
     }
 
     /**

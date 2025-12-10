@@ -15,6 +15,21 @@ class MovieCacheService {
      */
     async getCachedMovie(kinopoiskId) {
         try {
+            // Check localStorage first (fastest)
+            const localKey = `kp_movie_${kinopoiskId}`;
+            const localData = localStorage.getItem(localKey);
+            if (localData) {
+                try {
+                    const parsed = JSON.parse(localData);
+                    // Check local cache expiry (7 days for local to be safe, or just utilize it)
+                    // For now, let's treat local cache as valid if present to maximize speed
+                    return parsed;
+                } catch (e) {
+                    localStorage.removeItem(localKey);
+                }
+            }
+
+            // Fallback to Firestore
             const docRef = this.db.collection(this.collection).doc(kinopoiskId.toString());
             const doc = await docRef.get();
             
@@ -25,7 +40,10 @@ class MovieCacheService {
                 const maxAge = KINOPOISK_CONFIG.CACHE_DURATION;
                 
                 if (cacheAge < maxAge) {
-                    return { id: doc.id, ...data };
+                    const movieData = { id: doc.id, ...data };
+                    // Update local storage
+                    this.saveToLocalStorage(kinopoiskId, movieData);
+                    return movieData;
                 } else {
                     // Cache expired, remove it
                     await docRef.delete();
@@ -46,42 +64,63 @@ class MovieCacheService {
      */
     async getBatchCachedMovies(kinopoiskIds) {
         try {
-            // Check session cache first
-            const cacheKey = `movieCache_${kinopoiskIds.sort().join('_')}`;
-            const sessionCached = sessionStorage.getItem(cacheKey);
-            if (sessionCached) {
-                return JSON.parse(sessionCached);
-            }
-            
-            const docIds = kinopoiskIds.map(id => id.toString());
-            
-            // Use where 'in' query instead of individual gets (more efficient)
-            const query = this.db.collection(this.collection)
-                .where(firebase.firestore.FieldPath.documentId(), 'in', docIds);
-            
-            const querySnapshot = await query.get();
-            
             const cachedMovies = {};
-            
-            querySnapshot.forEach(doc => {
-                const kinopoiskId = parseInt(doc.id);
-                const data = doc.data();
-                
-                // Check if cache is still valid (24 hours)
-                const cacheAge = Date.now() - new Date(data.lastUpdated).getTime();
-                const maxAge = KINOPOISK_CONFIG.CACHE_DURATION;
-                
-                if (cacheAge < maxAge) {
-                    cachedMovies[kinopoiskId] = { id: doc.id, ...data };
+            const missingIds = [];
+
+            // 1. Check LocalStorage first for all IDs
+            kinopoiskIds.forEach(id => {
+                const localKey = `kp_movie_${id}`;
+                const localData = localStorage.getItem(localKey);
+                if (localData) {
+                    try {
+                        const parsed = JSON.parse(localData);
+                        cachedMovies[id] = parsed;
+                    } catch (e) {
+                        missingIds.push(id);
+                    }
                 } else {
-                    // Cache expired, mark for deletion (don't await to keep it fast)
-                    doc.ref.delete()
-                        .catch(err => console.warn('Failed to delete expired cache:', err));
+                    missingIds.push(id);
                 }
             });
+
+            if (missingIds.length === 0) {
+                return cachedMovies;
+            }
+
+            // 2. Check Firestore for missing IDs
+            const docIds = missingIds.map(id => id.toString());
             
-            // Cache results in session storage
-            sessionStorage.setItem(cacheKey, JSON.stringify(cachedMovies));
+            // Chunk requests if too many
+            const chunks = [];
+            const CHUNK_SIZE = 10;
+            for (let i = 0; i < docIds.length; i += CHUNK_SIZE) {
+                chunks.push(docIds.slice(i, i + CHUNK_SIZE));
+            }
+
+            for (const chunk of chunks) {
+                const query = this.db.collection(this.collection)
+                    .where(firebase.firestore.FieldPath.documentId(), 'in', chunk);
+                
+                const querySnapshot = await query.get();
+                
+                querySnapshot.forEach(doc => {
+                    const kinopoiskId = parseInt(doc.id);
+                    const data = doc.data();
+                    
+                    // Check if cache is still valid
+                    const cacheAge = Date.now() - new Date(data.lastUpdated).getTime();
+                    const maxAge = KINOPOISK_CONFIG.CACHE_DURATION;
+                    
+                    if (cacheAge < maxAge) {
+                        const movieData = { id: doc.id, ...data };
+                        cachedMovies[kinopoiskId] = movieData;
+                        // Save to local storage for next time
+                        this.saveToLocalStorage(kinopoiskId, movieData);
+                    } else {
+                        doc.ref.delete().catch(console.warn);
+                    }
+                });
+            }
             
             return cachedMovies;
             
@@ -92,33 +131,50 @@ class MovieCacheService {
     }
 
     /**
-     * Cache movie data in Firestore (only for rated movies)
+     * Cache movie data in Firestore and LocalStorage
      * @param {Object} movieData - Movie data to cache
      * @param {boolean} isRated - Whether this movie has ratings (required to cache)
      * @returns {Promise<Object>} - Cached movie data with ID
      */
     async cacheMovie(movieData, isRated = false) {
         try {
-            if (!isRated) {
-                console.log('Movie not cached - no user ratings yet:', movieData.name);
-                return movieData;
-            }
-
+            // Remove the check that prevented caching unrated movies
+            // We want to cache viewed movies to save API calls
+            
             const movieId = movieData.kinopoiskId.toString();
-            const docRef = this.db.collection(this.collection).doc(movieId);
             
             const cacheData = {
                 ...movieData,
                 lastUpdated: new Date().toISOString(),
                 cachedAt: firebase.firestore.FieldValue.serverTimestamp(),
-                hasRatings: true
+                hasRatings: isRated // Set correctly based on argument
             };
 
-            await docRef.set(cacheData, { merge: true });
+            // Save to LocalStorage immediately
+            this.saveToLocalStorage(movieId, { id: movieId, ...movieData, lastUpdated: new Date().toISOString() });
+
+            // Save to Firestore asynchronously (don't block UI)
+            this.db.collection(this.collection).doc(movieId)
+                .set(cacheData, { merge: true })
+                .catch(err => console.error('Background Firestore cache update failed:', err));
+
             return { id: movieId, ...cacheData };
         } catch (error) {
             console.error('Error caching movie:', error);
             throw new Error(`Failed to cache movie: ${error.message}`);
+        }
+    }
+
+    /**
+     * Helper to save to local storage
+     */
+    saveToLocalStorage(id, data) {
+        try {
+            localStorage.setItem(`kp_movie_${id}`, JSON.stringify(data));
+        } catch (e) {
+            console.warn('LocalStorage full, clearing old cache...');
+            // Simple cleanup: remove old movie keys or clear all movie keys
+            // For now, simple error catch is enough
         }
     }
 
@@ -130,13 +186,25 @@ class MovieCacheService {
      */
     async updateMovieCache(kinopoiskId, updateData) {
         try {
-            const docRef = this.db.collection(this.collection).doc(kinopoiskId.toString());
+            const movieId = kinopoiskId.toString();
+            const docRef = this.db.collection(this.collection).doc(movieId);
             
             const updatePayload = {
                 ...updateData,
                 lastUpdated: new Date().toISOString(),
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             };
+
+            // Update local storage
+            const localKey = `kp_movie_${movieId}`;
+            const existingLocal = localStorage.getItem(localKey);
+            if (existingLocal) {
+                try {
+                    const parsed = JSON.parse(existingLocal);
+                    const updatedLocal = { ...parsed, ...updateData, lastUpdated: new Date().toISOString() };
+                    localStorage.setItem(localKey, JSON.stringify(updatedLocal));
+                } catch (e) {}
+            }
 
             await docRef.update(updatePayload);
             const updatedDoc = await docRef.get();

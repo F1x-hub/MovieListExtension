@@ -312,11 +312,14 @@ class CollectionPageManager {
         if (!this.collection) return;
         
         if (this.elements.collectionIcon) {
-            const icon = this.collection.icon || '🎬';
+            const icon = this.collection.icon || Icons.MOVIE_CLAPPER;
             const isCustomIcon = icon.startsWith('data:') || icon.startsWith('https://') || icon.startsWith('http://');
+            const isSvgIcon = icon.trim().startsWith('<svg');
             
             if (isCustomIcon) {
                 this.elements.collectionIcon.innerHTML = `<img src="${icon}" style="width: 32px; height: 32px; object-fit: cover; border-radius: 6px;" alt="Collection icon">`;
+            } else if (isSvgIcon) {
+                this.elements.collectionIcon.innerHTML = icon;
             } else {
                 this.elements.collectionIcon.textContent = icon;
             }
@@ -486,55 +489,19 @@ class CollectionPageManager {
     }
 
     createMovieCard(movieData) {
-        const { movie, rating, averageRating, ratingsCount } = movieData;
-        
-        const card = document.createElement('div');
-        card.className = 'movie-card fade-in';
-        
-        const posterUrl = movie?.posterUrl || '/icons/icon48.png';
-        const title = movie?.name || 'Unknown Movie';
-        const year = movie?.year || '';
-        const genres = movie?.genres?.slice(0, 3) || [];
-        const userRating = rating || 0;
-        const avgRatingValue = averageRating || 0;
-        const ratingsCountValue = ratingsCount || 0;
-        
-        card.innerHTML = `
-            <div class="movie-poster-container">
-                <img src="${posterUrl}" alt="${title}" class="movie-poster" onerror="this.src='/icons/icon48.png'">
-                <button class="remove-from-collection-btn" data-movie-id="${movie?.kinopoiskId}" title="Удалить из коллекции">
-                    ❌
-                </button>
-            </div>
-            <div class="movie-content">
-                <h3 class="movie-title">${this.escapeHtml(title)}</h3>
-                <div class="movie-meta">${year}${year && genres.length ? ' • ' : ''}${genres.join(', ')}</div>
-                
-                ${genres.length > 0 ? `
-                    <div class="movie-genres">
-                        ${genres.map(genre => `<span class="genre-tag">${genre}</span>`).join('')}
-                    </div>
-                ` : ''}
-                
-                <div class="movie-ratings">
-                    <div class="rating-item">
-                        <div class="rating-label">My Rating</div>
-                        <div class="rating-value my-rating">⭐ ${userRating}/10</div>
-                    </div>
-                    <div class="rating-item">
-                        <div class="rating-label">Avg Rating</div>
-                        <div class="rating-value avg-rating">${ratingsCountValue > 0 ? avgRatingValue.toFixed(1) : 'N/A'}${ratingsCountValue > 0 ? '/10' : ''}</div>
-                    </div>
-                </div>
-                
-                <div class="movie-actions">
-                    <button class="action-btn btn-primary" data-movie-id="${movie?.kinopoiskId}">
-                        👁️ View Details
-                    </button>
-                </div>
-            </div>
-        `;
-        
+        // Use the new MovieCard component
+        const card = MovieCard.create(movieData, {
+            showFavorite: false,
+            showWatchlist: false,
+            showUserInfo: false,
+            showEditRating: false,
+            showAddToCollection: false,
+            showThreeDotMenu: false  // Simple card for collections
+        });
+
+        // Add collection-specific data attribute for remove button
+        card.setAttribute('data-collection-movie-id', movieData.movie?.kinopoiskId);
+
         return card;
     }
 
@@ -713,11 +680,14 @@ class CollectionPageManager {
             this.elements.emptyStateText.textContent = `Начните добавлять фильмы в "${this.collection.name}"`;
         }
         if (this.collection && this.elements.emptyStateIcon) {
-            const icon = this.collection.icon || '🎬';
+            const icon = this.collection.icon || Icons.MOVIE_CLAPPER;
             const isCustomIcon = icon.startsWith('data:') || icon.startsWith('https://') || icon.startsWith('http://');
+            const isSvgIcon = icon.trim().startsWith('<svg');
             
             if (isCustomIcon) {
                 this.elements.emptyStateIcon.innerHTML = `<img src="${icon}" style="width: 48px; height: 48px; object-fit: cover; border-radius: 8px;" alt="Collection icon">`;
+            } else if (isSvgIcon) {
+                this.elements.emptyStateIcon.innerHTML = icon;
             } else {
                 this.elements.emptyStateIcon.textContent = icon;
             }

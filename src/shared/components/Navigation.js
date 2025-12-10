@@ -57,35 +57,35 @@ class Navigation {
 
                     <!-- Mobile Toggle -->
                     <button class="nav-mobile-toggle" id="navMobileToggle">
-                        <span>☰</span>
+                        <span>${typeof Icons !== 'undefined' ? Icons.MENU : '☰'}</span>
                     </button>
 
                     <!-- Navigation Menu -->
                     <nav class="nav-menu" id="navMenu">
                         <div class="nav-item">
                             <a href="#" class="nav-link" data-page="search" id="navSearch">
-                                <span class="nav-icon">🔍</span>
+                                <span class="nav-icon">${typeof Icons !== 'undefined' ? Icons.SEARCH : '🔍'}</span>
                                 <span>Search Movies</span>
                             </a>
                         </div>
                         <div class="nav-item nav-item-dropdown">
                             <a href="#" class="nav-link" data-page="ratings" id="navRatings">
-                                <span class="nav-icon">⭐</span>
+                                <span class="nav-icon">${typeof Icons !== 'undefined' ? Icons.STAR : '⭐'}</span>
                                 <span>My Collection</span>
-                                <span class="nav-dropdown-arrow">▼</span>
+                                <span class="nav-dropdown-arrow">${typeof Icons !== 'undefined' ? Icons.CHEVRON_DOWN : '▼'}</span>
                             </a>
                             <div class="collection-dropdown" id="collectionDropdown">
                                 <div class="dropdown-item" data-page="ratings">
-                                    <span class="dropdown-icon">⭐</span>
+                                    <span class="dropdown-icon">${typeof Icons !== 'undefined' ? Icons.STAR : '⭐'}</span>
                                     <span>All Movies</span>
                                 </div>
                                 <div class="dropdown-item" data-page="watchlist">
-                                    <span class="dropdown-icon">🔖</span>
+                                    <span class="dropdown-icon">${typeof Icons !== 'undefined' ? Icons.BOOKMARK : '🔖'}</span>
                                     <span>Watchlist</span>
                                     <span class="count" id="watchlistCount">(0)</span>
                                 </div>
                                 <div class="dropdown-item" data-page="favorites">
-                                    <span class="dropdown-icon">❤️</span>
+                                    <span class="dropdown-icon">${typeof Icons !== 'undefined' ? Icons.HEART : '❤️'}</span>
                                     <span>Favorites</span>
                                     <span class="count" id="favoritesCount">(0)</span>
                                 </div>
@@ -93,7 +93,7 @@ class Navigation {
                                 <div class="dropdown-section-header">Custom Collections</div>
                                 <div class="custom-collections-list" id="customCollectionsList"></div>
                                 <div class="dropdown-item create-collection-item" id="createCollectionBtn">
-                                    <span class="dropdown-icon">➕</span>
+                                    <span class="dropdown-icon">${typeof Icons !== 'undefined' ? Icons.PLUS : '➕'}</span>
                                     <span>Create Collection</span>
                                 </div>
                             </div>
@@ -107,30 +107,28 @@ class Navigation {
                             <button class="nav-user-trigger" id="navUserTrigger">
                                 <img src="${chrome.runtime.getURL('icons/icon48.png')}" alt="User" class="nav-user-avatar" id="navUserAvatar">
                                 <span class="nav-user-name" id="navUserName">User</span>
-                                <span class="nav-dropdown-arrow">▼</span>
+                                <span class="nav-dropdown-arrow">${typeof Icons !== 'undefined' ? Icons.CHEVRON_DOWN : '▼'}</span>
                             </button>
                             
                             <!-- Dropdown Menu -->
                             <div class="nav-user-dropdown" id="navUserDropdown">
                                 <div class="nav-dropdown-item" id="navDropdownSettings">
-                                    <span class="nav-dropdown-icon">👤</span>
+                                    <span class="nav-dropdown-icon">${typeof Icons !== 'undefined' ? Icons.USER : '👤'}</span>
                                     <span>View Profile</span>
                                 </div>
                                 <div class="nav-dropdown-item" id="navDropdownAdmin" style="display: none;">
-                                    <span class="nav-dropdown-icon">🛡️</span>
+                                    <span class="nav-dropdown-icon">${typeof Icons !== 'undefined' ? Icons.ADMIN : '🛡️'}</span>
                                     <span>Admin Panel</span>
                                 </div>
                                 <div class="nav-dropdown-item" id="navDropdownTheme">
                                     <span class="nav-dropdown-icon" id="navThemeIcon">
-                                        <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20" style="width: 16px; height: 16px;">
-                                            <path fill-rule="evenodd" d="M10.606 1.987a.75.75 0 0 1-.217.835 5.795 5.795 0 0 0 6.387 9.58.75.75 0 0 1 1.031.965A8.502 8.502 0 0 1 1.5 10a8.5 8.5 0 0 1 8.395-8.5.75.75 0 0 1 .711.487M8.004 3.288a7 7 0 1 0 7.421 11.137A7.295 7.295 0 0 1 8.004 3.288" clip-rule="evenodd"></path>
-                                        </svg>
+                                        ${typeof Icons !== 'undefined' ? Icons.THEME : '<svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20" style="width: 16px; height: 16px;"><path fill-rule="evenodd" d="M10.606 1.987a.75.75 0 0 1-.217.835 5.795 5.795 0 0 0 6.387 9.58.75.75 0 0 1 1.031.965A8.502 8.502 0 0 1 1.5 10a8.5 8.5 0 0 1 8.395-8.5.75.75 0 0 1 .711.487M8.004 3.288a7 7 0 1 0 7.421 11.137A7.295 7.295 0 0 1 8.004 3.288" clip-rule="evenodd"></path></svg>'}
                                     </span>
                                     <span id="navThemeText">Theme (Dark)</span>
                                 </div>
                                 <div class="nav-dropdown-divider"></div>
                                 <div class="nav-dropdown-item nav-dropdown-logout" id="navDropdownLogout">
-                                    <span class="nav-dropdown-icon">🚪</span>
+                                    <span class="nav-dropdown-icon">${typeof Icons !== 'undefined' ? Icons.LOGOUT : '🚪'}</span>
                                     <span>Log Out</span>
                                 </div>
                             </div>
@@ -138,7 +136,7 @@ class Navigation {
                         
                         <!-- Sign In Button (for non-authenticated users) -->
                         <button class="nav-signin-btn" id="navSignInBtn" style="display: none;">
-                            <span class="nav-signin-icon">👤</span>
+                            <span class="nav-signin-icon">${typeof Icons !== 'undefined' ? Icons.USER : '👤'}</span>
                             <span>Sign In</span>
                         </button>
                     </div>
@@ -520,7 +518,7 @@ class Navigation {
                     <span class="count">(${collection.movieIds?.length || 0})</span>
                 </div>
                 <button class="collection-menu-button" data-collection-id="${collection.id}" title="Menu">
-                    <span>⋮</span>
+                    <span>${typeof Icons !== 'undefined' ? Icons.MORE_VERTICAL : '⋮'}</span>
                 </button>
             `;
             
@@ -530,10 +528,10 @@ class Navigation {
             submenu.style.display = 'none';
             submenu.innerHTML = `
                 <div class="submenu-item" data-action="edit" data-collection-id="${collection.id}">
-                    <span>✏️</span> Редактировать
+                    <span>${typeof Icons !== 'undefined' ? Icons.EDIT : '✏️'}</span> Редактировать
                 </div>
                 <div class="submenu-item delete" data-action="delete" data-collection-id="${collection.id}">
-                    <span>🗑️</span> Удалить
+                    <span>${typeof Icons !== 'undefined' ? Icons.TRASH : '🗑️'}</span> Удалить
                 </div>
             `;
             document.body.appendChild(submenu);
@@ -1556,6 +1554,34 @@ class Navigation {
             // Get display name based on user preference
             let displayText = user.displayName || user.email || 'User';
             
+            // Try to get from cache first for immediate update
+            try {
+                if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+                    const cacheKey = `user_profile_${user.uid}`;
+                    const cachedResult = await chrome.storage.local.get([cacheKey]);
+                    const cachedProfile = cachedResult[cacheKey];
+
+                    if (cachedProfile) {
+                        const displayNameFormat = cachedProfile.displayNameFormat || 'fullname';
+                        
+                        if (displayNameFormat === 'username' && cachedProfile.username) {
+                            displayText = cachedProfile.username;
+                        } else {
+                            const firstName = cachedProfile.firstName || '';
+                            const lastName = cachedProfile.lastName || '';
+                            const fullName = [firstName, lastName].filter(Boolean).join(' ');
+                            if (fullName) {
+                                displayText = fullName;
+                            } else {
+                                displayText = cachedProfile.displayName || user.displayName || user.email || 'User';
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading cached profile:', error);
+            }
+
             if (typeof firebaseManager !== 'undefined' && firebaseManager.getUserService) {
                 try {
                     const userService = firebaseManager.getUserService();

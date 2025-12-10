@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Movie Ratings Settings</title>
+    <link rel="stylesheet" href="../../shared/styles/common.css">
+    <link rel="stylesheet" href="../../shared/styles/theme.css">
+    <link rel="stylesheet" href="../../shared/styles/components.css">
+    <link rel="stylesheet" href="../../shared/styles/navigation.css">
+    <link rel="stylesheet" href="settings.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Navigation will be injected here -->
+        <nav class="navbar" id="navbar"></nav>
+
+        <main class="main-content">
+            <div class="settings-container">
+                <header class="settings-header">
+                    <h1>Settings</h1>
+                    <p class="settings-subtitle">Customize your movie rating experience</p>
+                </header>
+
+                <div class="settings-section">
+                    <h2 class="section-title">Display Mode</h2>
+                    <p class="section-description">Choose how you want to interact with the extension.</p>
+                    
+                    <div class="mode-options">
+                        <label class="mode-card">
+                            <input type="radio" name="displayMode" value="popup" checked>
+                            <div class="mode-content">
+                                <div class="mode-preview preview-popup">
+                                    <div class="preview-browser">
+                                        <div class="preview-popup-window"></div>
+                                    </div>
+                                </div>
+                                <div class="mode-info">
+                                    <h3>Popup</h3>
+                                    <p>Classic extension popup. Opens when you click the icon.</p>
+                                </div>
+                            </div>
+                        </label>
+
+                        <label class="mode-card">
+                            <input type="radio" name="displayMode" value="sidepanel">
+                            <div class="mode-content">
+                                <div class="mode-preview preview-sidepanel">
+                                    <div class="preview-browser">
+                                        <div class="preview-page-content"></div>
+                                        <div class="preview-sidebar"></div>
+                                    </div>
+                                </div>
+                                <div class="mode-info">
+                                    <h3>Side Panel</h3>
+                                    <p>Opens as a native Chrome side panel. Stays visible across tabs.</p>
+                                </div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="settings-actions">
+                    <button id="saveBtn" class="btn btn-primary">Save Settings</button>
+                    <button id="resetBtn" class="btn btn-ghost">Reset to Defaults</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="../../libs/firebase-app-compat.js"></script>
+    <script src="../../libs/firebase-firestore-compat.js"></script>
+    <script src="../../libs/firebase-auth-compat.js"></script>
+    <script src="../../shared/config/kinopoisk.config.js"></script>
+    <script src="../../shared/utils/IconUtils.js"></script>
+    <script src="../../shared/components/Navigation.js"></script>
+    <script src="settings.js"></script>
+</body>
+</html>

@@ -29,6 +29,16 @@
     /* Hover & Active States */
     --theme-hover-bg: rgba(255, 255, 255, 0.1);
     --theme-active-bg: rgba(255, 255, 255, 0.15);
+    
+    /* Filter State Colors (Dark Theme) */
+    --filter-include-bg: rgba(34, 197, 94, 0.15);
+    --filter-include-border: #22c55e;
+    --filter-include-text: #4ade80;
+    --filter-exclude-bg: rgba(239, 68, 68, 0.15);
+    --filter-exclude-border: #ef4444;
+    --filter-exclude-text: #f87171;
+    --filter-neutral-bg: transparent;
+    --filter-neutral-border: var(--theme-border);
 }
 
 /* Light Theme Variables */
@@ -81,6 +91,16 @@
     --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.12);
     --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.15);
     --shadow-xl: 0 12px 24px rgba(0, 0, 0, 0.18);
+    
+    /* Filter State Colors (Light Theme) */
+    --filter-include-bg: rgba(22, 163, 74, 0.12);
+    --filter-include-border: #16a34a;
+    --filter-include-text: #15803d;
+    --filter-exclude-bg: rgba(220, 38, 38, 0.12);
+    --filter-exclude-border: #dc2626;
+    --filter-exclude-text: #b91c1c;
+    --filter-neutral-bg: transparent;
+    --filter-neutral-border: var(--theme-border);
 }
 
 /* Smooth theme transitions */

@@ -43,6 +43,9 @@ class WatchlistService {
                 posterPath: movieData.posterPath || '',
                 releaseYear: movieData.releaseYear || null,
                 genres: movieData.genres || [],
+                description: movieData.description || '',
+                kpRating: movieData.kpRating || 0,
+                imdbRating: movieData.imdbRating || 0,
                 avgRating: movieData.avgRating || 0,
                 notes: movieData.notes || '',
                 addedAt: firebase.firestore.FieldValue.serverTimestamp()

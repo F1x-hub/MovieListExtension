@@ -38,15 +38,20 @@ console.log('[MovieList Extension] Content script loaded for hdrezka.co');
     }
 
     function loadInjectedScript() {
-        const script = document.createElement('script');
-        script.src = injectedScriptUrl;
-        script.onload = function() {
-            console.log('[MovieList Extension] Injected script loaded successfully');
+        const iconsScript = document.createElement('script');
+        iconsScript.src = chrome.runtime.getURL('src/shared/utils/Icons.js');
+        iconsScript.onload = function() {
+            const script = document.createElement('script');
+            script.src = injectedScriptUrl;
+            script.onload = function() {
+                console.log('[MovieList Extension] Injected script loaded successfully');
+            };
+            script.onerror = function() {
+                console.error('[MovieList Extension] Failed to load injected script');
+            };
+            (document.head || document.documentElement).appendChild(script);
         };
-        script.onerror = function() {
-            console.error('[MovieList Extension] Failed to load injected script');
-        };
-        (document.head || document.documentElement).appendChild(script);
+        (document.head || document.documentElement).appendChild(iconsScript);
     }
 
     window.addEventListener('message', async function(event) {

@@ -40,7 +40,6 @@ service cloud.firestore {
       allow update, delete: if isAuthenticated() && 
         (resource.data.userId == request.auth.uid || isAdmin()); // Owner or admin can update/delete
     }
-
     // Collections (Top-level)
     // REQUIRED: AdminService queries this top-level collection to count user collections
     match /collections/{collectionId} {
@@ -55,16 +54,19 @@ service cloud.firestore {
       // Allow authenticated users to read any profile
       allow read: if isAuthenticated();
       
-      // Allow users to create/update their own profile
-      allow create, update: if isOwner(userId);
+      // Allow users to create their own profile
+      allow create: if isOwner(userId);
       
-      // Allow admins to delete users (except themselves)
-      allow delete: if isAdmin() && request.auth.uid != userId;
-      
-      // Prevent users from making themselves admin (security rule)
+      // Allow users to update their own profile (with admin protection)
       allow update: if isOwner(userId) && 
         (!request.resource.data.keys().hasAny(['isAdmin']) || 
          resource.data.isAdmin == request.resource.data.isAdmin);
+      
+      // Allow admins to update any user profile
+      allow update: if isAdmin();
+      
+      // Allow admins to delete users (except themselves)
+      allow delete: if isAdmin() && request.auth.uid != userId;
          
       // --- Subcollections ---
       

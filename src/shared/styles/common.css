@@ -21,9 +21,9 @@
     --danger: #dc3545;
     --info: #17a2b8;
     
-    /* Gradients */
-    --gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    --gradient-accent: linear-gradient(135deg, #e94560 0%, #ff6b7a 100%);
+    /* Gradients - Updated for dark theme compatibility */
+    --gradient-primary: linear-gradient(135deg, #4A5C6A 0%, #5B6F7F 100%);
+    --gradient-accent: linear-gradient(135deg, #444444 0%, #666666 100%);
     --gradient-dark: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
     --gradient-card: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
     

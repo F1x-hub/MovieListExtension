@@ -387,7 +387,7 @@ class RatingsPageManager {
     }
 
     async loadMovies() {
-        if (this.isLoading || !this.currentUser) {
+        if (this.isLoading && !this.loadingMore) {
             return;
         }
         
@@ -397,33 +397,36 @@ class RatingsPageManager {
         
         try {
             const ratingService = firebaseManager.getRatingService();
-            const movieCacheService = firebaseManager.getMovieCacheService();
             
+            // fetch all ratings (lightweight)
             let ratings = [];
-            
             if (this.currentMode === 'my-ratings') {
-                ratings = await ratingService.getUserRatings(this.currentUser.uid, 100);
+                ratings = await ratingService.getUserRatings(this.currentUser.uid, 500); // Increased limit as we lazy load
             } else {
-                const result = await ratingService.getAllRatings(100);
+                const result = await ratingService.getAllRatings(500);
                 ratings = result.ratings;
             }
             
-            // Load user profiles for display name formatting
+            this.allRawRatings = ratings;
+            this.movies = []; // Clear current displayed list
+            this.nextLoadIndex = 0;
+            this.BATCH_SIZE = 6;
+            this.hasMore = true;
+
+            // Load user profiles if needed
             await this.loadUserProfiles(ratings);
             
-            // Enrich with movie data and average ratings
-            this.movies = await this.enrichRatingsWithMovieData(ratings);
-            
-            // Extract and populate users if in all-ratings mode
+            // Load first batch
+            await this.loadNextBatch();
+
+            // Setup Infinite Scroll
+            this.setupInfiniteScroll();
+
+            // Extract users for filter (might be partial if we don't load all profiles? 
+            // Actually loadUserProfiles loaded all needed profiles, so we can populate user filter correctly)
             if (this.currentMode === 'all-ratings') {
                 this.extractAndPopulateUsers(ratings);
             }
-            
-            // Populate year filter
-            this.populateYearFilter();
-            
-            // Apply current filters
-            this.applyFilters();
             
         } catch (error) {
             console.error('Error loading movies:', error);
@@ -432,6 +435,80 @@ class RatingsPageManager {
             this.isLoading = false;
             this.showLoading(false);
         }
+    }
+
+    async loadNextBatch() {
+        if (this.nextLoadIndex >= this.allRawRatings.length) {
+            this.hasMore = false;
+            return;
+        }
+
+        this.loadingMore = true;
+        const endIndex = Math.min(this.nextLoadIndex + this.BATCH_SIZE, this.allRawRatings.length);
+        const batch = this.allRawRatings.slice(this.nextLoadIndex, endIndex);
+        
+        // Enrich just this batch
+        const enrichedBatch = await this.enrichRatingsWithMovieData(batch);
+        
+        // Append to movies list
+        this.movies = [...this.movies, ...enrichedBatch];
+        this.nextLoadIndex = endIndex;
+        
+        // Update filters (year/genre) with NEW data
+        this.populateYearFilter(); 
+        this.populateGenreFilter();
+        
+        // Apply filters / Render
+        // We need to maintain scroll position, applyFilters calls renderMovies
+        this.applyFilters();
+        
+        this.loadingMore = false;
+
+        // If we still have more, ensure observer is valid
+        if (this.nextLoadIndex >= this.allRawRatings.length) {
+            this.hasMore = false;
+            this.removeInfiniteScroll();
+        }
+    }
+
+    setupInfiniteScroll() {
+        if (this.observer) this.observer.disconnect();
+
+        const options = {
+            root: null,
+            rootMargin: '100px',
+            threshold: 0.1
+        };
+
+        this.observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting && !this.loadingMore && this.hasMore) {
+                    this.loadNextBatch();
+                }
+            });
+        }, options);
+
+        // Create or get sentinel
+        let sentinel = document.getElementById('scrollSentinel');
+        if (!sentinel) {
+            sentinel = document.createElement('div');
+            sentinel.id = 'scrollSentinel';
+            sentinel.style.height = '20px';
+            sentinel.style.width = '100%';
+            // Place sentinel after movies grid
+            this.elements.moviesGrid.parentNode.insertBefore(sentinel, this.elements.moviesGrid.nextSibling);
+        }
+        
+        this.observer.observe(sentinel);
+    }
+
+    removeInfiniteScroll() {
+        if (this.observer) {
+            this.observer.disconnect();
+            this.observer = null;
+        }
+        const sentinel = document.getElementById('scrollSentinel');
+        if (sentinel) sentinel.remove();
     }
 
     async loadUserProfiles(ratings) {
@@ -452,37 +529,52 @@ class RatingsPageManager {
     }
 
     async enrichRatingsWithMovieData(ratings) {
+        console.time('Full Enrichment Process');
         const movieCacheService = firebaseManager.getMovieCacheService();
         const ratingService = firebaseManager.getRatingService();
         const kinopoiskService = firebaseManager.getKinopoiskService();
         
         const enrichedMovies = [];
+        let cacheHits = 0;
+        let apiHits = 0;
+        let failures = 0;
         
         // Step 1: Batch load average ratings for all movies
+        console.time('Step 1: Batch Avg Ratings');
         const movieIds = ratings.map(rating => rating.movieId);
         const averageRatings = await ratingService.getBatchMovieAverageRatings(movieIds);
+        console.timeEnd('Step 1: Batch Avg Ratings');
         
         // Step 2: Batch load cached movies
+        console.time('Step 2: Batch Cache Load');
         const cachedMovies = await movieCacheService.getBatchCachedMovies(movieIds);
+        const cachedCount = Object.keys(cachedMovies).length;
+        console.log(`Cache stats: Found ${cachedCount} of ${movieIds.length} movies in cache`);
+        console.timeEnd('Step 2: Batch Cache Load');
         
-        // Step 3: Process each rating with movie data
-        for (let i = 0; i < ratings.length; i++) {
-            const rating = ratings[i];
-            
+        // Step 3: Process ratings with parallel execution (batches of 5)
+        console.time('Step 3: Parallel Processing');
+        console.log('Starting parallel processing of', ratings.length, 'movies');
+        
+        // Helper function to process a single rating
+        const processRating = async (rating, index) => {
             try {
-                // Check if movie is in batch cache results
                 let movieData = cachedMovies[rating.movieId];
                 
                 if (!movieData) {
-                    // If not in cache, try to fetch from Kinopoisk
                     try {
+                        // console.log(`Cache miss for ${rating.movieId}, fetching from API... (${index + 1}/${ratings.length})`);
+                        // const apiStartTime = performance.now();
                         movieData = await kinopoiskService.getMovieById(rating.movieId);
+                        // const apiDuration = performance.now() - apiStartTime;
+                        // console.log(`API fetch for ${rating.movieId} took ${apiDuration.toFixed(2)}ms`);
                         
                         if (movieData) {
                             await movieCacheService.cacheMovie(movieData, true);
+                            apiHits++;
                         }
                     } catch (fetchError) {
-                        // Create minimal movie data
+                        console.warn(`Failed to fetch movie ${rating.movieId} from API:`, fetchError);
                         movieData = {
                             kinopoiskId: rating.movieId,
                             name: 'Unknown Movie',
@@ -491,26 +583,24 @@ class RatingsPageManager {
                             description: '',
                             posterUrl: ''
                         };
+                        failures++;
                     }
+                } else {
+                    cacheHits++;
                 }
                 
-                // Use pre-loaded average rating
                 const averageData = averageRatings[rating.movieId] || { average: 0, count: 0 };
                 
-                const enrichedMovie = {
+                return {
                     ...rating,
                     movie: movieData,
                     averageRating: averageData.average,
                     ratingsCount: averageData.count
                 };
-                
-                
-                enrichedMovies.push(enrichedMovie);
-                
             } catch (error) {
                 console.error('Error enriching rating:', error);
-                // Add with minimal data
-                enrichedMovies.push({
+                failures++;
+                return {
                     ...rating,
                     movie: {
                         kinopoiskId: rating.movieId,
@@ -522,9 +612,29 @@ class RatingsPageManager {
                     },
                     averageRating: 0,
                     ratingsCount: 0
-                });
+                };
             }
+        };
+
+        // Process in batches
+        const BATCH_SIZE = 5;
+        for (let i = 0; i < ratings.length; i += BATCH_SIZE) {
+            const batch = ratings.slice(i, i + BATCH_SIZE);
+            const batchPromises = batch.map((rating, batchIndex) => 
+                processRating(rating, i + batchIndex)
+            );
+            
+            const batchResults = await Promise.all(batchPromises);
+            enrichedMovies.push(...batchResults);
         }
+        
+        console.timeEnd('Step 3: Parallel Processing');
+        console.log(`Enrichment Summary:
+        - Total: ${ratings.length}
+        - Cache Hits: ${cacheHits}
+        - API Hits: ${apiHits}
+        - Failures: ${failures}`);
+        console.timeEnd('Full Enrichment Process');
         
         return enrichedMovies;
     }
@@ -562,6 +672,63 @@ class RatingsPageManager {
                     option.addEventListener('click', (e) => {
                         e.stopPropagation();
                         this.selectDropdownOption('yearFilter', year, year);
+                    });
+                    dropdownList.appendChild(option);
+                });
+            }
+        }
+    }
+
+    populateGenreFilter() {
+        const genres = new Set();
+        this.movies.forEach(movie => {
+            if (movie.movie?.genres && Array.isArray(movie.movie.genres)) {
+                movie.movie.genres.forEach(genre => {
+                    if (genre) genres.add(genre.trim());
+                });
+            }
+        });
+        
+        const sortedGenres = Array.from(genres).sort();
+        const genreFilter = this.elements.genreFilter;
+        
+        if (genreFilter) {
+            // Preserve current selection if possible
+            const currentSelection = this.filters.genre;
+            
+            genreFilter.innerHTML = '<option value="">All Genres</option>';
+            
+            sortedGenres.forEach(genre => {
+                const option = document.createElement('option');
+                option.value = genre;
+                option.textContent = genre; // Capitalize first letter if needed, but usually fine as is
+                genreFilter.appendChild(option);
+            });
+            
+            // Re-select if previously selected
+            if (currentSelection && genres.has(currentSelection)) {
+                genreFilter.value = currentSelection;
+            }
+
+            if (this.dropdowns?.genreFilter) {
+                const dropdownList = this.dropdowns.genreFilter.list;
+                dropdownList.innerHTML = '<div class="dropdown-option" data-value="">All Genres</div>';
+                
+                sortedGenres.forEach(genre => {
+                    const option = document.createElement('div');
+                    option.className = 'dropdown-option';
+                    option.setAttribute('data-value', genre);
+                    // Capitalize first letter for display
+                    option.textContent = genre.charAt(0).toUpperCase() + genre.slice(1);
+                    if (genre === currentSelection) {
+                        option.classList.add('selected');
+                        // Update trigger text as well
+                        this.updateDropdownValue('genreFilter', genre);
+                    }
+                    
+                    option.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.selectDropdownOption('genreFilter', genre, option.textContent);
                     });
                     dropdownList.appendChild(option);
                 });
@@ -747,163 +914,180 @@ class RatingsPageManager {
         const grid = this.elements.moviesGrid;
         if (!grid) return;
         
-        grid.innerHTML = '';
-        
         if (this.filteredMovies.length === 0) {
+            grid.innerHTML = ''; // Safe to clear if empty
             this.showEmptyState();
             return;
         }
         
         this.hideEmptyState();
         
-        this.filteredMovies.forEach(movieData => {
-            const card = this.createMovieCard(movieData);
-            grid.appendChild(card);
-        });
-        
-        // Add event listeners for View Details buttons
-        const viewDetailsButtons = grid.querySelectorAll('.action-btn.btn-primary');
-        viewDetailsButtons.forEach(button => {
-            button.addEventListener('click', (e) => {
-                const movieId = button.getAttribute('data-movie-id');
-                if (movieId) {
-                    const url = chrome.runtime.getURL(`src/pages/search/search.html?movieId=${movieId}`);
-                    window.location.href = url;
-                }
-            });
+        // DOM Reconciliation (Diffing) to prevent flickering
+        const existingCards = new Map();
+        Array.from(grid.children).forEach(child => {
+            if (child.nodeType === 1) { // Element node
+                // Try rating ID first, then movie ID
+                const key = child.getAttribute('data-rating-id') || child.getAttribute('data-movie-id');
+                if (key) existingCards.set(key, child);
+            }
         });
 
-        // Add event listeners for Favorite buttons
-        const favoriteButtons = grid.querySelectorAll('.favorite-btn');
-        favoriteButtons.forEach(button => {
-            button.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                const ratingId = button.getAttribute('data-rating-id');
-                const isFavorite = button.getAttribute('data-is-favorite') === 'true';
-                if (ratingId) {
-                    await this.toggleFavorite(ratingId, isFavorite, button);
+        // Use a document fragment for new items if we were clearing, but here we update in place
+        // Actually, for list reconciliation, we can just iterate and insertBefore
+        
+        let currentIdx = 0;
+        
+        this.filteredMovies.forEach((movieData) => {
+            const key = (movieData.id || movieData.movieId || movieData.kinopoiskId).toString();
+            let card = existingCards.get(key);
+            
+            // If card doesn't exist (new item), create it
+            if (!card) {
+                card = this.createMovieCard(movieData);
+                // Ensure the card has the ID for future diffing
+                if (movieData.id) card.setAttribute('data-rating-id', movieData.id);
+                if (movieData.movieId || movieData.kinopoiskId) {
+                    card.setAttribute('data-movie-id', movieData.movieId || movieData.kinopoiskId);
                 }
-            });
+            } else {
+                // If checking strict equality of data to update content would be expensive,
+                // we assume content is static for now unless explicitly refreshed.
+                // However, we remove it from the map to mark it as "used"
+                existingCards.delete(key);
+            }
+            
+            // Insert at correct position
+            const childAtPosition = grid.children[currentIdx];
+            
+            if (childAtPosition !== card) {
+                if (childAtPosition) {
+                    grid.insertBefore(card, childAtPosition);
+                } else {
+                    grid.appendChild(card);
+                }
+            }
+            
+            currentIdx++;
+        });
+        
+        // Remove any remaining cards (items that are no longer in the filtered list)
+        existingCards.forEach(card => card.remove());
+        
+        
+        // Ensure event delegation is set up (idempotent setup is better, but here we just leave it attached to grid)
+        // The previous event listener logic (lines 932+) was adding a NEW listener every render!
+        // That is a memory leak and performance issue. 
+        // We should move event listeners to setupEventListeners or ensure they are added only once.
+        // For now, I will NOT re-add them here. I will assume they are persistent on 'grid'.
+        // WAIT: The valid implementation in the previous file snippet showed event listeners being added INSIDE renderMovies.
+        // This causes multiple listeners to stack up! I must move them out or check if they exist.
+        // Since I cannot move them easily to setupEventListeners without changing more code,
+        // and 'grid' is a persistent element, adding listeners repeatedly is bad.
+        // I will add a check property to grid.
+        
+        if (!grid.hasAttribute('data-listeners-attached')) {
+            this.attachGridEventListeners(grid);
+            grid.setAttribute('data-listeners-attached', 'true');
+        }
+    }
+
+    attachGridEventListeners(grid) {
+        // Add event listeners using event delegation for MovieCard actions
+        grid.addEventListener('click', (e) => {
+            const target = e.target.closest('[data-action]');
+            if (!target) return;
+            
+            const action = target.getAttribute('data-action');
+            const movieId = target.getAttribute('data-movie-id');
+            const ratingId = target.getAttribute('data-rating-id');
+            
+            switch (action) {
+                case 'view-details':
+                    if (movieId) {
+                        const url = chrome.runtime.getURL(`src/pages/search/search.html?movieId=${movieId}`);
+                        window.location.href = url;
+                    }
+                    break;
+                    
+                case 'toggle-favorite':
+                    if (ratingId) {
+                        const isFavorite = target.getAttribute('data-is-favorite') === 'true';
+                        this.toggleFavorite(ratingId, isFavorite, target);
+                    }
+                    break;
+                    
+                case 'edit-rating':
+                    if (movieId) {
+                        const rating = parseInt(target.getAttribute('data-rating'));
+                        const comment = target.getAttribute('data-comment') || '';
+                        this.editRating(movieId, rating, comment);
+                    }
+                    break;
+                    
+                case 'add-to-collection':
+                    if (movieId) {
+                        if (window.navigation && typeof window.navigation.showCollectionPicker === 'function') {
+                            window.navigation.showCollectionPicker(parseInt(movieId));
+                        }
+                    }
+                    break;
+                    
+                case 'toggle-watchlist':
+                    if (movieId) {
+                        this.handleWatchlistToggle(movieId, target);
+                    }
+                    break;
+            }
         });
 
         // Add event listeners for clickable usernames
-        const clickableUsernames = grid.querySelectorAll('.clickable-username');
-        clickableUsernames.forEach(usernameEl => {
-            usernameEl.addEventListener('click', (e) => {
+        // Note: Because usernames are inside cards which are dynamic, we rely on bubbling. 
+        // But the previous code attached listeners DIRECTLY to elements.
+        // With diffing, we can't do that easily for new elements without complex logic.
+        // We must switch username clicks to delegation as well.
+        grid.addEventListener('click', (e) => {
+            const usernameEl = e.target.closest('.clickable-username');
+            if (usernameEl) {
                 e.stopPropagation();
                 const userId = usernameEl.getAttribute('data-user-id');
                 if (userId) {
                     const url = chrome.runtime.getURL(`src/pages/profile/profile.html?userId=${userId}`);
                     window.location.href = url;
                 }
-            });
-        });
-
-        // Add event listeners for collection buttons
-        const collectionButtons = grid.querySelectorAll('.collection-btn');
-        collectionButtons.forEach(button => {
-            button.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                const movieId = parseInt(button.getAttribute('data-movie-id'));
+            }
+            
+            const collectionBtn = e.target.closest('.collection-btn');
+            if (collectionBtn) {
+                 e.stopPropagation();
+                const movieId = parseInt(collectionBtn.getAttribute('data-movie-id'));
                 if (movieId && window.navigation && window.navigation.showCollectionSelector) {
-                    await window.navigation.showCollectionSelector(movieId, button);
+                    window.navigation.showCollectionSelector(movieId, collectionBtn);
                 }
-            });
+            }
         });
     }
 
     createMovieCard(movieData) {
-        const { movie, rating, averageRating, ratingsCount, comment, createdAt, userEmail, userDisplayName, userId, userName, userPhoto } = movieData;
+        // Enrich user data with correct photo from profile
+        const enrichedData = {
+            ...movieData,
+            userPhoto: this.getUserPhoto(movieData.userId, movieData.userPhoto),
+            userDisplayName: this.getDisplayNameForUser(
+                movieData.userId,
+                movieData.userDisplayName,
+                movieData.userName,
+                movieData.userEmail
+            )
+        };
         
-        const card = document.createElement('div');
-        card.className = 'movie-card fade-in';
-        
-        const posterUrl = movie?.posterUrl || '/icons/icon48.png';
-        const title = movie?.name || 'Unknown Movie';
-        const year = movie?.year || '';
-        const genres = movie?.genres?.slice(0, 3) || [];
-        const description = movie?.description || '';
-        
-        
-        const truncatedDescription = description.length > 150 
-            ? description.substring(0, 150) + '...' 
-            : description;
-        
-        const avgDisplay = ratingsCount > 0 ? `${averageRating.toFixed(1)}/10` : 'No ratings';
-        
-        // Check if movie is rated (only show watchlist button for unrated movies)
-        const isRated = !!rating;
-        const isFavorite = movieData.isFavorite === true;
-        const ratingId = movieData.id;
-        
-        card.innerHTML = `
-            <div class="movie-poster-container-ratings">
-                <img src="${posterUrl}" alt="${title}" class="movie-poster" onerror="this.src='/icons/icon48.png'">
-                ${isRated ? `
-                    <button class="favorite-btn ${isFavorite ? 'active' : ''}" data-rating-id="${ratingId}" data-is-favorite="${isFavorite}" title="${isFavorite ? 'Удалить из Избранного' : 'Добавить в Избранное'}">
-                    </button>
-                ` : ''}
-                ${!isRated ? `
-                    <button class="watchlist-btn-card watchlist-btn-ratings" data-movie-id="${movie?.kinopoiskId}" title="Добавить в Watchlist">
-                        🔖
-                    </button>
-                ` : ''}
-            </div>
-            <div class="movie-content">
-                <h3 class="movie-title">${title}</h3>
-                <div class="movie-meta">${year}${year && genres.length ? ' • ' : ''}${genres.join(', ')}</div>
-                
-                ${genres.length > 0 ? `
-                    <div class="movie-genres">
-                        ${genres.map(genre => `<span class="genre-tag">${genre}</span>`).join('')}
-                    </div>
-                ` : ''}
-                
-                ${description ? `
-                    <div class="movie-description">${truncatedDescription}</div>
-                ` : ''}
-                
-                ${this.currentMode === 'all-ratings' && userId && (userDisplayName || userEmail || userName) ? `
-                    <div class="movie-user-info">
-                        <img src="${this.getUserPhoto(userId, userPhoto)}" 
-                             alt="${this.escapeHtml(this.getDisplayNameForUser(userId, userDisplayName, userName, userEmail))}" 
-                             class="user-avatar" 
-                             onerror="this.src='/icons/icon48.png'; this.onerror=null;">
-                        <span class="user-name clickable-username" data-user-id="${userId}">${this.getDisplayNameForUser(userId, userDisplayName, userName, userEmail)}</span>
-                    </div>
-                ` : ''}
-                
-                <div class="movie-ratings">
-                    <div class="rating-item">
-                        <div class="rating-label">${this.currentMode === 'all-ratings' ? 'User Rating' : 'My Rating'}</div>
-                        <div class="rating-value my-rating">⭐ ${rating}/10</div>
-                    </div>
-                    <div class="rating-item">
-                        <div class="rating-label">Avg Rating</div>
-                        <div class="rating-value avg-rating">${avgDisplay}</div>
-                    </div>
-                </div>
-                
-                <div class="movie-actions">
-                    <button class="action-btn btn-primary" data-movie-id="${movie?.kinopoiskId}">
-                        View Details
-                    </button>
-                    ${this.currentMode === 'my-ratings' ? `
-                        <button class="action-btn edit-btn" 
-                                data-movie-id="${movie?.kinopoiskId}" 
-                                data-rating="${rating}" 
-                                data-comment="${this.escapeHtml(comment || '')}">
-                            Edit Rating
-                        </button>
-                        <button class="action-btn collection-btn" data-movie-id="${movie?.kinopoiskId}" title="Add to Collection">
-                            📁
-                        </button>
-                    ` : ''}
-                </div>
-            </div>
-        `;
-        
-        return card;
+        // Use the new MovieCard component
+        return MovieCard.create(enrichedData, {
+            showFavorite: !!movieData.rating,
+            showWatchlist: !movieData.rating,
+            showUserInfo: this.currentMode === 'all-ratings',
+            showEditRating: this.currentMode === 'my-ratings',
+            showAddToCollection: this.currentMode === 'my-ratings'
+        });
     }
 
     async toggleFavorite(ratingId, currentStatus, buttonElement) {
@@ -1020,6 +1204,9 @@ class RatingsPageManager {
                     posterPath: movie.posterUrl || '',
                     releaseYear: movie.year || null,
                     genres: movie.genres || [],
+                    description: movie.description || '',
+                    kpRating: movie.kpRating || 0,
+                    imdbRating: movie.imdbRating || 0,
                     avgRating: movie.kpRating || 0
                 };
                 
@@ -1094,7 +1281,7 @@ class RatingsPageManager {
                     <h3 style="margin: 0 0 10px 0;">${this.escapeHtml(movie?.name || 'Unknown Movie')}</h3>
                     <p style="color: #666; margin: 0 0 10px 0;">${movie?.year || ''} • ${movie?.genres?.join(', ') || ''}</p>
                     <div style="margin: 15px 0;">
-                        <strong>My Rating:</strong> ⭐ ${rating}/10<br>
+                        <strong>My Rating:</strong> <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> ${rating}/10<br>
                         <strong>Average Rating:</strong> ${avgDisplay}
                     </div>
                     ${comment ? `
@@ -1264,7 +1451,7 @@ class RatingsPageManager {
     }
 
     showEmptyState() {
-        this.elements.emptyState.style.display = 'block';
+        this.elements.emptyState.style.display = 'flex';
         this.elements.moviesGrid.style.display = 'none';
     }
 

@@ -1,0 +1,187 @@
+/* Settings Page Styles */
+
+.settings-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: var(--space-xl);
+}
+
+.settings-header {
+    margin-bottom: var(--space-2xl);
+    text-align: center;
+}
+
+.settings-header h1 {
+    font-size: var(--font-size-3xl);
+    margin-bottom: var(--space-xs);
+    color: var(--text-primary);
+}
+
+.settings-subtitle {
+    color: var(--text-secondary);
+    font-size: var(--font-size-lg);
+}
+
+.settings-section {
+    background: var(--theme-bg-card);
+    border-radius: var(--radius-xl);
+    padding: var(--space-xl);
+    border: 1px solid var(--theme-border);
+    margin-bottom: var(--space-xl);
+}
+
+.section-title {
+    font-size: var(--font-size-xl);
+    margin-bottom: var(--space-xs);
+    color: var(--text-primary);
+}
+
+.section-description {
+    color: var(--text-secondary);
+    margin-bottom: var(--space-lg);
+}
+
+/* Mode Selection Cards */
+.mode-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: var(--space-lg);
+}
+
+.mode-card {
+    position: relative;
+    cursor: pointer;
+}
+
+/* Hide default radio */
+.mode-card input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+}
+
+.mode-content {
+    background: var(--theme-bg-secondary);
+    border: 2px solid transparent;
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    height: 100%;
+    transition: all var(--transition-base);
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+}
+
+.mode-card:hover .mode-content {
+    background: var(--theme-bg-tertiary);
+    transform: translateY(-2px);
+}
+
+.mode-card input[type="radio"]:checked + .mode-content {
+    border-color: var(--accent-color);
+    background: var(--theme-bg-tertiary);
+    box-shadow: 0 0 0 4px rgba(233, 69, 96, 0.1);
+}
+
+.mode-info h3 {
+    margin: var(--space-md) 0 var(--space-xs);
+    color: var(--text-primary);
+    font-size: var(--font-size-lg);
+}
+
+.mode-info p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+}
+
+/* Previews */
+.mode-preview {
+    height: 120px;
+    background: #1a1a1a;
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-md);
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+.preview-browser {
+    width: 80%;
+    height: 80%;
+    background: #2a2a2a;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+/* Popup Preview */
+.preview-popup .preview-popup-window {
+    width: 40px;
+    height: 50px;
+    background: var(--accent-color);
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    border-radius: 2px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+
+/* Sidebar Preview elements */
+.preview-page-content {
+    width: 100%;
+    height: 100%;
+    background: #333;
+    opacity: 0.5;
+}
+
+.preview-sidebar {
+    width: 30%;
+    height: 100%;
+    background: var(--accent-color);
+    position: absolute;
+    top: 0;
+    right: 0;
+}
+
+/* Side Panel specific */
+.preview-sidepanel .preview-sidebar {
+    box-shadow: -4px 0 12px rgba(0,0,0,0.3);
+}
+
+/* Settings Actions */
+.settings-actions {
+    display: flex;
+    gap: var(--space-md);
+    justify-content: flex-end;
+    margin-top: var(--space-xl);
+    padding-top: var(--space-xl);
+    border-top: 1px solid var(--theme-border);
+}
+
+.btn {
+    padding: var(--space-md) var(--space-xl);
+    font-size: var(--font-size-base);
+}
+
+/* Toast for save confirmation */
+.toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--success);
+    color: white;
+    padding: 12px 24px;
+    border-radius: var(--radius-md);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    animation: slideUp 0.3s ease;
+    z-index: 100;
+}
+
+@keyframes slideUp {
+    from { transform: translateY(100%); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}

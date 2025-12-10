@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="../../shared/styles/navigation.css">
     <link rel="stylesheet" href="../../shared/styles/router.css">
     <link rel="stylesheet" href="../../shared/styles/search.css">
+    <link rel="stylesheet" href="../../shared/styles/movie-card.css">
     <link rel="stylesheet" href="../../shared/styles/collection.css">
     
     <!-- Firebase -->
@@ -32,8 +33,10 @@
     <script src="../../shared/services/CollectionService.js"></script>
     <script src="../../shared/utils/Utils.js"></script>
     <script src="../../shared/utils/IconUtils.js"></script>
+    <script src="../../shared/utils/Icons.js"></script>
     
     <!-- Components -->
+    <script src="../../shared/components/MovieCard.js"></script>
     <script src="../../shared/components/Navigation.js"></script>
     <script src="../../shared/components/Router.js"></script>
 </head>
@@ -55,10 +58,10 @@
                     </div>
                     <div class="collection-actions">
                         <button class="collection-action-btn edit-btn" id="editCollectionBtn" title="Edit Collection">
-                            ✏️ Редактировать
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; vertical-align: middle;"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg> Редактировать
                         </button>
                         <button class="collection-action-btn delete-btn" id="deleteCollectionBtn" title="Delete Collection">
-                            🗑️ Удалить
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; vertical-align: middle;"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg> Удалить
                         </button>
                     </div>
                 </div>
@@ -69,7 +72,7 @@
                 <div class="filters-header">
                     <h3 class="filters-title">Filters & Search</h3>
                     <button class="clear-filters-btn" id="clearFiltersBtn">
-                        <span>🗑️</span>
+                        <span><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></span>
                         Clear Filters
                     </button>
                 </div>
@@ -80,7 +83,7 @@
                         <label class="filter-label" id="searchLabel">Search in Collection</label>
                         <div class="search-input-wrapper">
                             <input type="text" class="search-input" id="collectionSearchInput" placeholder="Поиск в коллекции...">
-                            <span class="search-icon">🔍</span>
+                            <span class="search-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></span>
                         </div>
                     </div>
 
@@ -90,7 +93,7 @@
                         <div class="custom-dropdown" data-dropdown="sortFilter">
                             <button type="button" class="dropdown-trigger" id="sortFilterTrigger">
                                 <span class="dropdown-value">Date Added (Newest)</span>
-                                <span class="dropdown-arrow">▼</span>
+                                <span class="dropdown-arrow"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
                             </button>
                             <div class="dropdown-list" id="sortFilterList">
                                 <div class="dropdown-option" data-value="date-desc">Date Added (Newest)</div>
@@ -145,7 +148,7 @@
 
             <!-- Error State -->
             <div class="error-state" id="errorState" style="display: none;">
-                <div class="error-state-icon">⚠️</div>
+                <div class="error-state-icon"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #ef4444;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></div>
                 <h3 class="error-state-title">Something went wrong</h3>
                 <p class="error-state-text" id="errorMessage">Failed to load collection</p>
                 <button class="error-state-btn" id="retryBtn">Try Again</button>

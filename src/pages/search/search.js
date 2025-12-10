@@ -211,6 +211,30 @@ class SearchManager {
         if (this.elements.refreshPlayerBtn) {
             this.elements.refreshPlayerBtn.addEventListener('click', () => this.refreshPlayer());
         }
+        
+        // Tab navigation
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('tab-btn')) {
+                const tabName = e.target.dataset.tab;
+                
+                // Update active buttons
+                document.querySelectorAll('.tab-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                e.target.classList.add('active');
+                
+                // Update active tab content
+                document.querySelectorAll('.tab-pane').forEach(pane => {
+                    pane.classList.remove('active');
+                });
+                const targetPane = document.getElementById(`tab-${tabName}`);
+                if (targetPane) {
+                    targetPane.classList.add('active');
+                }
+            }
+        });
+
+
     }
 
     async initializeUI() {
@@ -251,6 +275,9 @@ class SearchManager {
         
         // Initialize filters
         this.initializeFilters();
+        
+        // Load saved filter state
+        this.loadFilterState();
         
         // Hide initial loading only if no movie/query was processed
         if (!movieId && !query) {
@@ -294,33 +321,50 @@ class SearchManager {
     createCheckboxItem(id, value, label) {
         const item = document.createElement('div');
         item.className = 'checkbox-item';
+        item.setAttribute('data-filter-state', 'neutral'); // neutral, include, exclude
+        item.setAttribute('data-filter-value', value);
+        item.setAttribute('data-filter-id', id);
         
+        // Hidden checkbox for backward compatibility
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.id = id;
         checkbox.value = value;
+        checkbox.style.display = 'none';
         
         const labelEl = document.createElement('label');
         labelEl.htmlFor = id;
         labelEl.textContent = label;
         
-        checkbox.addEventListener('change', () => {
-            if (checkbox.checked) {
-                item.classList.add('selected');
-            } else {
-                item.classList.remove('selected');
-            }
-        });
-        
         item.appendChild(checkbox);
         item.appendChild(labelEl);
         
-        // Make the whole item clickable
+        // Three-state toggle on click
         item.addEventListener('click', (e) => {
-            if (e.target !== checkbox) {
-                checkbox.checked = !checkbox.checked;
-                checkbox.dispatchEvent(new Event('change'));
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const currentState = item.getAttribute('data-filter-state');
+            let newState;
+            
+            // Cycle through states: neutral → include → exclude → neutral
+            if (currentState === 'neutral') {
+                newState = 'include';
+                item.classList.add('filter-include');
+                item.classList.remove('filter-exclude', 'selected');
+                checkbox.checked = true;
+            } else if (currentState === 'include') {
+                newState = 'exclude';
+                item.classList.add('filter-exclude');
+                item.classList.remove('filter-include', 'selected');
+                checkbox.checked = false;
+            } else { // exclude
+                newState = 'neutral';
+                item.classList.remove('filter-include', 'filter-exclude', 'selected');
+                checkbox.checked = false;
             }
+            
+            item.setAttribute('data-filter-state', newState);
         });
         
         return item;
@@ -346,6 +390,12 @@ class SearchManager {
 
     async searchMovies() {
         try {
+            // Clear old results immediately to prevent flickering
+            this.currentResults = { docs: [], total: 0, pages: 0 };
+            this.elements.resultsGrid.innerHTML = '';
+            this.elements.resultsHeader.style.display = 'none';
+            this.elements.pagination.style.display = 'none';
+            
             this.showLoading(true);
             this.hideError();
             
@@ -363,19 +413,34 @@ class SearchManager {
                 return;
             }
             
-            // Search movies
+            // Get current filters
+            const filters = this.getSelectedFilters();
+            
+            // Search movies with year range filter if available
             const searchResults = await kinopoiskService.searchMovies(
                 this.currentQuery,
                 this.currentPage,
-                20
+                20,
+                filters
             );
+            
+            // Apply client-side filtering (for filters not supported by API)
+            let filteredResults = searchResults;
+            if (searchResults && searchResults.docs) {
+                const filteredDocs = this.applyClientSideFilters(searchResults.docs, filters);
+                filteredResults = {
+                    ...searchResults,
+                    docs: filteredDocs,
+                    total: filteredDocs.length
+                };
+            }
             
             // Note: Movies are no longer cached here to save database quota
             // They will be cached only when users rate them
             
-            this.currentResults = searchResults;
+            this.currentResults = filteredResults;
             
-            if (searchResults && searchResults.docs) {
+            if (filteredResults && filteredResults.docs) {
                 this.displayResults();
             } else {
                 this.currentResults = { docs: [], total: 0, pages: 0 };
@@ -447,7 +512,7 @@ class SearchManager {
             this.elements.resultsGrid.classList.add('single-item');
             this.elements.resultsGrid.innerHTML = `
                 <div class="empty-state">
-                    <div class="empty-state-icon">🔍</div>
+                    <div class="empty-state-icon"><svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></div>
                     <h3 class="empty-state-title">Фильмы не найдены</h3>
                     <p class="empty-state-text">Попробуйте изменить поисковый запрос или воспользуйтесь фильтрами</p>
                 </div>
@@ -561,13 +626,103 @@ class SearchManager {
             }
             
             const kinopoiskService = firebaseManager.getKinopoiskService();
-            const movie = await kinopoiskService.getMovieById(movieId);
+            const movieCacheService = firebaseManager.getMovieCacheService();
+            
+            // Check cache/firebase first
+            // Note: getCachedMovie already checks localStorage then Firestore
+            let movie = await movieCacheService.getCachedMovie(movieId);
+            
+            // Check if movie exists and has detailed info (using budget/fees/persons as proxy)
+            // Search results might be cached but lack detailed info like budget/fees/full crew
+            const hasDetailedInfo = movie && (movie.budget || movie.fees?.world || movie.fees?.usa || (movie.persons && movie.persons.length > 0));
+            
+            if (!movie || !hasDetailedInfo) {
+                console.log('Movie not found in cache or missing details, fetching from API...');
+                movie = await kinopoiskService.getMovieById(movieId);
+                
+                // Cache the new movie data
+                if (movie) {
+                    await movieCacheService.cacheMovie(movie);
+                }
+            } else {
+                console.log('Loaded movie from cache');
+            }
+            
+            if (!movie) {
+               throw new Error('Movie not found');
+            }
+            
+            // Check and fetch awards (works for both cached and newly fetched movies)
+            // Awards are parsed for display but saved to Firebase only if movie is rated
+            console.log('[Awards Debug] Checking awards for movie...');
+            console.log('[Awards Debug] movie.awards:', movie.awards);
+            console.log('[Awards Debug] Awards exists?', !!movie.awards);
+            console.log('[Awards Debug] Awards length:', movie.awards?.length);
+            
+            if (!movie.awards || movie.awards.length === 0) {
+                console.log('[Awards Debug] ✓ Awards missing or empty, starting parsing...');
+                try {
+                    console.log('Fetching awards by parsing kinopoisk.ru...');
+                    const awardsParser = new AwardsParsingService();
+                    const awards = await awardsParser.getAwards(movieId);
+                    movie.awards = awards;
+                    console.log(`Fetched ${awards.length} awards from Kinopoisk.ru`);
+                    
+                    // Check if movie is already rated by user
+                    try {
+                        const ratingService = firebaseManager.getRatingService();
+                        const currentUser = firebaseManager.getCurrentUser();
+                        
+                        if (currentUser) {
+                            const userRating = await ratingService.getRating(currentUser.uid, movieId);
+                            
+                            if (userRating) {
+                                // Movie is rated → save awards to Firebase
+                                console.log('[Awards Debug] Movie is rated, saving awards to Firebase');
+                                await movieCacheService.cacheMovie(movie, true); // isRated = true
+                            } else {
+                                // Movie not rated → don't save to Firebase
+                                console.log('[Awards Debug] Movie NOT rated, awards parsed but NOT saved to Firebase');
+                            }
+                        } else {
+                            console.log('[Awards Debug] User not authenticated, not saving awards');
+                        }
+                    } catch (ratingError) {
+                        console.warn('[Awards Debug] Could not check rating status:', ratingError);
+                        // If can't check rating, don't save to be safe
+                    }
+                } catch (e) {
+                     console.error('Failed to parse awards', e);
+                     movie.awards = [];
+                }
+            } else {
+                console.log('[Awards Debug] ✗ Awards already present, skipping parsing');
+            }
             
             // Try to get movie images/frames
+            // We only fetch frames if we are showing the details view
             try {
-                const images = await kinopoiskService.getMovieImages(movieId);
-                if (images && images.length > 0) {
-                    movie.frames = images;
+                // Determine if we need to fetch frames (e.g. if cached frames are missing or empty)
+                // For now, we attempt to fetch if not present, but maybe cache them too? 
+                // The current MovieCacheService structure might not store strict "frames", 
+                // but let's see if we can attach them to the movie object before display.
+                
+                // If the movie came from cache and has frames stored, reuse them?
+                // Standard movie object might not have frames. 
+                // We will try to fetch frames from API if they are missing, 
+                // but this is a secondary request so it is less critical.
+                // To totally minimize API calls per user request, we could skip this if "only db" is strict,
+                // but frames usually need API. User asked "details of movie... from base",
+                // usually meaning the main metadata.
+                
+                if (!movie.frames || movie.frames.length === 0) {
+                     const images = await kinopoiskService.getMovieImages(movieId);
+                     if (images && images.length > 0) {
+                        movie.frames = images;
+                        // Optional: update cache with frames if the structure allows, 
+                        // but MovieCacheService might need update for that. 
+                        // For now we just display them.
+                     }
                 }
             } catch (imagesError) {
                 // Silently handle image loading errors
@@ -812,7 +967,7 @@ class SearchManager {
                         <img src="${userPhoto}" alt="${this.escapeHtml(userName)}" class="user-rating-avatar" onerror="this.src='/icons/icon48.png'">
                         <div class="user-rating-info">
                             <div class="user-rating-name clickable-username" data-user-id="${userId}">${this.escapeHtml(userName)}</div>
-                            <div class="user-rating-score">⭐ ${rating.rating}/10</div>
+                            <div class="user-rating-score"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> ${rating.rating}/10</div>
                         </div>
                         ${isCurrentUser ? `
                             <div class="user-rating-menu">
@@ -906,6 +1061,60 @@ class SearchManager {
         const isFavorite = userRating?.isFavorite === true;
         const ratingId = userRating?.id || null;
         
+        // Get kinopoisk service for helper functions
+        const kinopoiskService = typeof window !== 'undefined' && window.kinopoiskService 
+            ? window.kinopoiskService 
+            : new KinopoiskService();
+        
+        // Extract crew information
+        const directors = kinopoiskService.getPersonsByProfession(movie.persons, 'DIRECTOR');
+        const writers = kinopoiskService.getPersonsByProfession(movie.persons, 'WRITER');
+        const producers = kinopoiskService.getPersonsByProfession(movie.persons, 'PRODUCER');
+        const operators = kinopoiskService.getPersonsByProfession(movie.persons, 'OPERATOR');
+        const composers = kinopoiskService.getPersonsByProfession(movie.persons, 'COMPOSER');
+        const designers = kinopoiskService.getPersonsByProfession(movie.persons, 'DESIGNER');
+        const editors = kinopoiskService.getPersonsByProfession(movie.persons, 'EDITOR');
+        const actors = kinopoiskService.getPersonsByProfession(movie.persons, 'ACTOR');
+        
+        // Format crew names
+        const directorsStr = kinopoiskService.formatPersonNames(directors);
+        const writersStr = kinopoiskService.formatPersonNames(writers);
+        const producersStr = kinopoiskService.formatPersonNames(producers);
+        const operatorsStr = kinopoiskService.formatPersonNames(operators);
+        const composersStr = kinopoiskService.formatPersonNames(composers);
+        const designersStr = kinopoiskService.formatPersonNames(designers);
+        const editorsStr = kinopoiskService.formatPersonNames(editors);
+        
+        // Format financial data
+        const budgetStr = kinopoiskService.formatCurrency(movie.budget);
+        const feesUsaStr = kinopoiskService.formatCurrency(movie.fees?.usa);
+        const feesWorldStr = kinopoiskService.formatCurrency(movie.fees?.world);
+        const feesRussiaStr = kinopoiskService.formatCurrency(movie.fees?.russia);
+        
+        // Format premiere dates
+        // Extract distributor
+        let distributorStr = '';
+        if (movie.distributors) {
+            const distObj = Array.isArray(movie.distributors) ? movie.distributors[0] : movie.distributors;
+            distributorStr = distObj?.distributor || distObj?.value || '';
+        }
+
+        const premiereRussiaStr = movie.premiere?.russia 
+            ? kinopoiskService.formatDate(movie.premiere.russia) + (distributorStr ? `, «${distributorStr}»` : '')
+            : '';
+        const premiereWorldStr = movie.premiere?.world 
+            ? kinopoiskService.formatDate(movie.premiere.world) 
+            : '';
+        const premiereDigitalStr = movie.premiere?.digital 
+            ? kinopoiskService.formatDate(movie.premiere.digital) + (distributorStr ? `, «${distributorStr}»` : '')
+            : '';
+        
+        // Get audience data for Russia
+        const audienceRussia = movie.audience?.find(a => a.country === 'Россия' || a.country === 'Russia');
+        const audienceRussiaStr = audienceRussia 
+            ? `${(audienceRussia.count / 1000).toFixed(1)} тыс` 
+            : '';
+        
         return `
             <div class="movie-detail-page">
                 <div class="movie-detail-header">
@@ -920,32 +1129,8 @@ class SearchManager {
                                 🔖
                             </button>
                         `}
-                    </div>
-                    <div class="movie-detail-info-container">
-                        <h1 class="movie-detail-page-title">${this.escapeHtml(movie.name)}</h1>
-                        ${movie.alternativeName ? `<h2 class="movie-detail-alt-title">${this.escapeHtml(movie.alternativeName)}</h2>` : ''}
                         
-                        <div class="movie-detail-meta-grid">
-                            <div class="meta-item">
-                                <span class="meta-label">Год:</span>
-                                <span class="meta-value">${year}</span>
-                            </div>
-                            ${duration ? `
-                            <div class="meta-item">
-                                <span class="meta-label">Длительность:</span>
-                                <span class="meta-value">${duration} мин</span>
-                            </div>` : ''}
-                            <div class="meta-item">
-                                <span class="meta-label">Жанры:</span>
-                                <span class="meta-value">${genres}</span>
-                            </div>
-                            ${countries ? `
-                            <div class="meta-item">
-                                <span class="meta-label">Страны:</span>
-                                <span class="meta-value">${countries}</span>
-                            </div>` : ''}
-                        </div>
-                        
+                        <!-- Ratings under poster -->
                         <div class="movie-detail-ratings-container">
                             <div class="rating-item-large kp">
                                 <span class="rating-label">Кинопоиск</span>
@@ -960,15 +1145,230 @@ class SearchManager {
                             </div>` : ''}
                         </div>
                         
+                        <!-- Action buttons under ratings -->
                         <div class="movie-actions-container">
                             <button class="btn btn-primary btn-lg watch-movie-btn" data-movie-id="${movie.kinopoiskId}">
-                                <span class="btn-icon">▶️</span>
+                                <span class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
                                 Смотреть
                             </button>
                             <button class="btn btn-accent btn-lg rate-movie-btn" data-movie-id="${movie.kinopoiskId}">
-                                <span class="btn-icon">⭐</span>
+                                <span class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></span>
                                 Оценить фильм
                             </button>
+                        </div>
+                    </div>
+                    
+                    <div class="movie-detail-info-container">
+                        <h1 class="movie-detail-page-title">${this.escapeHtml(movie.name)}</h1>
+                        ${movie.alternativeName ? `<h2 class="movie-detail-alt-title">${this.escapeHtml(movie.alternativeName)}</h2>` : ''}
+                        
+                        <!-- Tabs Navigation -->
+                        <div class="movie-tabs">
+                            <div class="tab-buttons">
+                                <button class="tab-btn active" data-tab="about">О фильме</button>
+                                <button class="tab-btn" data-tab="actors">Актёры</button>
+                                <button class="tab-btn" data-tab="awards">Награды</button>
+                            </div>
+                            
+                            <div class="tab-content">
+                                <!-- About Film Tab -->
+                                <div class="tab-pane active" id="tab-about">
+                                    <div class="movie-detail-meta-grid">
+                                        <!-- Basic Info -->
+                                        <div class="meta-item">
+                                            <span class="meta-label">Год производства:</span>
+                                            <span class="meta-value">${year}</span>
+                                        </div>
+                                        ${countries ? `
+                                        <div class="meta-item">
+                                            <span class="meta-label">Страна:</span>
+                                            <span class="meta-value">${countries}</span>
+                                        </div>` : ''}
+                                        <div class="meta-item">
+                                            <span class="meta-label">Жанр:</span>
+                                            <span class="meta-value">${genres}</span>
+                                        </div>
+                                        <div class="meta-item">
+                                            <span class="meta-label">Слоган:</span>
+                                            <span class="meta-value">${movie.slogan ? `«${this.escapeHtml(movie.slogan)}»` : '—'}</span>
+                                        </div>
+                                        
+                                        <!-- Crew -->
+                                        ${directorsStr ? `
+                                        <div class="meta-item">
+                                            <span class="meta-label">Режиссер:</span>
+                                            <span class="meta-value">${this.escapeHtml(directorsStr)}</span>
+                                        </div>` : ''}
+                                        ${writersStr ? `
+                                        <div class="meta-item">
+                                            <span class="meta-label">Сценарий:</span>
+                                            <span class="meta-value">${this.escapeHtml(writersStr)}</span>
+                                        </div>` : ''}
+                                        ${producersStr ? `
+                                        <div class="meta-item">
+                                            <span class="meta-label">Продюсер:</span>
+                                            <span class="meta-value">${this.escapeHtml(producersStr)}</span>
+                                        </div>` : ''}
+                                        ${operatorsStr ? `
+                                        <div class="meta-item">
+                                            <span class="meta-label">Оператор:</span>
+                                            <span class="meta-value">${this.escapeHtml(operatorsStr)}</span>
+                                        </div>` : ''}
+                                        ${composersStr ? `
+                                        <div class="meta-item">
+                                            <span class="meta-label">Композитор:</span>
+                                            <span class="meta-value">${this.escapeHtml(composersStr)}</span>
+                                        </div>` : ''}
+                                        ${designersStr ? `
+                                        <div class="meta-item">
+                                            <span class="meta-label">Художник:</span>
+                                            <span class="meta-value">${this.escapeHtml(designersStr)}</span>
+                                        </div>` : ''}
+                                        ${editorsStr ? `
+                                        <div class="meta-item">
+                                            <span class="meta-label">Монтаж:</span>
+                                            <span class="meta-value">${this.escapeHtml(editorsStr)}</span>
+                                        </div>` : ''}
+                                        
+                                        <!-- Financial Info -->
+                                        ${budgetStr ? `
+                                        <div class="meta-item">
+                                            <span class="meta-label">Бюджет:</span>
+                                            <span class="meta-value">${budgetStr}</span>
+                                        </div>` : ''}
+                                        ${feesUsaStr ? `
+                                        <div class="meta-item">
+                                            <span class="meta-label">Сборы в США:</span>
+                                            <span class="meta-value">${feesUsaStr}</span>
+                                        </div>` : ''}
+                                        ${feesWorldStr ? `
+                                        <div class="meta-item">
+                                            <span class="meta-label">Сборы в мире:</span>
+                                            <span class="meta-value">${feesWorldStr}</span>
+                                        </div>` : ''}
+                                        ${feesRussiaStr ? `
+                                        <div class="meta-item">
+                                            <span class="meta-label">Сборы в России:</span>
+                                            <span class="meta-value">${feesRussiaStr}</span>
+                                        </div>` : ''}
+                                        ${audienceRussiaStr ? `
+                                        <div class="meta-item">
+                                            <span class="meta-label">Зрители:</span>
+                                            <span class="meta-value">${audienceRussiaStr}</span>
+                                        </div>` : ''}
+                                        
+                                        <!-- Premiere Info -->
+                                        ${premiereRussiaStr ? `
+                                        <div class="meta-item">
+                                            <span class="meta-label">Премьера в России:</span>
+                                            <span class="meta-value">${premiereRussiaStr}</span>
+                                        </div>` : ''}
+                                        ${premiereWorldStr ? `
+                                        <div class="meta-item">
+                                            <span class="meta-label">Премьера в мире:</span>
+                                            <span class="meta-value">${premiereWorldStr}</span>
+                                        </div>` : ''}
+                                        ${premiereDigitalStr ? `
+                                        <div class="meta-item">
+                                            <span class="meta-label">Цифровой релиз:</span>
+                                            <span class="meta-value">${premiereDigitalStr}</span>
+                                        </div>` : ''}
+                                        
+                                        <!-- Age and Duration -->
+                                        ${movie.ageRating ? `
+                                        <div class="meta-item">
+                                            <span class="meta-label">Возраст:</span>
+                                            <span class="meta-value">${movie.ageRating}+</span>
+                                        </div>` : ''}
+                                        ${movie.ratingMpaa ? `
+                                        <div class="meta-item">
+                                            <span class="meta-label">Рейтинг MPAA:</span>
+                                            <span class="meta-value">${movie.ratingMpaa.toUpperCase()}</span>
+                                        </div>` : ''}
+                                        ${duration ? `
+                                        <div class="meta-item">
+                                            <span class="meta-label">Время:</span>
+                                            <span class="meta-value">${Math.floor(duration / 60)} ч ${duration % 60} мин</span>
+                                        </div>` : ''}
+                                    </div>
+                                </div>
+                                
+                                <!-- Actors Tab -->
+                                <div class="tab-pane" id="tab-actors">
+                                    ${actors.length > 0 ? `
+                                        <div class="actors-grid">
+                                            ${actors.map(actor => {
+                                                const photoUrl = actor.photo || '';
+                                                const name = actor.name || actor.enName || 'Неизвестно';
+                                                const role = actor.description || actor.enProfession || '';
+                                                
+                                                return `
+                                                <div class="actor-card">
+                                                    <div class="actor-photo-container">
+                                                        ${photoUrl ? 
+                                                            `<img src="${photoUrl}" alt="${this.escapeHtml(name)}" class="actor-photo" loading="lazy">` : 
+                                                            `<div class="actor-placeholder">🎭</div>`
+                                                        }
+                                                    </div>
+                                                    <div class="actor-info">
+                                                        <div class="actor-name">${this.escapeHtml(name)}</div>
+                                                        <div class="actor-role">${this.escapeHtml(role)}</div>
+                                                    </div>
+                                                </div>
+                                                `;
+                                            }).join('')}
+                                        </div>
+                                    ` : `
+                                        <div class="no-data-placeholder">
+                                            <p>Информация об актерах отсутствует</p>
+                                        </div>
+                                    `}
+                                </div>
+                                
+                                <!-- Awards Tab -->
+                                <div class="tab-pane" id="tab-awards">
+                                    ${(() => {
+                                        if (!movie.awards || movie.awards.length === 0) return '';
+                                        
+                                        if (!movie.awards || movie.awards.length === 0) {
+                                            console.log('No awards in movie object');
+                                            return '<div class="no-data-placeholder"><p>Нет информации о наградах</p></div>';
+                                        }
+                                        
+                                        console.log('Processing awards:', movie.awards);
+
+                                        // Parser already returns Oscar and Golden Globe only
+                                        // Data format: { name, nominationName, win, year }
+                                        const notableAwards = movie.awards.sort((a, b) => (b.win ? 1 : 0) - (a.win ? 1 : 0)); // Winners first
+
+                                        if (notableAwards.length === 0) return '<div class="no-data-placeholder"><p>Нет информации о крупных наградах</p></div>';
+
+                                        const getAwardIcon = (name) => {
+                                            if (name.includes('Оскар')) return '<img src="../../../icons/oscar.png" alt="Oscar" class="award-icon-img">'; 
+                                            if (name.includes('Золотой глобус')) return '<img src="../../../icons/golden-globe.png" alt="Golden Globe" class="award-icon-img">';
+                                            // Default fallback
+                                            return '<img src="../../../icons/award-default.png" alt="Award" class="award-icon-img">';
+                                        };
+
+                                        return `
+                                            <div class="awards-grid">
+                                                ${notableAwards.map(award => `
+                                                    <div class="award-card">
+                                                        <div class="award-icon-container">
+                                                            ${getAwardIcon(award.name || '')}
+                                                        </div>
+                                                        <div class="award-title">${this.escapeHtml(award.name)}</div>
+                                                        <div class="award-nomination">${this.escapeHtml(award.nominationName || 'Номинация')}</div>
+                                                        <div class="award-badge ${award.win ? 'winner' : 'nominee'}">
+                                                            ${award.win ? 'Победитель' : 'Номинация'}
+                                                        </div>
+                                                    </div>
+                                                `).join('')}
+                                            </div>
+                                        `;
+                                    })()}
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1418,20 +1818,30 @@ class SearchManager {
         this.elements.yearFromFilter.value = '';
         this.elements.yearToFilter.value = '';
         
-        // Uncheck all genre checkboxes
-        this.elements.genreCheckboxes.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
-            checkbox.checked = false;
-            checkbox.closest('.checkbox-item').classList.remove('selected');
+        // Reset all genre filters to neutral state
+        this.elements.genreCheckboxes.querySelectorAll('.checkbox-item').forEach(item => {
+            item.setAttribute('data-filter-state', 'neutral');
+            item.classList.remove('filter-include', 'filter-exclude', 'selected');
+            const checkbox = item.querySelector('input[type="checkbox"]');
+            if (checkbox) checkbox.checked = false;
         });
         
-        // Uncheck all country checkboxes
-        this.elements.countryCheckboxes.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
-            checkbox.checked = false;
-            checkbox.closest('.checkbox-item').classList.remove('selected');
+        // Reset all country filters to neutral state
+        this.elements.countryCheckboxes.querySelectorAll('.checkbox-item').forEach(item => {
+            item.setAttribute('data-filter-state', 'neutral');
+            item.classList.remove('filter-include', 'filter-exclude', 'selected');
+            const checkbox = item.querySelector('input[type="checkbox"]');
+            if (checkbox) checkbox.checked = false;
         });
+        
+        // Clear saved filter state
+        this.clearFilterState();
     }
 
     applyFilters() {
+        // Save filter state to localStorage
+        this.saveFilterState();
+        
         // Apply filters and perform search
         this.performSearch();
     }
@@ -1440,18 +1850,34 @@ class SearchManager {
         const filters = {
             yearFrom: this.elements.yearFromFilter.value ? parseInt(this.elements.yearFromFilter.value) : null,
             yearTo: this.elements.yearToFilter.value ? parseInt(this.elements.yearToFilter.value) : null,
-            genres: [],
-            countries: []
+            genresInclude: [],
+            genresExclude: [],
+            countriesInclude: [],
+            countriesExclude: []
         };
         
-        // Get selected genres
-        this.elements.genreCheckboxes.querySelectorAll('input[type="checkbox"]:checked').forEach(checkbox => {
-            filters.genres.push(checkbox.value);
+        // Get genre filters by state
+        this.elements.genreCheckboxes.querySelectorAll('.checkbox-item').forEach(item => {
+            const state = item.getAttribute('data-filter-state');
+            const value = item.getAttribute('data-filter-value');
+            
+            if (state === 'include') {
+                filters.genresInclude.push(value);
+            } else if (state === 'exclude') {
+                filters.genresExclude.push(value);
+            }
         });
         
-        // Get selected countries
-        this.elements.countryCheckboxes.querySelectorAll('input[type="checkbox"]:checked').forEach(checkbox => {
-            filters.countries.push(checkbox.value);
+        // Get country filters by state
+        this.elements.countryCheckboxes.querySelectorAll('.checkbox-item').forEach(item => {
+            const state = item.getAttribute('data-filter-state');
+            const value = item.getAttribute('data-filter-value');
+            
+            if (state === 'include') {
+                filters.countriesInclude.push(value);
+            } else if (state === 'exclude') {
+                filters.countriesExclude.push(value);
+            }
         });
         
         return filters;
@@ -1477,6 +1903,153 @@ class SearchManager {
 
     openSettings() {
         this.showError('Settings feature coming soon!');
+    }
+
+    /**
+     * Apply client-side filtering to movie results
+     * Used for filters not supported by the API or for additional filtering
+     */
+    applyClientSideFilters(movies, filters) {
+        if (!movies || movies.length === 0) return movies;
+        
+        return movies.filter(movie => {
+            // Year range filter
+            if (filters.yearFrom && movie.year < filters.yearFrom) return false;
+            if (filters.yearTo && movie.year > filters.yearTo) return false;
+            
+            // Genre include filter (movie must have at least one of these genres)
+            if (filters.genresInclude && filters.genresInclude.length > 0) {
+                const movieGenres = movie.genres || [];
+                const hasIncludedGenre = filters.genresInclude.some(genre => 
+                    movieGenres.some(mg => mg.toLowerCase() === genre.toLowerCase())
+                );
+                if (!hasIncludedGenre) return false;
+            }
+            
+            // Genre exclude filter (movie must not have any of these genres)
+            if (filters.genresExclude && filters.genresExclude.length > 0) {
+                const movieGenres = movie.genres || [];
+                const hasExcludedGenre = filters.genresExclude.some(genre => 
+                    movieGenres.some(mg => mg.toLowerCase() === genre.toLowerCase())
+                );
+                if (hasExcludedGenre) return false;
+            }
+            
+            // Country include filter (movie must be from at least one of these countries)
+            if (filters.countriesInclude && filters.countriesInclude.length > 0) {
+                const movieCountries = movie.countries || [];
+                const hasIncludedCountry = filters.countriesInclude.some(country => 
+                    movieCountries.some(mc => mc.toLowerCase() === country.toLowerCase())
+                );
+                if (!hasIncludedCountry) return false;
+            }
+            
+            // Country exclude filter (movie must not be from any of these countries)
+            if (filters.countriesExclude && filters.countriesExclude.length > 0) {
+                const movieCountries = movie.countries || [];
+                const hasExcludedCountry = filters.countriesExclude.some(country => 
+                    movieCountries.some(mc => mc.toLowerCase() === country.toLowerCase())
+                );
+                if (hasExcludedCountry) return false;
+            }
+            
+            return true;
+        });
+    }
+
+    /**
+     * Save current filter state to localStorage
+     */
+    saveFilterState() {
+        const filterState = {
+            yearFrom: this.elements.yearFromFilter.value,
+            yearTo: this.elements.yearToFilter.value,
+            genres: [],
+            countries: []
+        };
+        
+        // Save genre filter states
+        this.elements.genreCheckboxes.querySelectorAll('.checkbox-item').forEach(item => {
+            const state = item.getAttribute('data-filter-state');
+            if (state !== 'neutral') {
+                filterState.genres.push({
+                    id: item.getAttribute('data-filter-id'),
+                    value: item.getAttribute('data-filter-value'),
+                    state: state
+                });
+            }
+        });
+        
+        // Save country filter states
+        this.elements.countryCheckboxes.querySelectorAll('.checkbox-item').forEach(item => {
+            const state = item.getAttribute('data-filter-state');
+            if (state !== 'neutral') {
+                filterState.countries.push({
+                    id: item.getAttribute('data-filter-id'),
+                    value: item.getAttribute('data-filter-value'),
+                    state: state
+                });
+            }
+        });
+        
+        localStorage.setItem('movieSearchFilters', JSON.stringify(filterState));
+    }
+
+    /**
+     * Load filter state from localStorage
+     */
+    loadFilterState() {
+        try {
+            const savedState = localStorage.getItem('movieSearchFilters');
+            if (!savedState) return;
+            
+            const filterState = JSON.parse(savedState);
+            
+            // Restore year range
+            if (filterState.yearFrom) this.elements.yearFromFilter.value = filterState.yearFrom;
+            if (filterState.yearTo) this.elements.yearToFilter.value = filterState.yearTo;
+            
+            // Restore genre filters
+            if (filterState.genres) {
+                filterState.genres.forEach(savedFilter => {
+                    const item = this.elements.genreCheckboxes.querySelector(`[data-filter-id="${savedFilter.id}"]`);
+                    if (item && savedFilter.state) {
+                        item.setAttribute('data-filter-state', savedFilter.state);
+                        item.classList.remove('filter-include', 'filter-exclude');
+                        if (savedFilter.state === 'include') {
+                            item.classList.add('filter-include');
+                        } else if (savedFilter.state === 'exclude') {
+                            item.classList.add('filter-exclude');
+                        }
+                    }
+                });
+            }
+            
+            // Restore country filters
+            if (filterState.countries) {
+                filterState.countries.forEach(savedFilter => {
+                    const item = this.elements.countryCheckboxes.querySelector(`[data-filter-id="${savedFilter.id}"]`);
+                    if (item && savedFilter.state) {
+                        item.setAttribute('data-filter-state', savedFilter.state);
+                        item.classList.remove('filter-include', 'filter-exclude');
+                        if (savedFilter.state === 'include') {
+                            item.classList.add('filter-include');
+                        } else if (savedFilter.state === 'exclude') {
+                            item.classList.add('filter-exclude');
+                        }
+                    }
+                });
+            }
+        } catch (error) {
+            console.error('Error loading filter state:', error);
+        }
+    }
+
+    /**
+     * Clear saved filter state from localStorage
+     */
+    clearFilterState() {
+        localStorage.removeItem('movieSearchFilters');
     }
 
     showLoading(show) {
@@ -1505,7 +2078,7 @@ class SearchManager {
             resultsGrid.classList.add('single-item');
             resultsGrid.innerHTML = `
                 <div class="empty-state">
-                    <div class="empty-state-icon">🔍</div>
+                    <div class="empty-state-icon"><svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></div>
                     <h3 class="empty-state-title">Search for movies</h3>
                     <p class="empty-state-text">Enter a movie title to start searching</p>
                 </div>
@@ -1675,6 +2248,9 @@ class SearchManager {
                     posterPath: movie.posterUrl || '',
                     releaseYear: movie.year || null,
                     genres: movie.genres || [],
+                    description: movie.description || '',
+                    kpRating: movie.kpRating || 0,
+                    imdbRating: movie.imdbRating || 0,
                     avgRating: movie.kpRating || 0
                 };
                 

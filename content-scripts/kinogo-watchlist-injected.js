@@ -3,8 +3,24 @@
     
     let isSettingUpButton = false;
     
+    function injectStyles() {
+        if (!document.getElementById('movie-list-extension-styles')) {
+            const style = document.createElement('style');
+            style.id = 'movie-list-extension-styles';
+            style.textContent = `
+                .spin { animation: spin 1s linear infinite; transform-origin: center; }
+                @keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+    }
+
     async function init() {
         console.log('[MovieList Extension] Initializing watchlist feature for kinogo.inc...');
+        injectStyles();
         setupWatchlistButton();
         setupMutationObserver();
     }
@@ -298,7 +314,7 @@
         
         if (btn) {
             btn.disabled = true;
-            btn.innerHTML = '⏳';
+            btn.innerHTML = Icons.LOADING;
             btn.style.opacity = '0.7';
         }
         
@@ -309,7 +325,7 @@
                 alert('Пожалуйста, войдите в систему, чтобы управлять Watchlist');
                 if (btn) {
                     btn.disabled = false;
-                    btn.innerHTML = isInWatchlist ? '✓' : '🔖';
+                    btn.innerHTML = isInWatchlist ? Icons.CHECK : Icons.MORE_VERTICAL;
                     btn.style.opacity = '1';
                 }
                 return;
@@ -325,7 +341,7 @@
                 
                 // Update button state
                 btn.dataset.inWatchlist = 'false';
-                btn.innerHTML = '🔖';
+                btn.innerHTML = Icons.MORE_VERTICAL;
                 btn.classList.remove('added');
                 btn.title = 'Добавить в Watchlist';
                 btn.disabled = false;
@@ -360,7 +376,10 @@
                     posterPath: posterUrl,
                     releaseYear: movie.year || year || null,
                     genres: genres,
-                    avgRating: rating
+                    avgRating: rating,
+                    description: movie.description || '',
+                    kpRating: movie.rating?.kp || movie.kpRating || 0,
+                    imdbRating: movie.rating?.imdb || movie.imdbRating || 0,
                 };
                 
                 console.log('[MovieList Extension] Prepared movie data:', movieData);
@@ -371,7 +390,7 @@
                 // Update button state
                 btn.dataset.movieId = foundMovieId;
                 btn.dataset.inWatchlist = 'true';
-                btn.innerHTML = '✓';
+                btn.innerHTML = Icons.CHECK;
                 btn.classList.add('added');
                 btn.title = 'Удалить из Watchlist';
                 btn.disabled = false;
@@ -380,7 +399,7 @@
                 console.error('[MovieList Extension] Could not find movie. Movie object:', movie);
                 alert('Не удалось найти фильм. Пожалуйста, попробуйте позже.');
                 if (btn) {
-                    btn.innerHTML = isInWatchlist ? '✓' : '🔖';
+                    btn.innerHTML = isInWatchlist ? Icons.CHECK : Icons.MORE_VERTICAL;
                     btn.disabled = false;
                     btn.style.opacity = '1';
                 }
@@ -389,7 +408,7 @@
             console.error('[MovieList Extension] Error in handleWatchlistClick:', error);
             alert('Произошла ошибка: ' + error.message);
             if (btn) {
-                btn.innerHTML = isInWatchlist ? '✓' : '🔖';
+                btn.innerHTML = isInWatchlist ? Icons.CHECK : Icons.MORE_VERTICAL;
                 btn.disabled = false;
                 btn.style.opacity = '1';
             }
@@ -479,7 +498,7 @@
             const btn = document.createElement('button');
             btn.id = 'movieListWatchlistBtn';
             btn.className = 'movieListWatchlistBtn';
-            btn.innerHTML = isInWatchlist ? '✓' : '🔖';
+            btn.innerHTML = isInWatchlist ? Icons.CHECK : Icons.MORE_VERTICAL;
             btn.title = isInWatchlist ? 'Удалить из Watchlist' : 'Добавить в Watchlist';
             btn.setAttribute('aria-label', isInWatchlist ? 'Удалить из Watchlist' : 'Добавить в Watchlist');
             if (movieId) {
