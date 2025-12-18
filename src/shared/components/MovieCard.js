@@ -72,6 +72,13 @@ class MovieCard {
                                 <span class="mc-menu-item-text">${data.isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}</span>
                             </button>
                         ` : ''}
+                        ${showWatchlist ? `
+                            <button class="mc-menu-item" data-action="toggle-watchlist"
+                                    data-movie-id="${movie.kinopoiskId || data.movieId}">
+                                <span class="mc-menu-item-icon">🔖</span>
+                                <span class="mc-menu-item-text">Add to Watchlist</span>
+                            </button>
+                        ` : ''}
                         ${showEditRating ? `
                             <button class="mc-menu-item" data-action="edit-rating"
                                     data-movie-id="${movie.kinopoiskId || data.movieId}"
@@ -98,14 +105,7 @@ class MovieCard {
                     </div>
                 ` : ''}
                 
-                ${showWatchlist ? `
-                    <button class="mc-watchlist-btn" 
-                            data-action="toggle-watchlist"
-                            data-movie-id="${movie.kinopoiskId || data.movieId}" 
-                            title="Add to Watchlist">
-                        🔖
-                    </button>
-                ` : ''}
+
             </div>
             
             <div class="mc-content">
@@ -135,20 +135,20 @@ class MovieCard {
                     ${kinopoiskRating > 0 ? `
                         <div class="mc-rating-item">
                             <div class="mc-rating-label">Kinopoisk</div>
-                            <div class="mc-rating-value mc-rating-kp">${kinopoiskRating.toFixed(1)}</div>
+                            <div class="mc-rating-value mc-rating-kp">${parseFloat(kinopoiskRating.toFixed(1))}</div>
                         </div>
                     ` : ''}
                     ${imdbRating > 0 ? `
                         <div class="mc-rating-item">
                             <div class="mc-rating-label">IMDb</div>
-                            <div class="mc-rating-value mc-rating-imdb">${imdbRating.toFixed(1)}</div>
+                            <div class="mc-rating-value mc-rating-imdb">${parseFloat(imdbRating.toFixed(1))}</div>
                         </div>
                     ` : ''}
                     ${showAverageRating ? `
                     <div class="mc-rating-item">
                         <div class="mc-rating-label">Avg Rating</div>
                         <div class="mc-rating-value mc-rating-avg">
-                            ${ratingsCount > 0 ? averageRating.toFixed(1) + '/10' : 'N/A'}
+                            ${ratingsCount > 0 ? parseFloat(averageRating.toFixed(1)) : 'N/A'}
                         </div>
                     </div>
                     ` : ''}
@@ -163,12 +163,12 @@ class MovieCard {
                         <span class="mc-user-name clickable-username" data-user-id="${userId}">
                             ${this.escapeHtml(userDisplayName || userEmail?.split('@')[0] || 'User')}
                         </span>
-                        ${rating > 0 ? `<span class="mc-user-rating"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> ${rating}/10</span>` : ''}
+                        ${rating > 0 ? `<span class="mc-user-rating"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> ${rating}</span>` : ''}
                     </div>
                 ` : rating > 0 && !showUserInfo ? `
                     <div class="mc-my-rating">
-                        <span class="mc-rating-icon">⭐</span>
-                        <span class="mc-rating-text">My Rating: ${rating}/10</span>
+                        <span class="mc-rating-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></span>
+                        <span class="mc-rating-text">My Rating: ${rating}</span>
                     </div>
                 ` : ''}
                 

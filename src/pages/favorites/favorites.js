@@ -519,7 +519,7 @@ class FavoritesPageManager {
         if (this.elements.currentRatingInfo && favorite.rating) {
             this.elements.currentRatingInfo.style.display = 'block';
             if (this.elements.existingRatingValue) {
-                this.elements.existingRatingValue.textContent = `${favorite.rating}/10`;
+                this.elements.existingRatingValue.textContent = `${favorite.rating}`;
             }
             if (this.elements.existingRatingComment) {
                 this.elements.existingRatingComment.textContent = favorite.comment || 'No comment';

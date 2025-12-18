@@ -180,6 +180,41 @@
     font-weight: 600;
 }
 
+/* Actions Buttons Container */
+.actions-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    align-items: stretch;
+}
+
+/* Clear Cache Button */
+.btn-clear-cache {
+    background: transparent;
+    border: 1px solid var(--primary, #6366f1);
+    color: var(--primary, #6366f1);
+    padding: var(--space-xs) var(--space-md);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+    transition: all var(--transition-base);
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.btn-clear-cache:hover:not(:disabled) {
+    background: var(--primary, #6366f1);
+    color: white;
+    transform: translateY(-1px);
+}
+
+.btn-clear-cache:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    border-color: var(--text-muted);
+    color: var(--text-muted);
+}
+
 /* Delete Button */
 .btn-delete {
     background: transparent;

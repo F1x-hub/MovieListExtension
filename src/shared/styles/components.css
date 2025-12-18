@@ -59,7 +59,7 @@
 .btn-accent:hover:not(:disabled) {
     background: linear-gradient(135deg, #555555 0%, #777777 100%);
     transform: translateY(-2px);
-    box-shadow: var(--shadow-glow);
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.15);
 }
 
 .btn-secondary {

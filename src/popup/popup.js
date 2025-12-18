@@ -1270,7 +1270,7 @@ class PopupManager {
         // Get pre-loaded average rating
         const averageData = averageRatingsMap.get(movieId) || { average: 0, count: 0 };
         const averageDisplay = averageData.count > 0 
-            ? `${averageData.average.toFixed(1)}/10` 
+            ? `${parseFloat(averageData.average.toFixed(1))}` 
             : 'No ratings';
 
         // Get current user photo if this is current user's rating and photo is missing/outdated
@@ -1324,7 +1324,7 @@ class PopupManager {
                 <div class="rating-scores">
                     <div class="rating-user-score">
                         <span>Your rating:</span>
-                        <span class="rating-badge">${rating.rating}/10</span>
+                        <span class="rating-badge">${rating.rating}</span>
                     </div>
                     <div class="rating-average-score">
                         <span>Average:</span>
@@ -1518,7 +1518,7 @@ class PopupManager {
                 
                 <form id="editRatingFormPopup">
                     <div style="margin-bottom:16px;">
-                        <label style="display:block; margin-bottom:8px; color:#94a3b8;">Оценка: <span id="editRatingValuePopup">${ratingData.rating}</span>/10</label>
+                        <label style="display:block; margin-bottom:8px; color:#94a3b8;">Оценка: <span id="editRatingValuePopup">${ratingData.rating}</span></label>
                         <input type="range" id="editRatingSliderPopup" min="1" max="10" value="${ratingData.rating}" style="width:100%;">
                     </div>
                     

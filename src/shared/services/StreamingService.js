@@ -171,7 +171,28 @@ class StreamingService {
         if (!tabContent) return players;
 
         const panes = tabContent.querySelectorAll('.tab-pane');
-        
+
+        // Check for video tags (raw sources)
+        const videoTags = tabContent.querySelectorAll('video');
+        videoTags.forEach(video => {
+            const src = video.src || (video.querySelector('source') ? video.querySelector('source').src : null);
+            if (src) {
+                let name = 'Direct Video';
+                const pane = video.closest('.tab-pane');
+                if (pane) {
+                     const tabLink = doc.querySelector(`.nav-tabs a[href="#${pane.id}"]`);
+                     if (tabLink) name = tabLink.textContent.trim();
+                }
+                
+                players.push({
+                    name: name,
+                    url: src,
+                    type: 'video'
+                });
+            }
+        });
+
+        // Check for iframes
         panes.forEach(pane => {
             const iframe = pane.querySelector('iframe');
             if (iframe && iframe.src) {
@@ -179,7 +200,6 @@ class StreamingService {
                 const id = pane.id;
                 
                 // Try to find the tab label for this pane
-                // <ul class="nav-tabs"><li><a href="#tab6">Плеер Full HD</a></li>...</ul>
                 const tabLink = doc.querySelector(`.nav-tabs a[href="#${id}"]`);
                 if (tabLink) {
                     name = tabLink.textContent.trim();
@@ -188,7 +208,7 @@ class StreamingService {
                 players.push({
                     name: name,
                     url: iframe.src,
-                    type: 'iframe' // Most likely an iframe embed
+                    type: 'iframe'
                 });
             }
         });

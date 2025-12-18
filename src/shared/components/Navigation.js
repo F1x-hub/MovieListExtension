@@ -62,30 +62,24 @@ class Navigation {
 
                     <!-- Navigation Menu -->
                     <nav class="nav-menu" id="navMenu">
-                        <div class="nav-item">
-                            <a href="#" class="nav-link" data-page="search" id="navSearch">
-                                <span class="nav-icon">${typeof Icons !== 'undefined' ? Icons.SEARCH : '🔍'}</span>
-                                <span>Search Movies</span>
-                            </a>
-                        </div>
                         <div class="nav-item nav-item-dropdown">
                             <a href="#" class="nav-link" data-page="ratings" id="navRatings">
-                                <span class="nav-icon">${typeof Icons !== 'undefined' ? Icons.STAR : '⭐'}</span>
-                                <span>My Collection</span>
+                                <span class="nav-icon">${typeof Icons !== 'undefined' ? Icons.STAR : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>'}</span>
+                                <span>Rated</span>
                                 <span class="nav-dropdown-arrow">${typeof Icons !== 'undefined' ? Icons.CHEVRON_DOWN : '▼'}</span>
                             </a>
                             <div class="collection-dropdown" id="collectionDropdown">
                                 <div class="dropdown-item" data-page="ratings">
-                                    <span class="dropdown-icon">${typeof Icons !== 'undefined' ? Icons.STAR : '⭐'}</span>
+                                    <span class="dropdown-icon">${typeof Icons !== 'undefined' ? Icons.STAR : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>'}</span>
                                     <span>All Movies</span>
                                 </div>
                                 <div class="dropdown-item" data-page="watchlist">
-                                    <span class="dropdown-icon">${typeof Icons !== 'undefined' ? Icons.BOOKMARK : '🔖'}</span>
+                                    <span class="dropdown-icon">${typeof Icons !== 'undefined' ? Icons.BOOKMARK : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>'}</span>
                                     <span>Watchlist</span>
                                     <span class="count" id="watchlistCount">(0)</span>
                                 </div>
                                 <div class="dropdown-item" data-page="favorites">
-                                    <span class="dropdown-icon">${typeof Icons !== 'undefined' ? Icons.HEART : '❤️'}</span>
+                                    <span class="dropdown-icon">${typeof Icons !== 'undefined' ? Icons.HEART : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>'}</span>
                                     <span>Favorites</span>
                                     <span class="count" id="favoritesCount">(0)</span>
                                 </div>
@@ -93,12 +87,22 @@ class Navigation {
                                 <div class="dropdown-section-header">Custom Collections</div>
                                 <div class="custom-collections-list" id="customCollectionsList"></div>
                                 <div class="dropdown-item create-collection-item" id="createCollectionBtn">
-                                    <span class="dropdown-icon">${typeof Icons !== 'undefined' ? Icons.PLUS : '➕'}</span>
+                                    <span class="dropdown-icon">${typeof Icons !== 'undefined' ? Icons.PLUS : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>'}</span>
                                     <span>Create Collection</span>
                                 </div>
                             </div>
                         </div>
                     </nav>
+
+                    <!-- Search Section -->
+                    <div class="nav-search-container">
+                        <button class="nav-search-toggle" id="navSearchToggle" title="Search Movies">
+                            <span class="nav-icon">${typeof Icons !== 'undefined' ? Icons.SEARCH : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>'}</span>
+                        </button>
+                        <div class="nav-search-input-wrapper" id="navSearchInputWrapper">
+                            <input type="text" class="nav-search-input" id="navSearchInput" placeholder="Search movies...">
+                        </div>
+                    </div>
 
                     <!-- User Section -->
                     <div class="nav-user" id="navUser">
@@ -113,11 +117,15 @@ class Navigation {
                             <!-- Dropdown Menu -->
                             <div class="nav-user-dropdown" id="navUserDropdown">
                                 <div class="nav-dropdown-item" id="navDropdownSettings">
-                                    <span class="nav-dropdown-icon">${typeof Icons !== 'undefined' ? Icons.USER : '👤'}</span>
+                                    <span class="nav-dropdown-icon">${typeof Icons !== 'undefined' ? Icons.USER : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>'}</span>
                                     <span>View Profile</span>
                                 </div>
+                                <div class="nav-dropdown-item" id="navDropdownSettingsPage">
+                                    <span class="nav-dropdown-icon">${typeof Icons !== 'undefined' ? Icons.SETTINGS : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 512 512"><path d="M262.29,192.31a64,64,0,1,0,57.4,57.4A64.13,64.13,0,0,0,262.29,192.31ZM416.39,256a154.34,154.34,0,0,1-1.53,20.79l45.21,35.46A10.81,10.81,0,0,1,462.52,326l-42.77,74a10.81,10.81,0,0,1-13.14,4.59l-44.9-18.08a16.11,16.11,0,0,0-15.17,1.75A164.48,164.48,0,0,1,325,400.8a15.94,15.94,0,0,0-8.82,12.14l-6.73,47.89A11.08,11.08,0,0,1,298.77,470H213.23a11.11,11.11,0,0,1-10.69-8.87l-6.72-47.82a16.07,16.07,0,0,0-9-12.22,155.3,155.3,0,0,1-21.46-12.57,16,16,0,0,0-15.11-1.71l-44.89,18.07a10.81,10.81,0,0,1-13.14-4.58l-42.77-74a10.8,10.8,0,0,1,2.45-13.75l38.21-30a16.05,16.05,0,0,0,6-14.08c-.36-4.17-.58-8.33-.58-12.5s.21-8.27.58-12.35a16,16,0,0,0-6.07-13.94l-38.19-30A10.81,10.81,0,0,1,49.48,186l42.77-74a10.81,10.81,0,0,1,13.14-4.59l44.9,18.08a16.11,16.11,0,0,0,15.17-1.75A164.48,164.48,0,0,1,187,111.2a15.94,15.94,0,0,0,8.82-12.14l6.73-47.89A11.08,11.08,0,0,1,213.23,42h85.54a11.11,11.11,0,0,1,10.69,8.87l6.72,47.82a16.07,16.07,0,0,0,9,12.22,155.3,155.3,0,0,1,21.46,12.57,16,16,0,0,0,15.11,1.71l44.89-18.07a10.81,10.81,0,0,1,13.14,4.58l42.77,74a10.8,10.8,0,0,1-2.45,13.75l-38.21,30a16.05,16.05,0,0,0-6.05,14.08C416.17,247.67,416.39,251.83,416.39,256Z" style="fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round;stroke-width:32px"></path></svg>'}</span>
+                                    <span>Settings</span>
+                                </div>
                                 <div class="nav-dropdown-item" id="navDropdownAdmin" style="display: none;">
-                                    <span class="nav-dropdown-icon">${typeof Icons !== 'undefined' ? Icons.ADMIN : '🛡️'}</span>
+                                    <span class="nav-dropdown-icon">${typeof Icons !== 'undefined' ? Icons.ADMIN : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>'}</span>
                                     <span>Admin Panel</span>
                                 </div>
                                 <div class="nav-dropdown-item" id="navDropdownTheme">
@@ -128,7 +136,7 @@ class Navigation {
                                 </div>
                                 <div class="nav-dropdown-divider"></div>
                                 <div class="nav-dropdown-item nav-dropdown-logout" id="navDropdownLogout">
-                                    <span class="nav-dropdown-icon">${typeof Icons !== 'undefined' ? Icons.LOGOUT : '🚪'}</span>
+                                    <span class="nav-dropdown-icon">${typeof Icons !== 'undefined' ? Icons.LOGOUT : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>'}</span>
                                     <span>Log Out</span>
                                 </div>
                             </div>
@@ -197,6 +205,9 @@ class Navigation {
             });
         }
 
+        // Search toggle functionality
+        this.setupSearchToggle();
+
         // Close mobile menu when clicking outside
         document.addEventListener('click', (e) => {
             if (navMenu && !navMenu.contains(e.target) && !mobileToggle.contains(e.target)) {
@@ -214,6 +225,7 @@ class Navigation {
         if (userTrigger && userDropdown) {
             // Toggle dropdown on user trigger click
             userTrigger.addEventListener('click', (e) => {
+                console.log('User trigger clicked', e);
                 e.stopPropagation();
                 const isOpen = userDropdown.classList.contains('active');
                 
@@ -221,14 +233,27 @@ class Navigation {
                 this.closeAllDropdowns();
                 
                 if (!isOpen) {
+                    console.log('Opening user dropdown');
                     userDropdown.classList.add('active');
                     userTrigger.classList.add('active');
+                } else {
+                    console.log('Closing user dropdown');
+                    this.closeAllDropdowns();
                 }
             });
 
-            // Settings dropdown item
+            // Settings dropdown item (View Profile)
             if (dropdownSettings) {
                 dropdownSettings.addEventListener('click', () => {
+                    this.closeAllDropdowns();
+                    this.navigateToPage('profile');
+                });
+            }
+
+            // Settings page dropdown item
+            const dropdownSettingsPage = document.getElementById('navDropdownSettingsPage');
+            if (dropdownSettingsPage) {
+                dropdownSettingsPage.addEventListener('click', () => {
                     this.closeAllDropdowns();
                     this.navigateToPage('settings');
                 });
@@ -290,6 +315,71 @@ class Navigation {
         if (collectionDropdown && collectionLink) {
             collectionDropdown.classList.remove('open');
             collectionLink.classList.remove('dropdown-open');
+        }
+    }
+
+    setupSearchToggle() {
+        const searchToggle = document.getElementById('navSearchToggle');
+        const searchInputWrapper = document.getElementById('navSearchInputWrapper');
+        const searchInput = document.getElementById('navSearchInput');
+
+        if (!searchToggle || !searchInputWrapper || !searchInput) return;
+
+        // Toggle search input on button click
+        searchToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isOpen = searchInputWrapper.classList.contains('active');
+            
+            if (isOpen) {
+                // Second click - perform search if input has value
+                const query = searchInput.value.trim();
+                if (query) {
+                    searchInputWrapper.classList.remove('active');
+                    this.navigateToSearchWithQuery(query);
+                    searchInput.value = ''; // Clear input after search
+                }
+            } else {
+                searchInputWrapper.classList.add('active');
+                // Focus the input after animation
+                setTimeout(() => searchInput.focus(), 300);
+            }
+        });
+
+        // Handle Enter key to navigate to search page
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                const query = searchInput.value.trim();
+                searchInputWrapper.classList.remove('active');
+                if (query) {
+                    this.navigateToSearchWithQuery(query);
+                    searchInput.value = ''; // Clear input after search
+                } else {
+                    this.navigateToPage('search');
+                }
+            }
+        });
+
+        // Close search when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!searchToggle.contains(e.target) && !searchInputWrapper.contains(e.target)) {
+                searchInputWrapper.classList.remove('active');
+            }
+        });
+
+        // Close search on Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && searchInputWrapper.classList.contains('active')) {
+                searchInputWrapper.classList.remove('active');
+            }
+        });
+    }
+
+    navigateToSearchWithQuery(query) {
+        const searchUrl = chrome.runtime.getURL(`src/pages/search/search.html?q=${encodeURIComponent(query)}`);
+        if (window.location.pathname.includes('popup.html')) {
+            chrome.tabs.create({ url: searchUrl });
+        } else {
+            window.location.href = searchUrl;
         }
     }
 
@@ -1628,7 +1718,7 @@ class Navigation {
                         const profile = await userService.getUserProfile(user.uid);
                         
                         if (profile && profile.isAdmin === true) {
-                            adminMenuItem.style.display = 'block';
+                            adminMenuItem.style.display = 'flex';
                         } else {
                             adminMenuItem.style.display = 'none';
                         }
@@ -1703,8 +1793,10 @@ class Navigation {
                     url = chrome.runtime.getURL('src/pages/favorites/favorites.html');
                     break;
                 case 'profile':
-                case 'settings':
                     url = chrome.runtime.getURL('src/pages/profile/profile.html');
+                    break;
+                case 'settings':
+                    url = chrome.runtime.getURL('src/pages/settings/settings.html');
                     break;
                 default:
                     return;
@@ -1733,8 +1825,10 @@ class Navigation {
                 url = chrome.runtime.getURL('src/pages/favorites/favorites.html');
                 break;
             case 'profile':
-            case 'settings':
                 url = chrome.runtime.getURL('src/pages/profile/profile.html');
+                break;
+            case 'settings':
+                url = chrome.runtime.getURL('src/pages/settings/settings.html');
                 break;
             case 'admin':
                 url = chrome.runtime.getURL('src/pages/admin/admin.html');
@@ -2220,7 +2314,11 @@ if (typeof window !== 'undefined' && !window.location.pathname.includes('popup.h
         } else if (window.location.pathname.includes('favorites.html')) {
             currentPage = 'favorites';
         } else if (window.location.pathname.includes('admin.html') || window.location.pathname.includes('src/pages/admin/')) {
-            currentPage = 'admin';
+            // Admin page handles its own navigation init
+            return;
+        } else if (window.location.pathname.includes('settings.html') || window.location.pathname.includes('src/pages/settings/')) {
+             // Settings page handles its own navigation init
+            return;
         }
         
         window.navigation = new Navigation(currentPage);

@@ -110,3 +110,71 @@
         max-width: none;
     }
 }
+
+/* Simple Player Styles */
+.simple-player-container {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    background-color: #000;
+    display: flex;
+    flex-direction: column;
+}
+
+.simple-player-overlay {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-size: cover;
+    background-position: center;
+    position: relative;
+}
+
+.simple-player-overlay::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+}
+
+.play-pause-btn {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background-color: rgba(229, 9, 20, 0.9);
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    transition: transform 0.2s, background-color 0.2s;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+}
+
+.play-pause-btn:hover {
+    transform: scale(1.1);
+    background-color: #f40612;
+}
+
+.play-pause-btn svg {
+    width: 40px;
+    height: 40px;
+    fill: white;
+    margin-left: 4px; /* Optical adjustment for play icon */
+}
+
+.play-pause-btn.playing svg {
+    margin-left: 0;
+}
+
+.simple-player-wrapper {
+    flex: 1;
+    display: flex;
+    width: 100%;
+    height: 100%;
+}

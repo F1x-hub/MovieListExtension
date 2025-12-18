@@ -23,7 +23,7 @@ class AdminPanelManager {
     async init() {
         try {
             // Initialize navigation
-            window.navigation = new Navigation('admin');
+            window.adminNav = new Navigation('admin');
 
             // Wait for Firebase to be ready
             await this.waitForFirebase();
@@ -194,7 +194,7 @@ class AdminPanelManager {
                     <div>
                         <div class="user-name">
                             ${this.escapeHtml(user.displayName || 'Unknown User')}
-                            ${user.isAdmin ? '<span class="admin-badge">🛡️ Admin</span>' : ''}
+                            ${user.isAdmin ? '<span class="admin-badge"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg> Admin</span>' : ''}
                             ${isCurrentUser ? '<span class="admin-badge" style="background: #22c55e;">You</span>' : ''}
                         </div>
                     </div>
@@ -642,7 +642,7 @@ class AdminPanelManager {
                 </div>
             </td>
             <td>
-                <div class="rating-value"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> ${rating.rating}/10</div>
+                <div class="rating-value"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> ${rating.rating}</div>
             </td>
             <td>
                 <div class="rating-comment" title="${this.escapeHtml(comment)}">
@@ -653,11 +653,31 @@ class AdminPanelManager {
                 <div class="rating-date">${ratingDate}</div>
             </td>
             <td>
-                <button class="btn-delete" data-rating-id="${rating.id}">
-                    Delete
-                </button>
+                <div class="actions-buttons">
+                    <button class="btn-clear-cache" data-movie-id="${rating.movieId}" title="Clear cache for this movie">
+                        Clear Cache
+                    </button>
+                    <button class="btn-update-info" data-movie-id="${rating.movieId}" title="Update movie info from Kinopoisk">
+                        Update Info
+                    </button>
+                    <button class="btn-delete" data-rating-id="${rating.id}">
+                        Delete
+                    </button>
+                </div>
             </td>
         `;
+
+        // Add click handler for clear cache button
+        const clearCacheBtn = row.querySelector('.btn-clear-cache');
+        if (clearCacheBtn) {
+            clearCacheBtn.addEventListener('click', () => this.clearMovieCache(rating.movieId, rating.movie));
+        }
+
+        // Add click handler for update info button
+        const updateInfoBtn = row.querySelector('.btn-update-info');
+        if (updateInfoBtn) {
+            updateInfoBtn.addEventListener('click', () => this.updateMovieInfo(rating));
+        }
 
         // Add click handler for delete button
         const deleteBtn = row.querySelector('.btn-delete');
@@ -682,7 +702,7 @@ class AdminPanelManager {
                 ratingPreview.innerHTML = `
                     <p><strong>Movie:</strong> ${this.escapeHtml(movieTitle)}</p>
                     <p><strong>User:</strong> ${this.escapeHtml(userName)}</p>
-                    <p><strong>Rating:</strong> <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> ${rating.rating}/10</p>
+                    <p><strong>Rating:</strong> <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> ${rating.rating}</p>
                     ${rating.comment ? `<p><strong>Comment:</strong> ${this.escapeHtml(rating.comment.substring(0, 100))}${rating.comment.length > 100 ? '...' : ''}</p>` : ''}
                 `;
             }
@@ -736,6 +756,95 @@ class AdminPanelManager {
             modal.style.display = 'none';
         }
         this.ratingToDelete = null;
+    }
+
+    async updateMovieInfo(rating) {
+        if (!rating || !rating.movieId) return;
+        
+        const movieId = rating.movieId;
+        const movieTitle = rating.movie?.name || 'this movie';
+
+        try {
+            // Show loading state
+            const buttons = document.querySelectorAll(`.btn-update-info[data-movie-id="${movieId}"]`);
+            buttons.forEach(btn => {
+                btn.disabled = true;
+                btn.textContent = 'Updating...';
+            });
+
+            // 1. Fetch fresh data from Kinopoisk
+            const kinopoiskService = new KinopoiskService();
+            const freshMovieData = await kinopoiskService.getMovieById(movieId);
+
+            if (!freshMovieData) {
+                throw new Error('Failed to fetch data from Kinopoisk');
+            }
+
+            // 2. Update Firestore cache
+            const movieCacheService = firebaseManager.getMovieCacheService();
+            await movieCacheService.cacheRatedMovie(freshMovieData);
+
+            // 3. Clear local cache for this movie to ensure immediate update in UI
+            localStorage.removeItem(`kp_movie_${movieId}`);
+
+            // 4. Reload ratings to reflect changes
+            await this.loadRatings();
+
+            this.showSuccessMessage(`Updated info for "${movieTitle}"`);
+
+        } catch (error) {
+            console.error('Error updating movie info:', error);
+            
+            // Reset button state
+            const buttons = document.querySelectorAll(`.btn-update-info[data-movie-id="${movieId}"]`);
+            buttons.forEach(btn => {
+                btn.disabled = false;
+                btn.textContent = 'Update Info';
+            });
+
+            this.showError(`Failed to update movie info: ${error.message}`);
+        }
+    }
+
+    async clearMovieCache(movieId, movieData) {
+        if (!movieId) return;
+
+        const movieTitle = movieData?.name || 'this movie';
+
+        if (!confirm(`Are you sure you want to clear the cache for "${movieTitle}"?\n\nThis will remove all cached data for this movie from both Firestore and localStorage.`)) {
+            return;
+        }
+
+        try {
+            // Show loading indicator on the button
+            const buttons = document.querySelectorAll(`.btn-clear-cache[data-movie-id="${movieId}"]`);
+            buttons.forEach(btn => {
+                btn.disabled = true;
+                btn.textContent = 'Clearing...';
+            });
+
+            await this.adminService.clearMovieCacheAsAdmin(movieId, this.currentUser.uid);
+
+            // Show success message
+            this.showSuccessMessage(`Cache cleared successfully for "${movieTitle}"`);
+
+            // Reset button state
+            buttons.forEach(btn => {
+                btn.disabled = false;
+                btn.textContent = 'Clear Cache';
+            });
+        } catch (error) {
+            console.error('Error clearing movie cache:', error);
+            
+            // Reset button state
+            const buttons = document.querySelectorAll(`.btn-clear-cache[data-movie-id="${movieId}"]`);
+            buttons.forEach(btn => {
+                btn.disabled = false;
+                btn.textContent = 'Clear Cache';
+            });
+
+            this.showError(`Failed to clear cache: ${error.message}`);
+        }
     }
 
     escapeHtml(text) {
