@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Movie Rating Extension",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Rate and discover movies with community ratings and Kinopoisk integration",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAn9oH6UpxDe3c/EWktNAbNvu9I9EOVjEW4VsEvSYgmEEmWb9Bn2NyMpWyUkG5QsEOHEO+3DQfCS5XN81BKOvsnHJst/1od7ZBp2lXS0Sr0QAAQY0FDZvQ6hnSamDPcw81y6q2NNNnynjLB9z9+AoyW3bEo/DRhBpbqOGHJgOD+rNbOTClSoreH1TggttLyEcDgN/nI7rc3QCSiE7helDgZLOOgmjBdILPZIDxg1XQM5SmPOOry0gcawh2B4Pp2ciQ3p5OuUzVYNG503+rlPUIoZ1BIZkTCnx8ezYJCXXhmMxXQwcpMVnNwmShr/Kzf+J3OehTusS0S332mk3tQAqvlwIDAQAB",
   "permissions": [
@@ -28,7 +28,8 @@
     "https://www.imdb.com/*",
     "https://kinogo.inc/*",
     "https://api.github.com/*",
-    "https://github.com/*"
+    "https://github.com/*",
+    "https://api.namy.ws/*"
   ],
   "oauth2": {
     "client_id": "532518163829-vb9oqal09sofhhtem6qbgd6d7lgk6som.apps.googleusercontent.com",
@@ -166,6 +167,18 @@
         "src/shared/styles/ex-fs-watchlist.css"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://*.namy.ws/*",
+        "*://*.lumex.cloud/*"
+      ],
+      "js": [
+        "content-scripts/player-cleaner.js"
+      ],
+      "run_at": "document_end",
+      "all_frames": true,
+      "match_about_blank": true
     }
   ]
 }

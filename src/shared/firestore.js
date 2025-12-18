@@ -836,6 +836,15 @@ class FirebaseManager {
 
     getUserService() {
         if (!this.userService) {
+            if (typeof UserService === 'undefined') {
+                throw new Error('UserService class not found');
+            }
+            if (!this.db) {
+                this.init();
+            }
+            if (!this.db) {
+                console.warn('Firebase DB not initialized when requesting UserService');
+            }
             this.userService = new UserService(this);
         }
         return this.userService;

@@ -309,6 +309,38 @@ class AdminService {
             throw new Error(`Failed to delete rating: ${error.message}`);
         }
     }
+
+    /**
+     * Clear movie cache as admin
+     * @param {number} movieId - Kinopoisk movie ID
+     * @param {string} currentAdminId - ID of admin performing the action
+     * @returns {Promise<Object>} - Result of cache clearing
+     */
+    async clearMovieCacheAsAdmin(movieId, currentAdminId) {
+        try {
+            // Verify admin status
+            const isAdmin = await this.isUserAdmin(currentAdminId);
+            if (!isAdmin) {
+                throw new Error('Unauthorized: Admin access required');
+            }
+
+            const movieCacheService = this.firebaseManager.getMovieCacheService();
+            if (!movieCacheService) {
+                throw new Error('MovieCacheService not available');
+            }
+
+            await movieCacheService.clearMovieCache(movieId);
+
+            return {
+                movieId,
+                success: true,
+                message: 'Movie cache cleared successfully'
+            };
+        } catch (error) {
+            console.error('Error clearing movie cache as admin:', error);
+            throw new Error(`Failed to clear movie cache: ${error.message}`);
+        }
+    }
 }
 
 // Export for use in other scripts

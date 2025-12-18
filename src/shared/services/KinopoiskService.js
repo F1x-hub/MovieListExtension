@@ -114,7 +114,28 @@ class KinopoiskService {
 
             const data = await response.json();
             console.log('Full movie API response:', data); // Debug log
-            return this.normalizeMovieData(data);
+            
+            let movieData = this.normalizeMovieData(data);
+
+            // Check if IMDb rating is missing and we have an IMDb ID
+            if ((!movieData.imdbRating || movieData.imdbRating === 0) && movieData.externalId?.imdb) {
+                console.log(`KinopoiskService: Missing IMDb rating for ${movieData.name}, attempting to parse from IMDb...`);
+                
+                if (typeof ImdbParsingService !== 'undefined') {
+                    const imdbService = new ImdbParsingService();
+                    const imdbData = await imdbService.getImdbRating(movieData.externalId.imdb);
+                    
+                    if (imdbData) {
+                        console.log(`KinopoiskService: Updated IMDb rating for ${movieData.name}: ${imdbData.rating} (${imdbData.votes} votes)`);
+                        movieData.imdbRating = imdbData.rating;
+                        movieData.votes.imdb = imdbData.votes;
+                    }
+                } else {
+                    console.warn('KinopoiskService: ImdbParsingService not found');
+                }
+            }
+
+            return movieData;
         } catch (error) {
             console.error('Error getting movie details:', error);
             throw new Error(`Failed to get movie details: ${error.message}`);
@@ -310,7 +331,10 @@ class KinopoiskService {
             distributors: movie.distributors || null,
             
             // Additional fields for caching
-            lastUpdated: new Date().toISOString()
+            lastUpdated: new Date().toISOString(),
+            
+            // IDs
+            externalId: movie.externalId || {}
         };
     }
     

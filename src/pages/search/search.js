@@ -10,9 +10,13 @@ class SearchManager {
         this.currentResults = [];
         this.selectedMovie = null;
         this.currentUser = null;
+        this.currentRating = 0; // State for new rating system
+        this.isReviewVisible = false;
         this.searchHistoryService = new SearchHistoryService();
         this.streamingService = new StreamingService();
         this.isHistoryDropdownOpen = false;
+        this.isPlaying = false;
+        this.currentVideoUrl = '';
         this.setupEventListeners();
         this.setupImageErrorHandlers();
         this.initializeUI();
@@ -66,17 +70,14 @@ class SearchManager {
             
             // Rating Modal
             ratingModal: document.getElementById('ratingModal'),
-            movieRatingInfo: document.getElementById('movieRatingInfo'),
-            ratingForm: document.getElementById('ratingForm'),
-            ratingSlider: document.getElementById('ratingSlider'),
-            ratingValue: document.getElementById('ratingValue'),
+            ratingMoviePoster: document.getElementById('ratingMoviePoster'),
+            ratingMovieTitle: document.getElementById('ratingMovieTitle'),
+            ratingMovieMeta: document.getElementById('ratingMovieMeta'),
+            ratingStars: document.getElementById('ratingStars'),
+            writeReviewBtn: document.getElementById('writeReviewBtn'),
+            reviewContainer: document.getElementById('reviewContainer'),
             ratingComment: document.getElementById('ratingComment'),
             charCount: document.getElementById('charCount'),
-            currentRatingInfo: document.getElementById('currentRatingInfo'),
-            existingRatingValue: document.getElementById('existingRatingValue'),
-            existingRatingComment: document.getElementById('existingRatingComment'),
-            saveRatingBtn: document.getElementById('saveRatingBtn'),
-            cancelRatingBtn: document.getElementById('cancelRatingBtn'),
             saveRatingBtn: document.getElementById('saveRatingBtn'),
             cancelRatingBtn: document.getElementById('cancelRatingBtn'),
             ratingModalClose: document.getElementById('ratingModalClose'),
@@ -87,7 +88,7 @@ class SearchManager {
             videoContainer: document.getElementById('videoContainer'),
             closeVideoBtn: document.getElementById('closeVideoBtn'),
             sourceSelect: document.getElementById('sourceSelect'),
-            refreshPlayerBtn: document.getElementById('refreshPlayerBtn')
+
         };
     }
 
@@ -167,13 +168,95 @@ class SearchManager {
         if (this.elements.cancelRatingBtn) {
             this.elements.cancelRatingBtn.addEventListener('click', () => this.closeRatingModal());
         }
+
+        // Delegation for MovieCard actions
+        this.elements.resultsGrid.addEventListener('click', (e) => {
+            const target = e.target;
+            const actionBtn = target.closest('[data-action]');
+            
+            if (!actionBtn) return;
+            
+            const action = actionBtn.getAttribute('data-action');
+            const movieId = actionBtn.getAttribute('data-movie-id');
+            const ratingId = actionBtn.getAttribute('data-rating-id');
+            const currentStatus = actionBtn.getAttribute('data-is-favorite') === 'true';
+            
+            if (action === 'view-details' && movieId) {
+                window.location.href = chrome.runtime.getURL(`src/pages/search/search.html?movieId=${movieId}`);
+            } else if (action === 'toggle-favorite' && ratingId) {
+                // For favorites, we need the button element to update its state
+                this.toggleFavorite(ratingId, currentStatus, actionBtn, movieId);
+            } else if (action === 'toggle-watchlist' && movieId) {
+                // Find the movie object from current results
+                const movie = this.currentResults.docs.find(m => String(m.kinopoiskId) === String(movieId));
+                if (movie) {
+                    this.toggleWatchlist(movie, actionBtn);
+                }
+            } else if (action === 'add-to-collection' && movieId) {
+                // TODO: Implement collection adding logic
+                 if (typeof Utils !== 'undefined') {
+                    Utils.showToast('Collection feature coming soon!', 'info');
+                }
+            } else if (action === 'edit-rating' || action === 'edit') {
+                // Handle edit rating action
+                let targetMovieId = movieId;
+                
+                // If movieId is missing on the button (e.g. inside a menu item), try to find it on the card
+                if (!targetMovieId) {
+                    const card = actionBtn.closest('.movie-card') || actionBtn.closest('.movie-card-component');
+                    if (card) {
+                        targetMovieId = card.getAttribute('data-movie-id');
+                    }
+                }
+
+                if (targetMovieId) {
+                    const movie = this.currentResults.docs.find(m => String(m.kinopoiskId) === String(targetMovieId));
+                    if (movie) {
+                        this.showRatingModal(movie);
+                    } else if (this.selectedMovie && String(this.selectedMovie.kinopoiskId) === String(targetMovieId)) {
+                         this.showRatingModal(this.selectedMovie);
+                    }
+                }
+            }
+        });
         
-        // Rating
-        if (this.elements.ratingSlider && this.elements.ratingValue) {
-            this.elements.ratingSlider.addEventListener('input', (e) => {
-                this.elements.ratingValue.textContent = e.target.value;
+        // Rating Interactions
+        if (this.elements.ratingStars) {
+            // Star hover delegation
+            this.elements.ratingStars.addEventListener('mouseover', (e) => {
+                const btn = e.target.closest('.star-rating-btn');
+                if (btn) {
+                    const rating = parseInt(btn.dataset.rating);
+                    this.updateStarVisuals(rating, true); // true for hover state
+                }
+            });
+
+            this.elements.ratingStars.addEventListener('mouseout', () => {
+                this.updateStarVisuals(this.currentRating, false); // restore actual rating
+            });
+
+            // Star click delegation
+            this.elements.ratingStars.addEventListener('click', (e) => {
+                const btn = e.target.closest('.star-rating-btn');
+                if (btn) {
+                    e.preventDefault(); // Prevent focus issues
+                    const rating = parseInt(btn.dataset.rating);
+                    this.currentRating = rating;
+                    this.updateStarVisuals(rating, false);
+                }
             });
         }
+
+        if (this.elements.writeReviewBtn) {
+            this.elements.writeReviewBtn.addEventListener('click', () => {
+                this.isReviewVisible = !this.isReviewVisible;
+                this.elements.reviewContainer.style.display = this.isReviewVisible ? 'block' : 'none';
+                if (this.isReviewVisible) {
+                    this.elements.ratingComment.focus();
+                }
+            });
+        }
+
         if (this.elements.ratingComment && this.elements.charCount) {
             this.elements.ratingComment.addEventListener('input', (e) => {
                 this.elements.charCount.textContent = e.target.value.length;
@@ -208,12 +291,32 @@ class SearchManager {
         if (this.elements.sourceSelect) {
             this.elements.sourceSelect.addEventListener('change', (e) => this.changeVideoSource(e.target.value));
         }
-        if (this.elements.refreshPlayerBtn) {
-            this.elements.refreshPlayerBtn.addEventListener('click', () => this.refreshPlayer());
-        }
+        // Refresh button repurposed as Play/Pause or removed? 
+        // We'll dynamically add a Play/Pause button in the controls panel
+
         
         // Tab navigation
         document.addEventListener('click', (e) => {
+            // Close menus if clicking outside
+            if (!e.target.closest('.mc-menu-btn') && !e.target.closest('.mc-menu-dropdown')) {
+                document.querySelectorAll('.mc-menu-dropdown.active').forEach(menu => {
+                    menu.classList.remove('active');
+                });
+            }
+
+            if (e.target.closest('.mc-menu-btn')) {
+                e.stopPropagation();
+                const btn = e.target.closest('.mc-menu-btn');
+                const menu = btn.nextElementSibling;
+                if (menu && menu.classList.contains('mc-menu-dropdown')) {
+                    // Close other menus
+                    document.querySelectorAll('.mc-menu-dropdown.active').forEach(m => {
+                        if (m !== menu) m.classList.remove('active');
+                    });
+                    menu.classList.toggle('active');
+                }
+            }
+
             if (e.target.classList.contains('tab-btn')) {
                 const tabName = e.target.dataset.tab;
                 
@@ -262,7 +365,7 @@ class SearchManager {
         // Check for parameters in URL
         const urlParams = new URLSearchParams(window.location.search);
         const movieId = urlParams.get('movieId');
-        const query = urlParams.get('query');
+        const query = urlParams.get('q') || urlParams.get('query'); // Support both 'q' and 'query'
         
         if (movieId) {
             await this.loadMovieById(movieId, false);
@@ -427,7 +530,9 @@ class SearchManager {
             // Apply client-side filtering (for filters not supported by API)
             let filteredResults = searchResults;
             if (searchResults && searchResults.docs) {
-                const filteredDocs = this.applyClientSideFilters(searchResults.docs, filters);
+                // Filter out movies with no KP rating
+                const ratedDocs = searchResults.docs.filter(movie => movie.kpRating && movie.kpRating > 0);
+                const filteredDocs = this.applyClientSideFilters(ratedDocs, filters);
                 filteredResults = {
                     ...searchResults,
                     docs: filteredDocs,
@@ -441,10 +546,10 @@ class SearchManager {
             this.currentResults = filteredResults;
             
             if (filteredResults && filteredResults.docs) {
-                this.displayResults();
+                await this.displayResults();
             } else {
                 this.currentResults = { docs: [], total: 0, pages: 0 };
-                this.displayResults();
+                await this.displayResults();
             }
             
         } catch (error) {
@@ -536,30 +641,63 @@ class SearchManager {
                 const ratingService = firebaseManager.getRatingService();
                 const movieIds = this.currentResults.docs.map(m => m.kinopoiskId);
                 
-                for (const movieId of movieIds) {
+                // Use Promise.all for parallel fetching
+                const ratingPromises = movieIds.map(async (movieId) => {
                     try {
                         const rating = await ratingService.getRating(this.currentUser.uid, movieId);
-                        if (rating) {
-                            userRatingsMap[movieId] = rating;
-                        }
+                        return { movieId, rating };
                     } catch (error) {
-                        console.warn(`Failed to load rating for movie ${movieId}:`, error);
+                        return { movieId, rating: null };
                     }
-                }
+                });
+
+                const results = await Promise.all(ratingPromises);
+                results.forEach(({ movieId, rating }) => {
+                    if (rating) {
+                        userRatingsMap[movieId] = rating;
+                    }
+                });
             } catch (error) {
                 console.error('Error loading user ratings:', error);
             }
         }
         
         // Display movie cards with user ratings
-        this.elements.resultsGrid.innerHTML = this.currentResults.docs.map(movie => {
+        this.elements.resultsGrid.innerHTML = ''; // Clear existing content
+        
+        this.currentResults.docs.forEach(movie => {
             const userRating = userRatingsMap[movie.kinopoiskId] || null;
-            return this.createMovieCard(movie, userRating);
-        }).join('');
+            const isFavorite = userRating?.isFavorite === true;
+            const ratingId = userRating?.id || null;
+            
+            // Prepare data for MovieCard
+            const cardData = {
+                movie: movie,
+                id: ratingId,
+                isFavorite: isFavorite,
+                // Pass user rating if exists
+                rating: userRating ? userRating.rating : 0,
+                comment: userRating ? userRating.comment : '',
+            };
+            
+            // Options for MovieCard
+            const cardOptions = {
+                showFavorite: true,
+                showWatchlist: true,
+                showUserInfo: false, // Don't show user info on search results
+                showAverageRating: true,
+                showThreeDotMenu: true,
+                showEditRating: false, // Edit is handled via menu or modal
+                showAddToCollection: true
+            };
+            
+            const cardElement = MovieCard.create(cardData, cardOptions);
+            this.elements.resultsGrid.appendChild(cardElement);
+        });
         
         // Update button states
         if (this.currentUser) {
-            await this.updateButtonStates();
+            this.updateButtonStates().catch(err => console.error('Error updating button states:', err));
         }
         
         // Show pagination
@@ -569,55 +707,7 @@ class SearchManager {
         this.elements.nextPageBtn.disabled = this.currentPage >= this.currentResults.pages;
     }
 
-    createMovieCard(movie, userRating = null) {
-        const posterUrl = movie.posterUrl || '';
-        const year = movie.year || '';
-        const genres = movie.genres?.slice(0, 3).join(', ') || '';
-        const kpRating = movie.kpRating || 0;
-        const imdbRating = movie.imdbRating || 0;
-        const description = movie.description || '';
-        const votes = movie.votes?.kp || 0;
-        const imdbVotes = movie.votes?.imdb || 0;
-        
-        const isRated = !!userRating;
-        const isFavorite = userRating?.isFavorite === true;
-        const ratingId = userRating?.id || null;
-        
-        return `
-            <div class="movie-card" data-movie-id="${movie.kinopoiskId}">
-                <div class="movie-poster-container">
-                    <img src="${posterUrl}" alt="${movie.name}" class="movie-poster" data-fallback="poster">
-                    <div class="movie-poster-placeholder" style="display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(135deg, var(--accent-color) 0%, var(--accent-hover) 100%); align-items: center; justify-content: center; color: var(--text-primary); font-size: var(--font-size-2xl); opacity: 0.7;">🎬</div>
-                    <div class="movie-overlay">
-                        <div class="movie-rating-badge">${kpRating.toFixed(1)}</div>
-                    </div>
-                    ${isRated && ratingId ? `
-                        <button class="favorite-btn-card ${isFavorite ? 'active' : ''}" data-rating-id="${ratingId}" data-is-favorite="${isFavorite}" data-movie-id="${movie.kinopoiskId}" title="${isFavorite ? 'Удалить из Избранного' : 'Добавить в Избранное'}">
-                        </button>
-                    ` : `
-                        <button class="watchlist-btn-card" data-movie-id="${movie.kinopoiskId}" title="Добавить в Watchlist">
-                            🔖
-                        </button>
-                    `}
-                </div>
-                <div class="movie-info">
-                    <h3 class="movie-title">${this.escapeHtml(movie.name)}</h3>
-                    <p class="movie-meta">${year} • ${genres}</p>
-                    <div class="movie-ratings">
-                        <span class="rating-badge kp">KP: ${kpRating.toFixed(1)}</span>
-                        <span class="rating-badge imdb">IMDb: ${imdbRating.toFixed(1)}</span>
-                        ${votes > 0 ? `<span class="rating-badge votes">${this.formatVotes(votes)} оценок</span>` : ''}
-                        ${imdbVotes > 0 ? `<span class="rating-badge votes">${this.formatVotes(imdbVotes)} оценок</span>` : ''}
-                    </div>
-                    <p class="movie-description">${this.escapeHtml(description)}</p>
-                </div>
-                <div class="movie-actions">
-                    <button class="btn btn-ghost btn-sm movie-detail-btn" data-movie-id="${movie.kinopoiskId}">Movie Detail</button>
-                    <button class="btn btn-accent btn-sm rate-movie-btn" data-movie-id="${movie.kinopoiskId}">Rate Movie</button>
-                </div>
-            </div>
-        `;
-    }
+    // Removed createMovieCard method as it is replaced by MovieCard component
 
     async loadMovieById(movieId, showLoading = true) {
         try {
@@ -728,7 +818,10 @@ class SearchManager {
                 // Silently handle image loading errors
             }
             
-            this.displaySingleMovieResult(movie);
+            // Start preloading video sources in background
+            this.preloadSources(movie);
+            
+            await this.displaySingleMovieResult(movie);
             
         } catch (error) {
             console.error('Error loading movie:', error);
@@ -762,6 +855,18 @@ class SearchManager {
         // Remove single-item class for movie display
         this.elements.resultsGrid.classList.remove('single-item');
         this.elements.resultsGrid.innerHTML = movieHTML;
+        
+        // Setup show all awards button listener
+        const showAllAwardsBtn = this.elements.resultsGrid.querySelector('.btn-show-all-awards');
+        if (showAllAwardsBtn) {
+            showAllAwardsBtn.addEventListener('click', function() {
+                this.style.display = 'none';
+                const hiddenGrid = this.previousElementSibling;
+                if (hiddenGrid && hiddenGrid.classList.contains('awards-grid-hidden')) {
+                    hiddenGrid.style.display = 'grid';
+                }
+            });
+        }
         
         // Load user ratings after displaying movie
         this.loadAndDisplayUserRatings(movie.kinopoiskId);
@@ -1121,26 +1226,45 @@ class SearchManager {
                     <div class="movie-detail-poster-container">
                         <img src="${posterUrl}" alt="${movie.name}" class="movie-detail-page-poster" data-fallback="detail">
                         <div class="movie-poster-placeholder" style="display: none;">🎬</div>
-                        ${isRated && ratingId ? `
-                            <button class="favorite-btn-card ${isFavorite ? 'active' : ''}" data-rating-id="${ratingId}" data-is-favorite="${isFavorite}" data-movie-id="${movie.kinopoiskId}" title="${isFavorite ? 'Удалить из Избранного' : 'Добавить в Избранное'}">
+                        <!-- Menu Button -->
+                        <div class="mc-menu-container" style="position: absolute; top: 10px; right: 10px; z-index: 20;">
+                            <button class="mc-menu-btn" title="More options">
+                                <span>⋮</span>
                             </button>
-                        ` : `
-                            <button class="watchlist-btn-card watchlist-btn-detail" data-movie-id="${movie.kinopoiskId}" title="Добавить в Watchlist">
-                                🔖
-                            </button>
-                        `}
+                            <div class="mc-menu-dropdown">
+                                <button class="mc-menu-item" data-action="toggle-favorite" 
+                                        data-rating-id="${ratingId || 'null'}" 
+                                        data-movie-id="${movie.kinopoiskId}"
+                                        data-is-favorite="${isFavorite}">
+                                    <span class="mc-menu-item-icon">${isFavorite ? '💔' : '❤️'}</span>
+                                    <span class="mc-menu-item-text">${isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}</span>
+                                </button>
+                                
+                                <button class="mc-menu-item" data-action="toggle-watchlist"
+                                        data-movie-id="${movie.kinopoiskId}">
+                                    <span class="mc-menu-item-icon">🔖</span>
+                                    <span class="mc-menu-item-text">Add to Watchlist</span>
+                                </button>
+                                
+                                <button class="mc-menu-item" data-action="add-to-collection"
+                                        data-movie-id="${movie.kinopoiskId}">
+                                    <span class="mc-menu-item-icon">📁</span>
+                                    <span class="mc-menu-item-text">Add to Collection</span>
+                                </button>
+                            </div>
+                        </div>
                         
                         <!-- Ratings under poster -->
                         <div class="movie-detail-ratings-container">
                             <div class="rating-item-large kp">
                                 <span class="rating-label">Кинопоиск</span>
-                                <span class="rating-value">${kpRating.toFixed(1)}</span>
+                                <span class="rating-value">${parseFloat(kpRating.toFixed(1))}</span>
                                 ${votes > 0 ? `<span class="rating-votes">${this.formatVotes(votes)} оценок</span>` : ''}
                             </div>
                             ${imdbRating > 0 ? `
                             <div class="rating-item-large imdb">
                                 <span class="rating-label">IMDb</span>
-                                <span class="rating-value">${imdbRating.toFixed(1)}</span>
+                                <span class="rating-value">${parseFloat(imdbRating.toFixed(1))}</span>
                                 ${imdbVotes > 0 ? `<span class="rating-votes">${this.formatVotes(imdbVotes)} оценок</span>` : '<span class="rating-votes">&nbsp;</span>'}
                             </div>` : ''}
                         </div>
@@ -1166,8 +1290,8 @@ class SearchManager {
                         <div class="movie-tabs">
                             <div class="tab-buttons">
                                 <button class="tab-btn active" data-tab="about">О фильме</button>
-                                <button class="tab-btn" data-tab="actors">Актёры</button>
-                                <button class="tab-btn" data-tab="awards">Награды</button>
+                                <button class="tab-btn ${actors.length === 0 ? 'disabled' : ''}" data-tab="actors" ${actors.length === 0 ? 'disabled' : ''}>Актёры</button>
+                                <button class="tab-btn ${!movie.awards || movie.awards.length === 0 ? 'disabled' : ''}" data-tab="awards" ${!movie.awards || movie.awards.length === 0 ? 'disabled' : ''}>Награды</button>
                             </div>
                             
                             <div class="tab-content">
@@ -1350,9 +1474,13 @@ class SearchManager {
                                             return '<img src="../../../icons/award-default.png" alt="Award" class="award-icon-img">';
                                         };
 
+                                        const hasMoreThan6 = notableAwards.length > 6;
+                                        const initialAwards = hasMoreThan6 ? notableAwards.slice(0, 6) : notableAwards;
+                                        const hiddenAwards = hasMoreThan6 ? notableAwards.slice(6) : [];
+
                                         return `
                                             <div class="awards-grid">
-                                                ${notableAwards.map(award => `
+                                                ${initialAwards.map(award => `
                                                     <div class="award-card">
                                                         <div class="award-icon-container">
                                                             ${getAwardIcon(award.name || '')}
@@ -1365,6 +1493,25 @@ class SearchManager {
                                                     </div>
                                                 `).join('')}
                                             </div>
+                                            ${hasMoreThan6 ? `
+                                                <div class="awards-grid awards-grid-hidden" style="display: none;">
+                                                    ${hiddenAwards.map(award => `
+                                                        <div class="award-card">
+                                                            <div class="award-icon-container">
+                                                                ${getAwardIcon(award.name || '')}
+                                                            </div>
+                                                            <div class="award-title">${this.escapeHtml(award.name)}</div>
+                                                            <div class="award-nomination">${this.escapeHtml(award.nominationName || 'Номинация')}</div>
+                                                            <div class="award-badge ${award.win ? 'winner' : 'nominee'}">
+                                                                ${award.win ? 'Победитель' : 'Номинация'}
+                                                            </div>
+                                                        </div>
+                                                    `).join('')}
+                                                </div>
+                                                <button class="btn-show-all-awards" data-action="show-all-awards">
+                                                    Показать все награды (${notableAwards.length})
+                                                </button>
+                                            ` : ''}
                                         `;
                                     })()}
                                 </div>
@@ -1396,6 +1543,72 @@ class SearchManager {
         this.elements.modalBody.innerHTML = this.createMovieDetailHTML(movie);
         
         this.elements.movieModal.style.display = 'flex';
+        
+        // Start preloading video sources in background
+        this.preloadSources(movie);
+    }
+    
+    /**
+     * Preload video sources in background
+     */
+    async preloadSources(movie) {
+        if (!movie) return;
+         // Check cache first
+        const cached = this.getCachedSources(movie.kinopoiskId);
+        if (cached) {
+            console.log('Sources already cached for', movie.name);
+            this.currentSources = cached;
+            return;
+        }
+
+        console.log('Preloading sources for', movie.name);
+        try {
+             const searchResult = await this.streamingService.search(movie.name, movie.year);
+             if (searchResult) {
+                 const sources = await this.streamingService.getVideoSources(searchResult.url);
+                 if (sources && sources.length > 0) {
+                     this.saveSourcesToCache(movie.kinopoiskId, sources);
+                     // If this movie is still selected, update currentSources
+                     if (this.selectedMovie && this.selectedMovie.kinopoiskId === movie.kinopoiskId) {
+                         this.currentSources = sources;
+                     }
+                     console.log('Preloaded sources count:', sources.length);
+                 }
+             }
+        } catch (e) {
+            console.warn('Preload failed:', e);
+        }
+    }
+
+    getCachedSources(movieId) {
+        try {
+            const key = `movie_sources_${movieId}`;
+            const data = localStorage.getItem(key);
+            if (!data) return null;
+            
+            const cached = JSON.parse(data);
+            // Check expiry (24h)
+            if (Date.now() - cached.timestamp > 24 * 60 * 60 * 1000) {
+                localStorage.removeItem(key);
+                return null;
+            }
+            return cached.sources;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    saveSourcesToCache(movieId, sources) {
+        try {
+            const key = `movie_sources_${movieId}`;
+            const data = {
+                timestamp: Date.now(),
+                sources: sources
+            };
+            localStorage.setItem(key, JSON.stringify(data));
+        } catch (e) {
+            console.warn('Failed to cache sources', e);
+        }
     }
 
     createMovieDetailHTML(movie) {
@@ -1415,8 +1628,8 @@ class SearchManager {
                         <h2 class="movie-detail-title">${this.escapeHtml(movie.name)}</h2>
                         <p class="movie-detail-meta">${year} • ${duration} min • ${genres}</p>
                         <div class="movie-detail-ratings">
-                            <span class="rating-badge kp">Kinopoisk: ${kpRating.toFixed(1)}</span>
-                            <span class="rating-badge imdb">IMDb: ${imdbRating.toFixed(1)}</span>
+                            <span class="rating-badge kp">Kinopoisk: ${parseFloat(kpRating.toFixed(1))}</span>
+                            <span class="rating-badge imdb">IMDb: ${parseFloat(imdbRating.toFixed(1))}</span>
                         </div>
                         <p class="movie-detail-description">${this.escapeHtml(description)}</p>
                     </div>
@@ -1444,39 +1657,47 @@ class SearchManager {
         // Update cached user
         this.currentUser = currentUser;
         
-        // Show movie info in rating modal
-        this.elements.movieRatingInfo.innerHTML = `
-            <div class="movie-detail">
-                <img src="${movie.posterUrl || '/icons/icon48.png'}" alt="${movie.name}" class="movie-detail-poster" data-fallback="rating-modal">
-                <div class="movie-detail-info">
-                    <h3 class="movie-detail-title">${this.escapeHtml(movie.name)}</h3>
-                    <p class="movie-detail-meta">${movie.year} • ${movie.genres?.slice(0, 3).join(', ')}</p>
-                    <div class="movie-detail-ratings">
-                        <span class="rating-badge kp">КП: ${movie.kpRating?.toFixed(1) || 'N/A'}</span>
-                        ${movie.imdbRating ? `<span class="rating-badge imdb">IMDb: ${movie.imdbRating.toFixed(1)}</span>` : ''}
-                    </div>
-                </div>
-            </div>
-        `;
+        // 1. Setup UI Content
+        this.elements.ratingMoviePoster.src = movie.posterUrl || '/icons/icon48.png';
+        this.elements.ratingMoviePoster.alt = movie.name;
+        this.elements.ratingMovieTitle.textContent = movie.name;
+        this.elements.ratingMovieMeta.textContent = `${movie.year} • ${movie.genres?.slice(0, 3).join(', ')}`;
         
-        // Check if user already rated this movie
+        // 2. Generate Stars
+        this.elements.ratingStars.innerHTML = '';
+        const starSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
+
+        for (let i = 1; i <= 10; i++) {
+            const btn = document.createElement('button');
+            btn.className = 'star-rating-btn';
+            btn.dataset.rating = i;
+            btn.innerHTML = starSvg;
+            this.elements.ratingStars.appendChild(btn);
+        }
+        
+        // 3. Check existing rating
         const ratingService = firebaseManager.getRatingService();
         const existingRating = await ratingService.getRating(currentUser.uid, movie.kinopoiskId);
         
         if (existingRating) {
-            this.elements.currentRatingInfo.style.display = 'block';
-            this.elements.existingRatingValue.textContent = `${existingRating.rating}/10`;
-            this.elements.existingRatingComment.textContent = existingRating.comment || 'No comment';
-            this.elements.ratingSlider.value = existingRating.rating;
-            this.elements.ratingValue.textContent = existingRating.rating;
+            this.currentRating = existingRating.rating;
+            this.updateStarVisuals(this.currentRating, false);
+            
             this.elements.ratingComment.value = existingRating.comment || '';
             this.elements.charCount.textContent = (existingRating.comment || '').length;
+            
+            // Show review section if there is a comment
+            this.isReviewVisible = !!existingRating.comment;
+            this.elements.reviewContainer.style.display = this.isReviewVisible ? 'block' : 'none';
         } else {
-            this.elements.currentRatingInfo.style.display = 'none';
-            this.elements.ratingSlider.value = 5;
-            this.elements.ratingValue.textContent = '5';
+            this.currentRating = 0;
+            this.updateStarVisuals(0, false);
+            
             this.elements.ratingComment.value = '';
             this.elements.charCount.textContent = '0';
+            
+            this.isReviewVisible = false;
+            this.elements.reviewContainer.style.display = 'none';
         }
         
         this.elements.ratingModal.style.display = 'flex';
@@ -1484,8 +1705,9 @@ class SearchManager {
 
     closeRatingModal() {
         this.elements.ratingModal.style.display = 'none';
-        // Do not clear selectedMovie here, as the parent movie modal might still be open
-        // and relying on it. selectedMovie is cleared when the main movie modal is closed.
+        // Reset state
+        this.currentRating = 0;
+        this.elements.ratingComment.value = ''; // extra safety
     }
 
     async saveRating() {
@@ -1499,11 +1721,11 @@ class SearchManager {
                 return;
             }
             
-            const rating = parseInt(this.elements.ratingSlider.value);
+            const rating = this.currentRating;
             const comment = this.elements.ratingComment.value.trim();
             
-            if (rating < 1 || rating > 10) {
-                this.showError('Rating must be between 1 and 10');
+            if (!rating || rating < 1 || rating > 10) {
+                this.showError('Please select a star rating');
                 return;
             }
             
@@ -1552,6 +1774,19 @@ class SearchManager {
             console.error('Error saving rating:', error);
             this.showError(`Failed to save rating: ${error.message}`);
         }
+    }
+
+    updateStarVisuals(rating, isHover) {
+        const buttons = this.elements.ratingStars.querySelectorAll('.star-rating-btn');
+        buttons.forEach(btn => {
+            const starRating = parseInt(btn.dataset.rating);
+            if (starRating <= rating) {
+                btn.classList.add(isHover ? 'hover' : 'active');
+                if (isHover) btn.classList.remove('active'); // Priority to hover class during hover
+            } else {
+                btn.classList.remove('active', 'hover');
+            }
+        });
     }
 
     setupRatingMenuListeners() {
@@ -1629,145 +1864,51 @@ class SearchManager {
 
     async editUserRating(ratingId) {
         try {
-            const ratingService = firebaseManager.getRatingService();
             const currentUser = firebaseManager.getCurrentUser();
-            
             if (!currentUser) {
-                this.showError('Пожалуйста, войдите в систему');
+                this.showError('Please sign in');
                 return;
             }
+
+            // We assume the edit action is for the currently selected movie
+            // or we try to find the movie from results if available.
+            // Since this is search.js, we prioritize selectedMovie.
             
-            const ratingDoc = await firebaseManager.db.collection('ratings').doc(ratingId).get();
-            if (!ratingDoc.exists) {
-                this.showError('Отзыв не найден');
-                return;
+            if (this.selectedMovie) {
+                // Verify this rating belongs to this movie?
+                // For simplicity/performance, we just open the rating modal for the selected movie.
+                // The modal will fetch the user's existing rating for this movie.
+                this.showRatingModal(this.selectedMovie);
+            } else {
+                // Try to find movie from ratingId? 
+                // Getting rating doc is needed to know which movie it is if selectedMovie is null
+                const ratingDoc = await firebaseManager.db.collection('ratings').doc(ratingId).get();
+                if (!ratingDoc.exists) {
+                    this.showError('Rating not found');
+                    return;
+                }
+                const data = ratingDoc.data();
+                const movieId = data.movieId;
+                
+                // Find movie in results
+                const movie = this.currentResults.docs.find(m => String(m.kinopoiskId) === String(movieId));
+                if (movie) {
+                    this.showRatingModal(movie);
+                } else {
+                    // Fetch movie if not in results?
+                    // For now, show error or try to fetch
+                     this.showError('Movie data not found. Please try opening the movie details first.');
+                }
             }
-            
-            const ratingData = ratingDoc.data();
-            this.showEditRatingModal(ratingId, ratingData);
             
         } catch (error) {
             console.error('Error editing rating:', error);
-            this.showError(`Ошибка при редактировании: ${error.message}`);
+            this.showError(`Error opening edit modal: ${error.message}`);
         }
     }
 
-    showEditRatingModal(ratingId, ratingData) {
-        const modal = document.createElement('div');
-        modal.className = 'modal-overlay';
-        modal.id = 'editRatingModal';
-        modal.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.8);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 10000;
-        `;
-        
-        modal.innerHTML = `
-            <div style="
-                background: #0f172a;
-                padding: 24px;
-                border-radius: 12px;
-                max-width: 500px;
-                width: 90%;
-                color: #e2e8f0;
-            ">
-                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;">
-                    <h3 style="margin:0; font-size:20px;">Редактировать отзыв</h3>
-                    <button id="closeEditModal" style="background:#334155; color:#e2e8f0; border:none; padding:8px 12px; border-radius:8px; cursor:pointer;">✕</button>
-                </div>
-                
-                <form id="editRatingForm">
-                    <div style="margin-bottom:16px;">
-                        <label style="display:block; margin-bottom:8px; color:#94a3b8;">Оценка: <span id="editRatingValue">${ratingData.rating}</span>/10</label>
-                        <input type="range" id="editRatingSlider" min="1" max="10" value="${ratingData.rating}" style="width:100%;">
-                    </div>
-                    
-                    <div style="margin-bottom:16px;">
-                        <label style="display:block; margin-bottom:8px; color:#94a3b8;">Комментарий:</label>
-                        <textarea id="editRatingComment" rows="4" maxlength="500" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid #334155; background:#0b1220; color:#e2e8f0; resize:vertical;">${this.escapeHtml(ratingData.comment || '')}</textarea>
-                        <div style="text-align:right; margin-top:4px; font-size:12px; color:#94a3b8;">
-                            <span id="editCommentCount">${(ratingData.comment || '').length}</span>/500
-                        </div>
-                    </div>
-                    
-                    <div style="display:flex; gap:8px; justify-content:flex-end;">
-                        <button type="button" id="cancelEditBtn" style="background:#334155; color:#e2e8f0; border:none; padding:10px 16px; border-radius:8px; cursor:pointer;">Отмена</button>
-                        <button type="submit" id="saveEditBtn" style="background:#22c55e; color:#062e0f; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-weight:600;">Сохранить</button>
-                    </div>
-                </form>
-            </div>
-        `;
-        
-        document.body.appendChild(modal);
-        
-        const slider = modal.querySelector('#editRatingSlider');
-        const valueDisplay = modal.querySelector('#editRatingValue');
-        const comment = modal.querySelector('#editRatingComment');
-        const commentCount = modal.querySelector('#editCommentCount');
-        
-        slider.addEventListener('input', (e) => {
-            valueDisplay.textContent = e.target.value;
-        });
-        
-        comment.addEventListener('input', (e) => {
-            commentCount.textContent = e.target.value.length;
-        });
-        
-        const closeModal = () => modal.remove();
-        
-        modal.querySelector('#closeEditModal').addEventListener('click', closeModal);
-        modal.querySelector('#cancelEditBtn').addEventListener('click', closeModal);
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) closeModal();
-        });
-        
-        modal.querySelector('#editRatingForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const newRating = parseInt(slider.value);
-            const newComment = comment.value.trim();
-            
-            try {
-                const ratingService = firebaseManager.getRatingService();
-                const currentUser = firebaseManager.getCurrentUser();
-                const userService = firebaseManager.getUserService();
-                
-                const userProfile = await userService.getUserProfile(currentUser.uid);
-                
-                // Get display name based on user preference
-                const displayName = typeof Utils !== 'undefined' && Utils.getDisplayName
-                    ? Utils.getDisplayName(userProfile, currentUser)
-                    : (userProfile?.displayName || currentUser.displayName || currentUser.email);
-                
-                await ratingService.addOrUpdateRating(
-                    currentUser.uid,
-                    displayName,
-                    userProfile?.photoURL || currentUser.photoURL || '',
-                    ratingData.movieId,
-                    newRating,
-                    newComment
-                );
-                
-                closeModal();
-                this.showSuccess('Отзыв обновлен!');
-                
-                if (this.selectedMovie) {
-                    await this.loadAndDisplayUserRatings(this.selectedMovie.kinopoiskId);
-                }
-                
-            } catch (error) {
-                console.error('Error updating rating:', error);
-                this.showError(`Ошибка при сохранении: ${error.message}`);
-            }
-        });
-    }
+    // showEditRatingModal removed - legacy code
+    // Old modal logic removed
 
     async deleteUserRating(ratingId) {
         const confirmed = confirm('Вы уверены, что хотите удалить свой отзыв?');
@@ -2217,10 +2358,14 @@ class SearchManager {
                 // Remove from watchlist
                 await watchlistService.removeFromWatchlist(this.currentUser.uid, movie.kinopoiskId);
                 
-                // Update button state
+                // Update button state (menu item)
                 if (buttonElement) {
+                    const textSpan = buttonElement.querySelector('.mc-menu-item-text');
+                    const iconSpan = buttonElement.querySelector('.mc-menu-item-icon');
+                        
                     buttonElement.classList.remove('active');
-                    buttonElement.title = 'Добавить в Watchlist';
+                    buttonElement.title = 'Add to Watchlist';
+                    if (textSpan) textSpan.textContent = 'Add to Watchlist';
                 }
                 
                 if (typeof Utils !== 'undefined') {
@@ -2256,10 +2401,15 @@ class SearchManager {
                 
                 await watchlistService.addToWatchlist(this.currentUser.uid, movieData);
                 
-                // Update button state
+                // Update button state (menu item)
                 if (buttonElement) {
+                    const textSpan = buttonElement.querySelector('.mc-menu-item-text');
+                    const iconSpan = buttonElement.querySelector('.mc-menu-item-icon');
+                    
                     buttonElement.classList.add('active');
-                    buttonElement.title = 'Удалить из Watchlist';
+                    buttonElement.title = 'Remove from Watchlist';
+                    if (textSpan) textSpan.textContent = 'Remove from Watchlist';
+                    // Optional: Change icon if desired
                 }
                 
                 if (typeof Utils !== 'undefined') {
@@ -2286,38 +2436,49 @@ class SearchManager {
             const watchlistService = firebaseManager.getWatchlistService();
             const favoriteService = firebaseManager.getFavoriteService();
             
-            // Update watchlist buttons
-            const watchlistButtons = document.querySelectorAll('.watchlist-btn-card');
+            // Update watchlist buttons (in menu)
+            const watchlistButtons = document.querySelectorAll('[data-action="toggle-watchlist"]');
             for (const button of watchlistButtons) {
                 const movieId = parseInt(button.getAttribute('data-movie-id'));
                 if (movieId) {
                     const isInWatchlist = await watchlistService.isInWatchlist(this.currentUser.uid, movieId);
                     
+                    const textSpan = button.querySelector('.mc-menu-item-text');
+                    
                     if (isInWatchlist) {
                         button.classList.add('active');
-                        button.title = 'Удалить из Watchlist';
+                        button.title = 'Remove from Watchlist';
+                        if (textSpan) textSpan.textContent = 'Remove from Watchlist';
                     } else {
                         button.classList.remove('active');
-                        button.title = 'Добавить в Watchlist';
+                        button.title = 'Add to Watchlist';
+                        if (textSpan) textSpan.textContent = 'Add to Watchlist';
                     }
                 }
             }
             
-            // Update favorite buttons
-            const favoriteButtons = document.querySelectorAll('.favorite-btn-card');
+            // Update favorite buttons (in menu)
+            // Note: Menu items might be hidden, selecting them all is fine
+            const favoriteButtons = document.querySelectorAll('[data-action="toggle-favorite"]');
             for (const button of favoriteButtons) {
                 const ratingId = button.getAttribute('data-rating-id');
                 if (ratingId) {
                     const isFavorite = await favoriteService.isFavoriteById(ratingId);
                     
+                    // Update the menu item text and icon
+                    const textSpan = button.querySelector('.mc-menu-item-text');
+                    const iconSpan = button.querySelector('.mc-menu-item-icon');
+                    
                     if (isFavorite) {
-                        button.classList.add('active');
+                        button.classList.add('active'); // Optional, logic mainly depends on data attr
                         button.setAttribute('data-is-favorite', 'true');
-                        button.title = 'Удалить из Избранного';
+                        if (textSpan) textSpan.textContent = 'Remove from Favorites';
+                        if (iconSpan) iconSpan.textContent = '💔';
                     } else {
                         button.classList.remove('active');
                         button.setAttribute('data-is-favorite', 'false');
-                        button.title = 'Добавить в Избранное';
+                        if (textSpan) textSpan.textContent = 'Add to Favorites';
+                        if (iconSpan) iconSpan.textContent = '❤️';
                     }
                 }
             }
@@ -2609,17 +2770,17 @@ class SearchManager {
         
         if (num >= 1000000) {
             const millions = num / 1000000;
-            // Format to 2 decimal places, remove trailing zeros
-            const formatted = millions.toFixed(2);
+            // Format to 1 decimal place, remove trailing zeros
+            const formatted = millions.toFixed(1);
             return formatted.replace(/\.?0+$/, '') + 'm';
         } else if (num >= 100000) {
             // For numbers >= 100k, show whole thousands only (582k)
             const thousands = Math.round(num / 1000);
             return thousands + 'k';
         } else if (num >= 1000) {
-            // For numbers < 100k, show with 2 decimal places (1.5k, 5.82k)
+            // For numbers < 100k, show with 1 decimal place (1.5k, 5.8k)
             const thousands = num / 1000;
-            const formatted = thousands.toFixed(2);
+            const formatted = thousands.toFixed(1);
             return formatted.replace(/\.?0+$/, '') + 'k';
         }
         
@@ -2629,6 +2790,18 @@ class SearchManager {
 
     async handleWatchClick() {
         if (!this.selectedMovie) return;
+        
+        // Reset current sources if it's a new movie (unless preloaded)
+        if (this.currentSources && this.currentSources._movieId !== this.selectedMovie.kinopoiskId) {
+             // If we have preloaded sources for this movie, keep them? 
+             // Logic in preloadSources sets currentSources correctly if matches.
+             // If mismatch, clear it.
+             // Actually, simplest is to let the cache check below handle it.
+             // We just need to make sure we don't use stale sources from previous movie.
+             // But since we set currentSources = null or cached in logic below, it's safer to just clear it if we are starting fresh?
+             // Or rely on logic:
+             // We need to attach movieId to currentSources to verify.
+        }
         
         try {
             this.showVideoModal(this.selectedMovie);
@@ -2641,49 +2814,104 @@ class SearchManager {
                 </div>
             `;
             
-            // Clear previous sources
-            this.elements.sourceSelect.innerHTML = '<option value="" disabled selected>Select a source</option>';
             
-            // Search for movie on ex-fs.net
-            const searchResult = await this.streamingService.search(
-                this.selectedMovie.name, 
-                this.selectedMovie.year
-            );
-            
-            if (!searchResult) {
-                this.elements.videoContainer.innerHTML = `
-                    <div class="video-placeholder">
-                        <span>Movie not found on streaming service.</span>
-                    </div>
-                `;
-                return;
+            // Try cache first
+            if (this.currentSources && this.currentSources.length > 0) {
+                 // Use preloaded sources
+                 console.log('Using preloaded sources');
+            } else {
+                const cached = this.getCachedSources(this.selectedMovie.kinopoiskId);
+                if (cached) {
+                    console.log('Using cached sources');
+                    this.currentSources = cached;
+                } else {
+                    // Search for movie on ex-fs.net
+                    const searchResult = await this.streamingService.search(
+                        this.selectedMovie.name, 
+                        this.selectedMovie.year
+                    );
+                    
+                    if (!searchResult) {
+                        this.elements.videoContainer.innerHTML = `
+                            <div class="video-placeholder">
+                                <span>Movie not found on streaming service.</span>
+                            </div>
+                        `;
+                        return;
+                    }
+                    
+                    // Get video sources
+                    const sources = await this.streamingService.getVideoSources(searchResult.url);
+                    
+                    if (sources.length === 0) {
+                        this.elements.videoContainer.innerHTML = `
+                            <div class="video-placeholder">
+                                <span>No video sources found.</span>
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    this.currentSources = sources;
+                    this.saveSourcesToCache(this.selectedMovie.kinopoiskId, sources);
+                }
             }
             
-            // Get video sources
-            const sources = await this.streamingService.getVideoSources(searchResult.url);
+            // Create sources map for easy access
+            const sources = this.currentSources;
+
+        // Populate source selector
+        sources.forEach((source, index) => {
+            const option = document.createElement('option');
+            option.value = source.url;
+            option.textContent = source.name || `Source ${index + 1}`;
+            this.elements.sourceSelect.appendChild(option);
+        });
+
+        // Select source (restore last used or default to first)
+        if (sources.length > 0) {
+            // Check for saved preference
+            let targetSource = sources[0].url; // Default
+            const lastSource = this.getLastSource(this.selectedMovie.kinopoiskId);
             
-            if (sources.length === 0) {
-                this.elements.videoContainer.innerHTML = `
-                    <div class="video-placeholder">
-                        <span>No video sources found.</span>
-                    </div>
-                `;
-                return;
+            if (lastSource) {
+                // Verify the saved source still exists in current list
+                const exists = sources.find(s => s.url === lastSource);
+                if (exists) targetSource = lastSource;
             }
-            
-            // Populate source selector
-            sources.forEach((source, index) => {
-                const option = document.createElement('option');
-                option.value = source.url;
-                option.textContent = source.name || `Source ${index + 1}`;
-                this.elements.sourceSelect.appendChild(option);
+
+            this.elements.sourceSelect.value = targetSource;
+            this.changeVideoSource(targetSource); // Will save as last source too
+            this.togglePlayPause(); // Start playing immediately
+        }
+
+        // Setup message listener for iframe communication
+        if (!this.messageListenerSetup) {
+            window.addEventListener('message', (event) => {
+                // Verify origin if possible, but we accept from our iframes
+                
+                if (event.data.type === 'PLAYER_READY') {
+                    // Send sources to iframe
+                    const iframe = this.elements.videoContainer.querySelector('iframe');
+                    if (iframe && iframe.contentWindow) {
+                        iframe.contentWindow.postMessage({
+                            type: 'SET_SOURCES',
+                            sources: this.currentSources, // Send full objects with names
+                            currentUrl: this.currentVideoUrl
+                        }, '*');
+                    }
+                } else if (event.data.type === 'CHANGE_SOURCE') {
+                    const newUrl = event.data.url;
+                    if (newUrl && newUrl !== this.currentVideoUrl) {
+                        this.elements.sourceSelect.value = newUrl;
+                        this.changeVideoSource(newUrl);
+                        // Auto-play the new source
+                        this.togglePlayPause(); 
+                    }
+                }
             });
-            
-            // Select first source automatically
-            if (sources.length > 0) {
-                this.elements.sourceSelect.value = sources[0].url;
-                this.changeVideoSource(sources[0].url);
-            }
+            this.messageListenerSetup = true;
+        }
             
         } catch (error) {
             console.error('Error in handleWatchClick:', error);
@@ -2702,24 +2930,142 @@ class SearchManager {
 
     closeVideoModal() {
         this.elements.videoPlayerModal.style.display = 'none';
-        // Stop video by clearing iframe
+        // Stop video and reset state
+        this.isPlaying = false;
+        this.currentVideoUrl = '';
         this.elements.videoContainer.innerHTML = '';
+        if (this.currentHls) {
+            this.currentHls.destroy();
+            this.currentHls = null;
+        }
     }
 
     changeVideoSource(url) {
         if (!url) return;
         
-        this.elements.videoContainer.innerHTML = `
-            <iframe src="${url}" allowfullscreen allow="autoplay; encrypted-media"></iframe>
-        `;
-    }
-
-    refreshPlayer() {
-        const currentUrl = this.elements.sourceSelect.value;
-        if (currentUrl) {
-            this.changeVideoSource(currentUrl);
+        this.currentVideoUrl = url;
+        // Don't render simple player, just update state. 
+        // Actual playback is triggered by togglePlayPause call.
+        this.isPlaying = false; 
+        
+        // Save as last selected source
+        if (this.selectedMovie) {
+            this.saveLastSource(this.selectedMovie.kinopoiskId, url);
         }
     }
+
+    getLastSource(movieId) {
+        try {
+            return localStorage.getItem(`last_source_${movieId}`);
+        } catch (e) { return null; }
+    }
+
+    saveLastSource(movieId, url) {
+        try {
+            localStorage.setItem(`last_source_${movieId}`, url);
+        } catch (e) { }
+    }
+
+    renderSimplePlayer() {
+        const posterUrl = this.selectedMovie?.posterUrl || this.selectedMovie?.images?.[0]?.url || '';
+        
+        // Update container with simple player UI
+        this.elements.videoContainer.innerHTML = `
+            <div class="simple-player-container">
+                <div class="simple-player-overlay" style="background-image: url('${posterUrl}')">
+                    <button class="play-pause-btn" id="mainPlayBtn" aria-label="Play">
+                        <svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                    </button>
+                </div>
+            </div>
+        `;
+
+        // Update control panel button
+        this.updateControlPanel();
+
+        // Add event listener to main play button
+        const mainPlayBtn = document.getElementById('mainPlayBtn');
+        if (mainPlayBtn) {
+            mainPlayBtn.addEventListener('click', () => this.togglePlayPause());
+        }
+    }
+
+    togglePlayPause() {
+        this.isPlaying = !this.isPlaying;
+        
+        if (this.isPlaying) {
+            // Check source type
+            // We need to know the type associated with the currentVideoUrl.
+            // Since we stored only the URL string, we might lose the type.
+            // But we can re-find it from the source options or store it better.
+            
+            // To be safe, we check if the URL ends with .mp4 or .m3u8, 
+            // OR we store the current source object instead of just the URL.
+            
+            const isMp4 = this.currentVideoUrl.includes('.mp4');
+            const isHls = this.currentVideoUrl.includes('.m3u8');
+            
+            if (isMp4 || isHls) {
+                // Native Player
+                this.elements.videoContainer.innerHTML = `
+                    <video id="nativeVideoPlayer" controls autoplay style="width:100%; height:100%; outline:none;" ${isHls && !this.currentVideoUrl.includes('.m3u8') ? '' : ''}>
+                        <source src="${this.currentVideoUrl}" type="${isHls ? 'application/x-mpegURL' : 'video/mp4'}">
+                        Your browser does not support the video tag.
+                    </video>
+                `;
+                
+                const videoElement = document.getElementById('nativeVideoPlayer');
+                
+                // If HLS and not natively supported (like on Chrome Desktop typically), use Hls.js
+                // Assuming Hls.js is loaded globally or available
+                if (isHls) {
+                    if (Hls.isSupported()) {
+                        const hls = new Hls();
+                        hls.loadSource(this.currentVideoUrl);
+                        hls.attachMedia(videoElement);
+                        hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                            videoElement.play().catch(e => console.log('Autoplay blocked:', e));
+                        });
+                        this.currentHls = hls; // Store to destroy later
+                    } else if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
+                        // Safari
+                        videoElement.play().catch(e => console.log('Autoplay blocked:', e));
+                    }
+                }
+            } else {
+                // Iframe Fallback
+                let url = this.currentVideoUrl;
+                try {
+                    const urlObj = new URL(url);
+                    urlObj.searchParams.set('autoplay', '1');
+                    urlObj.searchParams.set('mute', '0'); 
+                    url = urlObj.toString();
+                } catch (e) {
+                    if (url.includes('?')) {
+                        url += '&autoplay=1';
+                    } else {
+                        url += '?autoplay=1';
+                    }
+                }
+
+                this.elements.videoContainer.innerHTML = `
+                    <iframe src="${url}" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture" style="width:100%; height:100%; border:none;"></iframe>
+                `;
+            }
+        } else {
+            // Pause: Show simple player (which unloads iframe/video)
+            if (this.currentHls) {
+                this.currentHls.destroy();
+                this.currentHls = null;
+            }
+            this.renderSimplePlayer();
+        }
+        
+
+    }
+
+
+
 }
 
 // Add event listeners for movie cards

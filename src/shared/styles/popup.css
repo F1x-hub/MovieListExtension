@@ -756,7 +756,6 @@ body {
     display: flex;
     align-items: center;
     gap: var(--space-md);
-    margin: var(--space-xs) 0;
 }
 
 .rating-user-score {
@@ -1150,20 +1149,17 @@ body {
     }
     
     .rating-item {
-        flex-direction: column;
-        text-align: center;
-        gap: var(--space-sm);
+        gap: var(--space-md);
+        text-align: left;
     }
     
     .rating-poster {
-        width: 80px;
-        height: 120px;
-        margin: 0 auto;
+        width: 60px;
+        height: 90px;
     }
     
     .rating-scores {
-        justify-content: center;
-        flex-wrap: wrap;
+        justify-content: flex-start;
     }
     
     .user-actions {

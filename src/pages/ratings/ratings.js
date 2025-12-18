@@ -1,10 +1,10 @@
 /**
  * Ratings Page Manager
- * Handles the My Collection page functionality
+ * Handles the Rated page functionality
  */
 class RatingsPageManager {
     constructor() {
-        this.currentMode = 'my-ratings'; // 'my-ratings' or 'all-ratings'
+        this.currentMode = 'all-ratings'; // Always show all ratings
         this.filters = {
             search: '',
             genre: '',
@@ -46,9 +46,9 @@ class RatingsPageManager {
 
     initializeElements() {
         this.elements = {
-            // Mode toggle
-            myRatingsBtn: document.getElementById('myRatingsBtn'),
-            allRatingsBtn: document.getElementById('allRatingsBtn'),
+            // Mode toggle removed - always showing all ratings
+            myRatingsBtn: null, // Removed
+            allRatingsBtn: null, // Removed
             
             // Filters
             movieSearchInput: document.getElementById('movieSearchInput'),
@@ -216,9 +216,9 @@ class RatingsPageManager {
     }
 
     setupEventListeners() {
-        // Mode toggle
-        this.elements.myRatingsBtn?.addEventListener('click', () => this.setMode('my-ratings'));
-        this.elements.allRatingsBtn?.addEventListener('click', () => this.setMode('all-ratings'));
+        // Mode toggle removed - always using all-ratings mode
+        // this.elements.myRatingsBtn?.addEventListener('click', () => this.setMode('my-ratings'));
+        // this.elements.allRatingsBtn?.addEventListener('click', () => this.setMode('all-ratings'));
         
         // Filters
         this.elements.movieSearchInput?.addEventListener('input', (e) => {
@@ -1269,7 +1269,7 @@ class RatingsPageManager {
         
         this.elements.modalTitle.textContent = movie?.name || 'Movie Details';
         
-        const avgDisplay = ratingsCount > 0 ? `${averageRating.toFixed(1)}/10 (${ratingsCount} ratings)` : 'No ratings yet';
+        const avgDisplay = ratingsCount > 0 ? `${parseFloat(averageRating.toFixed(1))} (${ratingsCount} ratings)` : 'No ratings yet';
         
         this.elements.modalBody.innerHTML = `
             <div style="display: flex; gap: 20px; margin-bottom: 20px;">
@@ -1324,8 +1324,8 @@ class RatingsPageManager {
                     <h3 class="movie-detail-title">${this.escapeHtml(movie.name)}</h3>
                     <p class="movie-detail-meta">${movie.year} • ${movie.genres?.slice(0, 3).join(', ')}</p>
                     <div class="movie-detail-ratings">
-                        <span class="rating-badge kp">КП: ${movie.kpRating?.toFixed(1) || 'N/A'}</span>
-                        ${movie.imdbRating ? `<span class="rating-badge imdb">IMDb: ${movie.imdbRating.toFixed(1)}</span>` : ''}
+                        <span class="rating-badge kp">КП: ${movie.kpRating ? parseFloat(movie.kpRating.toFixed(1)) : 'N/A'}</span>
+                        ${movie.imdbRating ? `<span class="rating-badge imdb">IMDb: ${parseFloat(movie.imdbRating.toFixed(1))}</span>` : ''}
                     </div>
                 </div>
             </div>

@@ -444,6 +444,38 @@ class MovieCacheService {
             };
         }
     }
+
+    /**
+     * Clear cache for a specific movie
+     * @param {number} kinopoiskId - Kinopoisk movie ID
+     * @returns {Promise<boolean>} - True if cache was cleared successfully
+     */
+    async clearMovieCache(kinopoiskId) {
+        try {
+            const movieId = kinopoiskId.toString();
+            
+            // Remove from Firestore
+            const docRef = this.db.collection(this.collection).doc(movieId);
+            const doc = await docRef.get();
+            
+            if (doc.exists) {
+                await docRef.delete();
+                console.log(`Cleared Firestore cache for movie ${movieId}`);
+            }
+            
+            // Remove from localStorage
+            const localKey = `kp_movie_${movieId}`;
+            if (localStorage.getItem(localKey)) {
+                localStorage.removeItem(localKey);
+                console.log(`Cleared localStorage cache for movie ${movieId}`);
+            }
+            
+            return true;
+        } catch (error) {
+            console.error('Error clearing movie cache:', error);
+            throw new Error(`Failed to clear cache for movie ${kinopoiskId}: ${error.message}`);
+        }
+    }
 }
 
 // Export for use in other modules
