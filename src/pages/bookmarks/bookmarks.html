@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bookmarks - Movie Ratings</title>
+    <!-- Styles -->
+    <link rel="stylesheet" href="../../shared/styles/common.css">
+    <link rel="stylesheet" href="../../shared/styles/theme.css">
+    <link rel="stylesheet" href="../../shared/styles/components.css">
+    <link rel="stylesheet" href="../../shared/styles/navigation.css">
+    <link rel="stylesheet" href="../../shared/styles/movie-card.css">
+    <link rel="stylesheet" href="bookmarks.css">
+    <link rel="stylesheet" href="../../shared/styles/report-widget.css">
+</head>
+<body class="dark-theme">
+    <!-- Navigation will be inserted here -->
+
+    <main class="main-content">
+        <div class="bookmarks-container">
+            <!-- Sidebar -->
+            <aside class="bookmarks-sidebar">
+                <div class="sidebar-header">
+                    <h2 data-i18n="bookmarks.title">Bookmarks</h2>
+                </div>
+                <nav class="sidebar-nav">
+                    <button class="sidebar-item active" data-filter="all">
+                        <span class="sidebar-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg></span>
+                        <span class="sidebar-label" data-i18n="bookmarks.sidebar.all">All</span>
+                        <span class="sidebar-count" id="count-all">0</span>
+                    </button>
+                    <button class="sidebar-item" data-filter="watching">
+                        <span class="sidebar-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></span>
+                        <span class="sidebar-label" data-i18n="bookmarks.sidebar.watching">Watching</span>
+                        <span class="sidebar-count" id="count-watching">0</span>
+                    </button>
+                    <button class="sidebar-item" data-filter="plan_to_watch">
+                        <span class="sidebar-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg></span>
+                        <span class="sidebar-label" data-i18n="bookmarks.sidebar.plan_to_watch">Plan to Watch</span>
+                        <span class="sidebar-count" id="count-plan_to_watch">0</span>
+                    </button>
+                    <button class="sidebar-item" data-filter="favorite">
+                        <span class="sidebar-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg></span>
+                        <span class="sidebar-label" data-i18n="bookmarks.sidebar.favorites">Favorites</span>
+                        <span class="sidebar-count" id="count-favorite">0</span>
+                    </button>
+                </nav>
+                
+                <div class="sidebar-divider"></div>
+
+                <div class="sidebar-section">
+                    <div class="sidebar-header-sm">
+                        <span data-i18n="bookmarks.sidebar.collections">COLLECTIONS</span>
+                        <button class="icon-btn" id="createCollectionBtn" title="Create Collection">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                        </button>
+                    </div>
+                    <div id="customCollectionsList" class="custom-collections-list">
+                        <!-- Collections will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Migration section removed -->
+            </aside>
+
+            <!-- Main Grid Area -->
+            <section class="bookmarks-content">
+                <header class="content-header">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <h1 id="pageTitle" data-i18n="bookmarks.header.all_bookmarks">All Bookmarks</h1>
+                        <button id="collectionMenuBtn" class="collection-menu-btn" style="display: none;" title="Collection options">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="1"></circle>
+                                <circle cx="12" cy="5" r="1"></circle>
+                                <circle cx="12" cy="19" r="1"></circle>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="header-controls">
+                        <div class="search-wrapper">
+                            <input type="text" id="bookmarksSearchInput" data-i18n="bookmarks.search.placeholder" placeholder="Search in bookmarks...">
+                            <span class="search-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></span>
+                        </div>
+                        <div class="sort-wrapper">
+                            <select id="sortFilter" class="custom-select">
+                                <option value="updatedAt-desc" data-i18n="bookmarks.sort.updated_desc">Recently Updated</option>
+                                <option value="createdAt-desc" data-i18n="bookmarks.sort.created_desc">Recently Added</option>
+                                <option value="movieTitle-asc" data-i18n="bookmarks.sort.title_asc">Title (A-Z)</option>
+                                <option value="releaseYear-desc" data-i18n="bookmarks.sort.year_desc">Year (Newest)</option>
+                                <option value="avgRating-desc" data-i18n="bookmarks.sort.rating_desc">Rating</option>
+                            </select>
+                        </div>
+                    </div>
+                </header>
+
+                <div id="loadingSection" class="loading-section">
+                    <div class="spinner"></div>
+                </div>
+
+                <div id="moviesGrid" class="movies-grid">
+                    <!-- Movies will be rendered here -->
+                </div>
+
+                <div id="emptyState" class="empty-state" style="display: none;">
+                    <div class="empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></div>
+                    <h3 data-i18n="bookmarks.empty.title">No bookmarks found</h3>
+                    <p data-i18n="bookmarks.empty.message">Add using the bookmarks menu on any movie.</p>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Modals -->
+
+
+    <!-- Scripts -->
+    <!-- Scripts -->
+    <script src="../../../libs/firebase-app-compat.js"></script>
+    <script src="../../../libs/firebase-firestore-compat.js"></script>
+    <script src="../../../libs/firebase-auth-compat.js"></script>
+    <script src="../../shared/firestore.js"></script>
+    
+    <script src="../../shared/services/UserService.js"></script>
+    <script src="../../shared/services/MovieCacheService.js"></script>
+    <script src="../../shared/services/RatingService.js"></script>
+    <script src="../../shared/services/FavoriteService.js"></script>
+    <script src="../../shared/services/CollectionService.js"></script>
+    <script src="../../shared/services/ProgressService.js"></script>
+
+    
+    <script src="../../shared/utils/Utils.js"></script>
+    <script src="../../shared/utils/Icons.js"></script>
+    <script src="../../shared/components/MovieCard.js"></script>
+    <script src="../../shared/components/Navigation.js"></script>
+    
+    <script type="module" src="bookmarks.js"></script>
+    <script defer src="../../shared/components/ReportWidget.js"></script>
+</body>
+</html>

@@ -8,6 +8,18 @@ class RatingService {
         this.collection = 'ratings';
     }
 
+    async invalidateRatingsCache(userId) {
+        try {
+            if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+                const cacheKey = `ratings_cache_${userId}`;
+                await chrome.storage.local.remove([cacheKey]);
+                console.log('RatingService: Ratings cache invalidated for', userId);
+            }
+        } catch (error) {
+            console.warn('RatingService: Failed to invalidate cache', error);
+        }
+    }
+
     /**
      * Add or update a user's rating for a movie
      * @param {string} userId - User ID
@@ -111,6 +123,9 @@ class RatingService {
                 console.warn('Failed to remove from watchlist after rating:', watchlistError.message);
                 // Don't fail the rating if watchlist removal fails
             }
+
+            // Invalidate cache
+            await this.invalidateRatingsCache(userId);
 
             return result;
         } catch (error) {
@@ -292,16 +307,22 @@ class RatingService {
      * @param {string} lastDocId - Last document ID for pagination
      * @returns {Promise<Object>} - Ratings and pagination info
      */
-    async getAllRatings(limit = 50, lastDocId = null) {
+    async getAllRatings(limit = 50, lastDocInput = null) {
         try {
             let query = this.db.collection(this.collection)
                 .orderBy('createdAt', 'desc')
                 .limit(limit);
 
-            if (lastDocId) {
-                const lastDoc = await this.db.collection(this.collection).doc(lastDocId).get();
-                if (lastDoc.exists) {
-                    query = query.startAfter(lastDoc);
+            if (lastDocInput) {
+                if (typeof lastDocInput === 'string') {
+                    // It's a document ID string
+                    const lastDoc = await this.db.collection(this.collection).doc(lastDocInput).get();
+                    if (lastDoc.exists) {
+                        query = query.startAfter(lastDoc);
+                    }
+                } else if (lastDocInput.id && typeof lastDocInput.get === 'function') {
+                    // It's likely a DocumentSnapshot
+                    query = query.startAfter(lastDocInput);
                 }
             }
 
@@ -312,14 +333,17 @@ class RatingService {
                 ratings.push({ id: doc.id, ...doc.data() });
             });
 
+            const lastDoc = results.docs.length > 0 ? results.docs[results.docs.length - 1] : null;
+
             return {
                 ratings,
                 hasMore: results.size === limit,
-                lastDocId: results.docs.length > 0 ? results.docs[results.docs.length - 1].id : null
+                lastDocId: lastDoc ? lastDoc.id : null,
+                lastDoc: lastDoc // Return the actual snapshot for better pagination performance
             };
         } catch (error) {
             console.error('Error getting all ratings:', error);
-            return { ratings: [], hasMore: false, lastDocId: null };
+            return { ratings: [], hasMore: false, lastDocId: null, lastDoc: null };
         }
     }
 
@@ -415,6 +439,10 @@ class RatingService {
             }
 
             await ratingRef.delete();
+            
+            // Invalidate cache
+            await this.invalidateRatingsCache(userId);
+
             return true;
         } catch (error) {
             console.error('Error deleting rating:', error);

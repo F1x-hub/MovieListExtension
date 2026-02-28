@@ -1,3 +1,5 @@
+import { i18n } from '../shared/i18n/I18n.js';
+
 /**
  * PopupManager - Main controller for the Movie Rating Extension popup
  * Handles authentication, search, and rating feed display
@@ -6,20 +8,57 @@ class PopupManager {
     constructor() {
         console.log('🎨 PopupManager: Initializing...');
         
+        this.ratings = [];
+        this.searchTimeout = null;
+        this.ratingsLoaded = false;
+        this.isLoadingRatings = false; // true only during initial load / force refresh
+        
+        // Pagination state
+        this.lastDocId = null;
+        this.lastDoc = null; // Store actual document snapshot for better pagination
+        this.hasMore = true;
+        this.isLoadingMore = false;      // true only while a pagination fetch is in flight
+        this.isBackgroundRefreshing = false; // true during background cache refresh (does NOT block scroll)
+        this.ITEMS_PER_PAGE = 10;
+        this.observer = null;
+        
+        // Start initialization
+        this.start();
+    }
+
+    async start() {
         // Initialize theme first
         this.initializeTheme();
         
         this.elements = this.initializeElements();
-        this.ratings = [];
-        this.searchTimeout = null;
-        this.ratingsLoaded = false;
-        this.isLoadingRatings = false; // Add flag to prevent multiple simultaneous loads
         this.setupEventListeners();
         this.setupAuthStateListener();
-        this.initializeUI();
+        
+        // Initialize i18n BEFORE loading UI
+        await this.initI18n();
+        
+        // Then initialize UI which might load ratings
+        await this.initializeUI();
         
         // Trigger update check when popup opens
         chrome.runtime.sendMessage({ type: 'CHECK_FOR_UPDATES' });
+    }
+
+    async initI18n() {
+        await i18n.init();
+        i18n.translatePage();
+        
+        // Listen for storage changes to update language in real-time
+        chrome.storage.onChanged.addListener((changes) => {
+            if (changes.language) {
+                console.log('PopupManager: Language changed, re-translating...');
+                i18n.currentLocale = changes.language.newValue;
+                i18n.translatePage();
+                if (this.ratings.length > 0) {
+                    this.renderRatings();
+                }
+            }
+        });
     }
 
     initializeTheme() {
@@ -147,11 +186,21 @@ class PopupManager {
             refreshBtn: document.getElementById('refreshBtn'),
             viewAllRatingsBtn: document.getElementById('viewAllRatingsBtn'),
             loading: document.getElementById('loading'),
-            errorMessage: document.getElementById('errorMessage')
+            errorMessage: document.getElementById('errorMessage'),
+            infiniteScrollTrigger: document.getElementById('infiniteScrollTrigger')
         };
     }
 
     setupEventListeners() {
+        // Logo click handler
+        const popupLogo = document.getElementById('popupLogo');
+        if (popupLogo) {
+            popupLogo.addEventListener('click', (e) => {
+                e.preventDefault();
+                chrome.tabs.create({ url: 'src/pages/home/home.html' });
+            });
+        }
+        
         // Auth events
         if (this.elements.googleLoginBtn) {
             this.elements.googleLoginBtn.addEventListener('click', () => this.handleGoogleLogin());
@@ -211,6 +260,69 @@ class PopupManager {
         
         // Password toggle
         this.setupPasswordToggles();
+        
+        // Infinite scroll observer
+        this.setupIntersectionObserver();
+    }
+
+    setupIntersectionObserver() {
+        const options = {
+            root: null,
+            rootMargin: '0px',
+            threshold: 0.1
+        };
+        
+        this.observer = new IntersectionObserver((entries) => {
+            const entry = entries[0];
+            const el = this.elements.infiniteScrollTrigger;
+            // 🔍 Log 4: every IO callback
+            console.log('👁️ IntersectionObserver fired:', {
+                isIntersecting: entry.isIntersecting,
+                intersectionRatio: entry.intersectionRatio,
+                triggerDisplay: el?.style.display,
+                isLoadingMore: this.isLoadingMore,
+                isBackgroundRefreshing: this.isBackgroundRefreshing,
+                hasMore: this.hasMore,
+                ratingsLoaded: this.ratingsLoaded
+            });
+            // Only isLoadingMore blocks pagination — background refresh runs in parallel
+            if (entry.isIntersecting && this.hasMore && !this.isLoadingMore && this.ratingsLoaded) {
+                console.log('🔄 Infinite scroll: trigger visible, conditions met → loadMoreRatings()');
+                this.loadMoreRatings();
+            } else if (entry.isIntersecting) {
+                console.log('⛔ Infinite scroll: trigger visible but blocked:', {
+                    hasMore: this.hasMore,
+                    isLoadingMore: this.isLoadingMore,
+                    ratingsLoaded: this.ratingsLoaded
+                });
+            }
+        }, options);
+        
+        if (this.elements.infiniteScrollTrigger) {
+            this.observer.observe(this.elements.infiniteScrollTrigger);
+            console.log('👁️ IntersectionObserver attached to #infiniteScrollTrigger');
+        }
+    }
+
+    /** Show the infinite scroll trigger and re-attach the observer so it fires reliably */
+    showTrigger() {
+        const el = this.elements.infiniteScrollTrigger;
+        if (!el) return;
+        // 🔍 Log 6: trigger visibility change
+        console.log('🎯 SHOW trigger', { hasMore: this.hasMore, ratingsCount: this.ratings?.length });
+        if (this.observer) this.observer.unobserve(el);
+        el.style.display = 'flex';
+        if (this.observer) this.observer.observe(el);
+    }
+
+    /** Hide the infinite scroll trigger and detach the observer */
+    hideTrigger() {
+        const el = this.elements.infiniteScrollTrigger;
+        if (!el) return;
+        // 🔍 Log 6: trigger visibility change
+        console.log('🎯 HIDE trigger', { hasMore: this.hasMore, ratingsCount: this.ratings?.length });
+        if (this.observer) this.observer.unobserve(el);
+        el.style.display = 'none';
     }
 
     setupAuthSwitching() {
@@ -308,22 +420,35 @@ class PopupManager {
         // This allows instant loading when user is already authenticated
         const authData = await AuthManager.getAuthData();
         
-        if (authData && authData.user && AuthManager.isTokenValid(authData)) {
-            console.log('✅ PopupManager: Found valid auth data, showing UI immediately');
+        // Optimistic check: if we have a user stored, we are likely logged in.
+        // Don't wait for strict token validation for the VISUAL state to prevent flickering.
+        if (authData && authData.user) {
+            console.log('✅ PopupManager: Found stored user, showing UI immediately (Optimistic)');
             
-            // Show authenticated UI immediately (NO loading spinner!)
+            // Show authenticated UI immediately
             this.updateAuthUI(true, authData.user, false);
             this.elements.authSection.style.display = 'none';
             this.elements.initialLoading.style.display = 'none';
             this.elements.mainContent.style.display = 'flex';
             
-            // Load ratings in background (non-blocking)
-            this.loadRatings().catch(err => {
-                console.error('Background ratings load failed:', err);
-                this.showError('Failed to load ratings');
-            });
+            // Check if token is actually valid for data fetching
+            if (AuthManager.isTokenValid(authData)) {
+                // Load ratings in background
+                this.loadRatings().catch(err => {
+                    console.error('Background ratings load failed:', err);
+                    this.showError('Failed to load ratings');
+                });
+            } else {
+                console.log('⏳ PopupManager: Token expired/invalid, waiting for refresh...');
+                // Show loading state in the feed/content area while we wait for token refresh
+                this.showLoading(true);
+                
+                // If we have a refresh token (added in recent updates), we could try to refresh proactively here
+                // if the background alarm didn't catch it. 
+                // But typically firebaseSDK will auto-refresh and fire authStateChanged.
+            }
             
-            return; // Early exit - we're done!
+            return; // Early exit
         }
         
         // ===== SLOW PATH: No valid stored auth, need to check Firebase =====
@@ -384,21 +509,21 @@ class PopupManager {
         const dismissBtn = document.getElementById('dismissUpdateBtn');
 
         if (banner && versionEl) {
-            versionEl.textContent = `Version ${version} is ready`;
+            versionEl.textContent = `${i18n.get('popup.update.version')} ${version}`;
             banner.style.display = 'flex';
 
             // Update button handler
             updateBtn.onclick = () => {
-                updateBtn.textContent = 'Downloading...';
+                updateBtn.textContent = i18n.currentLocale === 'ru' ? 'Загрузка...' : 'Downloading...';
                 updateBtn.disabled = true;
                 
                 chrome.runtime.sendMessage({ type: 'DOWNLOAD_UPDATE', url: url }, (response) => {
                     if (response && response.success) {
                         // Banner will stay until download completes and instructions open
                         // But we can update text to show progress
-                        updateBtn.textContent = 'Opening...';
+                        updateBtn.textContent = i18n.currentLocale === 'ru' ? 'Открытие...' : 'Opening...';
                     } else {
-                        updateBtn.textContent = 'Error';
+                        updateBtn.textContent = i18n.currentLocale === 'ru' ? 'Ошибка' : 'Error';
                         updateBtn.disabled = false;
                         console.error('Update download failed:', response?.error);
                     }
@@ -491,7 +616,7 @@ class PopupManager {
         if (isAuthenticated) {
             this.elements.authSection.style.display = 'none';
             this.elements.statusIndicator.classList.add('authenticated');
-            this.elements.statusText.textContent = `Signed in as ${user?.displayName || user?.email || 'User'}`;
+            this.elements.statusText.textContent = i18n.get('popup.header.signed_in_as').replace('{user}', user?.displayName || user?.email || 'User');
             
             // Update user info
             this.elements.userName.textContent = user?.displayName || user?.email || 'User';
@@ -515,7 +640,7 @@ class PopupManager {
             this.elements.authSection.style.display = 'block';
             this.elements.mainContent.style.display = 'none';
             this.elements.statusIndicator.classList.remove('authenticated');
-            this.elements.statusText.textContent = 'Not authenticated';
+            this.elements.statusText.textContent = i18n.get('popup.header.not_authenticated');
         }
     }
 
@@ -541,7 +666,7 @@ class PopupManager {
             
             this.loadRatings();
         } catch (error) {
-            this.showError(`Google login failed: ${error.message}`);
+            this.showError(`${i18n.currentLocale === 'ru' ? 'Ошибка входа через Google' : 'Google login failed'}: ${error.message}`);
         }
     }
 
@@ -552,12 +677,12 @@ class PopupManager {
         const email = this.elements.registerEmail.value.trim();
         
         if (!firstName || !lastName || !email) {
-            this.showError('Please fill in all fields');
+            this.showError(i18n.get('popup.auth.fill_all'));
             return;
         }
         
         if (!this.isValidEmail(email)) {
-            this.showError('Please enter a valid email address');
+            this.showError(i18n.currentLocale === 'ru' ? 'Пожалуйста, введите корректный адрес электронной почты' : 'Please enter a valid email address');
             return;
         }
         
@@ -614,12 +739,12 @@ class PopupManager {
         const email = this.elements.loginEmail.value.trim();
         
         if (!email) {
-            this.showError('Please enter your email');
+            this.showError(i18n.currentLocale === 'ru' ? 'Пожалуйста, введите ваш email' : 'Please enter your email');
             return;
         }
         
         if (!this.isValidEmail(email)) {
-            this.showError('Please enter a valid email address');
+            this.showError(i18n.currentLocale === 'ru' ? 'Пожалуйста, введите корректный адрес электронной почты' : 'Please enter a valid email address');
             return;
         }
         
@@ -651,7 +776,7 @@ class PopupManager {
         const password = this.elements.loginPassword.value;
 
         if (!email || !password) {
-            this.showError('Please fill in all fields');
+            this.showError(i18n.get('popup.auth.fill_all'));
             return;
         }
 
@@ -680,7 +805,7 @@ class PopupManager {
             
             this.loadRatings();
         } catch (error) {
-            this.showError(`Email login failed: ${error.message}`);
+            this.showError(`${i18n.currentLocale === 'ru' ? 'Ошибка входа по email' : 'Email login failed'}: ${error.message}`);
         }
     }
 
@@ -692,17 +817,17 @@ class PopupManager {
         const confirmPassword = this.elements.registerConfirmPassword.value;
 
         if (!password || !confirmPassword) {
-            this.showError('Please fill in all password fields');
+            this.showError(i18n.get('popup.auth.fill_all'));
             return;
         }
 
         if (password.length < 6) {
-            this.showError('Password must be at least 6 characters long');
+            this.showError(i18n.get('popup.auth.password_min_length'));
             return;
         }
         
         if (password !== confirmPassword) {
-            this.showError('Passwords do not match');
+            this.showError(i18n.get('popup.auth.passwords_dont_match'));
             return;
         }
 
@@ -741,7 +866,7 @@ class PopupManager {
             
             this.loadRatings();
         } catch (error) {
-            this.showError(`Registration failed: ${error.message}`);
+            this.showError(`${i18n.currentLocale === 'ru' ? 'Ошибка регистрации' : 'Registration failed'}: ${error.message}`);
         }
     }
 
@@ -760,10 +885,14 @@ class PopupManager {
             await firebaseManager.signOut();
             this.ratings = [];
             this.ratingsLoaded = false;
-            this.isLoadingRatings = false; // Reset loading flag
+            this.isLoadingRatings = false;
+            this.lastDocId = null;
+            this.hasMore = true;
+            this.isLoadingMore = false;
+            this.hideTrigger();
             this.renderRatings();
         } catch (error) {
-            this.showError(`Logout failed: ${error.message}`);
+            this.showError(`${i18n.currentLocale === 'ru' ? 'Ошибка выхода' : 'Logout failed'}: ${error.message}`);
         } finally {
             this.showLoading(false);
         }
@@ -824,7 +953,7 @@ class PopupManager {
                     <div class="search-result-info">
                         <h4 class="search-result-title">${this.escapeHtml(name)}</h4>
                         <p class="search-result-meta">${movie.year} • ${movie.genres.slice(0, 2).join(', ')}</p>
-                        ${movie.votes?.kp ? `<span class="search-result-votes">${movie.votes.kp} оценок</span>` : ''}
+                        ${movie.votes?.kp ? `<span class="search-result-votes">${i18n.get('movie_details.votes_count').replace('{count}', movie.votes.kp)}</span>` : ''}
                     </div>
                 </div>
             `;
@@ -861,7 +990,7 @@ class PopupManager {
     openMovieDetails(movieId) {
         // For now, open in advanced search page with movie ID
         chrome.tabs.create({ 
-            url: chrome.runtime.getURL(`src/pages/search/search.html?movieId=${movieId}`) 
+            url: chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`) 
         });
     }
 
@@ -893,6 +1022,14 @@ class PopupManager {
             const startTime = performance.now();
             console.log('⏱️ PopupManager: Starting loadRatings()');
             
+            // Reset pagination state for fresh load
+            this.lastDocId = null;
+            this.lastDoc = null;
+            this.hasMore = true;
+            this.isLoadingMore = false;
+            // Hide trigger spinner — it must never appear during initial load
+            this.hideTrigger();
+            
             // Hide main content and show initial loading
             this.elements.mainContent.style.display = 'none';
             this.elements.initialLoading.style.display = 'flex';
@@ -913,25 +1050,48 @@ class PopupManager {
             
             const cacheStartTime = performance.now();
             console.log(`⏱️ [PopupManager] Starting getCachedRatingsWithBackgroundRefresh`);
-            const result = await ratingsCacheService.getCachedRatingsWithBackgroundRefresh(50);
+            
+            // Temporarily wrap refreshCacheInBackground to track isBackgroundRefreshing flag
+            const origRefresh = ratingsCacheService.refreshCacheInBackground.bind(ratingsCacheService);
+            ratingsCacheService.refreshCacheInBackground = async (...args) => {
+                this.isBackgroundRefreshing = true;
+                console.log('🔄 [PopupManager] Background cache refresh started');
+                try {
+                    return await origRefresh(...args);
+                } finally {
+                    this.isBackgroundRefreshing = false;
+                    console.log('✅ [PopupManager] Background cache refresh finished');
+                    // Restore original method
+                    ratingsCacheService.refreshCacheInBackground = origRefresh;
+                }
+            };
+            
+            const result = await ratingsCacheService.getCachedRatingsWithBackgroundRefresh(this.ITEMS_PER_PAGE, null); // Load first page
             const cacheEndTime = performance.now();
             const cacheLoadTime = Math.round(cacheEndTime - cacheStartTime);
             
             console.log(`✅ [PopupManager] Got result from cache service in ${cacheLoadTime}ms:`, { 
                 ratingsCount: result.ratings.length, 
                 isFromCache: result.isFromCache,
+                hasMore: result.hasMore,
                 loadTime: `${cacheLoadTime}ms`
             });
             
             this.ratings = result.ratings;
+            this.lastDocId = result.lastDocId;
+            this.lastDoc = result.lastDoc;
+            this.hasMore = result.hasMore !== undefined ? result.hasMore : (result.ratings.length === this.ITEMS_PER_PAGE);
             
             // Render ratings (both cached and fresh data)
             const renderStartTime = performance.now();
-            await this.renderRatings();
+            await this.renderRatings(false); // false = replace content (not append)
             const renderEndTime = performance.now();
             const renderTime = Math.round(renderEndTime - renderStartTime);
             
             this.ratingsLoaded = true;
+            
+            // Now that first batch is shown, update trigger visibility based on hasMore
+            if (this.hasMore) { this.showTrigger(); } else { this.hideTrigger(); }
             
             // Show main content after all ratings are rendered
             this.showMainContent();
@@ -972,9 +1132,86 @@ class PopupManager {
         } catch (error) {
             // Show main content even on error
             this.showMainContent();
-            this.showError(`Failed to load ratings: ${error.message}`);
+            this.showError(`${i18n.currentLocale === 'ru' ? 'Не удалось загрузить оценки' : 'Failed to load ratings'}: ${error.message}`);
         } finally {
             this.isLoadingRatings = false; // Reset flag
+        }
+    }
+
+    async loadMoreRatings() {
+        // 🔍 Log 2: state before the guard check
+        console.log('🔄 loadMoreRatings called:', {
+            isLoadingMore: this.isLoadingMore,
+            isBackgroundRefreshing: this.isBackgroundRefreshing,
+            hasMore: this.hasMore,
+            lastDocId: this.lastDocId,
+            lastDocType: this.lastDoc ? typeof this.lastDoc : 'null',
+            lastDocClass: this.lastDoc?.constructor?.name ?? 'null',
+            ratingsCount: this.ratings?.length
+        });
+        // isLoadingMore is the ONLY flag that blocks pagination
+        // isBackgroundRefreshing does NOT block — background refresh and pagination can coexist
+        if (this.isLoadingMore || !this.hasMore) {
+            console.warn('⛔ loadMoreRatings BLOCKED:', { isLoadingMore: this.isLoadingMore, hasMore: this.hasMore });
+            return;
+        }
+        
+        try {
+            this.isLoadingMore = true;
+            const cursor = this.lastDoc || this.lastDocId;
+            console.log('📤 loadMoreRatings: sending cursor to fetchAndCacheRatings:', {
+                cursorType: cursor === null ? 'null' : typeof cursor,
+                cursorIsSnapshot: cursor !== null && typeof cursor === 'object',
+                cursorId: cursor?.id ?? cursor,
+                cursorClass: cursor?.constructor?.name ?? 'N/A'
+            });
+            
+            const ratingsCacheService = firebaseManager.getRatingsCacheService();
+            const result = await ratingsCacheService.fetchAndCacheRatings(this.ITEMS_PER_PAGE, cursor);
+            
+            // 🔍 Log 3: what came back
+            console.log('📦 loadMoreRatings: fetchAndCacheRatings result:', {
+                ratingsCount: result?.ratings?.length,
+                newLastDocId: result?.lastDocId,
+                newLastDocType: result?.lastDoc ? typeof result.lastDoc : 'null',
+                newLastDocClass: result?.lastDoc?.constructor?.name ?? 'null',
+                hasMore: result?.hasMore
+            });
+            
+            if (result.ratings.length > 0) {
+                const startIndex = this.ratings.length;
+                this.ratings = [...this.ratings, ...result.ratings];
+                // 🔍 Log 1: what we save as cursors
+                console.log('💾 Saving new cursors after loadMore:', {
+                    lastDocId: result.lastDocId,
+                    lastDocType: result.lastDoc ? typeof result.lastDoc : 'null',
+                    lastDocClass: result.lastDoc?.constructor?.name ?? 'null',
+                    hasMore: result.hasMore
+                });
+                this.lastDocId = result.lastDocId;
+                this.lastDoc = result.lastDoc;
+                // Trust the server-side hasMore flag; fallback to count check if missing
+                this.hasMore = (result.hasMore !== undefined)
+                    ? result.hasMore
+                    : (result.ratings.length === this.ITEMS_PER_PAGE);
+                
+                await this.renderRatings(true, startIndex);
+                // renderRatings now handles showTrigger/hideTrigger at the end
+            } else {
+                // Zero results returned — definitely no more data
+                this.hasMore = false;
+                this.hideTrigger();
+            }
+            
+        } catch (error) {
+            console.error('❌ Error loading more ratings:', error);
+            this.hasMore = false;
+            this.hideTrigger();
+        } finally {
+            // 🔍 Log 5: finally block always runs
+            console.log('✅ loadMoreRatings finally: isLoadingMore will be reset to false (was:', this.isLoadingMore, ')');
+            this.isLoadingMore = false;
+            console.log('✅ isLoadingMore reset to false');
         }
     }
 
@@ -990,6 +1227,13 @@ class PopupManager {
             const startTime = performance.now();
             this.hideError();
             
+            // Reset pagination state before refresh
+            this.lastDocId = null;
+            this.lastDoc = null;
+            this.hasMore = true;
+            this.isLoadingMore = false;
+            this.hideTrigger();
+            
             console.log('🔄 PopupManager: Force refreshing ratings...');
             
             // Hide feed content with fade out
@@ -1003,18 +1247,27 @@ class PopupManager {
             await ratingsCacheService.clearCache();
             
             const fetchStartTime = performance.now();
-            const ratings = await ratingsCacheService.fetchAndCacheRatings(50);
+            // Force fetch first page
+            const result = await ratingsCacheService.fetchAndCacheRatings(this.ITEMS_PER_PAGE, null);
+            const ratings = result.ratings;
             const fetchEndTime = performance.now();
             const fetchTime = Math.round(fetchEndTime - fetchStartTime);
             
-            this.ratings = ratings;
+            this.ratings = result.ratings;
+            this.lastDocId = result.lastDocId;
+            this.lastDoc = result.lastDoc;
+            this.hasMore = result.hasMore;
             
+            this.ratingsLoaded = false; // Prevent premature trigger show inside renderRatings
             const renderStartTime = performance.now();
-            await this.renderRatings();
+            await this.renderRatings(false); // Replace content
             const renderEndTime = performance.now();
             const renderTime = Math.round(renderEndTime - renderStartTime);
             
             this.ratingsLoaded = true;
+            
+            // Update trigger visibility now that the refresh is complete
+            if (this.hasMore) { this.showTrigger(); } else { this.hideTrigger(); }
             
             // Hide loader with fade out
             await this.hideLoadingWithFade();
@@ -1036,28 +1289,33 @@ class PopupManager {
             // On error, hide loader and show content
             await this.hideLoadingWithFade();
             await this.showFeedContentWithFade();
-            this.showError(`Failed to refresh ratings: ${error.message}`);
+            this.showError(`${i18n.currentLocale === 'ru' ? 'Не удалось обновить оценки' : 'Failed to refresh ratings'}: ${error.message}`);
         } finally {
             this.isLoadingRatings = false; // Reset flag
         }
     }
 
-    async renderRatings() {
+    async renderRatings(append = false, startIndex = 0) {
         const startTime = performance.now();
-        console.log('⏱️ [PopupManager] Starting renderRatings');
+        console.log(`⏱️ [PopupManager] Starting renderRatings (append=${append}, index=${startIndex})`);
         
-        const clearStart = performance.now();
-        this.elements.feedContent.innerHTML = '';
-        const clearTime = Math.round(performance.now() - clearStart);
-        console.log(`⏱️ [PopupManager] Clear feedContent: ${clearTime}ms`);
+        if (!append) {
+            const clearStart = performance.now();
+            this.elements.feedContent.innerHTML = '';
+            const clearTime = Math.round(performance.now() - clearStart);
+            console.log(`⏱️ [PopupManager] Clear feedContent: ${clearTime}ms`);
+        } else {
+             // If appending, ensure we only process new items
+             // The loop below uses this.ratings, so we can iterate starting from startIndex
+        }
 
-        if (this.ratings.length === 0) {
+        if (this.ratings.length === 0 && !this.isLoadingMore) {
             const emptyStateStart = performance.now();
             this.elements.feedContent.innerHTML = `
                 <div class="empty-state">
                     <div class="empty-state-icon">🎬</div>
-                    <h3 class="empty-state-title">No ratings yet</h3>
-                    <p class="empty-state-text">Start rating movies to see them here!</p>
+                    <h3 class="empty-state-title" data-i18n="popup.content.empty_title">${i18n.get('popup.content.empty_title')}</h3>
+                    <p class="empty-state-text" data-i18n="popup.content.empty_text">${i18n.get('popup.content.empty_text')}</p>
                 </div>
             `;
             const emptyStateTime = Math.round(performance.now() - emptyStateStart);
@@ -1065,11 +1323,12 @@ class PopupManager {
             return;
         }
 
-        console.log(`⏱️ [PopupManager] Rendering ${this.ratings.length} ratings`);
+        const itemsToRender = append ? this.ratings.slice(startIndex) : this.ratings;
+        console.log(`⏱️ [PopupManager] Rendering ${itemsToRender.length} ratings (total: ${this.ratings.length})`);
         
-        // Pre-load all average ratings in batch to avoid multiple Firebase calls
+        // Pre-load all average ratings in batch to avoid multiple Firebase calls (only for items to render)
         const averageRatingsStartTime = performance.now();
-        const averageRatingsMap = await this.preloadAverageRatings();
+        const averageRatingsMap = await this.preloadAverageRatings(itemsToRender);
         const averageRatingsTime = Math.round(performance.now() - averageRatingsStartTime);
         console.log(`⏱️ [PopupManager] Pre-loaded average ratings: ${averageRatingsTime}ms`);
         
@@ -1095,8 +1354,8 @@ class PopupManager {
         let skippedCount = 0;
         let errorCount = 0;
         
-        for (let i = 0; i < this.ratings.length; i++) {
-            const rating = this.ratings[i];
+        for (let i = 0; i < itemsToRender.length; i++) {
+            const rating = itemsToRender[i];
             const elementStart = performance.now();
             try {
                 // Check if element already exists to prevent duplicates
@@ -1113,7 +1372,7 @@ class PopupManager {
                 
                 const elementTime = Math.round(performance.now() - elementStart);
                 if (elementTime > 50) {
-                    console.log(`⏱️ [PopupManager] Rating ${i+1}/${this.ratings.length} rendered in ${elementTime}ms (slow)`);
+                    console.log(`⏱️ [PopupManager] Rating ${i+1}/${itemsToRender.length} rendered in ${elementTime}ms (slow)`);
                 }
             } catch (error) {
                 errorCount++;
@@ -1126,11 +1385,23 @@ class PopupManager {
         const renderTime = Math.round(performance.now() - renderStart);
         const totalTime = Math.round(performance.now() - startTime);
         console.log(`✅ [PopupManager] Finished rendering ratings in ${totalTime}ms (render: ${renderTime}ms, avg ratings: ${averageRatingsTime}ms, rendered: ${renderedCount}, skipped: ${skippedCount}, errors: ${errorCount})`);
+
+        // Re-attach observer AFTER all cards are in the DOM so the trigger's
+        // position is final. This ensures IntersectionObserver fires correctly
+        // whether the trigger is already in the viewport or not.
+        if (append || this.ratingsLoaded) {
+            if (this.hasMore) {
+                this.showTrigger(); // unobserve → display:flex → observe
+            } else {
+                this.hideTrigger();
+            }
+        }
     }
 
-    async preloadAverageRatings() {
+    async preloadAverageRatings(ratingsToLoad = null) {
         const startTime = performance.now();
-        const movieIds = [...new Set(this.ratings.map(r => r.movie?.kinopoiskId || r.movieId))];
+        const targetRatings = ratingsToLoad || this.ratings;
+        const movieIds = [...new Set(targetRatings.map(r => r.movie?.kinopoiskId || r.movieId))];
         const averageRatingsMap = new Map();
         
         console.log(`⏱️ [PopupManager] preloadAverageRatings: ${movieIds.length} unique movies`);
@@ -1265,13 +1536,13 @@ class PopupManager {
         const movieTitle = movie?.name || 'Unknown Movie';
         const movieYear = movie?.year || '';
         const movieGenres = movie?.genres?.slice(0, 2).join(', ') || '';
-        const timestamp = firebaseManager.formatTimestamp(rating.createdAt);
+        const timestamp = i18n.formatRelativeTime(rating.createdAt);
 
         // Get pre-loaded average rating
         const averageData = averageRatingsMap.get(movieId) || { average: 0, count: 0 };
         const averageDisplay = averageData.count > 0 
             ? `${parseFloat(averageData.average.toFixed(1))}` 
-            : 'No ratings';
+            : (i18n.currentLocale === 'ru' ? 'Нет оценок' : 'No ratings');
 
         // Get current user photo if this is current user's rating and photo is missing/outdated
         let userPhoto = rating.userPhoto || '/icons/icon48.png';
@@ -1309,11 +1580,11 @@ class PopupManager {
                             <div class="rating-menu-dropdown" id="popup-menu-${rating.id}" style="display: none;">
                                 <button class="menu-item edit-item" data-rating-id="${rating.id}" data-action="edit">
                                     <span class="menu-icon">${Icons.EDIT}</span>
-                                    <span>Редактировать</span>
+                                    <span>${i18n.get('movie_details.edit')}</span>
                                 </button>
                                 <button class="menu-item delete-item" data-rating-id="${rating.id}" data-action="delete">
                                     <span class="menu-icon">${Icons.TRASH}</span>
-                                    <span>Удалить</span>
+                                    <span>${i18n.get('movie_details.delete')}</span>
                                 </button>
                             </div>
                         </div>
@@ -1323,11 +1594,11 @@ class PopupManager {
                 <p class="rating-movie-meta">${movieYear} • ${this.truncateText(movieGenres, 30)}</p>
                 <div class="rating-scores">
                     <div class="rating-user-score">
-                        <span>Your rating:</span>
+                        <span>${i18n.get('movie_card.my_rating')}:</span>
                         <span class="rating-badge">${rating.rating}</span>
                     </div>
                     <div class="rating-average-score">
-                        <span>Average:</span>
+                        <span>${i18n.get('movie_card.avg_rating')}:</span>
                         <span class="rating-badge">${averageDisplay}</span>
                     </div>
                 </div>
@@ -1343,7 +1614,7 @@ class PopupManager {
             }
             if (movieId) {
                 chrome.tabs.create({ 
-                    url: chrome.runtime.getURL(`src/pages/search/search.html?movieId=${movieId}`) 
+                    url: chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`) 
                 });
             }
         });
@@ -1467,13 +1738,13 @@ class PopupManager {
         try {
             const currentUser = firebaseManager.getCurrentUser();
             if (!currentUser) {
-                this.showError('Пожалуйста, войдите в систему');
+                this.showError(i18n.get('navbar.sign_in'));
                 return;
             }
             
             const ratingDoc = await firebaseManager.db.collection('ratings').doc(ratingId).get();
             if (!ratingDoc.exists) {
-                this.showError('Отзыв не найден');
+                this.showError(i18n.currentLocale === 'ru' ? 'Отзыв не найден' : 'Review not found');
                 return;
             }
             
@@ -1482,7 +1753,7 @@ class PopupManager {
             
         } catch (error) {
             console.error('Error editing rating:', error);
-            this.showError(`Ошибка при редактировании: ${error.message}`);
+            this.showError(`${i18n.currentLocale === 'ru' ? 'Ошибка при редактировании' : 'Error editing'}: ${error.message}`);
         }
     }
 
@@ -1512,18 +1783,18 @@ class PopupManager {
                 color: #e2e8f0;
             ">
                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;">
-                    <h3 style="margin:0; font-size:20px;">Редактировать отзыв</h3>
+                    <h3 style="margin:0; font-size:20px;">${i18n.get('ratings.modal.rate_movie')}</h3>
                     <button id="closeEditModalPopup" style="background:#334155; color:#e2e8f0; border:none; padding:8px 12px; border-radius:8px; cursor:pointer;">✕</button>
                 </div>
                 
                 <form id="editRatingFormPopup">
                     <div style="margin-bottom:16px;">
-                        <label style="display:block; margin-bottom:8px; color:#94a3b8;">Оценка: <span id="editRatingValuePopup">${ratingData.rating}</span></label>
+                        <label style="display:block; margin-bottom:8px; color:#94a3b8;">${i18n.get('ratings.modal.your_rating')}: <span id="editRatingValuePopup">${ratingData.rating}</span></label>
                         <input type="range" id="editRatingSliderPopup" min="1" max="10" value="${ratingData.rating}" style="width:100%;">
                     </div>
                     
                     <div style="margin-bottom:16px;">
-                        <label style="display:block; margin-bottom:8px; color:#94a3b8;">Комментарий:</label>
+                        <label style="display:block; margin-bottom:8px; color:#94a3b8;">${i18n.get('ratings.modal.share_thoughts')}:</label>
                         <textarea id="editRatingCommentPopup" rows="4" maxlength="500" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid #334155; background:#0b1220; color:#e2e8f0; resize:vertical;">${this.escapeHtml(ratingData.comment || '')}</textarea>
                         <div style="text-align:right; margin-top:4px; font-size:12px; color:#94a3b8;">
                             <span id="editCommentCountPopup">${(ratingData.comment || '').length}</span>/500
@@ -1531,8 +1802,8 @@ class PopupManager {
                     </div>
                     
                     <div style="display:flex; gap:8px; justify-content:flex-end;">
-                        <button type="button" id="cancelEditBtnPopup" style="background:#334155; color:#e2e8f0; border:none; padding:10px 16px; border-radius:8px; cursor:pointer;">Отмена</button>
-                        <button type="submit" id="saveEditBtnPopup" style="background:#22c55e; color:#062e0f; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-weight:600;">Сохранить</button>
+                        <button type="button" id="cancelEditBtnPopup" style="background:#334155; color:#e2e8f0; border:none; padding:10px 16px; border-radius:8px; cursor:pointer;">${i18n.get('ratings.modal.cancel')}</button>
+                        <button type="submit" id="saveEditBtnPopup" style="background:#22c55e; color:#062e0f; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-weight:600;">${i18n.get('ratings.modal.save')}</button>
                     </div>
                 </form>
             </div>
@@ -1589,18 +1860,18 @@ class PopupManager {
                 );
                 
                 closeModal();
-                this.showSuccess('Отзыв обновлен!');
+                this.showSuccess(i18n.get('settings.saved'));
                 await this.forceRefreshRatings();
                 
             } catch (error) {
                 console.error('Error updating rating:', error);
-                this.showError(`Ошибка при сохранении: ${error.message}`);
+                this.showError(`${i18n.get('settings.save_failed')}: ${error.message}`);
             }
         });
     }
 
     async deletePopupRating(ratingId) {
-        const confirmed = confirm('Вы уверены, что хотите удалить свой отзыв?');
+        const confirmed = confirm(i18n.get('settings.reset_confirm'));
         
         if (!confirmed) return;
         
@@ -1609,7 +1880,7 @@ class PopupManager {
             const currentUser = firebaseManager.getCurrentUser();
             
             if (!currentUser) {
-                this.showError('Пожалуйста, войдите в систему');
+                this.showError(i18n.get('navbar.sign_in'));
                 return;
             }
             
@@ -1627,11 +1898,11 @@ class PopupManager {
                 }, 300);
             }
             
-            this.showSuccess('Отзыв удален');
+            this.showSuccess(i18n.get('movie_card.remove'));
             
         } catch (error) {
             console.error('Error deleting rating:', error);
-            this.showError(`Ошибка при удалении: ${error.message}`);
+            this.showError(`${i18n.currentLocale === 'ru' ? 'Ошибка при удалении' : 'Error deleting'}: ${error.message}`);
         }
     }
 
@@ -1685,9 +1956,9 @@ class PopupManager {
     }
 
     diagnoseLayers(loadingElement) {
-        console.log('🔍 ========== ДИАГНОСТИКА СЛОЕВ ==========');
+        console.log('🔍 ========== LAYER DIAGNOSTICS ==========');
         
-        // Информация о самом loader'е
+        // Information about the loader itself
         const loadingRect = loadingElement.getBoundingClientRect();
         const loadingStyles = window.getComputedStyle(loadingElement);
         console.log('📦 LOADER ELEMENT:');
@@ -1701,10 +1972,10 @@ class PopupManager {
         console.log('  rect:', `top:${Math.round(loadingRect.top)} left:${Math.round(loadingRect.left)} width:${Math.round(loadingRect.width)} height:${Math.round(loadingRect.height)}`);
         console.log('  parent:', loadingElement.parentElement?.tagName + '.' + (loadingElement.parentElement?.className || 'no class'));
 
-        // Проверяем все родительские элементы
+        // Check all parent elements
         let parent = loadingElement.parentElement;
         let level = 1;
-        console.log('\n📚 РОДИТЕЛЬСКИЕ ЭЛЕМЕНТЫ:');
+        console.log('\n📚 PARENT ELEMENTS:');
         while (parent && parent !== document.body) {
             const parentStyles = window.getComputedStyle(parent);
             const parentRect = parent.getBoundingClientRect();
@@ -1722,10 +1993,10 @@ class PopupManager {
             level++;
         }
 
-        // Проверяем все элементы с z-index в popup-container
+        // Check all elements with z-index in popup-container
         const popupContainer = document.querySelector('.popup-container');
         if (popupContainer) {
-            console.log('\n🎯 ЭЛЕМЕНТЫ С Z-INDEX В POPUP:');
+            console.log('\n🎯 ELEMENTS WITH Z-INDEX IN POPUP:');
             const allElements = popupContainer.querySelectorAll('*');
             const elementsWithZIndex = [];
             
@@ -1752,7 +2023,7 @@ class PopupManager {
                 }
             });
 
-            // Сортируем по z-index
+            // Sort by z-index
             elementsWithZIndex.sort((a, b) => {
                 const zA = parseInt(a.zIndex) || 0;
                 const zB = parseInt(b.zIndex) || 0;
@@ -1766,11 +2037,11 @@ class PopupManager {
             });
         }
 
-        // Проверяем элементы, которые могут перекрывать loader по координатам
-        console.log('\n📍 ЭЛЕМЕНТЫ, КОТОРЫЕ МОГУТ ПЕРЕКРЫВАТЬ LOADER:');
+        // Check elements that might overlap the loader by coordinates
+        console.log('\n📍 ELEMENTS THAT MIGHT OVERLAP LOADER:');
         const loadingCenterX = loadingRect.left + loadingRect.width / 2;
         const loadingCenterY = loadingRect.top + loadingRect.height / 2;
-        console.log('  Центр loader:', `x:${Math.round(loadingCenterX)} y:${Math.round(loadingCenterY)}`);
+        console.log('  Loader center:', `x:${Math.round(loadingCenterX)} y:${Math.round(loadingCenterY)}`);
         
         const allElementsInPopup = popupContainer ? popupContainer.querySelectorAll('*') : [];
         const overlappingElements = [];
@@ -1781,7 +2052,7 @@ class PopupManager {
             const rect = el.getBoundingClientRect();
             const styles = window.getComputedStyle(el);
             
-            // Проверяем, перекрывает ли элемент центр loader'а
+            // Check if element overlaps the center of the loader
             const overlapsX = rect.left <= loadingCenterX && rect.right >= loadingCenterX;
             const overlapsY = rect.top <= loadingCenterY && rect.bottom >= loadingCenterY;
             
@@ -1815,17 +2086,17 @@ class PopupManager {
 
         if (overlappingElements.length > 0) {
             overlappingElements.forEach((item, index) => {
-                const status = item.overlapsLoader ? '⚠️ ПЕРЕКРЫВАЕТ' : '✅ НИЖЕ';
+                const status = item.overlapsLoader ? '⚠️ OVERLAPS' : '✅ BELOW';
                 console.log(`  ${index + 1}. ${status} - ${item.tag}${item.id ? '#' + item.id : ''}${item.className ? '.' + item.className.split(' ').join('.') : ''}`);
                 console.log('     z-index:', item.zIndex, `(${item.zIndexNum})`, '| position:', item.position, '| display:', item.display);
                 console.log('     rect:', `top:${item.rect.top} left:${item.rect.left} width:${item.rect.width} height:${item.rect.height}`);
             });
         } else {
-            console.log('  ✅ Нет элементов, перекрывающих loader');
+            console.log('  ✅ No elements overlapping loader');
         }
 
-        // Дополнительная проверка: элементы выше loader'а по z-index в той же области
-        console.log('\n🔎 ЭЛЕМЕНТЫ С БОЛЬШИМ Z-INDEX В ОБЛАСТИ LOADER:');
+        // Additional check: elements above loader by z-index in same area
+        console.log('\n🔎 ELEMENTS WITH HIGH Z-INDEX IN LOADER AREA:');
         const loaderTop = loadingRect.top;
         const loaderBottom = loadingRect.bottom;
         const loaderLeft = loadingRect.left;
@@ -1840,7 +2111,7 @@ class PopupManager {
             const zIndex = parseInt(styles.zIndex) || 0;
             const loadingZIndex = parseInt(loadingStyles.zIndex) || 0;
             
-            // Проверяем, пересекается ли элемент с областью loader'а
+            // Check if element intersects with loader area
             const intersectsX = !(rect.right < loaderLeft || rect.left > loaderRight);
             const intersectsY = !(rect.bottom < loaderTop || rect.top > loaderBottom);
             
@@ -1872,7 +2143,7 @@ class PopupManager {
                 console.log('     rect:', `top:${item.rect.top} left:${item.rect.left} width:${item.rect.width} height:${item.rect.height}`);
             });
         } else {
-            console.log('  ✅ Нет элементов с большим z-index в области loader');
+            console.log('  ✅ No elements with high z-index in loader area');
         }
 
         console.log('🔍 =========================================\n');

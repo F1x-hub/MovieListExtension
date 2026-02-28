@@ -28,7 +28,18 @@ class FirebaseManager {
                 firebase.initializeApp(firebaseConfig);
             }
 
+            // Initialize Firestore
             this.db = firebase.firestore();
+            
+            try {
+                this.db.settings({
+                    cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED,
+                    experimentalForceLongPolling: true
+                });
+            } catch (e) {
+                console.warn('[Firestore] settings already applied or failed:', e.message);
+            }
+
             this.auth = firebase.auth();
             this.isInitialized = true;
 
@@ -75,7 +86,7 @@ class FirebaseManager {
                     const refreshTime = timeUntilExpiry - TOKEN_REFRESH_THRESHOLD; // 2 hours before expiry
 
                     if (refreshTime > 0 && refreshTime < TOKEN_VALIDATION_TTL) {
-                        console.log(`[FirebaseManager] Scheduling token refresh in ${Math.round(refreshTime / 1000 / 60)} minutes`);
+                        // console.log(`[FirebaseManager] Scheduling token refresh in ${Math.round(refreshTime / 1000 / 60)} minutes`);
                         this.tokenRefreshTimeout = setTimeout(async () => {
                             try {
                                 // Refresh token in background
@@ -86,10 +97,11 @@ class FirebaseManager {
                                 await chrome.storage.local.set({
                                     authToken: token,
                                     authTokenExpiry: expiryTime,
-                                    tokenValidationTimestamp: Date.now()
+                                    tokenValidationTimestamp: Date.now(),
+                                    refreshToken: user.refreshToken
                                 });
                                 
-                                console.log('[FirebaseManager] Token refreshed in background, expires at:', new Date(expiryTime));
+                                // console.log('[FirebaseManager] Token refreshed in background, expires at:', new Date(expiryTime));
                                 
                                 // Schedule next refresh
                                 this.scheduleTokenRefresh(user);
@@ -115,7 +127,8 @@ class FirebaseManager {
                         photoURL: user.photoURL
                     } : null,
                     isAuthenticated: !!user,
-                    authTimestamp: Date.now()
+                    authTimestamp: Date.now(),
+                    refreshToken: user ? user.refreshToken : null
                 };
 
                 // If user is authenticated, get and store the auth token
@@ -134,7 +147,7 @@ class FirebaseManager {
                             // Use cached token if validation is not needed and token is still valid
                             storageData.authToken = cachedData.authToken;
                             storageData.authTokenExpiry = cachedData.authTokenExpiry;
-                            console.log('[FirebaseManager] Using cached auth token (validation not needed)');
+                            // console.log('[FirebaseManager] Using cached auth token (validation not needed)');
                         } else if (!needsValidation && !cachedTokenValid) {
                             // Token expired but validation is still valid, refresh token without server validation
                             const token = await user.getIdToken(false);
@@ -142,7 +155,7 @@ class FirebaseManager {
                             const expiryTime = tokenResult.expirationTime ? new Date(tokenResult.expirationTime).getTime() : Date.now() + (55 * 60 * 1000);
                             storageData.authToken = token;
                             storageData.authTokenExpiry = expiryTime;
-                            console.log('[FirebaseManager] Auth token refreshed (without server validation), expires at:', new Date(expiryTime));
+                            // console.log('[FirebaseManager] Auth token refreshed (without server validation), expires at:', new Date(expiryTime));
                         } else {
                             // Need full validation - call getIdToken() which may check with server
                             const token = await user.getIdToken();
@@ -151,7 +164,7 @@ class FirebaseManager {
                             storageData.authToken = token;
                             storageData.authTokenExpiry = expiryTime;
                             storageData.tokenValidationTimestamp = Date.now();
-                            console.log('[FirebaseManager] Auth token validated and saved to chrome.storage, expires at:', new Date(expiryTime));
+                            // console.log('[FirebaseManager] Auth token validated and saved to chrome.storage, expires at:', new Date(expiryTime));
                             
                             // Schedule background token refresh
                             this.scheduleTokenRefresh(user);
@@ -229,11 +242,11 @@ class FirebaseManager {
             
             const uploadUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o?name=${encodeURIComponent(objectPath)}&uploadType=media`;
             
-            console.log('Uploading file:', {
+            /* console.log('Uploading file:', {
                 size: file.size,
                 type: file.type || 'image/jpeg',
                 path: objectPath
-            });
+            }); */
             
             const res = await fetch(uploadUrl, {
                 method: 'POST',
@@ -253,7 +266,7 @@ class FirebaseManager {
             }
 
             const info = await res.json();
-            console.log('Upload success, response:', info);
+            // console.log('Upload success, response:', info);
             
             if (info.size && parseInt(info.size) !== file.size) {
                 console.warn('File size mismatch! Uploaded:', info.size, 'bytes, Expected:', file.size, 'bytes');
@@ -349,11 +362,11 @@ class FirebaseManager {
             
             const uploadUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o?name=${encodeURIComponent(objectPath)}&uploadType=media`;
             
-            console.log('Uploading banner:', {
+            /* console.log('Uploading banner:', {
                 size: file.size,
                 type: file.type || 'image/jpeg',
                 path: objectPath
-            });
+            }); */
             
             const res = await fetch(uploadUrl, {
                 method: 'POST',
@@ -427,11 +440,11 @@ class FirebaseManager {
             
             const uploadUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o?name=${encodeURIComponent(objectPath)}&uploadType=media`;
             
-            console.log('Uploading collection icon:', {
+            /* console.log('Uploading collection icon:', {
                 size: file.size,
                 type: file.type || 'image/jpeg',
                 path: objectPath
-            });
+            }); */
             
             const res = await fetch(uploadUrl, {
                 method: 'POST',
@@ -808,6 +821,149 @@ class FirebaseManager {
         });
     }
 
+    // Report System Methods
+    async addReport(text, file, pageUrl) {
+        try {
+            if (!this.isInitialized) throw new Error('Firebase not initialized');
+            
+            let photoUrl = null;
+            let photoPath = null;
+            const reportId = this.db.collection('reports').doc().id;
+
+            if (file) {
+                // Upload via REST API similar to uploadAvatar
+                const bucket = 'movielistdb-13208.firebasestorage.app';
+                const extension = file.name.split('.').pop() || 'jpg';
+                photoPath = `reports/${reportId}/photo.${extension}`;
+                
+                const uploadUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o?name=${encodeURIComponent(photoPath)}&uploadType=media`;
+                
+                let token = null;
+                if (this.user) {
+                    token = await this.user.getIdToken();
+                }
+
+                const headers = { 'Content-Type': file.type || `image/${extension}` };
+                if (token) headers['Authorization'] = `Bearer ${token}`;
+
+                const res = await fetch(uploadUrl, {
+                    method: 'POST',
+                    headers: headers,
+                    body: file
+                });
+
+                if (!res.ok) {
+                    const errorText = await res.text();
+                    console.error('Report photo upload error response:', errorText);
+                    throw new Error(`Upload failed: ${res.status} ${res.statusText}`);
+                }
+
+                const info = await res.json();
+                const uploadedPath = info.name || photoPath;
+                
+                if (info && info.downloadTokens) {
+                    const tokenParam = Array.isArray(info.downloadTokens) ? info.downloadTokens[0] : info.downloadTokens;
+                    photoUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(uploadedPath)}?alt=media&token=${tokenParam}`;
+                } else {
+                    photoUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(uploadedPath)}?alt=media`;
+                }
+            }
+
+            const reportData = {
+                text: text || '',
+                photoUrl: photoUrl,
+                photoPath: photoPath,
+                status: "pending",
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                userId: this.user ? this.user.uid : null,
+                pageUrl: pageUrl || window.location.href
+            };
+
+            await this.db.collection('reports').doc(reportId).set(reportData);
+            return { id: reportId, ...reportData };
+        } catch (error) {
+            console.error('Error adding report:', error);
+            throw error;
+        }
+    }
+
+    listenToReports(callback) {
+        try {
+            if (!this.isInitialized) throw new Error('Firebase not initialized');
+            
+            return this.db
+                .collection('reports')
+                .orderBy('createdAt', 'desc')
+                .onSnapshot((querySnapshot) => {
+                    const reports = [];
+                    querySnapshot.forEach((doc) => {
+                        reports.push({
+                            id: doc.id,
+                            ...doc.data()
+                        });
+                    });
+                    callback(reports);
+                });
+        } catch (error) {
+            console.error('Error listening to reports:', error);
+            throw error;
+        }
+    }
+
+    async updateReportStatus(reportId, status) {
+        try {
+            if (!this.isInitialized) throw new Error('Firebase not initialized');
+            await this.db.collection('reports').doc(reportId).update({
+                status: status,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            return true;
+        } catch (error) {
+            console.error('Error updating report status:', error);
+            throw error;
+        }
+    }
+
+    async deleteReport(reportId, photoPath) {
+        try {
+            if (!this.isInitialized) throw new Error('Firebase not initialized');
+            
+            // Delete photo if exists
+            if (photoPath) {
+                try {
+                    const bucket = 'movielistdb-13208.firebasestorage.app';
+                    const encodedPath = encodeURIComponent(photoPath);
+                    const url = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodedPath}`;
+                    
+                    let token = null;
+                    if (this.user) {
+                        token = await this.user.getIdToken();
+                    }
+                    
+                    const headers = {};
+                    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+                    const res = await fetch(url, {
+                        method: 'DELETE',
+                        headers: headers
+                    });
+
+                    if (!res.ok && res.status !== 404) {
+                        console.error('Failed to delete report photo:', await res.text());
+                    }
+                } catch (photoError) {
+                    console.error('Error deleting report photo:', photoError);
+                }
+            }
+
+            await this.db.collection('reports').doc(reportId).delete();
+            return true;
+        } catch (error) {
+            console.error('Error deleting report:', error);
+            throw error;
+        }
+    }
+
     // Initialize service instances
     initializeServices() {
         this.movieCacheService = new MovieCacheService(this);
@@ -817,6 +973,7 @@ class FirebaseManager {
         this.ratingsCacheService = new RatingsCacheService(this);
         this.watchlistService = new WatchlistService(this);
         this.favoriteService = new FavoriteService(this);
+        this.watchingService = new WatchingService(this);
     }
 
     // Get service instances
@@ -829,6 +986,9 @@ class FirebaseManager {
 
     getRatingService() {
         if (!this.ratingService) {
+            if (typeof RatingService === 'undefined') {
+                throw new Error('RatingService class not found. Check if RatingService.js is loaded.');
+            }
             this.ratingService = new RatingService(this);
         }
         return this.ratingService;
@@ -837,13 +997,10 @@ class FirebaseManager {
     getUserService() {
         if (!this.userService) {
             if (typeof UserService === 'undefined') {
-                throw new Error('UserService class not found');
+                throw new Error('UserService class not found. Check if UserService.js is loaded.');
             }
             if (!this.db) {
                 this.init();
-            }
-            if (!this.db) {
-                console.warn('Firebase DB not initialized when requesting UserService');
             }
             this.userService = new UserService(this);
         }
@@ -859,6 +1016,9 @@ class FirebaseManager {
 
     getRatingsCacheService() {
         if (!this.ratingsCacheService) {
+            if (typeof RatingsCacheService === 'undefined') {
+                throw new Error('RatingsCacheService class not found. Check if RatingsCacheService.js is loaded.');
+            }
             this.ratingsCacheService = new RatingsCacheService(this);
         }
         return this.ratingsCacheService;
@@ -866,6 +1026,9 @@ class FirebaseManager {
 
     getWatchlistService() {
         if (!this.watchlistService) {
+            if (typeof WatchlistService === 'undefined') {
+                throw new Error('WatchlistService class not found. Check if WatchlistService.js is loaded.');
+            }
             this.watchlistService = new WatchlistService(this);
         }
         return this.watchlistService;
@@ -873,14 +1036,34 @@ class FirebaseManager {
 
     getFavoriteService() {
         if (!this.favoriteService) {
+            if (typeof FavoriteService === 'undefined') {
+                throw new Error('FavoriteService class not found. Check if FavoriteService.js is loaded.');
+            }
             this.favoriteService = new FavoriteService(this);
         }
         return this.favoriteService;
     }
+
+    getWatchingService() {
+        if (!this.watchingService) {
+            if (typeof WatchingService === 'undefined') {
+                throw new Error('WatchingService class not found. Check if WatchingService.js is loaded.');
+            }
+            this.watchingService = new WatchingService(this);
+        }
+        return this.watchingService;
+    }
 }
 
-const firebaseManager = new FirebaseManager();
-window.firebaseManager = firebaseManager;
+let firebaseManager;
+
+if (window.firebaseManager) {
+    // Singleton: if already exists, use it
+    firebaseManager = window.firebaseManager;
+} else {
+    firebaseManager = new FirebaseManager();
+    window.firebaseManager = firebaseManager;
+}
 
 setTimeout(() => {
     if (window.firebaseManager && window.firebaseManager.isInitialized) {

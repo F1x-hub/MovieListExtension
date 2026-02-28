@@ -15,30 +15,13 @@
     <link rel="stylesheet" href="../../shared/styles/movie-card.css">
     <link rel="stylesheet" href="../../shared/styles/ratings.css">
     
-    <!-- Firebase -->
-    <script src="../../../libs/firebase-app-compat.js"></script>
-    <script src="../../../libs/firebase-auth-compat.js"></script>
-    <script src="../../../libs/firebase-firestore-compat.js"></script>
-    
-    <!-- Services -->
-    <script src="../../shared/firestore.js"></script>
-    <script src="../../shared/config/kinopoisk.config.js"></script>
-    <script src="../../shared/services/RatingsCacheService.js"></script>
-    <script src="../../shared/services/RatingService.js"></script>
-    <script src="../../shared/services/MovieCacheService.js"></script>
-    <script src="../../shared/services/KinopoiskService.js"></script>
-    <script src="../../shared/services/UserService.js"></script>
-    <script src="../../shared/services/WatchlistService.js"></script>
-    <script src="../../shared/services/FavoriteService.js"></script>
-    <script src="../../shared/services/CollectionService.js"></script>
-    <script src="../../shared/utils/Utils.js"></script>
-    <script src="../../shared/utils/IconUtils.js"></script>
-    <script src="../../shared/utils/Icons.js"></script>
-    
-    <!-- Components -->
-    <script src="../../shared/components/MovieCard.js"></script>
-    <script src="../../shared/components/Navigation.js"></script>
-    <script src="../../shared/components/Router.js"></script>
+    <!-- Resource Hints -->
+    <link rel="preload" as="script" href="../../../libs/firebase-app-compat.js">
+    <link rel="preload" as="script" href="../../../libs/firebase-firestore-compat.js">
+    <link rel="preconnect" href="https://firebaseio.com">
+    <link rel="preconnect" href="https://firebasestorage.googleapis.com">
+    <link rel="dns-prefetch" href="https://api.kinopoisk.dev">
+    <link rel="stylesheet" href="../../shared/styles/report-widget.css">
 </head>
 <body>
     <!-- Navigation will be inserted here by Navigation.js -->
@@ -47,37 +30,34 @@
     <main class="ratings-main">
         <div class="ratings-container">
             <!-- Page Header -->
-            <div class="ratings-header">
-                <h1 class="ratings-title">Rated</h1>
-                <p class="ratings-subtitle">Manage and explore your movie ratings</p>
-            </div>
+
 
             <!-- Filters Section -->
             <div class="filters-section">
                 <div class="filters-header">
-                    <h3 class="filters-title">Filters & Search</h3>
+                    <h3 class="filters-title" data-i18n="ratings.filters.title">Filters & Search</h3>
                     <button class="clear-filters-btn" id="clearFiltersBtn">
                         <span><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></span>
-                        Clear Filters
+                        <span data-i18n="ratings.filters.clear">Clear Filters</span>
                     </button>
                 </div>
 
                 <div class="filters-grid">
                     <!-- Search -->
                     <div class="filter-group">
-                        <label class="filter-label">Search Movies</label>
+                        <label class="filter-label" data-i18n="ratings.filters.search_placeholder">Search Movies</label>
                         <div class="search-input-wrapper">
-                            <input type="text" class="search-input" id="movieSearchInput" placeholder="Search by title...">
+                            <input type="text" class="search-input" id="movieSearchInput" data-i18n="ratings.filters.search_placeholder" placeholder="Search by title...">
                             <span class="search-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></span>
                         </div>
                     </div>
 
                     <!-- Genre Filter -->
                     <div class="filter-group">
-                        <label class="filter-label">Genre</label>
+                        <label class="filter-label" data-i18n="ratings.filters.genre">Genre</label>
                         <div class="custom-dropdown" data-dropdown="genreFilter">
                             <button type="button" class="dropdown-trigger" id="genreFilterTrigger">
-                                <span class="dropdown-value">All Genres</span>
+                                <span class="dropdown-value" data-i18n="ratings.filters.all_genres">All Genres</span>
                                 <span class="dropdown-arrow"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
                             </button>
                             <div class="dropdown-list" id="genreFilterList">
@@ -91,10 +71,10 @@
 
                     <!-- Year Filter -->
                     <div class="filter-group">
-                        <label class="filter-label">Year</label>
+                        <label class="filter-label" data-i18n="ratings.filters.year">Year</label>
                         <div class="custom-dropdown" data-dropdown="yearFilter">
                             <button type="button" class="dropdown-trigger" id="yearFilterTrigger">
-                                <span class="dropdown-value">All Years</span>
+                                <span class="dropdown-value" data-i18n="ratings.filters.all_years">All Years</span>
                                 <span class="dropdown-arrow"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
                             </button>
                             <div class="dropdown-list" id="yearFilterList">
@@ -107,38 +87,14 @@
                     </div>
 
                     <!-- My Rating Filter -->
-                    <div class="filter-group">
-                        <label class="filter-label">My Rating</label>
-                        <div class="custom-dropdown" data-dropdown="myRatingFilter">
-                            <button type="button" class="dropdown-trigger" id="myRatingFilterTrigger">
-                                <span class="dropdown-value">Any Rating</span>
-                                <span class="dropdown-arrow"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
-                            </button>
-                            <div class="dropdown-list" id="myRatingFilterList">
-                                <div class="dropdown-option" data-value="">Any Rating</div>
-                                <div class="dropdown-option" data-value="9-10">9-10 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></div>
-                                <div class="dropdown-option" data-value="7-8">7-8 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></div>
-                                <div class="dropdown-option" data-value="5-6">5-6 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></div>
-                                <div class="dropdown-option" data-value="3-4">3-4 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></div>
-                                <div class="dropdown-option" data-value="1-2">1-2 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></div>
-                            </div>
-                            <select class="filter-select-hidden" id="myRatingFilter">
-                                <option value="">Any Rating</option>
-                                <option value="9-10">9-10 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></option>
-                                <option value="7-8">7-8 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></option>
-                                <option value="5-6">5-6 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></option>
-                                <option value="3-4">3-4 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></option>
-                                <option value="1-2">1-2 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></option>
-                            </select>
-                        </div>
-                    </div>
+                    
 
                     <!-- Average Rating Filter -->
                     <div class="filter-group">
-                        <label class="filter-label">Average Rating</label>
+                        <label class="filter-label" data-i18n="ratings.filters.avg_rating">Average Rating</label>
                         <div class="custom-dropdown" data-dropdown="avgRatingFilter">
                             <button type="button" class="dropdown-trigger" id="avgRatingFilterTrigger">
-                                <span class="dropdown-value">Any Average</span>
+                                <span class="dropdown-value" data-i18n="ratings.filters.any_average">Any Average</span>
                                 <span class="dropdown-arrow"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
                             </button>
                             <div class="dropdown-list" id="avgRatingFilterList">
@@ -162,10 +118,10 @@
 
                     <!-- User Filter (only visible in All Ratings mode) -->
                     <div class="filter-group" id="userFilterGroup" style="display: none;">
-                        <label class="filter-label">User</label>
+                        <label class="filter-label" data-i18n="ratings.filters.user">User</label>
                         <div class="custom-dropdown" data-dropdown="userFilter">
                             <button type="button" class="dropdown-trigger" id="userFilterTrigger">
-                                <span class="dropdown-value">All Users</span>
+                                <span class="dropdown-value" data-i18n="ratings.filters.all_users">All Users</span>
                                 <span class="dropdown-arrow"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
                             </button>
                             <div class="dropdown-list" id="userFilterList">
@@ -179,23 +135,23 @@
 
                     <!-- Sort Options -->
                     <div class="filter-group">
-                        <label class="filter-label">Sort By</label>
+                        <label class="filter-label" data-i18n="ratings.filters.sort">Sort By</label>
                         <div class="custom-dropdown" data-dropdown="sortFilter">
                             <button type="button" class="dropdown-trigger" id="sortFilterTrigger">
-                                <span class="dropdown-value">Date Added (Newest)</span>
+                                <span class="dropdown-value" data-i18n="ratings.sort.date_newest">Date Added (Newest)</span>
                                 <span class="dropdown-arrow"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
                             </button>
                             <div class="dropdown-list" id="sortFilterList">
-                                <div class="dropdown-option" data-value="date-desc">Date Added (Newest)</div>
-                                <div class="dropdown-option" data-value="date-asc">Date Added (Oldest)</div>
-                                <div class="dropdown-option" data-value="rating-desc">My Rating (High to Low)</div>
-                                <div class="dropdown-option" data-value="rating-asc">My Rating (Low to High)</div>
-                                <div class="dropdown-option" data-value="avg-rating-desc">Avg Rating (High to Low)</div>
-                                <div class="dropdown-option" data-value="avg-rating-asc">Avg Rating (Low to High)</div>
-                                <div class="dropdown-option" data-value="title-asc">Title (A-Z)</div>
-                                <div class="dropdown-option" data-value="title-desc">Title (Z-A)</div>
-                                <div class="dropdown-option" data-value="year-desc">Year (Newest)</div>
-                                <div class="dropdown-option" data-value="year-asc">Year (Oldest)</div>
+                                <div class="dropdown-option" data-value="date-desc" data-i18n="ratings.sort.date_newest">Date Added (Newest)</div>
+                                <div class="dropdown-option" data-value="date-asc" data-i18n="ratings.sort.date_oldest">Date Added (Oldest)</div>
+                                <div class="dropdown-option" data-value="rating-desc" data-i18n="ratings.sort.rating_high">My Rating (High to Low)</div>
+                                <div class="dropdown-option" data-value="rating-asc" data-i18n="ratings.sort.rating_low">My Rating (Low to High)</div>
+                                <div class="dropdown-option" data-value="avg-rating-desc" data-i18n="ratings.sort.avg_high">Avg Rating (High to Low)</div>
+                                <div class="dropdown-option" data-value="avg-rating-asc" data-i18n="ratings.sort.avg_low">Avg Rating (Low to High)</div>
+                                <div class="dropdown-option" data-value="title-asc" data-i18n="ratings.sort.title_az">Title (A-Z)</div>
+                                <div class="dropdown-option" data-value="title-desc" data-i18n="ratings.sort.title_za">Title (Z-A)</div>
+                                <div class="dropdown-option" data-value="year-desc" data-i18n="ratings.sort.year_newest">Year (Newest)</div>
+                                <div class="dropdown-option" data-value="year-asc" data-i18n="ratings.sort.year_oldest">Year (Oldest)</div>
                             </div>
                             <select class="filter-select-hidden" id="sortFilter">
                                 <option value="date-desc">Date Added (Newest)</option>
@@ -223,7 +179,7 @@
             <!-- Loading State -->
             <div class="loading-section" id="loadingSection">
                 <div class="loading-spinner"></div>
-                <p>Loading your collection...</p>
+                <p data-i18n="ratings.loading">Loading your collection...</p>
             </div>
 
             <!-- Movies Grid -->
@@ -234,9 +190,9 @@
             <!-- Empty State -->
             <div class="empty-state" id="emptyState" style="display: none;">
                 <div class="empty-state-icon"><svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="2" ry="2"></rect><path d="M16 6 22 2"></path><path d="M22 6 2 6"></path><path d="M7 6 2 2"></path><path d="M12 6 7 2"></path><path d="M17 6 12 2"></path></svg></div>
-                <h3 class="empty-state-title">No movies found</h3>
-                <p class="empty-state-text">Try adjusting your filters or start rating some movies!</p>
-                <button class="empty-state-btn" onclick="window.navigation?.navigateToPage('search')">
+                <h3 class="empty-state-title" data-i18n="ratings.empty.title">No movies found</h3>
+                <p class="empty-state-text" data-i18n="ratings.empty.message">Try adjusting your filters or start rating some movies!</p>
+                <button class="empty-state-btn" onclick="window.navigation?.navigateToPage('search')" data-i18n="ratings.empty.search_btn">
                     Search Movies
                 </button>
             </div>
@@ -244,9 +200,9 @@
             <!-- Error State -->
             <div class="error-state" id="errorState" style="display: none;">
                 <div class="error-state-icon"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #ef4444;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></div>
-                <h3 class="error-state-title">Something went wrong</h3>
-                <p class="error-state-text" id="errorMessage">Failed to load movies</p>
-                <button class="error-state-btn" id="retryBtn">Try Again</button>
+                <h3 class="error-state-title" data-i18n="ratings.error.title">Something went wrong</h3>
+                <p class="error-state-text" id="errorMessage" data-i18n="ratings.error.message">Failed to load movies</p>
+                <button class="error-state-btn" id="retryBtn" data-i18n="ratings.error.retry">Try Again</button>
             </div>
         </div>
     </main>
@@ -270,7 +226,7 @@
             <div class="modal-header rating-header">
                 <div class="rating-header-content">
                     <div class="rating-header-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #eab308;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></div>
-                    <h2 class="modal-title" id="ratingModalTitle">Rate This Movie</h2>
+                    <h2 class="modal-title" id="ratingModalTitle" data-i18n="ratings.modal.rate_movie">Rate This Movie</h2>
                 </div>
                 <button class="modal-close" id="ratingModalClose">×</button>
             </div>
@@ -286,7 +242,7 @@
                         </div>
                         <div class="current-rating-content">
                             <div class="current-rating-score">
-                                <span class="current-score-label">Rating:</span>
+                                <span class="current-score-label" data-i18n="ratings.modal.your_rating">Rating:</span>
                                 <span id="existingRatingValue" class="current-score-value"></span>
                             </div>
                             <div class="current-rating-comment" id="existingRatingComment"></div>
@@ -296,7 +252,7 @@
                     <form id="ratingForm" class="rating-form-modern">
                         <div class="rating-input-section">
                             <div class="rating-score-container">
-                                <label class="rating-main-label">Your Rating</label>
+                                <label class="rating-main-label" data-i18n="ratings.modal.your_rating">Your Rating</label>
                                 <div class="rating-controls-modern">
                                     <div class="rating-slider-container">
                                         <input type="range" id="ratingSlider" class="rating-slider-modern" min="1" max="10" value="5">
@@ -322,9 +278,9 @@
                         </div>
                         
                         <div class="rating-comment-section">
-                            <label for="ratingComment" class="comment-label">Share Your Thoughts</label>
+                            <label for="ratingComment" class="comment-label" data-i18n="ratings.modal.share_thoughts">Share Your Thoughts</label>
                             <div class="comment-input-container">
-                                <textarea id="ratingComment" class="comment-textarea" rows="4" maxlength="500" placeholder="What did you think about this movie? (Optional)"></textarea>
+                                <textarea id="ratingComment" class="comment-textarea" rows="4" maxlength="500" data-i18n="ratings.modal.placeholder" placeholder="What did you think about this movie? (Optional)"></textarea>
                                 <div class="comment-footer">
                                     <div class="char-counter">
                                         <span id="charCount">0</span><span class="char-limit">/500</span>
@@ -336,16 +292,48 @@
                 </div>
             </div>
             <div class="modal-footer rating-footer">
-                <button id="cancelRatingBtn" class="btn btn-secondary btn-lg">Cancel</button>
+                <button id="cancelRatingBtn" class="btn btn-secondary btn-lg" data-i18n="ratings.modal.cancel">Cancel</button>
                 <button id="saveRatingBtn" class="btn btn-accent btn-lg rating-save-btn">
                     <span class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg></span>
-                    Save Rating
+                    <span data-i18n="ratings.modal.save">Save Rating</span>
                 </button>
             </div>
         </div>
     </div>
 
     <!-- Main Script -->
-    <script src="ratings.js"></script>
+    <!-- Firebase SDK (defer, loaded in order) -->
+    <script defer src="../../../libs/firebase-app-compat.js"></script>
+    <script defer src="../../../libs/firebase-auth-compat.js"></script>
+    <script defer src="../../../libs/firebase-firestore-compat.js"></script>
+
+    <!-- Config & Core -->
+    <script defer src="../../shared/firestore.js"></script>
+    <script defer src="../../shared/config/kinopoisk.config.js"></script>
+
+    <!-- Services -->
+    <script defer src="../../shared/services/RatingsCacheService.js"></script>
+    <script defer src="../../shared/services/RatingService.js"></script>
+    <script defer src="../../shared/services/MovieCacheService.js"></script>
+    <script defer src="../../shared/services/KinopoiskService.js"></script>
+    <script defer src="../../shared/services/UserService.js"></script>
+    <script defer src="../../shared/services/WatchlistService.js"></script>
+    <script defer src="../../shared/services/WatchingService.js"></script>
+    <script defer src="../../shared/services/FavoriteService.js"></script>
+    <script defer src="../../shared/services/CollectionService.js"></script>
+
+    <!-- Utils -->
+    <script defer src="../../shared/utils/Utils.js"></script>
+    <script defer src="../../shared/utils/IconUtils.js"></script>
+    <script defer src="../../shared/utils/Icons.js"></script>
+
+    <!-- Components -->
+    <script defer src="../../shared/components/MovieCard.js"></script>
+    <script defer src="../../shared/components/Navigation.js"></script>
+    <script defer src="../../shared/components/Router.js"></script>
+
+    <!-- Main Script -->
+    <script defer src="ratings.js" type="module"></script>
+    <script defer src="../../shared/components/ReportWidget.js"></script>
 </body>
 </html>

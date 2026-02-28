@@ -26,6 +26,30 @@ class Utils {
     }
 
     /**
+     * Clean up movie title (remove file paths, extensions)
+     * @param {string} title - Title to clean
+     * @returns {string} - Cleaned title
+     */
+    static cleanTitle(title) {
+        if (!title) return '';
+        
+        // Remove file path (forward and backward slashes)
+        let clean = title.split(/[/\\]/).pop();
+        
+        // Remove common video extensions
+        clean = clean.replace(/\.(mkv|mp4|avi|mov|wmv|flv|webm|m4v)$/i, '');
+        
+        // If it looked like a filename (contains dots or underscores instead of spaces), replace them
+        // But be careful not to break "Dr. Strange" or "Mr. Robot"
+        // Heuristic: if no spaces are present, but dots/underscores are
+        if (!clean.includes(' ') && (clean.includes('.') || clean.includes('_'))) {
+            clean = clean.replace(/[._]/g, ' ');
+        }
+        
+        return clean;
+    }
+
+    /**
      * Format timestamp for display
      * @param {Date|Object} timestamp - Timestamp to format
      * @returns {string} - Formatted timestamp

@@ -374,17 +374,21 @@ class UserService {
             const ratingsQuery = this.db.collection('ratings')
                 .where('userId', '==', userId);
 
-            const favoritesQuery = this.db.collection('ratings')
-                .where('userId', '==', userId)
-                .where('isFavorite', '==', true);
 
             const watchlistQuery = this.db.collection('watchlist')
                 .where('userId', '==', userId);
 
-            const [ratingsSnapshot, favoritesSnapshot, watchlistSnapshot] = await Promise.all([
+            const watchingQuery = this.db.collection('watching')
+                .where('userId', '==', userId);
+
+            const favoritesQuery = this.db.collection('favorites')
+                .where('userId', '==', userId);
+
+            const [ratingsSnapshot, favoritesSnapshot, watchlistSnapshot, watchingSnapshot] = await Promise.all([
                 ratingsQuery.get(),
                 favoritesQuery.get(),
-                watchlistQuery.get()
+                watchlistQuery.get(),
+                watchingQuery.get()
             ]);
 
             let totalRatings = 0;
@@ -406,7 +410,8 @@ class UserService {
                 totalRatings,
                 averageRating,
                 favoritesCount: favoritesSnapshot.size,
-                watchlistCount: watchlistSnapshot.size
+                watchlistCount: watchlistSnapshot.size,
+                watchingCount: watchingSnapshot.size
             };
         } catch (error) {
             console.error('Error getting user stats:', error);

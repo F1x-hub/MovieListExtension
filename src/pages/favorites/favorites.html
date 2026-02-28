@@ -15,30 +15,13 @@
     <link rel="stylesheet" href="../../shared/styles/movie-card.css">
     <link rel="stylesheet" href="../../shared/styles/favorites.css">
     
-    <!-- Firebase -->
-    <script src="../../../libs/firebase-app-compat.js"></script>
-    <script src="../../../libs/firebase-auth-compat.js"></script>
-    <script src="../../../libs/firebase-firestore-compat.js"></script>
-    
-    <!-- Services -->
-    <script src="../../shared/firestore.js"></script>
-    <script src="../../shared/config/kinopoisk.config.js"></script>
-    <script src="../../shared/services/RatingsCacheService.js"></script>
-    <script src="../../shared/services/RatingService.js"></script>
-    <script src="../../shared/services/MovieCacheService.js"></script>
-    <script src="../../shared/services/KinopoiskService.js"></script>
-    <script src="../../shared/services/UserService.js"></script>
-    <script src="../../shared/services/WatchlistService.js"></script>
-    <script src="../../shared/services/FavoriteService.js"></script>
-    <script src="../../shared/services/CollectionService.js"></script>
-    <script src="../../shared/utils/Utils.js"></script>
-    <script src="../../shared/utils/IconUtils.js"></script>
-    <script src="../../shared/utils/Icons.js"></script>
-    
-    <!-- Components -->
-    <script src="../../shared/components/MovieCard.js"></script>
-    <script src="../../shared/components/Navigation.js"></script>
-    <script src="../../shared/components/Router.js"></script>
+    <!-- Resource Hints -->
+    <link rel="preload" as="script" href="../../../libs/firebase-app-compat.js">
+    <link rel="preload" as="script" href="../../../libs/firebase-firestore-compat.js">
+    <link rel="preconnect" href="https://firebaseio.com">
+    <link rel="preconnect" href="https://firebasestorage.googleapis.com">
+    <link rel="dns-prefetch" href="https://api.kinopoisk.dev">
+    <link rel="stylesheet" href="../../shared/styles/report-widget.css">
 </head>
 <body>
     <!-- Navigation will be inserted here by Navigation.js -->
@@ -247,8 +230,40 @@
         </div>
     </div>
 
+    <!-- Firebase SDK (defer, loaded in order) -->
+    <script defer src="../../../libs/firebase-app-compat.js"></script>
+    <script defer src="../../../libs/firebase-auth-compat.js"></script>
+    <script defer src="../../../libs/firebase-firestore-compat.js"></script>
+
+    <!-- Config & Core -->
+    <script defer src="../../shared/firestore.js"></script>
+    <script defer src="../../shared/config/kinopoisk.config.js"></script>
+
+    <!-- Services -->
+    <script defer src="../../shared/services/RatingsCacheService.js"></script>
+    <script defer src="../../shared/services/RatingService.js"></script>
+    <script defer src="../../shared/services/MovieCacheService.js"></script>
+    <script defer src="../../shared/services/KinopoiskService.js"></script>
+    <script defer src="../../shared/services/UserService.js"></script>
+    <script defer src="../../shared/services/WatchlistService.js"></script>
+    <script defer src="../../shared/services/WatchingService.js"></script>
+    <script defer src="../../shared/services/FavoriteService.js"></script>
+    <script defer src="../../shared/services/CollectionService.js"></script>
+
+    <!-- Utils -->
+    <script defer src="../../shared/utils/MigrationTool.js"></script>
+    <script defer src="../../shared/utils/Utils.js"></script>
+    <script defer src="../../shared/utils/IconUtils.js"></script>
+    <script defer src="../../shared/utils/Icons.js"></script>
+
+    <!-- Components -->
+    <script defer src="../../shared/components/MovieCard.js"></script>
+    <script defer src="../../shared/components/Navigation.js"></script>
+    <script defer src="../../shared/components/Router.js"></script>
+
     <!-- Main Script -->
-    <script src="favorites.js"></script>
+    <script defer src="favorites.js"></script>
+    <script defer src="../../shared/components/ReportWidget.js"></script>
 </body>
 </html>
 

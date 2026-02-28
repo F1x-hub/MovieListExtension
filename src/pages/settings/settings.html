@@ -9,60 +9,184 @@
     <link rel="stylesheet" href="../../shared/styles/components.css">
     <link rel="stylesheet" href="../../shared/styles/navigation.css">
     <link rel="stylesheet" href="settings.css">
+    <link rel="stylesheet" href="../../shared/styles/report-widget.css">
 </head>
-<body>
+<body class="settings-page-body">
     <div class="app-container">
         <!-- Navigation will be injected here -->
         <nav class="navbar" id="navbar"></nav>
 
-        <main class="main-content">
-            <div class="settings-container">
-                <header class="settings-header">
-                    <h1>Settings</h1>
-                    <p class="settings-subtitle">Customize your movie rating experience</p>
-                </header>
-
-                <div class="settings-section">
-                    <h2 class="section-title">Display Mode</h2>
-                    <p class="section-description">Choose how you want to interact with the extension.</p>
-                    
-                    <div class="mode-options">
-                        <label class="mode-card">
-                            <input type="radio" name="displayMode" value="popup" checked>
-                            <div class="mode-content">
-                                <div class="mode-preview preview-popup">
-                                    <div class="preview-browser">
-                                        <div class="preview-popup-window"></div>
-                                    </div>
-                                </div>
-                                <div class="mode-info">
-                                    <h3>Popup</h3>
-                                    <p>Classic extension popup. Opens when you click the icon.</p>
-                                </div>
-                            </div>
-                        </label>
-
-                        <label class="mode-card">
-                            <input type="radio" name="displayMode" value="sidepanel">
-                            <div class="mode-content">
-                                <div class="mode-preview preview-sidepanel">
-                                    <div class="preview-browser">
-                                        <div class="preview-page-content"></div>
-                                        <div class="preview-sidebar"></div>
-                                    </div>
-                                </div>
-                                <div class="mode-info">
-                                    <h3>Side Panel</h3>
-                                    <p>Opens as a native Chrome side panel. Stays visible across tabs.</p>
-                                </div>
-                            </div>
-                        </label>
+        <main class="main-content settings-main">
+            <div class="settings-layout">
+                <!-- Sidebar -->
+                <aside class="settings-sidebar">
+                    <div class="sidebar-header">
+                        <h1 data-i18n="settings.title">Settings</h1>
+                        <p class="sidebar-subtitle" data-i18n="settings.subtitle">Customize your movie rating experience</p>
                     </div>
-                </div>
+                    
+                    <nav class="sidebar-nav">
+                        <button class="sidebar-link active" data-target="appearance">
+                            <span class="icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="4"></circle><line x1="21.17" y1="8" x2="12" y2="8"></line><line x1="3.95" y1="6.06" x2="8.54" y2="14"></line><line x1="10.88" y1="21.94" x2="15.46" y2="14"></line></svg>
+                            </span>
+                            <span data-i18n="settings.nav.appearance">Внешний вид</span>
+                        </button>
+                        <button class="sidebar-link" data-target="language">
+                            <span class="icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+                            </span>
+                            <span data-i18n="settings.nav.language">Язык</span>
+                        </button>
+                        <button class="sidebar-link" data-target="extras">
+                            <span class="icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"></path><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path></svg>
+                            </span>
+                            <span data-i18n="settings.nav.extras">Дополнительно</span>
+                        </button>
+                        <div class="sidebar-spacer"></div>
+                    </nav>
+                </aside>
 
-                <div class="settings-actions">
-                    <button id="saveBtn" class="btn btn-primary">Save Settings</button>
-                    <button id="resetBtn" class="btn btn-ghost">Reset to Defaults</button>
+                <!-- Content Area -->
+                <section class="settings-content-area">
+                    
+                    <!-- Appearance Pane -->
+                    <div class="settings-pane active" id="pane-appearance">
+                        <div class="pane-header">
+                            <h2 data-i18n="settings.nav.appearance">Внешний вид</h2>
+                            <p data-i18n="settings.appearance_desc">Настройте визуальное отображение расширения.</p>
+                        </div>
+
+                        <div class="settings-section">
+                            <h3 class="section-title" data-i18n="settings.display_mode.title">Display Mode</h3>
+                            <p class="section-description" data-i18n="settings.display_mode.description">Choose how you want to interact with the extension.</p>
+                            
+                            <div class="mode-options">
+                                <label class="mode-card">
+                                    <input type="radio" name="displayMode" value="popup" checked>
+                                    <div class="mode-content">
+                                        <div class="mode-preview preview-popup">
+                                            <div class="preview-browser">
+                                                <div class="preview-popup-window"></div>
+                                            </div>
+                                        </div>
+                                        <div class="mode-info">
+                                            <h4 data-i18n="settings.display_mode.popup.title">Popup</h4>
+                                            <p data-i18n="settings.display_mode.popup.description">Classic extension popup. Opens when you click the icon.</p>
+                                        </div>
+                                    </div>
+                                </label>
+
+                                <label class="mode-card">
+                                    <input type="radio" name="displayMode" value="sidepanel">
+                                    <div class="mode-content">
+                                        <div class="mode-preview preview-sidepanel">
+                                            <div class="preview-browser">
+                                                <div class="preview-page-content"></div>
+                                                <div class="preview-sidebar"></div>
+                                            </div>
+                                        </div>
+                                        <div class="mode-info">
+                                            <h4 data-i18n="settings.display_mode.sidepanel.title">Side Panel</h4>
+                                            <p data-i18n="settings.display_mode.sidepanel.description">Opens as a native Chrome side panel. Stays visible across tabs.</p>
+                                        </div>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Language Pane -->
+                    <div class="settings-pane" id="pane-language">
+                        <div class="pane-header">
+                            <h2 data-i18n="settings.nav.language">Язык</h2>
+                            <p data-i18n="settings.language_desc">Выберите предпочитаемый язык для интерфейса.</p>
+                        </div>
+                        
+                        <div class="settings-section">
+                            <h3 class="section-title" data-i18n="settings.language">Language</h3>
+                            <p class="section-description" data-i18n="settings.select_language">Select your preferred language.</p>
+                            
+                            <div class="custom-dropdown" id="languageDropdown">
+                                <div class="dropdown-header">
+                                    <div class="selected-content">
+                                        <span class="selected-flag">🇷🇺</span>
+                                        <span class="selected-name">Русский</span>
+                                    </div>
+                                    <span class="dropdown-arrow">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                    </span>
+                                </div>
+                                <div class="dropdown-list">
+                                    <div class="dropdown-item" data-value="ru">
+                                        <span class="item-flag">🇷🇺</span>
+                                        <div class="item-text">
+                                            <span class="native-name">Русский</span>
+                                            <span class="english-name">Russian</span>
+                                        </div>
+                                        <span class="check-icon">✓</span>
+                                    </div>
+                                    <div class="dropdown-item" data-value="en">
+                                        <span class="item-flag">🇺🇸</span>
+                                        <div class="item-text">
+                                            <span class="native-name">English</span>
+                                            <span class="english-name">English</span>
+                                        </div>
+                                        <span class="check-icon">✓</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Extras Pane -->
+                    <div class="settings-pane" id="pane-extras">
+                        <div class="pane-header">
+                            <h2 data-i18n="settings.nav.extras">Дополнительно</h2>
+                            <p>Экспериментальные функции и радио.</p>
+                        </div>
+
+                        <div class="settings-section">
+                            <div class="setting-group-row">
+                                <div class="setting-info">
+                                    <h3 class="setting-title">Аниме Радио</h3>
+                                    <p class="setting-desc">Показывать плеер аниме-радио в навбаре</p>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="animeRadioToggle">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+
+                            <!-- Radio Source Selector -->
+                            <div class="radio-source-group" id="radioSourceGroup" style="display: none;">
+                                <h3 class="setting-title" style="margin-bottom: var(--space-md); display: block;">Источник аниме-радио</h3>
+                                <div class="radio-source-options">
+                                    <label class="radio-source-card">
+                                        <input type="radio" name="radioSource" value="anison" checked>
+                                        <div class="radio-source-content">
+                                            <span class="radio-source-name">Anison.FM</span>
+                                            <span class="radio-source-desc">320 kbps · метаданные трека</span>
+                                        </div>
+                                    </label>
+                                    <label class="radio-source-card">
+                                        <input type="radio" name="radioSource" value="radionami">
+                                        <div class="radio-source-content">
+                                            <span class="radio-source-name">Radio Nami</span>
+                                            <span class="radio-source-desc">Any-anime.ru поток</span>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                
+                <!-- Action Footer -->
+                <div class="settings-actions-footer">
+                    <button id="resetBtn" class="btn btn-ghost" data-i18n="settings.reset">Reset to Defaults</button>
+                    <button id="saveBtn" class="btn btn-primary" data-i18n="settings.save">Save Settings</button>
                 </div>
             </div>
         </main>
@@ -74,12 +198,15 @@
     <script src="/libs/firebase-auth-compat.js"></script>
     <script src="/src/shared/services/UserService.js"></script>
     <script src="/src/shared/services/WatchlistService.js"></script>
+    <script src="/src/shared/services/WatchingService.js"></script>
     <script src="/src/shared/services/FavoriteService.js"></script>
     <script src="/src/shared/services/RatingsCacheService.js"></script>
     <script src="/src/shared/firestore.js"></script>
     <script src="/src/shared/config/kinopoisk.config.js"></script>
     <script src="/src/shared/utils/IconUtils.js"></script>
     <script src="/src/shared/components/Navigation.js"></script>
-    <script src="settings.js"></script>
+    <script src="/src/shared/utils/MigrationTool.js"></script>
+    <script src="settings.js" type="module"></script>
+    <script defer src="../../shared/components/ReportWidget.js"></script>
 </body>
 </html>

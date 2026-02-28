@@ -40,6 +40,23 @@ service cloud.firestore {
       allow update, delete: if isAuthenticated() && 
         (resource.data.userId == request.auth.uid || isAdmin()); // Owner or admin can update/delete
     }
+
+     // Watching collection (Top-level)
+    match /watching/{watchingId} {
+      allow read: if true; // Anyone can read watching list
+      allow create: if isAuthenticated(); // Only authenticated users can create watching entries
+      allow update, delete: if isAuthenticated() && 
+        (resource.data.userId == request.auth.uid || isAdmin()); // Owner or admin can update/delete
+    }
+
+    // Favorites collection (Top-level)
+    match /favorites/{favoriteId} {
+      allow read: if true; // Anyone can read favorites
+      allow create: if isAuthenticated(); // Only authenticated users can create favorite entries
+      allow update, delete: if isAuthenticated() && 
+        (resource.data.userId == request.auth.uid || isAdmin()); // Owner or admin can update/delete
+    }
+    
     // Collections (Top-level)
     // REQUIRED: AdminService queries this top-level collection to count user collections
     match /collections/{collectionId} {
@@ -47,6 +64,12 @@ service cloud.firestore {
       allow create: if isAuthenticated();
       allow update, delete: if isAuthenticated() && 
         (resource.data.userId == request.auth.uid || isAdmin());
+    }
+    
+    // Reports collection
+    match /reports/{reportId} {
+      allow create: if true; // Anyone can create a report
+      allow read, update, delete: if isAdmin(); // Only admins can read, update, delete
     }
     
     // Users collection

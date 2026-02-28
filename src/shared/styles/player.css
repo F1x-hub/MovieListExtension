@@ -43,31 +43,36 @@
     gap: 1rem;
 }
 
-.player-controls-panel {
-    padding: 1rem;
-    background-color: var(--bg-primary);
-    border-top: 1px solid var(--border-color);
+.source-buttons-container {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 15px;
+    background-color: var(--bg-primary, #1e1e1e);
+    border-bottom: 1px solid var(--border-color, #333);
 }
 
-.source-selector {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex: 1;
+.source-btn {
+    background-color: var(--bg-secondary, #2a2a2a);
+    color: var(--text-primary, #fff);
+    border: 1px solid var(--border-color, #444);
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
 }
 
-.source-selector label {
-    color: var(--text-secondary);
-    font-size: 0.9rem;
+.source-btn:hover {
+    background-color: var(--hover-color, #3a3a3a);
+    border-color: var(--text-secondary, #aaa);
 }
 
-.source-selector select {
-    flex: 1;
-    max-width: 300px;
+.source-btn.active {
+    background-color: var(--accent-color, #e50914);
+    color: white;
+    border-color: var(--accent-color, #e50914);
+    font-weight: 500;
 }
 
 /* Watch Button Styles */
@@ -100,15 +105,7 @@
         width: 95%;
         height: 70vh;
     }
-    
-    .player-controls-panel {
-        flex-direction: column;
-        align-items: stretch;
-    }
-    
-    .source-selector select {
-        max-width: none;
-    }
+
 }
 
 /* Simple Player Styles */
@@ -172,9 +169,235 @@
     margin-left: 0;
 }
 
-.simple-player-wrapper {
-    flex: 1;
-    display: flex;
+/* Custom Player Controls */
+.video-wrapper {
     width: 100%;
     height: 100%;
+    position: relative;
+    background: #000;
+    overflow: hidden;
+}
+
+.video-wrapper:hover .custom-controls,
+.video-wrapper.paused .custom-controls {
+    opacity: 1;
+    pointer-events: all;
+}
+
+.video-wrapper.idle .custom-controls {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.custom-controls {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0));
+    padding: 40px 15px 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    z-index: 20;
+}
+
+/* Progress Bar */
+.progress-container {
+    width: 100%;
+    height: 5px;
+    background: rgba(255,255,255,0.3);
+    border-radius: 5px;
+    cursor: pointer;
+    position: relative;
+    transition: height 0.1s ease;
+}
+
+.progress-container:hover {
+    height: 8px;
+}
+
+.progress-bar {
+    height: 100%;
+    background: var(--accent-color, #e50914);
+    width: 0%;
+    border-radius: 5px;
+    position: relative;
+}
+
+.progress-bar::after {
+    content: '';
+    position: absolute;
+    right: -6px;
+    top: 50%;
+    transform: translateY(-50%) scale(0);
+    width: 12px;
+    height: 12px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.1s ease;
+}
+
+.progress-container:hover .progress-bar::after {
+    transform: translateY(-50%) scale(1);
+}
+
+/* Controls Row */
+.controls-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.controls-left, .controls-right {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.control-btn {
+    background: none;
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    width: 32px;
+    height: 32px;
+    padding: 4px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s, transform 0.1s;
+}
+
+.control-btn:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+.control-btn svg {
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
+}
+
+/* Specific button styles */
+.pip-btn svg {
+    width: 22px; /* Slightly larger for the detailed icon */
+    height: 22px;
+}
+
+.time-display {
+    color: #fff;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    font-family: monospace;
+}
+
+/* Volume Control */
+.volume-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    position: relative;
+}
+
+.volume-slider-container {
+    width: 0;
+    overflow: hidden;
+    transition: width 0.2s ease;
+    display: flex;
+    align-items: center;
+}
+
+.volume-container:hover .volume-slider-container,
+.volume-slider-container:hover {
+    width: 80px;
+}
+
+.volume-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    background: rgba(255,255,255,0.3);
+    border-radius: 2px;
+    outline: none;
+}
+
+.volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    background: #fff;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+/* Animations & States */
+.control-btn.active {
+    color: var(--accent-color, #e50914);
+}
+
+@media (max-width: 768px) {
+    .custom-controls {
+        opacity: 1; /* Always show on mobile for now, or implement tap handling */
+        padding: 20px 10px 10px;
+    }
+    
+    .volume-slider-container {
+        display: none; /* Simplify on mobile */
+    }
+}
+
+
+/* Seasonvar Player Styles */
+.player-clean {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: #000;
+    position: relative;
+}
+
+.player-clean video {
+    flex: 1;
+    width: 100%;
+    height: calc(100% - 60px); /* Reserve space for controls if needed */
+    object-fit: contain;
+}
+
+.seasonvar-controls {
+    min-height: 50px;
+    padding: 10px 15px;
+    background: rgba(20, 20, 20, 0.95);
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    z-index: 10;
+}
+
+.seasonvar-controls select {
+    background-color: #333;
+    color: white;
+    border: 1px solid #444;
+    padding: 6px 12px;
+    border-radius: 4px;
+    outline: none;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.seasonvar-controls select:hover {
+    background-color: #404040;
+    border-color: #666;
+}
+
+.seasonvar-controls select:focus {
+    border-color: var(--accent-color, #e50914);
 }

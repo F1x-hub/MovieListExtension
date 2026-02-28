@@ -29,36 +29,47 @@ class AdminService {
     }
 
     /**
-     * Get all users with their statistics
+     * Get all users with their statistics (Optimized with Promise.all and counts if possible, fallback to size)
      * @returns {Promise<Array>} - Array of user objects with stats
      */
     async getAllUsers() {
         try {
             const usersSnapshot = await this.db.collection('users').get();
-            const users = [];
-
-            for (const doc of usersSnapshot.docs) {
+            
+            const userPromises = usersSnapshot.docs.map(async (doc) => {
                 const userData = doc.data();
                 
-                // Get user's rating count
-                const ratingsSnapshot = await this.db
-                    .collection('ratings')
-                    .where('userId', '==', doc.id)
-                    .get();
+                // Fetch stats concurrently via Promise.all
+                // `count().get()` is an optimized feature in modern Firestore, we use try/catch fallback
+                let ratingsCount = 0;
+                let collectionCount = 0;
                 
-                // Get user's collection count
-                const collectionSnapshot = await this.db
-                    .collection('collections')
-                    .where('userId', '==', doc.id)
-                    .get();
+                try {
+                    const [ratingsSnapshot, collectionSnapshot] = await Promise.all([
+                        this.db.collection('ratings').where('userId', '==', doc.id).count().get(),
+                        this.db.collection('collections').where('userId', '==', doc.id).count().get()
+                    ]);
+                    ratingsCount = ratingsSnapshot.data().count;
+                    collectionCount = collectionSnapshot.data().count;
+                } catch (e) {
+                    console.warn(`[AdminService] count() failed, falling back to .get() for user ${doc.id}`);
+                    const [ratingsSnapshot, collectionSnapshot] = await Promise.all([
+                        this.db.collection('ratings').where('userId', '==', doc.id).get(),
+                        this.db.collection('collections').where('userId', '==', doc.id).get()
+                    ]);
+                    ratingsCount = ratingsSnapshot.size;
+                    collectionCount = collectionSnapshot.size;
+                }
 
-                users.push({
+                return {
                     id: doc.id,
                     ...userData,
-                    ratingsCount: ratingsSnapshot.size,
-                    collectionCount: collectionSnapshot.size
-                });
-            }
+                    ratingsCount,
+                    collectionCount
+                };
+            });
+
+            const users = await Promise.all(userPromises);
 
             return users.sort((a, b) => {
                 // Sort by creation date (newest first)
@@ -69,6 +80,66 @@ class AdminService {
         } catch (error) {
             console.error('Error getting all users:', error);
             throw new Error(`Failed to fetch users: ${error.message}`);
+        }
+    }
+
+    /**
+     * Get users paginated
+     * @param {Object} lastVisibleDoc - Last document from previous page
+     * @param {number} pageSize - Number of users to fetch
+     * @returns {Promise<{users: Array, lastDoc: Object, hasMore: boolean}>}
+     */
+    async getUsersPage(lastVisibleDoc = null, pageSize = 20) {
+        try {
+            // Removed orderBy('createdAt', 'desc') to prevent Firestore from
+            // excluding legacy users that don't have a 'createdAt' field.
+            let query = this.db.collection('users')
+                .limit(pageSize);
+                
+            if (lastVisibleDoc) {
+                query = query.startAfter(lastVisibleDoc);
+            }
+            
+            const snapshot = await query.get();
+            const lastDoc = snapshot.docs[snapshot.docs.length - 1];
+            const hasMore = snapshot.size === pageSize;
+            
+            const userPromises = snapshot.docs.map(async (doc) => {
+                const userData = doc.data();
+                
+                let ratingsCount = 0;
+                let collectionCount = 0;
+                
+                try {
+                    const [ratingsSnapshot, collectionSnapshot] = await Promise.all([
+                        this.db.collection('ratings').where('userId', '==', doc.id).count().get(),
+                        this.db.collection('collections').where('userId', '==', doc.id).count().get()
+                    ]);
+                    ratingsCount = ratingsSnapshot.data().count;
+                    collectionCount = collectionSnapshot.data().count;
+                } catch (e) {
+                    const [ratingsSnapshot, collectionSnapshot] = await Promise.all([
+                        this.db.collection('ratings').where('userId', '==', doc.id).get(),
+                        this.db.collection('collections').where('userId', '==', doc.id).get()
+                    ]);
+                    ratingsCount = ratingsSnapshot.size;
+                    collectionCount = collectionSnapshot.size;
+                }
+
+                return {
+                    id: doc.id,
+                    ...userData,
+                    ratingsCount,
+                    collectionCount
+                };
+            });
+            
+            const users = await Promise.all(userPromises);
+            
+            return { users, lastDoc, hasMore };
+        } catch (error) {
+            console.error('Error getting users page:', error);
+            throw new Error(`Failed to fetch users page: ${error.message}`);
         }
     }
 
@@ -122,6 +193,16 @@ class AdminService {
 
             // Finally, delete the user document
             await userRef.delete();
+            
+            // Invalidate users cache since a user was deleted
+            const cacheService = this.firebaseManager.getAdminRatingsCacheService ? 
+                                 this.firebaseManager.getAdminRatingsCacheService() : null;
+            if (cacheService && typeof cacheService.invalidateUsersCache === 'function') {
+                cacheService.invalidateUsersCache();
+            } else if (typeof window !== 'undefined' && window.AdminRatingsCacheService) {
+                // Fallback attempt to clear cache manually via a temp instance
+                new window.AdminRatingsCacheService(this.firebaseManager).invalidateUsersCache();
+            }
             
             deletionStats.success = true;
             return deletionStats;
@@ -339,6 +420,156 @@ class AdminService {
         } catch (error) {
             console.error('Error clearing movie cache as admin:', error);
             throw new Error(`Failed to clear movie cache: ${error.message}`);
+        }
+    }
+
+    /**
+     * Bulk delete movies and their ratings
+     * @param {Array<number>} movieIds - Array of Kinopoisk movie IDs
+     * @param {string} currentAdminId - ID of admin performing the deletion
+     * @returns {Promise<Object>} - Deletion summary
+     */
+    async bulkDeleteMoviesAndRatings(movieIds, currentAdminId) {
+        try {
+            // Verify admin status
+            const isAdmin = await this.isUserAdmin(currentAdminId);
+            if (!isAdmin) {
+                throw new Error('Unauthorized: Admin access required');
+            }
+
+            const results = {
+                moviesDeleted: 0,
+                ratingsDeleted: 0,
+                errors: []
+            };
+
+            // Process each movie
+            for (const movieId of movieIds) {
+                try {
+                    // Delete all ratings for this movie
+                    const ratingsSnapshot = await this.db.collection('ratings')
+                        .where('movieId', '==', movieId)
+                        .get();
+                    
+                    const ratingDeletePromises = ratingsSnapshot.docs.map(doc => doc.ref.delete());
+                    await Promise.all(ratingDeletePromises);
+                    results.ratingsDeleted += ratingsSnapshot.size;
+
+                    // Delete movie from cache
+                    const movieRef = this.db.collection('movies').doc(movieId.toString());
+                    const movieDoc = await movieRef.get();
+                    if (movieDoc.exists) {
+                        await movieRef.delete();
+                        results.moviesDeleted++;
+                    }
+
+                    // Clear local storage cache
+                    localStorage.removeItem(`kp_movie_${movieId}`);
+                } catch (error) {
+                    console.error(`Error deleting movie ${movieId}:`, error);
+                    results.errors.push({ movieId, error: error.message });
+                }
+            }
+
+            console.log(`[AdminService] Bulk delete completed:`, results);
+            return results;
+        } catch (error) {
+            console.error('Error in bulk delete:', error);
+            throw new Error(`Bulk delete failed: ${error.message}`);
+        }
+    }
+
+    /**
+     * Bulk update movie info from Kinopoisk
+     * @param {Array<number>} movieIds - Array of Kinopoisk movie IDs
+     * @param {string} currentAdminId - ID of admin performing the update
+     * @param {Function} onProgress - Progress callback (current, total)
+     * @returns {Promise<Object>} - Update summary
+     */
+    async bulkUpdateMoviesInfo(movieIds, currentAdminId, onProgress = null) {
+        try {
+            // Verify admin status
+            const isAdmin = await this.isUserAdmin(currentAdminId);
+            if (!isAdmin) {
+                throw new Error('Unauthorized: Admin access required');
+            }
+
+            const results = {
+                updated: 0,
+                errors: []
+            };
+
+            const kinopoiskService = new KinopoiskService();
+            const movieCacheService = this.firebaseManager.getMovieCacheService();
+
+            for (let i = 0; i < movieIds.length; i++) {
+                const movieId = movieIds[i];
+                
+                if (onProgress) {
+                    onProgress(i + 1, movieIds.length);
+                }
+
+                try {
+                    // Fetch fresh data from Kinopoisk
+                    const freshMovieData = await kinopoiskService.getMovieById(movieId);
+                    
+                    if (freshMovieData) {
+                        // Update Firestore cache
+                        await movieCacheService.cacheRatedMovie(freshMovieData);
+                        // Clear local storage cache
+                        localStorage.removeItem(`kp_movie_${movieId}`);
+                        results.updated++;
+                    }
+                } catch (error) {
+                    console.error(`Error updating movie ${movieId}:`, error);
+                    results.errors.push({ movieId, error: error.message });
+                }
+            }
+
+            console.log(`[AdminService] Bulk update completed:`, results);
+            return results;
+        } catch (error) {
+            console.error('Error in bulk update:', error);
+            throw new Error(`Bulk update failed: ${error.message}`);
+        }
+    }
+
+    /**
+     * Bulk clear movie caches
+     * @param {Array<number>} movieIds - Array of Kinopoisk movie IDs
+     * @param {string} currentAdminId - ID of admin performing the action
+     * @returns {Promise<Object>} - Result summary
+     */
+    async bulkClearMoviesCache(movieIds, currentAdminId) {
+        try {
+            // Verify admin status
+            const isAdmin = await this.isUserAdmin(currentAdminId);
+            if (!isAdmin) {
+                throw new Error('Unauthorized: Admin access required');
+            }
+
+            const results = {
+                cleared: 0,
+                errors: []
+            };
+
+            const movieCacheService = this.firebaseManager.getMovieCacheService();
+
+            for (const movieId of movieIds) {
+                try {
+                    await movieCacheService.clearMovieCache(movieId);
+                    results.cleared++;
+                } catch (error) {
+                    console.error(`Error clearing cache for movie ${movieId}:`, error);
+                    results.errors.push({ movieId, error: error.message });
+                }
+            }
+
+            console.log(`[AdminService] Bulk cache clear completed:`, results);
+            return results;
+        } catch (error) {
+            console.error('Error in bulk cache clear:', error);
+            throw new Error(`Bulk cache clear failed: ${error.message}`);
         }
     }
 }

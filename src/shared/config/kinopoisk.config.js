@@ -16,7 +16,8 @@ const KINOPOISK_CONFIG = {
     // Endpoints
     ENDPOINTS: {
         SEARCH: '/movie/search',
-        MOVIE: '/movie'
+        MOVIE: '/movie',
+        RANDOM: '/movie/random'
     }
 };
 

@@ -23,6 +23,211 @@
         injectStyles();
         setupWatchlistButton();
         setupMutationObserver();
+        setupPlayerReplacement();
+    }
+
+    // ─── Player Replacement Logic ─────────────────────────────────────
+
+    /**
+     * Replace the native site player with extension's movie-details player.
+     * Uses MutationObserver + polling to wait for the player element (it loads dynamically).
+     * On close — restores the original player.
+     */
+    function setupPlayerReplacement() {
+        const config = document.getElementById('movieListExtensionConfig');
+        const movieDetailsBaseUrl = config ? config.getAttribute('data-movie-details-url') : null;
+
+        if (!movieDetailsBaseUrl) {
+            console.warn('[MovieList Extension] movie-details URL not found in config, skipping player replacement.');
+            return;
+        }
+
+        // Player selectors to look for (KinoGo uses iframes with embed URLs)
+        const PLAYER_SELECTORS = [
+            'iframe[src*="variyt"]',
+            'iframe[src*="embed"]',
+            '#player iframe',
+            '.player iframe',
+            'div[id*="player"] iframe'
+        ];
+
+        const MAX_WAIT_MS = 30000;
+        const POLL_INTERVAL_MS = 500;
+        let replaced = false;
+        let cleanupFn = null;
+
+        function findNativePlayer() {
+            for (const selector of PLAYER_SELECTORS) {
+                const el = document.querySelector(selector);
+                if (el) return el;
+            }
+            // Fallback: any iframe inside a player-like container
+            const playerContainer = document.querySelector('#player, .player, div[id*="player"]');
+            if (playerContainer) {
+                const iframe = playerContainer.querySelector('iframe');
+                if (iframe) return iframe;
+            }
+            return null;
+        }
+
+        async function doReplacement(nativePlayer) {
+            if (replaced) return;
+            replaced = true;
+
+            console.log('[MovieList Extension] Native player found:', nativePlayer);
+
+            // Extract movie ID
+            const kpId = extractKinopoiskId();
+            const title = extractMovieTitle();
+            const year = extractReleaseYear();
+
+            if (!kpId && !title) {
+                console.warn('[MovieList Extension] Could not identify movie (no KP ID or title). Leaving native player untouched.');
+                replaced = false;
+                return;
+            }
+
+            console.log('[MovieList Extension] Searching movie for player replacement — KP ID:', kpId, 'Title:', title, 'Year:', year);
+            const movie = await searchMovie(kpId, title, year);
+            const movieId = movie ? (movie.id || movie.kinopoiskId) : kpId;
+
+            if (!movieId) {
+                console.warn('[MovieList Extension] Could not resolve movieId. Leaving native player untouched.');
+                replaced = false;
+                return;
+            }
+
+            console.log('[MovieList Extension] Replacing native player with extension player. movieId:', movieId);
+
+            // Copy native player dimensions
+            const rect = nativePlayer.getBoundingClientRect();
+            const nativeWidth = rect.width || nativePlayer.offsetWidth || 800;
+            const nativeHeight = rect.height || nativePlayer.offsetHeight || 450;
+
+            // Store reference for restore
+            const nativeParent = nativePlayer.parentElement;
+            const nativeSibling = nativePlayer.nextSibling;
+            const originalDisplay = nativePlayer.style.display;
+
+            // Hide native player
+            nativePlayer.style.display = 'none';
+
+            // Create extension iframe
+            const extensionIframe = document.createElement('iframe');
+            extensionIframe.id = 'movieExtensionPlayer';
+            extensionIframe.src = `${movieDetailsBaseUrl}?movieId=${movieId}&autoplay=true&embedded=true`;
+            extensionIframe.style.width = nativeWidth + 'px';
+            extensionIframe.style.height = nativeHeight + 'px';
+            extensionIframe.style.border = 'none';
+            extensionIframe.style.borderRadius = '8px';
+            extensionIframe.style.backgroundColor = '#000';
+            extensionIframe.setAttribute('allowfullscreen', 'true');
+            extensionIframe.setAttribute('allow', 'autoplay; fullscreen; picture-in-picture');
+
+            // Insert in place of native player
+            if (nativeSibling) {
+                nativeParent.insertBefore(extensionIframe, nativeSibling);
+            } else {
+                nativeParent.appendChild(extensionIframe);
+            }
+
+            console.log('[MovieList Extension] Extension player injected successfully.');
+
+            // Listen for close message from extension player
+            function onCloseMessage(event) {
+                if (event.data && event.data.type === 'CLOSE_EXTENSION_PLAYER') {
+                    console.log('[MovieList Extension] Received CLOSE_EXTENSION_PLAYER — restoring native player.');
+                    restoreNativePlayer();
+                }
+            }
+
+            window.addEventListener('message', onCloseMessage);
+
+            // Cleanup on page navigation
+            function onBeforeUnload() {
+                window.removeEventListener('message', onCloseMessage);
+                window.removeEventListener('beforeunload', onBeforeUnload);
+            }
+
+            window.addEventListener('beforeunload', onBeforeUnload);
+
+            // Store cleanup for external use
+            cleanupFn = () => {
+                restoreNativePlayer();
+                window.removeEventListener('message', onCloseMessage);
+                window.removeEventListener('beforeunload', onBeforeUnload);
+            };
+
+            function restoreNativePlayer() {
+                // Remove extension iframe
+                const extIframe = document.getElementById('movieExtensionPlayer');
+                if (extIframe) {
+                    extIframe.remove();
+                }
+
+                // Show native player
+                nativePlayer.style.display = originalDisplay || '';
+
+                // Cleanup listeners
+                window.removeEventListener('message', onCloseMessage);
+                window.removeEventListener('beforeunload', onBeforeUnload);
+
+                replaced = false;
+                cleanupFn = null;
+                console.log('[MovieList Extension] Native player restored.');
+            }
+        }
+
+        // Wait for native player using MutationObserver + polling with timeout
+        const startTime = Date.now();
+        let pollTimer = null;
+        let observer = null;
+
+        function tryFind() {
+            const player = findNativePlayer();
+            if (player) {
+                cleanup();
+                doReplacement(player);
+                return true;
+            }
+            return false;
+        }
+
+        function cleanup() {
+            if (observer) {
+                observer.disconnect();
+                observer = null;
+            }
+            if (pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+            }
+        }
+
+        // 1. Try immediately
+        if (tryFind()) return;
+
+        // 2. MutationObserver
+        observer = new MutationObserver(() => {
+            if (Date.now() - startTime > MAX_WAIT_MS) {
+                console.log('[MovieList Extension] Player replacement timeout — leaving native player.');
+                cleanup();
+                return;
+            }
+            tryFind();
+        });
+
+        observer.observe(document.body, { childList: true, subtree: true });
+
+        // 3. Polling fallback (in case MutationObserver misses it)
+        pollTimer = setInterval(() => {
+            if (Date.now() - startTime > MAX_WAIT_MS) {
+                console.log('[MovieList Extension] Player replacement polling timeout.');
+                cleanup();
+                return;
+            }
+            tryFind();
+        }, POLL_INTERVAL_MS);
     }
     
     function extractMovieTitle() {

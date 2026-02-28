@@ -10,6 +10,7 @@ class FavoritesPageManager {
         };
         this.favorites = [];
         this.filteredFavorites = [];
+        this.watchingProgressMap = {}; // Map to store progress by movieId
         this.currentUser = null;
         this.isLoading = false;
         this.currentRatingMovie = null;
@@ -23,6 +24,7 @@ class FavoritesPageManager {
         this.setupEventListeners();
         
         await this.setupFirebase();
+        await this.loadWatchingProgress(); // Load progress before rendering
         await this.loadFavorites();
     }
 
@@ -310,7 +312,8 @@ class FavoritesPageManager {
                         ...favorite,
                         movie: movie,
                         averageRating: avgData.average,
-                        ratingsCount: avgData.count
+                        ratingsCount: avgData.count,
+                        isFavorite: true
                     });
                 } catch (error) {
                     console.warn(`Failed to load movie data for ${favorite.movieId}:`, error);
@@ -319,7 +322,8 @@ class FavoritesPageManager {
                         ...favorite,
                         movie: null,
                         averageRating: avgData.average,
-                        ratingsCount: avgData.count
+                        ratingsCount: avgData.count,
+                        isFavorite: true
                     });
                 }
             }
@@ -408,58 +412,61 @@ class FavoritesPageManager {
 
     createMovieCard(favorite) {
         // Use the new MovieCard component
-        return MovieCard.create(favorite, {
+        const card = MovieCard.create(favorite, {
             showFavorite: true,  // Show favorite toggle (to remove from favorites)
             showWatchlist: false,
             showUserInfo: false,
             showEditRating: true,  // Show edit rating in menu
             showAddToCollection: false,
-            showThreeDotMenu: true
+            showThreeDotMenu: true,
+            animeStyle: true, // Use anime style for favorites
+            watchingProgress: this.getFormattedProgress(favorite.kinopoiskId)
         });
+        
+        return card;
     }
 
     attachCardEventListeners() {
         const grid = this.elements.moviesGrid;
         if (!grid) return;
 
-        // View Details buttons
-        grid.querySelectorAll('.action-btn.btn-primary').forEach(button => {
-            button.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const movieId = button.getAttribute('data-movie-id');
-                if (movieId) {
-                    const url = chrome.runtime.getURL(`src/pages/search/search.html?movieId=${movieId}`);
-                    window.location.href = url;
-                }
-            });
-        });
+        // Use event delegation for all card actions
+        grid.addEventListener('click', async (e) => {
+            const target = e.target.closest('[data-action]');
+            if (!target) return;
 
-        // Edit Rating buttons
-        grid.querySelectorAll('.edit-rating-btn').forEach(button => {
-            button.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                const ratingId = button.getAttribute('data-rating-id');
-                const movieId = button.getAttribute('data-movie-id');
-                
-                if (ratingId && movieId) {
-                    const favorite = this.favorites.find(f => f.id === ratingId);
-                    if (favorite) {
-                        await this.showRatingModal(favorite);
-                    }
-                }
-            });
-        });
+            e.stopPropagation();
+            const action = target.getAttribute('data-action');
+            const movieId = target.getAttribute('data-movie-id');
+            const ratingId = target.getAttribute('data-rating-id');
 
-        // Remove from Favorites buttons
-        grid.querySelectorAll('.favorite-btn-remove').forEach(button => {
-            button.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                const ratingId = button.getAttribute('data-rating-id');
-                if (ratingId) {
-                    await this.removeFromFavorites(ratingId);
+            if (action === 'view-details' && movieId) {
+                const url = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`);
+                window.location.href = url;
+            } else if (action === 'resume-watching' && movieId) {
+                const url = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}&autoplay=true`);
+                window.location.href = url;
+            } else if (action === 'edit-rating' && ratingId && movieId) {
+                const favorite = this.favorites.find(f => f.id === ratingId);
+                if (favorite) {
+                    await this.showRatingModal(favorite);
                 }
-            });
+            } else if (action === 'remove-favorite' && ratingId) { // MovieCard specific action name ??
+                 // Note: MovieCard uses 'toggle-favorite' in menu, but we might have custom buttons.
+                 // The old code targeted .favorite-btn-remove. 
+                 // Let's check MovieCard data-action for remove.
+                 // It uses 'toggle-favorite'. If isFavorite is true, it removes.
+            } else if (action === 'toggle-favorite' && movieId) {
+                // Handle toggle favorite from menu
+                 const favorite = this.favorites.find(f => (f.movie?.kinopoiskId == movieId || f.movieId == movieId));
+                 if (favorite) {
+                     await this.removeFromFavorites(favorite.id);
+                 }
+            }
         });
+        
+        // Keep old specific listeners if they exist outside of data-action (just in case)
+        // actually, let's just rely on delegation for the new card structure.
     }
 
     async removeFromFavorites(ratingId) {
@@ -675,11 +682,126 @@ class FavoritesPageManager {
         div.textContent = text;
         return div.innerHTML;
     }
+
+    async handleMigration() {
+        if (!this.migrationTool) {
+             if (typeof MigrationTool !== 'undefined') {
+                 this.migrationTool = new MigrationTool(firebaseManager);
+             } else {
+                 alert('Migration tool not loaded. Please refresh the page.');
+                 return;
+             }
+        }
+
+        const btn = document.getElementById('runMigrationBtn');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Migrating...';
+        }
+
+        try {
+            const user = firebaseManager.getCurrentUser();
+            if (!user) {
+                throw new Error('You must be logged in to migrate.');
+            }
+
+            const result = await this.migrationTool.migrateFavoritesForUser(user.uid);
+            
+            if (result.count > 0) {
+                alert(`Successfully migrated ${result.count} favorites! The page will reload.`);
+                window.location.reload();
+            } else {
+                alert('No old favorites found to migrate.');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = 'No data found';
+                }
+            }
+        } catch (error) {
+            console.error('Migration error:', error);
+            alert(`Migration failed: ${error.message}`);
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = 'Retry Migration';
+            }
+        }
+    }
+
+    async loadWatchingProgress() {
+        return new Promise((resolve) => {
+            chrome.storage.local.get(null, (items) => {
+                this.watchingProgressMap = {};
+                
+                Object.keys(items).forEach(key => {
+                    if (key.startsWith('watching_progress_')) {
+                        const movieId = parseInt(key.replace('watching_progress_', ''));
+                        if (movieId) {
+                            this.watchingProgressMap[movieId] = items[key];
+                        }
+                    }
+                });
+                
+                resolve();
+            });
+        });
+    }
+
+    getFormattedProgress(movieId) {
+        const progress = this.watchingProgressMap[movieId];
+        
+        if (!progress) {
+            return null;
+        }
+        
+        // For TV series: show season and episode
+        if (progress.season || progress.episode) {
+            // Check if values are already formatted (contain text) or are numbers
+            const seasonIsNumber = typeof progress.season === 'number' || /^\d+$/.test(progress.season);
+            const episodeIsNumber = typeof progress.episode === 'number' || /^\d+$/.test(progress.episode);
+            
+            let label = '';
+            if (progress.season) {
+                label += seasonIsNumber ? `${progress.season} сезон` : progress.season;
+            }
+            if (progress.season && progress.episode) label += ', ';
+            if (progress.episode) {
+                label += episodeIsNumber ? `${progress.episode} серия` : progress.episode;
+            }
+            return label;
+        }
+        
+        // For movies: show timestamp
+        if (progress.timestamp) {
+            return this.formatTimestamp(progress.timestamp);
+        }
+        
+        return null;
+    }
+
+    formatTimestamp(seconds) {
+        if (!seconds || seconds < 0) return null;
+        
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const secs = Math.floor(seconds % 60);
+        
+        // Format as H:MM:SS
+        return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
 }
 
 // Initialize favorites page manager when DOM is loaded
 let favoritesPage;
 document.addEventListener('DOMContentLoaded', () => {
     favoritesPage = new FavoritesPageManager();
+});
+
+// Bind migration button
+document.addEventListener('click', (e) => {
+    if (e.target && e.target.id === 'runMigrationBtn') {
+        if (favoritesPage) {
+            favoritesPage.handleMigration();
+        }
+    }
 });
 

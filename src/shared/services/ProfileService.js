@@ -120,17 +120,20 @@ class ProfileService {
                 throw new Error('User ID is required');
             }
 
-            const [ratingsStats, favoritesCount, watchlistCount] = await Promise.all([
+            // Get ratings stats and counts from FavoriteService (watching and plan_to_watch)
+            const [ratingsStats, watchingCount, watchlistCount] = await Promise.all([
                 this.getRatingsStatistics(userId),
-                this.getFavoritesCount(userId),
-                this.getWatchlistCount(userId)
+                this.favoriteService ? this.favoriteService.getFavoritesCount(userId, 'watching') : 0,
+                this.favoriteService ? this.favoriteService.getFavoritesCount(userId, 'plan_to_watch') : 0
             ]);
 
             return {
                 totalRatings: ratingsStats.totalRatings,
                 averageRating: ratingsStats.averageRating,
-                favoritesCount,
-                watchlistCount
+                // We map 'watching' count to 'favoritesCount' because the frontend expects this property name
+                // The label in the UI will be updated to "Watching" via locales
+                favoritesCount: watchingCount, 
+                watchlistCount: watchlistCount
             };
         } catch (error) {
             console.error('Error getting user statistics:', error);

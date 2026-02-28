@@ -42,54 +42,71 @@ class RatingsCacheService {
     /**
      * Get cached ratings with smart refresh logic
      * @param {number} limit - Maximum number of ratings to return
-     * @returns {Promise<{ratings: Array, isFromCache: boolean}>}
+     * @param {string} lastDocId - Last document ID for pagination (if null, fetches first page)
+     * @returns {Promise<{ratings: Array, isFromCache: boolean, lastDocId: string, hasMore: boolean}>}
      */
-    async getCachedRatingsWithBackgroundRefresh(limit = 50) {
+    async getCachedRatingsWithBackgroundRefresh(limit = 50, lastDocId = null) {
         const startTime = performance.now();
         try {
             console.log('⏱️ [RatingsCacheService] Starting getCachedRatingsWithBackgroundRefresh');
             
-            const cacheReadStart = performance.now();
-            const cachedData = await this.getCacheData();
-            const cacheReadTime = Math.round(performance.now() - cacheReadStart);
-            console.log(`⏱️ [RatingsCacheService] Cache read: ${cacheReadTime}ms`);
             
-            if (cachedData && cachedData.ratings.length > 0) {
-                // Check if cache is still valid
-                if (this.isCacheValid(cachedData.timestamp)) {
-                    // Return valid cached data immediately
-                    const sliceStart = performance.now();
-                    const ratings = cachedData.ratings.slice(0, limit);
-                    const sliceTime = Math.round(performance.now() - sliceStart);
-                    console.log(`⏱️ [RatingsCacheService] Slice ratings: ${sliceTime}ms`);
-                    console.log(`✅ [RatingsCacheService] Found ${ratings.length} valid cached ratings (total time: ${Math.round(performance.now() - startTime)}ms)`);
-                    
-                    // Start background refresh (non-blocking)
-                    this.refreshCacheInBackground(limit).catch(error => {
-                        console.error('❌ [RatingsCacheService] Error refreshing cache in background:', error);
-                    });
-                    
-                    return { ratings, isFromCache: true };
-                } else {
-                    console.log('⏱️ [RatingsCacheService] Cache expired, fetching fresh data');
-                    // Cache expired, fetch fresh data instead of showing stale data
-                    const ratings = await this.fetchAndCacheRatings(limit);
-                    console.log(`⏱️ [RatingsCacheService] Fresh data fetched (total time: ${Math.round(performance.now() - startTime)}ms)`);
-                    return { ratings, isFromCache: false };
+            const cacheReadStart = performance.now();
+            
+            // Only use cache for the first page (no lastDocId)
+            if (!lastDocId) {
+                const cachedData = await this.getCacheData();
+                const cacheReadTime = Math.round(performance.now() - cacheReadStart);
+                console.log(`⏱️ [RatingsCacheService] Cache read: ${cacheReadTime}ms`);
+                
+                if (cachedData && cachedData.ratings.length > 0) {
+                    // Check if cache is still valid
+                    if (this.isCacheValid(cachedData.timestamp)) {
+                        // Return valid cached data immediately
+                        const sliceStart = performance.now();
+                        const ratings = cachedData.ratings.slice(0, limit);
+                        const sliceTime = Math.round(performance.now() - sliceStart);
+                        console.log(`⏱️ [RatingsCacheService] Slice ratings: ${sliceTime}ms`);
+                        console.log(`✅ [RatingsCacheService] Found ${ratings.length} valid cached ratings (total time: ${Math.round(performance.now() - startTime)}ms)`);
+                        
+                        // Start background refresh (non-blocking) for first page
+                        this.refreshCacheInBackground(limit).catch(error => {
+                            console.error('❌ [RatingsCacheService] Error refreshing cache in background:', error);
+                        });
+                        
+                        // Calculate pagination info from cached data
+                        const lastItem = ratings.length > 0 ? ratings[ratings.length - 1] : null;
+                        
+                        return { 
+                            ratings, 
+                            isFromCache: true,
+                            // If we have cached data, we assume there might be more if we hit the limit
+                            hasMore: ratings.length === limit, 
+                            lastDocId: lastItem ? lastItem.id : null
+                        };
+                    } else {
+                        console.log('⏱️ [RatingsCacheService] Cache expired, fetching fresh data');
+                        // Cache expired, fetch fresh data instead of showing stale data
+                        const result = await this.fetchAndCacheRatings(limit, null);
+                        console.log(`⏱️ [RatingsCacheService] Fresh data fetched (total time: ${Math.round(performance.now() - startTime)}ms)`);
+                        return { ...result, isFromCache: false };
+                    }
                 }
+            } else {
+                console.log('⏱️ [RatingsCacheService] Pagination request (lastDocId present), bypassing cache');
             }
 
-            console.log('⏱️ [RatingsCacheService] No cache available, fetching from server');
+            console.log('⏱️ [RatingsCacheService] No cache available or pagination request, fetching from server');
             // No cache available, fetch from server
-            const ratings = await this.fetchAndCacheRatings(limit);
+            const result = await this.fetchAndCacheRatings(limit, lastDocId);
             console.log(`⏱️ [RatingsCacheService] Server data fetched (total time: ${Math.round(performance.now() - startTime)}ms)`);
-            return { ratings, isFromCache: false };
+            return { ...result, isFromCache: false };
         } catch (error) {
             console.error('❌ [RatingsCacheService] Error getting cached ratings with background refresh:', error);
             console.log('⏱️ [RatingsCacheService] Falling back to server fetch');
-            const ratings = await this.fetchAndCacheRatings(limit);
+            const result = await this.fetchAndCacheRatings(limit, lastDocId);
             console.log(`⏱️ [RatingsCacheService] Fallback fetch completed (total time: ${Math.round(performance.now() - startTime)}ms)`);
-            return { ratings, isFromCache: false };
+            return { ...result, isFromCache: false };
         }
     }
 
@@ -101,10 +118,10 @@ class RatingsCacheService {
         const startTime = performance.now();
         try {
             console.log('🔄 [RatingsCacheService] Starting background cache refresh');
-            const ratings = await this.fetchAndCacheRatings(limit);
+            const result = await this.fetchAndCacheRatings(limit, null);
             const totalTime = Math.round(performance.now() - startTime);
             console.log(`✅ [RatingsCacheService] Background cache refresh completed in ${totalTime}ms`);
-            return ratings;
+            return result.ratings;
         } catch (error) {
             const totalTime = Math.round(performance.now() - startTime);
             console.error(`❌ [RatingsCacheService] Error refreshing cache in background (${totalTime}ms):`, error);
@@ -115,19 +132,35 @@ class RatingsCacheService {
     /**
      * Fetch ratings from server and cache them
      * @param {number} limit - Maximum number of ratings to fetch
-     * @returns {Promise<Array>} - Array of ratings with movie data
+     * @param {string|DocumentSnapshot} lastCursor - Last document ID (string) or snapshot for pagination
+     * @returns {Promise<{ratings: Array, lastDocId: string, lastDoc: DocumentSnapshot, hasMore: boolean}>}
      */
-    async fetchAndCacheRatings(limit = 50) {
+    async fetchAndCacheRatings(limit = 50, lastCursor = null) {
         const startTime = performance.now();
         try {
-            console.log('⏱️ [RatingsCacheService] Starting fetchAndCacheRatings');
+            // 🔍 Diagnostic: log exactly what cursor type was received
+            console.log('🔮 [RatingsCacheService] fetchAndCacheRatings called:', {
+                limit,
+                cursorType: lastCursor === null ? 'null' : typeof lastCursor,
+                cursorIsSnapshot: lastCursor !== null && typeof lastCursor === 'object',
+                cursorId: lastCursor?.id ?? lastCursor, // log .id if snapshot, raw string otherwise
+                cursorClass: lastCursor?.constructor?.name ?? 'N/A'
+            });
             
             const fetchStart = performance.now();
             const ratingService = this.firebaseManager.getRatingService();
-            const result = await ratingService.getAllRatings(limit);
+            const result = await ratingService.getAllRatings(limit, lastCursor);
             const ratings = result.ratings;
             const fetchTime = Math.round(performance.now() - fetchStart);
             console.log(`⏱️ [RatingsCacheService] getAllRatings from Firebase: ${fetchTime}ms (${ratings.length} ratings)`);
+
+            // 🔍 Diagnostic: log the returned cursor
+            console.log('📦 [RatingsCacheService] getAllRatings returned cursor:', {
+                lastDocId: result.lastDocId,
+                lastDocType: result.lastDoc ? typeof result.lastDoc : 'null',
+                lastDocClass: result.lastDoc?.constructor?.name ?? 'null',
+                hasMore: result.hasMore
+            });
 
             // Enrich ratings with movie data
             const enrichStart = performance.now();
@@ -135,16 +168,25 @@ class RatingsCacheService {
             const enrichTime = Math.round(performance.now() - enrichStart);
             console.log(`⏱️ [RatingsCacheService] enrichRatingsWithMovieData: ${enrichTime}ms`);
 
-            // Cache the enriched ratings
-            const cacheStart = performance.now();
-            await this.cacheRatings(ratings);
-            const cacheTime = Math.round(performance.now() - cacheStart);
-            console.log(`⏱️ [RatingsCacheService] cacheRatings: ${cacheTime}ms`);
+            // Cache the enriched ratings ONLY if it's the first page (no cursor)
+            if (!lastCursor) {
+                const cacheStart = performance.now();
+                await this.cacheRatings(ratings);
+                const cacheTime = Math.round(performance.now() - cacheStart);
+                console.log(`⏱️ [RatingsCacheService] cacheRatings: ${cacheTime}ms`);
+            } else {
+                console.log(`⏱️ [RatingsCacheService] Pagination request, skipping cache write`);
+            }
 
             const totalTime = Math.round(performance.now() - startTime);
-            console.log(`✅ [RatingsCacheService] fetchAndCacheRatings completed in ${totalTime}ms (fetch: ${fetchTime}ms, enrich: ${enrichTime}ms, cache: ${cacheTime}ms)`);
+            console.log(`✅ [RatingsCacheService] fetchAndCacheRatings completed in ${totalTime}ms`);
             
-            return ratings;
+            return {
+                ratings,
+                lastDocId: result.lastDocId,
+                lastDoc: result.lastDoc, // Propagate the snapshot for better pagination performance
+                hasMore: result.hasMore
+            };
         } catch (error) {
             const totalTime = Math.round(performance.now() - startTime);
             console.error(`❌ [RatingsCacheService] Error fetching and caching ratings (${totalTime}ms):`, error);
@@ -175,11 +217,11 @@ class RatingsCacheService {
             const missingMovieIds = movieIds.filter(id => !movieMap.has(id));
             
             if (missingMovieIds.length > 0) {
-                console.log(`⏱️ [RatingsCacheService] Fetching ${missingMovieIds.length} movies from Kinopoisk API...`);
+                console.log(`⏱️ [RatingsCacheService] Fetching ${missingMovieIds.length} movies from Kinopoisk API in parallel...`);
                 const kinopoiskStart = performance.now();
                 
-                for (let i = 0; i < missingMovieIds.length; i++) {
-                    const movieId = missingMovieIds[i];
+                // Fetch missing movies in parallel for better performance
+                const moviePromises = missingMovieIds.map(async (movieId, index) => {
                     const movieFetchStart = performance.now();
                     try {
                         const movieData = await kinopoiskService.getMovieById(movieId);
@@ -187,15 +229,18 @@ class RatingsCacheService {
                         if (movieData) {
                             movieMap.set(movieData.kinopoiskId, movieData);
                             await movieCacheService.cacheRatedMovie(movieData);
-                            console.log(`⏱️ [RatingsCacheService] Movie ${i+1}/${missingMovieIds.length}: ${movieData.name} (${movieFetchTime}ms)`);
+                            console.log(`⏱️ [RatingsCacheService] Movie ${index+1}/${missingMovieIds.length}: ${movieData.name} (${movieFetchTime}ms)`);
                         }
                     } catch (error) {
                         const movieFetchTime = Math.round(performance.now() - movieFetchStart);
                         console.error(`❌ [RatingsCacheService] Failed to fetch movie ${movieId} (${movieFetchTime}ms):`, error);
                     }
-                }
+                });
+                
+                await Promise.all(moviePromises);
+                
                 const kinopoiskTime = Math.round(performance.now() - kinopoiskStart);
-                console.log(`⏱️ [RatingsCacheService] Kinopoisk API fetch: ${kinopoiskTime}ms (${missingMovieIds.length} movies)`);
+                console.log(`⏱️ [RatingsCacheService] Kinopoisk API parallel fetch: ${kinopoiskTime}ms (${missingMovieIds.length} movies)`);
             }
             
             // Enrich with user profile data
