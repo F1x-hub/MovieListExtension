@@ -5,31 +5,78 @@
 class AdminPanelManager {
     constructor() {
         this.adminService = null;
+        this.cacheService = null;
         this.currentUser = null;
         this.users = [];
         this.userToDelete = null;
+        
+        // Movies and ratings data
+        this.movies = [];
         this.ratings = [];
-        this.filteredRatings = [];
+        this.ratingsMap = new Map(); // movieId -> [ratings]
+        this.usersMap = new Map();
+        this.filteredMovies = [];
+        this.displayedMovies = [];
+        this.BATCH_SIZE = 20;
+        
+        // Selection state
+        this.selectedMovies = new Set();
+        
+        // Pagination state for users
+        this.userPagination = {
+            currentPage: 1,
+            itemsPerPage: 20,
+            totalItems: 0,
+            lastVisibleDocs: [],
+            hasMore: true
+        };
+        this.userSearchTerm = '';
+        this.userSearchTimeout = null;
+        this.displayedUsers = [];
+        
+        // Pagination state for movies
+        this.pagination = {
+            currentPage: 1,
+            itemsPerPage: 20,
+            totalItems: 0,
+            lastVisibleDocs: [], // Stack of last visible docs for navigation
+            hasMore: true
+        };
+        
+        // Rating modal state
         this.ratingToDelete = null;
+        
+        // Filters
         this.ratingsFilters = {
             movieTitle: '',
             userId: '',
-            dateFrom: '',
-            dateTo: ''
+            ratingStatus: 'all' // 'all', 'rated', 'unrated'
         };
+        
+        // Online status
+        this.isOnline = navigator.onLine;
+        window.addEventListener('online', () => this.updateOnlineStatus(true));
+        window.addEventListener('offline', () => this.updateOnlineStatus(false));
+        
         this.init();
     }
 
     async init() {
+        console.time('[Admin Perf] Total Init');
+        console.time('[Admin Perf] 1. Navigation & Firebase Wait');
         try {
             // Initialize navigation
             window.adminNav = new Navigation('admin');
 
             // Wait for Firebase to be ready
             await this.waitForFirebase();
+            console.timeEnd('[Admin Perf] 1. Navigation & Firebase Wait');
 
             // Check if user is admin
+            console.time('[Admin Perf] 2. Check Admin Access');
             const isAdmin = await this.checkAdminAccess();
+            console.timeEnd('[Admin Perf] 2. Check Admin Access');
+            
             if (!isAdmin) {
                 this.showError('Access denied. You must be an administrator to view this page.');
                 setTimeout(() => {
@@ -38,20 +85,37 @@ class AdminPanelManager {
                 return;
             }
 
+            console.time('[Admin Perf] 3. Services Init');
             // Initialize services
             this.adminService = new AdminService(firebaseManager);
+            this.cacheService = new AdminRatingsCacheService(firebaseManager);
+            console.timeEnd('[Admin Perf] 3. Services Init');
 
-            // Load users
+            // Update offline indicator
+            this.updateOnlineIndicator();
+
+            console.time('[Admin Perf] 4. Load Data Sequentially');
+            // Load users and movies sequentially to avoid WebChannel stream congestion
+            this.showLoading();
             await this.loadUsers();
+            await this.loadMovies();
+            this.hideLoading();
+            console.timeEnd('[Admin Perf] 4. Load Data Sequentially');
 
-            // Load ratings
-            await this.loadRatings();
+            console.time('[Admin Perf] 5. UI & Event Setup');
+            // Initialize Reports
+            this.initReports();
 
             // Setup event listeners
             this.setupEventListeners();
+            console.timeEnd('[Admin Perf] 5. UI & Event Setup');
+            console.timeEnd('[Admin Perf] Total Init');
+            
+            console.log(`[Admin Performance] Init fully complete. Data size - Users: ${this.users.length}, Movies: ${this.movies.length}`);
         } catch (error) {
             console.error('Error initializing admin panel:', error);
             this.showError(`Failed to initialize: ${error.message}`);
+            console.timeEnd('[Admin Perf] Total Init');
         }
     }
 
@@ -94,6 +158,7 @@ class AdminPanelManager {
 
     async checkAdminAccess() {
         try {
+            console.time('[Admin Perf] checkAdminAccess - getUserManager');
             this.currentUser = firebaseManager.getCurrentUser();
             console.log('[Admin Panel] Checking admin access for user:', this.currentUser?.email);
             
@@ -107,8 +172,22 @@ class AdminPanelManager {
                 console.error('[Admin Panel] UserService not available');
                 return false;
             }
+            console.timeEnd('[Admin Perf] checkAdminAccess - getUserManager');
 
-            const userProfile = await userService.getUserProfile(this.currentUser.uid);
+            console.time('[Admin Perf] checkAdminAccess - Firestore get');
+            console.log('[Admin Panel] Attempting to fetch user profile from Firestore...');
+            
+            // Try fetching from server first, then cache if offline
+            let userProfile;
+            try {
+                userProfile = await userService.getUserProfile(this.currentUser.uid);
+            } catch (err) {
+                console.warn('[Admin Panel] Firestore fetch error (possibly offline), trying again or ignoring:', err);
+                throw err;
+            }
+            
+            console.timeEnd('[Admin Perf] checkAdminAccess - Firestore get');
+            
             console.log('[Admin Panel] User profile loaded:', {
                 userId: this.currentUser.uid,
                 email: userProfile?.email,
@@ -131,18 +210,128 @@ class AdminPanelManager {
     }
 
     async loadUsers() {
+        console.time('[Admin Perf] loadUsers total');
         try {
-            this.showLoading();
+            console.time('[Admin Perf] loadUsers - Get Cache');
+            const cachedUsers = this.cacheService.getCachedUsers();
+            console.timeEnd('[Admin Perf] loadUsers - Get Cache');
             
-            this.users = await this.adminService.getAllUsers();
-            
-            this.hideLoading();
-            this.renderUsers();
+            if (cachedUsers && cachedUsers.length > 0 && this.cacheService.isUsersCacheValid()) {
+                console.log(`[Admin] Using cached users`);
+                this.users = cachedUsers;
+                this.displayedUsers = this.users;
+                
+                this.renderUsers();
+                this.renderUserPagination();
+            } else if (cachedUsers && cachedUsers.length > 0) {
+                console.log(`[Admin] Users cache stale, rendering instantly then background sync`);
+                this.users = cachedUsers;
+                this.displayedUsers = this.users;
+                this.renderUsers();
+                this.renderUserPagination();
+                this.fetchUsersFromDb(true); // background update
+            } else {
+                await this.fetchUsersFromDb();
+            }
         } catch (error) {
             console.error('Error loading users:', error);
-            this.hideLoading();
             this.showError(`Failed to load users: ${error.message}`);
         }
+        console.timeEnd('[Admin Perf] loadUsers total');
+    }
+
+    renderUsersSkeleton() {
+        const tableBody = document.getElementById('usersTableBody');
+        if (!tableBody) return;
+        tableBody.innerHTML = '';
+        for (let i = 0; i < 5; i++) {
+            tableBody.innerHTML += `
+                <tr>
+                    <td>
+                        <div class="user-info">
+                            <div class="skeleton-avatar"></div>
+                            <div><div class="skeleton-text" style="width: 100px;"></div></div>
+                        </div>
+                    </td>
+                    <td><div class="skeleton-text" style="width: 150px;"></div></td>
+                    <td><div class="skeleton-text" style="width: 80px;"></div></td>
+                    <td><div class="skeleton-text" style="width: 80px;"></div></td>
+                    <td><div class="skeleton-text" style="width: 40px;"></div></td>
+                    <td><div class="skeleton-text" style="width: 40px;"></div></td>
+                    <td><div class="skeleton-text" style="width: 60px;"></div></td>
+                </tr>
+            `;
+        }
+    }
+
+    async fetchUsersFromDb(isBackground = false) {
+        let fetchLabel = `[Admin Perf] fetchUsersFromDb (background=${isBackground})`;
+        console.time(fetchLabel);
+        if (!isBackground) {
+            this.renderUsersSkeleton();
+        }
+        
+        try {
+            const lastDoc = this.userPagination.currentPage > 1 ? 
+                this.userPagination.lastVisibleDocs[this.userPagination.currentPage - 2] : null;
+
+            const result = await this.adminService.getUsersPage(lastDoc, this.userPagination.itemsPerPage);
+            this.users = result.users;
+
+            if (result.lastDoc) {
+                if (this.userPagination.currentPage > this.userPagination.lastVisibleDocs.length) {
+                    this.userPagination.lastVisibleDocs.push(result.lastDoc);
+                } else {
+                    this.userPagination.lastVisibleDocs[this.userPagination.currentPage - 1] = result.lastDoc;
+                }
+            }
+            this.userPagination.hasMore = result.hasMore;
+            this.displayedUsers = this.users;
+
+            // Cache first page
+            if (this.userPagination.currentPage === 1 && !this.userSearchTerm) {
+                console.time('[Admin Perf] Save users to cache');
+                this.cacheService.saveUsersToCache(this.users);
+                console.timeEnd('[Admin Perf] Save users to cache');
+            }
+
+            this.applyUserSearch();
+        } catch (error) {
+            console.error('Error fetching users from DB:', error);
+            if (!isBackground) {
+                this.showError(`Failed to load users page: ${error.message}`);
+            }
+        }
+        console.timeEnd(fetchLabel);
+    }
+
+    async changeUserPage(action) {
+        if (action === 'next' && this.userPagination.hasMore) {
+            this.userPagination.currentPage++;
+            await this.fetchUsersFromDb();
+        } else if (action === 'prev' && this.userPagination.currentPage > 1) {
+            this.userPagination.currentPage--;
+            await this.fetchUsersFromDb();
+        } else if (action === 'first') {
+            this.userPagination.currentPage = 1;
+            this.userPagination.lastVisibleDocs = [];
+            await this.fetchUsersFromDb();
+        }
+    }
+
+    applyUserSearch() {
+        if (this.userSearchTerm) {
+            const term = this.userSearchTerm.toLowerCase();
+            this.displayedUsers = this.users.filter(user => 
+                (user.displayName && user.displayName.toLowerCase().includes(term)) ||
+                (user.email && user.email.toLowerCase().includes(term)) ||
+                (user.id && user.id.toLowerCase().includes(term))
+            );
+        } else {
+            this.displayedUsers = this.users;
+        }
+        this.renderUsers();
+        this.renderUserPagination();
     }
 
     renderUsers() {
@@ -153,13 +342,13 @@ class AdminPanelManager {
 
         // Update count
         if (usersCount) {
-            usersCount.textContent = `${this.users.length} user${this.users.length !== 1 ? 's' : ''}`;
+            usersCount.textContent = `${this.displayedUsers.length} user${this.displayedUsers.length !== 1 ? 's' : ''}${this.userPagination.currentPage > 1 ? ` (pg ${this.userPagination.currentPage})` : ''}`;
         }
 
         // Clear existing rows
         tableBody.innerHTML = '';
 
-        if (this.users.length === 0) {
+        if (this.displayedUsers.length === 0) {
             tableBody.innerHTML = `
                 <tr>
                     <td colspan="7" style="text-align: center; padding: var(--space-xl); color: var(--text-secondary);">
@@ -171,10 +360,32 @@ class AdminPanelManager {
         }
 
         // Render each user
-        this.users.forEach(user => {
+        this.displayedUsers.forEach(user => {
             const row = this.createUserRow(user);
             tableBody.appendChild(row);
         });
+    }
+
+    renderUserPagination() {
+        const pageInfo = document.getElementById('usersPaginationInfo');
+        const pageNumbers = document.getElementById('user-page-numbers');
+        const prevBtn = document.getElementById('user-prev-page');
+        const nextBtn = document.getElementById('user-next-page');
+        const firstBtn = document.getElementById('user-first-page');
+        
+        if (pageInfo) {
+            const start = (this.userPagination.currentPage - 1) * this.userPagination.itemsPerPage + 1;
+            const end = start + this.displayedUsers.length - 1;
+            pageInfo.innerHTML = `Showing <span id="user-range-start">${start}</span>-<span id="user-range-end">${end}</span> users`;
+        }
+        
+        if (pageNumbers) {
+            pageNumbers.textContent = `Page ${this.userPagination.currentPage}`;
+        }
+        
+        if (prevBtn) prevBtn.disabled = this.userPagination.currentPage === 1;
+        if (firstBtn) firstBtn.disabled = this.userPagination.currentPage === 1;
+        if (nextBtn) nextBtn.disabled = !this.userPagination.hasMore;
     }
 
     createUserRow(user) {
@@ -190,12 +401,13 @@ class AdminPanelManager {
                     <img src="${user.photoURL || chrome.runtime.getURL('icons/icon48.png')}" 
                          alt="${user.displayName || 'User'}" 
                          class="user-avatar"
+                         loading="lazy"
                          onerror="this.src='${chrome.runtime.getURL('icons/icon48.png')}'">
                     <div>
                         <div class="user-name">
                             ${this.escapeHtml(user.displayName || 'Unknown User')}
                             ${user.isAdmin ? '<span class="admin-badge"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg> Admin</span>' : ''}
-                            ${isCurrentUser ? '<span class="admin-badge" style="background: #22c55e;">You</span>' : ''}
+                            ${isCurrentUser ? '<span class="you-badge">You</span>' : ''}
                         </div>
                     </div>
                 </div>
@@ -337,6 +549,55 @@ class AdminPanelManager {
             });
         }
 
+        // Sidebar Navigation
+        const sidebarLinks = document.querySelectorAll('.sidebar-link');
+        const settingsPanes = document.querySelectorAll('.settings-pane');
+
+        sidebarLinks.forEach(link => {
+            link.addEventListener('click', () => {
+                sidebarLinks.forEach(l => l.classList.remove('active'));
+                settingsPanes.forEach(p => p.classList.remove('active'));
+
+                link.classList.add('active');
+                const targetId = 'pane-' + link.dataset.target;
+                const targetPane = document.getElementById(targetId);
+                if (targetPane) {
+                    targetPane.classList.add('active');
+                }
+            });
+        });
+
+        // User Search Filter (Debounced)
+        const userSearchInput = document.getElementById('userSearchFilterInput');
+        if (userSearchInput) {
+            userSearchInput.addEventListener('input', () => {
+                clearTimeout(this.userSearchTimeout);
+                this.userSearchTimeout = setTimeout(() => {
+                    this.userSearchTerm = userSearchInput.value.trim();
+                    this.applyUserSearch();
+                }, 300);
+            });
+        }
+        
+        // Users Pagination controls
+        const userFirstPageBtn = document.getElementById('user-first-page');
+        const userPrevPageBtn = document.getElementById('user-prev-page');
+        const userNextPageBtn = document.getElementById('user-next-page');
+        const userPageSizeSelect = document.getElementById('user-page-size-select');
+        
+        if (userFirstPageBtn) userFirstPageBtn.addEventListener('click', () => this.changeUserPage('first'));
+        if (userPrevPageBtn) userPrevPageBtn.addEventListener('click', () => this.changeUserPage('prev'));
+        if (userNextPageBtn) userNextPageBtn.addEventListener('click', () => this.changeUserPage('next'));
+        
+        if (userPageSizeSelect) {
+            userPageSizeSelect.addEventListener('change', (e) => {
+                this.userPagination.itemsPerPage = parseInt(e.target.value, 10);
+                this.userPagination.currentPage = 1;
+                this.userPagination.lastVisibleDocs = [];
+                this.fetchUsersFromDb();
+            });
+        }
+
         // Delete rating modal controls
         const closeRatingBtn = document.getElementById('closeDeleteRatingModal');
         const cancelRatingBtn = document.getElementById('cancelDeleteRatingBtn');
@@ -363,38 +624,30 @@ class AdminPanelManager {
             });
         }
 
-        // Ratings filters
+        // Movies/Ratings filters
         const movieSearchFilter = document.getElementById('movieSearchFilter');
         const userFilter = document.getElementById('userFilter');
-        const dateFromFilter = document.getElementById('dateFromFilter');
-        const dateToFilter = document.getElementById('dateToFilter');
+        const ratingStatusFilter = document.getElementById('ratingStatusFilter');
         const clearFiltersBtn = document.getElementById('clearRatingsFilters');
 
         if (movieSearchFilter) {
             movieSearchFilter.addEventListener('input', () => {
                 this.ratingsFilters.movieTitle = movieSearchFilter.value.trim();
-                this.applyRatingsFilters();
+                this.applyMoviesFilters();
             });
         }
 
         if (userFilter) {
             userFilter.addEventListener('change', () => {
                 this.ratingsFilters.userId = userFilter.value;
-                this.applyRatingsFilters();
+                this.applyMoviesFilters();
             });
         }
 
-        if (dateFromFilter) {
-            dateFromFilter.addEventListener('change', () => {
-                this.ratingsFilters.dateFrom = dateFromFilter.value;
-                this.applyRatingsFilters();
-            });
-        }
-
-        if (dateToFilter) {
-            dateToFilter.addEventListener('change', () => {
-                this.ratingsFilters.dateTo = dateToFilter.value;
-                this.applyRatingsFilters();
+        if (ratingStatusFilter) {
+            ratingStatusFilter.addEventListener('change', () => {
+                this.ratingsFilters.ratingStatus = ratingStatusFilter.value;
+                this.applyMoviesFilters();
             });
         }
 
@@ -403,14 +656,88 @@ class AdminPanelManager {
                 this.ratingsFilters = {
                     movieTitle: '',
                     userId: '',
-                    dateFrom: '',
-                    dateTo: ''
+                    ratingStatus: 'all'
                 };
                 if (movieSearchFilter) movieSearchFilter.value = '';
                 if (userFilter) userFilter.value = '';
-                if (dateFromFilter) dateFromFilter.value = '';
-                if (dateToFilter) dateToFilter.value = '';
-                this.applyRatingsFilters();
+                if (ratingStatusFilter) ratingStatusFilter.value = 'all';
+                this.applyMoviesFilters();
+            });
+        }
+
+        // Refresh data button
+        const refreshBtn = document.getElementById('refreshDataBtn');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => this.forceRefresh());
+        }
+
+        // Pagination controls
+        const firstPageBtn = document.getElementById('first-page');
+        const prevPageBtn = document.getElementById('prev-page');
+        const nextPageBtn = document.getElementById('next-page');
+        const lastPageBtn = document.getElementById('last-page');
+        const pageSizeSelect = document.getElementById('page-size-select');
+
+        if (firstPageBtn) firstPageBtn.addEventListener('click', () => this.changePage('first'));
+        if (prevPageBtn) prevPageBtn.addEventListener('click', () => this.changePage('prev'));
+        if (nextPageBtn) nextPageBtn.addEventListener('click', () => this.changePage('next'));
+        if (lastPageBtn) lastPageBtn.addEventListener('click', () => this.changePage('last')); // Note: Firestore doesn't support true "last" easily without reading all
+        
+        if (pageSizeSelect) {
+            pageSizeSelect.addEventListener('change', (e) => {
+                this.pagination.itemsPerPage = parseInt(e.target.value, 10);
+                this.pagination.currentPage = 1;
+                this.pagination.lastVisibleDocs = [];
+                this.loadMovies();
+            });
+        }
+
+        // Select all checkboxes
+        const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+        if (selectAllCheckbox) {
+            selectAllCheckbox.addEventListener('change', (e) => this.handleSelectAll(e.target.checked));
+        }
+        const headerCheckbox = document.getElementById('headerCheckbox');
+        if (headerCheckbox) {
+            headerCheckbox.addEventListener('change', (e) => this.handleSelectAll(e.target.checked));
+        }
+
+        // Bulk action buttons
+        const bulkClearCacheBtn = document.getElementById('bulkClearCacheBtn');
+        if (bulkClearCacheBtn) {
+            bulkClearCacheBtn.addEventListener('click', () => this.bulkClearCache());
+        }
+
+        const bulkUpdateInfoBtn = document.getElementById('bulkUpdateInfoBtn');
+        if (bulkUpdateInfoBtn) {
+            bulkUpdateInfoBtn.addEventListener('click', () => this.bulkUpdateInfo());
+        }
+
+        const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+        if (bulkDeleteBtn) {
+            bulkDeleteBtn.addEventListener('click', () => this.showBulkDeleteConfirmation());
+        }
+
+        // Bulk delete modal controls
+        const closeBulkDeleteBtn = document.getElementById('closeBulkDeleteModal');
+        const cancelBulkDeleteBtn = document.getElementById('cancelBulkDeleteBtn');
+        const confirmBulkDeleteBtn = document.getElementById('confirmBulkDeleteBtn');
+        const bulkDeleteModal = document.getElementById('bulkDeleteModal');
+
+        if (closeBulkDeleteBtn) {
+            closeBulkDeleteBtn.addEventListener('click', () => this.hideBulkDeleteModal());
+        }
+        if (cancelBulkDeleteBtn) {
+            cancelBulkDeleteBtn.addEventListener('click', () => this.hideBulkDeleteModal());
+        }
+        if (confirmBulkDeleteBtn) {
+            confirmBulkDeleteBtn.addEventListener('click', () => this.confirmBulkDelete());
+        }
+        if (bulkDeleteModal) {
+            bulkDeleteModal.addEventListener('click', (e) => {
+                if (e.target === bulkDeleteModal) {
+                    this.hideBulkDeleteModal();
+                }
             });
         }
 
@@ -419,6 +746,7 @@ class AdminPanelManager {
             if (e.key === 'Escape') {
                 this.hideDeleteModal();
                 this.hideDeleteRatingModal();
+                this.hideBulkDeleteModal();
             }
         });
     }
@@ -477,34 +805,125 @@ class AdminPanelManager {
         }, 3000);
     }
 
-    async loadRatings() {
+    async loadMovies() {
+        console.time('[Admin Perf] loadMovies total');
         try {
-            const filters = {};
-            if (this.ratingsFilters.userId) {
-                filters.userId = this.ratingsFilters.userId;
-            }
-
-            const allRatings = await this.adminService.getAllRatingsWithDetails(500, filters);
+            this.showLoading();
             
-            // Enrich with movie data
-            const movieCacheService = firebaseManager.getMovieCacheService();
-            const movieIds = [...new Set(allRatings.map(r => r.movieId))];
-            const cachedMovies = await movieCacheService.getBatchCachedMovies(movieIds);
+            // Get last visible doc for current page (for Next button)
+            // For Page 1, it's null. For Page 2, it's lastDocs[0].
+            const lastDoc = this.pagination.currentPage > 1 ? 
+                this.pagination.lastVisibleDocs[this.pagination.currentPage - 2] : null;
 
-            this.ratings = allRatings.map(rating => {
-                const movie = cachedMovies[rating.movieId] || null;
-                return {
-                    ...rating,
-                    movie
-                };
-            });
+            console.time('[Admin Perf] loadMovies - DB fetchMoviesPage');
+            const result = await this.cacheService.fetchMoviesPage(
+                lastDoc,
+                this.pagination.itemsPerPage
+            );
+            console.timeEnd('[Admin Perf] loadMovies - DB fetchMoviesPage');
 
-            this.populateUserFilter();
-            this.applyRatingsFilters();
+            this.movies = result.movies;
+            const hasMore = result.hasMore;
+            const newLastDoc = result.lastDoc;
+
+            // Update pagination state
+            if (newLastDoc) {
+                // If we are moving forward, add to stack
+                if (this.pagination.currentPage > this.pagination.lastVisibleDocs.length) {
+                    this.pagination.lastVisibleDocs.push(newLastDoc);
+                } else {
+                    // Updating existing (should match)
+                    this.pagination.lastVisibleDocs[this.pagination.currentPage - 1] = newLastDoc;
+                }
+            }
+            this.pagination.hasMore = hasMore;
+
+            // Load ratings matching these movies (optimization: only fetch for current page?)
+            // For now, to keep filters working, we might need more data, but let's try just showing what we have.
+            // Or we can keep fetching all ratings if they are light.
+            // Users requested "Reduce load".
+            // We will fetch ALL ratings as per original design (caching them), assuming they are lighter than movies.
+            
+            console.time('[Admin Perf] loadMovies - Get cached ratings');
+            const cachedRatings = this.cacheService.getCachedRatings();
+            if (cachedRatings && this.cacheService.isCacheValid()) {
+                 this.ratings = cachedRatings;
+                 console.log(`[Admin] Using cached ratings (${this.cacheService.getCacheAgeMinutes()} min old)`);
+                 console.timeEnd('[Admin Perf] loadMovies - Get cached ratings');
+            } else {
+                 console.timeEnd('[Admin Perf] loadMovies - Get cached ratings');
+                 console.time('[Admin Perf] loadMovies - fetchAllRatings');
+                 this.ratings = await this.cacheService.fetchAllRatings();
+                 this.cacheService.saveRatingsToCache(this.ratings); // Update cache
+                 console.timeEnd('[Admin Perf] loadMovies - fetchAllRatings');
+            }
+            
+            console.time('[Admin Perf] loadMovies - buildMaps');
+            this.ratingsMap = this.cacheService.buildRatingsMap(this.ratings);
+            this.usersMap = await this.cacheService.fetchUsersForRatings(this.ratings);
+            console.timeEnd('[Admin Perf] loadMovies - buildMaps');
+
+            this.hideLoading();
+            
+            console.time('[Admin Perf] loadMovies - render');
+            // Render
+            this.filteredMovies = this.movies; // No client-side filtering on full DB anymore, only current page
+            this.displayedMovies = this.movies;
+            this.renderMovies();
+            this.renderPagination();
+            this.updateSelectionUI();
+            console.timeEnd('[Admin Perf] loadMovies - render');
+
+            // Show updated timestamp
+            const updateTime = new Date().toLocaleTimeString();
+            const ageDiv = document.getElementById('dataAge');
+            if (ageDiv) ageDiv.textContent = `Обновлено: ${updateTime}`;
+            
         } catch (error) {
-            console.error('Error loading ratings:', error);
-            this.showError(`Failed to load ratings: ${error.message}`);
+            console.error('Error loading movies:', error);
+            this.hideLoading();
+            this.showError(`Не удалось загрузить фильмы: ${error.message}`);
         }
+        console.timeEnd('[Admin Perf] loadMovies total');
+    }
+
+    async changePage(action) {
+        if (action === 'next' && this.pagination.hasMore) {
+            this.pagination.currentPage++;
+            await this.loadMovies();
+        } else if (action === 'prev' && this.pagination.currentPage > 1) {
+            this.pagination.currentPage--;
+            await this.loadMovies();
+        } else if (action === 'first') {
+            this.pagination.currentPage = 1;
+            this.pagination.lastVisibleDocs = [];
+            await this.loadMovies();
+        }
+        // 'last' is difficult with Firestore cursors without reading all. 
+        // We will disable 'last' or implement it by reading a count if possible, but Firestore count is expensive.
+        // For now, 'last' button will just be hidden or disabled if we can't implement it efficiently.
+    }
+
+    renderPagination() {
+        const pageInfo = document.getElementById('paginationInfo');
+        const pageNumbers = document.getElementById('page-numbers');
+        const prevBtn = document.getElementById('prev-page');
+        const nextBtn = document.getElementById('next-page');
+        const firstBtn = document.getElementById('first-page');
+        
+        if (pageInfo) {
+            const start = (this.pagination.currentPage - 1) * this.pagination.itemsPerPage + 1;
+            const end = start + this.displayedMovies.length - 1;
+            pageInfo.innerHTML = `Показано <span id="range-start">${start}</span>-<span id="range-end">${end}</span> фильмов`;
+        }
+        
+        if (pageNumbers) {
+            pageNumbers.textContent = `Страница ${this.pagination.currentPage}`;
+        }
+        
+        if (prevBtn) prevBtn.disabled = this.pagination.currentPage === 1;
+        if (firstBtn) firstBtn.disabled = this.pagination.currentPage === 1;
+        if (nextBtn) nextBtn.disabled = !this.pagination.hasMore;
     }
 
     populateUserFilter() {
@@ -512,18 +931,10 @@ class AdminPanelManager {
         if (!userFilter) return;
 
         // Clear existing options except "All Users"
-        userFilter.innerHTML = '<option value="">All Users</option>';
+        userFilter.innerHTML = '<option value="">Все пользователи</option>';
 
-        // Get unique users from ratings
-        const uniqueUsers = new Map();
-        this.ratings.forEach(rating => {
-            if (rating.user && !uniqueUsers.has(rating.userId)) {
-                uniqueUsers.set(rating.userId, rating.user);
-            }
-        });
-
-        // Add user options
-        uniqueUsers.forEach((user, userId) => {
+        // Get unique users from usersMap
+        this.usersMap.forEach((user, userId) => {
             const option = document.createElement('option');
             option.value = userId;
             option.textContent = user.displayName || user.email || 'Unknown User';
@@ -531,47 +942,52 @@ class AdminPanelManager {
         });
     }
 
-    applyRatingsFilters() {
-        this.filteredRatings = this.ratings.filter(rating => {
+    applyMoviesFilters() {
+        // With server-side pagination, we only filter the CURRENT page
+        // Or we should update the query. For now, we only filter the loaded movies client-side
+        // Ideally, we would update the Firestore query, but that combines orderBy + where which needs indexes.
+        
+        this.filteredMovies = this.movies.filter(movie => {
+            const movieId = movie.kinopoiskId;
+            const movieRatings = this.ratingsMap.get(movieId) || [];
+            const hasRating = movieRatings.length > 0;
+
             // Movie title filter
             if (this.ratingsFilters.movieTitle) {
-                const movieTitle = rating.movie?.name?.toLowerCase() || '';
+                const movieTitle = movie.name?.toLowerCase() || '';
                 const searchTerm = this.ratingsFilters.movieTitle.toLowerCase();
                 if (!movieTitle.includes(searchTerm)) {
                     return false;
                 }
             }
 
-            // User filter (already applied in loadRatings, but double-check)
-            if (this.ratingsFilters.userId && rating.userId !== this.ratingsFilters.userId) {
+            // User filter - movie must have a rating from this user
+            if (this.ratingsFilters.userId) {
+                const hasRatingFromUser = movieRatings.some(r => r.userId === this.ratingsFilters.userId);
+                if (!hasRatingFromUser) {
+                    return false;
+                }
+            }
+
+            // Rating status filter
+            if (this.ratingsFilters.ratingStatus === 'rated' && !hasRating) {
                 return false;
             }
-
-            // Date filters
-            if (this.ratingsFilters.dateFrom) {
-                const ratingDate = rating.createdAt?.toDate?.() || new Date(rating.createdAt);
-                const filterDate = new Date(this.ratingsFilters.dateFrom);
-                if (ratingDate < filterDate) {
-                    return false;
-                }
-            }
-
-            if (this.ratingsFilters.dateTo) {
-                const ratingDate = rating.createdAt?.toDate?.() || new Date(rating.createdAt);
-                const filterDate = new Date(this.ratingsFilters.dateTo);
-                filterDate.setHours(23, 59, 59, 999); // Include entire day
-                if (ratingDate > filterDate) {
-                    return false;
-                }
+            if (this.ratingsFilters.ratingStatus === 'unrated' && hasRating) {
+                return false;
             }
 
             return true;
         });
 
-        this.renderRatings();
+        this.displayedMovies = this.filteredMovies; // Show all filtered from current page
+        
+        this.renderMovies();
+        this.renderPagination();
+        this.updateSelectionUI();
     }
 
-    renderRatings() {
+    renderMovies() {
         const tableBody = document.getElementById('ratingsTableBody');
         const ratingsCount = document.getElementById('ratingsCount');
         
@@ -579,113 +995,490 @@ class AdminPanelManager {
 
         // Update count
         if (ratingsCount) {
-            ratingsCount.textContent = `${this.filteredRatings.length} rating${this.filteredRatings.length !== 1 ? 's' : ''}`;
+            ratingsCount.textContent = `${this.filteredMovies.length} фильмов`;
         }
 
         // Clear existing rows
         tableBody.innerHTML = '';
 
-        if (this.filteredRatings.length === 0) {
+        if (this.displayedMovies.length === 0) {
             tableBody.innerHTML = `
                 <tr>
                     <td colspan="6" style="text-align: center; padding: var(--space-xl); color: var(--text-secondary);">
-                        No ratings found
+                        Фильмы не найдены
                     </td>
                 </tr>
             `;
             return;
         }
 
-        // Render each rating
-        this.filteredRatings.forEach(rating => {
-            const row = this.createRatingRow(rating);
+        // Render each movie
+        this.displayedMovies.forEach(movie => {
+            const row = this.createMovieRow(movie);
             tableBody.appendChild(row);
         });
     }
 
-    createRatingRow(rating) {
+    createMovieRow(movie) {
         const row = document.createElement('tr');
-        const movie = rating.movie || {};
-        const user = rating.user || {};
+        const movieId = movie.kinopoiskId;
+        const isSelected = this.selectedMovies.has(movieId);
+        
+        // Get rating info for this movie
+        const movieRatings = this.ratingsMap.get(movieId) || [];
+        const latestRating = movieRatings[0]; // Ratings are sorted by date desc
+        const hasRating = movieRatings.length > 0;
+        
+        // Get user info
+        let userInfo = { displayName: '—', email: '', photoURL: null };
+        let ratingValue = '—';
+        let ratingComment = '—';
+        let ratingDate = '—';
+        
+        if (hasRating && latestRating) {
+            const user = latestRating.user || this.usersMap.get(latestRating.userId) || {};
+            userInfo = {
+                displayName: user.displayName || user.email || 'Unknown',
+                email: user.email || '',
+                photoURL: user.photoURL
+            };
+            ratingValue = latestRating.rating || '—';
+            ratingComment = latestRating.comment || '—';
+            ratingDate = latestRating.createdAt?.toDate ? 
+                latestRating.createdAt.toDate().toLocaleDateString() : 
+                (latestRating.createdAt ? new Date(latestRating.createdAt).toLocaleDateString() : '—');
+        }
+
         const movieTitle = movie.name || 'Unknown Movie';
         const movieYear = movie.year ? ` (${movie.year})` : '';
-        const userName = user.displayName || user.email || 'Unknown User';
-        const ratingDate = rating.createdAt?.toDate ? 
-            rating.createdAt.toDate().toLocaleDateString() : 
-            (rating.createdAt ? new Date(rating.createdAt).toLocaleDateString() : 'Unknown');
-        const comment = rating.comment || '';
-        const truncatedComment = comment.length > 50 ? comment.substring(0, 50) + '...' : comment;
+        const truncatedComment = ratingComment.length > 50 ? ratingComment.substring(0, 50) + '...' : ratingComment;
+
+        if (isSelected) {
+            row.classList.add('selected');
+        }
 
         row.innerHTML = `
+            <td class="col-checkbox">
+                <input type="checkbox" 
+                       class="admin-checkbox row-checkbox" 
+                       data-movie-id="${movieId}"
+                       ${isSelected ? 'checked' : ''}>
+            </td>
             <td>
                 <div class="movie-info">
                     ${movie.posterUrl ? 
-                        `<img src="${movie.posterUrl}" alt="${movieTitle}" class="movie-poster" onerror="this.style.display='none'">` : 
+                        `<img src="${movie.posterUrl}" alt="${this.escapeHtml(movieTitle)}" class="movie-poster" onerror="this.style.display='none'">` : 
                         ''
                     }
                     <div>
                         <div class="movie-title">${this.escapeHtml(movieTitle)}${movieYear}</div>
-                        <div class="movie-id">ID: ${rating.movieId}</div>
+                        <div class="movie-id">ID: ${movieId}</div>
                     </div>
                 </div>
             </td>
             <td>
+                ${hasRating ? `
                 <div class="user-info">
-                    <img src="${user.photoURL || chrome.runtime.getURL('icons/icon48.png')}" 
-                         alt="${userName}" 
+                    <img src="${userInfo.photoURL || chrome.runtime.getURL('icons/icon48.png')}" 
+                         alt="${this.escapeHtml(userInfo.displayName)}" 
                          class="user-avatar"
                          onerror="this.src='${chrome.runtime.getURL('icons/icon48.png')}'">
                     <div>
-                        <div class="user-name">${this.escapeHtml(userName)}</div>
-                        <div class="user-email">${this.escapeHtml(user.email || '')}</div>
+                        <div class="user-name">${this.escapeHtml(userInfo.displayName)}</div>
+                        <div class="user-email">${this.escapeHtml(userInfo.email)}</div>
                     </div>
                 </div>
+                ` : `<span class="unrated-cell">Не оценен</span>`}
             </td>
             <td>
-                <div class="rating-value"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> ${rating.rating}</div>
+                ${hasRating ? `
+                <div class="rating-value">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                    </svg> ${ratingValue}
+                </div>
+                ` : `<span class="unrated-cell">—</span>`}
             </td>
             <td>
-                <div class="rating-comment" title="${this.escapeHtml(comment)}">
-                    ${this.escapeHtml(truncatedComment || 'No comment')}
+                <div class="rating-comment" title="${this.escapeHtml(ratingComment)}">
+                    ${hasRating ? this.escapeHtml(truncatedComment) : '<span class="unrated-cell">—</span>'}
                 </div>
             </td>
             <td>
                 <div class="rating-date">${ratingDate}</div>
             </td>
-            <td>
-                <div class="actions-buttons">
-                    <button class="btn-clear-cache" data-movie-id="${rating.movieId}" title="Clear cache for this movie">
-                        Clear Cache
-                    </button>
-                    <button class="btn-update-info" data-movie-id="${rating.movieId}" title="Update movie info from Kinopoisk">
-                        Update Info
-                    </button>
-                    <button class="btn-delete" data-rating-id="${rating.id}">
-                        Delete
-                    </button>
-                </div>
-            </td>
         `;
 
-        // Add click handler for clear cache button
-        const clearCacheBtn = row.querySelector('.btn-clear-cache');
-        if (clearCacheBtn) {
-            clearCacheBtn.addEventListener('click', () => this.clearMovieCache(rating.movieId, rating.movie));
-        }
-
-        // Add click handler for update info button
-        const updateInfoBtn = row.querySelector('.btn-update-info');
-        if (updateInfoBtn) {
-            updateInfoBtn.addEventListener('click', () => this.updateMovieInfo(rating));
-        }
-
-        // Add click handler for delete button
-        const deleteBtn = row.querySelector('.btn-delete');
-        if (deleteBtn) {
-            deleteBtn.addEventListener('click', () => this.showDeleteRatingConfirmation(rating));
+        // Add checkbox change handler
+        const checkbox = row.querySelector('.row-checkbox');
+        if (checkbox) {
+            checkbox.addEventListener('change', (e) => {
+                this.handleCheckboxChange(movieId, e.target.checked, row);
+            });
         }
 
         return row;
+    }
+
+    showSkeletonRows(count) {
+        const tableBody = document.getElementById('ratingsTableBody');
+        if (!tableBody) return;
+
+        tableBody.innerHTML = '';
+        
+        for (let i = 0; i < count; i++) {
+            const row = document.createElement('tr');
+            row.className = 'skeleton-row';
+            row.innerHTML = `
+                <td class="col-checkbox">
+                    <div class="skeleton skeleton-text short" style="width: 18px; height: 18px;"></div>
+                </td>
+                <td>
+                    <div class="skeleton-movie">
+                        <div class="skeleton skeleton-poster"></div>
+                        <div>
+                            <div class="skeleton skeleton-title"></div>
+                            <div class="skeleton skeleton-subtitle"></div>
+                        </div>
+                    </div>
+                </td>
+                <td>
+                    <div class="skeleton skeleton-avatar"></div>
+                </td>
+                <td>
+                    <div class="skeleton skeleton-text short"></div>
+                </td>
+                <td>
+                    <div class="skeleton skeleton-text long"></div>
+                </td>
+                <td>
+                    <div class="skeleton skeleton-text"></div>
+                </td>
+            `;
+            tableBody.appendChild(row);
+        }
+    }
+
+    // loadMoreMovies and updateLoadMoreButton removed in favor of pagination
+
+    updateProgress(loaded, total) {
+        const loadedCount = document.getElementById('loadedCount');
+        const progressFill = document.getElementById('progressBarFill');
+
+        if (loadedCount) {
+            loadedCount.textContent = `Загружено: ${loaded} из ${total} фильмов`;
+        }
+
+        if (progressFill) {
+            const percent = total > 0 ? (loaded / total) * 100 : 0;
+            progressFill.style.width = `${percent}%`;
+        }
+    }
+
+    // Selection management
+    handleCheckboxChange(movieId, isChecked, row) {
+        if (isChecked) {
+            this.selectedMovies.add(movieId);
+            row.classList.add('selected');
+        } else {
+            this.selectedMovies.delete(movieId);
+            row.classList.remove('selected');
+        }
+        this.updateSelectionUI();
+    }
+
+    handleSelectAll(isChecked) {
+        // Select/deselect all displayed movies
+        this.displayedMovies.forEach(movie => {
+            const movieId = movie.kinopoiskId;
+            if (isChecked) {
+                this.selectedMovies.add(movieId);
+            } else {
+                this.selectedMovies.delete(movieId);
+            }
+        });
+
+        // Update all checkboxes in table
+        const checkboxes = document.querySelectorAll('.row-checkbox');
+        checkboxes.forEach(cb => {
+            cb.checked = isChecked;
+            const row = cb.closest('tr');
+            if (row) {
+                row.classList.toggle('selected', isChecked);
+            }
+        });
+
+        this.updateSelectionUI();
+    }
+
+    updateSelectionUI() {
+        const counter = document.getElementById('selectionCounter');
+        const clearCacheBtn = document.getElementById('bulkClearCacheBtn');
+        const updateInfoBtn = document.getElementById('bulkUpdateInfoBtn');
+        const deleteBtn = document.getElementById('bulkDeleteBtn');
+        const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+        const headerCheckbox = document.getElementById('headerCheckbox');
+
+        const selectedCount = this.selectedMovies.size;
+
+        if (counter) {
+            counter.textContent = `Выбрано: ${selectedCount}`;
+        }
+
+        // Enable/disable bulk action buttons
+        const hasSelection = selectedCount > 0;
+        const canWrite = this.isOnline;
+        
+        if (clearCacheBtn) clearCacheBtn.disabled = !hasSelection || !canWrite;
+        if (updateInfoBtn) updateInfoBtn.disabled = !hasSelection || !canWrite;
+        if (deleteBtn) deleteBtn.disabled = !hasSelection || !canWrite;
+
+        // Update "select all" checkbox state
+        if (selectAllCheckbox) {
+            const allDisplayedSelected = this.displayedMovies.every(m => 
+                this.selectedMovies.has(m.kinopoiskId)
+            );
+            selectAllCheckbox.checked = allDisplayedSelected && this.displayedMovies.length > 0;
+            selectAllCheckbox.indeterminate = selectedCount > 0 && !allDisplayedSelected;
+        }
+        if (headerCheckbox) {
+            const allDisplayedSelected = this.displayedMovies.every(m => 
+                this.selectedMovies.has(m.kinopoiskId)
+            );
+            headerCheckbox.checked = allDisplayedSelected && this.displayedMovies.length > 0;
+            headerCheckbox.indeterminate = selectedCount > 0 && !allDisplayedSelected;
+        }
+    }
+
+    // UI state indicators
+    showBackgroundSyncIndicator(show) {
+        const indicator = document.getElementById('backgroundSyncIndicator');
+        if (indicator) {
+            indicator.style.display = show ? 'inline-flex' : 'none';
+        }
+    }
+
+    showDataUpdatedBadge() {
+        const badge = document.getElementById('dataUpdatedBadge');
+        if (badge) {
+            badge.style.display = 'inline-flex';
+            setTimeout(() => {
+                badge.style.display = 'none';
+            }, 3000);
+        }
+    }
+
+    updateOnlineStatus(isOnline) {
+        this.isOnline = isOnline;
+        this.updateOnlineIndicator();
+        this.updateSelectionUI();
+    }
+
+    updateOnlineIndicator() {
+        const indicator = document.getElementById('offlineIndicator');
+        if (indicator) {
+            indicator.style.display = this.isOnline ? 'none' : 'inline-flex';
+        }
+    }
+
+    // Force refresh
+    async forceRefresh() {
+        if (!this.isOnline) {
+            this.showError('Нет подключения к интернету');
+            return;
+        }
+
+        const refreshBtn = document.getElementById('refreshDataBtn');
+        if (refreshBtn) {
+            refreshBtn.classList.add('loading');
+            refreshBtn.disabled = true;
+        }
+
+        try {
+            // Clear selection before refresh
+            this.selectedMovies.clear();
+            
+            // Show skeleton
+            this.showSkeletonRows(this.pagination.itemsPerPage);
+            
+            // Clear cache to force fresh fetch for ratings too
+            this.cacheService.clearCache();
+            
+            // Reset pagination
+            this.pagination.currentPage = 1;
+            this.pagination.lastVisibleDocs = [];
+            
+            // Load fresh data
+            await this.loadMovies();
+            
+            this.showSuccessMessage('Данные обновлены');
+        } catch (error) {
+            console.error('Error refreshing data:', error);
+            this.showError(`Ошибка обновления: ${error.message}`);
+        } finally {
+            if (refreshBtn) {
+                refreshBtn.classList.remove('loading');
+                refreshBtn.disabled = false;
+            }
+        }
+    }
+
+    // Bulk operations
+    async bulkClearCache() {
+        // Only clear local cache, do not delete from server
+        
+        // This check is for write access to server, which we don't need for local cache clearing
+        // but we can keep it if we want to ensure only admins can do this, 
+        // though strictly speaking clearing local cache should be allowed for anyone if the UI exposes it.
+        // For consistency, let's just proceed.
+
+        const movieIds = Array.from(this.selectedMovies);
+        if (movieIds.length === 0) return;
+
+        const btn = document.getElementById('bulkClearCacheBtn');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="icon">⏳</span> Очистка...';
+        }
+
+        try {
+            // Update local cache only
+            this.cacheService.removeMoviesFromCache(movieIds);
+            
+            this.showSuccessMessage(`Кэш очищен для ${movieIds.length} фильмов`);
+            this.selectedMovies.clear();
+            this.updateSelectionUI();
+            
+            // Optionally refresh the view or just mark them as needing refresh?
+            // Since we just cleared cache, the current view is technically "stale" but matches what was loaded.
+            // Let's just update UI.
+        } catch (error) {
+            console.error('Bulk clear cache error:', error);
+            this.showError(`Ошибка: ${error.message}`);
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<span class="icon">🗑️</span> Очистить кэш';
+            }
+        }
+    }
+
+    async clearMovieCache(movieId, movieData) {
+        if (!movieId) return;
+
+        try {
+            // Only clear local cache
+            this.cacheService.removeMoviesFromCache([movieId]);
+            this.showSuccessMessage(`Кэш очищен для фильма`);
+        } catch (error) {
+            console.error('Error clearing movie cache:', error);
+            this.showError(`Failed to clear cache: ${error.message}`);
+        }
+    }
+
+    async bulkUpdateInfo() {
+        const check = this.cacheService.checkWriteAccess();
+        if (!check.canWrite) {
+            this.showError(check.reason);
+            return;
+        }
+
+        const movieIds = Array.from(this.selectedMovies);
+        if (movieIds.length === 0) return;
+
+        const btn = document.getElementById('bulkUpdateInfoBtn');
+        if (btn) {
+            btn.disabled = true;
+        }
+
+        try {
+            const result = await this.adminService.bulkUpdateMoviesInfo(
+                movieIds, 
+                this.currentUser.uid,
+                (current, total) => {
+                    if (btn) {
+                        btn.innerHTML = `<span class="icon">🔄</span> ${current}/${total}`;
+                    }
+                }
+            );
+
+            this.showSuccessMessage(`Обновлено ${result.updated} фильмов`);
+            
+            // Refresh to show updated data
+            await this.forceRefresh();
+        } catch (error) {
+            console.error('Bulk update error:', error);
+            this.showError(`Ошибка: ${error.message}`);
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<span class="icon">🔄</span> Обновить инфо';
+            }
+        }
+    }
+
+    showBulkDeleteConfirmation() {
+        const count = this.selectedMovies.size;
+        if (count === 0) return;
+
+        const preview = document.getElementById('bulkDeletePreview');
+        if (preview) {
+            preview.textContent = `${count} фильмов`;
+        }
+
+        const modal = document.getElementById('bulkDeleteModal');
+        if (modal) {
+            modal.style.display = 'flex';
+        }
+    }
+
+    hideBulkDeleteModal() {
+        const modal = document.getElementById('bulkDeleteModal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    }
+
+    async confirmBulkDelete() {
+        const check = this.cacheService.checkWriteAccess();
+        if (!check.canWrite) {
+            this.showError(check.reason);
+            return;
+        }
+
+        const movieIds = Array.from(this.selectedMovies);
+        if (movieIds.length === 0) return;
+
+        const confirmBtn = document.getElementById('confirmBulkDeleteBtn');
+        if (confirmBtn) {
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = 'Удаление...';
+        }
+
+        try {
+            const result = await this.adminService.bulkDeleteMoviesAndRatings(movieIds, this.currentUser.uid);
+
+            // Update local cache
+            this.cacheService.removeMoviesFromCache(movieIds);
+
+            // Remove from local arrays
+            this.movies = this.movies.filter(m => !movieIds.includes(m.kinopoiskId));
+            movieIds.forEach(id => this.ratingsMap.delete(id));
+            
+            this.selectedMovies.clear();
+            this.applyMoviesFilters();
+            
+            this.hideBulkDeleteModal();
+            this.showSuccessMessage(`Удалено ${result.moviesDeleted} фильмов и ${result.ratingsDeleted} оценок`);
+        } catch (error) {
+            console.error('Bulk delete error:', error);
+            this.showError(`Ошибка удаления: ${error.message}`);
+        } finally {
+            if (confirmBtn) {
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = 'Удалить';
+            }
+        }
     }
 
     async showDeleteRatingConfirmation(rating) {
@@ -847,13 +1640,168 @@ class AdminPanelManager {
         }
     }
 
+    initReports() {
+        if (typeof firebaseManager === 'undefined' || !firebaseManager.isInitialized) return;
+        
+        let pendingList = document.getElementById('pendingReportsList');
+        let resolvedList = document.getElementById('resolvedReportsList');
+        if (!pendingList || !resolvedList) return;
+        
+        this.unsubscribeReports = firebaseManager.listenToReports((reports) => {
+            this.renderReports(reports);
+        });
+    }
+
+    renderReports(reports) {
+        const pendingList = document.getElementById('pendingReportsList');
+        const resolvedList = document.getElementById('resolvedReportsList');
+        const countSpan = document.getElementById('reportsCount');
+        const pendingCountBadge = document.getElementById('pendingReportsCount');
+        const resolvedCountBadge = document.getElementById('resolvedReportsCount');
+        
+        if (!pendingList || !resolvedList) return;
+        
+        const pending = reports.filter(r => r.status === 'pending');
+        const resolved = reports.filter(r => r.status === 'resolved');
+        
+        if (countSpan) countSpan.textContent = `${reports.length} репортов`;
+        if (pendingCountBadge) pendingCountBadge.textContent = pending.length;
+        if (resolvedCountBadge) resolvedCountBadge.textContent = resolved.length;
+        
+        this.renderReportsList(pendingList, pending, true);
+        this.renderReportsList(resolvedList, resolved, false);
+    }
+
+    renderReportsList(container, reports, isPending) {
+        container.innerHTML = '';
+        if (reports.length === 0) {
+            container.innerHTML = '<div class="reports-empty">Нет репортов</div>';
+            return;
+        }
+        
+        reports.forEach(report => {
+            const card = document.createElement('div');
+            card.className = 'report-card';
+            
+            const dateStr = report.createdAt ? 
+                (typeof report.createdAt.toDate === 'function' ? report.createdAt.toDate().toLocaleString() : new Date(report.createdAt).toLocaleString()) 
+                : 'Недавно';
+            
+            let photoHtml = '';
+            if (report.photoUrl) {
+                photoHtml = `<img class="report-photo" src="${report.photoUrl}" alt="Прикрепленное фото" data-photo-url="${report.photoUrl}">`;
+            }
+            
+            let actionHtml = '';
+            if (isPending) {
+                actionHtml = `<button class="btn-resolve" data-id="${report.id}">✔ Решено</button>`;
+            }
+            actionHtml += `<button class="btn-report-delete" data-id="${report.id}" data-photo="${report.photoPath || ''}">🗑 Удалить</button>`;
+            
+            card.innerHTML = `
+                <div class="report-header">
+                    <span class="report-date">${dateStr}</span>
+                    <a href="${report.pageUrl}" target="_blank" class="report-url" title="${report.pageUrl}">${report.pageUrl.replace('chrome-extension://', '').substring(0, 30)}...</a>
+                </div>
+                <div class="report-text">${this.escapeHtml(report.text)}</div>
+                ${photoHtml}
+                <div class="report-actions">
+                    ${actionHtml}
+                </div>
+            `;
+            
+            container.appendChild(card);
+        });
+        
+        // Add listeners
+        container.querySelectorAll('.btn-resolve').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const id = e.target.dataset.id;
+                try {
+                    e.target.disabled = true;
+                    e.target.textContent = 'Обработка...';
+                    await firebaseManager.updateReportStatus(id, 'resolved');
+                } catch (err) {
+                    console.error('Ошибка:', err);
+                    alert('Ошибка: ' + err.message);
+                    e.target.disabled = false;
+                    e.target.textContent = '✔ Решено';
+                }
+            });
+        });
+        
+        container.querySelectorAll('.report-photo').forEach(img => {
+            img.addEventListener('click', (e) => {
+                this.openPhotoLightbox(e.target.dataset.photoUrl);
+            });
+        });
+        
+        container.querySelectorAll('.btn-report-delete').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                if (!confirm('Вы точно хотите удалить этот репорт?')) return;
+                const id = e.target.dataset.id;
+                const photoPath = e.target.dataset.photo;
+                try {
+                    e.target.disabled = true;
+                    e.target.textContent = 'Удаление...';
+                    await firebaseManager.deleteReport(id, photoPath);
+                } catch (err) {
+                    console.error('Ошибка:', err);
+                    alert('Ошибка: ' + err.message);
+                    e.target.disabled = false;
+                    e.target.textContent = '🗑 Удалить';
+                }
+            });
+        });
+    }
+
     escapeHtml(text) {
+        if (!text) return '';
         if (typeof Utils !== 'undefined' && Utils.escapeHtml) {
             return Utils.escapeHtml(text);
         }
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    openPhotoLightbox(url) {
+        let overlay = document.getElementById('report-lightbox-overlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'report-lightbox-overlay';
+            overlay.className = 'report-lightbox-overlay';
+            
+            const img = document.createElement('img');
+            img.id = 'report-lightbox-image';
+            img.className = 'report-lightbox-image';
+            
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'report-lightbox-close';
+            closeBtn.innerHTML = '✕';
+            
+            overlay.appendChild(img);
+            overlay.appendChild(closeBtn);
+            document.body.appendChild(overlay);
+            
+            const closeLightbox = () => {
+                overlay.classList.remove('visible');
+            };
+            
+            closeBtn.addEventListener('click', closeLightbox);
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) closeLightbox();
+            });
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && overlay.classList.contains('visible')) {
+                    closeLightbox();
+                }
+            });
+        }
+        
+        const img = document.getElementById('report-lightbox-image');
+        img.src = url;
+        overlay.classList.add('visible');
     }
 }
 

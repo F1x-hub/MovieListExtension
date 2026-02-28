@@ -1115,3 +1115,23 @@
 .light-theme .rating-slider {
     background: var(--theme-bg-tertiary);
 }
+/* Light Theme Overrides */
+.light-theme .filter-label {
+    color: #000000;
+}
+
+.light-theme .clear-filters-btn {
+    color: #000000;
+}
+
+.light-theme .clear-filters-btn:hover {
+    color: #000000;
+    background: #e0e0e0;
+}
+
+.light-theme .results-info,
+.light-theme .results-count,
+.light-theme .results-mode {
+    color: #000000 !important;
+    opacity: 1 !important;
+}

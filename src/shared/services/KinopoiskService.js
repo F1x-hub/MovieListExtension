@@ -92,6 +92,74 @@ class KinopoiskService {
     }
 
     /**
+     * Get movies by filters (e.g. for similar movies fallback)
+     * @param {Object} filters - Search filters
+     * @param {number} page - Page number
+     * @param {number} limit - Results limit
+     * @returns {Promise<Object>} - Search results
+     */
+    async getMoviesByFilters(filters = {}, page = 1, limit = 10) {
+        try {
+            const url = `${this.baseUrl}${KINOPOISK_CONFIG.ENDPOINTS.MOVIE}`;
+            const params = new URLSearchParams({
+                page: page.toString(),
+                limit: limit.toString(),
+                'votes.kp': '1000-10000000', // Ensure popular movies
+                'poster.url': '!null', // Ensure poster exists
+                'name': '!null' // Ensure title exists
+            });
+
+            if (filters.genres) {
+                if (Array.isArray(filters.genres)) {
+                    filters.genres.forEach(g => params.append('genres.name', g));
+                } else {
+                    params.append('genres.name', filters.genres);
+                }
+            }
+
+            if (filters.year) {
+                params.append('year', filters.year);
+            }
+            
+            if (filters.excludeId) {
+                // Not all endpoints support id exclusion, but we can filter client-side too
+                // params.append('id', `!${filters.excludeId}`); 
+            }
+
+            // Exclude cartoons if original movie is not a cartoon
+            if (filters.excludeGenres && Array.isArray(filters.excludeGenres)) {
+                 filters.excludeGenres.forEach(g => params.append('genres.name', `!${g}`));
+            }
+
+            const fullUrl = `${url}?${params}`;
+            console.log(`KinopoiskService: Filter Request URL: ${fullUrl}`);
+
+            const response = await fetch(fullUrl, {
+                method: 'GET',
+                headers: {
+                    'X-API-KEY': this.apiKey,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            return {
+                docs: data.docs ? data.docs.map(movie => this.normalizeMovieData(movie)) : [],
+                total: data.total || 0,
+                page: data.page || page,
+                pages: data.pages || 0
+            };
+        } catch (error) {
+            console.error('Error getting movies by filters:', error);
+            return { docs: [] };
+        }
+    }
+
+    /**
      * Get detailed movie information by ID
      * @param {number} movieId - Kinopoisk movie ID
      * @returns {Promise<Object>} - Movie details
@@ -330,11 +398,20 @@ class KinopoiskService {
             // Release information
             distributors: movie.distributors || null,
             
+            // Sequels and Prequels
+            sequelsAndPrequels: movie.sequelsAndPrequels || [],
+            
+            // Similar Movies
+            similarMovies: movie.similarMovies || [],
+            
             // Additional fields for caching
             lastUpdated: new Date().toISOString(),
             
             // IDs
-            externalId: movie.externalId || {}
+            externalId: movie.externalId || {},
+            
+            // Serialize seasons info if available
+            seasonsInfo: movie.seasonsInfo || []
         };
     }
     
@@ -667,6 +744,126 @@ class KinopoiskService {
 
         // Remove duplicates and return
         return [...new Set(alternatives)];
+    }
+    /**
+     * Get a random movie based on filters
+     * @param {Object} filters - Filters: { countries, genres, yearFrom, yearTo, ratingFrom, ratingTo }
+     * @returns {Promise<Object>} - Random movie data
+     */
+    async getRandomMovie(filters = {}) {
+        try {
+            console.log('KinopoiskService: Getting random movie with filters:', filters);
+            
+            const url = `${this.baseUrl}${KINOPOISK_CONFIG.ENDPOINTS.RANDOM}`;
+            const params = new URLSearchParams();
+
+            // API v1.4 random endpoint parameters
+            // Standard filters
+            if (filters.yearFrom || filters.yearTo) {
+                const start = filters.yearFrom || 1900;
+                const end = filters.yearTo || new Date().getFullYear();
+                params.append('year', `${start}-${end}`);
+            }
+
+            if (filters.ratingFrom || filters.ratingTo) {
+                const start = filters.ratingFrom || 1;
+                const end = filters.ratingTo || 10;
+                params.append('rating.kp', `${start}-${end}`);
+            }
+
+            if (filters.votesFrom || filters.votesTo) {
+                const start = filters.votesFrom || 0;
+                const end = filters.votesTo || 10000000;
+                params.append('votes.kp', `${start}-${end}`);
+            }
+
+            // Handle multiple values for countries and genres
+            // include: ['USA', 'France'] -> countries.name=USA&countries.name=France
+            // exclude: ['Horror'] -> genres.name=!Horror (if supported) or handled client side
+            // Note: The official docs saying "list of strings". We'll try appending multiple times.
+            
+            if (filters.countries && filters.countries.length > 0) {
+                filters.countries.forEach(country => {
+                    params.append('countries.name', country);
+                });
+            }
+
+            if (filters.genres && filters.genres.length > 0) {
+                filters.genres.forEach(genre => {
+                    params.append('genres.name', genre);
+                });
+            }
+
+            // Exclude filters - API v1.4 often supports !value
+            // We'll try passing negated values
+            if (filters.excludeCountries && filters.excludeCountries.length > 0) {
+                filters.excludeCountries.forEach(country => {
+                    params.append('countries.name', `!${country}`);
+                });
+            }
+
+            if (filters.excludeGenres && filters.excludeGenres.length > 0) {
+                filters.excludeGenres.forEach(genre => {
+                    params.append('genres.name', `!${genre}`);
+                });
+            }
+
+            if (filters.types && filters.types.length > 0) {
+                filters.types.forEach(type => {
+                    params.append('type', type);
+                });
+            }
+
+            if (filters.excludeTypes && filters.excludeTypes.length > 0) {
+                filters.excludeTypes.forEach(type => {
+                    params.append('type', `!${type}`);
+                });
+            }
+
+            // Ensure we get non-null name and poster
+            params.append('notNullFields', 'name');
+            params.append('notNullFields', 'poster.url');
+
+            const fullUrl = `${url}?${params}`;
+            console.log(`KinopoiskService: Random Request URL: ${fullUrl}`);
+
+            const response = await fetch(fullUrl, {
+                method: 'GET',
+                headers: {
+                    'X-API-KEY': this.apiKey,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                if (response.status === 403 || response.status === 402) {
+                     throw new Error('DAILY_LIMIT_REACHED');
+                }
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            // Random endpoint returns a single object, not docs array
+            // But sometimes it might return docs if used differently. 
+            // In v1.4/movie/random it returns a single movie object.
+            
+            console.log('KinopoiskService: Random movie response:', data);
+            
+            if (!data || (!data.id && !data.kinopoiskId)) {
+                return null;
+            }
+
+            return this.normalizeMovieData(data);
+
+        } catch (error) {
+            console.error('Error getting random movie:', error);
+             if (error.message === 'DAILY_LIMIT_REACHED') {
+                 if (typeof Utils !== 'undefined' && Utils.showToast) {
+                    Utils.showToast('⚠️ Вы израсходовали ваш суточный лимит запросов.', 'error');
+                }
+            }
+            throw error;
+        }
     }
 }
 

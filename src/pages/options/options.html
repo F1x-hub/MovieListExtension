@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Extension Options</title>
+    <link rel="stylesheet" href="../../shared/styles/common.css">
+    <link rel="stylesheet" href="../../shared/styles/theme.css">
+    <link rel="stylesheet" href="../../shared/styles/components.css">
+    <style>
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            justify-content: center;
+            padding-top: 50px;
+        }
+        .options-container {
+            width: 100%;
+            max-width: 600px;
+            padding: 24px;
+            background-color: var(--bg-secondary);
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .options-header h1 {
+            margin: 0 0 8px 0;
+            font-size: 24px;
+        }
+        .form-group {
+            margin-top: 24px;
+        }
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        .form-select {
+            width: 100%;
+            padding: 10px;
+            border-radius: 6px;
+            background-color: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            font-size: 16px;
+        }
+        .status-message {
+            margin-top: 16px;
+            padding: 10px;
+            border-radius: 6px;
+            display: none;
+        }
+        .status-message.success {
+            background-color: rgba(76, 175, 80, 0.1);
+            color: #4CAF50;
+            display: block;
+        }
+    </style>
+</head>
+<body class="dark-theme">
+    <div class="options-container">
+        <header class="options-header">
+            <h1 data-i18n="settings.language">Language</h1>
+        </header>
+        
+        <div class="form-group">
+            <label class="form-label" for="languageSelect" data-i18n="settings.select_language">Select Language</label>
+            <select id="languageSelect" class="form-select">
+                <option value="en">English</option>
+                <option value="ru">Русский</option>
+            </select>
+        </div>
+
+        <div id="statusMessage" class="status-message"></div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="../../shared/i18n/locales.js" type="module"></script>
+    <script src="../../shared/i18n/I18n.js" type="module"></script>
+    <script src="options.js" type="module"></script>
+</body>
+</html>

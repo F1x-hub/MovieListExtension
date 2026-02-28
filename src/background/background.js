@@ -1,7 +1,8 @@
 try {
     importScripts('../shared/utils/IconUtils.js');
+    importScripts('../shared/config/spotify.config.js');
 } catch (e) {
-    console.error('Failed to import IconUtils:', e);
+    console.error('Failed to import scripts:', e);
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -11,6 +12,19 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.runtime.onStartup.addListener(() => {
     updateIconFromStorage();
+    setupAuthCheckAlarm();
+});
+
+function setupAuthCheckAlarm() {
+    chrome.alarms.create('authCheck', { periodInMinutes: 60 });
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'authCheck') {
+        checkAuthToken();
+    } else if (alarm.name === 'checkUpdates') {
+        checkForUpdates();
+    }
 });
 
 // Listen for theme changes from other parts of the extension
@@ -63,11 +77,89 @@ async function getIdToken() {
                 }
             }
 
+            // If we have a refresh token, try to refresh it
+            if (result.refreshToken) {
+                console.log('[Background] Token expired or validation needed, attempting refresh...');
+                refreshAuthToken(result.refreshToken)
+                    .then(newToken => resolve(newToken))
+                    .catch(err => {
+                        console.error('[Background] Token refresh failed:', err);
+                        reject(new Error('Token expired and refresh failed. Please open the extension popup.'));
+                    });
+                return;
+            }
+
             // Token expired, validation expired, or doesn't exist - need to get a new one
             // Reject and let the user know they need to open popup to refresh authentication
             reject(new Error('Token expired or validation expired. Please open the extension popup to refresh authentication.'));
         });
     });
+}
+
+async function checkAuthToken() {
+    console.log('[Background] Checking auth token status...');
+    chrome.storage.local.get(['user', 'authToken', 'authTokenExpiry', 'tokenValidationTimestamp', 'refreshToken'], async (result) => {
+        if (!result.user || !result.refreshToken) {
+            console.log('[Background] No user or refresh token found, skipping check');
+            return;
+        }
+
+        const now = Date.now();
+        const TOKEN_REFRESH_THRESHOLD = 55 * 60 * 1000; // Refresh if expires in less than 5 minutes (assuming 1h token)
+        
+        // Check if token is expired or about to expire
+        const isExpired = !result.authTokenExpiry || now >= result.authTokenExpiry;
+        const isAboutToExpire = result.authTokenExpiry && (result.authTokenExpiry - now < 5 * 60 * 1000);
+        
+        // Also check validation timestamp (24h)
+        const TOKEN_VALIDATION_TTL = 24 * 60 * 60 * 1000;
+        const isValidationOld = !result.tokenValidationTimestamp || (now - result.tokenValidationTimestamp > TOKEN_VALIDATION_TTL - 60 * 60 * 1000); // Refresh 1h before validation expiry
+
+        if (isExpired || isAboutToExpire || isValidationOld) {
+            console.log('[Background] Token needs refresh. Expired:', isExpired, 'About to expire:', isAboutToExpire, 'Validation old:', isValidationOld);
+            try {
+                await refreshAuthToken(result.refreshToken);
+            } catch (error) {
+                console.error('[Background] Scheduled token refresh failed:', error);
+            }
+        } else {
+            console.log('[Background] Token is valid and fresh');
+        }
+    });
+}
+
+async function refreshAuthToken(refreshToken) {
+    const API_KEY = 'AIzaSyC6PI4cBRzn6KLVJ6ikensKus6LaulabO4'; // From firestore.js
+    const url = `https://securetoken.googleapis.com/v1/token?key=${API_KEY}`;
+    
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: `grant_type=refresh_token&refresh_token=${refreshToken}`
+    });
+
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error ? error.error.message : 'Token refresh failed');
+    }
+
+    const data = await response.json();
+    const now = Date.now();
+    
+    // Update storage
+    const updates = {
+        authToken: data.id_token,
+        authTokenExpiry: now + (parseInt(data.expires_in) * 1000),
+        tokenValidationTimestamp: now, // We just validated it with server
+        refreshToken: data.refresh_token // Update refresh token if it changed
+    };
+
+    await new Promise(resolve => chrome.storage.local.set(updates, resolve));
+    console.log('[Background] Token successfully refreshed via REST API');
+    
+    return data.id_token;
 }
 
 async function addToWatchlistViaAPI(userId, movieData) {
@@ -580,8 +672,122 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 sendResponse({ success: false, error: error.message });
             });
         return true;
+    } else if (message.type === 'FETCH_HTML') {
+        fetch(message.url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        })
+        .then(response => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return response.text();
+        })
+        .then(html => sendResponse({ success: true, data: html }))
+        .catch(error => sendResponse({ success: false, error: error.message }));
+        
+        return true; // Keep channel open for async response
+    } else if (message.type === 'GET_SPOTIFY_TOKEN') {
+        getSpotifyToken()
+            .then(token => sendResponse({ success: true, token: token }))
+            .catch(error => sendResponse({ success: false, error: error.message }));
+        return true;
+    } else if (message.type === 'RADIO_GET_METADATA') {
+        // Handle metadata fetch in background (not relay to offscreen)
+        fetchAnisonMetadata()
+            .then(meta => sendResponse(meta))
+            .catch(err => {
+                console.warn('[Background] Metadata fetch error:', err);
+                sendResponse({ error: err.message });
+            });
+        return true;
+    } else if (message.type && message.type.startsWith('RADIO_')) {
+        // Relay radio messages to the offscreen document
+        ensureOffscreen()
+            .then(() => chrome.runtime.sendMessage({ ...message, target: 'offscreen-radio' }))
+            .then(response => sendResponse(response))
+            .catch(err => {
+                console.warn('[Background] Radio relay error:', err);
+                sendResponse({ error: err.message });
+            });
+        return true;
     }
 });
+
+// --- Offscreen Document for Radio ---
+let _offscreenPromise = null;
+async function ensureOffscreen() {
+    if (_offscreenPromise) return _offscreenPromise;
+    _offscreenPromise = (async () => {
+        try {
+            const existing = await chrome.offscreen.hasDocument();
+            if (!existing) {
+                await chrome.offscreen.createDocument({
+                    url: 'src/offscreen/offscreen.html',
+                    reasons: ['AUDIO_PLAYBACK'],
+                    justification: 'Persistent anime radio playback across extension pages'
+                });
+            }
+        } finally {
+            _offscreenPromise = null;
+        }
+    })();
+    return _offscreenPromise;
+}
+
+// --- Auto-stop radio when all extension pages are closed ---
+async function checkExtensionPagesOpen() {
+    const extUrl = chrome.runtime.getURL('');
+    const views = await chrome.runtime.getContexts({ contextTypes: ['TAB'] });
+    const extPages = views.filter(v => v.documentUrl && v.documentUrl.startsWith(extUrl));
+    if (extPages.length === 0) {
+        // No extension pages open — stop radio and close offscreen
+        try {
+            const hasDoc = await chrome.offscreen.hasDocument();
+            if (hasDoc) {
+                await chrome.runtime.sendMessage({ type: 'RADIO_STOP', target: 'offscreen-radio' });
+                await chrome.offscreen.closeDocument();
+            }
+        } catch (e) {
+            // Offscreen already closed or error, ignore
+        }
+    }
+}
+
+chrome.tabs.onRemoved.addListener(() => {
+    // Small delay to let Chrome finish cleanup
+    setTimeout(checkExtensionPagesOpen, 500);
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+    if (changeInfo.url) {
+        setTimeout(checkExtensionPagesOpen, 500);
+    }
+});
+
+// --- Anison.FM Metadata Parser (regex, no DOMParser in service workers) ---
+async function fetchAnisonMetadata() {
+    const res = await fetch('https://anison.fm/', { cache: 'no-store' });
+    if (!res.ok) throw new Error(`anison.fm returned ${res.status}`);
+    const html = await res.text();
+
+    const extract = (regex) => {
+        const m = html.match(regex);
+        return m ? m[1].trim() : '';
+    };
+
+    // #on_air .anime a  →  <div id="on_air">...<span class="anime"><a ...>NAME</a></span>
+    const animeName = extract(/<span[^>]*class="anime"[^>]*>\s*<a[^>]*>([^<]+)<\/a>/i);
+    // #on_air .title  →  <span class="title">TRACK</span>
+    const trackTitle = extract(/<span[^>]*class="title"[^>]*>([^<]+)<\/span>/i);
+    // #current_poster_img  →  <img id="current_poster_img" src="URL"
+    const posterUrl = extract(/<img[^>]*id="current_poster_img"[^>]*src="([^"]+)"/i);
+    // #curent_poster  →  <a id="curent_poster" href="URL"
+    const animeLink = extract(/<a[^>]*id="curent_poster"[^>]*href="([^"]+)"/i);
+    // #duration  →  <span id="duration">2:40</span>
+    const duration = extract(/<span[^>]*id="duration"[^>]*>([^<]*)<\/span>/i);
+
+    return { animeName, trackTitle, posterUrl, animeLink, duration };
+}
 
 async function searchKinopoiskMovie(kpId, title, year) {
     // Kinopoisk API key from config
@@ -798,3 +1004,44 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         updateExtensionAction(message.settings.displayMode);
     }
 });
+
+// --- Spotify Integration ---
+let spotifyAccessToken = null;
+let spotifyTokenExpiration = 0;
+
+async function getSpotifyToken() {
+    // Return valid cached token
+    if (spotifyAccessToken && Date.now() < spotifyTokenExpiration) {
+        return spotifyAccessToken;
+    }
+
+    if (typeof SPOTIFY_CONFIG === 'undefined') {
+        throw new Error('Spotify config not loaded');
+    }
+
+    try {
+        const response = await fetch(SPOTIFY_CONFIG.ENDPOINTS.TOKEN, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Authorization': 'Basic ' + btoa(SPOTIFY_CONFIG.CLIENT_ID + ':' + SPOTIFY_CONFIG.CLIENT_SECRET)
+            },
+            body: 'grant_type=client_credentials'
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error_description || 'Failed to get token');
+        }
+
+        const data = await response.json();
+        spotifyAccessToken = data.access_token;
+        // Set expiration slightly before actual expiry (usually 3600s)
+        spotifyTokenExpiration = Date.now() + (data.expires_in * 1000) - 60000;
+        
+        return spotifyAccessToken;
+    } catch (error) {
+        console.error('[Background] Spotify token error:', error);
+        throw error;
+    }
+}

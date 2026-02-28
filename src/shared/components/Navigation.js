@@ -3,40 +3,131 @@
  * Global navigation header for all pages
  */
 class Navigation {
+    // Cache key for storing user display data
+    static USER_DISPLAY_CACHE_KEY = 'userDisplayCache';
+    // Cache lifetime: 7 days
+    static CACHE_LIFETIME = 7 * 24 * 60 * 60 * 1000;
+
     constructor(currentPage = '') {
         this.currentPage = currentPage;
         this.user = null;
         this.authCheckInterval = null;
         this.collectionService = null;
+        this.userId = null;
+        this.watchlistService = null;
+        this.favoriteService = null;
+        this.watchingService = null;
+        this.cachedUserDisplay = null;
+        this._updateInProgress = false;
         this.init();
     }
 
-    init() {
+    async init() {
         this.applyTheme(this.getCurrentTheme());
+        
+        // CRITICAL: Load cached user display BEFORE rendering to prevent flickering
+        await this.loadCachedUserDisplay();
+        
+        // Initialize i18n via dynamic import to maintain compatibility with non-module scripts
+        try {
+            const module = await import('../i18n/I18n.js');
+            this.i18n = module.i18n;
+            if (this.i18n) {
+                if (!this.i18n.currentLocale || this.i18n.currentLocale === 'en') {
+                    await this.i18n.init();
+                }
+            }
+        } catch (e) {
+            console.warn('Navigation: i18n module not loaded', e);
+        }
+
         this.render();
         this.updateThemeButton(this.getCurrentTheme()); // Update UI after render
         this.setupEventListeners();
         this.setupAuthListener();
+        this.setupDisplayCacheListener();
         
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', () => {
-                this.ensureCollectionsLoaded();
-            });
-        } else {
-            this.ensureCollectionsLoaded();
+        if (this.i18n) {
+            this.i18n.translatePage(); // Translate newly inserted navigation
         }
     }
 
-    ensureCollectionsLoaded() {
-        if (typeof CollectionService !== 'undefined') {
-            if (!this.collectionService) {
-                this.collectionService = new CollectionService();
+    /**
+     * Load cached user display data from chrome.storage.local
+     * This is called BEFORE render to prevent flickering
+     */
+    async loadCachedUserDisplay() {
+        try {
+            if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+                const result = await chrome.storage.local.get([
+                    Navigation.USER_DISPLAY_CACHE_KEY,
+                    'isAuthenticated',
+                    'user'
+                ]);
+                
+                const cache = result[Navigation.USER_DISPLAY_CACHE_KEY];
+                
+                if (result.isAuthenticated && cache) {
+                    // Validate: cache belongs to current user
+                    const currentUserId = result.user?.uid;
+                    if (cache.uid === currentUserId) {
+                        // Check cache lifetime (7 days)
+                        const isExpired = cache.timestamp && (Date.now() - cache.timestamp > Navigation.CACHE_LIFETIME);
+                        
+                        if (!isExpired) {
+                            this.cachedUserDisplay = cache;
+                            // console.log('Navigation: Loaded cached user display:', cache.displayName);
+                        } else {
+                            // Clear expired cache
+                            // console.log('Navigation: Cached user display expired, clearing');
+                            await chrome.storage.local.remove([Navigation.USER_DISPLAY_CACHE_KEY]);
+                        }
+                    } else {
+                        // UID mismatch, clear stale cache
+                        // console.log('Navigation: Cached user display UID mismatch, clearing');
+                        await chrome.storage.local.remove([Navigation.USER_DISPLAY_CACHE_KEY]);
+                    }
+                }
             }
-            this.loadCustomCollections();
-        } else {
-            setTimeout(() => this.ensureCollectionsLoaded(), 200);
+        } catch (error) {
+            console.warn('Navigation: Could not load cached user display:', error);
         }
     }
+
+    /**
+     * Listen for display cache changes from other tabs
+     */
+    setupDisplayCacheListener() {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+            chrome.storage.onChanged.addListener((changes, areaName) => {
+                if (areaName === 'local' && changes[Navigation.USER_DISPLAY_CACHE_KEY]) {
+                    const newCache = changes[Navigation.USER_DISPLAY_CACHE_KEY].newValue;
+                    this.handleDisplayCacheUpdate(newCache);
+                }
+            });
+        }
+    }
+
+    /**
+     * Handle display cache updates from other tabs
+     */
+    handleDisplayCacheUpdate(newCache) {
+        if (newCache && this.user && newCache.uid === this.user.uid) {
+            this.cachedUserDisplay = newCache;
+            // Update UI without full re-render
+            const userAvatar = document.getElementById('navUserAvatar');
+            const userName = document.getElementById('navUserName');
+            if (userAvatar && newCache.photoURL) {
+                userAvatar.src = newCache.photoURL;
+            }
+            if (userName && newCache.displayName) {
+                userName.textContent = newCache.displayName;
+            }
+            // console.log('Navigation: Updated display from other tab cache:', newCache.displayName);
+        }
+    }
+
+
 
     render() {
         // Check if navigation already exists in DOM
@@ -47,8 +138,37 @@ class Navigation {
             return;
         }
 
+        // Use cached user display data to prevent flickering
+        const cachedName = this.cachedUserDisplay?.displayName || 'User';
+        const cachedAvatar = this.cachedUserDisplay?.photoURL || chrome.runtime.getURL('icons/icon48.png');
+        const hasCachedUser = !!this.cachedUserDisplay;
+        
+        // Determine initial visibility based on cache
+        const userProfileDisplay = hasCachedUser ? 'block' : 'none';
+        const signInDisplay = hasCachedUser ? 'none' : 'none'; // Initially hidden, will be shown by auth check if needed
+
         const navHTML = `
             <header class="nav-header">
+                    <!-- Radio Player (absolute, outside flex flow) -->
+                    <div id="navigationLeft" class="nav-radio" style="display: none;">
+                        <span class="nav-radio-controls">
+                            <button class="nav-radio-btn" id="radioPlayBtn" title="Play">▶</button>
+                            <button class="nav-radio-btn" id="radioStopBtn" title="Stop" style="display:none;">⏹</button>
+                        </span>
+                        <span id="volumeControl" class="nav-radio-volume">
+                            <span id="volumeIcon">🔊</span>
+                            <input type="range" id="volumeSlider" class="nav-radio-slider"
+                                min="0" max="1" step="0.05" value="0.8">
+                        </span>
+                        <div class="nav-radio-meta" id="radioMeta">
+                            <img class="nav-radio-poster" id="radioPoster" src="" alt="" style="display:none;">
+                            <div class="nav-radio-meta-text">
+                                <span class="nav-radio-track" id="radioTrackName">Anime Radio</span>
+                                <span class="nav-radio-duration" id="radioDuration"></span>
+                            </div>
+                        </div>
+                    </div>
+
                 <div class="nav-container">
                     <!-- Logo Section -->
                     <a href="#" class="nav-logo" id="navLogo">
@@ -62,55 +182,43 @@ class Navigation {
 
                     <!-- Navigation Menu -->
                     <nav class="nav-menu" id="navMenu">
-                        <div class="nav-item nav-item-dropdown">
+                        <div class="nav-item">
+                            <a href="#" class="nav-link" data-page="random" id="navRandom">
+                                <span class="nav-icon">${typeof Icons !== 'undefined' ? Icons.DICE : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect><circle cx="16" cy="16" r="2"></circle><circle cx="16" cy="8" r="2"></circle><circle cx="8" cy="16" r="2"></circle><circle cx="8" cy="8" r="2"></circle><circle cx="12" cy="12" r="2"></circle></svg>'}</span>
+                                <span data-i18n="navbar.random">Random</span>
+                            </a>
+                        </div>
+
+                        <div class="nav-item">
                             <a href="#" class="nav-link" data-page="ratings" id="navRatings">
                                 <span class="nav-icon">${typeof Icons !== 'undefined' ? Icons.STAR : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>'}</span>
-                                <span>Rated</span>
-                                <span class="nav-dropdown-arrow">${typeof Icons !== 'undefined' ? Icons.CHEVRON_DOWN : '▼'}</span>
+                                <span data-i18n="navbar.rated">Rated</span>
                             </a>
-                            <div class="collection-dropdown" id="collectionDropdown">
-                                <div class="dropdown-item" data-page="ratings">
-                                    <span class="dropdown-icon">${typeof Icons !== 'undefined' ? Icons.STAR : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>'}</span>
-                                    <span>All Movies</span>
-                                </div>
-                                <div class="dropdown-item" data-page="watchlist">
-                                    <span class="dropdown-icon">${typeof Icons !== 'undefined' ? Icons.BOOKMARK : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>'}</span>
-                                    <span>Watchlist</span>
-                                    <span class="count" id="watchlistCount">(0)</span>
-                                </div>
-                                <div class="dropdown-item" data-page="favorites">
-                                    <span class="dropdown-icon">${typeof Icons !== 'undefined' ? Icons.HEART : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>'}</span>
-                                    <span>Favorites</span>
-                                    <span class="count" id="favoritesCount">(0)</span>
-                                </div>
-                                <div class="dropdown-divider"></div>
-                                <div class="dropdown-section-header">Custom Collections</div>
-                                <div class="custom-collections-list" id="customCollectionsList"></div>
-                                <div class="dropdown-item create-collection-item" id="createCollectionBtn">
-                                    <span class="dropdown-icon">${typeof Icons !== 'undefined' ? Icons.PLUS : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>'}</span>
-                                    <span>Create Collection</span>
-                                </div>
-                            </div>
                         </div>
                     </nav>
 
-                    <!-- Search Section -->
+                    <!-- Search & Bookmarks Section -->
                     <div class="nav-search-container">
-                        <button class="nav-search-toggle" id="navSearchToggle" title="Search Movies">
+                        <button class="nav-search-toggle" id="navSearchToggle" title="Search Movies" style="margin-right: 5px;">
                             <span class="nav-icon">${typeof Icons !== 'undefined' ? Icons.SEARCH : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>'}</span>
                         </button>
                         <div class="nav-search-input-wrapper" id="navSearchInputWrapper">
-                            <input type="text" class="nav-search-input" id="navSearchInput" placeholder="Search movies...">
+                            <input type="text" class="nav-search-input" id="navSearchInput" data-i18n="navbar.search_placeholder" placeholder="Search movies...">
                         </div>
+
+                        <!-- Bookmarks Button -->
+                        <button class="nav-icon-btn" id="navBookmarksBtn" title="Bookmarks">
+                            <span class="nav-icon">${typeof Icons !== 'undefined' ? Icons.BOOKMARK : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>'}</span>
+                        </button>
                     </div>
 
                     <!-- User Section -->
                     <div class="nav-user" id="navUser">
                         <!-- User Profile Dropdown -->
-                        <div class="nav-user-profile" id="navUserProfile" style="display: none;">
+                        <div class="nav-user-profile" id="navUserProfile" style="display: ${userProfileDisplay};">
                             <button class="nav-user-trigger" id="navUserTrigger">
-                                <img src="${chrome.runtime.getURL('icons/icon48.png')}" alt="User" class="nav-user-avatar" id="navUserAvatar">
-                                <span class="nav-user-name" id="navUserName">User</span>
+                                <img src="${cachedAvatar}" alt="User" class="nav-user-avatar" id="navUserAvatar">
+                                <span class="nav-user-name" id="navUserName">${cachedName}</span>
                                 <span class="nav-dropdown-arrow">${typeof Icons !== 'undefined' ? Icons.CHEVRON_DOWN : '▼'}</span>
                             </button>
                             
@@ -118,26 +226,26 @@ class Navigation {
                             <div class="nav-user-dropdown" id="navUserDropdown">
                                 <div class="nav-dropdown-item" id="navDropdownSettings">
                                     <span class="nav-dropdown-icon">${typeof Icons !== 'undefined' ? Icons.USER : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>'}</span>
-                                    <span>View Profile</span>
+                                    <span data-i18n="navbar.view_profile">View Profile</span>
                                 </div>
                                 <div class="nav-dropdown-item" id="navDropdownSettingsPage">
                                     <span class="nav-dropdown-icon">${typeof Icons !== 'undefined' ? Icons.SETTINGS : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 512 512"><path d="M262.29,192.31a64,64,0,1,0,57.4,57.4A64.13,64.13,0,0,0,262.29,192.31ZM416.39,256a154.34,154.34,0,0,1-1.53,20.79l45.21,35.46A10.81,10.81,0,0,1,462.52,326l-42.77,74a10.81,10.81,0,0,1-13.14,4.59l-44.9-18.08a16.11,16.11,0,0,0-15.17,1.75A164.48,164.48,0,0,1,325,400.8a15.94,15.94,0,0,0-8.82,12.14l-6.73,47.89A11.08,11.08,0,0,1,298.77,470H213.23a11.11,11.11,0,0,1-10.69-8.87l-6.72-47.82a16.07,16.07,0,0,0-9-12.22,155.3,155.3,0,0,1-21.46-12.57,16,16,0,0,0-15.11-1.71l-44.89,18.07a10.81,10.81,0,0,1-13.14-4.58l-42.77-74a10.8,10.8,0,0,1,2.45-13.75l38.21-30a16.05,16.05,0,0,0,6-14.08c-.36-4.17-.58-8.33-.58-12.5s.21-8.27.58-12.35a16,16,0,0,0-6.07-13.94l-38.19-30A10.81,10.81,0,0,1,49.48,186l42.77-74a10.81,10.81,0,0,1,13.14-4.59l44.9,18.08a16.11,16.11,0,0,0,15.17-1.75A164.48,164.48,0,0,1,187,111.2a15.94,15.94,0,0,0,8.82-12.14l6.73-47.89A11.08,11.08,0,0,1,213.23,42h85.54a11.11,11.11,0,0,1,10.69,8.87l6.72,47.82a16.07,16.07,0,0,0,9,12.22,155.3,155.3,0,0,1,21.46,12.57,16,16,0,0,0,15.11,1.71l44.89-18.07a10.81,10.81,0,0,1,13.14,4.58l42.77,74a10.8,10.8,0,0,1-2.45,13.75l-38.21,30a16.05,16.05,0,0,0-6.05,14.08C416.17,247.67,416.39,251.83,416.39,256Z" style="fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round;stroke-width:32px"></path></svg>'}</span>
-                                    <span>Settings</span>
+                                    <span data-i18n="navbar.settings">Settings</span>
                                 </div>
                                 <div class="nav-dropdown-item" id="navDropdownAdmin" style="display: none;">
                                     <span class="nav-dropdown-icon">${typeof Icons !== 'undefined' ? Icons.ADMIN : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>'}</span>
-                                    <span>Admin Panel</span>
+                                    <span data-i18n="navbar.admin_panel">Admin Panel</span>
                                 </div>
                                 <div class="nav-dropdown-item" id="navDropdownTheme">
                                     <span class="nav-dropdown-icon" id="navThemeIcon">
                                         ${typeof Icons !== 'undefined' ? Icons.THEME : '<svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20" style="width: 16px; height: 16px;"><path fill-rule="evenodd" d="M10.606 1.987a.75.75 0 0 1-.217.835 5.795 5.795 0 0 0 6.387 9.58.75.75 0 0 1 1.031.965A8.502 8.502 0 0 1 1.5 10a8.5 8.5 0 0 1 8.395-8.5.75.75 0 0 1 .711.487M8.004 3.288a7 7 0 1 0 7.421 11.137A7.295 7.295 0 0 1 8.004 3.288" clip-rule="evenodd"></path></svg>'}
                                     </span>
-                                    <span id="navThemeText">Theme (Dark)</span>
+                                    <span id="navThemeText" data-i18n="navbar.theme">Theme</span>
                                 </div>
                                 <div class="nav-dropdown-divider"></div>
                                 <div class="nav-dropdown-item nav-dropdown-logout" id="navDropdownLogout">
                                     <span class="nav-dropdown-icon">${typeof Icons !== 'undefined' ? Icons.LOGOUT : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>'}</span>
-                                    <span>Log Out</span>
+                                    <span data-i18n="navbar.log_out">Log Out</span>
                                 </div>
                             </div>
                         </div>
@@ -145,7 +253,7 @@ class Navigation {
                         <!-- Sign In Button (for non-authenticated users) -->
                         <button class="nav-signin-btn" id="navSignInBtn" style="display: none;">
                             <span class="nav-signin-icon">${typeof Icons !== 'undefined' ? Icons.USER : '👤'}</span>
-                            <span>Sign In</span>
+                            <span data-i18n="navbar.sign_in">Sign In</span>
                         </button>
                     </div>
                 </div>
@@ -180,10 +288,7 @@ class Navigation {
             });
         });
 
-        // Collection dropdown functionality
-        this.setupCollectionDropdown();
-        this.initializeCollectionService();
-        this.setupCollectionStorageListener();
+
 
         // Logo click - go to popup/home
         const navLogo = document.getElementById('navLogo');
@@ -208,6 +313,28 @@ class Navigation {
         // Search toggle functionality
         this.setupSearchToggle();
 
+        // Radio player
+        this.setupRadioPlayer();
+
+        // Bookmarks button functionality
+        const bookmarksBtn = document.getElementById('navBookmarksBtn');
+        if (bookmarksBtn) {
+            bookmarksBtn.addEventListener('click', (e) => {
+                // console.log('Bookmarks button clicked');
+                e.preventDefault();
+                this.navigateToPage('bookmarks');
+            });
+        } else {
+            console.error('Bookmarks button not found in DOM during setup');
+        }
+
+        // Global delegation fallback for Bookmarks
+        document.addEventListener('click', (e) => {
+            const btn = e.target.closest('#navBookmarksBtn');
+            if (btn) {
+            }
+        });
+
         // Close mobile menu when clicking outside
         document.addEventListener('click', (e) => {
             if (navMenu && !navMenu.contains(e.target) && !mobileToggle.contains(e.target)) {
@@ -223,22 +350,25 @@ class Navigation {
         const dropdownLogout = document.getElementById('navDropdownLogout');
 
         if (userTrigger && userDropdown) {
+            // Prevent duplicate listeners
+            if (userTrigger.dataset.listenerAttached === 'true') {
+                return;
+            }
+            userTrigger.dataset.listenerAttached = 'true';
+            
             // Toggle dropdown on user trigger click
             userTrigger.addEventListener('click', (e) => {
-                console.log('User trigger clicked', e);
+                e.preventDefault();
                 e.stopPropagation();
+                
                 const isOpen = userDropdown.classList.contains('active');
                 
                 // Close all other dropdowns first
                 this.closeAllDropdowns();
                 
                 if (!isOpen) {
-                    console.log('Opening user dropdown');
                     userDropdown.classList.add('active');
                     userTrigger.classList.add('active');
-                } else {
-                    console.log('Closing user dropdown');
-                    this.closeAllDropdowns();
                 }
             });
 
@@ -304,17 +434,10 @@ class Navigation {
     closeAllDropdowns() {
         const userDropdown = document.getElementById('navUserDropdown');
         const userTrigger = document.getElementById('navUserTrigger');
-        const collectionDropdown = document.getElementById('collectionDropdown');
-        const collectionLink = document.getElementById('navRatings');
         
         if (userDropdown && userTrigger) {
             userDropdown.classList.remove('active');
             userTrigger.classList.remove('active');
-        }
-        
-        if (collectionDropdown && collectionLink) {
-            collectionDropdown.classList.remove('open');
-            collectionLink.classList.remove('dropdown-open');
         }
     }
 
@@ -331,16 +454,14 @@ class Navigation {
             const isOpen = searchInputWrapper.classList.contains('active');
             
             if (isOpen) {
-                // Second click - perform search if input has value
                 const query = searchInput.value.trim();
                 if (query) {
                     searchInputWrapper.classList.remove('active');
                     this.navigateToSearchWithQuery(query);
-                    searchInput.value = ''; // Clear input after search
+                    searchInput.value = '';
                 }
             } else {
                 searchInputWrapper.classList.add('active');
-                // Focus the input after animation
                 setTimeout(() => searchInput.focus(), 300);
             }
         });
@@ -352,7 +473,7 @@ class Navigation {
                 searchInputWrapper.classList.remove('active');
                 if (query) {
                     this.navigateToSearchWithQuery(query);
-                    searchInput.value = ''; // Clear input after search
+                    searchInput.value = '';
                 } else {
                     this.navigateToPage('search');
                 }
@@ -383,899 +504,227 @@ class Navigation {
         }
     }
 
-    setupCollectionDropdown() {
-        const collectionLink = document.getElementById('navRatings');
-        const collectionDropdown = document.getElementById('collectionDropdown');
-        const dropdownItems = collectionDropdown ? collectionDropdown.querySelectorAll('.dropdown-item') : [];
+    async setupRadioPlayer() {
+        const playBtn = document.getElementById('radioPlayBtn');
+        const stopBtn = document.getElementById('radioStopBtn');
+        const volumeSlider = document.getElementById('volumeSlider');
+        const volumeIcon = document.getElementById('volumeIcon');
+        const trackNameEl = document.getElementById('radioTrackName');
+        const durationEl = document.getElementById('radioDuration');
+        const posterEl = document.getElementById('radioPoster');
 
-        if (!collectionLink || !collectionDropdown) return;
+        if (!playBtn || !stopBtn) return;
 
-        let hoverTimeout = null;
-        let isHovering = false;
-        let isOpen = false;
-
-        // Show dropdown on hover with delay
-        const showDropdown = () => {
-            if (hoverTimeout) {
-                clearTimeout(hoverTimeout);
-            }
-            hoverTimeout = setTimeout(() => {
-                if (isHovering) {
-                    collectionDropdown.classList.add('open');
-                    collectionLink.classList.add('dropdown-open');
-                    isOpen = true;
-                }
-            }, 200);
-        };
-
-        // Hide dropdown with delay
-        const hideDropdown = () => {
-            if (hoverTimeout) {
-                clearTimeout(hoverTimeout);
-            }
-            hoverTimeout = setTimeout(() => {
-                if (!isHovering) {
-                    collectionDropdown.classList.remove('open');
-                    collectionLink.classList.remove('dropdown-open');
-                    isOpen = false;
-                }
-            }, 150);
-        };
-
-        // Mouse enter on link
-        collectionLink.addEventListener('mouseenter', () => {
-            isHovering = true;
-            showDropdown();
-        });
-
-        // Mouse enter on dropdown
-        collectionDropdown.addEventListener('mouseenter', () => {
-            isHovering = true;
-            if (hoverTimeout) {
-                clearTimeout(hoverTimeout);
-            }
-            collectionDropdown.classList.add('open');
-            collectionLink.classList.add('dropdown-open');
-            isOpen = true;
-        });
-
-        // Mouse leave from link - check if moving to dropdown
-        collectionLink.addEventListener('mouseleave', (e) => {
-            const relatedTarget = e.relatedTarget;
-            // If mouse is moving to dropdown, keep it open
-            if (collectionDropdown.contains(relatedTarget)) {
-                return;
-            }
-            // Otherwise, start hide timer
-            isHovering = false;
-            hideDropdown();
-        });
-
-        // Mouse leave from dropdown
-        collectionDropdown.addEventListener('mouseleave', (e) => {
-            const relatedTarget = e.relatedTarget;
-            // If mouse is moving back to link, keep it open
-            if (collectionLink.contains(relatedTarget)) {
-                return;
-            }
-            // Otherwise, hide it
-            isHovering = false;
-            hideDropdown();
-        });
-
-        // Handle dropdown item clicks
-        dropdownItems.forEach(item => {
-            item.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const page = item.dataset.page;
-                // Don't hide immediately, let navigation handle it
-                setTimeout(() => {
-                    collectionDropdown.classList.remove('open');
-                    collectionLink.classList.remove('dropdown-open');
-                    isOpen = false;
-                    isHovering = false;
-                }, 100);
-                this.navigateToPage(page);
-            });
-        });
-
-        // Create collection button
-        const createCollectionBtn = document.getElementById('createCollectionBtn');
-        if (createCollectionBtn) {
-            createCollectionBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                this.showCollectionModal();
-                setTimeout(() => {
-                    collectionDropdown.classList.remove('open');
-                    collectionLink.classList.remove('dropdown-open');
-                    isOpen = false;
-                    isHovering = false;
-                }, 100);
+        // Check visibility setting
+        const radioBlock = document.getElementById('navigationLeft');
+        if (radioBlock) {
+            chrome.storage.local.get('showAnimeRadio', (data) => {
+                radioBlock.style.display = (data.showAnimeRadio ?? false) ? 'flex' : 'none';
             });
         }
 
-        // Also handle click on the main link
-        collectionLink.addEventListener('click', (e) => {
-            // If dropdown is open, don't navigate immediately
-            if (isOpen) {
-                e.preventDefault();
-                // Let user click on dropdown items
-                return;
+        // Stream URL map
+        const STREAM_URLS = {
+            anison: 'https://pool.anison.fm/AniSonFM(320)?nocache=' + Date.now(),
+            radionami: 'https://relay.radionami.com/any-anime.ru'
+        };
+
+        // Read selected source and set stream URL
+        let currentSource = 'anison';
+        try {
+            const data = await new Promise(resolve => {
+                chrome.storage.local.get('animeRadioSource', resolve);
+            });
+            currentSource = data.animeRadioSource || 'anison';
+        } catch (e) { /* default */ }
+
+        // Helper to send commands to the offscreen radio via background
+        const radioCmd = (type, data = {}) => {
+            return chrome.runtime.sendMessage({ type, ...data });
+        };
+
+        // Ensure the offscreen doc has the correct source
+        radioCmd('RADIO_SET_SOURCE', { streamUrl: STREAM_URLS[currentSource] });
+
+        const updateVolumeIcon = (vol) => {
+            if (!volumeIcon) return;
+            if (vol == 0) volumeIcon.textContent = '🔇';
+            else if (vol < 0.5) volumeIcon.textContent = '🔉';
+            else volumeIcon.textContent = '🔊';
+        };
+
+        // --- Metadata display for Anison.FM ---
+        let metaInterval = null;
+        let countdownInterval = null;
+        let remainingSeconds = 0;
+
+        const formatTime = (totalSec) => {
+            if (totalSec <= 0) return '';
+            const m = Math.floor(totalSec / 60);
+            const s = totalSec % 60;
+            return `${m}:${s.toString().padStart(2, '0')}`;
+        };
+
+        const parseDuration = (str) => {
+            // "2:40" → 160 seconds
+            if (!str) return 0;
+            const parts = str.split(':').map(Number);
+            if (parts.length === 2) return parts[0] * 60 + parts[1];
+            if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+            return 0;
+        };
+
+        const startCountdown = () => {
+            stopCountdown();
+            countdownInterval = setInterval(() => {
+                if (remainingSeconds > 0) {
+                    remainingSeconds--;
+                    if (durationEl) durationEl.textContent = formatTime(remainingSeconds);
+                } else {
+                    // Time's up — fetch fresh metadata
+                    updateMetadata();
+                }
+            }, 1000);
+        };
+
+        const stopCountdown = () => {
+            if (countdownInterval) {
+                clearInterval(countdownInterval);
+                countdownInterval = null;
             }
+        };
+
+        const updateMetadata = async () => {
+            if (currentSource !== 'anison') return;
+            try {
+                const meta = await radioCmd('RADIO_GET_METADATA');
+                if (meta && !meta.error) {
+                    const fullName = meta.animeName
+                        ? `${meta.animeName} — ${meta.trackTitle}`
+                        : (meta.trackTitle || 'Anison.FM');
+                    if (trackNameEl) {
+                        trackNameEl.textContent = fullName;
+                        trackNameEl.title = fullName; // tooltip on hover
+                    }
+                    // Sync countdown from server
+                    remainingSeconds = parseDuration(meta.duration);
+                    if (durationEl) durationEl.textContent = formatTime(remainingSeconds);
+
+                    if (posterEl && meta.posterUrl) {
+                        posterEl.src = meta.posterUrl;
+                        posterEl.style.display = 'block';
+                    }
+                }
+            } catch (e) {
+                // Metadata fetch failed, not critical
+            }
+        };
+
+        const startMetaPolling = () => {
+            if (currentSource !== 'anison') return;
+            updateMetadata();
+            metaInterval = setInterval(updateMetadata, 10000);
+            startCountdown();
+        };
+
+        const stopMetaPolling = () => {
+            if (metaInterval) {
+                clearInterval(metaInterval);
+                metaInterval = null;
+            }
+            stopCountdown();
+        };
+
+        // Set default label based on source
+        if (currentSource === 'radionami') {
+            if (trackNameEl) trackNameEl.textContent = 'Radio Nami';
+            if (posterEl) posterEl.style.display = 'none';
+            if (durationEl) durationEl.textContent = '';
+        }
+
+        // Restore UI from offscreen state
+        try {
+            const state = await radioCmd('RADIO_GET_STATE');
+            if (state && !state.error) {
+                if (state.isPlaying) {
+                    playBtn.style.display = 'none';
+                    stopBtn.style.display = 'inline-flex';
+                    startMetaPolling();
+                }
+                if (volumeSlider) {
+                    volumeSlider.value = state.isMuted ? 0 : state.volume;
+                }
+                updateVolumeIcon(state.isMuted ? 0 : state.volume);
+            }
+        } catch (e) {
+            // Offscreen not created yet — that's fine, defaults are used
+        }
+
+        playBtn.addEventListener('click', () => {
+            radioCmd('RADIO_PLAY');
+            playBtn.style.display = 'none';
+            stopBtn.style.display = 'inline-flex';
+            startMetaPolling();
         });
 
-        // Update watchlist count
-        this.updateWatchlistCount();
-
-        // Close submenus when clicking outside
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('.collection-submenu') && !e.target.closest('.collection-menu-button')) {
-                this.closeAllSubmenus();
+        stopBtn.addEventListener('click', () => {
+            radioCmd('RADIO_STOP');
+            stopBtn.style.display = 'none';
+            playBtn.style.display = 'inline-flex';
+            stopMetaPolling();
+            if (currentSource === 'anison') {
+                if (trackNameEl) trackNameEl.textContent = 'Anison.FM';
+            } else {
+                if (trackNameEl) trackNameEl.textContent = 'Radio Nami';
             }
+            if (durationEl) durationEl.textContent = '';
         });
+
+        // Volume control
+        if (volumeSlider && volumeIcon) {
+            volumeSlider.addEventListener('input', (e) => {
+                const vol = parseFloat(e.target.value);
+                radioCmd('RADIO_SET_VOLUME', { volume: vol });
+                if (vol > 0) radioCmd('RADIO_SET_MUTED', { muted: false });
+                updateVolumeIcon(vol);
+            });
+
+            // Toggle mute on icon click
+            volumeIcon.addEventListener('click', async () => {
+                try {
+                    const state = await radioCmd('RADIO_GET_STATE');
+                    const newMuted = !state.isMuted;
+                    radioCmd('RADIO_SET_MUTED', { muted: newMuted });
+                    if (newMuted) {
+                        volumeIcon.textContent = '🔇';
+                        volumeSlider.value = 0;
+                    } else {
+                        updateVolumeIcon(state.volume);
+                        volumeSlider.value = state.volume;
+                    }
+                } catch (e) {
+                    console.warn('Radio mute toggle error:', e);
+                }
+            });
+            volumeIcon.style.cursor = 'pointer';
+        }
     }
 
     initializeCollectionService() {
         if (typeof CollectionService !== 'undefined') {
             this.collectionService = new CollectionService();
-            this.loadCustomCollections();
         } else {
             setTimeout(() => {
                 if (typeof CollectionService !== 'undefined') {
                     this.collectionService = new CollectionService();
-                    this.loadCustomCollections();
-                } else {
-                    setTimeout(() => {
-                        if (typeof CollectionService !== 'undefined') {
-                            this.collectionService = new CollectionService();
-                            this.loadCustomCollections();
-                        }
-                    }, 500);
                 }
-            }, 100);
+            }, 200);
         }
     }
 
-    setupCollectionStorageListener() {
-        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
-            chrome.storage.onChanged.addListener((changes, namespace) => {
-                if (namespace === 'local' && changes.movieCollections) {
-                    this.loadCustomCollections();
-                    
-                    if (typeof window.collectionPage !== 'undefined' && window.collectionPage.collectionId) {
-                        const collectionData = changes.movieCollections.newValue || [];
-                        const currentCollection = collectionData.find(c => c.id === window.collectionPage.collectionId);
-                        
-                        if (currentCollection && window.collectionPage.loadCollection) {
-                            window.collectionPage.loadCollection();
-                        } else if (!currentCollection && window.collectionPage) {
-                            window.location.href = chrome.runtime.getURL('src/pages/ratings/ratings.html');
-                        }
-                    }
-                }
-            });
-        }
-    }
 
-    async loadCustomCollections() {
-        if (!this.collectionService) {
-            if (typeof CollectionService !== 'undefined') {
-                this.collectionService = new CollectionService();
-            } else {
-                return;
-            }
-        }
 
-        try {
-            const collections = await this.collectionService.getCollections();
-            this.renderCustomCollections(collections);
-        } catch (error) {
-            console.error('Error loading custom collections:', error);
-        }
-    }
 
-    renderCustomCollections(collections) {
-        const listContainer = document.getElementById('customCollectionsList');
-        if (!listContainer) return;
-
-        listContainer.innerHTML = '';
-
-        if (collections.length === 0) {
-            const emptyState = document.createElement('div');
-            emptyState.className = 'dropdown-empty-state';
-            emptyState.textContent = 'No collections yet';
-            listContainer.appendChild(emptyState);
-            return;
-        }
-
-        collections.forEach(collection => {
-            const item = document.createElement('div');
-            item.className = 'dropdown-item custom-collection-item';
-            item.setAttribute('data-collection-id', collection.id);
-            
-            // Check if icon is a custom image (base64 or Firebase Storage URL) or emoji
-        const isCustomIcon = collection.icon && (collection.icon.startsWith('data:') || collection.icon.startsWith('https://') || collection.icon.startsWith('http://'));
-            const iconHtml = isCustomIcon 
-                ? `<img src="${collection.icon}" style="width: 22px; height: 22px; object-fit: cover; border-radius: 4px; vertical-align: middle;">`
-                : collection.icon;
-            
-            item.innerHTML = `
-                <div class="collection-info">
-                    <span class="dropdown-icon">${iconHtml}</span>
-                    <span class="collection-name">${this.escapeHtml(collection.name)}</span>
-                    <span class="count">(${collection.movieIds?.length || 0})</span>
-                </div>
-                <button class="collection-menu-button" data-collection-id="${collection.id}" title="Menu">
-                    <span>${typeof Icons !== 'undefined' ? Icons.MORE_VERTICAL : '⋮'}</span>
-                </button>
-            `;
-            
-            const submenu = document.createElement('div');
-            submenu.className = 'collection-submenu';
-            submenu.id = `submenu-${collection.id}`;
-            submenu.style.display = 'none';
-            submenu.innerHTML = `
-                <div class="submenu-item" data-action="edit" data-collection-id="${collection.id}">
-                    <span>${typeof Icons !== 'undefined' ? Icons.EDIT : '✏️'}</span> Редактировать
-                </div>
-                <div class="submenu-item delete" data-action="delete" data-collection-id="${collection.id}">
-                    <span>${typeof Icons !== 'undefined' ? Icons.TRASH : '🗑️'}</span> Удалить
-                </div>
-            `;
-            document.body.appendChild(submenu);
-
-            const collectionInfo = item.querySelector('.collection-info');
-            if (collectionInfo) {
-                collectionInfo.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    this.navigateToCollection(collection.id);
-                });
-            }
-
-            const menuButton = item.querySelector('.collection-menu-button');
-            if (menuButton) {
-                menuButton.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    this.toggleCollectionSubmenu(e, collection.id);
-                });
-            }
-
-            const editItem = submenu.querySelector('[data-action="edit"]');
-            if (editItem) {
-                editItem.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    this.closeAllSubmenus();
-                    this.editCollection(collection);
-                });
-            }
-
-            const deleteItem = submenu.querySelector('[data-action="delete"]');
-            if (deleteItem) {
-                deleteItem.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    this.closeAllSubmenus();
-                    this.deleteCollection(collection.id);
-                });
-            }
-
-            listContainer.appendChild(item);
-        });
-    }
-
-    navigateToCollection(collectionId) {
-        const url = chrome.runtime.getURL(`src/pages/collection/collection.html?id=${collectionId}`);
-        if (window.location.pathname.includes('popup.html')) {
-            chrome.tabs.create({ url });
-        } else {
-            window.location.href = url;
-        }
-    }
-
-    toggleCollectionSubmenu(event, collectionId) {
-        event.stopPropagation();
-        
-        const submenu = document.getElementById(`submenu-${collectionId}`);
-        if (!submenu) return;
-        
-        const isOpen = submenu.style.display === 'block';
-        
-        this.closeAllSubmenus();
-        
-        if (!isOpen) {
-            submenu.style.display = 'block';
-            this.positionSubmenu(submenu);
-        }
-    }
-
-    closeAllSubmenus() {
-        document.querySelectorAll('.collection-submenu').forEach(menu => {
-            menu.style.display = 'none';
-        });
-    }
-    
-    cleanupSubmenus() {
-        document.querySelectorAll('.collection-submenu').forEach(menu => {
-            if (menu.parentNode) {
-                menu.parentNode.removeChild(menu);
-            }
-        });
-    }
-
-    positionSubmenu(submenu) {
-        const collectionId = submenu.id.replace('submenu-', '');
-        const item = document.querySelector(`.custom-collection-item[data-collection-id="${collectionId}"]`);
-        if (!item) return;
-        
-        const button = item.querySelector('.collection-menu-button');
-        if (!button) return;
-        
-        const dropdown = item.closest('.collection-dropdown');
-        if (!dropdown) return;
-        
-        const itemRect = item.getBoundingClientRect();
-        const dropdownRect = dropdown.getBoundingClientRect();
-        
-        const calculatedTop = itemRect.top;
-        const calculatedLeft = dropdownRect.right + 4;
-        
-        submenu.style.position = 'fixed';
-        submenu.style.top = `${calculatedTop}px`;
-        submenu.style.left = `${calculatedLeft}px`;
-        submenu.style.right = 'auto';
-        submenu.style.marginLeft = '0';
-        submenu.style.marginRight = '0';
-        
-        requestAnimationFrame(() => {
-            const submenuRect = submenu.getBoundingClientRect();
-            
-            if (submenuRect.right > window.innerWidth) {
-                const newLeft = dropdownRect.left - submenuRect.width - 4;
-                submenu.style.left = `${newLeft}px`;
-                submenu.style.right = 'auto';
-            }
-        });
-    }
-
-    async editCollection(collection) {
-        this.showCollectionModal(collection);
-    }
-
-    async deleteCollection(collectionId) {
-        if (!confirm('Are you sure you want to delete this collection? Movies will not be removed.')) {
-            return;
-        }
-
-        try {
-            if (!this.collectionService) {
-                this.initializeCollectionService();
-                await new Promise(resolve => setTimeout(resolve, 100));
-            }
-
-            await this.collectionService.deleteCollection(collectionId);
-            await this.loadCustomCollections();
-            
-            if (typeof Utils !== 'undefined' && Utils.showToast) {
-                Utils.showToast('Collection deleted', 'success');
-            }
-        } catch (error) {
-            console.error('Error deleting collection:', error);
-            if (typeof Utils !== 'undefined' && Utils.showToast) {
-                Utils.showToast('Failed to delete collection', 'error');
-            }
-        }
-    }
-
-    showCollectionModal(collection = null) {
-        // Detect current theme
-        const isLightTheme = document.body.classList.contains('light-theme');
-        
-        // Define theme colors
-        const themeColors = isLightTheme ? {
-            overlay: 'rgba(0, 0, 0, 0.5)',
-            background: '#ededed',
-            text: '#333335',
-            textSecondary: '#495057',
-            border: 'rgba(0, 0, 0, 0.1)',
-            inputBg: '#ffffff',
-            inputBorder: '#ced4da',
-            iconBg: '#e9ecef',
-            selectedIconBorder: '#333335',
-            selectedIconBg: '#ededed',
-            cancelBg: '#e9ecef',
-            cancelText: '#333335',
-            saveBg: '#333335',
-            saveText: '#ffffff'
-        } : {
-            overlay: 'rgba(0, 0, 0, 0.7)',
-            background: '#1e293b',
-            text: '#e2e8f0',
-            textSecondary: '#94a3b8',
-            border: '#334155',
-            inputBg: '#0f172a',
-            inputBorder: '#334155',
-            iconBg: '#0f172a',
-            selectedIconBorder: '#6366f1',
-            selectedIconBg: '#1e293b',
-            cancelBg: '#334155',
-            cancelText: '#e2e8f0',
-            saveBg: '#6366f1',
-            saveText: '#ffffff'
-        };
-        
-        const modal = document.createElement('div');
-        modal.className = 'collection-modal-overlay';
-        modal.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: ${themeColors.overlay};
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 10000;
-        `;
-
-        const isEdit = !!collection;
-        const defaultIcons = ['🎬', '🎭', '🎨', '🎪', '🎯', '🎲', '🎸', '🎺', '🎻', '🎤', '🎧', '🎮', '🎰', '🎱', '🎳', '🎴', '🎵', '🎶', '🎼', '🎹'];
-        
-        // Check if current icon is a custom image (base64 or Firebase Storage URL)
-        const isCustomIcon = collection && collection.icon && (collection.icon.startsWith('data:') || collection.icon.startsWith('https://') || collection.icon.startsWith('http://'));
-
-        modal.innerHTML = `
-            <div class="collection-modal-content" style="
-                background: ${themeColors.background};
-                padding: 24px;
-                border-radius: 12px;
-                max-width: 500px;
-                width: 90%;
-                color: ${themeColors.text};
-                box-shadow: 0 20px 40px rgba(0, 0, 0, ${isLightTheme ? '0.15' : '0.5'});
-                max-height: 90vh;
-                overflow-y: auto;
-            ">
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
-                    <h3 style="margin: 0; font-size: 20px;">${isEdit ? 'Edit Collection' : 'Create Collection'}</h3>
-                    <button class="modal-close-btn" style="
-                        background: none;
-                        border: none;
-                        color: ${themeColors.textSecondary};
-                        font-size: 24px;
-                        cursor: pointer;
-                        padding: 0;
-                        width: 32px;
-                        height: 32px;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                    ">×</button>
-                </div>
-                <form id="collectionForm" style="display: flex; flex-direction: column; gap: 16px;">
-                    <div>
-                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">Collection Name</label>
-                        <input type="text" id="collectionNameInput" 
-                               value="${collection ? this.escapeHtml(collection.name) : ''}" 
-                               placeholder="e.g., Комедии 90-х, Аниме 2025"
-                               maxlength="50"
-                               style="
-                                   width: 100%;
-                                   padding: 10px 12px;
-                                   border-radius: 8px;
-                                   border: 1px solid ${themeColors.inputBorder};
-                                   background: ${themeColors.inputBg};
-                                   color: ${themeColors.text};
-                                   font-size: 14px;
-                               ">
-                        <div style="margin-top: 4px; font-size: 12px; color: ${themeColors.textSecondary};">
-                            <span id="nameCharCount">0</span>/50 characters
-                        </div>
-                    </div>
-                    <div>
-                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">Icon</label>
-                        
-                        <!-- Custom Icon Upload Section -->
-                        <div style="margin-bottom: 12px;">
-                            <input type="file" id="customIconInput" accept="image/png,image/jpeg,image/jpg,image/gif" style="display: none;">
-                            <button type="button" id="uploadIconBtn" style="
-                                background: ${themeColors.saveBg};
-                                color: ${themeColors.saveText};
-                                border: none;
-                                padding: 8px 12px;
-                                border-radius: 6px;
-                                cursor: pointer;
-                                font-size: 13px;
-                                font-weight: 500;
-                                display: flex;
-                                align-items: center;
-                                gap: 6px;
-                            ">
-                                <span>📁</span> Upload Custom Icon
-                            </button>
-                            <div id="customIconPreview" style="
-                                margin-top: 8px;
-                                display: ${isCustomIcon ? 'flex' : 'none'};
-                                align-items: center;
-                                gap: 8px;
-                                padding: 8px;
-                                background: ${themeColors.iconBg};
-                                border-radius: 8px;
-                            ">
-                                <img id="customIconImg" src="${isCustomIcon ? collection.icon : ''}" style="
-                                    width: 40px;
-                                    height: 40px;
-                                    object-fit: cover;
-                                    border-radius: 6px;
-                                    border: 2px solid ${themeColors.selectedIconBorder};
-                                ">
-                                <span style="flex: 1; font-size: 13px; color: ${themeColors.textSecondary};">Custom icon</span>
-                                <button type="button" id="removeCustomIconBtn" style="
-                                    background: none;
-                                    border: none;
-                                    color: ${themeColors.textSecondary};
-                                    cursor: pointer;
-                                    font-size: 18px;
-                                    padding: 4px;
-                                ">×</button>
-                            </div>
-                            <div style="margin-top: 4px; font-size: 11px; color: ${themeColors.textSecondary};">
-                                Max 500KB • PNG, JPG, GIF
-                            </div>
-                        </div>
-                        
-                        <!-- Emoji Icons Grid -->
-                        <div id="iconsGrid" style="display: flex; flex-wrap: wrap; gap: 8px; max-height: 150px; overflow-y: auto; padding: 8px; background: ${themeColors.iconBg}; border-radius: 8px;">
-                            <!-- Icons will be populated dynamically -->
-                        </div>
-                    </div>
-                    <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px;">
-                        <button type="button" id="cancelCollectionBtn" style="
-                            background: ${themeColors.cancelBg};
-                            color: ${themeColors.cancelText};
-                            border: none;
-                            padding: 10px 16px;
-                            border-radius: 8px;
-                            cursor: pointer;
-                            font-weight: 500;
-                        ">Cancel</button>
-                        <button type="submit" id="saveCollectionBtn" style="
-                            background: ${themeColors.saveBg};
-                            color: ${themeColors.saveText};
-                            border: none;
-                            padding: 10px 16px;
-                            border-radius: 8px;
-                            cursor: pointer;
-                            font-weight: 600;
-                        ">${isEdit ? 'Save Changes' : 'Create'}</button>
-                    </div>
-                </form>
-            </div>
-        `;
-
-        document.body.appendChild(modal);
-
-        const nameInput = modal.querySelector('#collectionNameInput');
-        const charCount = modal.querySelector('#nameCharCount');
-        const customIconInput = modal.querySelector('#customIconInput');
-        const uploadIconBtn = modal.querySelector('#uploadIconBtn');
-        const customIconPreview = modal.querySelector('#customIconPreview');
-        const customIconImg = modal.querySelector('#customIconImg');
-        const removeCustomIconBtn = modal.querySelector('#removeCustomIconBtn');
-        
-        let selectedIcon = collection ? collection.icon : defaultIcons[0];
-        let customIconData = isCustomIcon ? collection.icon : null;
-
-        nameInput.addEventListener('input', () => {
-            charCount.textContent = nameInput.value.length;
-        });
-        charCount.textContent = nameInput.value.length;
-
-        // Custom icon upload handler
-        uploadIconBtn.addEventListener('click', () => {
-            customIconInput.click();
-        });
-
-        customIconInput.addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            // Validate file type
-            const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif'];
-            if (!validTypes.includes(file.type)) {
-                alert('Please select a valid image file (PNG, JPG, or GIF)');
-                return;
-            }
-
-            // Validate file size (500KB)
-            if (file.size > 500 * 1024) {
-                alert('Image size must be less than 500KB');
-                return;
-            }
-
-            try {
-                // Convert image to base64
-                const reader = new FileReader();
-                reader.onload = async (event) => {
-                    const img = new Image();
-                    img.onload = () => {
-                        const width = img.width;
-                        const height = img.height;
-                        const aspectRatio = width / height;
-
-                        // Validate aspect ratio (prevent too wide or too tall)
-                        // Allow some flexibility (e.g., between 1:1.5 and 1.5:1), but reject extreme wide/tall
-                        if (aspectRatio > 1.5) {
-                            alert('Image is too wide. Please use a square or near-square image.');
-                            customIconInput.value = ''; // Clear input
-                            return;
-                        }
-                        if (aspectRatio < 0.67) {
-                            alert('Image is too tall. Please use a square or near-square image.');
-                            customIconInput.value = ''; // Clear input
-                            return;
-                        }
-
-                        // Create canvas to resize and crop
-                        const canvas = document.createElement('canvas');
-                        const ctx = canvas.getContext('2d');
-                        
-                        // Set fixed standard size for all icons
-                        const standardSize = 128;
-                        canvas.width = standardSize;
-                        canvas.height = standardSize;
-
-                        // Calculate center crop
-                        let sourceX = 0;
-                        let sourceY = 0;
-                        let sourceSize = 0;
-
-                        if (width > height) {
-                            // Landscape: crop center square based on height
-                            sourceSize = height;
-                            sourceX = (width - height) / 2;
-                            sourceY = 0;
-                        } else {
-                            // Portrait: crop center square based on width
-                            sourceSize = width;
-                            sourceX = 0;
-                            sourceY = (height - width) / 2;
-                        }
-
-                        // Draw cropped and resized image
-                        ctx.drawImage(
-                            img, 
-                            sourceX, sourceY, sourceSize, sourceSize, // Source crop
-                            0, 0, standardSize, standardSize          // Destination resize
-                        );
-                        
-                        // Upload to Firebase Storage if authenticated, otherwise use base64
-                        canvas.toBlob(async (blob) => {
-                            if (!blob) return;
-
-                            // Show loading state
-                            const originalBtnContent = uploadIconBtn.innerHTML;
-                            uploadIconBtn.textContent = 'Uploading...';
-                            uploadIconBtn.disabled = true;
-
-                            try {
-                                let iconUrl;
-                                const user = (typeof firebaseManager !== 'undefined') ? firebaseManager.getCurrentUser() : null;
-
-                                if (user && typeof firebaseManager !== 'undefined' && firebaseManager.uploadCollectionIcon) {
-                                    // Authenticated: Upload to Storage
-                                    try {
-                                        const result = await firebaseManager.uploadCollectionIcon(blob);
-                                        iconUrl = result.iconURL;
-                                    } catch (uploadError) {
-                                        console.error('Upload failed, falling back to base64:', uploadError);
-                                        iconUrl = canvas.toDataURL(file.type, 0.9);
-                                    }
-                                } else {
-                                    // Unauthenticated: Use base64
-                                    iconUrl = canvas.toDataURL(file.type, 0.9);
-                                }
-
-                                customIconData = iconUrl;
-                                selectedIcon = customIconData;
-                                
-                                // Show preview
-                                customIconImg.src = customIconData;
-                                customIconPreview.style.display = 'flex';
-                                
-                                // Deselect all grid icons
-                                const iconButtons = modal.querySelectorAll('.icon-select-btn');
-                                iconButtons.forEach(btn => {
-                                    btn.style.borderColor = themeColors.border;
-                                    btn.style.background = 'transparent';
-                                    btn.classList.remove('selected');
-                                });
-
-                                // Save the new custom icon
-                                if (this.collectionService) {
-                                    this.collectionService.saveCustomIcon(customIconData).then(() => {
-                                        // Refresh grid to show new icon
-                                        renderIconsGrid();
-                                    });
-                                }
-                            } catch (error) {
-                                console.error('Error processing icon:', error);
-                                alert('Failed to process icon');
-                            } finally {
-                                uploadIconBtn.innerHTML = originalBtnContent;
-                                uploadIconBtn.disabled = false;
-                            }
-                        }, file.type, 0.9);
-                    };
-                    img.src = event.target.result;
-                };
-                reader.readAsDataURL(file);
-            } catch (error) {
-                console.error('Error processing image:', error);
-                alert('Failed to process image');
-            }
-        });
-
-        // Remove custom icon handler
-        removeCustomIconBtn.addEventListener('click', () => {
-            customIconData = null;
-            selectedIcon = defaultIcons[0];
-            customIconPreview.style.display = 'none';
-            customIconInput.value = '';
-            
-            // Select first emoji by default
-            const firstIconBtn = modal.querySelector('.icon-select-btn');
-            if (firstIconBtn) {
-                firstIconBtn.style.borderColor = themeColors.selectedIconBorder;
-                firstIconBtn.style.background = themeColors.selectedIconBg;
-                firstIconBtn.classList.add('selected');
-            }
-        });
-
-        // Function to render icons grid
-        const renderIconsGrid = async () => {
-            const iconsGrid = modal.querySelector('#iconsGrid');
-            if (!iconsGrid) return;
-
-            // Get saved custom icons
-            let savedIcons = [];
-            if (this.collectionService) {
-                savedIcons = await this.collectionService.getSavedIcons();
-            } else {
-                // Fallback if service not ready
-                const result = await chrome.storage.local.get(['savedCustomIcons']);
-                savedIcons = result.savedCustomIcons || [];
-            }
-
-            let html = '';
-
-            // Render saved custom icons
-            if (savedIcons.length > 0) {
-                html += savedIcons.map(icon => `
-                    <button type="button" class="icon-select-btn custom-icon-btn ${collection && collection.icon === icon ? 'selected' : ''}" 
-                            data-icon="${icon}" 
-                            style="
-                                width: 40px;
-                                height: 40px;
-                                padding: 0;
-                                border: 2px solid ${collection && collection.icon === icon ? themeColors.selectedIconBorder : themeColors.border};
-                                background: ${collection && collection.icon === icon ? themeColors.selectedIconBg : 'transparent'};
-                                border-radius: 8px;
-                                cursor: pointer;
-                                transition: all 0.2s;
-                                overflow: hidden;
-                                position: relative;
-                            ">
-                        <img src="${icon}" style="width: 100%; height: 100%; object-fit: cover;">
-                    </button>
-                `).join('');
-            }
-
-            // Render default emoji icons
-            html += defaultIcons.map(icon => `
-                <button type="button" class="icon-select-btn emoji-icon-btn ${collection && collection.icon === icon ? 'selected' : ''}" 
-                        data-icon="${icon}" 
-                        style="
-                            width: 40px;
-                            height: 40px;
-                            font-size: 20px;
-                            border: 2px solid ${collection && collection.icon === icon ? themeColors.selectedIconBorder : themeColors.border};
-                            background: ${collection && collection.icon === icon ? themeColors.selectedIconBg : 'transparent'};
-                            border-radius: 8px;
-                            cursor: pointer;
-                            transition: all 0.2s;
-                        ">${icon}</button>
-            `).join('');
-
-            iconsGrid.innerHTML = html;
-
-            // Add event listeners
-            const iconButtons = iconsGrid.querySelectorAll('.icon-select-btn');
-            iconButtons.forEach(btn => {
-                btn.addEventListener('click', () => {
-                    // Clear custom icon preview/input
-                    customIconData = null;
-                    customIconPreview.style.display = 'none';
-                    customIconInput.value = '';
-                    
-                    // Update selection UI
-                    iconButtons.forEach(b => {
-                        b.style.borderColor = themeColors.border;
-                        b.style.background = 'transparent';
-                        b.classList.remove('selected');
-                    });
-                    
-                    btn.style.borderColor = themeColors.selectedIconBorder;
-                    btn.style.background = themeColors.selectedIconBg;
-                    btn.classList.add('selected');
-                    
-                    selectedIcon = btn.dataset.icon;
-                });
-            });
-        };
-
-        // Initial render
-        renderIconsGrid();
-
-        const close = () => modal.remove();
-        modal.querySelector('.modal-close-btn').addEventListener('click', close);
-        modal.querySelector('#cancelCollectionBtn').addEventListener('click', close);
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) close();
-        });
-
-        modal.querySelector('#collectionForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const name = nameInput.value.trim();
-
-            if (!name) {
-                alert('Collection name is required');
-                return;
-            }
-
-            try {
-                if (!this.collectionService) {
-                    this.initializeCollectionService();
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                }
-
-                if (isEdit) {
-                    await this.collectionService.updateCollection(collection.id, {
-                        name: name,
-                        icon: selectedIcon
-                    });
-                    if (typeof Utils !== 'undefined' && Utils.showToast) {
-                        Utils.showToast('Collection updated', 'success');
-                    }
-                } else {
-                    await this.collectionService.createCollection(name, selectedIcon);
-                    if (typeof Utils !== 'undefined' && Utils.showToast) {
-                        Utils.showToast('Collection created', 'success');
-                    }
-                }
-
-                await this.loadCustomCollections();
-                
-                if (typeof window.navigation !== 'undefined' && window.navigation.loadCustomCollections) {
-                    await window.navigation.loadCustomCollections();
-                }
-                
-                if (typeof window.collectionPage !== 'undefined' && window.collectionPage.loadCollection) {
-                    await window.collectionPage.loadCollection();
-                }
-                
-                close();
-            } catch (error) {
-                console.error('Error saving collection:', error);
-                alert(error.message || 'Failed to save collection');
-            }
-        });
-    }
 
     async showCollectionSelector(movieId, buttonElement) {
         if (!this.collectionService) {
@@ -1407,7 +856,7 @@ class Navigation {
                         await this.collectionService.removeMovieFromCollection(collectionId, movieId);
                     }
 
-                    await this.loadCustomCollections();
+
                     
                     if (typeof window.collectionPage !== 'undefined' && window.collectionPage.collectionId === collectionId) {
                         await window.collectionPage.loadCollection();
@@ -1450,28 +899,68 @@ class Navigation {
         return div.innerHTML;
     }
 
+    async updateCounts() {
+        await Promise.all([
+            this.updateWatchlistCount(),
+            this.updateFavoritesCount(),
+            this.updateWatchingCount()
+        ]);
+    }
+
+
+    async updateWatchingCount() {
+        try {
+            if (typeof firebaseManager === 'undefined') {
+                return;
+            }
+
+            const countElement = document.getElementById('watchingCount');
+            if (!countElement) return;
+
+            const user = firebaseManager.getCurrentUser();
+            if (!user) {
+                countElement.textContent = '(0)';
+                return;
+            }
+
+            const watchingService = firebaseManager.getWatchingService();
+            if (watchingService) {
+                const count = await watchingService.getWatchingCount(user.uid);
+                if (countElement) {
+                    countElement.textContent = `(${count})`;
+                }
+            }
+        } catch (error) {
+            console.error('Error updating watching count:', error);
+        }
+    }
+
     async updateWatchlistCount() {
         try {
             if (typeof firebaseManager === 'undefined') {
                 return;
             }
 
+            const countElement = document.getElementById('watchlistCount');
+            if (!countElement) return;
+
             const user = firebaseManager.getCurrentUser();
             if (!user) {
-                const countElement = document.getElementById('watchlistCount');
-                if (countElement) {
-                    countElement.textContent = '(0)';
-                }
+                countElement.textContent = '(0)';
                 return;
             }
 
-            const watchlistService = firebaseManager.getWatchlistService();
-            if (watchlistService) {
-                const count = await watchlistService.getWatchlistCount(user.uid);
-                const countElement = document.getElementById('watchlistCount');
-                if (countElement) {
-                    countElement.textContent = `(${count})`;
+            // check if service is available before calling
+            try {
+                const watchlistService = firebaseManager.getWatchlistService();
+                if (watchlistService) {
+                    const count = await watchlistService.getWatchlistCount(user.uid);
+                    if (countElement) {
+                        countElement.textContent = `(${count})`;
+                    }
                 }
+            } catch (e) {
+                console.warn('WatchlistService not available:', e.message);
             }
         } catch (error) {
             console.error('Error updating watchlist count:', error);
@@ -1483,6 +972,9 @@ class Navigation {
             if (typeof firebaseManager === 'undefined') {
                 return;
             }
+
+            const countElement = document.getElementById('favoritesCount');
+            if (!countElement) return;
 
             const user = firebaseManager.getCurrentUser();
             if (!user) {
@@ -1509,40 +1001,40 @@ class Navigation {
     setupAuthListener() {
         // Listen for auth state changes via firebaseManager
         if (typeof firebaseManager !== 'undefined') {
-            console.log('Navigation: Firebase Manager available, setting up auth listener');
+            // console.log('Navigation: Firebase Manager available, setting up auth listener');
             window.addEventListener('authStateChanged', (e) => {
                 const user = e.detail.user;
-                console.log('Navigation: Firebase auth state changed:', user ? (user.displayName || user.email) : 'No user');
+                // console.log('Navigation: Firebase auth state changed:', user ? (user.displayName || user.email) : 'No user');
                 this.updateUserDisplay(user);
             });
             
             // Also check current user immediately
             const currentUser = firebaseManager.getCurrentUser();
             if (currentUser) {
-                console.log('Navigation: Found current Firebase user:', currentUser.displayName || currentUser.email);
+                // console.log('Navigation: Found current Firebase user:', currentUser.displayName || currentUser.email);
                 this.updateUserDisplay(currentUser);
             }
         } else {
             // Fallback for pages without firebaseManager
-            console.log('Navigation: Firebase Manager not available, setting up fallback');
+            // console.log('Navigation: Firebase Manager not available, setting up fallback');
             setTimeout(() => {
                 if (typeof firebaseManager !== 'undefined') {
-                    console.log('Navigation: Firebase Manager became available');
+                    // console.log('Navigation: Firebase Manager became available');
                     window.addEventListener('authStateChanged', (e) => {
                         const user = e.detail.user;
-                        console.log('Navigation: Firebase auth state changed (delayed):', user ? (user.displayName || user.email) : 'No user');
+                        // console.log('Navigation: Firebase auth state changed (delayed):', user ? (user.displayName || user.email) : 'No user');
                         this.updateUserDisplay(user);
                     });
                     
                     // Check current user
                     const currentUser = firebaseManager.getCurrentUser();
                     if (currentUser) {
-                        console.log('Navigation: Found current Firebase user (delayed):', currentUser.displayName || currentUser.email);
+                        // console.log('Navigation: Found current Firebase user (delayed):', currentUser.displayName || currentUser.email);
                         this.updateUserDisplay(currentUser);
                     }
                 } else {
                     // If no firebaseManager, check chrome.storage periodically
-                    console.log('Navigation: Firebase Manager still not available, using storage fallback');
+                    // console.log('Navigation: Firebase Manager still not available, using storage fallback');
                     this.startStorageAuthCheck();
                 }
             }, 1000);
@@ -1556,11 +1048,11 @@ class Navigation {
         
         // Listen for firebaseManagerReady event
         window.addEventListener('firebaseManagerReady', () => {
-            console.log('Navigation: Received firebaseManagerReady event');
+            // console.log('Navigation: Received firebaseManagerReady event');
             if (typeof firebaseManager !== 'undefined') {
                 const currentUser = firebaseManager.getCurrentUser();
                 if (currentUser) {
-                    console.log('Navigation: Found user after firebaseManagerReady:', currentUser.displayName || currentUser.email);
+                    // console.log('Navigation: Found user after firebaseManagerReady:', currentUser.displayName || currentUser.email);
                     this.updateUserDisplay(currentUser);
                 }
             }
@@ -1579,7 +1071,7 @@ class Navigation {
                     
                     if (authAge < maxAge) {
                         // User is authenticated according to storage
-                        console.log('Navigation: Found valid auth in storage:', result.user.displayName || result.user.email);
+                        // console.log('Navigation: Found valid auth in storage:', result.user.displayName || result.user.email);
                         this.updateUserDisplay(result.user);
                         return;
                     } else {
@@ -1593,7 +1085,7 @@ class Navigation {
                 }
                 
                 // Not authenticated or auth expired
-                console.log('Navigation: No valid auth found in storage');
+                // console.log('Navigation: No valid auth found in storage');
                 this.updateUserDisplay(null);
             }
         } catch (error) {
@@ -1606,7 +1098,7 @@ class Navigation {
         if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
             chrome.storage.onChanged.addListener((changes, namespace) => {
                 if (namespace === 'local' && (changes.user || changes.isAuthenticated)) {
-                    console.log('Navigation: Storage auth state changed, updating display');
+                    // console.log('Navigation: Storage auth state changed, updating display');
                     this.checkStorageAuth();
                 }
             });
@@ -1628,131 +1120,173 @@ class Navigation {
     }
 
     async updateUserDisplay(user) {
-        this.user = user;
-        const userProfile = document.getElementById('navUserProfile');
-        const userAvatar = document.getElementById('navUserAvatar');
-        const userName = document.getElementById('navUserName');
-        const signInBtn = document.getElementById('navSignInBtn');
+        // Prevent multiple simultaneous updates (race condition protection)
+        if (this._updateInProgress) {
+            // console.log('Navigation: Update already in progress, skipping');
+            return;
+        }
+        this._updateInProgress = true;
 
-        console.log('Navigation: Updating user display:', user ? (user.displayName || user.email) : 'No user');
+        try {
+            this.user = user;
+            const userProfile = document.getElementById('navUserProfile');
+            const userAvatar = document.getElementById('navUserAvatar');
+            const userName = document.getElementById('navUserName');
+            const signInBtn = document.getElementById('navSignInBtn');
 
-        if (user && userProfile && userName) {
-            // Show user profile dropdown
-            userProfile.style.display = 'block';
-            if (signInBtn) signInBtn.style.display = 'none';
+            // console.log('Navigation: Updating user display:', user ? (user.displayName || user.email) : 'No user');
 
-            // Get display name based on user preference
-            let displayText = user.displayName || user.email || 'User';
-            
-            // Try to get from cache first for immediate update
-            try {
-                if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-                    const cacheKey = `user_profile_${user.uid}`;
-                    const cachedResult = await chrome.storage.local.get([cacheKey]);
-                    const cachedProfile = cachedResult[cacheKey];
+            if (user && userProfile && userName) {
+                // Show user profile dropdown
+                userProfile.style.display = 'block';
+                if (signInBtn) signInBtn.style.display = 'none';
 
-                    if (cachedProfile) {
-                        const displayNameFormat = cachedProfile.displayNameFormat || 'fullname';
-                        
-                        if (displayNameFormat === 'username' && cachedProfile.username) {
-                            displayText = cachedProfile.username;
-                        } else {
-                            const firstName = cachedProfile.firstName || '';
-                            const lastName = cachedProfile.lastName || '';
-                            const fullName = [firstName, lastName].filter(Boolean).join(' ');
-                            if (fullName) {
-                                displayText = fullName;
-                            } else {
-                                displayText = cachedProfile.displayName || user.displayName || user.email || 'User';
-                            }
-                        }
-                    }
-                }
-            } catch (error) {
-                console.error('Error loading cached profile:', error);
-            }
-
-            if (typeof firebaseManager !== 'undefined' && firebaseManager.getUserService) {
+                // Get display name based on user preference
+                let displayText = user.displayName || user.email || 'User';
+                let photoURL = user.photoURL || null;
+                
+                // Try to get from cache first for immediate update
                 try {
-                    const userService = firebaseManager.getUserService();
-                    const profile = await userService.getUserProfile(user.uid);
-                    
-                    if (profile) {
-                        const displayNameFormat = profile.displayNameFormat || 'fullname';
-                        
-                        if (displayNameFormat === 'username' && profile.username) {
-                            displayText = profile.username;
-                        } else {
-                            const firstName = profile.firstName || '';
-                            const lastName = profile.lastName || '';
-                            const fullName = [firstName, lastName].filter(Boolean).join(' ');
-                            if (fullName) {
-                                displayText = fullName;
+                    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+                        const cacheKey = `user_profile_${user.uid}`;
+                        const cachedResult = await chrome.storage.local.get([cacheKey]);
+                        const cachedProfile = cachedResult[cacheKey];
+
+                        if (cachedProfile) {
+                            const displayNameFormat = cachedProfile.displayNameFormat || 'fullname';
+                            
+                            if (displayNameFormat === 'username' && cachedProfile.username) {
+                                displayText = cachedProfile.username;
                             } else {
-                                displayText = profile.displayName || user.displayName || user.email || 'User';
+                                const firstName = cachedProfile.firstName || '';
+                                const lastName = cachedProfile.lastName || '';
+                                const fullName = [firstName, lastName].filter(Boolean).join(' ');
+                                if (fullName) {
+                                    displayText = fullName;
+                                } else {
+                                    displayText = cachedProfile.displayName || user.displayName || user.email || 'User';
+                                }
+                            }
+                            // Use cached photoURL if available
+                            if (cachedProfile.photoURL) {
+                                photoURL = cachedProfile.photoURL;
                             }
                         }
                     }
                 } catch (error) {
-                    console.error('Error loading user profile for display:', error);
+                    console.error('Error loading cached profile:', error);
                 }
-            }
 
-            userName.textContent = displayText;
-            
-            if (userAvatar) {
-                if (user.photoURL) {
-                    userAvatar.src = user.photoURL;
-                } else {
-                    // Use default avatar if no photo
-                    userAvatar.src = chrome.runtime.getURL('icons/icon48.png');
-                }
-            }
-
-            // Show/hide Admin Panel menu item based on admin status
-            const adminMenuItem = document.getElementById('navDropdownAdmin');
-            if (adminMenuItem) {
-                try {
-                    if (typeof firebaseManager !== 'undefined' && firebaseManager.getUserService) {
+                if (typeof firebaseManager !== 'undefined' && firebaseManager.getUserService) {
+                    try {
                         const userService = firebaseManager.getUserService();
                         const profile = await userService.getUserProfile(user.uid);
                         
-                        if (profile && profile.isAdmin === true) {
-                            adminMenuItem.style.display = 'flex';
+                        if (profile) {
+                            const displayNameFormat = profile.displayNameFormat || 'fullname';
+                            
+                            if (displayNameFormat === 'username' && profile.username) {
+                                displayText = profile.username;
+                            } else {
+                                const firstName = profile.firstName || '';
+                                const lastName = profile.lastName || '';
+                                const fullName = [firstName, lastName].filter(Boolean).join(' ');
+                                if (fullName) {
+                                    displayText = fullName;
+                                } else {
+                                    displayText = profile.displayName || user.displayName || user.email || 'User';
+                                }
+                            }
+                            // Use profile photoURL if available
+                            if (profile.photoURL) {
+                                photoURL = profile.photoURL;
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error loading user profile for display:', error);
+                    }
+                }
+
+                userName.textContent = displayText;
+                
+                // Determine final avatar URL
+                let finalAvatarUrl;
+                if (photoURL) {
+                    finalAvatarUrl = photoURL;
+                } else if (user.photoURL) {
+                    finalAvatarUrl = user.photoURL;
+                } else {
+                    // Use default avatar if no photo
+                    finalAvatarUrl = chrome.runtime.getURL('icons/icon48.png');
+                }
+                
+                if (userAvatar) {
+                    userAvatar.src = finalAvatarUrl;
+                }
+
+                // Save to display cache for instant loading on next page visit
+                try {
+                    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+                        const cacheData = {
+                            displayName: displayText,
+                            photoURL: finalAvatarUrl,
+                            uid: user.uid,
+                            timestamp: Date.now()
+                        };
+                        await chrome.storage.local.set({
+                            [Navigation.USER_DISPLAY_CACHE_KEY]: cacheData
+                        });
+                        this.cachedUserDisplay = cacheData;
+                        // console.log('Navigation: Saved user display cache:', displayText);
+                    }
+                } catch (error) {
+                    console.warn('Navigation: Could not save user display cache:', error);
+                }
+
+                // Show/hide Admin Panel menu item based on admin status
+                const adminMenuItem = document.getElementById('navDropdownAdmin');
+                if (adminMenuItem) {
+                    try {
+                        if (typeof firebaseManager !== 'undefined' && firebaseManager.getUserService) {
+                            const userService = firebaseManager.getUserService();
+                            const profile = await userService.getUserProfile(user.uid);
+                            
+                            if (profile && profile.isAdmin === true) {
+                                adminMenuItem.style.display = 'flex';
+                            } else {
+                                adminMenuItem.style.display = 'none';
+                            }
                         } else {
                             adminMenuItem.style.display = 'none';
                         }
-                    } else {
+                    } catch (error) {
+                        console.error('Error checking admin status:', error);
                         adminMenuItem.style.display = 'none';
                     }
-                } catch (error) {
-                    console.error('Error checking admin status:', error);
-                    adminMenuItem.style.display = 'none';
+                }
+
+                // Update watchlist and favorites counts when user is logged in
+                this.updateWatchlistCount();
+                this.updateFavoritesCount();
+            } else {
+                // Hide user profile, show sign in button
+                if (userProfile) userProfile.style.display = 'none';
+                if (signInBtn) signInBtn.style.display = 'flex';
+                
+                // Reset watchlist and favorites counts
+                const watchlistCountElement = document.getElementById('watchlistCount');
+                if (watchlistCountElement) {
+                    watchlistCountElement.textContent = '(0)';
+                }
+                const favoritesCountElement = document.getElementById('favoritesCount');
+                if (favoritesCountElement) {
+                    favoritesCountElement.textContent = '(0)';
                 }
             }
-
-        // Update watchlist and favorites counts when user is logged in
-        this.updateWatchlistCount();
-        this.updateFavoritesCount();
-    } else {
-        // Hide user profile, show sign in button
-        if (userProfile) userProfile.style.display = 'none';
-        if (signInBtn) signInBtn.style.display = 'flex';
-        
-        // Reset watchlist and favorites counts
-        const watchlistCountElement = document.getElementById('watchlistCount');
-        if (watchlistCountElement) {
-            watchlistCountElement.textContent = '(0)';
-        }
-        const favoritesCountElement = document.getElementById('favoritesCount');
-        if (favoritesCountElement) {
-            favoritesCountElement.textContent = '(0)';
+        } finally {
+            this._updateInProgress = false;
         }
     }
-
-    // Reload collections to ensure we show the correct ones (Firestore vs Local)
-    this.loadCustomCollections();
-}
 
     setActivePage(page) {
         // Remove active class from all links
@@ -1771,15 +1305,18 @@ class Navigation {
     }
 
     navigateToPage(page) {
+        // console.log(`[Navigation] navigateToPage called with page: ${page}`);
+        
         // Check if we're in popup context
         if (window.location.pathname.includes('popup.html')) {
+            // console.log('[Navigation] Context: Popup, opening in new tab');
             // In popup, open new tabs as before
             let url = '';
             
             switch (page) {
                 case 'home':
-                    window.location.reload();
-                    return;
+                    url = chrome.runtime.getURL('src/pages/home/home.html');
+                    break;
                 case 'search':
                     url = chrome.runtime.getURL('src/pages/search/search.html');
                     break;
@@ -1792,6 +1329,12 @@ class Navigation {
                 case 'favorites':
                     url = chrome.runtime.getURL('src/pages/favorites/favorites.html');
                     break;
+                case 'watching':
+                    url = chrome.runtime.getURL('src/pages/watching/watching.html');
+                    break;
+                case 'bookmarks':
+                    url = chrome.runtime.getURL('src/pages/bookmarks/bookmarks.html');
+                    break;
                 case 'profile':
                     url = chrome.runtime.getURL('src/pages/profile/profile.html');
                     break;
@@ -1799,9 +1342,11 @@ class Navigation {
                     url = chrome.runtime.getURL('src/pages/settings/settings.html');
                     break;
                 default:
+                    console.warn(`[Navigation] Unknown page for popup: ${page}`);
                     return;
             }
 
+            // console.log(`[Navigation] Generated URL: ${url}`);
             if (url && chrome.tabs) {
                 chrome.tabs.create({ url });
             }
@@ -1809,9 +1354,13 @@ class Navigation {
         }
 
         // For extension pages, use simple navigation on same tab
+        // console.log('[Navigation] Context: Extension Page, navigating current tab');
         let url = '';
         
         switch (page) {
+            case 'home':
+                url = chrome.runtime.getURL('src/pages/home/home.html');
+                break;
             case 'search':
                 url = chrome.runtime.getURL('src/pages/search/search.html');
                 break;
@@ -1824,6 +1373,15 @@ class Navigation {
             case 'favorites':
                 url = chrome.runtime.getURL('src/pages/favorites/favorites.html');
                 break;
+            case 'watching':
+                url = chrome.runtime.getURL('src/pages/watching/watching.html');
+                break;
+            case 'bookmarks':
+                url = chrome.runtime.getURL('src/pages/bookmarks/bookmarks.html');
+                break;
+            case 'random':
+                url = chrome.runtime.getURL('src/pages/random/random.html');
+                break;
             case 'profile':
                 url = chrome.runtime.getURL('src/pages/profile/profile.html');
                 break;
@@ -1834,12 +1392,16 @@ class Navigation {
                 url = chrome.runtime.getURL('src/pages/admin/admin.html');
                 break;
             default:
+                console.warn(`[Navigation] Unknown page for extension: ${page}`);
                 return;
         }
 
+        // console.log(`[Navigation] Target URL: ${url}`);
         if (url) {
             // Navigate on same tab
             window.location.href = url;
+        } else {
+            console.error('[Navigation] No URL generated');
         }
     }
 
@@ -2256,6 +1818,17 @@ class Navigation {
 
     async handleLogout() {
         try {
+            // Clear display cache before logout
+            try {
+                if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+                    await chrome.storage.local.remove([Navigation.USER_DISPLAY_CACHE_KEY]);
+                    this.cachedUserDisplay = null;
+                    // console.log('Navigation: Cleared user display cache on logout');
+                }
+            } catch (cacheError) {
+                console.warn('Navigation: Could not clear user display cache:', cacheError);
+            }
+
             if (typeof firebaseManager !== 'undefined') {
                 await firebaseManager.signOut();
                 // Redirect to popup or refresh

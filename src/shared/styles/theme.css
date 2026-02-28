@@ -50,10 +50,10 @@
     --theme-bg-card: #ededed;
     
     /* Text Colors */
-    --theme-text-primary: #333335;
-    --theme-text-secondary: #495057;
+    --theme-text-primary: #000000;
+    --theme-text-secondary: #000000;
     --theme-text-muted: #6c757d;
-    --theme-stat-color: #333335;
+    --theme-stat-color: #000000;
     
     /* Border Colors */
     --theme-border: rgba(0, 0, 0, 0.1);
@@ -78,10 +78,10 @@
     --accent-hover: #1a1a1a;
     --accent-light: #4a4a4a;
     
-    --text-primary: #333335;
-    --text-secondary: #495057;
+    --text-primary: #000000;
+    --text-secondary: #000000;
     --text-muted: #6c757d;
-    --text-accent: #333335;
+    --text-accent: #000000;
     
     /* Card backgrounds */
     --gradient-card: linear-gradient(135deg, rgba(0, 0, 0, 0.03) 0%, rgba(0, 0, 0, 0.01) 100%);

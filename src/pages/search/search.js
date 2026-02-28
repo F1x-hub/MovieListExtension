@@ -1,3 +1,5 @@
+import { i18n } from '../../shared/i18n/I18n.js';
+
 /**
  * SearchManager - Controller for the movie search page
  * Handles movie search, filtering, and rating functionality
@@ -13,13 +15,42 @@ class SearchManager {
         this.currentRating = 0; // State for new rating system
         this.isReviewVisible = false;
         this.searchHistoryService = new SearchHistoryService();
-        this.streamingService = new StreamingService();
+        this.parserRegistry = window.parserRegistry || new ParserRegistry();
+        this.progressService = new ProgressService();
         this.isHistoryDropdownOpen = false;
         this.isPlaying = false;
         this.currentVideoUrl = '';
+        this.availableCollections = []; // Store for menu
         this.setupEventListeners();
         this.setupImageErrorHandlers();
-        this.initializeUI();
+        this.init();
+    }
+
+    async init() {
+        await i18n.init();
+        i18n.translatePage();
+        await this.initializeUI();
+        
+        // Listen for language changes
+        chrome.runtime.onMessage.addListener((message) => {
+            if (message.type === 'SETTINGS_UPDATED') {
+                this.handleSettingsUpdate(message.settings);
+            }
+        });
+    }
+
+    async handleSettingsUpdate(settings) {
+        if (settings.language && settings.language !== i18n.currentLocale) {
+            await i18n.init();
+            i18n.translatePage();
+            
+            // Re-initialize filters to update their labels
+            this.initializeFilters();
+            
+            if (this.currentResults?.docs?.length > 0) {
+                await this.displayResults();
+            }
+        }
     }
 
     initializeElements() {
@@ -53,7 +84,6 @@ class SearchManager {
             resultsHeader: document.getElementById('resultsHeader'),
             resultsInfo: document.getElementById('resultsInfo'),
             resultsGrid: document.getElementById('resultsGrid'),
-            loading: document.getElementById('loading'),
             pagination: document.getElementById('pagination'),
             prevPageBtn: document.getElementById('prevPageBtn'),
             nextPageBtn: document.getElementById('nextPageBtn'),
@@ -158,7 +188,7 @@ class SearchManager {
         if (this.elements.movieDetailBtn) {
             this.elements.movieDetailBtn.addEventListener('click', () => {
                 if (this.selectedMovie) {
-                    window.location.href = chrome.runtime.getURL(`src/pages/search/search.html?movieId=${this.selectedMovie.kinopoiskId}`);
+                    window.location.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${this.selectedMovie.kinopoiskId}`);
                 }
             });
         }
@@ -182,18 +212,22 @@ class SearchManager {
             const currentStatus = actionBtn.getAttribute('data-is-favorite') === 'true';
             
             if (action === 'view-details' && movieId) {
-                window.location.href = chrome.runtime.getURL(`src/pages/search/search.html?movieId=${movieId}`);
+                // Redirect to new movie-details page
+                window.location.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`);
             } else if (action === 'toggle-favorite' && ratingId) {
                 // For favorites, we need the button element to update its state
                 this.toggleFavorite(ratingId, currentStatus, actionBtn, movieId);
+            } else if (action === 'toggle-watching' && movieId) {
+                this.handleWatchingToggle(movieId, actionBtn);
             } else if (action === 'toggle-watchlist' && movieId) {
-                // Find the movie object from current results
-                const movie = this.currentResults.docs.find(m => String(m.kinopoiskId) === String(movieId));
-                if (movie) {
-                    this.toggleWatchlist(movie, actionBtn);
+                this.handleWatchlistToggle(movieId, actionBtn);
+            } else if (action === 'toggle-collection' && movieId) {
+                const collectionId = actionBtn.getAttribute('data-collection-id');
+                if (collectionId) {
+                    this.handleToggleCollection(movieId, collectionId, actionBtn);
                 }
             } else if (action === 'add-to-collection' && movieId) {
-                // TODO: Implement collection adding logic
+                // Legacy add-to-collection action
                  if (typeof Utils !== 'undefined') {
                     Utils.showToast('Collection feature coming soon!', 'info');
                 }
@@ -356,19 +390,41 @@ class SearchManager {
         const isAuth = firebaseManager.isAuthenticated();
         
         if (!isAuth) {
-            this.showError('Пожалуйста, войдите в систему для поиска фильмов');
+            this.showError(i18n.get('search.error_login'));
             return;
         }
         
         this.currentUser = firebaseManager.getCurrentUser();
-        
-        // Check for parameters in URL
+    
+    // Load collections using CollectionService
+    if (typeof CollectionService !== 'undefined') {
+        this.collectionService = new CollectionService();
+        try {
+            this.availableCollections = await this.collectionService.getCollections();
+        } catch (e) {
+            console.error('Error loading collections:', e);
+        }
+    }
+    
+    // Check for parameters in URL
         const urlParams = new URLSearchParams(window.location.search);
         const movieId = urlParams.get('movieId');
         const query = urlParams.get('q') || urlParams.get('query'); // Support both 'q' and 'query'
+        const sourceUrl = urlParams.get('sourceUrl');
         
         if (movieId) {
-            await this.loadMovieById(movieId, false);
+            // Redirect to new movie-details page (backward compatibility)
+            let redirectUrl = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`);
+            
+            // Preserve autoplay parameter if present
+            if (urlParams.get('autoplay') === 'true') {
+                redirectUrl += '&autoplay=true';
+            }
+            
+            window.location.replace(redirectUrl);
+            return; // Stop further execution
+        } else if (sourceUrl) {
+            await this.loadMovieFromSource(sourceUrl);
         } else if (query) {
             this.elements.searchInput.value = query;
             this.currentQuery = query;
@@ -382,9 +438,94 @@ class SearchManager {
         // Load saved filter state
         this.loadFilterState();
         
-        // Hide initial loading only if no movie/query was processed
-        if (!movieId && !query) {
+        // Hide initial loading only if no movie/query/source was processed
+        if (!movieId && !query && !sourceUrl) {
             this.hideInitialLoading();
+        }
+    }
+
+    async loadMovieFromSource(url) {
+        try {
+            this.showLoading(true);
+            
+            // Wait for firebaseManager to be ready (for services)
+            if (!window.firebaseManager) {
+                await this.waitForFirebaseManager();
+            }
+
+            console.log('Loading movie from source URL:', url);
+            const primaryParser = this.parserRegistry.get('exfs');
+            if (!primaryParser) throw new Error('ExFs parser not available');
+            const movieDetails = await primaryParser.getMovieDetails(url);
+            console.log('Parsed movie details:', movieDetails);
+            
+            // Generate a temporary ID if missing, or handle null ID gracefully in display
+            // Usually we need an ID for ratings/watchlist. 
+            // We can try to search for the movie on KP by title to find the ID?
+            // Or just display without ID features enabled.
+            
+            if (!movieDetails.kinopoiskId && movieDetails.nameRu) {
+                 // Optional: Try to find KP ID by title
+                 try {
+                     const kinopoiskService = firebaseManager.getKinopoiskService();
+                     if (kinopoiskService.isConfigured()) {
+                         const searchResults = await kinopoiskService.searchMovies(movieDetails.nameRu, 1, 1);
+                         if (searchResults && searchResults.docs && searchResults.docs.length > 0) {
+                             // Simple fuzzy check
+                             const best = searchResults.docs[0];
+                             if (best.nameRu && movieDetails.nameRu && best.nameRu.toLowerCase() === movieDetails.nameRu.toLowerCase()) {
+                                 movieDetails.kinopoiskId = best.id || best.kinopoiskId;
+                                 movieDetails.ratingKinopoisk = best.ratingKinopoisk || movieDetails.ratingKinopoisk;
+                                 if (!movieDetails.description) movieDetails.description = best.description;
+                                 if (!movieDetails.year && best.year) movieDetails.year = best.year;
+                                 console.log('Found matching KP ID:', movieDetails.kinopoiskId);
+                             }
+                         }
+                     }
+                 } catch (e) {
+                     console.warn('Failed to resolve KP ID:', e);
+                 }
+            }
+            
+            // Normalize for display
+            // createDetailedMovieCard expects countries/genres as joined strings or array of strings (it does .join(', '))
+            // and ratings as kpRating/imdbRating (it seems, based on snippet read)
+            
+            const countries = (movieDetails.countries || []).map(c => {
+                if (typeof c === 'string') return c;
+                if (c.country) return c.country;
+                if (c.name) return c.name;
+                return '';
+            }).filter(c => c);
+
+            const genres = (movieDetails.genres || []).map(g => {
+                 if (typeof g === 'string') return g;
+                 if (g.genre) return g.genre;
+                 if (g.name) return g.name;
+                 return '';
+            }).filter(g => g);
+
+            const movie = {
+                ...movieDetails,
+                countries: countries, // Array of strings
+                genres: genres,       // Array of strings
+                
+                // Map ratings to keys expected by display function
+                kpRating: movieDetails.ratingKinopoisk || 0,
+                imdbRating: movieDetails.ratingImdb || 0,
+                
+                // Keep original keys just in case
+                ratingKinopoisk: movieDetails.ratingKinopoisk || 0,
+                ratingImdb: movieDetails.ratingImdb || 0,
+            };
+
+            await this.displaySingleMovieResult(movie);
+            
+        } catch (error) {
+             console.error('Error loading movie from source:', error);
+             this.showError(`${i18n.get('movie_details.error_loading_movie') || 'Failed to load movie info'}: ${error.message}`);
+        } finally {
+            this.showLoading(false);
         }
     }
 
@@ -393,30 +534,27 @@ class SearchManager {
         const currentYear = new Date().getFullYear();
         this.elements.yearToFilter.value = currentYear;
         
-        // Common genres with Russian translations
-        const genres = [
-            'боевик', 'приключения', 'анимация', 'биография', 'комедия', 
-            'криминал', 'документальный', 'драма', 'семейный', 'фэнтези', 
-            'история', 'ужасы', 'музыка', 'мюзикл', 'детектив', 'мелодрама', 
-            'фантастика', 'спорт', 'триллер', 'военный', 'вестерн'
-        ];
+        // Get genres from locales
+        const genres = Object.entries(i18n.locales.ru.random.genres).map(([key, val]) => ({
+            key,
+            label: i18n.get(`random.genres.${key}`)
+        }));
         
         this.elements.genreCheckboxes.innerHTML = '';
-        genres.forEach((genre, index) => {
-            const checkboxItem = this.createCheckboxItem(`genre-${index}`, genre, genre);
+        genres.forEach(({ key, label }) => {
+            const checkboxItem = this.createCheckboxItem(`genre-${key}`, label, label);
             this.elements.genreCheckboxes.appendChild(checkboxItem);
         });
         
-        // Common countries with Russian names
-        const countries = [
-            'США', 'Великобритания', 'Франция', 'Германия', 'Италия', 
-            'Испания', 'Россия', 'Япония', 'Китай', 'Индия', 
-            'Австралия', 'Канада', 'Бразилия', 'Мексика', 'Южная Корея'
-        ];
+        // Get countries from locales
+        const countries = Object.entries(i18n.locales.ru.random.countries).map(([key, val]) => ({
+            key,
+            label: i18n.get(`random.countries.${key}`)
+        }));
         
         this.elements.countryCheckboxes.innerHTML = '';
-        countries.forEach((country, index) => {
-            const checkboxItem = this.createCheckboxItem(`country-${index}`, country, country);
+        countries.forEach(({ key, label }) => {
+            const checkboxItem = this.createCheckboxItem(`country-${key}`, label, label);
             this.elements.countryCheckboxes.appendChild(checkboxItem);
         });
     }
@@ -476,7 +614,7 @@ class SearchManager {
     async performSearch() {
         const query = this.elements.searchInput.value.trim();
         if (!query) {
-            this.showError('Please enter a search query');
+            this.showError(i18n.get('search.error_query'));
             return;
         }
         
@@ -512,7 +650,7 @@ class SearchManager {
             
             // Check if API is configured
             if (!kinopoiskService.isConfigured()) {
-                this.showError('Kinopoisk API key not configured. Please check the configuration.');
+                this.showError(i18n.get('search.error_api'));
                 return;
             }
             
@@ -556,20 +694,20 @@ class SearchManager {
             console.error('Search error:', error);
             
             // Provide more user-friendly error messages
-            let errorMessage = 'Произошла ошибка при поиске фильмов';
+            let errorMessage = i18n.get('search.error_generic');
             
             if (error.message.includes('500')) {
                 if (this.hasCyrillic(this.currentQuery)) {
-                    errorMessage = `Проблема с поиском на кириллице "${this.currentQuery}". Попробуйте английское название или другие ключевые слова.`;
+                    errorMessage = i18n.get('search.error_cyrillic').replace('{query}', this.currentQuery);
                 } else {
-                    errorMessage = 'Сервер временно недоступен. Попробуйте позже или измените запрос.';
+                    errorMessage = i18n.get('search.error_server');
                 }
             } else if (error.message.includes('404')) {
-                errorMessage = 'По вашему запросу ничего не найдено. Попробуйте другие ключевые слова.';
+                errorMessage = i18n.get('search.error_not_found');
             } else if (error.message.includes('403')) {
-                errorMessage = 'Проблема с доступом к API. Проверьте настройки.';
+                errorMessage = i18n.get('search.error_forbidden');
             } else if (error.message.includes('network') || error.message.includes('fetch')) {
-                errorMessage = 'Проблема с подключением к интернету. Проверьте соединение.';
+                errorMessage = i18n.get('search.error_network');
             }
             
             this.showError(errorMessage);
@@ -618,8 +756,8 @@ class SearchManager {
             this.elements.resultsGrid.innerHTML = `
                 <div class="empty-state">
                     <div class="empty-state-icon"><svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></div>
-                    <h3 class="empty-state-title">Фильмы не найдены</h3>
-                    <p class="empty-state-text">Попробуйте изменить поисковый запрос или воспользуйтесь фильтрами</p>
+                    <h3 class="empty-state-title" data-i18n="search.no_results_title">${i18n.get('search.no_results_title')}</h3>
+                    <p class="empty-state-text" data-i18n="search.no_results_text">${i18n.get('search.no_results_text')}</p>
                 </div>
             `;
             this.elements.resultsHeader.style.display = 'none';
@@ -629,7 +767,7 @@ class SearchManager {
         
         // Show results header
         this.elements.resultsHeader.style.display = 'flex';
-        this.elements.resultsInfo.textContent = `Найдено ${this.currentResults.total} фильмов`;
+        this.elements.resultsInfo.textContent = i18n.get('search.found_count').replace('{count}', this.currentResults.total);
         
         // Remove single-item class for grid layout
         this.elements.resultsGrid.classList.remove('single-item');
@@ -666,6 +804,11 @@ class SearchManager {
         this.elements.resultsGrid.innerHTML = ''; // Clear existing content
         
         this.currentResults.docs.forEach(movie => {
+            // Clean title
+            if (movie.name) movie.name = Utils.cleanTitle(movie.name);
+            if (movie.nameRu) movie.nameRu = Utils.cleanTitle(movie.nameRu);
+            if (movie.nameEn) movie.nameEn = Utils.cleanTitle(movie.nameEn);
+
             const userRating = userRatingsMap[movie.kinopoiskId] || null;
             const isFavorite = userRating?.isFavorite === true;
             const ratingId = userRating?.id || null;
@@ -683,15 +826,28 @@ class SearchManager {
             // Options for MovieCard
             const cardOptions = {
                 showFavorite: true,
+                showWatching: true,
                 showWatchlist: true,
                 showUserInfo: false, // Don't show user info on search results
                 showAverageRating: true,
                 showThreeDotMenu: true,
                 showEditRating: false, // Edit is handled via menu or modal
-                showAddToCollection: true
+                showAddToCollection: false, // Use collections list instead
+                
+                // Pass collections
+                availableCollections: this.availableCollections || [],
+                movieCollections: (this.availableCollections || [])
+                    .filter(c => c.movieIds && (c.movieIds.includes(Number(movie.kinopoiskId)) || c.movieIds.includes(String(movie.kinopoiskId))))
+                    .map(c => c.id)
             };
             
             const cardElement = MovieCard.create(cardData, cardOptions);
+            
+            // Make entire card clickable
+            cardElement.style.cursor = 'pointer';
+            cardElement.setAttribute('data-action', 'view-details');
+            cardElement.setAttribute('data-movie-id', movie.kinopoiskId);
+            
             this.elements.resultsGrid.appendChild(cardElement);
         });
         
@@ -702,7 +858,9 @@ class SearchManager {
         
         // Show pagination
         this.elements.pagination.style.display = 'flex';
-        this.elements.pageInfo.textContent = `Страница ${this.currentPage} из ${this.currentResults.pages}`;
+        this.elements.pageInfo.textContent = i18n.get('search.page_info')
+            .replace('{current}', this.currentPage)
+            .replace('{total}', this.currentResults.pages);
         this.elements.prevPageBtn.disabled = this.currentPage <= 1;
         this.elements.nextPageBtn.disabled = this.currentPage >= this.currentResults.pages;
     }
@@ -749,6 +907,17 @@ class SearchManager {
             console.log('[Awards Debug] Awards exists?', !!movie.awards);
             console.log('[Awards Debug] Awards length:', movie.awards?.length);
             
+            // Check for legacy/invalid awards data (missing name or using old property names)
+            if (movie.awards && movie.awards.length > 0) {
+                const firstAward = movie.awards[0];
+                const isLegacy = !firstAward.name || firstAward.hasOwnProperty('winning'); // Old format used 'winning' instead of 'win'
+                
+                if (isLegacy) {
+                    console.log('[Awards Debug] ⚠ Detected legacy/invalid awards data, forcing re-parse');
+                    movie.awards = [];
+                }
+            }
+            
             if (!movie.awards || movie.awards.length === 0) {
                 console.log('[Awards Debug] ✓ Awards missing or empty, starting parsing...');
                 try {
@@ -786,7 +955,7 @@ class SearchManager {
                      movie.awards = [];
                 }
             } else {
-                console.log('[Awards Debug] ✗ Awards already present, skipping parsing');
+                console.log('[Awards Debug] ✗ Awards already present and valid, skipping parsing');
             }
             
             // Try to get movie images/frames
@@ -836,21 +1005,37 @@ class SearchManager {
     async displaySingleMovieResult(movie) {
         // Show results header for single movie
         this.elements.resultsHeader.style.display = 'flex';
-        this.elements.resultsInfo.textContent = `Информация о фильме`;
+        this.elements.resultsInfo.textContent = i18n.get('search.movie_details_modal');
         
-        // Load user rating if user is logged in
+        // Load user rating and status if user is logged in
         let userRating = null;
+        let bookmarkStatus = null;
+        
         if (this.currentUser) {
             try {
+                // Get rating
                 const ratingService = firebaseManager.getRatingService();
                 userRating = await ratingService.getRating(this.currentUser.uid, movie.kinopoiskId);
+                
+                // Get bookmark status (including watching, favorite, plan_to_watch)
+                const favoriteService = firebaseManager.getFavoriteService();
+                const bookmark = await favoriteService.getBookmark(this.currentUser.uid, movie.kinopoiskId);
+                if (bookmark) {
+                    bookmarkStatus = bookmark.status;
+                    // If we have a bookmark but no userRating object yet, we can construct a partial one for isFavorite flag
+                    if (!userRating && bookmark.status === 'favorite') {
+                        userRating = { isFavorite: true, id: bookmark.id };
+                    } else if (userRating && bookmark.status === 'favorite') {
+                         userRating.isFavorite = true;
+                    }
+                }
             } catch (error) {
-                console.warn('Failed to load user rating:', error);
+                console.warn('Failed to load user data:', error);
             }
         }
         
-        // Create detailed movie card for single movie view with user rating
-        const movieHTML = this.createDetailedMovieCard(movie, userRating);
+        // Create detailed movie card for single movie view with user rating and status
+        const movieHTML = this.createDetailedMovieCard(movie, userRating, bookmarkStatus);
         
         // Remove single-item class for movie display
         this.elements.resultsGrid.classList.remove('single-item');
@@ -954,7 +1139,7 @@ class SearchManager {
             
             return `
                 <div class="movie-frame" data-frame-url="${frameUrl}" data-frame-index="${index}">
-                    <img src="${frameUrl}" alt="Кадр из фильма" class="movie-frame-image" data-fallback="frame">
+                    <img src="${frameUrl}" alt="${i18n.get('movie_details.tabs.about').replace('About', 'Frame').replace('О фильме', 'Кадр')}" class="movie-frame-image" data-fallback="frame">
                 </div>
             `;
         }).join('');
@@ -962,7 +1147,7 @@ class SearchManager {
         if (framesHTML) {
             return `
                 <div class="movie-frames-section">
-                    <h4>Кадры из фильма</h4>
+                    <h4>${i18n.get('movie_details.frames')}</h4>
                     <div class="movie-frames-grid">
                         ${framesHTML}
                     </div>
@@ -994,7 +1179,7 @@ class SearchManager {
             if (ratings.length === 0) {
                 contentEl.innerHTML = `
                     <div class="user-ratings-empty">
-                        <p>Будьте первым, кто оценит этот фильм!</p>
+                        <p>${i18n.get('movie_details.empty_reviews')}</p>
                     </div>
                 `;
                 loadingEl.style.display = 'none';
@@ -1037,7 +1222,7 @@ class SearchManager {
             console.error('Error loading user ratings:', error);
             contentEl.innerHTML = `
                 <div class="user-ratings-error">
-                    <p>Ошибка загрузки отзывов. Попробуйте обновить страницу.</p>
+                    <p>${i18n.get('movie_details.error_loading_reviews')}</p>
                 </div>
             `;
         } finally {
@@ -1049,7 +1234,7 @@ class SearchManager {
         if (ratings.length === 0) {
             return `
                 <div class="user-ratings-empty">
-                    <p>Будьте первым, кто оценит этот фильм!</p>
+                    <p>${i18n.get('movie_details.be_first')}</p>
                 </div>
             `;
         }
@@ -1058,7 +1243,7 @@ class SearchManager {
             const userProfile = userProfileMap.get(rating.userId);
             const userName = typeof Utils !== 'undefined' && Utils.getDisplayName
                 ? Utils.getDisplayName(userProfile, null)
-                : (userProfile?.displayName || rating.userName || 'Неизвестный пользователь');
+                : (userProfile?.displayName || rating.userName || i18n.get('navbar.sign_in').replace('Sign In', 'User').replace('Войти', 'Пользователь'));
             const userPhoto = userProfile?.photoURL || rating.userPhoto || '/icons/icon48.png';
             const isCurrentUser = currentUserId && rating.userId === currentUserId;
             const userId = rating.userId;
@@ -1076,17 +1261,17 @@ class SearchManager {
                         </div>
                         ${isCurrentUser ? `
                             <div class="user-rating-menu">
-                                <button class="user-rating-menu-btn" data-rating-id="${rating.id}" aria-label="Меню отзыва">
+                                <button class="user-rating-menu-btn" data-rating-id="${rating.id}" aria-label="${i18n.get('movie_details.user_ratings_title')}">
                                     <span>⋮</span>
                                 </button>
                                 <div class="user-rating-menu-dropdown" id="menu-${rating.id}" style="display: none;">
                                     <button class="menu-item edit-item" data-rating-id="${rating.id}" data-action="edit">
                                         <span class="menu-icon">✏️</span>
-                                        <span>Редактировать</span>
+                                        <span>${i18n.get('movie_details.edit')}</span>
                                     </button>
                                     <button class="menu-item delete-item" data-rating-id="${rating.id}" data-action="delete">
                                         <span class="menu-icon">🗑️</span>
-                                        <span>Удалить</span>
+                                        <span>${i18n.get('movie_details.delete')}</span>
                                     </button>
                                 </div>
                             </div>
@@ -1102,7 +1287,7 @@ class SearchManager {
         
         return `
             <div class="user-ratings-container">
-                <h4 class="user-ratings-title">Оценки пользователей</h4>
+                <h4 class="user-ratings-title">${i18n.get('movie_details.user_ratings_title')}</h4>
                 <div class="user-ratings-list">
                     ${ratingsHTML}
                 </div>
@@ -1150,7 +1335,7 @@ class SearchManager {
         return 'недель';
     }
 
-    createDetailedMovieCard(movie, userRating = null) {
+    createDetailedMovieCard(movie, userRating = null, bookmarkStatus = null) {
         const posterUrl = movie.posterUrl || '/icons/icon48.png';
         const year = movie.year || '';
         const genres = movie.genres?.join(', ') || '';
@@ -1158,12 +1343,14 @@ class SearchManager {
         const kpRating = movie.kpRating || 0;
         const imdbRating = movie.imdbRating || 0;
         const duration = movie.duration || 0;
-        const description = movie.description || 'Описание отсутствует';
+        const description = movie.description || i18n.get('movie_details.no_description') || 'Описание отсутствует';
         const votes = movie.votes?.kp || 0;
         const imdbVotes = movie.votes?.imdb || 0;
         
         const isRated = !!userRating;
-        const isFavorite = userRating?.isFavorite === true;
+        const isFavorite = bookmarkStatus === 'favorite' || (userRating?.isFavorite === true);
+        const isWatching = bookmarkStatus === 'watching';
+        const isInWatchlist = bookmarkStatus === 'plan_to_watch';
         const ratingId = userRating?.id || null;
         
         // Get kinopoisk service for helper functions
@@ -1217,7 +1404,7 @@ class SearchManager {
         // Get audience data for Russia
         const audienceRussia = movie.audience?.find(a => a.country === 'Россия' || a.country === 'Russia');
         const audienceRussiaStr = audienceRussia 
-            ? `${(audienceRussia.count / 1000).toFixed(1)} тыс` 
+            ? `${(audienceRussia.count / 1000).toFixed(1)} ${i18n.currentLocale === 'ru' ? 'тыс' : 'k'}` 
             : '';
         
         return `
@@ -1232,7 +1419,7 @@ class SearchManager {
                                 <span>⋮</span>
                             </button>
                             <div class="mc-menu-dropdown">
-                                <button class="mc-menu-item" data-action="toggle-favorite" 
+                                <button class="mc-menu-item ${isFavorite ? 'active' : ''}" data-action="toggle-favorite" 
                                         data-rating-id="${ratingId || 'null'}" 
                                         data-movie-id="${movie.kinopoiskId}"
                                         data-is-favorite="${isFavorite}">
@@ -1240,32 +1427,59 @@ class SearchManager {
                                     <span class="mc-menu-item-text">${isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}</span>
                                 </button>
                                 
-                                <button class="mc-menu-item" data-action="toggle-watchlist"
-                                        data-movie-id="${movie.kinopoiskId}">
-                                    <span class="mc-menu-item-icon">🔖</span>
-                                    <span class="mc-menu-item-text">Add to Watchlist</span>
+                                <button class="mc-menu-item ${isWatching ? 'active' : ''}" data-action="toggle-watching"
+                                        data-movie-id="${movie.kinopoiskId}"
+                                        data-is-watching="${isWatching}">
+                                    <span class="mc-menu-item-icon">👁️</span>
+                                    <span class="mc-menu-item-text">${isWatching ? 'Remove from Watching' : 'Add to Watching'}</span>
                                 </button>
                                 
-                                <button class="mc-menu-item" data-action="add-to-collection"
-                                        data-movie-id="${movie.kinopoiskId}">
-                                    <span class="mc-menu-item-icon">📁</span>
-                                    <span class="mc-menu-item-text">Add to Collection</span>
+                                <button class="mc-menu-item ${isInWatchlist ? 'active' : ''}" data-action="toggle-watchlist"
+                                        data-movie-id="${movie.kinopoiskId}"
+                                        data-is-in-watchlist="${isInWatchlist}">
+                                    <span class="mc-menu-item-icon">🔖</span>
+                                    <span class="mc-menu-item-text">${isInWatchlist ? 'Remove from Plan to Watch' : 'Add to Plan to Watch'}</span>
                                 </button>
+                                
+                                ${this.availableCollections && this.availableCollections.length > 0 ? `
+                                <div class="mc-menu-divider" style="height: 1px; background: rgba(255,255,255,0.1); margin: 4px 0;"></div>
+                                <div class="mc-menu-collections">
+                                    ${this.availableCollections.map(col => {
+                                        const isInCollection = col.movieIds && (col.movieIds.includes(Number(movie.kinopoiskId)) || col.movieIds.includes(String(movie.kinopoiskId)));
+                                        const isCustomIcon = col.icon && (col.icon.startsWith('data:') || col.icon.startsWith('https://') || col.icon.startsWith('http://'));
+                                        const iconHtml = isCustomIcon 
+                                            ? `<img src="${col.icon}" style="width: 16px; height: 16px; object-fit: cover; border-radius: 4px;">`
+                                            : (col.icon || '📁');
+                                            
+                                        return `
+                                            <button class="mc-menu-item" data-action="toggle-collection"
+                                                    data-movie-id="${movie.kinopoiskId}"
+                                                    data-collection-id="${col.id}">
+                                                <span class="mc-menu-item-icon">${iconHtml}</span>
+                                                <span class="mc-menu-item-text" style="${isInCollection ? 'font-weight: 500; color: #fff;' : ''}">
+                                                    ${col.name}
+                                                </span>
+                                                ${isInCollection ? '<span style="margin-left: auto; font-weight: bold; color: var(--accent-color, #4CAF50);">✓</span>' : ''}
+                                            </button>
+                                        `;
+                                    }).join('')}
+                                </div>
+                                ` : ''}
                             </div>
                         </div>
                         
                         <!-- Ratings under poster -->
                         <div class="movie-detail-ratings-container">
                             <div class="rating-item-large kp">
-                                <span class="rating-label">Кинопоиск</span>
+                                <span class="rating-label">${i18n.get('movie_card.kinopoisk')}</span>
                                 <span class="rating-value">${parseFloat(kpRating.toFixed(1))}</span>
-                                ${votes > 0 ? `<span class="rating-votes">${this.formatVotes(votes)} оценок</span>` : ''}
+                                ${votes > 0 ? `<span class="rating-votes">${i18n.get('movie_details.votes_count').replace('{count}', this.formatVotes(votes))}</span>` : '<span class="rating-votes">&nbsp;</span>'}
                             </div>
                             ${imdbRating > 0 ? `
                             <div class="rating-item-large imdb">
-                                <span class="rating-label">IMDb</span>
+                                <span class="rating-label">${i18n.get('movie_card.imdb')}</span>
                                 <span class="rating-value">${parseFloat(imdbRating.toFixed(1))}</span>
-                                ${imdbVotes > 0 ? `<span class="rating-votes">${this.formatVotes(imdbVotes)} оценок</span>` : '<span class="rating-votes">&nbsp;</span>'}
+                                ${imdbVotes > 0 ? `<span class="rating-votes">${i18n.get('movie_details.votes_count').replace('{count}', this.formatVotes(imdbVotes))}</span>` : '<span class="rating-votes">&nbsp;</span>'}
                             </div>` : ''}
                         </div>
                         
@@ -1273,11 +1487,11 @@ class SearchManager {
                         <div class="movie-actions-container">
                             <button class="btn btn-primary btn-lg watch-movie-btn" data-movie-id="${movie.kinopoiskId}">
                                 <span class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
-                                Смотреть
+                                ${i18n.get('movie_details.watch_movie')}
                             </button>
                             <button class="btn btn-accent btn-lg rate-movie-btn" data-movie-id="${movie.kinopoiskId}">
                                 <span class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></span>
-                                Оценить фильм
+                                ${i18n.get('movie_details.rate_title')}
                             </button>
                         </div>
                     </div>
@@ -1289,9 +1503,9 @@ class SearchManager {
                         <!-- Tabs Navigation -->
                         <div class="movie-tabs">
                             <div class="tab-buttons">
-                                <button class="tab-btn active" data-tab="about">О фильме</button>
-                                <button class="tab-btn ${actors.length === 0 ? 'disabled' : ''}" data-tab="actors" ${actors.length === 0 ? 'disabled' : ''}>Актёры</button>
-                                <button class="tab-btn ${!movie.awards || movie.awards.length === 0 ? 'disabled' : ''}" data-tab="awards" ${!movie.awards || movie.awards.length === 0 ? 'disabled' : ''}>Награды</button>
+                                <button class="tab-btn active" data-tab="about">${i18n.get('movie_details.tabs.about')}</button>
+                                <button class="tab-btn ${actors.length === 0 ? 'disabled' : ''}" data-tab="actors" ${actors.length === 0 ? 'disabled' : ''}>${i18n.get('movie_details.tabs.actors')}</button>
+                                <button class="tab-btn ${!movie.awards || movie.awards.length === 0 ? 'disabled' : ''}" data-tab="awards" ${!movie.awards || movie.awards.length === 0 ? 'disabled' : ''}>${i18n.get('movie_details.tabs.awards')}</button>
                             </div>
                             
                             <div class="tab-content">
@@ -1300,119 +1514,119 @@ class SearchManager {
                                     <div class="movie-detail-meta-grid">
                                         <!-- Basic Info -->
                                         <div class="meta-item">
-                                            <span class="meta-label">Год производства:</span>
+                                            <span class="meta-label">${i18n.get('movie_details.meta.year')}</span>
                                             <span class="meta-value">${year}</span>
                                         </div>
                                         ${countries ? `
                                         <div class="meta-item">
-                                            <span class="meta-label">Страна:</span>
+                                            <span class="meta-label">${i18n.get('movie_details.meta.country')}</span>
                                             <span class="meta-value">${countries}</span>
                                         </div>` : ''}
                                         <div class="meta-item">
-                                            <span class="meta-label">Жанр:</span>
+                                            <span class="meta-label">${i18n.get('movie_details.meta.genre')}</span>
                                             <span class="meta-value">${genres}</span>
                                         </div>
                                         <div class="meta-item">
-                                            <span class="meta-label">Слоган:</span>
+                                            <span class="meta-label">${i18n.get('movie_details.meta.slogan')}</span>
                                             <span class="meta-value">${movie.slogan ? `«${this.escapeHtml(movie.slogan)}»` : '—'}</span>
                                         </div>
                                         
                                         <!-- Crew -->
                                         ${directorsStr ? `
                                         <div class="meta-item">
-                                            <span class="meta-label">Режиссер:</span>
+                                            <span class="meta-label">${i18n.get('movie_details.meta.director')}</span>
                                             <span class="meta-value">${this.escapeHtml(directorsStr)}</span>
                                         </div>` : ''}
                                         ${writersStr ? `
                                         <div class="meta-item">
-                                            <span class="meta-label">Сценарий:</span>
+                                            <span class="meta-label">${i18n.get('movie_details.meta.writer')}</span>
                                             <span class="meta-value">${this.escapeHtml(writersStr)}</span>
                                         </div>` : ''}
                                         ${producersStr ? `
                                         <div class="meta-item">
-                                            <span class="meta-label">Продюсер:</span>
+                                            <span class="meta-label">${i18n.get('movie_details.meta.producer')}</span>
                                             <span class="meta-value">${this.escapeHtml(producersStr)}</span>
                                         </div>` : ''}
                                         ${operatorsStr ? `
                                         <div class="meta-item">
-                                            <span class="meta-label">Оператор:</span>
+                                            <span class="meta-label">${i18n.get('movie_details.meta.operator')}</span>
                                             <span class="meta-value">${this.escapeHtml(operatorsStr)}</span>
                                         </div>` : ''}
                                         ${composersStr ? `
                                         <div class="meta-item">
-                                            <span class="meta-label">Композитор:</span>
+                                            <span class="meta-label">${i18n.get('movie_details.meta.composer')}</span>
                                             <span class="meta-value">${this.escapeHtml(composersStr)}</span>
                                         </div>` : ''}
                                         ${designersStr ? `
                                         <div class="meta-item">
-                                            <span class="meta-label">Художник:</span>
+                                            <span class="meta-label">${i18n.get('movie_details.meta.designer')}</span>
                                             <span class="meta-value">${this.escapeHtml(designersStr)}</span>
                                         </div>` : ''}
                                         ${editorsStr ? `
                                         <div class="meta-item">
-                                            <span class="meta-label">Монтаж:</span>
+                                            <span class="meta-label">${i18n.get('movie_details.meta.editor')}</span>
                                             <span class="meta-value">${this.escapeHtml(editorsStr)}</span>
                                         </div>` : ''}
                                         
                                         <!-- Financial Info -->
                                         ${budgetStr ? `
                                         <div class="meta-item">
-                                            <span class="meta-label">Бюджет:</span>
+                                            <span class="meta-label">${i18n.get('movie_details.meta.budget')}</span>
                                             <span class="meta-value">${budgetStr}</span>
                                         </div>` : ''}
                                         ${feesUsaStr ? `
                                         <div class="meta-item">
-                                            <span class="meta-label">Сборы в США:</span>
+                                            <span class="meta-label">${i18n.get('movie_details.meta.fees_usa')}</span>
                                             <span class="meta-value">${feesUsaStr}</span>
                                         </div>` : ''}
                                         ${feesWorldStr ? `
                                         <div class="meta-item">
-                                            <span class="meta-label">Сборы в мире:</span>
+                                            <span class="meta-label">${i18n.get('movie_details.meta.fees_world')}</span>
                                             <span class="meta-value">${feesWorldStr}</span>
                                         </div>` : ''}
                                         ${feesRussiaStr ? `
                                         <div class="meta-item">
-                                            <span class="meta-label">Сборы в России:</span>
+                                            <span class="meta-label">${i18n.get('movie_details.meta.fees_russia')}</span>
                                             <span class="meta-value">${feesRussiaStr}</span>
                                         </div>` : ''}
                                         ${audienceRussiaStr ? `
                                         <div class="meta-item">
-                                            <span class="meta-label">Зрители:</span>
+                                            <span class="meta-label">${i18n.get('movie_details.meta.audience') || 'Зрители'}:</span>
                                             <span class="meta-value">${audienceRussiaStr}</span>
                                         </div>` : ''}
                                         
                                         <!-- Premiere Info -->
                                         ${premiereRussiaStr ? `
                                         <div class="meta-item">
-                                            <span class="meta-label">Премьера в России:</span>
+                                            <span class="meta-label">${i18n.get('movie_details.meta.premiere_russia')}</span>
                                             <span class="meta-value">${premiereRussiaStr}</span>
                                         </div>` : ''}
                                         ${premiereWorldStr ? `
                                         <div class="meta-item">
-                                            <span class="meta-label">Премьера в мире:</span>
+                                            <span class="meta-label">${i18n.get('movie_details.meta.premiere_world')}</span>
                                             <span class="meta-value">${premiereWorldStr}</span>
                                         </div>` : ''}
                                         ${premiereDigitalStr ? `
                                         <div class="meta-item">
-                                            <span class="meta-label">Цифровой релиз:</span>
+                                            <span class="meta-label">${i18n.get('movie_details.meta.premiere_digital') || 'Цифровой релиз'}:</span>
                                             <span class="meta-value">${premiereDigitalStr}</span>
                                         </div>` : ''}
                                         
                                         <!-- Age and Duration -->
                                         ${movie.ageRating ? `
                                         <div class="meta-item">
-                                            <span class="meta-label">Возраст:</span>
+                                            <span class="meta-label">${i18n.get('movie_details.meta.age_rating')}</span>
                                             <span class="meta-value">${movie.ageRating}+</span>
                                         </div>` : ''}
                                         ${movie.ratingMpaa ? `
                                         <div class="meta-item">
-                                            <span class="meta-label">Рейтинг MPAA:</span>
+                                            <span class="meta-label">${i18n.get('movie_details.meta.rating_mpaa') || 'Рейтинг MPAA'}:</span>
                                             <span class="meta-value">${movie.ratingMpaa.toUpperCase()}</span>
                                         </div>` : ''}
                                         ${duration ? `
                                         <div class="meta-item">
-                                            <span class="meta-label">Время:</span>
-                                            <span class="meta-value">${Math.floor(duration / 60)} ч ${duration % 60} мин</span>
+                                            <span class="meta-label">${i18n.get('movie_details.meta.duration')}</span>
+                                            <span class="meta-value">${Math.floor(duration / 60)} ${i18n.get('movie_details.meta.hours')} ${duration % 60} ${i18n.get('movie_details.meta.minutes')}</span>
                                         </div>` : ''}
                                     </div>
                                 </div>
@@ -1423,8 +1637,9 @@ class SearchManager {
                                         <div class="actors-grid">
                                             ${actors.map(actor => {
                                                 const photoUrl = actor.photo || '';
-                                                const name = actor.name || actor.enName || 'Неизвестно';
-                                                const role = actor.description || actor.enProfession || '';
+                                                const isEnglish = i18n.currentLocale === 'en';
+                                                const name = (isEnglish && actor.enName) ? actor.enName : (actor.name || actor.enName || i18n.get('movie_details.actors_tab.unknown'));
+                                                const role = actor.description || (actor.enProfession ? i18n.get(`movie_details.profession.${actor.enProfession.toLowerCase()}`) : '');
                                                 
                                                 return `
                                                 <div class="actor-card">
@@ -1444,7 +1659,7 @@ class SearchManager {
                                         </div>
                                     ` : `
                                         <div class="no-data-placeholder">
-                                            <p>Информация об актерах отсутствует</p>
+                                            <p>${i18n.get('movie_details.actors_tab.no_data')}</p>
                                         </div>
                                     `}
                                 </div>
@@ -1456,7 +1671,7 @@ class SearchManager {
                                         
                                         if (!movie.awards || movie.awards.length === 0) {
                                             console.log('No awards in movie object');
-                                            return '<div class="no-data-placeholder"><p>Нет информации о наградах</p></div>';
+                                            return `<div class="no-data-placeholder"><p>${i18n.get('movie_details.awards_tab.no_data')}</p></div>`;
                                         }
                                         
                                         console.log('Processing awards:', movie.awards);
@@ -1465,13 +1680,13 @@ class SearchManager {
                                         // Data format: { name, nominationName, win, year }
                                         const notableAwards = movie.awards.sort((a, b) => (b.win ? 1 : 0) - (a.win ? 1 : 0)); // Winners first
 
-                                        if (notableAwards.length === 0) return '<div class="no-data-placeholder"><p>Нет информации о крупных наградах</p></div>';
+                                        if (notableAwards.length === 0) return `<div class="no-data-placeholder"><p>${i18n.get('movie_details.awards_tab.no_data')}</p></div>`;
 
                                         const getAwardIcon = (name) => {
                                             if (name.includes('Оскар')) return '<img src="../../../icons/oscar.png" alt="Oscar" class="award-icon-img">'; 
                                             if (name.includes('Золотой глобус')) return '<img src="../../../icons/golden-globe.png" alt="Golden Globe" class="award-icon-img">';
-                                            // Default fallback
-                                            return '<img src="../../../icons/award-default.png" alt="Award" class="award-icon-img">';
+                                            // No default icon for other awards
+                                            return '';
                                         };
 
                                         const hasMoreThan6 = notableAwards.length > 6;
@@ -1486,9 +1701,9 @@ class SearchManager {
                                                             ${getAwardIcon(award.name || '')}
                                                         </div>
                                                         <div class="award-title">${this.escapeHtml(award.name)}</div>
-                                                        <div class="award-nomination">${this.escapeHtml(award.nominationName || 'Номинация')}</div>
+                                                        <div class="award-nomination">${this.escapeHtml(award.nominationName || i18n.get('movie_details.awards_tab.nomination'))}</div>
                                                         <div class="award-badge ${award.win ? 'winner' : 'nominee'}">
-                                                            ${award.win ? 'Победитель' : 'Номинация'}
+                                                            ${award.win ? i18n.get('movie_details.awards_tab.winner') : i18n.get('movie_details.awards_tab.nominee')}
                                                         </div>
                                                     </div>
                                                 `).join('')}
@@ -1501,15 +1716,15 @@ class SearchManager {
                                                                 ${getAwardIcon(award.name || '')}
                                                             </div>
                                                             <div class="award-title">${this.escapeHtml(award.name)}</div>
-                                                            <div class="award-nomination">${this.escapeHtml(award.nominationName || 'Номинация')}</div>
+                                                            <div class="award-nomination">${this.escapeHtml(award.nominationName || i18n.get('movie_details.awards_tab.nomination'))}</div>
                                                             <div class="award-badge ${award.win ? 'winner' : 'nominee'}">
-                                                                ${award.win ? 'Победитель' : 'Номинация'}
+                                                                ${award.win ? i18n.get('movie_details.awards_tab.winner') : i18n.get('movie_details.awards_tab.nominee')}
                                                             </div>
                                                         </div>
                                                     `).join('')}
                                                 </div>
                                                 <button class="btn-show-all-awards" data-action="show-all-awards">
-                                                    Показать все награды (${notableAwards.length})
+                                                    ${i18n.get('movie_details.awards_tab.show_all').replace('{count}', notableAwards.length)}
                                                 </button>
                                             ` : ''}
                                         `;
@@ -1521,13 +1736,13 @@ class SearchManager {
                 </div>
                 
                 <div class="movie-detail-description">
-                    <h3>Описание</h3>
+                    <h3>${i18n.get('movie_details.description')}</h3>
                     <p>${this.escapeHtml(description)}</p>
                     ${this.createMovieFramesSection(movie)}
                     <div id="userRatingsSection" class="user-ratings-section" data-movie-id="${movie.kinopoiskId}">
                         <div class="user-ratings-loading" style="display: none;">
                             <div class="loading-spinner"></div>
-                            <span>Загрузка отзывов...</span>
+                            <span>${i18n.get('movie_details.loading_reviews')}</span>
                         </div>
                         <div class="user-ratings-content"></div>
                     </div>
@@ -1563,9 +1778,11 @@ class SearchManager {
 
         console.log('Preloading sources for', movie.name);
         try {
-             const searchResult = await this.streamingService.search(movie.name, movie.year);
+             const primaryParser = this.parserRegistry.getAll()[0];
+             if (!primaryParser) return;
+             const searchResult = await primaryParser.cachedSearch(movie.name, movie.year);
              if (searchResult) {
-                 const sources = await this.streamingService.getVideoSources(searchResult.url);
+                 const sources = await primaryParser.getVideoSources(searchResult);
                  if (sources && sources.length > 0) {
                      this.saveSourcesToCache(movie.kinopoiskId, sources);
                      // If this movie is still selected, update currentSources
@@ -1650,7 +1867,7 @@ class SearchManager {
         
         // Check if user is authenticated
         if (!currentUser) {
-            this.showError('Please sign in to rate movies');
+            this.showError(i18n.get('navbar.sign_in'));
             return;
         }
         
@@ -1717,7 +1934,7 @@ class SearchManager {
             
             // Check if user is authenticated
             if (!currentUser) {
-                this.showError('Please sign in to save rating');
+                this.showError(i18n.get('navbar.sign_in'));
                 return;
             }
             
@@ -1725,7 +1942,7 @@ class SearchManager {
             const comment = this.elements.ratingComment.value.trim();
             
             if (!rating || rating < 1 || rating > 10) {
-                this.showError('Please select a star rating');
+                this.showError(i18n.get('ratings.modal.rate_movie'));
                 return;
             }
             
@@ -1751,7 +1968,7 @@ class SearchManager {
             );
             
             this.closeRatingModal();
-            this.showSuccess('Rating saved successfully!');
+            this.showSuccess(i18n.get('settings.saved'));
             
             // Reload user ratings section if on detail page
             if (this.selectedMovie && document.getElementById('userRatingsSection')) {
@@ -1772,7 +1989,7 @@ class SearchManager {
             
         } catch (error) {
             console.error('Error saving rating:', error);
-            this.showError(`Failed to save rating: ${error.message}`);
+            this.showError(`${i18n.get('settings.save_failed')}: ${error.message}`);
         }
     }
 
@@ -1866,7 +2083,7 @@ class SearchManager {
         try {
             const currentUser = firebaseManager.getCurrentUser();
             if (!currentUser) {
-                this.showError('Please sign in');
+                this.showError(i18n.get('navbar.sign_in'));
                 return;
             }
 
@@ -1911,7 +2128,7 @@ class SearchManager {
     // Old modal logic removed
 
     async deleteUserRating(ratingId) {
-        const confirmed = confirm('Вы уверены, что хотите удалить свой отзыв?');
+        const confirmed = confirm(i18n.get('settings.reset_confirm'));
         
         if (!confirmed) return;
         
@@ -1920,7 +2137,7 @@ class SearchManager {
             const currentUser = firebaseManager.getCurrentUser();
             
             if (!currentUser) {
-                this.showError('Пожалуйста, войдите в систему');
+                this.showError(i18n.get('navbar.sign_in'));
                 return;
             }
             
@@ -1941,7 +2158,7 @@ class SearchManager {
                 }, 300);
             }
             
-            this.showSuccess('Отзыв удален');
+            this.showSuccess(i18n.get('movie_card.remove'));
             
         } catch (error) {
             console.error('Error deleting rating:', error);
@@ -1952,7 +2169,7 @@ class SearchManager {
     toggleFilters() {
         const isVisible = this.elements.filters.style.display !== 'none';
         this.elements.filters.style.display = isVisible ? 'none' : 'grid';
-        this.elements.toggleFiltersBtn.textContent = isVisible ? 'Filters' : 'Hide Filters';
+        this.elements.toggleFiltersBtn.textContent = isVisible ? i18n.get('search.filters_btn') : i18n.get('search.filters_btn').replace('Filters', 'Hide Filters').replace('Фильтры', 'Скрыть фильтры');
     }
 
     clearFilters() {
@@ -2194,7 +2411,7 @@ class SearchManager {
     }
 
     showLoading(show) {
-        this.elements.loading.style.display = show ? 'flex' : 'none';
+        // No-op: Using modal loader in results grid instead
     }
 
     showInitialLoading() {
@@ -2287,6 +2504,12 @@ class SearchManager {
         try {
             const favoriteService = firebaseManager.getFavoriteService();
             
+            // Resolve movie object
+            let movie = this.currentResults?.docs?.find(m => (m.kinopoiskId) == movieId);
+            if (!movie && this.selectedMovie && (this.selectedMovie.kinopoiskId == movieId || String(this.selectedMovie.kinopoiskId) === String(movieId))) {
+                movie = this.selectedMovie;
+            }
+
             // Check limit before adding
             if (!currentStatus) {
                 const limitReached = await favoriteService.isFavoritesLimitReached(this.currentUser.uid, 50);
@@ -2306,8 +2529,24 @@ class SearchManager {
                 }, 600);
             }
 
-            // Toggle favorite
-            const newStatus = await favoriteService.toggleFavorite(ratingId, currentStatus);
+            let newStatus = !currentStatus;
+
+            if (currentStatus) {
+                 // Remove from favorites
+                 await favoriteService.removeFromFavorites(this.currentUser.uid, movieId);
+                 newStatus = false;
+            } else {
+                 if (movie) {
+                     await favoriteService.addToFavorites(this.currentUser.uid, {
+                        ...movie,
+                        movieId: movieId
+                    }, 'favorite');
+                    newStatus = true;
+                 } else {
+                     console.error('Movie object missing for addToFavorites');
+                     return;
+                 }
+            }
             
             // Update button state
             if (buttonElement) {
@@ -2315,10 +2554,20 @@ class SearchManager {
                     buttonElement.classList.add('active');
                     buttonElement.setAttribute('data-is-favorite', 'true');
                     buttonElement.title = 'Удалить из Избранного';
+                    
+                    const textSpan = buttonElement.querySelector('.mc-menu-item-text');
+                    const iconSpan = buttonElement.querySelector('.mc-menu-item-icon');
+                    if (textSpan) textSpan.textContent = 'Remove from Favorites';
+                    if (iconSpan) iconSpan.textContent = '💔';
                 } else {
                     buttonElement.classList.remove('active');
                     buttonElement.setAttribute('data-is-favorite', 'false');
                     buttonElement.title = 'Добавить в Избранное';
+
+                    const textSpan = buttonElement.querySelector('.mc-menu-item-text');
+                    const iconSpan = buttonElement.querySelector('.mc-menu-item-icon');
+                    if (textSpan) textSpan.textContent = 'Add to Favorites';
+                    if (iconSpan) iconSpan.textContent = '❤️';
                 }
             }
             
@@ -2342,7 +2591,7 @@ class SearchManager {
         }
     }
 
-    async toggleWatchlist(movie, buttonElement) {
+    async _legacy_toggleWatchlist(movie, buttonElement) {
         if (!this.currentUser) {
             if (typeof Utils !== 'undefined') {
                 Utils.showToast('Войдите в систему, чтобы добавить фильм в Watchlist', 'warning');
@@ -2433,7 +2682,6 @@ class SearchManager {
         if (!this.currentUser) return;
 
         try {
-            const watchlistService = firebaseManager.getWatchlistService();
             const favoriteService = firebaseManager.getFavoriteService();
             
             // Update watchlist buttons (in menu)
@@ -2441,18 +2689,24 @@ class SearchManager {
             for (const button of watchlistButtons) {
                 const movieId = parseInt(button.getAttribute('data-movie-id'));
                 if (movieId) {
-                    const isInWatchlist = await watchlistService.isInWatchlist(this.currentUser.uid, movieId);
-                    
-                    const textSpan = button.querySelector('.mc-menu-item-text');
-                    
-                    if (isInWatchlist) {
-                        button.classList.add('active');
-                        button.title = 'Remove from Watchlist';
-                        if (textSpan) textSpan.textContent = 'Remove from Watchlist';
-                    } else {
-                        button.classList.remove('active');
-                        button.title = 'Add to Watchlist';
-                        if (textSpan) textSpan.textContent = 'Add to Watchlist';
+                    try {
+                        const bookmark = await favoriteService.getBookmark(this.currentUser.uid, movieId);
+                        const isInWatchlist = bookmark && bookmark.status === 'plan_to_watch';
+                        
+                        const textSpan = button.querySelector('.mc-menu-item-text');
+                        
+                        if (isInWatchlist) {
+                            button.classList.add('active');
+                            // button.title = 'Remove from Plan to Watch';
+                            if (textSpan) textSpan.textContent = 'Remove from Plan to Watch';
+                        } else {
+                            button.classList.remove('active');
+                            // button.title = 'Add to Plan to Watch';
+                            if (textSpan) textSpan.textContent = 'Add to Plan to Watch';
+                        }
+                        button.setAttribute('data-is-in-watchlist', isInWatchlist);
+                    } catch (e) {
+                        console.error('Error updating watchlist button:', e);
                     }
                 }
             }
@@ -2462,8 +2716,10 @@ class SearchManager {
             const favoriteButtons = document.querySelectorAll('[data-action="toggle-favorite"]');
             for (const button of favoriteButtons) {
                 const ratingId = button.getAttribute('data-rating-id');
-                if (ratingId) {
-                    const isFavorite = await favoriteService.isFavoriteById(ratingId);
+                const movieId = button.getAttribute('data-movie-id');
+                
+                if (ratingId && movieId && this.currentUser) {
+                    const isFavorite = await favoriteService.isFavorite(this.currentUser.uid, parseInt(movieId));
                     
                     // Update the menu item text and icon
                     const textSpan = button.querySelector('.mc-menu-item-text');
@@ -2789,10 +3045,49 @@ class SearchManager {
 
 
     async handleWatchClick() {
-        if (!this.selectedMovie) return;
+        console.log('=== WATCH BUTTON CLICKED ===');
+        
+        if (!this.selectedMovie) {
+            console.error('No movie selected!');
+            return;
+        }
+        
+        console.log('Selected movie:', {
+            name: this.selectedMovie.name || this.selectedMovie.nameRu,
+            kinopoiskId: this.selectedMovie.kinopoiskId,
+            source: this.selectedMovie.source,
+            webUrl: this.selectedMovie.webUrl,
+            hasVideoSources: !!this.selectedMovie.videoSources,
+            videoSourcesCount: this.selectedMovie.videoSources?.length || 0
+        });
+        
+        // Check if modal is already open for the same movie
+        const isSameMovie = this.videoModalMovie && 
+                           ((this.selectedMovie.kinopoiskId && this.videoModalMovie.kinopoiskId === this.selectedMovie.kinopoiskId) ||
+                            (this.selectedMovie.webUrl && this.videoModalMovie.webUrl === this.selectedMovie.webUrl));
+        
+        console.log('Modal state:', {
+            isModalOpen: this.elements.videoPlayerModal.style.display === 'flex',
+            videoModalMovie: this.videoModalMovie?.nameRu || this.videoModalMovie?.name,
+            isSameMovie: isSameMovie,
+            hasLoadedSources: this.currentSources?.length > 0
+        });
+        
+        if (isSameMovie && this.currentSources && this.currentSources.length > 0) {
+            console.log('✅ Same movie already loaded, just showing modal (resuming)');
+            this.showVideoModal(this.selectedMovie);
+            // Resume playback if it was playing before
+            if (!this.isPlaying) {
+                console.log('  - Video was paused, ready to resume');
+            }
+            return; // Don't reinitialize!
+        }
+        
+        console.log('🔄 Loading video for first time or different movie');
         
         // Reset current sources if it's a new movie (unless preloaded)
         if (this.currentSources && this.currentSources._movieId !== this.selectedMovie.kinopoiskId) {
+             console.log('Clearing stale currentSources for different movie');
              // If we have preloaded sources for this movie, keep them? 
              // Logic in preloadSources sets currentSources correctly if matches.
              // If mismatch, clear it.
@@ -2806,6 +3101,9 @@ class SearchManager {
         try {
             this.showVideoModal(this.selectedMovie);
             
+            // Store which movie is currently loaded in the modal
+            this.videoModalMovie = this.selectedMovie;
+            
             // Show loading state in player
             this.elements.videoContainer.innerHTML = `
                 <div class="video-placeholder">
@@ -2815,35 +3113,62 @@ class SearchManager {
             `;
             
             
+            console.log('Checking for video sources...');
+            console.log('  - this.currentSources:', this.currentSources?.length || 0, 'sources');
+            console.log('  - movie.videoSources:', this.selectedMovie.videoSources?.length || 0, 'sources');
+            
             // Try cache first
             if (this.currentSources && this.currentSources.length > 0) {
                  // Use preloaded sources
-                 console.log('Using preloaded sources');
+                 console.log('✅ Using preloaded sources:', this.currentSources.length);
+            } else if (this.selectedMovie.videoSources && this.selectedMovie.videoSources.length > 0) {
+                // Use already-parsed video sources (from ex-fs details parsing)
+                console.log('✅ Using pre-parsed video sources from movie object:', this.selectedMovie.videoSources.length);
+                console.log('Video sources:', this.selectedMovie.videoSources);
+                this.currentSources = this.selectedMovie.videoSources;
+                // Cache them for future use
+                if (this.selectedMovie.kinopoiskId) {
+                    this.saveSourcesToCache(this.selectedMovie.kinopoiskId, this.currentSources);
+                }
             } else {
+                console.log('Checking cache for kinopoiskId:', this.selectedMovie.kinopoiskId);
                 const cached = this.getCachedSources(this.selectedMovie.kinopoiskId);
                 if (cached) {
-                    console.log('Using cached sources');
+                    console.log('✅ Using cached sources:', cached.length);
                     this.currentSources = cached;
                 } else {
-                    // Search for movie on ex-fs.net
-                    const searchResult = await this.streamingService.search(
+                    console.log('❌ No cached sources, searching for movie...');
+                    // Search for movie via primary parser
+                    const primaryParser = this.parserRegistry.getAll()[0];
+                    if (!primaryParser) {
+                        this.elements.videoContainer.innerHTML = `<div class="video-placeholder"><span>No parsers available.</span></div>`;
+                        return;
+                    }
+                    console.log('Searching for:', this.selectedMovie.name, 'Year:', this.selectedMovie.year);
+                    const searchResult = await primaryParser.cachedSearch(
                         this.selectedMovie.name, 
                         this.selectedMovie.year
                     );
                     
+                    console.log('Search result:', searchResult);
+                    
                     if (!searchResult) {
+                        console.error('❌ Movie not found');
                         this.elements.videoContainer.innerHTML = `
                             <div class="video-placeholder">
-                                <span>Movie not found on streaming service.</span>
+                                <span>Movie not found.</span>
                             </div>
                         `;
                         return;
                     }
                     
-                    // Get video sources
-                    const sources = await this.streamingService.getVideoSources(searchResult.url);
+                    console.log('Getting video sources from URL:', searchResult.url);
+                    const sources = await primaryParser.getVideoSources(searchResult);
+                    
+                    console.log('Found sources:', sources.length, sources);
                     
                     if (sources.length === 0) {
+                        console.error('❌ No video sources found');
                         this.elements.videoContainer.innerHTML = `
                             <div class="video-placeholder">
                                 <span>No video sources found.</span>
@@ -2852,20 +3177,25 @@ class SearchManager {
                         return;
                     }
 
+                    console.log('✅ Saving sources to cache');
                     this.currentSources = sources;
                     this.saveSourcesToCache(this.selectedMovie.kinopoiskId, sources);
                 }
             }
             
+            console.log('Final currentSources:', this.currentSources?.length || 0, 'sources');
+            
             // Create sources map for easy access
             const sources = this.currentSources;
 
+        console.log('Populating source selector with', sources.length, 'sources');
         // Populate source selector
         sources.forEach((source, index) => {
             const option = document.createElement('option');
             option.value = source.url;
             option.textContent = source.name || `Source ${index + 1}`;
             this.elements.sourceSelect.appendChild(option);
+            console.log(`  - Source ${index + 1}:`, source.name, source.url.substring(0, 60) + '...');
         });
 
         // Select source (restore last used or default to first)
@@ -2874,12 +3204,18 @@ class SearchManager {
             let targetSource = sources[0].url; // Default
             const lastSource = this.getLastSource(this.selectedMovie.kinopoiskId);
             
+            console.log('Last used source:', lastSource);
+            
             if (lastSource) {
                 // Verify the saved source still exists in current list
                 const exists = sources.find(s => s.url === lastSource);
-                if (exists) targetSource = lastSource;
+                if (exists) {
+                    console.log('Restoring last used source');
+                    targetSource = lastSource;
+                }
             }
 
+            console.log('Selected source:', targetSource.substring(0, 60) + '...');
             this.elements.sourceSelect.value = targetSource;
             this.changeVideoSource(targetSource); // Will save as last source too
             this.togglePlayPause(); // Start playing immediately
@@ -2887,18 +3223,36 @@ class SearchManager {
 
         // Setup message listener for iframe communication
         if (!this.messageListenerSetup) {
-            window.addEventListener('message', (event) => {
+            console.log('Setting up message listener for iframe communication');
+
+            window.addEventListener('message', async (event) => {
                 // Verify origin if possible, but we accept from our iframes
                 
                 if (event.data.type === 'PLAYER_READY') {
                     // Send sources to iframe
-                    const iframe = this.elements.videoContainer.querySelector('iframe');
                     if (iframe && iframe.contentWindow) {
                         iframe.contentWindow.postMessage({
                             type: 'SET_SOURCES',
                             sources: this.currentSources, // Send full objects with names
                             currentUrl: this.currentVideoUrl
                         }, '*');
+
+                        // Restore Progress if available
+                        if (this.selectedMovie && this.selectedMovie.kinopoiskId) {
+                            // Use ProgressService
+                            if (this.progressService) {
+                                this.progressService.getProgress(this.selectedMovie.kinopoiskId).then(progress => {
+                                    if (progress && progress.season && progress.episode) {
+                                         console.log('Restoring progress:', progress);
+                                         iframe.contentWindow.postMessage({
+                                             type: 'RESTORE_PROGRESS',
+                                             season: progress.season,
+                                             episode: progress.episode
+                                         }, '*');
+                                    }
+                                }).catch(err => console.error('Error loading progress:', err));
+                            }
+                        }
                     }
                 } else if (event.data.type === 'CHANGE_SOURCE') {
                     const newUrl = event.data.url;
@@ -2908,36 +3262,110 @@ class SearchManager {
                         // Auto-play the new source
                         this.togglePlayPause(); 
                     }
+                } else if (event.data.type === 'UPDATE_WATCHING_PROGRESS') {
+                    // Handle progress update from player
+                    const { season, episode, timestamp } = event.data;
+                    console.log('Received progress update:', season, episode);
+                    
+                    if (this.selectedMovie && this.selectedMovie.kinopoiskId && this.progressService) {
+                         try {
+                             const data = {
+                                 season,
+                                 episode,
+                                 timestamp,
+                                 movieId: this.selectedMovie.kinopoiskId,
+                                 movieTitle: this.selectedMovie.name || this.selectedMovie.nameRu
+                             };
+                             
+                             this.progressService.saveProgress(this.selectedMovie.kinopoiskId, data)
+                                 .then(() => console.log('Saved watching progress:', data))
+                                 .catch(e => console.error('Failed to save progress via service:', e));
+
+                         } catch (e) {
+                             console.error('Failed to save watching progress:', e);
+                         }
+                    }
                 }
             });
+
             this.messageListenerSetup = true;
         }
             
         } catch (error) {
-            console.error('Error in handleWatchClick:', error);
+            console.error('❌ ERROR in handleWatchClick:', error);
+            console.error('Error stack:', error.stack);
+            console.error('Movie at time of error:', this.selectedMovie);
             this.elements.videoContainer.innerHTML = `
                 <div class="video-placeholder">
                     <span>Error loading video: ${error.message}</span>
                 </div>
             `;
         }
+        
+        console.log('=== WATCH BUTTON HANDLER COMPLETE ===');
     }
 
     showVideoModal(movie) {
-        this.elements.videoTitle.textContent = `Watching: ${movie.name}`;
+        console.log('📺 showVideoModal called');
+        // Use nameRu for ex-fs movies, fallback to name for Kinopoisk movies
+        const title = movie.nameRu || movie.name || 'Movie';
+        console.log('  - Title:', title);
+        console.log('  - Modal display before:', this.elements.videoPlayerModal.style.display);
+        
+        this.elements.videoTitle.textContent = `Watching: ${title}`;
         this.elements.videoPlayerModal.style.display = 'flex';
+        
+        console.log('  - Modal display after:', this.elements.videoPlayerModal.style.display);
     }
 
     closeVideoModal() {
+        console.log('❌ closeVideoModal called (minimizing)');
+        console.log('  - isPlaying before:', this.isPlaying);
+        console.log('  - currentVideoUrl:', this.currentVideoUrl);
+        console.log('  - currentSources count:', this.currentSources?.length || 0);
+        
+        // Instead of closing, minimize the modal (hide it)
         this.elements.videoPlayerModal.style.display = 'none';
-        // Stop video and reset state
-        this.isPlaying = false;
-        this.currentVideoUrl = '';
-        this.elements.videoContainer.innerHTML = '';
-        if (this.currentHls) {
-            this.currentHls.destroy();
-            this.currentHls = null;
+        
+        // Pause the video instead of stopping it
+        if (this.isPlaying) {
+            console.log('  - Pausing video...');
+            
+            // Pause directly without calling togglePlayPause (which causes errors)
+            this.isPlaying = false;
+            
+            // If there's an iframe, send pause message
+            const iframe = this.elements.videoContainer.querySelector('iframe');
+            if (iframe && iframe.contentWindow) {
+                console.log('  - Sending pause message to iframe');
+                try {
+                    iframe.contentWindow.postMessage({ type: 'PAUSE' }, '*');
+                } catch (e) {
+                    console.warn('Failed to send pause message:', e);
+                }
+            }
+            
+            // If using HLS player, pause it
+            if (this.currentHls) {
+                console.log('  - Pausing HLS player');
+                const video = this.elements.videoContainer.querySelector('video');
+                if (video) {
+                    video.pause();
+                }
+            }
         }
+        
+        // DON'T reset state - keep video loaded so it resumes from same position
+        // DON'T clear currentVideoUrl - we need it to resume
+        // DON'T destroy HLS - keep the player instance
+        // DON'T clear videoContainer - keep the iframe/player loaded
+        
+        console.log('🔽 Video modal minimized (paused)');
+        console.log('  - State preserved:', {
+            isPlaying: this.isPlaying,
+            currentVideoUrl: this.currentVideoUrl,
+            videoModalMovie: this.videoModalMovie?.nameRu || this.videoModalMovie?.name
+        });
     }
 
     changeVideoSource(url) {
@@ -2990,7 +3418,7 @@ class SearchManager {
         }
     }
 
-    togglePlayPause() {
+    async togglePlayPause() {
         this.isPlaying = !this.isPlaying;
         
         if (this.isPlaying) {
@@ -3017,8 +3445,20 @@ class SearchManager {
                 const videoElement = document.getElementById('nativeVideoPlayer');
                 
                 // If HLS and not natively supported (like on Chrome Desktop typically), use Hls.js
-                // Assuming Hls.js is loaded globally or available
+                // Lazy-load hls.min.js only when needed
                 if (isHls) {
+                    try {
+                        await LazyLoader.loadScript('../../shared/lib/hls.min.js');
+                    } catch (e) {
+                        console.error('Failed to load HLS library:', e);
+                        this.elements.videoContainer.innerHTML = `
+                            <div class="video-placeholder">
+                                <span>Failed to load video player library.</span>
+                            </div>
+                        `;
+                        return;
+                    }
+
                     if (Hls.isSupported()) {
                         const hls = new Hls();
                         hls.loadSource(this.currentVideoUrl);
@@ -3064,7 +3504,172 @@ class SearchManager {
 
     }
 
+    async handleWatchingToggle(movieId, buttonElement) {
+        if (!this.currentUser) {
+            if (typeof Utils !== 'undefined') {
+                Utils.showToast('Войдите в систему', 'warning');
+            }
+            return;
+        }
 
+        try {
+            const favoriteService = firebaseManager.getFavoriteService();
+            // Safely try to find movie in results, or use selectedMovie
+            let movie = this.currentResults?.docs?.find(m => (m.kinopoiskId) == movieId);
+            if (!movie && this.selectedMovie && (this.selectedMovie.kinopoiskId == movieId || String(this.selectedMovie.kinopoiskId) === String(movieId))) {
+                movie = this.selectedMovie;
+            }
+            
+            if (!movie) {
+                 console.error('Movie not found for toggling watching:', movieId);
+                 return;
+            }
+
+            const bookmark = await favoriteService.getBookmark(this.currentUser.uid, movieId);
+            const isWatching = bookmark && bookmark.status === 'watching';
+
+            if (isWatching) {
+                // Remove
+                await favoriteService.removeFromFavorites(this.currentUser.uid, movieId);
+                this.updateButtonState(buttonElement, 'watching', false);
+                if (typeof Utils !== 'undefined') Utils.showToast('Removed from Watching', 'success');
+            } else {
+                // Add to Watching
+                await favoriteService.addToFavorites(this.currentUser.uid, {
+                    ...movie,
+                    movieId: movieId
+                }, 'watching');
+                
+                this.updateButtonState(buttonElement, 'watching', true);
+                
+                if (typeof Utils !== 'undefined') Utils.showToast('Added to Watching', 'success');
+            }
+
+            if (window.navigation?.updateWatchingCount) window.navigation.updateWatchingCount();
+        } catch (error) {
+            console.error('Error toggling watching:', error);
+            if (typeof Utils !== 'undefined') Utils.showToast('Error updating status', 'error');
+        }
+    }
+
+    async handleWatchlistToggle(movieId, buttonElement) {
+        if (!this.currentUser) {
+            if (typeof Utils !== 'undefined') {
+                Utils.showToast('Войдите в систему', 'warning');
+            }
+            return;
+        }
+
+        try {
+            const favoriteService = firebaseManager.getFavoriteService();
+            // Safely try to find movie in results, or use selectedMovie
+            let movie = this.currentResults?.docs?.find(m => (m.kinopoiskId) == movieId);
+            if (!movie && this.selectedMovie && (this.selectedMovie.kinopoiskId == movieId || String(this.selectedMovie.kinopoiskId) === String(movieId))) {
+                movie = this.selectedMovie;
+            }
+
+            if (!movie) {
+                 console.error('Movie not found for toggling watchlist:', movieId);
+                 return;
+            }
+
+            const bookmark = await favoriteService.getBookmark(this.currentUser.uid, movieId);
+            const isInWatchlist = bookmark && bookmark.status === 'plan_to_watch';
+
+            if (isInWatchlist) {
+                // Remove
+                await favoriteService.removeFromFavorites(this.currentUser.uid, movieId);
+                this.updateButtonState(buttonElement, 'watchlist', false);
+                if (typeof Utils !== 'undefined') Utils.showToast('Removed from Plan to Watch', 'success');
+            } else {
+                // Add to Plan to Watch
+                await favoriteService.addToFavorites(this.currentUser.uid, {
+                    ...movie,
+                    movieId: movieId
+                }, 'plan_to_watch');
+                
+                this.updateButtonState(buttonElement, 'watchlist', true);
+                
+                if (typeof Utils !== 'undefined') Utils.showToast('Added to Plan to Watch', 'success');
+            }
+
+            if (window.navigation?.updateWatchlistCount) window.navigation.updateWatchlistCount();
+        } catch (error) {
+            console.error('Error toggling watchlist:', error);
+            if (typeof Utils !== 'undefined') Utils.showToast('Error updating status', 'error');
+        }
+    }
+
+    async handleToggleCollection(movieId, collectionId, buttonElement) {
+        if (!this.collectionService) return;
+        
+        // Optimistic UI update
+        const originalHtml = buttonElement.innerHTML;
+        const textSpan = buttonElement.querySelector('.mc-menu-item-text');
+        
+        try {
+            // Check if checkmark exists
+            let checkSpan = Array.from(buttonElement.children).find(child => child.textContent.includes('✓'));
+            const isChecked = !!checkSpan;
+            
+            if (isChecked) {
+                checkSpan.remove();
+                if (textSpan) {
+                    textSpan.style.fontWeight = 'normal';
+                    textSpan.style.color = '';
+                }
+            } else {
+                const newCheck = document.createElement('span');
+                newCheck.textContent = '✓';
+                newCheck.style.marginLeft = 'auto';
+                newCheck.style.fontWeight = 'bold';
+                newCheck.style.color = 'var(--accent-color, #4CAF50)';
+                buttonElement.appendChild(newCheck);
+                
+                if (textSpan) {
+                    textSpan.style.fontWeight = '500';
+                    textSpan.style.color = '#fff';
+                }
+            }
+
+            await this.collectionService.toggleMovieInCollection(collectionId, parseInt(movieId));
+            
+            // Update local cache
+            const col = this.availableCollections.find(c => c.id === collectionId);
+            if (col) {
+                const idToCheck = parseInt(movieId);
+                const idx = col.movieIds.indexOf(idToCheck);
+                if (idx > -1) {
+                    col.movieIds.splice(idx, 1);
+                } else {
+                    col.movieIds.push(idToCheck);
+                }
+            }
+
+            if (typeof Utils !== 'undefined') Utils.showToast(isChecked ? 'Removed from collection' : 'Added to collection', 'success');
+
+        } catch (error) {
+            console.error('Error toggling collection:', error);
+            buttonElement.innerHTML = originalHtml;
+            if (typeof Utils !== 'undefined') Utils.showToast('Error updating collection', 'error');
+        }
+    }
+
+    updateButtonState(button, type, isActive) {
+        if (!button) return;
+        
+        if (type === 'watching') {
+            button.setAttribute('data-is-watching', isActive);
+            const text = button.querySelector('.mc-menu-item-text');
+            if (text) text.textContent = isActive ? 'Remove from Watching' : 'Add to Watching';
+            button.classList.toggle('active', isActive);
+        } else if (type === 'watchlist') {
+            button.setAttribute('data-is-in-watchlist', isActive);
+            const text = button.querySelector('.mc-menu-item-text');
+            if (text) text.textContent = isActive ? 'Remove from Plan to Watch' : 'Add to Plan to Watch';
+            button.classList.toggle('active', isActive);
+        }
+    }
 
 }
 
@@ -3084,7 +3689,7 @@ document.addEventListener('click', (e) => {
         const movieId = e.target.dataset.movieId;
         
         // Navigate to movie detail page with movieId parameter
-        window.location.href = chrome.runtime.getURL(`src/pages/search/search.html?movieId=${movieId}`);
+        window.location.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`);
     }
     
     if (e.target.classList.contains('rate-movie-btn')) {
@@ -3105,22 +3710,47 @@ document.addEventListener('click', (e) => {
     }
 
     if (e.target.classList.contains('watch-movie-btn') || e.target.closest('.watch-movie-btn')) {
+        console.log('👁️ Watch button clicked!');
         e.stopPropagation();
         const btn = e.target.classList.contains('watch-movie-btn') ? e.target : e.target.closest('.watch-movie-btn');
         const movieId = btn.dataset.movieId;
         
+        console.log('  - Button movieId:', movieId, 'type:', typeof movieId);
+        console.log('  - selectedMovie:', searchManager.selectedMovie);
+        
+        // Normalize movieId: convert string 'null' or 'undefined' to actual null
+        const normalizedMovieId = (movieId === 'null' || movieId === 'undefined' || !movieId) ? null : movieId;
+        console.log('  - Normalized movieId:', normalizedMovieId);
+        
         // Try to find movie in search results first
-        let movie = searchManager.currentResults.docs?.find(m => m.kinopoiskId == movieId);
+        let movie = searchManager.currentResults.docs?.find(m => m.kinopoiskId == normalizedMovieId);
+        
+        console.log('  - Found in search results:', !!movie);
         
         // If not found in search results, check if it's the selected movie (detail page)
-        if (!movie && searchManager.selectedMovie && searchManager.selectedMovie.kinopoiskId == movieId) {
-            movie = searchManager.selectedMovie;
+        if (!movie && searchManager.selectedMovie) {
+            const selectedId = searchManager.selectedMovie.kinopoiskId;
+            // For ex-fs movies, kinopoiskId might be null, so check if selectedMovie exists
+            // and either IDs match or both are null/undefined
+            if (selectedId == normalizedMovieId || 
+                (normalizedMovieId === null && (selectedId === null || selectedId === undefined))) {
+                console.log('  - Using selectedMovie (ID match or both null)');
+                movie = searchManager.selectedMovie;
+            }
         }
         
         if (movie) {
+            console.log('  - ✅ Movie found, calling handleWatchClick');
+            console.log('  - Movie has videoSources:', !!movie.videoSources, 'count:', movie.videoSources?.length || 0);
             // Set selected movie if not already set (important for handleWatchClick)
             searchManager.selectedMovie = movie;
             searchManager.handleWatchClick();
+        } else {
+            console.error('  - ❌ No movie found for watch button!');
+            console.error('  - movieId from button:', movieId);
+            console.error('  - normalizedMovieId:', normalizedMovieId);
+            console.error('  - selectedMovie:', searchManager.selectedMovie);
+            console.error('  - selectedMovie.kinopoiskId:', searchManager.selectedMovie?.kinopoiskId);
         }
     }
     

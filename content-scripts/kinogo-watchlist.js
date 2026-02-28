@@ -27,6 +27,7 @@ console.log('[MovieList Extension] Content script loaded for kinogo.inc');
         config.id = 'movieListExtensionConfig';
         config.style.display = 'none';
         config.setAttribute('data-script-urls', JSON.stringify(scriptUrls));
+        config.setAttribute('data-movie-details-url', chrome.runtime.getURL('src/pages/movie-details/movie-details.html'));
         if (user) {
             config.setAttribute('data-user', JSON.stringify(user));
             console.log('[MovieList Extension] User data added to config:', user.uid);

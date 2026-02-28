@@ -12,36 +12,34 @@
     <link rel="stylesheet" href="../shared/styles/overflow-fixes.css">
 </head>
 <body>
-    <script>
-        (function() {
-            const theme = localStorage.getItem('movieExtensionTheme') || 'dark';
-            if (theme === 'light') {
-                document.body.classList.add('light-theme');
-            }
-        })();
-    </script>
+    <script src="theme-init.js"></script>
     <div class="popup-container">
         <!-- Update Banner -->
         <div id="updateBanner" class="update-banner" style="display: none;">
             <div class="update-content">
                 <span class="update-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"></path><path d="M12 15l-3-3a22 22 0 0 1 2-9 20.66 20.66 0 0 1 7 7 22 22 0 0 1-9 2z"></path><path d="M5 21c.5-.5 2.5-1.5 5-1.5 2.5 0 4.5 1 5 1.5"></path></svg></span>
                 <div class="update-text">
-                    <span class="update-title">Update Available</span>
-                    <span class="update-version" id="updateVersion">New version ready</span>
+                    <span class="update-title" data-i18n="popup.update.title">Update Available</span>
+                    <span class="update-version" id="updateVersion" data-i18n="popup.update.version">New version ready</span>
                 </div>
             </div>
             <div class="update-actions">
-                <button id="updateBtn" class="btn-update">Update</button>
+                <button id="updateBtn" class="btn-update" data-i18n="popup.update.btn">Update</button>
                 <button id="dismissUpdateBtn" class="btn-dismiss">✕</button>
             </div>
         </div>
 
         <!-- Header -->
         <header class="popup-header">
-            <h1 class="popup-title">Movie Ratings</h1>
+            <div class="popup-title-container">
+                <a href="#" class="popup-logo" id="popupLogo" title="Go to Home">
+                    <img src="../../../icons/icon48-white.png" alt="Logo" class="popup-logo-img">
+                </a>
+                <h1 class="popup-title" data-i18n="popup.header.title">Movie Ratings</h1>
+            </div>
             <div class="auth-status" id="authStatus">
                 <span class="status-indicator" id="statusIndicator"></span>
-                <span id="statusText">Not authenticated</span>
+                <span id="statusText" data-i18n="popup.header.not_authenticated">Not authenticated</span>
             </div>
         </header>
 
@@ -65,17 +63,17 @@
                                 <path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/>
                                 <path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"/>
                             </svg>
-                            <span>Продолжить с Google</span>
+                            <span data-i18n="popup.auth.google_btn">Продолжить с Google</span>
                         </button>
 
                         <div class="auth-divider"></div>
 
                         <form id="loginEmailForm" class="auth-form">
                             <div class="form-group">
-                                <label for="loginEmail">Электронная почта</label>
-                                <input type="email" id="loginEmail" class="form-input" placeholder="Ваш адрес электронной почты" required>
+                                <label for="loginEmail" data-i18n="popup.auth.email_label">Электронная почта</label>
+                                <input type="email" id="loginEmail" class="form-input" placeholder="Ваш адрес электронной почты" data-i18n="[placeholder]popup.auth.email_placeholder" required>
                             </div>
-                            <button type="submit" class="btn btn-primary btn-block">Войти</button>
+                            <button type="submit" class="btn btn-primary btn-block" data-i18n="popup.auth.login_btn">Войти</button>
                         </form>
                     </div>
 
@@ -83,29 +81,29 @@
                     <div id="loginStep2" style="display: none;">
                         <form id="loginPasswordForm" class="auth-form">
                             <div class="form-group">
-                                <label>Электронная почта</label>
+                                <label data-i18n="popup.auth.email_label">Электронная почта</label>
                                 <div id="staticEmail" class="static-input-text"></div>
                             </div>
                             <div class="form-group">
                                 <div class="label-row">
-                                    <label for="loginPassword">Пароль</label>
-                                    <a href="#" class="forgot-password-link">Забыли пароль?</a>
+                                    <label for="loginPassword" data-i18n="popup.auth.password_label">Пароль</label>
+                                    <a href="#" class="forgot-password-link" data-i18n="popup.auth.forgot_password">Забыли пароль?</a>
                                 </div>
                                 <div class="password-input-wrapper">
-                                    <input type="password" id="loginPassword" class="form-input" placeholder="Ваш пароль" required>
+                                    <input type="password" id="loginPassword" class="form-input" placeholder="Ваш пароль" data-i18n="[placeholder]popup.auth.password_placeholder" required>
                                     <button type="button" class="toggle-password" title="Show password"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
                                 </div>
                             </div>
-                            <button type="submit" class="btn btn-gradient btn-block">Войти</button>
+                            <button type="submit" class="btn btn-gradient btn-block" data-i18n="popup.auth.login_btn">Войти</button>
                             
                             <div class="auth-switch back-nav">
-                                <a href="#" id="backToEmailBtn">← Назад</a>
+                                <a href="#" id="backToEmailBtn" data-i18n="popup.auth.back">← Назад</a>
                             </div>
                         </form>
                     </div>
                     
                     <div id="loginFooter" class="auth-switch">
-                         <p>Нет аккаунта? <a href="#" id="showRegisterLink">Регистрация</a></p>
+                         <p><span data-i18n="popup.auth.no_account">Нет аккаунта?</span> <a href="#" id="showRegisterLink" data-i18n="popup.auth.register_btn">Регистрация</a></p>
                     </div>
                 </div>
 
@@ -121,7 +119,7 @@
                                 <path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/>
                                 <path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"/>
                             </svg>
-                            <span>Продолжить с Google</span>
+                            <span data-i18n="popup.auth.google_btn">Продолжить с Google</span>
                         </button>
 
                         <div class="auth-divider"></div>
@@ -129,19 +127,19 @@
                         <form id="registerInfoForm" class="auth-form">
                             <div class="form-row">
                                 <div class="form-group">
-                                    <label for="registerFirstName">Имя</label>
-                                    <input type="text" id="registerFirstName" class="form-input" placeholder="Ваше имя" required>
+                                    <label for="registerFirstName" data-i18n="popup.auth.first_name_label">Имя</label>
+                                    <input type="text" id="registerFirstName" class="form-input" placeholder="Ваше имя" data-i18n="[placeholder]popup.auth.first_name_placeholder" required>
                                 </div>
                                 <div class="form-group">
-                                    <label for="registerLastName">Фамилия</label>
-                                    <input type="text" id="registerLastName" class="form-input" placeholder="Ваша фамилия" required>
+                                    <label for="registerLastName" data-i18n="popup.auth.last_name_label">Фамилия</label>
+                                    <input type="text" id="registerLastName" class="form-input" placeholder="Ваша фамилия" data-i18n="[placeholder]popup.auth.last_name_placeholder" required>
                                 </div>
                             </div>
                             <div class="form-group">
-                                <label for="registerEmail">Электронная почта</label>
-                                <input type="email" id="registerEmail" class="form-input" placeholder="Ваш адрес электронной почты" required>
+                                <label for="registerEmail" data-i18n="popup.auth.email_label">Электронная почта</label>
+                                <input type="email" id="registerEmail" class="form-input" placeholder="Ваш адрес электронной почты" data-i18n="[placeholder]popup.auth.email_placeholder" required>
                             </div>
-                            <button type="submit" class="btn btn-primary btn-block">Продолжить</button>
+                            <button type="submit" class="btn btn-primary btn-block" data-i18n="popup.auth.register_info">Продолжить</button>
                         </form>
                     </div>
 
@@ -150,44 +148,44 @@
                         <form id="registerPasswordForm" class="auth-form">
                             <div class="form-row">
                                 <div class="form-group">
-                                    <label>Имя</label>
+                                    <label data-i18n="popup.auth.first_name_label">Имя</label>
                                     <div id="staticName" class="static-input-text"></div>
                                 </div>
                                 <div class="form-group">
-                                    <label>Фамилия</label>
+                                    <label data-i18n="popup.auth.last_name_label">Фамилия</label>
                                     <div id="staticSurname" class="static-input-text"></div>
                                 </div>
                             </div>
                             <div class="form-group">
-                                <label>Электронная почта</label>
+                                <label data-i18n="popup.auth.email_label">Электронная почта</label>
                                 <div id="staticRegisterEmail" class="static-input-text"></div>
                             </div>
 
                             <div class="form-group">
-                                <label for="registerPassword">Пароль</label>
+                                <label for="registerPassword" data-i18n="popup.auth.password_label">Пароль</label>
                                 <div class="password-input-wrapper">
-                                    <input type="password" id="registerPassword" class="form-input" placeholder="Придумайте пароль" required minlength="6">
+                                    <input type="password" id="registerPassword" class="form-input" placeholder="Придумайте пароль" data-i18n="[placeholder]popup.auth.password_placeholder" required minlength="6">
                                     <button type="button" class="toggle-password" title="Show password"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
                                 </div>
                             </div>
                             <div class="form-group">
-                                <label for="registerConfirmPassword">Повторите пароль</label>
+                                <label for="registerConfirmPassword" data-i18n="popup.auth.confirm_password_label">Повторите пароль</label>
                                 <div class="password-input-wrapper">
-                                    <input type="password" id="registerConfirmPassword" class="form-input" placeholder="Повторите пароль" required minlength="6">
+                                    <input type="password" id="registerConfirmPassword" class="form-input" placeholder="Повторите пароль" data-i18n="[placeholder]popup.auth.confirm_password_placeholder" required minlength="6">
                                     <button type="button" class="toggle-password" title="Show password"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
                                 </div>
                             </div>
 
-                            <button type="submit" class="btn btn-gradient btn-block">Зарегистрироваться</button>
+                            <button type="submit" class="btn btn-gradient btn-block" data-i18n="popup.auth.create_account">Зарегистрироваться</button>
 
                             <div class="auth-switch back-nav">
-                                <a href="#" id="backToRegisterInfoBtn">← Назад</a>
+                                <a href="#" id="backToRegisterInfoBtn" data-i18n="popup.auth.back">← Назад</a>
                             </div>
                         </form>
                     </div>
 
                      <div id="registerFooter" class="auth-switch">
-                        <p>Уже есть аккаунт? <a href="#" id="showLoginLink">Войти</a></p>
+                        <p><span data-i18n="popup.auth.have_account">Уже есть аккаунт?</span> <a href="#" id="showLoginLink" data-i18n="popup.auth.login_btn">Войти</a></p>
                     </div>
                 </div>
             </div>
@@ -202,15 +200,15 @@
                     <span id="userName">User</span>
                 </div>
                 <div class="feed-actions">
-                    <button id="settingsBtn" class="btn btn-ghost btn-sm">Settings</button>
-                    <button id="logoutBtn" class="btn btn-secondary btn-sm">Sign Out</button>
+                    <button id="settingsBtn" class="btn btn-ghost btn-sm" data-i18n="popup.content.settings">Settings</button>
+                    <button id="logoutBtn" class="btn btn-secondary btn-sm" data-i18n="popup.content.logout">Sign Out</button>
                 </div>
             </div>
             
             <!-- Search Section -->
             <div class="search-section">
                 <div class="search-container">
-                    <input type="text" id="searchInput" class="search-input" placeholder="Search movies...">
+                    <input type="text" id="searchInput" class="search-input" placeholder="Search movies..." data-i18n="[placeholder]popup.content.search_placeholder">
                     <button id="searchIconBtn" class="search-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></button>
                     <div id="searchResults" class="search-results" style="display: none;"></div>
                 </div>
@@ -219,26 +217,30 @@
             <!-- Feed Section -->
             <div class="feed-section">
                 <div class="feed-header">
-                    <h2 class="feed-title">Recent Ratings</h2>
+                    <h2 class="feed-title" data-i18n="popup.content.recent_ratings">Recent Ratings</h2>
                     <div class="feed-actions">
-                        <button id="viewAllRatingsBtn" class="btn btn-primary btn-sm">View All Ratings</button>
-                        <button id="refreshBtn" class="btn btn-ghost btn-sm">Refresh</button>
+                        <button id="viewAllRatingsBtn" class="btn btn-primary btn-sm" data-i18n="popup.content.view_all">View All Ratings</button>
+                        <button id="refreshBtn" class="btn btn-ghost btn-sm" data-i18n="popup.content.refresh">Refresh</button>
                     </div>
                 </div>
                 
                 <div class="feed-content" id="feedContent">
                     <div class="empty-state">
                         <div class="empty-state-icon"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="2" ry="2"></rect><path d="M16 6 22 2"></path><path d="M22 6 2 6"></path><path d="M7 6 2 2"></path><path d="M12 6 7 2"></path><path d="M17 6 12 2"></path></svg></div>
-                        <h3 class="empty-state-title">No ratings yet</h3>
-                        <p class="empty-state-text">Start rating movies to see them here!</p>
+                        <h3 class="empty-state-title" data-i18n="popup.content.empty_title">No ratings yet</h3>
+                        <p class="empty-state-text" data-i18n="popup.content.empty_text">Start rating movies to see them here!</p>
                     </div>
+                </div>
+                <!-- Infinite Scroll Trigger -->
+                <div id="infiniteScrollTrigger" class="infinite-scroll-trigger" style="display: none; justify-content: center; padding: 20px;">
+                    <div class="loading-spinner" style="width: 24px; height: 24px; border-width: 3px;"></div>
                 </div>
             </div>
             
             <!-- Loading overlay - moved outside feed-section to avoid overflow clipping -->
             <div class="loading" id="loading" style="display: none;">
                 <div class="loading-spinner"></div>
-                <span>Loading...</span>
+                <span data-i18n="popup.content.loading">Loading...</span>
             </div>
         </div>
 
@@ -251,10 +253,13 @@
     <script src="../../libs/firebase-firestore-compat.js"></script>
     <script src="../../libs/firebase-auth-compat.js"></script>
     <script src="../shared/config/kinopoisk.config.js"></script>
+    <script src="../shared/services/ImdbParsingService.js"></script>
     <script src="../shared/services/KinopoiskService.js"></script>
     <script src="../shared/services/MovieCacheService.js"></script>
     <script src="../shared/services/RatingService.js"></script>
     <script src="../shared/services/RatingsCacheService.js"></script>
+    <script src="../shared/services/WatchlistService.js"></script>
+    <script src="../shared/services/FavoriteService.js"></script>
     <script src="../shared/services/UserService.js"></script>
     <script src="../shared/utils/helpers.js"></script>
     <script src="../shared/utils/Utils.js"></script>
@@ -263,7 +268,7 @@
     <script src="../shared/utils/auth.js"></script>
     <script src="../shared/components/Navigation.js"></script>
     <script src="../shared/firestore.js"></script>
-    <script src="popup.js"></script>
+    <script type="module" src="popup.js"></script>
 
 </body>
 </html>

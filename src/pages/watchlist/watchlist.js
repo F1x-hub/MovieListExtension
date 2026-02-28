@@ -366,7 +366,7 @@ class WatchlistPageManager {
             switch (action) {
                 case 'view-details':
                     if (movieId) {
-                        const url = chrome.runtime.getURL(`src/pages/search/search.html?movieId=${movieId}`);
+                        const url = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`);
                         window.location.href = url;
                     }
                     break;

@@ -683,7 +683,7 @@
 
 .light-theme .filters-title,
 .light-theme .filter-label {
-    color: var(--theme-text-primary);
+    color: #000000;
 }
 
 .light-theme .search-input,
@@ -798,6 +798,13 @@
 .light-theme .rating-modal {
     background: var(--theme-bg-secondary);
     border-color: var(--theme-border);
+}
+
+.light-theme .results-info,
+.light-theme .results-count,
+.light-theme .results-mode {
+    color: #000000 !important;
+    opacity: 1 !important;
 }
 
 .light-theme .rating-header {

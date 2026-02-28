@@ -20,7 +20,7 @@ class WatchlistService {
      * @param {Array<string>} movieData.genres - Array of genres
      * @param {number} movieData.avgRating - Average rating from TMDb/Kinopoisk
      * @param {string} movieData.notes - Optional notes
-     * @returns {Promise<Object>} - Created watchlist entry
+     * @returns {Promise<Object>} - Created watchlist entry with movedFrom indicator
      */
     async addToWatchlist(userId, movieData) {
         try {
@@ -33,15 +33,34 @@ class WatchlistService {
             }
 
             const docId = `${userId}_${movieData.movieId}`;
+            
+            // Check if movie is in watching and remove it
+            let movedFrom = null;
+            const watchingDocId = `${userId}_${movieData.movieId}`;
+            const watchingRef = this.db.collection('watching').doc(watchingDocId);
+            
+            try {
+                const watchingDoc = await watchingRef.get();
+                if (watchingDoc.exists) {
+                    await watchingRef.delete();
+                    movedFrom = 'watching';
+                    console.log(`Moved movie ${movieData.movieId} from watching to watchlist for user ${userId}`);
+                }
+            } catch (checkError) {
+                console.warn('Error checking watching:', checkError);
+                // Continue with adding to watchlist even if check fails
+            }
+            
+            // Add to watchlist
             const watchlistRef = this.db.collection(this.collection).doc(docId);
 
             const watchlistData = {
                 userId,
                 movieId: movieData.movieId,
-                movieTitle: movieData.movieTitle || '',
+                movieTitle: movieData.movieTitle || movieData.name || '',
                 movieTitleRu: movieData.movieTitleRu || '',
-                posterPath: movieData.posterPath || '',
-                releaseYear: movieData.releaseYear || null,
+                posterPath: movieData.posterPath || movieData.posterUrl || '',
+                releaseYear: movieData.releaseYear || movieData.year || null,
                 genres: movieData.genres || [],
                 description: movieData.description || '',
                 kpRating: movieData.kpRating || 0,
@@ -53,7 +72,7 @@ class WatchlistService {
 
             await watchlistRef.set(watchlistData);
 
-            return { id: docId, ...watchlistData };
+            return { id: docId, movedFrom, ...watchlistData };
         } catch (error) {
             console.error('Error adding to watchlist:', error);
             throw new Error(`Failed to add to watchlist: ${error.message}`);

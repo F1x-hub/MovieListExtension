@@ -1,8 +1,13 @@
+import { i18n } from '../../shared/i18n/I18n.js';
+
 /**
  * Profile Page Manager
  * Handles the user profile page functionality
  */
 class ProfilePageManager {
+    static CACHE_KEY_PREFIX = 'profile_cache_';
+    static CACHE_LIFETIME = 24 * 60 * 60 * 1000; // 24 hours
+
     constructor() {
         this.currentUser = null;
         this.userProfile = null;
@@ -21,8 +26,93 @@ class ProfilePageManager {
     async init() {
         this.initializeElements();
         this.setupEventListeners();
+        
+        // Try to load cached profile immediately for instant render
+        await this.loadCachedProfile();
+
+        await i18n.init();
+        i18n.translatePage();
+
         await this.setupFirebase();
         await this.loadProfile();
+    }
+
+    async loadCachedProfile() {
+        try {
+            if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
+
+            // Determine target user ID without waiting for Auth
+            const urlParams = new URLSearchParams(window.location.search);
+            let targetUserId = urlParams.get('userId');
+
+            // If no ID in URL, try to get current user from storage (stored by AuthManager)
+            if (!targetUserId) {
+                const result = await chrome.storage.local.get(['user']);
+                if (result.user && result.user.uid) {
+                    targetUserId = result.user.uid;
+                }
+            }
+
+            if (!targetUserId) return;
+
+            // Load profile cache
+            const cacheKey = `${ProfilePageManager.CACHE_KEY_PREFIX}${targetUserId}`;
+            const result = await chrome.storage.local.get([cacheKey]);
+            const cache = result[cacheKey];
+
+            if (cache && cache.profile) {
+                // Check expiry
+                if (Date.now() - (cache.timestamp || 0) < ProfilePageManager.CACHE_LIFETIME) {
+                    console.log('ProfilePage: Using cached profile for', targetUserId);
+                    this.userProfile = cache.profile;
+                    
+                    // Determine viewingOtherUser from stored auth state
+                    const authResult = await chrome.storage.local.get(['user']);
+                    const currentUid = authResult.user?.uid;
+                    if (currentUid && targetUserId && currentUid !== targetUserId) {
+                        this.viewingOtherUser = true;
+                    } else {
+                        this.viewingOtherUser = false;
+                    }
+
+                    this.displayProfile();
+                    if (cache.stats) {
+                        this.displayStatistics(cache.stats);
+                    }
+                    
+                    // Hide loading immediately if we have data
+                    this.showLoading(false);
+                } else {
+                    console.log('ProfilePage: Cache expired for', targetUserId);
+                }
+            }
+        } catch (error) {
+            console.error('ProfilePage: Error loading cache', error);
+        }
+        return false;
+    }
+
+    async loadExpiredCacheFallback(targetUserId) {
+        try {
+            if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
+            const cacheKey = `${ProfilePageManager.CACHE_KEY_PREFIX}${targetUserId}`;
+            const result = await chrome.storage.local.get([cacheKey]);
+            const cache = result[cacheKey];
+
+            if (cache && cache.profile) {
+                console.log('ProfilePage: Using EXPIRED cache fallback due to connection error for', targetUserId);
+                this.userProfile = cache.profile;
+                this.displayProfile();
+                if (cache.stats) {
+                    this.displayStatistics(cache.stats);
+                }
+                this.showLoading(false);
+                return true;
+            }
+        } catch (error) {
+            console.error('ProfilePage: Error loading expired cache fallback', error);
+        }
+        return false;
     }
 
     initializeElements() {
@@ -238,7 +328,11 @@ class ProfilePageManager {
             }
         }
 
-        this.showLoading(true);
+        // Only show loading screen if we don't have cached profile
+        if (!this.userProfile) {
+            this.showLoading(true);
+        }
+        
         this.viewingOtherUser = profileUserId && this.currentUser && profileUserId !== this.currentUser.uid;
 
         try {
@@ -257,10 +351,34 @@ class ProfilePageManager {
             this.displayStatistics(stats);
             await this.loadRecentRatings(targetUserId);
 
+            // Save to cache
+            try {
+                if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+                    const cacheKey = `${ProfilePageManager.CACHE_KEY_PREFIX}${targetUserId}`;
+                    await chrome.storage.local.set({
+                        [cacheKey]: {
+                            profile: this.userProfile,
+                            stats: stats,
+                            timestamp: Date.now()
+                        }
+                    });
+                    console.log('ProfilePage: Saved profile to cache', targetUserId);
+                }
+            } catch (cacheError) {
+                console.warn('ProfilePage: Failed to save cache', cacheError);
+            }
+
             this.showLoading(false);
         } catch (error) {
             console.error('Error loading profile:', error);
-            this.showError('Failed to load profile. Please try again.');
+            
+            // Try to load even expired cache if we are having connection issues
+            console.log('ProfilePage: Network error, attempting expired cache fallback...');
+            const hasFallback = await this.loadExpiredCacheFallback(targetUserId);
+            
+            if (!hasFallback) {
+                this.showError('Failed to load profile. Please check your connection.');
+            }
             this.showLoading(false);
         }
     }
@@ -272,7 +390,8 @@ class ProfilePageManager {
         const firstName = profile.firstName || '';
         const lastName = profile.lastName || '';
         const fullName = [firstName, lastName].filter(Boolean).join(' ') || profile.displayName || 'User';
-        const username = profile.username || this.userService.generateUsernameFromEmail(profile.email);
+        // Fallback for username if userService is not ready
+        const username = profile.username || (this.userService ? this.userService.generateUsernameFromEmail(profile.email) : profile.email?.split('@')[0] || 'user');
         const photoURL = profile.photoURL || '';
         const displayNameFormat = profile.displayNameFormat || 'fullname';
         const isUsernameFirst = displayNameFormat === 'username';
@@ -303,18 +422,31 @@ class ProfilePageManager {
         }
 
         if (photoURL) {
-            // Try to get from cache first
-            this.imageCacheService.getCachedImage(profile.uid || this.currentUser.uid, 'avatar').then(cachedAvatar => {
-                if (cachedAvatar) {
-                    if (this.elements.profilePhotoImg) {
-                        this.elements.profilePhotoImg.src = cachedAvatar;
-                        this.elements.profilePhotoImg.style.display = 'block';
+            // Check if imageCacheService is ready
+            if (this.imageCacheService && typeof this.imageCacheService.getCachedImage === 'function') {
+                // Try to get from cache first
+                this.imageCacheService.getCachedImage(profile.uid || this.currentUser?.uid, 'avatar').then(cachedAvatar => {
+                    if (cachedAvatar) {
+                        if (this.elements.profilePhotoImg) {
+                            this.elements.profilePhotoImg.src = cachedAvatar;
+                            this.elements.profilePhotoImg.style.display = 'block';
+                        }
+                        if (this.elements.profilePhotoPlaceholder) {
+                            this.elements.profilePhotoPlaceholder.style.display = 'none';
+                        }
+                    } else {
+                        // Fallback to URL and cache it
+                        if (this.elements.profilePhotoImg) {
+                            this.elements.profilePhotoImg.src = photoURL;
+                            this.elements.profilePhotoImg.style.display = 'block';
+                        }
+                        if (this.elements.profilePhotoPlaceholder) {
+                            this.elements.profilePhotoPlaceholder.style.display = 'none';
+                        }
+                        this.imageCacheService.fetchAndCache(profile.uid || this.currentUser?.uid, 'avatar', photoURL);
                     }
-                    if (this.elements.profilePhotoPlaceholder) {
-                        this.elements.profilePhotoPlaceholder.style.display = 'none';
-                    }
-                } else {
-                    // Fallback to URL and cache it
+                }).catch(err => {
+                    console.warn('ProfilePage: Avatar cache error, falling back to URL', err);
                     if (this.elements.profilePhotoImg) {
                         this.elements.profilePhotoImg.src = photoURL;
                         this.elements.profilePhotoImg.style.display = 'block';
@@ -322,9 +454,17 @@ class ProfilePageManager {
                     if (this.elements.profilePhotoPlaceholder) {
                         this.elements.profilePhotoPlaceholder.style.display = 'none';
                     }
-                    this.imageCacheService.fetchAndCache(profile.uid || this.currentUser.uid, 'avatar', photoURL);
+                });
+            } else {
+                // imageCacheService not ready, use URL directly
+                if (this.elements.profilePhotoImg) {
+                    this.elements.profilePhotoImg.src = photoURL;
+                    this.elements.profilePhotoImg.style.display = 'block';
                 }
-            });
+                if (this.elements.profilePhotoPlaceholder) {
+                    this.elements.profilePhotoPlaceholder.style.display = 'none';
+                }
+            }
         } else {
             if (this.elements.profilePhotoImg) {
                 this.elements.profilePhotoImg.style.display = 'none';
@@ -337,15 +477,31 @@ class ProfilePageManager {
         }
 
         if (this.elements.profileJoinDate && profile.createdAt) {
-            const joinDate = this.profileService.formatJoinDate(profile.createdAt);
-            this.elements.joinDateText.textContent = `Участник с ${joinDate}`;
-            this.elements.profileJoinDate.style.display = 'flex';
+            // Check if profileService is ready for date formatting
+            let joinDate;
+            if (this.profileService && typeof this.profileService.formatJoinDate === 'function') {
+                joinDate = this.profileService.formatJoinDate(profile.createdAt);
+            } else {
+                // Fallback: simple date format
+                try {
+                    const date = profile.createdAt.toDate ? profile.createdAt.toDate() : new Date(profile.createdAt);
+                    joinDate = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+                } catch (e) {
+                    joinDate = '';
+                }
+            }
+            if (joinDate) {
+                this.elements.joinDateText.textContent = `${i18n.get('profile.joined')} ${joinDate}`;
+                this.elements.profileJoinDate.style.display = 'flex';
+            } else {
+                this.elements.profileJoinDate.style.display = 'none';
+            }
         } else if (this.elements.profileJoinDate) {
             this.elements.profileJoinDate.style.display = 'none';
         }
 
         if (this.elements.profileFavoriteGenre && profile.favoriteGenre) {
-            this.elements.favoriteGenreText.textContent = `Любимый жанр: ${profile.favoriteGenre}`;
+            this.elements.favoriteGenreText.textContent = `${i18n.get('profile.favorite_genre')}: ${profile.favoriteGenre}`;
             this.elements.profileFavoriteGenre.style.display = 'flex';
         } else if (this.elements.profileFavoriteGenre) {
             this.elements.profileFavoriteGenre.style.display = 'none';
@@ -361,18 +517,29 @@ class ProfilePageManager {
 
         if (this.elements.profileCover) {
             if (profile.bannerURL) {
-                // Try to get from cache first
-                this.imageCacheService.getCachedImage(profile.uid || this.currentUser.uid, 'banner').then(cachedBanner => {
-                    if (cachedBanner) {
-                        this.elements.profileCover.style.backgroundImage = `url('${cachedBanner}')`;
-                        this.elements.profileCover.classList.add('has-banner');
-                    } else {
-                        // Fallback to URL and cache it
+                // Check if imageCacheService is ready
+                if (this.imageCacheService && typeof this.imageCacheService.getCachedImage === 'function') {
+                    // Try to get from cache first
+                    this.imageCacheService.getCachedImage(profile.uid || this.currentUser?.uid, 'banner').then(cachedBanner => {
+                        if (cachedBanner) {
+                            this.elements.profileCover.style.backgroundImage = `url('${cachedBanner}')`;
+                            this.elements.profileCover.classList.add('has-banner');
+                        } else {
+                            // Fallback to URL and cache it
+                            this.elements.profileCover.style.backgroundImage = `url('${profile.bannerURL}')`;
+                            this.elements.profileCover.classList.add('has-banner');
+                            this.imageCacheService.fetchAndCache(profile.uid || this.currentUser?.uid, 'banner', profile.bannerURL);
+                        }
+                    }).catch(err => {
+                        console.warn('ProfilePage: Banner cache error, falling back to URL', err);
                         this.elements.profileCover.style.backgroundImage = `url('${profile.bannerURL}')`;
                         this.elements.profileCover.classList.add('has-banner');
-                        this.imageCacheService.fetchAndCache(profile.uid || this.currentUser.uid, 'banner', profile.bannerURL);
-                    }
-                });
+                    });
+                } else {
+                    // imageCacheService not ready, use URL directly
+                    this.elements.profileCover.style.backgroundImage = `url('${profile.bannerURL}')`;
+                    this.elements.profileCover.classList.add('has-banner');
+                }
             } else {
                 this.elements.profileCover.style.backgroundImage = '';
                 this.elements.profileCover.classList.remove('has-banner');
@@ -456,7 +623,7 @@ class ProfilePageManager {
             card.addEventListener('click', () => {
                 const movieId = card.getAttribute('data-movie-id');
                 if (movieId) {
-                    const url = chrome.runtime.getURL(`src/pages/search/search.html?movieId=${movieId}`);
+                    const url = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`);
                     window.location.href = url;
                 }
             });

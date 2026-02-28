@@ -771,18 +771,25 @@
 
 .light-theme .filters-title,
 .light-theme .filter-label {
-    color: var(--theme-text-primary);
+    color: #000000;
 }
 
 .light-theme .clear-filters-btn {
     background: var(--theme-bg-tertiary);
     border-color: var(--theme-border);
-    color: var(--theme-text-secondary);
+    color: #000000;
 }
 
 .light-theme .clear-filters-btn:hover {
     background: var(--theme-hover-bg);
     color: var(--theme-text-primary);
+}
+
+.light-theme .results-info,
+.light-theme .results-count,
+.light-theme .results-mode {
+    color: #000000 !important;
+    opacity: 1 !important;
 }
 
 .light-theme .search-input,

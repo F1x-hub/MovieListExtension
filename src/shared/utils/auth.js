@@ -10,7 +10,8 @@ class AuthManager {
         AUTH_TOKEN_EXPIRY: 'authTokenExpiry',
         IS_AUTHENTICATED: 'isAuthenticated',
         TOKEN_VALIDATION_TIMESTAMP: 'tokenValidationTimestamp',
-        AUTH_TIMESTAMP: 'authTimestamp'
+        AUTH_TIMESTAMP: 'authTimestamp',
+        REFRESH_TOKEN: 'refreshToken'
     };
 
     /**
@@ -24,7 +25,9 @@ class AuthManager {
                 AuthManager.STORAGE_KEYS.AUTH_TOKEN,
                 AuthManager.STORAGE_KEYS.AUTH_TOKEN_EXPIRY,
                 AuthManager.STORAGE_KEYS.IS_AUTHENTICATED,
-                AuthManager.STORAGE_KEYS.TOKEN_VALIDATION_TIMESTAMP
+                AuthManager.STORAGE_KEYS.IS_AUTHENTICATED,
+                AuthManager.STORAGE_KEYS.TOKEN_VALIDATION_TIMESTAMP,
+                AuthManager.STORAGE_KEYS.REFRESH_TOKEN
             ], (result) => {
                 if (chrome.runtime.lastError) {
                     console.error('[AuthManager] Error getting auth data:', chrome.runtime.lastError);
@@ -43,7 +46,9 @@ class AuthManager {
                     authToken: result.authToken,
                     authTokenExpiry: result.authTokenExpiry,
                     isAuthenticated: result.isAuthenticated,
-                    tokenValidationTimestamp: result.tokenValidationTimestamp
+                    isAuthenticated: result.isAuthenticated,
+                    tokenValidationTimestamp: result.tokenValidationTimestamp,
+                    refreshToken: result.refreshToken
                 });
             });
         });
@@ -93,7 +98,9 @@ class AuthManager {
                 AuthManager.STORAGE_KEYS.AUTH_TOKEN_EXPIRY,
                 AuthManager.STORAGE_KEYS.IS_AUTHENTICATED,
                 AuthManager.STORAGE_KEYS.TOKEN_VALIDATION_TIMESTAMP,
-                AuthManager.STORAGE_KEYS.AUTH_TIMESTAMP
+                AuthManager.STORAGE_KEYS.TOKEN_VALIDATION_TIMESTAMP,
+                AuthManager.STORAGE_KEYS.AUTH_TIMESTAMP,
+                AuthManager.STORAGE_KEYS.REFRESH_TOKEN
             ], () => {
                 if (chrome.runtime.lastError) {
                     console.error('[AuthManager] Error clearing auth data:', chrome.runtime.lastError);
@@ -110,9 +117,10 @@ class AuthManager {
      * @param {string} authToken - Firebase auth token
      * @param {number} authTokenExpiry - Token expiry timestamp
      * @param {number} tokenValidationTimestamp - Last validation timestamp
+     * @param {string} refreshToken - Firebase refresh token (optional)
      * @returns {Promise<void>}
      */
-    static async saveAuthData(user, authToken, authTokenExpiry, tokenValidationTimestamp) {
+    static async saveAuthData(user, authToken, authTokenExpiry, tokenValidationTimestamp, refreshToken = null) {
         return new Promise((resolve) => {
             const authData = {
                 [AuthManager.STORAGE_KEYS.USER]: {
@@ -125,8 +133,13 @@ class AuthManager {
                 [AuthManager.STORAGE_KEYS.AUTH_TOKEN_EXPIRY]: authTokenExpiry,
                 [AuthManager.STORAGE_KEYS.IS_AUTHENTICATED]: true,
                 [AuthManager.STORAGE_KEYS.TOKEN_VALIDATION_TIMESTAMP]: tokenValidationTimestamp,
+                [AuthManager.STORAGE_KEYS.TOKEN_VALIDATION_TIMESTAMP]: tokenValidationTimestamp,
                 [AuthManager.STORAGE_KEYS.AUTH_TIMESTAMP]: Date.now()
             };
+
+            if (refreshToken) {
+                authData[AuthManager.STORAGE_KEYS.REFRESH_TOKEN] = refreshToken;
+            }
 
             chrome.storage.local.set(authData, () => {
                 if (chrome.runtime.lastError) {

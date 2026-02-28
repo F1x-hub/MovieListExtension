@@ -26,6 +26,7 @@
     <script src="../../shared/services/KinopoiskService.js"></script>
     <script src="../../shared/services/UserService.js"></script>
     <script src="../../shared/services/WatchlistService.js"></script>
+    <script src="../../shared/services/WatchingService.js"></script>
     <script src="../../shared/services/FavoriteService.js"></script>
     <script src="../../shared/services/CollectionService.js"></script>
     <script src="../../shared/services/ImageCacheService.js"></script>
@@ -37,6 +38,7 @@
     <!-- Components -->
     <script src="../../shared/components/Navigation.js"></script>
     <script src="../../shared/components/Router.js"></script>
+    <link rel="stylesheet" href="../../shared/styles/report-widget.css">
 </head>
 <body>
     <!-- Navigation will be inserted here by Navigation.js -->
@@ -75,7 +77,7 @@
                             <div class="profile-dropdown" id="profileDropdown">
                                 <button class="dropdown-item" id="editProfileItem">
                                     <span class="dropdown-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></span>
-                                    Edit Profile
+                                    <span data-i18n="profile.edit_profile">Edit Profile</span>
                                 </button>
                             </div>
                         </div>
@@ -87,19 +89,19 @@
             <div class="profile-stats" id="profileStats">
                 <div class="stat-card">
                     <span class="stat-value" id="statTotalRatings">0</span>
-                    <span class="stat-label">Movies Rated</span>
+                    <span class="stat-label" data-i18n="profile.stats.rated">Movies Rated</span>
                 </div>
                 <div class="stat-card">
                     <span class="stat-value" id="statAverageRating">0.0</span>
-                    <span class="stat-label">Average Rating</span>
+                    <span class="stat-label" data-i18n="profile.stats.average">Average Rating</span>
                 </div>
                 <div class="stat-card">
                     <span class="stat-value" id="statFavorites">0</span>
-                    <span class="stat-label">Favorites</span>
+                    <span class="stat-label" data-i18n="profile.stats.favorites">Favorites</span>
                 </div>
                 <div class="stat-card">
                     <span class="stat-value" id="statWatchlist">0</span>
-                    <span class="stat-label">Watchlist</span>
+                    <span class="stat-label" data-i18n="profile.stats.watchlist">Watchlist</span>
                 </div>
             </div>
 
@@ -108,9 +110,9 @@
                 <div class="section-header">
                     <h2 class="section-title">
                         <span class="section-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg></span>
-                        Recent Ratings
+                        <span data-i18n="profile.recent_ratings">Recent Ratings</span>
                     </h2>
-                    <button class="btn-view-all" id="viewAllRatingsBtn">
+                    <button class="btn-view-all" id="viewAllRatingsBtn" data-i18n="profile.view_all">
                         View All
                     </button>
                 </div>
@@ -122,15 +124,15 @@
             <!-- Loading State -->
             <div class="loading-section" id="loadingSection">
                 <div class="loading-spinner"></div>
-                <p>Loading profile...</p>
+                <p data-i18n="profile.loading">Loading profile...</p>
             </div>
 
             <!-- Error State -->
             <div class="error-state" id="errorState" style="display: none;">
                 <div class="error-state-icon"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #ef4444;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></div>
                 <h3 class="error-state-title">Something went wrong</h3>
-                <p class="error-state-text" id="errorMessage">Failed to load profile</p>
-                <button class="error-state-btn" id="retryBtn">Try Again</button>
+                <p class="error-state-text" id="errorMessage" data-i18n="profile.error">Failed to load profile</p>
+                <button class="error-state-btn" id="retryBtn" data-i18n="profile.try_again">Try Again</button>
             </div>
         </div>
     </main>
@@ -141,14 +143,14 @@
             <div class="modal-header">
                 <h2 class="modal-title">
                     <span class="modal-icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></span>
-                    Edit Profile
+                    <span data-i18n="profile.edit_modal.title">Edit Profile</span>
                 </h2>
                 <button class="modal-close" id="editProfileModalClose">×</button>
             </div>
             <form id="editProfileForm" class="modal-body">
                 <!-- Banner Upload -->
                 <div class="form-group banner-upload">
-                    <label>Profile Banner</label>
+                    <label data-i18n="profile.edit_modal.banner">Profile Banner</label>
                     <div class="banner-upload-container">
                         <div class="banner-preview" id="bannerPreview">
                             <img id="bannerPreviewImg" src="" alt="Banner Preview" style="display: none;">
@@ -160,12 +162,12 @@
                         <div class="banner-actions">
                             <label class="btn-upload" for="bannerInput">
                                 <span class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg></span>
-                                Upload Banner
+                                <span data-i18n="profile.edit_modal.upload_banner">Upload Banner</span>
                             </label>
                             <input type="file" id="bannerInput" accept="image/png,image/jpeg,image/webp,image/gif" style="display: none;">
                             <button type="button" class="btn-remove" id="removeBannerBtn" style="display: none;">
                                 <span class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></span>
-                                Remove
+                                <span data-i18n="profile.edit_modal.remove">Remove</span>
                             </button>
                         </div>
                     </div>
@@ -174,7 +176,7 @@
 
                 <!-- Photo Upload -->
                 <div class="form-group photo-upload">
-                    <label>Profile Photo</label>
+                    <label data-i18n="profile.edit_modal.photo">Profile Photo</label>
                     <div class="photo-upload-container">
                         <div class="photo-preview" id="photoPreview">
                             <img id="photoPreviewImg" src="" alt="Preview" style="display: none;">
@@ -185,12 +187,12 @@
                         <div class="photo-actions">
                             <label class="btn-upload" for="photoInput">
                                 <span class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg></span>
-                                Upload Photo
+                                <span data-i18n="profile.edit_modal.upload_photo">Upload Photo</span>
                             </label>
                             <input type="file" id="photoInput" accept="image/png,image/jpeg,image/webp,image/gif" style="display: none;">
                             <button type="button" class="btn-remove" id="removePhotoBtn" style="display: none;">
                                 <span class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></span>
-                                Remove
+                                <span data-i18n="profile.edit_modal.remove">Remove</span>
                             </button>
                         </div>
                     </div>
@@ -199,21 +201,21 @@
 
                 <!-- First Name -->
                 <div class="form-group">
-                    <label for="firstNameInput">First Name *</label>
+                    <label for="firstNameInput" data-i18n="profile.edit_modal.first_name">First Name *</label>
                     <input type="text" id="firstNameInput" name="firstName" maxlength="50" required>
                     <span class="error-message" id="firstNameError"></span>
                 </div>
 
                 <!-- Last Name -->
                 <div class="form-group">
-                    <label for="lastNameInput">Last Name *</label>
+                    <label for="lastNameInput" data-i18n="profile.edit_modal.last_name">Last Name *</label>
                     <input type="text" id="lastNameInput" name="lastName" maxlength="50" required>
                     <span class="error-message" id="lastNameError"></span>
                 </div>
 
                 <!-- Username -->
                 <div class="form-group">
-                    <label for="usernameInput">Username *</label>
+                    <label for="usernameInput" data-i18n="profile.edit_modal.username">Username *</label>
                     <input type="text" id="usernameInput" name="username" minlength="3" maxlength="20" pattern="[a-zA-Z0-9_]+" required>
                     <span class="error-message" id="usernameError"></span>
                     <p class="input-hint">3-20 characters, letters, numbers, and underscores only</p>
@@ -221,7 +223,7 @@
 
                 <!-- Bio -->
                 <div class="form-group">
-                    <label for="bioInput">Bio / About Me</label>
+                    <label for="bioInput" data-i18n="profile.edit_modal.bio">Bio / About Me</label>
                     <textarea id="bioInput" name="bio" rows="3" maxlength="200" placeholder="Tell us about yourself..."></textarea>
                     <div class="char-count">
                         <span id="bioCharCount">0</span>/200
@@ -231,7 +233,7 @@
 
                 <!-- Display Name Format -->
                 <div class="form-group">
-                    <label for="displayNameFormatInput">Display Name in Navigation</label>
+                    <label for="displayNameFormatInput" data-i18n="profile.edit_modal.display_name_format">Display Name in Navigation</label>
                     <select id="displayNameFormatInput" name="displayNameFormat">
                         <option value="fullname">First Name + Last Name</option>
                         <option value="username">Username</option>
@@ -241,7 +243,7 @@
 
                 <!-- Favorite Genre -->
                 <div class="form-group">
-                    <label for="favoriteGenreInput">Favorite Genre</label>
+                    <label for="favoriteGenreInput" data-i18n="profile.edit_modal.favorite_genre">Favorite Genre</label>
                     <select id="favoriteGenreInput" name="favoriteGenre">
                         <option value="">Select genre...</option>
                         <option value="Action">Action</option>
@@ -262,7 +264,7 @@
 
                 <!-- Social Links -->
                 <div class="form-section">
-                    <h3 class="form-section-title">Social Links (optional)</h3>
+                    <h3 class="form-section-title" data-i18n="profile.edit_modal.social_links">Social Links (optional)</h3>
                     <div class="form-group">
                         <label for="twitterInput">Twitter</label>
                         <input type="url" id="twitterInput" name="twitter" placeholder="https://twitter.com/username">
@@ -301,9 +303,9 @@
             </form>
             <!-- Form Footer -->
             <div class="modal-footer">
-                <button type="button" class="btn-secondary" id="cancelEditBtn">Cancel</button>
+                <button type="button" class="btn-secondary" id="cancelEditBtn" data-i18n="profile.edit_modal.cancel">Cancel</button>
                 <button type="submit" form="editProfileForm" class="btn-primary" id="saveProfileBtn">
-                    <span id="saveBtnText">Save Changes</span>
+                    <span id="saveBtnText" data-i18n="profile.edit_modal.save">Save Changes</span>
                     <span id="saveBtnLoading" style="display: none;">Saving...</span>
                 </button>
             </div>
@@ -312,7 +314,8 @@
     </div>
 
     <!-- Main Script -->
-    <script src="profile.js"></script>
+    <script src="profile.js" type="module"></script>
+    <script defer src="../../shared/components/ReportWidget.js"></script>
 </body>
 </html>
 

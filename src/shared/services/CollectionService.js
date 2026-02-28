@@ -2,33 +2,7 @@ class CollectionService {
     constructor() {
         this.storageKey = 'movieCollections';
         this.savedIconsKey = 'savedCustomIcons';
-        this.defaultIcons = ['🎬', '🎭', '🎨', '🎪', '🎯', '🎲', '🎸', '🎺', '🎻', '🎤', '🎧', '🎮', '🎰', '🎱', '🎳', '🎴', '🎵', '🎶', '🎼', '🎹'];
-        
-        // Wait for Firebase to be ready before migrating
-        if (window.firebaseManager) {
-            this.init();
-        } else {
-            window.addEventListener('firebaseManagerReady', () => this.init());
-        }
-    }
-
-    async init() {
-        // Listen for auth state changes to trigger migration/sync
-        if (window.firebaseManager && window.firebaseManager.auth) {
-            window.firebaseManager.auth.onAuthStateChanged(async (user) => {
-                if (user) {
-                    await this.migrateLocalToFirestore(user.uid);
-                }
-            });
-        }
-        
-        // Initial check
-        const user = this.getCurrentUser();
-        if (user) {
-            await this.migrateLocalToFirestore(user.uid);
-        } else {
-            this.migrateFromSyncToLocal();
-        }
+        this.defaultIcons = ['🎬', '🎭', '🎨', '🎪', '🎯', '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect><circle cx="16" cy="16" r="2"></circle><circle cx="16" cy="8" r="2"></circle><circle cx="8" cy="16" r="2"></circle><circle cx="8" cy="8" r="2"></circle><circle cx="12" cy="12" r="2"></circle></svg>', '🎸', '🎺', '🎻', '🎤', '🎧', '🎮', '🎰', '🎱', '🎳', '🎴', '🎵', '🎶', '🎼', '🎹'];
     }
 
     getCurrentUser() {
@@ -82,84 +56,7 @@ class CollectionService {
         }
     }
 
-    async migrateFromSyncToLocal() {
-        try {
-            // Check if data exists in sync
-            const syncData = await chrome.storage.sync.get([this.storageKey]);
-            if (syncData[this.storageKey] && syncData[this.storageKey].length > 0) {
-                console.log('Found collections in sync storage. Merging into local storage...');
-                
-                // Get existing local data
-                const localData = await chrome.storage.local.get([this.storageKey]);
-                let localCollections = localData[this.storageKey] || [];
-                
-                const syncCollections = syncData[this.storageKey];
-                let addedCount = 0;
 
-                // Merge sync collections into local collections
-                syncCollections.forEach(syncCollection => {
-                    // Check if collection already exists in local (by ID)
-                    const exists = localCollections.some(c => c.id === syncCollection.id);
-                    if (!exists) {
-                        localCollections.push(syncCollection);
-                        addedCount++;
-                    }
-                });
-
-                if (addedCount > 0) {
-                    await chrome.storage.local.set({ [this.storageKey]: localCollections });
-                    console.log(`Merged ${addedCount} collections from sync to local.`);
-                } else {
-                    console.log('All sync collections already exist in local.');
-                }
-
-                // Clear sync storage after successful merge
-                await chrome.storage.sync.remove(this.storageKey);
-                console.log('Cleared sync storage.');
-            }
-        } catch (error) {
-            console.error('Error migrating collections:', error);
-        }
-    }
-
-    async migrateLocalToFirestore(userId) {
-        try {
-            // Check for local collections
-            const localData = await chrome.storage.local.get([this.storageKey, this.savedIconsKey]);
-            const localCollections = localData[this.storageKey] || [];
-            const localIcons = localData[this.savedIconsKey] || [];
-
-            if (localCollections.length === 0 && localIcons.length === 0) return;
-
-            console.log('Migrating local data to Firestore for user:', userId);
-            const batch = window.firebaseManager.db.batch();
-            const userCollectionsRef = window.firebaseManager.db.collection('users').doc(userId).collection('collections');
-
-            // Migrate collections
-            for (const collection of localCollections) {
-                // Check if already exists in Firestore to avoid overwrites/duplicates if needed
-                // For now, we'll use set with merge: true, using the same ID
-                const docRef = userCollectionsRef.doc(collection.id);
-                batch.set(docRef, {
-                    ...collection,
-                    userId: userId,
-                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                }, { merge: true });
-            }
-
-            // Icons migration removed as per user request (icons stored in Storage, not Settings)
-
-            await batch.commit();
-            console.log('Migration to Firestore complete.');
-
-            // Clear local storage after successful migration
-            // Only clear collections, keep icons locally if needed (though they are not synced now)
-            await chrome.storage.local.remove([this.storageKey]);
-
-        } catch (error) {
-            console.error('Error migrating to Firestore:', error);
-        }
-    }
 
     async getCollections() {
         try {

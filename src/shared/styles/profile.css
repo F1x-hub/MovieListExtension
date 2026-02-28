@@ -375,7 +375,7 @@
 
 .recent-rating-card .date {
     font-size: 0.85rem;
-    color: #64748b;
+    color: var(--theme-text-primary);
 }
 
 .recent-rating-card .rating {

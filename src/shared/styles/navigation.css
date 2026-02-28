@@ -379,6 +379,37 @@
     outline: none !important;
 }
 
+/* Navigation Icon Button (Bookmarks, etc) */
+.nav-icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    color: rgba(255, 255, 255, 0.9);
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 16px;
+}
+
+.nav-icon-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+/* Light theme icon button styles */
+.light-theme .nav-icon-btn {
+    color: #333;
+}
+
+.light-theme .nav-icon-btn:hover {
+    background: rgba(0, 0, 0, 0.05);
+    color: #000;
+}
+
 /* Light theme search styles */
 .light-theme .nav-search-toggle {
     background: transparent;
@@ -713,6 +744,129 @@
 
 .nav-link.active::after {
     width: 100%;
+}
+
+/* ===== Radio Player ===== */
+.nav-radio {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 10;
+}
+
+.nav-radio-controls {
+    display: flex;
+    align-items: center;
+}
+
+.nav-radio-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 50%;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    padding: 0;
+    line-height: 1;
+}
+
+.nav-radio-btn:hover {
+    background: rgba(255, 255, 255, 0.25);
+    color: white;
+    transform: scale(1.1);
+}
+
+.nav-radio-volume {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 14px;
+}
+
+.nav-radio-slider {
+    width: 60px;
+    height: 4px;
+    cursor: pointer;
+    accent-color: rgba(255, 255, 255, 0.8);
+    vertical-align: middle;
+}
+
+.nav-radio-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 220px;
+    overflow: hidden;
+}
+
+.nav-radio-poster {
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.nav-radio-meta-text {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+}
+
+.nav-radio-track {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.7);
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.nav-radio-duration {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.45);
+    white-space: nowrap;
+}
+
+/* Light theme overrides */
+.light-theme .nav-radio-btn {
+    background: rgba(0, 0, 0, 0.08);
+    color: #333;
+}
+
+.light-theme .nav-radio-btn:hover {
+    background: rgba(0, 0, 0, 0.15);
+    color: #000;
+}
+
+.light-theme .nav-radio-track {
+    color: rgba(0, 0, 0, 0.6);
+}
+
+.light-theme .nav-radio-duration {
+    color: rgba(0, 0, 0, 0.4);
+}
+
+.light-theme .nav-radio-slider {
+    accent-color: #333;
+}
+
+/* Hide radio on mobile */
+@media (max-width: 768px) {
+    .nav-radio {
+        display: none;
+    }
 }
 
 /* Loading state for navigation */
