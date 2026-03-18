@@ -7,7 +7,7 @@ class FavoriteService {
         this.db = firebaseManager.db;
         this.collection = 'favorites';
         this.favoritesLimit = 200; // Increased limit for combined collection
-        this.validStatuses = ['watching', 'plan_to_watch', 'favorite'];
+        this.validStatuses = ['watching', 'plan_to_watch', 'favorite', 'watched'];
     }
 
     /**

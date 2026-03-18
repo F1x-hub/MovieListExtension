@@ -179,18 +179,18 @@ class MovieDetailsManager {
 
         // Back button
         if (this.elements.backToSearchBtn) {
-            this.elements.backToSearchBtn.addEventListener('click', () => this.goBackToSearch());
+            this.elements.backToSearchBtn.addEventListener('mousedown', () => this.goBackToSearch());
         }
         
         // Rating Modal
         if (this.elements.ratingModalClose) {
-            this.elements.ratingModalClose.addEventListener('click', () => this.closeRatingModal());
+            this.elements.ratingModalClose.addEventListener('mousedown', () => this.closeRatingModal());
         }
         if (this.elements.cancelRatingBtn) {
-            this.elements.cancelRatingBtn.addEventListener('click', () => this.closeRatingModal());
+            this.elements.cancelRatingBtn.addEventListener('mousedown', () => this.closeRatingModal());
         }
         if (this.elements.ratingModal) {
-            this.elements.ratingModal.addEventListener('click', (e) => {
+            this.elements.ratingModal.addEventListener('mousedown', (e) => {
                 if (e.target === this.elements.ratingModal) this.closeRatingModal();
             });
         }
@@ -209,7 +209,7 @@ class MovieDetailsManager {
                 this.updateStarVisuals(this.currentRating, false);
             });
 
-            this.elements.ratingStars.addEventListener('click', (e) => {
+            this.elements.ratingStars.addEventListener('mousedown', (e) => {
                 const btn = e.target.closest('.star-rating-btn');
                 if (btn) {
                     e.preventDefault();
@@ -221,7 +221,7 @@ class MovieDetailsManager {
         }
 
         if (this.elements.writeReviewBtn) {
-            this.elements.writeReviewBtn.addEventListener('click', () => {
+            this.elements.writeReviewBtn.addEventListener('mousedown', () => {
                 this.isReviewVisible = !this.isReviewVisible;
                 this.elements.reviewContainer.style.display = this.isReviewVisible ? 'block' : 'none';
                 if (this.isReviewVisible) {
@@ -237,20 +237,20 @@ class MovieDetailsManager {
         }
         
         if (this.elements.saveRatingBtn) {
-            this.elements.saveRatingBtn.addEventListener('click', () => this.saveRating());
+            this.elements.saveRatingBtn.addEventListener('mousedown', () => this.saveRating());
         }
 
         // Video Player Modal
         if (this.elements.closeVideoBtn) {
-            this.elements.closeVideoBtn.addEventListener('click', () => this.closeVideoModal());
+            this.elements.closeVideoBtn.addEventListener('mousedown', () => this.closeVideoModal());
         }
         if (this.elements.videoPlayerModal) {
-            this.elements.videoPlayerModal.addEventListener('click', (e) => {
+            this.elements.videoPlayerModal.addEventListener('mousedown', (e) => {
                 if (e.target === this.elements.videoPlayerModal) this.closeVideoModal();
             });
         }
         if (this.elements.sourceButtonsContainer) {
-            this.elements.sourceButtonsContainer.addEventListener('click', (e) => {
+            this.elements.sourceButtonsContainer.addEventListener('mousedown', (e) => {
                 const btn = e.target.closest('.source-btn');
                 if (btn) {
                     const value = btn.getAttribute('data-value');
@@ -263,10 +263,10 @@ class MovieDetailsManager {
 
         // Trailer Modal Listeners
         if (this.elements.closeTrailerBtn) {
-            this.elements.closeTrailerBtn.addEventListener('click', () => this.closeTrailerModal());
+            this.elements.closeTrailerBtn.addEventListener('mousedown', () => this.closeTrailerModal());
         }
         if (this.elements.trailerModal) {
-            this.elements.trailerModal.addEventListener('click', (e) => {
+            this.elements.trailerModal.addEventListener('mousedown', (e) => {
                 if (e.target === this.elements.trailerModal) this.closeTrailerModal();
             });
         }
@@ -274,14 +274,14 @@ class MovieDetailsManager {
         // Restore Player Button
         const restoreBtn = document.getElementById('restorePlayerBtn');
         if (restoreBtn) {
-            restoreBtn.addEventListener('click', (e) => {
+            restoreBtn.addEventListener('mousedown', (e) => {
                 if (e.target.closest('.restore-close')) return; // Let the close handler handle it
                 this.restorePlayer();
             });
             
             const closeRestoreBtn = document.getElementById('closeRestoreBtn');
             if (closeRestoreBtn) {
-                closeRestoreBtn.addEventListener('click', (e) => {
+                closeRestoreBtn.addEventListener('mousedown', (e) => {
                     e.stopPropagation();
                     this.destroyPlayer();
                 });
@@ -289,7 +289,7 @@ class MovieDetailsManager {
         }
 
         // Tab navigation & Menu delegation
-        document.addEventListener('click', (e) => {
+        document.addEventListener('mousedown', (e) => {
             // Close menus if clicking outside
             if (!e.target.closest('.mc-menu-btn') && !e.target.closest('.mc-menu-dropdown')) {
                 document.querySelectorAll('.mc-menu-dropdown.active').forEach(menu => {
@@ -317,10 +317,16 @@ class MovieDetailsManager {
                 const targetPane = document.getElementById(`tab-${tabName}`);
                 if (targetPane) targetPane.classList.add('active');
             }
+
+            // Spoiler reveal delegation
+            const spoiler = e.target.closest('.spoiler-text');
+            if (spoiler && !spoiler.classList.contains('revealed')) {
+                spoiler.classList.add('revealed');
+            }
         });
 
         // Action buttons delegation
-        document.addEventListener('click', (e) => {
+        document.addEventListener('mousedown', (e) => {
             const actionBtn = e.target.closest('[data-action]');
             if (!actionBtn) return;
             
@@ -342,7 +348,7 @@ class MovieDetailsManager {
         });
 
         // Rate and Watch button handlers
-        document.addEventListener('click', (e) => {
+        document.addEventListener('mousedown', (e) => {
             if (e.target.classList.contains('rate-movie-btn') || e.target.closest('.rate-movie-btn')) {
                 e.stopPropagation();
                 if (this.selectedMovie) {
@@ -386,6 +392,7 @@ class MovieDetailsManager {
         }, true);
 
         this.setupImageErrorHandlers();
+        this.initSelectionPopup();
     }
 
     async initializeUI() {
@@ -637,7 +644,7 @@ class MovieDetailsManager {
         // Setup show all awards button event listener again since we replaced the HTML
         const showAllAwardsBtn = tabPane ? tabPane.querySelector('.btn-show-all-awards') : null;
         if (showAllAwardsBtn) {
-            showAllAwardsBtn.addEventListener('click', function() {
+            showAllAwardsBtn.addEventListener('mousedown', function() {
                 this.style.display = 'none';
                 const hiddenGrid = this.previousElementSibling;
                 if (hiddenGrid && hiddenGrid.classList.contains('awards-grid-hidden')) {
@@ -659,7 +666,7 @@ class MovieDetailsManager {
                 <div class="error-icon">⚠️</div>
                 <h3 class="error-title">${i18n.get('movie_details.error_title')}</h3>
                 <p class="error-text">${this.escapeHtml(message)}</p>
-                <button class="btn btn-accent" onclick="window.location.href=chrome.runtime.getURL('src/pages/search/search.html')">
+                <button class="btn btn-accent" onmousedown="window.location.href=chrome.runtime.getURL('src/pages/search/search.html')">
                     ${i18n.get('movie_details.return_btn')}
                 </button>
             </div>
@@ -719,12 +726,20 @@ class MovieDetailsManager {
         // Setup show all awards button
         const showAllAwardsBtn = this.elements.movieDetailsContainer.querySelector('.btn-show-all-awards');
         if (showAllAwardsBtn) {
-            showAllAwardsBtn.addEventListener('click', function() {
+            showAllAwardsBtn.addEventListener('mousedown', function() {
                 this.style.display = 'none';
                 const hiddenGrid = this.previousElementSibling;
                 if (hiddenGrid && hiddenGrid.classList.contains('awards-grid-hidden')) {
                     hiddenGrid.style.display = 'grid';
                 }
+            });
+        }
+        
+        // Setup poster zoom listener
+        const posterImg = this.elements.movieDetailsContainer.querySelector('.movie-detail-page-poster');
+        if (posterImg && typeof window.ImageLightbox !== 'undefined') {
+            posterImg.addEventListener('click', () => {
+                window.ImageLightbox.show(posterImg.src);
             });
         }
         
@@ -829,35 +844,7 @@ class MovieDetailsManager {
                         <img src="${posterUrl}" alt="${movie.name}" class="movie-detail-page-poster" data-fallback="detail" decoding="async" fetchpriority="high">
                         <div class="movie-poster-placeholder" style="display: none;">🎬</div>
                         
-                        <div class="mc-menu-container" style="position: absolute; top: 10px; right: 10px; z-index: 20;">
-                            <button class="mc-menu-btn" title="More options"><span>⋮</span></button>
-                            <div class="mc-menu-dropdown">
-                                <button class="mc-menu-item ${isFavorite ? 'active' : ''}" data-action="toggle-favorite" 
-                                        data-rating-id="${ratingId || 'null'}" 
-                                        data-movie-id="${movie.kinopoiskId}"
-                                        data-is-favorite="${isFavorite}">
-                                    <span class="mc-menu-item-icon">${isFavorite ? '💔' : '❤️'}</span>
-                                    <span class="mc-menu-item-text">${isFavorite ? i18n.get('movie_card.remove_favorite') : i18n.get('movie_card.add_favorite')}</span>
-                                </button>
-                                
-                                <button class="mc-menu-item ${isWatching ? 'active' : ''}" data-action="toggle-watching"
-                                        data-movie-id="${movie.kinopoiskId}"
-                                        data-is-watching="${isWatching}">
-                                    <span class="mc-menu-item-icon">👁️</span>
-                                    <span class="mc-menu-item-text">${isWatching ? i18n.get('movie_card.remove_watching') : i18n.get('movie_card.add_watching')}</span>
-                                </button>
-                                
-                                <button class="mc-menu-item ${isInWatchlist ? 'active' : ''}" data-action="toggle-watchlist"
-                                        data-movie-id="${movie.kinopoiskId}"
-                                        data-is-in-watchlist="${isInWatchlist}">
-                                    <span class="mc-menu-item-icon">🔖</span>
-                                    <span class="mc-menu-item-text">${isInWatchlist ? i18n.get('movie_card.remove_watchlist') : i18n.get('movie_card.add_watchlist')}</span>
-                                </button>
-                                
-                                ${this.renderCollectionsMenu(movie)}
-                            </div>
-                        </div>
-                        
+
                         <div class="movie-detail-ratings-container">
                             <div class="rating-item-large kp">
                                 <span class="rating-label">${i18n.get('movie_card.kinopoisk')}</span>
@@ -885,7 +872,38 @@ class MovieDetailsManager {
                     </div>
                     
                     <div class="movie-detail-info-container">
-                        <h1 class="movie-detail-page-title">${this.escapeHtml(movieName)}</h1>
+                        <div class="movie-detail-title-wrapper">
+                            <h1 class="movie-detail-page-title">${this.escapeHtml(movieName)}</h1>
+                            
+                            <div class="mc-menu-container" style="position: relative; z-index: 20;">
+                                <button class="mc-menu-btn" title="More options"><span class="mc-menu-icon">⋮</span></button>
+                                <div class="mc-menu-dropdown">
+                                    <button class="mc-menu-item ${isFavorite ? 'active' : ''}" data-action="toggle-favorite" 
+                                            data-rating-id="${ratingId || 'null'}" 
+                                            data-movie-id="${movie.kinopoiskId}"
+                                            data-is-favorite="${isFavorite}">
+                                        <span class="mc-menu-item-icon">${isFavorite ? '💔' : '❤️'}</span>
+                                        <span class="mc-menu-item-text">${isFavorite ? i18n.get('movie_card.remove_favorite') : i18n.get('movie_card.add_favorite')}</span>
+                                    </button>
+                                    
+                                    <button class="mc-menu-item ${isWatching ? 'active' : ''}" data-action="toggle-watching"
+                                            data-movie-id="${movie.kinopoiskId}"
+                                            data-is-watching="${isWatching}">
+                                        <span class="mc-menu-item-icon">👁️</span>
+                                        <span class="mc-menu-item-text">${isWatching ? i18n.get('movie_card.remove_watching') : i18n.get('movie_card.add_watching')}</span>
+                                    </button>
+                                    
+                                    <button class="mc-menu-item ${isInWatchlist ? 'active' : ''}" data-action="toggle-watchlist"
+                                            data-movie-id="${movie.kinopoiskId}"
+                                            data-is-in-watchlist="${isInWatchlist}">
+                                        <span class="mc-menu-item-icon">🔖</span>
+                                        <span class="mc-menu-item-text">${isInWatchlist ? i18n.get('movie_card.remove_watchlist') : i18n.get('movie_card.add_watchlist')}</span>
+                                    </button>
+                                    
+                                    ${this.renderCollectionsMenu(movie)}
+                                </div>
+                            </div>
+                        </div>
                         ${movieAltName ? `<h2 class="movie-detail-alt-title">${this.escapeHtml(movieAltName)}</h2>` : ''}
                         
                         <div class="movie-tabs">
@@ -1377,17 +1395,31 @@ class MovieDetailsManager {
             const userPhoto = userProfile?.photoURL || '/icons/icon48.png';
             const isCurrentUser = currentUserId && rating.userId === currentUserId;
             
+            let dateStr = '';
+            if (rating.createdAt) {
+                const dateObj = rating.createdAt.toDate ? rating.createdAt.toDate() : new Date(rating.createdAt);
+                if (!isNaN(dateObj.getTime())) {
+                    const d = dateObj.getDate().toString().padStart(2, '0');
+                    const m = (dateObj.getMonth() + 1).toString().padStart(2, '0');
+                    const y = dateObj.getFullYear();
+                    dateStr = `<span class="user-rating-date">${d}.${m}.${y}</span>`;
+                }
+            }
+            
             return `
                 <div class="user-rating-card ${isCurrentUser ? 'current-user' : ''}" data-rating-id="${rating.id}">
                     <div class="user-rating-header">
                         <img src="${userPhoto}" alt="${this.escapeHtml(userName)}" class="user-rating-avatar" loading="lazy" decoding="async" onerror="this.src='/icons/icon48.png'">
                         <div class="user-rating-info">
-                            <div class="user-rating-name clickable-username" data-user-id="${rating.userId}">${this.escapeHtml(userName)}</div>
+                            <div class="user-rating-name-row">
+                                <span class="user-rating-name clickable-username" data-user-id="${rating.userId}">${this.escapeHtml(userName)}</span>
+                                ${dateStr}
+                            </div>
                             <div class="user-rating-score">⭐ ${rating.rating}/10</div>
                         </div>
                         ${isCurrentUser ? `
                             <div class="user-rating-menu">
-                                <button class="user-rating-menu-btn" data-rating-id="${rating.id}"><span>⋮</span></button>
+                                <button class="user-rating-menu-btn" data-rating-id="${rating.id}"><span>⋯</span></button>
                                 <div class="user-rating-menu-dropdown" id="menu-${rating.id}" style="display: none;">
                                     <button class="menu-item" data-rating-id="${rating.id}" data-action="edit"><span class="menu-icon">✏️</span><span>${i18n.get('movie_details.edit')}</span></button>
                                     <button class="menu-item delete-item" data-rating-id="${rating.id}" data-action="delete"><span class="menu-icon">🗑️</span><span>${i18n.get('movie_details.delete')}</span></button>
@@ -1395,7 +1427,7 @@ class MovieDetailsManager {
                             </div>
                         ` : ''}
                     </div>
-                    ${rating.comment ? `<div class="user-rating-comment">${this.escapeHtml(rating.comment)}</div>` : ''}
+                    ${rating.comment ? `<div class="user-rating-comment">${this.parseSpoilers(this.escapeHtml(rating.comment))}</div>` : ''}
                 </div>
             `;
         }).join('');
@@ -1405,19 +1437,33 @@ class MovieDetailsManager {
 
     setupRatingMenuListeners() {
         document.querySelectorAll('.user-rating-menu-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
+            btn.addEventListener('mousedown', (e) => {
                 e.stopPropagation();
                 const ratingId = btn.getAttribute('data-rating-id');
                 const menu = document.getElementById(`menu-${ratingId}`);
+                
+                // Close other menus
                 document.querySelectorAll('.user-rating-menu-dropdown').forEach(m => {
                     if (m.id !== `menu-${ratingId}`) m.style.display = 'none';
                 });
-                if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+
+                if (menu) {
+                    const isVisible = menu.style.display === 'block';
+                    if (!isVisible) {
+                        // Position the menu relative to the button
+                        const rect = btn.getBoundingClientRect();
+                        menu.style.top = `${rect.bottom + 5}px`;
+                        menu.style.left = `${rect.right - 160}px`; // 160 is min-width
+                        menu.style.display = 'block';
+                    } else {
+                        menu.style.display = 'none';
+                    }
+                }
             });
         });
 
         document.querySelectorAll('.user-rating-menu-dropdown .menu-item').forEach(item => {
-            item.addEventListener('click', async (e) => {
+            item.addEventListener('mousedown', async (e) => {
                 e.stopPropagation();
                 const ratingId = item.getAttribute('data-rating-id');
                 const action = item.getAttribute('data-action');
@@ -1431,7 +1477,7 @@ class MovieDetailsManager {
 
     setupUsernameClickListeners() {
         document.querySelectorAll('.clickable-username').forEach(el => {
-            el.addEventListener('click', (e) => {
+            el.addEventListener('mousedown', (e) => {
                 e.stopPropagation();
                 const userId = el.getAttribute('data-user-id');
                 if (userId) window.location.href = chrome.runtime.getURL(`src/pages/profile/profile.html?userId=${userId}`);
@@ -3499,7 +3545,135 @@ class MovieDetailsManager {
             </div>
         `;
     }
+
+    initSelectionPopup() {
+        const textarea = this.elements.ratingComment;
+        if (!textarea) return;
+
+        let popup = null;
+
+        const handleSelection = () => {
+            const selection = window.getSelection();
+            const selectedText = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd).trim();
+
+            if (selectedText.length > 0 && document.activeElement === textarea) {
+                if (!popup) {
+                    popup = document.createElement('div');
+                    popup.className = 'selection-popup';
+                    popup.innerHTML = `
+                        <button class="selection-popup-btn" title="Make Spoiler">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        </button>
+                    `;
+                    document.body.appendChild(popup);
+
+                    popup.querySelector('button').addEventListener('mousedown', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        this.wrapSelectionWithSpoilerTag(textarea);
+                        hidePopup();
+                    });
+                }
+
+                // Calculate position above selection
+                const coords = this.getTextareaSelectionCoords(textarea);
+                popup.style.left = `${coords.left + coords.width / 2}px`;
+                popup.style.top = `${coords.top - 45}px`;
+                popup.style.display = 'flex';
+                popup.style.transform = 'translateX(-50%)';
+            } else {
+                hidePopup();
+            }
+        };
+
+        const hidePopup = () => {
+            if (popup) popup.style.display = 'none';
+        };
+
+        textarea.addEventListener('mouseup', handleSelection);
+        textarea.addEventListener('keyup', handleSelection);
+        textarea.addEventListener('blur', () => setTimeout(hidePopup, 200));
+        
+        // Hide popup on scroll if needed, but since it's in a modal, maybe not necessary
+        window.addEventListener('resize', hidePopup);
+        if (this.elements.ratingModal) {
+            this.elements.ratingModal.addEventListener('scroll', hidePopup);
+        }
+    }
+
+    getTextareaSelectionCoords(textarea) {
+        const { selectionStart, selectionEnd } = textarea;
+        const style = window.getComputedStyle(textarea);
+        
+        // Create a ghost element to measure text position
+        const ghost = document.createElement('div');
+        const properties = [
+            'direction', 'boxSizing', 'width', 'height', 'overflowX', 'overflowY',
+            'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+            'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+            'fontStyle', 'fontVariant', 'fontWeight', 'fontStretch', 'fontSize', 'lineHeight', 'fontFamily',
+            'textAlign', 'textTransform', 'textIndent', 'textDecoration', 'letterSpacing', 'wordSpacing'
+        ];
+
+        properties.forEach(prop => {
+            ghost.style[prop] = style[prop];
+        });
+
+        ghost.style.position = 'absolute';
+        ghost.style.visibility = 'hidden';
+        ghost.style.whiteSpace = 'pre-wrap';
+        ghost.style.wordBreak = 'break-word';
+
+        const textBefore = textarea.value.substring(0, selectionStart);
+        const selectedText = textarea.value.substring(selectionStart, selectionEnd);
+
+        ghost.textContent = textBefore;
+        const span = document.createElement('span');
+        span.textContent = selectedText;
+        ghost.appendChild(span);
+
+        document.body.appendChild(ghost);
+        const rect = textarea.getBoundingClientRect();
+        const spanRect = span.getBoundingClientRect();
+        
+        const coords = {
+            top: rect.top + spanRect.top - ghost.getBoundingClientRect().top,
+            left: rect.left + spanRect.left - ghost.getBoundingClientRect().left,
+            width: spanRect.width,
+            height: spanRect.height
+        };
+
+        document.body.removeChild(ghost);
+        return coords;
+    }
+
+    wrapSelectionWithSpoilerTag(textarea) {
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const text = textarea.value;
+        const selectedText = text.substring(start, end);
+        
+        if (selectedText.length === 0) return;
+
+        textarea.value = text.substring(0, start) + `||${selectedText}||` + text.substring(end);
+        
+        // Restore focus and selection
+        textarea.focus();
+        textarea.setSelectionRange(start, end + 4);
+        
+        // Trigger input event for character counter if any
+        textarea.dispatchEvent(new Event('input'));
+    }
+
+    parseSpoilers(text) {
+        if (!text) return '';
+        // Discord style spoilers: ||text||
+        return text.replace(/\|\|(.*?)\|\|/g, (match, p1) => {
+            return `<span class="spoiler-text" title="Click to show spoiler">${p1}</span>`;
+        });
+    }
 }
+
 
 // Initialize when DOM is loaded
 let movieDetailsManager;

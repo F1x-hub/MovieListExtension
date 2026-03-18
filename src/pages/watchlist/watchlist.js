@@ -76,13 +76,13 @@ class WatchlistPageManager {
                 isOpen: false
             };
             
-            trigger.addEventListener('click', (e) => {
+            trigger.addEventListener('mousedown', (e) => {
                 e.stopPropagation();
                 this.toggleDropdown(dropdownId);
             });
             
             options.forEach(option => {
-                option.addEventListener('click', (e) => {
+                option.addEventListener('mousedown', (e) => {
                     e.stopPropagation();
                     const value = option.getAttribute('data-value');
                     const text = option.textContent.trim();
@@ -91,7 +91,7 @@ class WatchlistPageManager {
             });
         });
         
-        document.addEventListener('click', (e) => {
+        document.addEventListener('mousedown', (e) => {
             if (!e.target.closest('.custom-dropdown')) {
                 this.closeAllDropdowns();
             }
@@ -147,7 +147,7 @@ class WatchlistPageManager {
 
         // Retry button
         if (this.elements.retryBtn) {
-            this.elements.retryBtn.addEventListener('click', () => {
+            this.elements.retryBtn.addEventListener('mousedown', () => {
                 this.loadWatchlist();
             });
         }
@@ -161,13 +161,13 @@ class WatchlistPageManager {
 
         // Close modal
         if (this.elements.ratingModalClose) {
-            this.elements.ratingModalClose.addEventListener('click', () => {
+            this.elements.ratingModalClose.addEventListener('mousedown', () => {
                 this.closeRatingModal();
             });
         }
 
         if (this.elements.cancelRatingBtn) {
-            this.elements.cancelRatingBtn.addEventListener('click', () => {
+            this.elements.cancelRatingBtn.addEventListener('mousedown', () => {
                 this.closeRatingModal();
             });
         }
@@ -190,13 +190,13 @@ class WatchlistPageManager {
 
         // Save rating
         if (this.elements.saveRatingBtn) {
-            this.elements.saveRatingBtn.addEventListener('click', () => {
+            this.elements.saveRatingBtn.addEventListener('mousedown', () => {
                 this.saveRating();
             });
         }
 
         // Close on overlay click
-        this.elements.ratingModal.addEventListener('click', (e) => {
+        this.elements.ratingModal.addEventListener('mousedown', (e) => {
             if (e.target === this.elements.ratingModal) {
                 this.closeRatingModal();
             }
@@ -356,7 +356,7 @@ class WatchlistPageManager {
         if (!grid) return;
 
         // Add event listeners using event delegation for MovieCard actions
-        grid.addEventListener('click', (e) => {
+        grid.addEventListener('mousedown', (e) => {
             const target = e.target.closest('[data-action]');
             if (!target) return;
             

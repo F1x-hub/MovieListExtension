@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="../../shared/styles/navigation.css">
     <link rel="stylesheet" href="../../shared/styles/admin.css">
     <link rel="stylesheet" href="../../shared/styles/report-widget.css">
+    <link rel="stylesheet" href="../../shared/styles/image-lightbox.css">
 </head>
 <body class="settings-page-body admin-page-body">
     <div class="app-container">
@@ -133,7 +134,7 @@
                                 <div class="pane-actions">
                                     <span class="data-age" id="dataAge"></span>
                                     <span class="offline-indicator" id="offlineIndicator" style="display: none;">⚠️ Офлайн режим</span>
-                                    <button id="refreshDataBtn" class="btn btn-primary btn-sm" title="Обновить данные">
+                                    <button id="refreshDataBtn" class="button-refresh" title="Обновить данные">
                                         <span class="refresh-icon">🔄</span> Обновить
                                     </button>
                                     <span class="badge-count" id="ratingsCount">0 фильмов</span>
@@ -388,6 +389,7 @@
     <script src="/src/shared/firestore.js"></script>
     <script src="/src/shared/utils/MigrationTool.js"></script>
     <script src="/src/shared/components/Navigation.js"></script>
+    <script src="/src/shared/components/ImageLightbox.js"></script>
     <script src="admin.js"></script>
     <script defer src="../../shared/components/ReportWidget.js"></script>
 </body>

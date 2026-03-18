@@ -213,7 +213,7 @@ class Router {
                     <div class="error-icon">⚠️</div>
                     <h3>Error</h3>
                     <p>${message}</p>
-                    <button onclick="window.router.navigateTo('search')" class="btn btn-primary">
+                    <button onmousedown="window.router.navigateTo('search')" class="btn btn-primary">
                         Go to Search
                     </button>
                 </div>
@@ -561,7 +561,7 @@ const RouteLoaders = {
                         <div class="empty-state-icon">🎬</div>
                         <h3 class="empty-state-title">No movies found</h3>
                         <p class="empty-state-text">Try adjusting your filters or start rating some movies!</p>
-                        <button class="empty-state-btn" onclick="window.router?.navigateTo('search')">
+                        <button class="empty-state-btn" onmousedown="window.router?.navigateTo('search')">
                             Search Movies
                         </button>
                     </div>

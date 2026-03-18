@@ -5,6 +5,7 @@ export const locales = {
             sidebar: {
                 all: "All",
                 watching: "Watching",
+                watched: "Watched",
                 plan_to_watch: "Plan to Watch",
                 favorites: "Favorites",
                 collections: "COLLECTIONS",
@@ -99,6 +100,14 @@ export const locales = {
                 social_links: "Social Links (optional)",
                 cancel: "Cancel",
                 save: "Save Changes"
+            },
+            cropper: {
+                title: "Crop Image",
+                avatar: "Avatar",
+                banner: "Banner",
+                cancel: "Cancel",
+                apply: "Apply",
+                gif_bypass: "GIF image cannot be cropped in browser, using original image."
             }
         },
         ratings: {
@@ -157,6 +166,8 @@ export const locales = {
             remove_watchlist: "Remove from Plan to Watch",
             add_watching: "Add to Watching",
             remove_watching: "Remove from Watching",
+            add_watched: "Add to Watched",
+            remove_watched: "Remove from Watched",
             edit_rating: "Edit Rating",
             add_collection: "Add to Collection",
             remove: "Remove",
@@ -424,6 +435,7 @@ export const locales = {
             sidebar: {
                 all: "Все",
                 watching: "Смотрю",
+                watched: "Просмотрено",
                 plan_to_watch: "Буду смотреть",
                 favorites: "Избранное",
                 collections: "КОЛЛЕКЦИИ",
@@ -518,6 +530,14 @@ export const locales = {
                 social_links: "Социальные сети",
                 cancel: "Отмена",
                 save: "Сохранить"
+            },
+            cropper: {
+                title: "Обрезать изображение",
+                avatar: "Аватарка",
+                banner: "Баннер",
+                cancel: "Отмена",
+                apply: "Применить",
+                gif_bypass: "GIF-изображение обрезается без браузера, используется оригинал."
             }
         },
         ratings: {
@@ -576,6 +596,8 @@ export const locales = {
             remove_watchlist: "Не буду смотреть",
             add_watching: "Смотрю",
             remove_watching: "Больше не смотрю",
+            add_watched: "Просмотрено",
+            remove_watched: "Убрать из Просмотренного",
             edit_rating: "Изменить оценку",
             add_collection: "В коллекцию",
             remove: "Удалить",

@@ -105,9 +105,9 @@ class ReportWidget {
 
     attachEventListeners() {
         // Toggle Drawer
-        this.triggerBtn.addEventListener('click', () => this.openDrawer());
-        this.closeBtn.addEventListener('click', () => this.closeDrawer());
-        this.overlay.addEventListener('click', () => this.closeDrawer());
+        this.triggerBtn.addEventListener('mousedown', () => this.openDrawer());
+        this.closeBtn.addEventListener('mousedown', () => this.closeDrawer());
+        this.overlay.addEventListener('mousedown', () => this.closeDrawer());
 
         // Text input handling
         this.textarea.addEventListener('input', () => {
@@ -160,10 +160,10 @@ class ReportWidget {
         });
 
         // Remove photo handling
-        this.removePhotoBtn.addEventListener('click', () => this.removePhoto());
+        this.removePhotoBtn.addEventListener('mousedown', () => this.removePhoto());
 
         // Form submission
-        this.submitBtn.addEventListener('click', () => this.submitReport());
+        this.submitBtn.addEventListener('mousedown', () => this.submitReport());
     }
 
     openDrawer() {
@@ -171,6 +171,11 @@ class ReportWidget {
         this.overlay.classList.add('visible');
         this.triggerBtn.style.display = 'none';
         this.clearMessage();
+        
+        // Устанавливаем фокус на текстовое поле
+        setTimeout(() => {
+            this.textarea.focus();
+        }, 100);
     }
 
     closeDrawer() {

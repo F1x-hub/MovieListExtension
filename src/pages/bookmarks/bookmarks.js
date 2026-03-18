@@ -158,6 +158,7 @@ class BookmarksPageManager {
             // Counts
             countAll: document.getElementById('count-all'),
             countWatching: document.getElementById('count-watching'),
+            countWatched: document.getElementById('count-watched'),
             countPlanToWatch: document.getElementById('count-plan_to_watch'),
             countFavorite: document.getElementById('count-favorite'),
             
@@ -175,7 +176,7 @@ class BookmarksPageManager {
     setupEventListeners() {
         // Sidebar filtering
         this.elements.sidebarItems.forEach(item => {
-            item.addEventListener('click', () => {
+            item.addEventListener('mousedown', () => {
                 const filter = item.dataset.filter;
                 this.setFilter(filter);
             });
@@ -200,11 +201,12 @@ class BookmarksPageManager {
         // Migration removed
 
         // Event Delegation for Movie Cards
-        this.elements.moviesGrid.addEventListener('click', (e) => {
+        this.elements.moviesGrid.addEventListener('mousedown', (e) => {
             const target = e.target.closest('[data-action]');
             if (!target) return;
 
             const action = target.dataset.action;
+            if (action === 'stop-propagation') return;
             const movieId = target.dataset.movieId;
 
             if (!movieId && action !== 'view-details') return; // movieId might be needed, check logic
@@ -230,10 +232,16 @@ class BookmarksPageManager {
                 case 'toggle-watchlist':
                     this.handleToggleAction(movieId, 'plan_to_watch', target);
                     break;
+                case 'toggle-watched':
+                    this.handleToggleAction(movieId, 'watched', target);
+                    break;
                 case 'remove-from-watching':
                     this.handleRemoveBookmark(movieId);
                     break; 
                  case 'remove-from-watchlist':
+                    this.handleRemoveBookmark(movieId);
+                    break;
+                 case 'remove-from-watched':
                     this.handleRemoveBookmark(movieId);
                     break;
                 case 'remove-from-bookmarks':
@@ -267,21 +275,21 @@ class BookmarksPageManager {
 
         // Collection Modal Listeners
         if (this.elements.createCollectionBtn) {
-            this.elements.createCollectionBtn.addEventListener('click', () => {
+            this.elements.createCollectionBtn.addEventListener('mousedown', () => {
                 this.showCollectionModal();
             });
         }
         
         // Collection Menu Button
         if (this.elements.collectionMenuBtn) {
-            this.elements.collectionMenuBtn.addEventListener('click', (e) => {
+            this.elements.collectionMenuBtn.addEventListener('mousedown', (e) => {
                 e.stopPropagation();
                 this.toggleCollectionMenuDropdown();
             });
         }
 
         // Close dropdown when clicking outside
-        document.addEventListener('click', (e) => {
+        document.addEventListener('mousedown', (e) => {
             const dropdown = document.querySelector('.collection-dropdown');
             if (dropdown && !e.target.closest('.collection-menu-btn')) {
                 dropdown.remove();
@@ -490,6 +498,7 @@ class BookmarksPageManager {
         const counts = {
             all: this.allBookmarks.length,
             watching: 0,
+            watched: 0,
             plan_to_watch: 0,
             favorite: 0
         };
@@ -502,6 +511,7 @@ class BookmarksPageManager {
 
         if (this.elements.countAll) this.elements.countAll.textContent = counts.all;
         if (this.elements.countWatching) this.elements.countWatching.textContent = counts.watching;
+        if (this.elements.countWatched) this.elements.countWatched.textContent = counts.watched;
         if (this.elements.countPlanToWatch) this.elements.countPlanToWatch.textContent = counts.plan_to_watch;
         if (this.elements.countFavorite) this.elements.countFavorite.textContent = counts.favorite;
     }
@@ -561,7 +571,7 @@ class BookmarksPageManager {
 
         // Add click handlers
         this.elements.customCollectionsList.querySelectorAll('.collection-item').forEach(item => {
-            item.addEventListener('click', () => {
+            item.addEventListener('mousedown', () => {
                 const collectionId = item.dataset.collectionId;
                 this.setFilter(`collection:${collectionId}`);
             });
@@ -768,7 +778,7 @@ class BookmarksPageManager {
         charCount.textContent = nameInput.value.length;
 
         // Custom icon upload handler
-        uploadIconBtn.addEventListener('click', () => {
+        uploadIconBtn.addEventListener('mousedown', () => {
             customIconInput.click();
         });
 
@@ -910,7 +920,7 @@ class BookmarksPageManager {
         });
 
         // Remove custom icon handler
-        removeCustomIconBtn.addEventListener('click', () => {
+        removeCustomIconBtn.addEventListener('mousedown', () => {
             customIconData = null;
             selectedIcon = defaultIcons[0];
             customIconPreview.style.display = 'none';
@@ -1129,6 +1139,7 @@ class BookmarksPageManager {
             const titleMap = {
                 'all': i18n.get('bookmarks.header.all_bookmarks'),
                 'watching': i18n.get('bookmarks.sidebar.watching'),
+                'watched': i18n.get('bookmarks.sidebar.watched'),
                 'plan_to_watch': i18n.get('bookmarks.sidebar.plan_to_watch'),
                 'favorite': i18n.get('bookmarks.sidebar.favorites')
             };
@@ -1284,6 +1295,7 @@ class BookmarksPageManager {
                 // Boolean flags for toggles
                 isFavorite: movieData.status === 'favorite',
                 isWatching: movieData.status === 'watching',
+                isWatched: movieData.status === 'watched',
                 isInWatchlist: movieData.status === 'plan_to_watch',
                 
                 // Collections
@@ -1347,6 +1359,7 @@ class BookmarksPageManager {
                 // Enable status toggles (like in Rated page)
                 showFavorite: true,
                 showWatching: true,
+                showWatched: true,
                 showWatchlist: true,
                 showRemoveFromBookmarks: false, // Disabled as requested, now we have status toggles
                 

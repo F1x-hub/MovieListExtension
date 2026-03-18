@@ -21,6 +21,25 @@ class RatingService {
     }
 
     /**
+     * Clear all cached average ratings from chrome.storage.local
+     * These are stored under keys like 'averageRatings_...' by getBatchMovieAverageRatings
+     */
+    async invalidateAverageRatingsCache() {
+        try {
+            if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+                const allData = await chrome.storage.local.get(null);
+                const keysToRemove = Object.keys(allData).filter(key => key.startsWith('averageRatings_'));
+                if (keysToRemove.length > 0) {
+                    await chrome.storage.local.remove(keysToRemove);
+                    console.log(`RatingService: Cleared ${keysToRemove.length} average ratings cache entries`);
+                }
+            }
+        } catch (error) {
+            console.warn('RatingService: Failed to invalidate average ratings cache', error);
+        }
+    }
+
+    /**
      * Add or update a user's rating for a movie
      * @param {string} userId - User ID
      * @param {string} userName - User display name
@@ -107,6 +126,13 @@ class RatingService {
             } catch (cacheError) {
                 console.warn('Failed to clear ratings cache after rating update:', cacheError.message);
                 // Don't fail the rating if cache clearing fails
+            }
+
+            // Invalidate average ratings cache (getBatchMovieAverageRatings uses its own cache)
+            try {
+                await this.invalidateAverageRatingsCache();
+            } catch (cacheError) {
+                console.warn('Failed to clear average ratings cache after rating update:', cacheError.message);
             }
 
             // Remove from watchlist if movie was in watchlist
@@ -442,6 +468,7 @@ class RatingService {
             
             // Invalidate cache
             await this.invalidateRatingsCache(userId);
+            await this.invalidateAverageRatingsCache();
 
             return true;
         } catch (error) {

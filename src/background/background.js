@@ -1,4 +1,5 @@
 try {
+    importScripts('../shared/config/kinopoisk.config.js');
     importScripts('../shared/utils/IconUtils.js');
     importScripts('../shared/config/spotify.config.js');
 } catch (e) {
@@ -27,11 +28,34 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     }
 });
 
-// Listen for theme changes from other parts of the extension
-chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === 'local' && changes.theme) {
-        if (typeof IconUtils !== 'undefined') {
-            IconUtils.updateExtensionIcon(changes.theme.newValue);
+// Listen for storage changes from other parts of the extension
+chrome.storage.onChanged.addListener(async (changes, areaName) => {
+    if (areaName === 'local') {
+        if (changes.theme) {
+            if (typeof IconUtils !== 'undefined') {
+                IconUtils.updateExtensionIcon(changes.theme.newValue);
+            }
+        }
+        if (changes.animeRadioSource) {
+            const newSource = changes.animeRadioSource.newValue;
+            const STREAM_URLS = {
+                anison: 'https://pool.anison.fm/AniSonFM(320)?nocache=' + Date.now(),
+                radionami: 'https://relay.radionami.com/any-anime.ru'
+            };
+            if (newSource && STREAM_URLS[newSource]) {
+                try {
+                    const hasDoc = await chrome.offscreen.hasDocument();
+                    if (hasDoc) {
+                        chrome.runtime.sendMessage({ 
+                            type: 'RADIO_SET_SOURCE', 
+                            streamUrl: STREAM_URLS[newSource],
+                            target: 'offscreen-radio' 
+                        });
+                    }
+                } catch (e) {
+                    console.error('[Background] Failed to update radio source:', e);
+                }
+            }
         }
     }
 });
@@ -789,27 +813,50 @@ async function fetchAnisonMetadata() {
     return { animeName, trackTitle, posterUrl, animeLink, duration };
 }
 
-async function searchKinopoiskMovie(kpId, title, year) {
-    // Kinopoisk API key from config
-    const apiKey = 'Q6Q938P-CG3M56S-GKJRF4P-J3TSZ6S';
+async function fetchKinopoiskWithRotation(url, options = {}) {
+    const maxAttempts = typeof KINOPOISK_CONFIG !== 'undefined' && KINOPOISK_CONFIG.API_KEYS 
+        ? KINOPOISK_CONFIG.API_KEYS.length 
+        : 1;
+        
+    let lastResponse = null;
 
-    if (kpId) {
-        const response = await fetch(`https://api.kinopoisk.dev/v1.4/movie/${kpId}`, {
-            headers: {
-                'X-API-KEY': apiKey
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const currentKey = typeof KINOPOISK_CONFIG !== 'undefined' 
+            ? KINOPOISK_CONFIG.API_KEY 
+            : 'Q6Q938P-CG3M56S-GKJRF4P-J3TSZ6S';
+            
+        const fetchOptions = { ...options };
+        fetchOptions.headers = {
+            ...options.headers,
+            'X-API-KEY': currentKey
+        };
+        
+        const response = await fetch(url, fetchOptions);
+        lastResponse = response;
+
+        if (response.status === 403 || response.status === 402) {
+            console.warn(`[Background] ${response.status} Error. Rotating key...`);
+            if (typeof KINOPOISK_CONFIG !== 'undefined' && typeof KINOPOISK_CONFIG.rotateKey === 'function') {
+                KINOPOISK_CONFIG.rotateKey();
             }
-        });
+            if (attempt < maxAttempts - 1) continue;
+        }
+        
+        return response;
+    }
+    return lastResponse;
+}
+
+async function searchKinopoiskMovie(kpId, title, year) {
+    if (kpId) {
+        const response = await fetchKinopoiskWithRotation(`https://api.kinopoisk.dev/v1.4/movie/${kpId}`);
         if (!response.ok) {
             throw new Error(`Kinopoisk API error: ${response.status}`);
         }
         return await response.json();
     } else if (title) {
         // Search with more results to find the best match
-        const response = await fetch(`https://api.kinopoisk.dev/v1.4/movie/search?page=1&limit=10&query=${encodeURIComponent(title)}`, {
-            headers: {
-                'X-API-KEY': apiKey
-            }
-        });
+        const response = await fetchKinopoiskWithRotation(`https://api.kinopoisk.dev/v1.4/movie/search?page=1&limit=10&query=${encodeURIComponent(title)}`);
         if (!response.ok) {
             throw new Error(`Kinopoisk API error: ${response.status}`);
         }

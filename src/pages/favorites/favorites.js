@@ -90,13 +90,13 @@ class FavoritesPageManager {
                 isOpen: false
             };
             
-            trigger.addEventListener('click', (e) => {
+            trigger.addEventListener('mousedown', (e) => {
                 e.stopPropagation();
                 this.toggleDropdown(dropdownId);
             });
             
             options.forEach(option => {
-                option.addEventListener('click', (e) => {
+                option.addEventListener('mousedown', (e) => {
                     e.stopPropagation();
                     const value = option.getAttribute('data-value');
                     const text = option.textContent.trim();
@@ -105,7 +105,7 @@ class FavoritesPageManager {
             });
         });
         
-        document.addEventListener('click', (e) => {
+        document.addEventListener('mousedown', (e) => {
             if (!e.target.closest('.custom-dropdown')) {
                 this.closeAllDropdowns();
             }
@@ -161,7 +161,7 @@ class FavoritesPageManager {
 
         // Retry button
         if (this.elements.retryBtn) {
-            this.elements.retryBtn.addEventListener('click', () => {
+            this.elements.retryBtn.addEventListener('mousedown', () => {
                 this.loadFavorites();
             });
         }
@@ -178,19 +178,19 @@ class FavoritesPageManager {
 
         // Close modal
         if (this.elements.limitModalClose) {
-            this.elements.limitModalClose.addEventListener('click', () => {
+            this.elements.limitModalClose.addEventListener('mousedown', () => {
                 this.closeLimitModal();
             });
         }
 
         if (this.elements.cancelLimitBtn) {
-            this.elements.cancelLimitBtn.addEventListener('click', () => {
+            this.elements.cancelLimitBtn.addEventListener('mousedown', () => {
                 this.closeLimitModal();
             });
         }
 
         if (this.elements.manageFavoritesBtn) {
-            this.elements.manageFavoritesBtn.addEventListener('click', () => {
+            this.elements.manageFavoritesBtn.addEventListener('mousedown', () => {
                 this.closeLimitModal();
                 // Already on favorites page, just scroll to top
                 window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -198,7 +198,7 @@ class FavoritesPageManager {
         }
 
         // Close on overlay click
-        this.elements.limitModal.addEventListener('click', (e) => {
+        this.elements.limitModal.addEventListener('mousedown', (e) => {
             if (e.target === this.elements.limitModal) {
                 this.closeLimitModal();
             }
@@ -222,13 +222,13 @@ class FavoritesPageManager {
 
         // Close modal
         if (this.elements.ratingModalClose) {
-            this.elements.ratingModalClose.addEventListener('click', () => {
+            this.elements.ratingModalClose.addEventListener('mousedown', () => {
                 this.closeRatingModal();
             });
         }
 
         if (this.elements.cancelRatingBtn) {
-            this.elements.cancelRatingBtn.addEventListener('click', () => {
+            this.elements.cancelRatingBtn.addEventListener('mousedown', () => {
                 this.closeRatingModal();
             });
         }
@@ -251,13 +251,13 @@ class FavoritesPageManager {
 
         // Save rating
         if (this.elements.saveRatingBtn) {
-            this.elements.saveRatingBtn.addEventListener('click', () => {
+            this.elements.saveRatingBtn.addEventListener('mousedown', () => {
                 this.saveRating();
             });
         }
 
         // Close on overlay click
-        this.elements.ratingModal.addEventListener('click', (e) => {
+        this.elements.ratingModal.addEventListener('mousedown', (e) => {
             if (e.target === this.elements.ratingModal) {
                 this.closeRatingModal();
             }
@@ -431,7 +431,7 @@ class FavoritesPageManager {
         if (!grid) return;
 
         // Use event delegation for all card actions
-        grid.addEventListener('click', async (e) => {
+        grid.addEventListener('mousedown', async (e) => {
             const target = e.target.closest('[data-action]');
             if (!target) return;
 
@@ -797,7 +797,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Bind migration button
-document.addEventListener('click', (e) => {
+document.addEventListener('mousedown', (e) => {
     if (e.target && e.target.id === 'runMigrationBtn') {
         if (favoritesPage) {
             favoritesPage.handleMigration();

@@ -40,7 +40,7 @@ class HomePage {
     }
 
     bindEvents() {
-        this.retryBtn.addEventListener('click', () => {
+        this.retryBtn.addEventListener('mousedown', () => {
             this.hideError();
             this.init();
         });
@@ -48,7 +48,7 @@ class HomePage {
         // Clear cache button
         const clearCacheBtn = document.getElementById('clearCacheBtn');
         if (clearCacheBtn) {
-            clearCacheBtn.addEventListener('click', async () => {
+            clearCacheBtn.addEventListener('mousedown', async () => {
                 console.log('HomePage: Manually clearing cache...');
                 await chrome.storage.local.remove([this.cacheKey]);
                 console.log('HomePage: Cache cleared, reloading...');
@@ -57,7 +57,7 @@ class HomePage {
         }
 
         // Delegate clicks for movie cards
-        this.contentContainer.addEventListener('click', (e) => {
+        this.contentContainer.addEventListener('mousedown', (e) => {
             const card = e.target.closest('.movie-card, .featured-card');
             if (card && card.dataset.href) {
                 // Open in search page with sourceUrl parameter

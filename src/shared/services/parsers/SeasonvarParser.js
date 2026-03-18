@@ -298,7 +298,7 @@ class SeasonvarParser extends BaseParserService {
         // 1. Voiceover items
         const voiceoverItems = container.querySelectorAll('.seasonvar-voiceover-item');
         voiceoverItems.forEach(item => {
-            item.addEventListener('click', async (e) => {
+            item.addEventListener('mousedown', async (e) => {
                  e.stopPropagation();
                  const url = item.getAttribute('data-url');
                  
@@ -408,7 +408,7 @@ class SeasonvarParser extends BaseParserService {
         // 4. Seamless Season Switch
         const seasonItems = container.querySelectorAll('.dropdown_seasons .item_simulated');
         seasonItems.forEach(item => {
-             item.addEventListener('click', async (e) => {
+             item.addEventListener('mousedown', async (e) => {
                  e.stopPropagation();
                  const url = item.getAttribute('data-url');
                  if (!url || item.classList.contains('active')) return;
@@ -490,7 +490,7 @@ class SeasonvarParser extends BaseParserService {
     _attachHiddenEpisodeListeners(container, video, epSelect) {
         const episodeItems = container.querySelectorAll('.dropdown_episodes .item_simulated');
         episodeItems.forEach(item => {
-             item.addEventListener('click', (e) => {
+             item.addEventListener('mousedown', (e) => {
                  e.stopPropagation();
                  const url = item.getAttribute('data-url');
                  if (!url || item.classList.contains('active')) return;
