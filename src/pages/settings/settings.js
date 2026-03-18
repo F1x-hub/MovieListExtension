@@ -1,8 +1,15 @@
 import { i18n } from '../../shared/i18n/I18n.js';
 
-/**
- * Settings Page Logic
- */
+let initialState = {
+    displayMode: 'popup',
+    language: 'en',
+    showAnimeRadio: false,
+    animeRadioSource: 'anison'
+};
+
+let currentState = { ...initialState };
+let isDirty = false;
+
 document.addEventListener('DOMContentLoaded', async () => {
     // Initialize I18n
     await i18n.init();
@@ -11,11 +18,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     const nav = new Navigation('navbar');
     nav.render();
 
+    // Intercept Navigation
+    setupNavigationInterception();
+
     // Elements
     const displayModeRadios = document.getElementsByName('displayMode');
     const languageDropdown = document.getElementById('languageDropdown');
     const dropdownHeader = languageDropdown.querySelector('.dropdown-header');
     const dropdownItems = languageDropdown.querySelectorAll('.dropdown-item');
+    const saveBtn = document.getElementById('saveBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    
+    // Anime Radio Elements
+    const animeRadioToggle = document.getElementById('animeRadioToggle');
+    const radioSourceGroup = document.getElementById('radioSourceGroup');
+    const radioSourceRadios = document.getElementsByName('radioSource');
     
     // Sidebar Navigation Elements
     const sidebarLinks = document.querySelectorAll('.sidebar-link');
@@ -25,7 +42,7 @@ document.addEventListener('DOMContentLoaded', async () => {
      * Handle Sidebar Navigation
      */
     sidebarLinks.forEach(link => {
-        link.addEventListener('click', () => {
+        link.addEventListener('mousedown', () => {
             // Remove active class from all links and panes
             sidebarLinks.forEach(l => l.classList.remove('active'));
             settingsPanes.forEach(p => p.classList.remove('active'));
@@ -65,86 +82,131 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     /**
-     * Handle Language Change
+     * Handle Setting Changes tracking
+     */
+    function updateDirtyState() {
+        isDirty = 
+            currentState.displayMode !== initialState.displayMode ||
+            currentState.language !== initialState.language ||
+            currentState.showAnimeRadio !== initialState.showAnimeRadio ||
+            currentState.animeRadioSource !== initialState.animeRadioSource;
+            
+        if (isDirty) {
+            saveBtn.style.backgroundColor = '#22c55e';
+            saveBtn.style.color = '#ffffff';
+        } else {
+            saveBtn.style.backgroundColor = '';
+            saveBtn.style.color = '';
+        }
+        return isDirty;
+    }
+
+    /**
+     * Handle Language Change (UI Only until Save)
      */
     async function handleLanguageChange(lang) {
-        try {
-            // Update UI immediately
+        if (lang !== currentState.language) {
+            currentState.language = lang;
             updateDropdownUI(lang);
-            
-            // Close dropdown
-            languageDropdown.classList.remove('active');
+            updateDirtyState();
 
-            // Save and apply if changed
-            if (lang !== i18n.currentLocale) {
+            // Preview language temporarily
+            try {
                 await i18n.setLanguage(lang);
-                
-                await chrome.storage.local.set({ language: lang });
-
-                // Redraw page text
                 i18n.translatePage();
-
-                // Notify background
-                chrome.runtime.sendMessage({
-                    type: 'SETTINGS_UPDATED',
-                    settings: { 
-                        displayMode: DEFAULT_SETTINGS.displayMode,
-                        language: lang
-                    }
-                });
+            } catch (error) {
+                console.error('Failed to preview language:', error);
             }
-        } catch (error) {
-            console.error('Failed to change language:', error);
-            showToast(i18n.get('settings.save_failed'), true);
         }
+        languageDropdown.classList.remove('active');
     }
 
     // Dropdown Event Listeners
-    dropdownHeader.addEventListener('click', (e) => {
+    dropdownHeader.addEventListener('mousedown', (e) => {
         e.stopPropagation();
         languageDropdown.classList.toggle('active');
     });
 
-    document.addEventListener('click', () => {
+    document.addEventListener('mousedown', () => {
         languageDropdown.classList.remove('active');
     });
 
     dropdownItems.forEach(item => {
-        item.addEventListener('click', async (e) => {
+        item.addEventListener('mousedown', async (e) => {
             e.stopPropagation();
             const lang = item.dataset.value;
             await handleLanguageChange(lang);
         });
     });
 
-    const saveBtn = document.getElementById('saveBtn');
-    const resetBtn = document.getElementById('resetBtn');
-
     // Default Settings
     const DEFAULT_SETTINGS = {
         displayMode: 'popup',
-        language: 'en'
+        language: 'en',
+        showAnimeRadio: false,
+        animeRadioSource: 'anison'
     };
+
+    /**
+     * Update UI from currentState
+     */
+    function updateUIFromState() {
+        // Set radio button for display mode
+        for (const radio of displayModeRadios) {
+            if (radio.value === currentState.displayMode) {
+                radio.checked = true;
+                break;
+            }
+        }
+        
+        // Set language dropdown
+        updateDropdownUI(currentState.language);
+
+        // Anime radio toggle
+        if (animeRadioToggle) {
+            animeRadioToggle.checked = currentState.showAnimeRadio;
+            if (radioSourceGroup) {
+                radioSourceGroup.style.display = currentState.showAnimeRadio ? 'block' : 'none';
+            }
+            const radioBlock = document.getElementById('navigationLeft');
+            if (radioBlock) {
+                radioBlock.style.display = currentState.showAnimeRadio ? 'flex' : 'none';
+            }
+        }
+
+        // Set source radio
+        if (radioSourceRadios) {
+            for (const radio of radioSourceRadios) {
+                radio.checked = (radio.value === currentState.animeRadioSource);
+            }
+        }
+    }
 
     /**
      * Load current settings from storage
      */
     async function loadSettings() {
         try {
-            const result = await chrome.storage.local.get(['displayMode']);
-            const currentMode = result.displayMode || DEFAULT_SETTINGS.displayMode;
+            const result = await chrome.storage.local.get(['displayMode', 'language', 'showAnimeRadio', 'animeRadioSource']);
             
-            // Set radio button
-            for (const radio of displayModeRadios) {
-                if (radio.value === currentMode) {
-                    radio.checked = true;
-                    break;
-                }
+            initialState = {
+                displayMode: result.displayMode || DEFAULT_SETTINGS.displayMode,
+                language: result.language || i18n.currentLocale || DEFAULT_SETTINGS.language,
+                showAnimeRadio: result.showAnimeRadio ?? false,
+                animeRadioSource: result.animeRadioSource || 'anison'
+            };
+            
+            currentState = { ...initialState };
+            
+            updateUIFromState();
+            
+            // Ensure language matches initial
+            if (i18n.currentLocale !== initialState.language) {
+                await i18n.setLanguage(initialState.language);
+                i18n.translatePage();
             }
             
-            // Set language dropdown
-            const currentLang = result.language || i18n.currentLocale || DEFAULT_SETTINGS.language;
-            updateDropdownUI(currentLang);
+            updateDirtyState();
         } catch (error) {
             console.error('Failed to load settings:', error);
         }
@@ -154,28 +216,28 @@ document.addEventListener('DOMContentLoaded', async () => {
      * Save settings to storage
      */
     async function saveSettings() {
-        let selectedMode = DEFAULT_SETTINGS.displayMode;
-        
-        for (const radio of displayModeRadios) {
-            if (radio.checked) {
-                selectedMode = radio.value;
-                break;
-            }
-        }
-
         try {
             await chrome.storage.local.set({
-                displayMode: selectedMode
+                displayMode: currentState.displayMode,
+                language: currentState.language,
+                showAnimeRadio: currentState.showAnimeRadio,
+                animeRadioSource: currentState.animeRadioSource
             });
 
+            // If language changed, ensure i18n saves it globally depending on how it's structured, but i18n.setLanguage was already called on preview.
             // Notify background script
             chrome.runtime.sendMessage({
                 type: 'SETTINGS_UPDATED',
                 settings: { 
-                    displayMode: selectedMode,
-                    language: i18n.currentLocale
+                    displayMode: currentState.displayMode,
+                    language: currentState.language,
+                    showAnimeRadio: currentState.showAnimeRadio,
+                    animeRadioSource: currentState.animeRadioSource
                 }
             });
+
+            initialState = { ...currentState };
+            updateDirtyState();
 
             showToast(i18n.get('settings.saved'));
         } catch (error) {
@@ -193,7 +255,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 await chrome.storage.local.set(DEFAULT_SETTINGS);
                 
                 // Reload UI
-                loadSettings();
+                await loadSettings();
                 
                 // Notify background
                 chrome.runtime.sendMessage({
@@ -237,9 +299,40 @@ document.addEventListener('DOMContentLoaded', async () => {
         }, 3000);
     }
 
-    // Event Listeners
-    saveBtn.addEventListener('click', saveSettings);
-    resetBtn.addEventListener('click', resetSettings);
+    // Input Event Listeners for tracking dirty state
+    for (const radio of displayModeRadios) {
+        radio.addEventListener('change', (e) => {
+            currentState.displayMode = e.target.value;
+            updateDirtyState();
+        });
+    }
+
+    if (animeRadioToggle) {
+        animeRadioToggle.addEventListener('change', (e) => {
+            currentState.showAnimeRadio = e.target.checked;
+            updateDirtyState();
+            
+            // Immediately update visually 
+            if (radioSourceGroup) {
+                radioSourceGroup.style.display = e.target.checked ? 'block' : 'none';
+            }
+            const radioBlock = document.getElementById('navigationLeft');
+            if (radioBlock) {
+                radioBlock.style.display = e.target.checked ? 'flex' : 'none';
+            }
+        });
+    }
+
+    for (const radio of radioSourceRadios) {
+        radio.addEventListener('change', (e) => {
+            currentState.animeRadioSource = e.target.value;
+            updateDirtyState();
+        });
+    }
+
+    // Event Listeners for buttons
+    saveBtn.addEventListener('mousedown', saveSettings);
+    resetBtn.addEventListener('mousedown', resetSettings);
 
     // Initialize
     loadSettings();
@@ -250,46 +343,173 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.body.classList.add('light-theme');
     }
 
-    // Anime Radio Toggle + Source Selector
-    const animeRadioToggle = document.getElementById('animeRadioToggle');
-    const radioSourceGroup = document.getElementById('radioSourceGroup');
-    const radioSourceRadios = document.getElementsByName('radioSource');
+    /**
+     * Custom Unsaved Dialog UI
+     */
+    function showUnsavedDialog(onCancel, onSave) {
+        const overlay = document.createElement('div');
+        overlay.className = 'unsaved-dialog-overlay';
 
-    const updateSourceGroupVisibility = (show) => {
-        if (radioSourceGroup) {
-            radioSourceGroup.style.display = show ? 'block' : 'none';
+        const dialog = document.createElement('div');
+        dialog.className = 'unsaved-dialog';
+
+        const title = document.createElement('h3');
+        title.textContent = 'Внимание';
+
+        const text = document.createElement('p');
+        text.textContent = 'У вас есть несохранённые изменения. Что хотите сделать?';
+
+        const actions = document.createElement('div');
+        actions.className = 'unsaved-dialog-actions';
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'btn btn-ghost';
+        cancelBtn.textContent = 'Отменить изменения';
+        cancelBtn.addEventListener('mousedown', async () => {
+            overlay.classList.remove('active');
+            setTimeout(() => document.body.removeChild(overlay), 200);
+            
+            // Revert state
+            currentState = { ...initialState };
+            updateUIFromState();
+            updateDirtyState();
+            if (i18n.currentLocale !== initialState.language) {
+                await i18n.setLanguage(initialState.language);
+                i18n.translatePage();
+            }
+            
+            if (onCancel) onCancel();
+        });
+
+        const confirmBtn = document.createElement('button');
+        confirmBtn.className = 'btn btn-primary';
+        confirmBtn.style.backgroundColor = '#22c55e';
+        confirmBtn.textContent = 'Сохранить';
+        confirmBtn.addEventListener('mousedown', async () => {
+            overlay.classList.remove('active');
+            setTimeout(() => document.body.removeChild(overlay), 200);
+            
+            await saveSettings();
+            
+            if (onSave) onSave();
+        });
+
+        actions.appendChild(cancelBtn);
+        actions.appendChild(confirmBtn);
+
+        dialog.appendChild(title);
+        dialog.appendChild(text);
+        dialog.appendChild(actions);
+        overlay.appendChild(dialog);
+
+        document.body.appendChild(overlay);
+
+        // Trigger animation
+        requestAnimationFrame(() => {
+            overlay.classList.add('active');
+        });
+    }
+
+    /**
+     * Intercept Navigation
+     */
+    function setupNavigationInterception() {
+        // 1. Intercept all global link clicks
+        const linkInterceptor = (e) => {
+            const link = e.target.closest('a');
+            if (link && link.href && !link.href.startsWith('javascript:') && !link.href.includes('#')) {
+                if (updateDirtyState()) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const targetHref = link.href;
+                    showUnsavedDialog(
+                        () => { window.location.href = targetHref; },
+                        async () => { window.location.href = targetHref; }
+                    );
+                }
+            }
+        };
+        
+        document.addEventListener('mousedown', linkInterceptor, true);
+        document.addEventListener('click', (e) => {
+            const link = e.target.closest('a');
+            // If we caught it in mousedown, just prevent click on dirty forms to avoid double triggers
+            if (link && link.href && !link.href.startsWith('javascript:') && !link.href.includes('#')) {
+                if (updateDirtyState()) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+            }
+        }, true);
+
+        // 2. Intercept Navigation.js methods securely via prototype
+        if (typeof Navigation !== 'undefined') {
+            const origNavigate = Navigation.prototype.navigateToPage;
+            if (origNavigate && !Navigation.prototype._navigateIntercepted) {
+                Navigation.prototype._navigateIntercepted = true;
+                Navigation.prototype.navigateToPage = function(page) {
+                    if (updateDirtyState() && page !== 'settings') {
+                        showUnsavedDialog(
+                            () => { origNavigate.call(this, page); },
+                            async () => { origNavigate.call(this, page); }
+                        );
+                        return;
+                    }
+                    origNavigate.call(this, page);
+                };
+            }
+
+            const origNavSearch = Navigation.prototype.navigateToSearchWithQuery;
+            if (origNavSearch && !Navigation.prototype._searchIntercepted) {
+                Navigation.prototype._searchIntercepted = true;
+                Navigation.prototype.navigateToSearchWithQuery = function(query) {
+                    if (updateDirtyState()) {
+                        showUnsavedDialog(
+                            () => { origNavSearch.call(this, query); },
+                            async () => { origNavSearch.call(this, query); }
+                        );
+                        return;
+                    }
+                    origNavSearch.call(this, query);
+                };
+            }
         }
-    };
 
-    if (animeRadioToggle) {
-        // Load saved state
-        chrome.storage.local.get(['showAnimeRadio', 'animeRadioSource'], (data) => {
-            const isEnabled = data.showAnimeRadio ?? false;
-            animeRadioToggle.checked = isEnabled;
-            updateSourceGroupVisibility(isEnabled);
-
-            // Set source radio
-            const source = data.animeRadioSource || 'anison';
-            for (const radio of radioSourceRadios) {
-                radio.checked = (radio.value === source);
+        // 3. Intercept chrome.tabs.create (e.g. from Navigation.js or anywhere else)
+        if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.create) {
+            const origTabsCreate = chrome.tabs.create;
+            if (!chrome.tabs.create._intercepted) {
+                chrome.tabs.create = function(createProperties, callback) {
+                    if (updateDirtyState() && typeof createProperties.url === 'string' && !createProperties.url.includes('settings.html')) {
+                        showUnsavedDialog(
+                            () => { origTabsCreate.call(chrome.tabs, createProperties, callback); },
+                            async () => { origTabsCreate.call(chrome.tabs, createProperties, callback); }
+                        );
+                        return;
+                    }
+                    origTabsCreate.call(chrome.tabs, createProperties, callback);
+                };
+                chrome.tabs.create._intercepted = true;
             }
-        });
+        }
 
-        // Save on toggle change & apply immediately
-        animeRadioToggle.addEventListener('change', (e) => {
-            chrome.storage.local.set({ showAnimeRadio: e.target.checked });
-            updateSourceGroupVisibility(e.target.checked);
-            const radioBlock = document.getElementById('navigationLeft');
-            if (radioBlock) {
-                radioBlock.style.display = e.target.checked ? 'flex' : 'none';
+        // 4. Intercept history.pushState
+        if (typeof history !== 'undefined' && history.pushState) {
+            const origPushState = history.pushState;
+            if (!history.pushState._intercepted) {
+                history.pushState = function(state, unused, url) {
+                    if (updateDirtyState()) {
+                        showUnsavedDialog(
+                            () => { origPushState.call(history, state, unused, url); },
+                            async () => { origPushState.call(history, state, unused, url); }
+                        );
+                        return;
+                    }
+                    origPushState.call(history, state, unused, url);
+                };
+                history.pushState._intercepted = true;
             }
-        });
+        }
     }
 
-    // Source selector save
-    for (const radio of radioSourceRadios) {
-        radio.addEventListener('change', (e) => {
-            chrome.storage.local.set({ animeRadioSource: e.target.value });
-        });
-    }
 });

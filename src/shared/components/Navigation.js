@@ -172,7 +172,7 @@ class Navigation {
                 <div class="nav-container">
                     <!-- Logo Section -->
                     <a href="#" class="nav-logo" id="navLogo">
-                        <img src="${chrome.runtime.getURL(typeof IconUtils !== 'undefined' ? IconUtils.getIconPath(this.getCurrentTheme(), 48) : 'icons/icon48-white.png')}" alt="Movie Ratings" class="nav-logo-image">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" class="nav-logo-image" style="fill: var(--theme-text-primary, currentColor);"><path d="M241.1 104.7h-162l149.8-44.03c5.09-1.52 7.34-5.32 5.81-10.41l-8.8-27.33c-4.1-12.65-16.27-16.87-27.97-13.5l-172.6 49c-12.87 3.94-20.3 16.5-16.36 30.35l6.04 23.68v111.8c0 12.55 10.16 23.76 23.48 23.76h97.2c5.5 0 8.35-4.89 7.75-8.29-.68-3.74-3.68-6.59-7.44-6.59H38.5c-4.94 0-7.38-4.29-7.38-7.5v-65.56h201.5v64.45c0 4.52-3.4 8.61-8.49 8.61H207.7c-5.09 0-8.15 3.99-8.15 7.44 0 4.34 3.59 7.44 7.84 7.44h16.74c12.97 0 24.59-10.89 24.59-23.69v-112c0-4.37-3.32-7.55-7.68-7.55zm-38.5-81.56c4.54-.86 7.25 2.51 8.05 5.47l5.16 19.29-23.18 6.53L170 33.45zm-50.31 14.94 22.63 20.98-35.67 10.62-21.8-20.98zM99.65 53.7l22.63 20.98L90.6 84.72 67.62 62.88zM23.69 84.79c-1.6-6.05 1.99-10.91 7.19-12.21l18.95-4.53 22.63 20.98-43.61 13.16zm7.51 34.79h42.29l-14.04 24.74H31.2zm46.23 24.74 15.55-24.33h36.61l-13.73 24.33zm55.82 0 14.83-24.33h37.65l-14.54 24.33zm56.69 0 14.14-23.92h28.6v23.92z"/><path d="M168.1 232.7c-5.38 0-8.44 3.92-8.44 7.51 0 4.6 3.79 7.78 7.94 7.78h8.22c4.87 0 7.93-3.79 7.93-7.78 0-4.41-3.83-7.51-7.67-7.51z"/></svg>
                     </a>
 
                     <!-- Mobile Toggle -->
@@ -273,7 +273,7 @@ class Navigation {
         const navMenu = document.getElementById('navMenu');
         
         if (mobileToggle && navMenu) {
-            mobileToggle.addEventListener('click', () => {
+            mobileToggle.addEventListener('mousedown', () => {
                 navMenu.classList.toggle('active');
             });
         }
@@ -281,7 +281,7 @@ class Navigation {
         // Navigation links
         const navLinks = document.querySelectorAll('.nav-link');
         navLinks.forEach(link => {
-            link.addEventListener('click', (e) => {
+            link.addEventListener('mousedown', (e) => {
                 e.preventDefault();
                 const page = link.dataset.page;
                 this.navigateToPage(page);
@@ -293,7 +293,7 @@ class Navigation {
         // Logo click - go to popup/home
         const navLogo = document.getElementById('navLogo');
         if (navLogo) {
-            navLogo.addEventListener('click', (e) => {
+            navLogo.addEventListener('mousedown', (e) => {
                 e.preventDefault();
                 this.navigateToPage('home');
             });
@@ -305,7 +305,7 @@ class Navigation {
         // Sign In button
         const signInBtn = document.getElementById('navSignInBtn');
         if (signInBtn) {
-            signInBtn.addEventListener('click', () => {
+            signInBtn.addEventListener('mousedown', () => {
                 this.handleSignIn();
             });
         }
@@ -319,7 +319,7 @@ class Navigation {
         // Bookmarks button functionality
         const bookmarksBtn = document.getElementById('navBookmarksBtn');
         if (bookmarksBtn) {
-            bookmarksBtn.addEventListener('click', (e) => {
+            bookmarksBtn.addEventListener('mousedown', (e) => {
                 // console.log('Bookmarks button clicked');
                 e.preventDefault();
                 this.navigateToPage('bookmarks');
@@ -329,14 +329,14 @@ class Navigation {
         }
 
         // Global delegation fallback for Bookmarks
-        document.addEventListener('click', (e) => {
+        document.addEventListener('mousedown', (e) => {
             const btn = e.target.closest('#navBookmarksBtn');
             if (btn) {
             }
         });
 
         // Close mobile menu when clicking outside
-        document.addEventListener('click', (e) => {
+        document.addEventListener('mousedown', (e) => {
             if (navMenu && !navMenu.contains(e.target) && !mobileToggle.contains(e.target)) {
                 navMenu.classList.remove('active');
             }
@@ -357,7 +357,7 @@ class Navigation {
             userTrigger.dataset.listenerAttached = 'true';
             
             // Toggle dropdown on user trigger click
-            userTrigger.addEventListener('click', (e) => {
+            userTrigger.addEventListener('mousedown', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 
@@ -374,7 +374,7 @@ class Navigation {
 
             // Settings dropdown item (View Profile)
             if (dropdownSettings) {
-                dropdownSettings.addEventListener('click', () => {
+                dropdownSettings.addEventListener('mousedown', () => {
                     this.closeAllDropdowns();
                     this.navigateToPage('profile');
                 });
@@ -383,7 +383,7 @@ class Navigation {
             // Settings page dropdown item
             const dropdownSettingsPage = document.getElementById('navDropdownSettingsPage');
             if (dropdownSettingsPage) {
-                dropdownSettingsPage.addEventListener('click', () => {
+                dropdownSettingsPage.addEventListener('mousedown', () => {
                     this.closeAllDropdowns();
                     this.navigateToPage('settings');
                 });
@@ -392,7 +392,7 @@ class Navigation {
             // Admin Panel dropdown item
             const dropdownAdmin = document.getElementById('navDropdownAdmin');
             if (dropdownAdmin) {
-                dropdownAdmin.addEventListener('click', () => {
+                dropdownAdmin.addEventListener('mousedown', () => {
                     this.closeAllDropdowns();
                     this.navigateToPage('admin');
                 });
@@ -401,7 +401,7 @@ class Navigation {
             // Theme dropdown item
             const dropdownTheme = document.getElementById('navDropdownTheme');
             if (dropdownTheme) {
-                dropdownTheme.addEventListener('click', () => {
+                dropdownTheme.addEventListener('mousedown', () => {
                     this.closeAllDropdowns();
                     this.showThemeModal();
                 });
@@ -409,14 +409,14 @@ class Navigation {
 
             // Logout dropdown item
             if (dropdownLogout) {
-                dropdownLogout.addEventListener('click', () => {
+                dropdownLogout.addEventListener('mousedown', () => {
                     this.closeAllDropdowns();
                     this.handleLogout();
                 });
             }
 
             // Close dropdown when clicking outside
-            document.addEventListener('click', (e) => {
+            document.addEventListener('mousedown', (e) => {
                 if (!userTrigger.contains(e.target) && !userDropdown.contains(e.target)) {
                     this.closeAllDropdowns();
                 }
@@ -449,7 +449,7 @@ class Navigation {
         if (!searchToggle || !searchInputWrapper || !searchInput) return;
 
         // Toggle search input on button click
-        searchToggle.addEventListener('click', (e) => {
+        searchToggle.addEventListener('mousedown', (e) => {
             e.stopPropagation();
             const isOpen = searchInputWrapper.classList.contains('active');
             
@@ -481,7 +481,7 @@ class Navigation {
         });
 
         // Close search when clicking outside
-        document.addEventListener('click', (e) => {
+        document.addEventListener('mousedown', (e) => {
             if (!searchToggle.contains(e.target) && !searchInputWrapper.contains(e.target)) {
                 searchInputWrapper.classList.remove('active');
             }
@@ -543,8 +543,41 @@ class Navigation {
             return chrome.runtime.sendMessage({ type, ...data });
         };
 
-        // Ensure the offscreen doc has the correct source
-        radioCmd('RADIO_SET_SOURCE', { streamUrl: STREAM_URLS[currentSource] });
+        // Ensure the offscreen doc has the correct source, without interrupting if already playing
+        try {
+            const state = await radioCmd('RADIO_GET_STATE');
+            const targetBaseUrl = STREAM_URLS[currentSource].split('?')[0];
+            const currentStreamUrl = state && state.streamUrl ? state.streamUrl.split('?')[0] : '';
+            
+            if (!state || state.error || currentStreamUrl !== targetBaseUrl) {
+                radioCmd('RADIO_SET_SOURCE', { streamUrl: STREAM_URLS[currentSource] });
+            }
+        } catch (e) {
+            radioCmd('RADIO_SET_SOURCE', { streamUrl: STREAM_URLS[currentSource] });
+        }
+
+        // Listen for storage changes to update UI dynamically
+        chrome.storage.onChanged.addListener((changes, area) => {
+            if (area === 'local' && changes.animeRadioSource) {
+                const newSource = changes.animeRadioSource.newValue;
+                if (newSource && newSource !== currentSource) {
+                    currentSource = newSource;
+                    if (currentSource === 'radionami') {
+                        if (trackNameEl) trackNameEl.textContent = 'Radio Nami';
+                        if (posterEl) posterEl.style.display = 'none';
+                        if (durationEl) durationEl.textContent = '';
+                        stopMetaPolling();
+                    } else if (currentSource === 'anison') {
+                        if (trackNameEl) trackNameEl.textContent = 'Anison.FM';
+                        radioCmd('RADIO_GET_STATE').then(state => {
+                            if (state && state.isPlaying) {
+                                startMetaPolling();
+                            }
+                        }).catch(() => {});
+                    }
+                }
+            }
+        });
 
         const updateVolumeIcon = (vol) => {
             if (!volumeIcon) return;
@@ -660,14 +693,14 @@ class Navigation {
             // Offscreen not created yet — that's fine, defaults are used
         }
 
-        playBtn.addEventListener('click', () => {
+        playBtn.addEventListener('mousedown', () => {
             radioCmd('RADIO_PLAY');
             playBtn.style.display = 'none';
             stopBtn.style.display = 'inline-flex';
             startMetaPolling();
         });
 
-        stopBtn.addEventListener('click', () => {
+        stopBtn.addEventListener('mousedown', () => {
             radioCmd('RADIO_STOP');
             stopBtn.style.display = 'none';
             playBtn.style.display = 'inline-flex';
@@ -690,7 +723,7 @@ class Navigation {
             });
 
             // Toggle mute on icon click
-            volumeIcon.addEventListener('click', async () => {
+            volumeIcon.addEventListener('mousedown', async () => {
                 try {
                     const state = await radioCmd('RADIO_GET_STATE');
                     const newMuted = !state.isMuted;
@@ -837,9 +870,9 @@ class Navigation {
         document.body.appendChild(modal);
 
         const close = () => modal.remove();
-        modal.querySelector('.modal-close-btn').addEventListener('click', close);
-        modal.querySelector('#cancelCollectionSelectorBtn').addEventListener('click', close);
-        modal.addEventListener('click', (e) => {
+        modal.querySelector('.modal-close-btn').addEventListener('mousedown', close);
+        modal.querySelector('#cancelCollectionSelectorBtn').addEventListener('mousedown', close);
+        modal.addEventListener('mousedown', (e) => {
             if (e.target === modal) close();
         });
 
@@ -1485,16 +1518,16 @@ class Navigation {
         document.body.appendChild(modal);
 
         const close = () => modal.remove();
-        modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
-        modal.querySelector('#profileCloseBtn').addEventListener('click', close);
-        modal.querySelector('#cancelProfileBtn').addEventListener('click', close);
+        modal.addEventListener('mousedown', (e) => { if (e.target === modal) close(); });
+        modal.querySelector('#profileCloseBtn').addEventListener('mousedown', close);
+        modal.querySelector('#cancelProfileBtn').addEventListener('mousedown', close);
 
         const avatarInput = modal.querySelector('#avatarInput');
         const avatarPreview = modal.querySelector('#avatarPreview');
         const avatarPlaceholder = modal.querySelector('#avatarPlaceholder');
         const uploadBtn = modal.querySelector('#uploadAvatarBtn');
 
-        uploadBtn.addEventListener('click', () => avatarInput.click());
+        uploadBtn.addEventListener('mousedown', () => avatarInput.click());
         avatarInput.addEventListener('change', () => {
             const file = avatarInput.files && avatarInput.files[0];
             if (!file) return;
@@ -1511,7 +1544,7 @@ class Navigation {
 
         const toggleBtn = modal.querySelector('#togglePasswordChange');
         const fields = modal.querySelector('#passwordFields');
-        if (toggleBtn) toggleBtn.addEventListener('click', () => { fields.style.display = fields.style.display === 'none' ? 'flex' : 'none'; });
+        if (toggleBtn) toggleBtn.addEventListener('mousedown', () => { fields.style.display = fields.style.display === 'none' ? 'flex' : 'none'; });
 
         modal.querySelector('#profileForm').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -1757,10 +1790,10 @@ class Navigation {
         };
 
         // Close button
-        modal.querySelector('.modal-close-btn').addEventListener('click', close);
+        modal.querySelector('.modal-close-btn').addEventListener('mousedown', close);
         
         // Close on overlay click
-        modal.addEventListener('click', (e) => {
+        modal.addEventListener('mousedown', (e) => {
             if (e.target === modal) close();
         });
 
@@ -1783,7 +1816,7 @@ class Navigation {
                 const theme = option.dataset.theme;
                 option.style.background = currentTheme === theme ? colors.optionHover : colors.optionBg;
             });
-            option.addEventListener('click', () => {
+            option.addEventListener('mousedown', () => {
                 const selectedTheme = option.dataset.theme;
                 this.applyTheme(selectedTheme);
                 close();

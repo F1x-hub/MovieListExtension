@@ -128,6 +128,7 @@
     object-fit: cover;
     border: 2px solid rgba(255, 255, 255, 0.2);
     box-shadow: var(--shadow-lg);
+    cursor: pointer;
 }
 
 .movie-detail-info-container {
@@ -137,12 +138,38 @@
     gap: var(--space-lg);
 }
 
+.movie-detail-title-wrapper {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-md);
+}
+
+.movie-detail-title-wrapper .mc-menu-container {
+    position: relative;
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+}
+
+.movie-detail-title-wrapper .mc-menu-btn {
+    position: relative;
+    top: 0;
+    right: 0;
+}
+
+.movie-detail-title-wrapper .mc-menu-dropdown {
+    top: 45px;
+    right: 0;
+}
+
 .movie-detail-page-title {
     font-size: var(--font-size-3xl);
     font-weight: 700;
     color: var(--text-primary);
     margin: 0;
     line-height: 1.2;
+    flex: 1; /* allow title to take available space */
 }
 
 .movie-detail-alt-title {
@@ -317,8 +344,7 @@
 
 .tab-buttons {
     display: flex;
-    gap: var(--space-xs);
-    border-bottom: 2px solid var(--theme-border);
+    /* border-bottom is removed, using flex item borders and ::after instead */
     margin-bottom: var(--space-lg);
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
@@ -329,29 +355,37 @@
     display: none;
 }
 
+.tab-buttons::after {
+    content: "";
+    flex-grow: 1;
+    border-bottom: 1px solid #666;
+}
+
 .tab-btn {
     padding: var(--space-md) var(--space-lg);
     background: transparent;
-    border: none;
-    border-bottom: 3px solid transparent;
-    color: var(--text-secondary);
+    border: 1px solid transparent;
+    border-top: none;
+    border-bottom: 1px solid #666;
+    color: #999;
     font-size: var(--font-size-base);
     font-weight: 600;
     cursor: pointer;
     transition: all var(--transition-base);
-    margin-bottom: -2px;
     white-space: nowrap;
     flex-shrink: 0;
 }
 
 .tab-btn:hover {
-    color: var(--text-primary);
-    background: var(--theme-hover-bg);
+    color: #ddd;
+    background: transparent;
 }
 
 .tab-btn.active {
-    color: var(--accent-color);
-    border-bottom-color: var(--accent-color);
+    color: #fff;
+    border-left: 1px solid #666;
+    border-right: 1px solid #666;
+    border-bottom: 1px solid transparent;
 }
 
 .tab-btn.disabled {
@@ -637,13 +671,20 @@
 .user-rating-name.clickable-username {
     cursor: pointer;
     text-decoration: underline;
-    color: var(--accent-color);
+    color: var(--text-primary);
     transition: color var(--transition-base);
 }
 
 .user-rating-name.clickable-username:hover {
-    color: var(--accent-hover);
+    color: var(--accent-color);
     text-decoration: underline;
+}
+
+.user-rating-name-row {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-sm);
+    flex-wrap: wrap;
 }
 
 .user-rating-score {
@@ -671,7 +712,6 @@
 .user-rating-date {
     font-size: var(--font-size-xs);
     color: var(--text-muted);
-    margin-top: var(--space-xs);
 }
 
 .user-rating-menu {
@@ -706,12 +746,24 @@
 .user-rating-menu-dropdown {
     position: fixed;
     background: var(--secondary-bg);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: var(--radius-md);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
     z-index: 10000;
     min-width: 160px;
     overflow: hidden;
+    animation: menuFadeIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes menuFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .menu-item {
@@ -1288,6 +1340,8 @@
   display: flex;
   justify-content: center;
   background: var(--secondary-bg);
+  position: relative;
+  z-index: 10;
 }
 
 .stars-wrapper {
@@ -1303,6 +1357,36 @@
   transition: transform 0.2s ease;
   color: var(--text-muted); /* Default color */
   outline: none;
+  position: relative;
+}
+
+/* Tooltip for rating stars */
+.star-rating-btn::after {
+  content: attr(data-rating);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(5px);
+  background: var(--secondary-bg, rgba(26, 26, 46, 0.95));
+  color: #ffffff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
+  z-index: 10;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.1));
+}
+
+.star-rating-btn:hover::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(-5px);
 }
 
 .star-rating-btn svg {
@@ -1492,5 +1576,78 @@
 .btn-show-all-awards:hover {
     background: var(--accent-color);
     color: #fff;
+}
+
+/* Text Selection Spoiler Popup */
+.selection-popup {
+    position: fixed;
+    z-index: 10000;
+    background: #18191c; /* Discord-like dark backdrop */
+    border-radius: var(--radius-md);
+    padding: 6px;
+    display: flex;
+    align-items: center;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+    animation: fadeInScale 0.15s ease-out;
+    pointer-events: auto;
+}
+
+.selection-popup::after {
+    content: '';
+    position: absolute;
+    bottom: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 6px solid #18191c;
+}
+
+.selection-popup-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background var(--transition-fast);
+}
+
+.selection-popup-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+@keyframes fadeInScale {
+    from {
+        opacity: 0;
+        transform: translate(-50%, 10px) scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, 0) scale(1);
+    }
+}
+
+/* Spoiler Text Rendering */
+.spoiler-text {
+    background: #4f545c; /* Discord-like grey for unrevealed spoilers */
+    color: transparent;
+    border-radius: var(--radius-sm);
+    padding: 0 2px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s, color 0.2s;
+    display: inline;
+}
+
+.spoiler-text.revealed {
+    background: rgba(255, 255, 255, 0.1);
+    color: inherit;
+    cursor: text;
+    user-select: text;
 }
 

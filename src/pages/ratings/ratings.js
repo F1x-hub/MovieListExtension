@@ -138,13 +138,13 @@ class RatingsPageManager {
                 isOpen: false
             };
             
-            trigger.addEventListener('click', (e) => {
+            trigger.addEventListener('mousedown', (e) => {
                 e.stopPropagation();
                 this.toggleDropdown(dropdownId);
             });
             
             options.forEach(option => {
-                option.addEventListener('click', (e) => {
+                option.addEventListener('mousedown', (e) => {
                     e.stopPropagation();
                     const value = option.getAttribute('data-value');
                     const text = option.textContent.trim();
@@ -153,7 +153,7 @@ class RatingsPageManager {
             });
         });
         
-        document.addEventListener('click', (e) => {
+        document.addEventListener('mousedown', (e) => {
             if (!e.target.closest('.custom-dropdown')) {
                 this.closeAllDropdowns();
             }
@@ -239,8 +239,8 @@ class RatingsPageManager {
 
     setupEventListeners() {
         // Mode toggle removed - always using all-ratings mode
-        // this.elements.myRatingsBtn?.addEventListener('click', () => this.setMode('my-ratings'));
-        // this.elements.allRatingsBtn?.addEventListener('click', () => this.setMode('all-ratings'));
+        // this.elements.myRatingsBtn?.addEventListener('mousedown', () => this.setMode('my-ratings'));
+        // this.elements.allRatingsBtn?.addEventListener('mousedown', () => this.setMode('all-ratings'));
         
         // Filters
         this.elements.movieSearchInput?.addEventListener('input', (e) => {
@@ -273,13 +273,13 @@ class RatingsPageManager {
             this.applyFilters();
         });
         
-        this.elements.clearFiltersBtn?.addEventListener('click', () => this.clearFilters());
+        this.elements.clearFiltersBtn?.addEventListener('mousedown', () => this.clearFilters());
         
         // Retry button
-        this.elements.retryBtn?.addEventListener('click', () => this.loadMovies());
+        this.elements.retryBtn?.addEventListener('mousedown', () => this.loadMovies());
         
         // Event delegation for Movie Cards (Actions and Edit Rating)
-        this.elements.moviesGrid?.addEventListener('click', (e) => {
+        this.elements.moviesGrid?.addEventListener('mousedown', (e) => {
             // Handle Edit Rating Button (legacy separate button outside menu if exists)
             const editBtn = e.target.closest('.edit-btn');
             if (editBtn) {
@@ -297,6 +297,7 @@ class RatingsPageManager {
             if (!target) return;
 
             const action = target.dataset.action;
+            if (action === 'stop-propagation') return;
             const movieId = target.dataset.movieId;
             const ratingId = target.dataset.ratingId || target.closest('.movie-card-component')?.dataset.ratingId;
 
@@ -331,8 +332,8 @@ class RatingsPageManager {
         });
         
         // Modal close buttons
-        this.elements.modalClose?.addEventListener('click', () => this.closeModal());
-        this.elements.ratingModalClose?.addEventListener('click', () => this.closeRatingModal());
+        this.elements.modalClose?.addEventListener('mousedown', () => this.closeModal());
+        this.elements.ratingModalClose?.addEventListener('mousedown', () => this.closeRatingModal());
         
         // Rating modal
         this.elements.ratingSlider?.addEventListener('input', (e) => {
@@ -344,15 +345,15 @@ class RatingsPageManager {
             this.elements.charCount.textContent = count;
         });
         
-        this.elements.saveRatingBtn?.addEventListener('click', () => this.saveRating());
-        this.elements.cancelRatingBtn?.addEventListener('click', () => this.closeRatingModal());
+        this.elements.saveRatingBtn?.addEventListener('mousedown', () => this.saveRating());
+        this.elements.cancelRatingBtn?.addEventListener('mousedown', () => this.closeRatingModal());
         
         // Close modals on background click
-        this.elements.movieModal?.addEventListener('click', (e) => {
+        this.elements.movieModal?.addEventListener('mousedown', (e) => {
             if (e.target === this.elements.movieModal) this.closeModal();
         });
         
-        this.elements.ratingModal?.addEventListener('click', (e) => {
+        this.elements.ratingModal?.addEventListener('mousedown', (e) => {
             if (e.target === this.elements.ratingModal) this.closeRatingModal();
         });
     }
@@ -927,7 +928,7 @@ class RatingsPageManager {
                     option.className = 'dropdown-option';
                     option.setAttribute('data-value', year);
                     option.textContent = year;
-                    option.addEventListener('click', (e) => {
+                    option.addEventListener('mousedown', (e) => {
                         e.stopPropagation();
                         this.selectDropdownOption('yearFilter', year, year);
                     });
@@ -972,7 +973,7 @@ class RatingsPageManager {
                     option.className = 'dropdown-option';
                     option.setAttribute('data-value', genre);
                     option.textContent = genre;
-                    option.addEventListener('click', (e) => {
+                    option.addEventListener('mousedown', (e) => {
                         e.stopPropagation();
                         this.selectDropdownOption('genreFilter', genre, genre);
                     });
@@ -1247,6 +1248,19 @@ class RatingsPageManager {
                         userAvatarEl.classList.remove('mc-skeleton');
                     }
                 }
+
+                // Update average rating if data has changed (e.g. cache → enriched data)
+                const avgRatingEl = card.querySelector('.mc-rating-avg');
+                if (avgRatingEl) {
+                    const avgRating = movieData.averageRating || 0;
+                    const rCount = movieData.ratingsCount || 0;
+                    const newAvgText = rCount > 0
+                        ? parseFloat(avgRating.toFixed(1)).toString()
+                        : (window.i18n?.get('movie_card.not_available') || 'N/A');
+                    if (avgRatingEl.textContent.trim() !== newAvgText) {
+                        avgRatingEl.textContent = newAvgText;
+                    }
+                }
             }
             
             // Insert at correct position
@@ -1294,6 +1308,7 @@ class RatingsPageManager {
             if (!target) return;
             
             const action = target.getAttribute('data-action');
+            if (action === 'stop-propagation') return;
             const movieId = target.getAttribute('data-movie-id');
             const ratingId = target.getAttribute('data-rating-id');
             

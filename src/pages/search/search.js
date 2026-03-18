@@ -125,10 +125,10 @@ class SearchManager {
     setupEventListeners() {
         // Navigation (optional elements for router compatibility)
         if (this.elements.backBtn) {
-            this.elements.backBtn.addEventListener('click', () => this.goBack());
+            this.elements.backBtn.addEventListener('mousedown', () => this.goBack());
         }
         if (this.elements.settingsBtn) {
-            this.elements.settingsBtn.addEventListener('click', () => this.openSettings());
+            this.elements.settingsBtn.addEventListener('mousedown', () => this.openSettings());
         }
         
         // Search
@@ -140,67 +140,67 @@ class SearchManager {
             this.elements.searchInput.addEventListener('input', (e) => this.handleSearchInput(e));
         }
         if (this.elements.searchBtn) {
-            this.elements.searchBtn.addEventListener('click', () => this.performSearch());
+            this.elements.searchBtn.addEventListener('mousedown', () => this.performSearch());
         }
         
         // Search History
         if (this.elements.clearHistoryBtn) {
-            this.elements.clearHistoryBtn.addEventListener('click', (e) => {
+            this.elements.clearHistoryBtn.addEventListener('mousedown', (e) => {
                 e.stopPropagation();
                 this.clearSearchHistory();
             });
         }
         
         // Click outside to close dropdown
-        document.addEventListener('click', (e) => {
+        document.addEventListener('mousedown', (e) => {
             if (!this.elements.searchInputWrapper?.contains(e.target)) {
                 this.hideSearchHistory();
             }
         });
         if (this.elements.toggleFiltersBtn) {
-            this.elements.toggleFiltersBtn.addEventListener('click', () => this.toggleFilters());
+            this.elements.toggleFiltersBtn.addEventListener('mousedown', () => this.toggleFilters());
         }
         if (this.elements.clearFiltersBtn) {
-            this.elements.clearFiltersBtn.addEventListener('click', () => this.clearFilters());
+            this.elements.clearFiltersBtn.addEventListener('mousedown', () => this.clearFilters());
         }
         if (this.elements.applyFiltersBtn) {
-            this.elements.applyFiltersBtn.addEventListener('click', () => this.applyFilters());
+            this.elements.applyFiltersBtn.addEventListener('mousedown', () => this.applyFilters());
         }
         
         // Pagination
         if (this.elements.prevPageBtn) {
-            this.elements.prevPageBtn.addEventListener('click', () => this.previousPage());
+            this.elements.prevPageBtn.addEventListener('mousedown', () => this.previousPage());
         }
         if (this.elements.nextPageBtn) {
-            this.elements.nextPageBtn.addEventListener('click', () => this.nextPage());
+            this.elements.nextPageBtn.addEventListener('mousedown', () => this.nextPage());
         }
         
         // Modals
         if (this.elements.modalClose) {
-            this.elements.modalClose.addEventListener('click', () => this.closeMovieModal());
+            this.elements.modalClose.addEventListener('mousedown', () => this.closeMovieModal());
         }
         if (this.elements.closeModalBtn) {
-            this.elements.closeModalBtn.addEventListener('click', () => this.closeMovieModal());
+            this.elements.closeModalBtn.addEventListener('mousedown', () => this.closeMovieModal());
         }
         if (this.elements.rateMovieBtn) {
-            this.elements.rateMovieBtn.addEventListener('click', () => this.showRatingModal(this.selectedMovie));
+            this.elements.rateMovieBtn.addEventListener('mousedown', () => this.showRatingModal(this.selectedMovie));
         }
         if (this.elements.movieDetailBtn) {
-            this.elements.movieDetailBtn.addEventListener('click', () => {
+            this.elements.movieDetailBtn.addEventListener('mousedown', () => {
                 if (this.selectedMovie) {
                     window.location.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${this.selectedMovie.kinopoiskId}`);
                 }
             });
         }
         if (this.elements.ratingModalClose) {
-            this.elements.ratingModalClose.addEventListener('click', () => this.closeRatingModal());
+            this.elements.ratingModalClose.addEventListener('mousedown', () => this.closeRatingModal());
         }
         if (this.elements.cancelRatingBtn) {
-            this.elements.cancelRatingBtn.addEventListener('click', () => this.closeRatingModal());
+            this.elements.cancelRatingBtn.addEventListener('mousedown', () => this.closeRatingModal());
         }
 
         // Delegation for MovieCard actions
-        this.elements.resultsGrid.addEventListener('click', (e) => {
+        this.elements.resultsGrid.addEventListener('mousedown', (e) => {
             const target = e.target;
             const actionBtn = target.closest('[data-action]');
             
@@ -270,7 +270,7 @@ class SearchManager {
             });
 
             // Star click delegation
-            this.elements.ratingStars.addEventListener('click', (e) => {
+            this.elements.ratingStars.addEventListener('mousedown', (e) => {
                 const btn = e.target.closest('.star-rating-btn');
                 if (btn) {
                     e.preventDefault(); // Prevent focus issues
@@ -282,7 +282,7 @@ class SearchManager {
         }
 
         if (this.elements.writeReviewBtn) {
-            this.elements.writeReviewBtn.addEventListener('click', () => {
+            this.elements.writeReviewBtn.addEventListener('mousedown', () => {
                 this.isReviewVisible = !this.isReviewVisible;
                 this.elements.reviewContainer.style.display = this.isReviewVisible ? 'block' : 'none';
                 if (this.isReviewVisible) {
@@ -297,17 +297,17 @@ class SearchManager {
             });
         }
         if (this.elements.saveRatingBtn) {
-            this.elements.saveRatingBtn.addEventListener('click', () => this.saveRating());
+            this.elements.saveRatingBtn.addEventListener('mousedown', () => this.saveRating());
         }
         
         // Modal overlays
         if (this.elements.movieModal) {
-            this.elements.movieModal.addEventListener('click', (e) => {
+            this.elements.movieModal.addEventListener('mousedown', (e) => {
                 if (e.target === this.elements.movieModal) this.closeMovieModal();
             });
         }
         if (this.elements.ratingModal) {
-            this.elements.ratingModal.addEventListener('click', (e) => {
+            this.elements.ratingModal.addEventListener('mousedown', (e) => {
                 if (e.target === this.elements.ratingModal) this.closeRatingModal();
             });
         }
@@ -315,10 +315,10 @@ class SearchManager {
         
         // Video Player Modal
         if (this.elements.closeVideoBtn) {
-            this.elements.closeVideoBtn.addEventListener('click', () => this.closeVideoModal());
+            this.elements.closeVideoBtn.addEventListener('mousedown', () => this.closeVideoModal());
         }
         if (this.elements.videoPlayerModal) {
-            this.elements.videoPlayerModal.addEventListener('click', (e) => {
+            this.elements.videoPlayerModal.addEventListener('mousedown', (e) => {
                 if (e.target === this.elements.videoPlayerModal) this.closeVideoModal();
             });
         }
@@ -330,7 +330,7 @@ class SearchManager {
 
         
         // Tab navigation
-        document.addEventListener('click', (e) => {
+        document.addEventListener('mousedown', (e) => {
             // Close menus if clicking outside
             if (!e.target.closest('.mc-menu-btn') && !e.target.closest('.mc-menu-dropdown')) {
                 document.querySelectorAll('.mc-menu-dropdown.active').forEach(menu => {
@@ -581,7 +581,7 @@ class SearchManager {
         item.appendChild(labelEl);
         
         // Three-state toggle on click
-        item.addEventListener('click', (e) => {
+        item.addEventListener('mousedown', (e) => {
             e.preventDefault();
             e.stopPropagation();
             

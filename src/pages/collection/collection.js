@@ -100,13 +100,13 @@ class CollectionPageManager {
                 isOpen: false
             };
             
-            trigger.addEventListener('click', (e) => {
+            trigger.addEventListener('mousedown', (e) => {
                 e.stopPropagation();
                 this.toggleDropdown(dropdownId);
             });
             
             options.forEach(option => {
-                option.addEventListener('click', (e) => {
+                option.addEventListener('mousedown', (e) => {
                     e.stopPropagation();
                     const value = option.getAttribute('data-value');
                     const text = option.textContent.trim();
@@ -115,7 +115,7 @@ class CollectionPageManager {
             });
         });
         
-        document.addEventListener('click', (e) => {
+        document.addEventListener('mousedown', (e) => {
             if (!e.target.closest('.custom-dropdown')) {
                 this.closeAllDropdowns();
             }
@@ -169,49 +169,49 @@ class CollectionPageManager {
         }
 
         if (this.elements.clearFiltersBtn) {
-            this.elements.clearFiltersBtn.addEventListener('click', () => {
+            this.elements.clearFiltersBtn.addEventListener('mousedown', () => {
                 this.clearFilters();
             });
         }
 
         if (this.elements.editCollectionBtn) {
-            this.elements.editCollectionBtn.addEventListener('click', () => {
+            this.elements.editCollectionBtn.addEventListener('mousedown', () => {
                 this.editCollection();
             });
         }
 
         if (this.elements.deleteCollectionBtn) {
-            this.elements.deleteCollectionBtn.addEventListener('click', () => {
+            this.elements.deleteCollectionBtn.addEventListener('mousedown', () => {
                 this.showDeleteConfirmation();
             });
         }
 
         if (this.elements.retryBtn) {
-            this.elements.retryBtn.addEventListener('click', () => {
+            this.elements.retryBtn.addEventListener('mousedown', () => {
                 this.loadCollection();
             });
         }
 
         if (this.elements.deleteModalClose) {
-            this.elements.deleteModalClose.addEventListener('click', () => {
+            this.elements.deleteModalClose.addEventListener('mousedown', () => {
                 this.closeDeleteModal();
             });
         }
 
         if (this.elements.cancelDeleteBtn) {
-            this.elements.cancelDeleteBtn.addEventListener('click', () => {
+            this.elements.cancelDeleteBtn.addEventListener('mousedown', () => {
                 this.closeDeleteModal();
             });
         }
 
         if (this.elements.confirmDeleteBtn) {
-            this.elements.confirmDeleteBtn.addEventListener('click', () => {
+            this.elements.confirmDeleteBtn.addEventListener('mousedown', () => {
                 this.confirmDeleteCollection();
             });
         }
 
         if (this.elements.deleteCollectionModal) {
-            this.elements.deleteCollectionModal.addEventListener('click', (e) => {
+            this.elements.deleteCollectionModal.addEventListener('mousedown', (e) => {
                 if (e.target === this.elements.deleteCollectionModal) {
                     this.closeDeleteModal();
                 }
@@ -510,7 +510,7 @@ class CollectionPageManager {
         if (!grid) return;
 
         grid.querySelectorAll('.action-btn.btn-primary').forEach(button => {
-            button.addEventListener('click', (e) => {
+            button.addEventListener('mousedown', (e) => {
                 e.stopPropagation();
                 const movieId = button.getAttribute('data-movie-id');
                 if (movieId) {
@@ -521,7 +521,7 @@ class CollectionPageManager {
         });
 
         grid.querySelectorAll('.remove-from-collection-btn').forEach(button => {
-            button.addEventListener('click', async (e) => {
+            button.addEventListener('mousedown', async (e) => {
                 e.stopPropagation();
                 const movieId = parseInt(button.getAttribute('data-movie-id'));
                 if (movieId) {

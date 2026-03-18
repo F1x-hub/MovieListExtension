@@ -19,6 +19,7 @@ class MovieCard {
             showAddToCollection = false,
             showRemoveFromWatchlist = false,
             showRemoveFromWatching = false, // New option
+            showRemoveFromWatched = false, // New option
             showRemoveFromBookmarks = false, // New option for Bookmarks page
             showThreeDotMenu = true,
             showAverageRating = true,
@@ -26,6 +27,7 @@ class MovieCard {
             showDescription = true, // New option
             animeStyle = false, // New: Use anime-style card design
             isWatching = false,
+            isWatched = false,
             isInWatchlist = false,
             watchingProgress = null,
             availableCollections = [], // New: List of all custom collections
@@ -94,10 +96,10 @@ class MovieCard {
             </div>
             
             ${showThreeDotMenu ? `
-                    <button class="mc-menu-btn" data-menu="true" title="Options">
+                    <button class="mc-menu-btn" data-menu="true" data-action="stop-propagation" title="Options">
                         <span class="mc-menu-icon">⋮</span>
                     </button>
-                    <div class="mc-menu-dropdown">
+                    <div class="mc-menu-dropdown" data-action="stop-propagation">
                         ${showFavorite ? `
                             <button class="mc-menu-item" data-action="toggle-favorite" 
                                     data-rating-id="${data.id}"
@@ -113,6 +115,14 @@ class MovieCard {
                                     data-is-watching="${isWatching}">
                                 <span class="mc-menu-item-icon">${isWatching ? '👁️' : '👁️'}</span>
                                 <span class="mc-menu-item-text">${isWatching ? window.i18n?.get('movie_card.remove_watching') : window.i18n?.get('movie_card.add_watching')}</span>
+                            </button>
+                        ` : ''}
+                        ${options.showWatched ? `
+                            <button class="mc-menu-item" data-action="toggle-watched"
+                                    data-movie-id="${movie.kinopoiskId || data.movieId}"
+                                    data-is-watched="${isWatched}">
+                                <span class="mc-menu-item-icon">${isWatched ? '✓' : '✓'}</span>
+                                <span class="mc-menu-item-text">${isWatched ? window.i18n?.get('movie_card.remove_watched') : window.i18n?.get('movie_card.add_watched')}</span>
                             </button>
                         ` : ''}
                         ${showWatchlist ? `
@@ -144,6 +154,13 @@ class MovieCard {
                                     data-movie-id="${movie.kinopoiskId || data.movieId}">
                                 <span class="mc-menu-item-icon">❌</span>
                                 <span class="mc-menu-item-text">Удалить из "Смотрю"</span>
+                            </button>
+                        ` : ''}
+                        ${showRemoveFromWatched ? `
+                            <button class="mc-menu-item" data-action="remove-from-watched"
+                                    data-movie-id="${movie.kinopoiskId || data.movieId}">
+                                <span class="mc-menu-item-icon">❌</span>
+                                <span class="mc-menu-item-text">Удалить из "Просмотрено"</span>
                             </button>
                         ` : ''}
                         ${showRemoveFromWatchlist ? `
@@ -222,8 +239,13 @@ class MovieCard {
                 ` : ''}
                 
                 ${animeStyle ? `
-                    <div class="mc-progress-display" data-action="${options.watchingProgress ? 'resume-watching' : 'view-details'}" data-movie-id="${movie.kinopoiskId || data.movieId}">
-                        ${options.watchingProgress ? `
+                    <div class="mc-progress-display" data-action="${options.watchingProgress || isWatched ? 'resume-watching' : 'view-details'}" data-movie-id="${movie.kinopoiskId || data.movieId}">
+                        ${isWatched ? `
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #4ade80;">
+                                    <polyline points="20 6 9 17 4 12"></polyline>
+                                </svg>
+                                <span class="mc-progress-text" style="color: #4ade80;">✓ ${window.i18n?.get('movie_card.add_watched') || 'Просмотрено'}</span>
+                            ` : options.watchingProgress ? `
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #4ade80;">
                                     <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"></path>
                                     <polyline points="12 6 12 12 16 14"></polyline>
@@ -321,7 +343,7 @@ class MovieCard {
         const menuDropdown = card.querySelector('.mc-menu-dropdown');
         
         if (menuBtn && menuDropdown) {
-            menuBtn.addEventListener('click', (e) => {
+            menuBtn.addEventListener('mousedown', (e) => {
                 e.stopPropagation();
                 // Close other open menus
                 document.querySelectorAll('.mc-menu-dropdown.active').forEach(menu => {
@@ -332,8 +354,17 @@ class MovieCard {
                 menuDropdown.classList.toggle('active');
             });
 
+            menuBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+            });
+
+            // We do NOT stop propagation on menuDropdown because items inside 
+            // rely on delegation at the grid level (e.g. toggle-favorite)
+            // Instead, we use data-action="stop-propagation" in the template
+            // and handle it in the delegation listener.
+
             // Close menu when clicking outside
-            document.addEventListener('click', (e) => {
+            document.addEventListener('mousedown', (e) => {
                 if (!card.contains(e.target)) {
                     menuDropdown.classList.remove('active');
                 }
@@ -522,7 +553,7 @@ class MovieCard {
         // Attach watch button handler
         const watchBtn = card.querySelector('.cmc-watch-btn');
         if (watchBtn) {
-            watchBtn.addEventListener('click', () => {
+            watchBtn.addEventListener('mousedown', () => {
                 const movieId = movie.kinopoiskId || movie.id;
                 // Navigate to movie details page
                 window.location.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`);

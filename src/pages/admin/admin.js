@@ -437,7 +437,7 @@ class AdminPanelManager {
         // Add click handler for delete button
         const deleteBtn = row.querySelector('.btn-delete');
         if (deleteBtn && !isCurrentUser) {
-            deleteBtn.addEventListener('click', () => this.showDeleteConfirmation(user));
+            deleteBtn.addEventListener('mousedown', () => this.showDeleteConfirmation(user));
         }
 
         return row;
@@ -529,20 +529,20 @@ class AdminPanelManager {
         const modal = document.getElementById('deleteModal');
 
         if (closeBtn) {
-            closeBtn.addEventListener('click', () => this.hideDeleteModal());
+            closeBtn.addEventListener('mousedown', () => this.hideDeleteModal());
         }
 
         if (cancelBtn) {
-            cancelBtn.addEventListener('click', () => this.hideDeleteModal());
+            cancelBtn.addEventListener('mousedown', () => this.hideDeleteModal());
         }
 
         if (confirmBtn) {
-            confirmBtn.addEventListener('click', () => this.confirmDelete());
+            confirmBtn.addEventListener('mousedown', () => this.confirmDelete());
         }
 
         // Close modal on outside click
         if (modal) {
-            modal.addEventListener('click', (e) => {
+            modal.addEventListener('mousedown', (e) => {
                 if (e.target === modal) {
                     this.hideDeleteModal();
                 }
@@ -554,7 +554,7 @@ class AdminPanelManager {
         const settingsPanes = document.querySelectorAll('.settings-pane');
 
         sidebarLinks.forEach(link => {
-            link.addEventListener('click', () => {
+            link.addEventListener('mousedown', () => {
                 sidebarLinks.forEach(l => l.classList.remove('active'));
                 settingsPanes.forEach(p => p.classList.remove('active'));
 
@@ -585,9 +585,9 @@ class AdminPanelManager {
         const userNextPageBtn = document.getElementById('user-next-page');
         const userPageSizeSelect = document.getElementById('user-page-size-select');
         
-        if (userFirstPageBtn) userFirstPageBtn.addEventListener('click', () => this.changeUserPage('first'));
-        if (userPrevPageBtn) userPrevPageBtn.addEventListener('click', () => this.changeUserPage('prev'));
-        if (userNextPageBtn) userNextPageBtn.addEventListener('click', () => this.changeUserPage('next'));
+        if (userFirstPageBtn) userFirstPageBtn.addEventListener('mousedown', () => this.changeUserPage('first'));
+        if (userPrevPageBtn) userPrevPageBtn.addEventListener('mousedown', () => this.changeUserPage('prev'));
+        if (userNextPageBtn) userNextPageBtn.addEventListener('mousedown', () => this.changeUserPage('next'));
         
         if (userPageSizeSelect) {
             userPageSizeSelect.addEventListener('change', (e) => {
@@ -605,19 +605,19 @@ class AdminPanelManager {
         const ratingModal = document.getElementById('deleteRatingModal');
 
         if (closeRatingBtn) {
-            closeRatingBtn.addEventListener('click', () => this.hideDeleteRatingModal());
+            closeRatingBtn.addEventListener('mousedown', () => this.hideDeleteRatingModal());
         }
 
         if (cancelRatingBtn) {
-            cancelRatingBtn.addEventListener('click', () => this.hideDeleteRatingModal());
+            cancelRatingBtn.addEventListener('mousedown', () => this.hideDeleteRatingModal());
         }
 
         if (confirmRatingBtn) {
-            confirmRatingBtn.addEventListener('click', () => this.confirmDeleteRating());
+            confirmRatingBtn.addEventListener('mousedown', () => this.confirmDeleteRating());
         }
 
         if (ratingModal) {
-            ratingModal.addEventListener('click', (e) => {
+            ratingModal.addEventListener('mousedown', (e) => {
                 if (e.target === ratingModal) {
                     this.hideDeleteRatingModal();
                 }
@@ -652,7 +652,7 @@ class AdminPanelManager {
         }
 
         if (clearFiltersBtn) {
-            clearFiltersBtn.addEventListener('click', () => {
+            clearFiltersBtn.addEventListener('mousedown', () => {
                 this.ratingsFilters = {
                     movieTitle: '',
                     userId: '',
@@ -668,7 +668,7 @@ class AdminPanelManager {
         // Refresh data button
         const refreshBtn = document.getElementById('refreshDataBtn');
         if (refreshBtn) {
-            refreshBtn.addEventListener('click', () => this.forceRefresh());
+            refreshBtn.addEventListener('mousedown', () => this.forceRefresh());
         }
 
         // Pagination controls
@@ -678,10 +678,10 @@ class AdminPanelManager {
         const lastPageBtn = document.getElementById('last-page');
         const pageSizeSelect = document.getElementById('page-size-select');
 
-        if (firstPageBtn) firstPageBtn.addEventListener('click', () => this.changePage('first'));
-        if (prevPageBtn) prevPageBtn.addEventListener('click', () => this.changePage('prev'));
-        if (nextPageBtn) nextPageBtn.addEventListener('click', () => this.changePage('next'));
-        if (lastPageBtn) lastPageBtn.addEventListener('click', () => this.changePage('last')); // Note: Firestore doesn't support true "last" easily without reading all
+        if (firstPageBtn) firstPageBtn.addEventListener('mousedown', () => this.changePage('first'));
+        if (prevPageBtn) prevPageBtn.addEventListener('mousedown', () => this.changePage('prev'));
+        if (nextPageBtn) nextPageBtn.addEventListener('mousedown', () => this.changePage('next'));
+        if (lastPageBtn) lastPageBtn.addEventListener('mousedown', () => this.changePage('last')); // Note: Firestore doesn't support true "last" easily without reading all
         
         if (pageSizeSelect) {
             pageSizeSelect.addEventListener('change', (e) => {
@@ -705,17 +705,17 @@ class AdminPanelManager {
         // Bulk action buttons
         const bulkClearCacheBtn = document.getElementById('bulkClearCacheBtn');
         if (bulkClearCacheBtn) {
-            bulkClearCacheBtn.addEventListener('click', () => this.bulkClearCache());
+            bulkClearCacheBtn.addEventListener('mousedown', () => this.bulkClearCache());
         }
 
         const bulkUpdateInfoBtn = document.getElementById('bulkUpdateInfoBtn');
         if (bulkUpdateInfoBtn) {
-            bulkUpdateInfoBtn.addEventListener('click', () => this.bulkUpdateInfo());
+            bulkUpdateInfoBtn.addEventListener('mousedown', () => this.bulkUpdateInfo());
         }
 
         const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
         if (bulkDeleteBtn) {
-            bulkDeleteBtn.addEventListener('click', () => this.showBulkDeleteConfirmation());
+            bulkDeleteBtn.addEventListener('mousedown', () => this.showBulkDeleteConfirmation());
         }
 
         // Bulk delete modal controls
@@ -725,16 +725,16 @@ class AdminPanelManager {
         const bulkDeleteModal = document.getElementById('bulkDeleteModal');
 
         if (closeBulkDeleteBtn) {
-            closeBulkDeleteBtn.addEventListener('click', () => this.hideBulkDeleteModal());
+            closeBulkDeleteBtn.addEventListener('mousedown', () => this.hideBulkDeleteModal());
         }
         if (cancelBulkDeleteBtn) {
-            cancelBulkDeleteBtn.addEventListener('click', () => this.hideBulkDeleteModal());
+            cancelBulkDeleteBtn.addEventListener('mousedown', () => this.hideBulkDeleteModal());
         }
         if (confirmBulkDeleteBtn) {
-            confirmBulkDeleteBtn.addEventListener('click', () => this.confirmBulkDelete());
+            confirmBulkDeleteBtn.addEventListener('mousedown', () => this.confirmBulkDelete());
         }
         if (bulkDeleteModal) {
-            bulkDeleteModal.addEventListener('click', (e) => {
+            bulkDeleteModal.addEventListener('mousedown', (e) => {
                 if (e.target === bulkDeleteModal) {
                     this.hideBulkDeleteModal();
                 }
@@ -1732,7 +1732,7 @@ class AdminPanelManager {
         
         container.querySelectorAll('.report-photo').forEach(img => {
             img.addEventListener('click', (e) => {
-                this.openPhotoLightbox(e.target.dataset.photoUrl);
+                ImageLightbox.show(e.target.dataset.photoUrl);
             });
         });
         
@@ -1763,45 +1763,6 @@ class AdminPanelManager {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
-    }
-
-    openPhotoLightbox(url) {
-        let overlay = document.getElementById('report-lightbox-overlay');
-        if (!overlay) {
-            overlay = document.createElement('div');
-            overlay.id = 'report-lightbox-overlay';
-            overlay.className = 'report-lightbox-overlay';
-            
-            const img = document.createElement('img');
-            img.id = 'report-lightbox-image';
-            img.className = 'report-lightbox-image';
-            
-            const closeBtn = document.createElement('button');
-            closeBtn.className = 'report-lightbox-close';
-            closeBtn.innerHTML = '✕';
-            
-            overlay.appendChild(img);
-            overlay.appendChild(closeBtn);
-            document.body.appendChild(overlay);
-            
-            const closeLightbox = () => {
-                overlay.classList.remove('visible');
-            };
-            
-            closeBtn.addEventListener('click', closeLightbox);
-            overlay.addEventListener('click', (e) => {
-                if (e.target === overlay) closeLightbox();
-            });
-            document.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape' && overlay.classList.contains('visible')) {
-                    closeLightbox();
-                }
-            });
-        }
-        
-        const img = document.getElementById('report-lightbox-image');
-        img.src = url;
-        overlay.classList.add('visible');
     }
 }
 

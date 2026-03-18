@@ -251,7 +251,7 @@ class RandomManager {
 
     setupEventListeners() {
         // Use Delegation for Tags
-        document.body.addEventListener('click', (e) => {
+        document.body.addEventListener('mousedown', (e) => {
             const btn = e.target.closest('.tag-btn');
             if (btn) {
                 this.handleTagClick(btn);
@@ -259,22 +259,22 @@ class RandomManager {
         });
 
         // Reset
-        this.elements.resetBtn.addEventListener('click', (e) => {
+        this.elements.resetBtn.addEventListener('mousedown', (e) => {
             e.stopPropagation(); // Prevent header toggle
             this.resetFilters();
         });
 
         // Toggle Config
         if (this.elements.configHeader) {
-            this.elements.configHeader.addEventListener('click', () => this.toggleConfig());
+            this.elements.configHeader.addEventListener('mousedown', () => this.toggleConfig());
         }
 
         // Roll Dice
-        this.elements.rollDiceBtn.addEventListener('click', () => this.findRandomMovie());
+        this.elements.rollDiceBtn.addEventListener('mousedown', () => this.findRandomMovie());
 
         // Try Again
         if (this.elements.tryAgainBtn) {
-            this.elements.tryAgainBtn.addEventListener('click', () => {
+            this.elements.tryAgainBtn.addEventListener('mousedown', () => {
                 this.resetFilters();
                 this.toggleConfig(true); // Open config
             });
@@ -501,7 +501,7 @@ class RandomManager {
         if (this.delegationSetup) return;
         this.delegationSetup = true;
 
-        this.elements.movieResult.addEventListener('click', (e) => {
+        this.elements.movieResult.addEventListener('mousedown', (e) => {
              const target = e.target;
              const actionBtn = target.closest('[data-action]');
              if (!actionBtn) return;

@@ -11,7 +11,7 @@
     'use strict';
 
     console.log('[DEBUG ParserInit] === PARSER INIT START ===');
-    const registry = new ParserRegistry(['kinogo', 'exfs', 'seasonvar']);
+    const registry = new ParserRegistry(['kinogo', 'exfs', 'seasonvar', 'rutube']);
 
     // Register KinoGo parser
     if (typeof KinogoParser !== 'undefined') {
@@ -35,6 +35,14 @@
         console.log('[DEBUG ParserInit] SeasonvarParser registered. playerType:', new SeasonvarParser().getPlayerType(), 'supportedTypes:', new SeasonvarParser().getSupportedTypes());
     } else {
         console.warn('[DEBUG ParserInit] SeasonvarParser NOT available (undefined)');
+    }
+
+    // Register Rutube parser (rutube.ru)
+    if (typeof RutubeParser !== 'undefined') {
+        registry.register(new RutubeParser());
+        console.log('[DEBUG ParserInit] RutubeParser registered. playerType:', new RutubeParser().getPlayerType(), 'supportedTypes:', new RutubeParser().getSupportedTypes());
+    } else {
+        console.warn('[DEBUG ParserInit] RutubeParser NOT available (undefined)');
     }
 
     // Expose globally

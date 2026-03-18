@@ -314,8 +314,15 @@ class RatingsCacheService {
                         rating.userPhoto = userProfile.photoURL;
                     }
                     // Update userName if profile has a newer one
-                    if (userProfile.displayName && (!rating.userName || rating.userName !== userProfile.displayName)) {
-                        rating.userName = userProfile.displayName;
+                    let bestName = userProfile.displayName;
+                    if (typeof Utils !== 'undefined' && Utils.getDisplayName) {
+                        bestName = Utils.getDisplayName(userProfile, null);
+                    } else if (typeof window !== 'undefined' && window.Utils && window.Utils.getDisplayName) {
+                        bestName = window.Utils.getDisplayName(userProfile, null);
+                    }
+                    
+                    if (bestName && (!rating.userName || rating.userName !== bestName)) {
+                        rating.userName = bestName;
                     }
                 }
             });

@@ -195,7 +195,7 @@ class PopupManager {
         // Logo click handler
         const popupLogo = document.getElementById('popupLogo');
         if (popupLogo) {
-            popupLogo.addEventListener('click', (e) => {
+            popupLogo.addEventListener('mousedown', (e) => {
                 e.preventDefault();
                 chrome.tabs.create({ url: 'src/pages/home/home.html' });
             });
@@ -203,9 +203,9 @@ class PopupManager {
         
         // Auth events
         if (this.elements.googleLoginBtn) {
-            this.elements.googleLoginBtn.addEventListener('click', () => this.handleGoogleLogin());
+            this.elements.googleLoginBtn.addEventListener('mousedown', () => this.handleGoogleLogin());
         }
-        this.elements.logoutBtn.addEventListener('click', () => this.handleLogout());
+        this.elements.logoutBtn.addEventListener('mousedown', () => this.handleLogout());
         
         // Two-step login listeners
         if (this.elements.loginEmailForm) {
@@ -215,7 +215,7 @@ class PopupManager {
             this.elements.loginPasswordForm.addEventListener('submit', (e) => this.handleEmailLogin(e));
         }
         if (this.elements.backToEmailBtn) {
-            this.elements.backToEmailBtn.addEventListener('click', (e) => this.goToStep1(e));
+            this.elements.backToEmailBtn.addEventListener('mousedown', (e) => this.goToStep1(e));
         }
         
         // Two-step registration listeners
@@ -226,10 +226,10 @@ class PopupManager {
             this.elements.registerPasswordForm.addEventListener('submit', (e) => this.handleRegisterFinal(e));
         }
         if (this.elements.backToRegisterInfoBtn) {
-            this.elements.backToRegisterInfoBtn.addEventListener('click', (e) => this.goToRegisterStep1(e));
+            this.elements.backToRegisterInfoBtn.addEventListener('mousedown', (e) => this.goToRegisterStep1(e));
         }
         if (this.elements.googleRegisterBtn) {
-            this.elements.googleRegisterBtn.addEventListener('click', () => this.handleGoogleLogin());
+            this.elements.googleRegisterBtn.addEventListener('mousedown', () => this.handleGoogleLogin());
         }
         
         // Replaced old register listener
@@ -249,12 +249,12 @@ class PopupManager {
             // Delay hiding to allow click events on results
             setTimeout(() => this.hideSearchResults(), 150);
         });
-        this.elements.searchIconBtn.addEventListener('click', () => this.openSearchPage());
+        this.elements.searchIconBtn.addEventListener('mousedown', () => this.openSearchPage());
         
         // Feed events
-        this.elements.refreshBtn.addEventListener('click', () => this.forceRefreshRatings());
-        this.elements.viewAllRatingsBtn.addEventListener('click', () => this.openRatingsPage());
-        this.elements.settingsBtn.addEventListener('click', () => {
+        this.elements.refreshBtn.addEventListener('mousedown', () => this.forceRefreshRatings());
+        this.elements.viewAllRatingsBtn.addEventListener('mousedown', () => this.openRatingsPage());
+        this.elements.settingsBtn.addEventListener('mousedown', () => {
             chrome.tabs.create({ url: 'src/pages/settings/settings.html' });
         });
         
@@ -327,14 +327,14 @@ class PopupManager {
 
     setupAuthSwitching() {
         if (this.elements.showRegisterLink) {
-            this.elements.showRegisterLink.addEventListener('click', (e) => {
+            this.elements.showRegisterLink.addEventListener('mousedown', (e) => {
                 e.preventDefault();
                 this.switchAuthForm('register');
             });
         }
 
         if (this.elements.showLoginLink) {
-            this.elements.showLoginLink.addEventListener('click', (e) => {
+            this.elements.showLoginLink.addEventListener('mousedown', (e) => {
                 e.preventDefault();
                 this.switchAuthForm('login');
             });
@@ -373,7 +373,7 @@ class PopupManager {
 
     setupPasswordToggles() {
         document.querySelectorAll('.toggle-password').forEach(btn => {
-            btn.addEventListener('click', (e) => {
+            btn.addEventListener('mousedown', (e) => {
                 e.preventDefault(); // Prevent focus loss or form submit
                 const input = btn.previousElementSibling;
                 if (input && input.tagName === 'INPUT') {
@@ -597,6 +597,11 @@ class PopupManager {
         }
 
         this.elements.userName.textContent = displayText;
+
+        // Also update the "Signed in as: ..." status text
+        if (this.elements.statusText) {
+            this.elements.statusText.textContent = i18n.get('popup.header.signed_in_as').replace('{user}', displayText);
+        }
     }
 
     async getCachedProfile(userId) {
@@ -964,7 +969,7 @@ class PopupManager {
 
         // Add click handlers
         this.elements.searchResults.querySelectorAll('.search-result-item').forEach(item => {
-            item.addEventListener('click', () => {
+            item.addEventListener('mousedown', () => {
                 const movieId = item.dataset.movieId;
                 this.openMovieDetails(movieId);
             });
@@ -1608,7 +1613,7 @@ class PopupManager {
         `;
 
         // Add click handler to navigate to movie detail page (but not if clicking menu or user info)
-        ratingDiv.addEventListener('click', (e) => {
+        ratingDiv.addEventListener('mousedown', (e) => {
             if (e.target.closest('.rating-menu') || e.target.closest('.rating-user-info')) {
                 return;
             }
@@ -1627,7 +1632,7 @@ class PopupManager {
         // Add click handler for user info
         const userInfo = ratingDiv.querySelector('.rating-user-info');
         if (userInfo) {
-            userInfo.addEventListener('click', (e) => {
+            userInfo.addEventListener('mousedown', (e) => {
                 e.stopPropagation();
                 this.openUserProfile(rating.userId);
             });
@@ -1652,7 +1657,7 @@ class PopupManager {
         if (!this.popupMenus) this.popupMenus = new Map();
         this.popupMenus.set(ratingId, menu);
 
-        menuBtn.addEventListener('click', (e) => {
+        menuBtn.addEventListener('mousedown', (e) => {
             e.stopPropagation();
             const isVisible = menu.style.display === 'block';
             
@@ -1680,7 +1685,7 @@ class PopupManager {
 
         const menuItems = menu.querySelectorAll('.menu-item');
         menuItems.forEach(item => {
-            item.addEventListener('click', async (e) => {
+            item.addEventListener('mousedown', async (e) => {
                 e.stopPropagation();
                 const action = item.getAttribute('data-action');
                 menu.style.display = 'none';
@@ -1702,7 +1707,7 @@ class PopupManager {
                     });
                 }
             };
-            document.addEventListener('click', this.popupMenuClickHandler);
+            document.addEventListener('mousedown', this.popupMenuClickHandler);
         }
 
         // Close menu on Escape key
@@ -1826,9 +1831,9 @@ class PopupManager {
         
         const closeModal = () => modal.remove();
         
-        modal.querySelector('#closeEditModalPopup').addEventListener('click', closeModal);
-        modal.querySelector('#cancelEditBtnPopup').addEventListener('click', closeModal);
-        modal.addEventListener('click', (e) => {
+        modal.querySelector('#closeEditModalPopup').addEventListener('mousedown', closeModal);
+        modal.querySelector('#cancelEditBtnPopup').addEventListener('mousedown', closeModal);
+        modal.addEventListener('mousedown', (e) => {
             if (e.target === modal) closeModal();
         });
         

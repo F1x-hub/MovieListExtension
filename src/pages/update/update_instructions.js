@@ -36,7 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Копирование в буфер обмена
     const copyBtn = document.getElementById('copyBtn');
     if (copyBtn) {
-        copyBtn.addEventListener('click', async () => {
+        copyBtn.addEventListener('mousedown', async () => {
             if (currentCommand) {
                 await navigator.clipboard.writeText(currentCommand);
                 const msg = document.getElementById('copyMsg');

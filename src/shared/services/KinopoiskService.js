@@ -10,6 +10,52 @@ class KinopoiskService {
     }
 
     /**
+     * Internal fetch method that automatically handles 403 API key rotation
+     * @param {string} url - API URL
+     * @param {Object} options - Fetch options
+     * @returns {Promise<Response>} - Fetch response
+     */
+    async _fetchWithRotation(url, options = {}) {
+        const maxAttempts = typeof KINOPOISK_CONFIG.API_KEYS !== 'undefined' 
+            ? KINOPOISK_CONFIG.API_KEYS.length 
+            : 1;
+            
+        let lastResponse = null;
+
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            const currentKey = typeof KINOPOISK_CONFIG.API_KEYS !== 'undefined' 
+                ? KINOPOISK_CONFIG.API_KEY 
+                : this.apiKey;
+            
+            const fetchOptions = { ...options };
+            fetchOptions.headers = {
+                ...options.headers,
+                'X-API-KEY': currentKey,
+                'Content-Type': 'application/json'
+            };
+            
+            const response = await fetch(url, fetchOptions);
+            lastResponse = response;
+
+            if (response.status === 403 || response.status === 402) {
+                console.warn(`KinopoiskService: ${response.status} Error with current key. Rotating to next key...`);
+                if (typeof KINOPOISK_CONFIG.rotateKey === 'function') {
+                    KINOPOISK_CONFIG.rotateKey();
+                    this.apiKey = KINOPOISK_CONFIG.API_KEY;
+                }
+                
+                if (attempt < maxAttempts - 1) {
+                    continue;
+                } // Else, fall through to return the failed response
+            }
+            
+            return response;
+        }
+
+        return lastResponse;
+    }
+
+    /**
      * Search for movies by query
      * @param {string} query - Search query
      * @param {number} page - Page number (default: 1)
@@ -40,12 +86,8 @@ class KinopoiskService {
             const fullUrl = `${url}?${params}`;
             console.log(`KinopoiskService: Request URL: ${fullUrl}`);
 
-            const response = await fetch(fullUrl, {
-                method: 'GET',
-                headers: {
-                    'X-API-KEY': this.apiKey,
-                    'Content-Type': 'application/json'
-                }
+            const response = await this._fetchWithRotation(fullUrl, {
+                method: 'GET'
             });
 
             console.log(`KinopoiskService: Response status: ${response.status}`);
@@ -134,12 +176,8 @@ class KinopoiskService {
             const fullUrl = `${url}?${params}`;
             console.log(`KinopoiskService: Filter Request URL: ${fullUrl}`);
 
-            const response = await fetch(fullUrl, {
-                method: 'GET',
-                headers: {
-                    'X-API-KEY': this.apiKey,
-                    'Content-Type': 'application/json'
-                }
+            const response = await this._fetchWithRotation(fullUrl, {
+                method: 'GET'
             });
 
             if (!response.ok) {
@@ -168,12 +206,8 @@ class KinopoiskService {
         try {
             const url = `${this.baseUrl}${KINOPOISK_CONFIG.ENDPOINTS.MOVIE}/${movieId}`;
             
-            const response = await fetch(url, {
-                method: 'GET',
-                headers: {
-                    'X-API-KEY': this.apiKey,
-                    'Content-Type': 'application/json'
-                }
+            const response = await this._fetchWithRotation(url, {
+                method: 'GET'
             });
 
             if (!response.ok) {
@@ -220,12 +254,8 @@ class KinopoiskService {
             // Try the images endpoint if it exists
             const url = `${this.baseUrl}/image?movieId=${movieId}&type=still`;
             
-            const response = await fetch(url, {
-                method: 'GET',
-                headers: {
-                    'X-API-KEY': this.apiKey,
-                    'Content-Type': 'application/json'
-                }
+            const response = await this._fetchWithRotation(url, {
+                method: 'GET'
             });
 
             if (!response.ok) {
@@ -253,12 +283,8 @@ class KinopoiskService {
             const url = `${this.baseUrl}/movie/awards?movieId=${movieId}&limit=250`;
             console.log('Fetching awards from:', url);
 
-            const response = await fetch(url, {
-                method: 'GET',
-                headers: {
-                    'X-API-KEY': this.apiKey,
-                    'Content-Type': 'application/json'
-                }
+            const response = await this._fetchWithRotation(url, {
+                method: 'GET'
             });
 
             if (!response.ok) {
@@ -615,12 +641,8 @@ class KinopoiskService {
                 const url = `${this.baseUrl}${KINOPOISK_CONFIG.ENDPOINTS.SEARCH}`;
                 const params = new URLSearchParams(alternatives[i]);
                 
-                const response = await fetch(`${url}?${params}`, {
-                    method: 'GET',
-                    headers: {
-                        'X-API-KEY': this.apiKey,
-                        'Content-Type': 'application/json'
-                    }
+                const response = await this._fetchWithRotation(`${url}?${params}`, {
+                    method: 'GET'
                 });
 
                 if (response.ok) {
@@ -827,12 +849,8 @@ class KinopoiskService {
             const fullUrl = `${url}?${params}`;
             console.log(`KinopoiskService: Random Request URL: ${fullUrl}`);
 
-            const response = await fetch(fullUrl, {
-                method: 'GET',
-                headers: {
-                    'X-API-KEY': this.apiKey,
-                    'Content-Type': 'application/json'
-                }
+            const response = await this._fetchWithRotation(fullUrl, {
+                method: 'GET'
             });
 
             if (!response.ok) {

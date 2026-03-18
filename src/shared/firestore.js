@@ -34,7 +34,8 @@ class FirebaseManager {
             try {
                 this.db.settings({
                     cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED,
-                    experimentalForceLongPolling: true
+                    useFetchStreams: false,
+                    merge: true
                 });
             } catch (e) {
                 console.warn('[Firestore] settings already applied or failed:', e.message);
@@ -530,32 +531,64 @@ class FirebaseManager {
             }
 
             return new Promise((resolve, reject) => {
-                chrome.identity.getAuthToken({ interactive: true }, (token) => {
-                    if (chrome.runtime.lastError) {
-                        reject(new Error(chrome.runtime.lastError.message));
-                        return;
-                    }
+                const manifest = chrome.runtime.getManifest();
+                const clientId = manifest.oauth2.client_id;
+                const scopes = manifest.oauth2.scopes.join(' ');
+                const redirectUri = chrome.identity.getRedirectURL();
 
-                    if (!token) {
-                        reject(new Error('No token received'));
-                        return;
-                    }
+                const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+                authUrl.searchParams.set('client_id', clientId);
+                authUrl.searchParams.set('response_type', 'token');
+                authUrl.searchParams.set('redirect_uri', redirectUri);
+                authUrl.searchParams.set('scope', scopes);
 
-                    const credential = firebase.auth.GoogleAuthProvider.credential(null, token);
-                    this.auth.signInWithCredential(credential)
-                        .then(async (userCredential) => {
-                            // Set tokenValidationTimestamp on successful login
-                            if (typeof chrome !== 'undefined' && chrome.storage) {
-                                await chrome.storage.local.set({
-                                    tokenValidationTimestamp: Date.now()
-                                });
-                            }
-                            resolve(userCredential.user);
-                        })
-                        .catch((error) => {
-                            reject(error);
-                        });
-                });
+                chrome.identity.launchWebAuthFlow(
+                    {
+                        url: authUrl.href,
+                        interactive: true
+                    },
+                    (responseUrl) => {
+                        if (chrome.runtime.lastError) {
+                            reject(new Error(chrome.runtime.lastError.message));
+                            return;
+                        }
+
+                        if (!responseUrl) {
+                            reject(new Error('No response URL received'));
+                            return;
+                        }
+
+                        let token = null;
+                        try {
+                            const url = new URL(responseUrl);
+                            const params = new URLSearchParams(url.hash.substring(1));
+                            token = params.get('access_token');
+                        } catch (e) {
+                            reject(new Error('Failed to parse the response URL'));
+                            return;
+                        }
+
+                        if (!token) {
+                            reject(new Error('No access token in response'));
+                            return;
+                        }
+
+                        const credential = firebase.auth.GoogleAuthProvider.credential(null, token);
+                        this.auth.signInWithCredential(credential)
+                            .then(async (userCredential) => {
+                                // Set tokenValidationTimestamp on successful login
+                                if (typeof chrome !== 'undefined' && chrome.storage) {
+                                    await chrome.storage.local.set({
+                                        tokenValidationTimestamp: Date.now()
+                                    });
+                                }
+                                resolve(userCredential.user);
+                            })
+                            .catch((error) => {
+                                reject(error);
+                            });
+                    }
+                );
             });
         } catch (error) {
             throw error;
@@ -565,7 +598,13 @@ class FirebaseManager {
     async signOut() {
         try {
             await this.auth.signOut();
-            chrome.identity.clearAllCachedAuthTokens();
+            try {
+                if (chrome.identity && chrome.identity.clearAllCachedAuthTokens) {
+                    chrome.identity.clearAllCachedAuthTokens(() => {});
+                }
+            } catch (e) {
+                console.warn('clearAllCachedAuthTokens not supported or failed', e);
+            }
             
             // Clear token validation timestamp and cancel scheduled refresh
             if (typeof chrome !== 'undefined' && chrome.storage) {

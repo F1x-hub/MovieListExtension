@@ -189,6 +189,18 @@ class ProfilePageManager {
             saveBtnLoading: document.getElementById('saveBtnLoading'),
             profileToast: document.getElementById('profileToast'),
 
+            // Cropper elements
+            cropperModal: document.getElementById('cropperModal'),
+            cropperModalClose: document.getElementById('cropperModalClose'),
+            cropperTabs: document.getElementById('cropperTabs'),
+            cropperTabAvatar: document.getElementById('cropperTabAvatar'),
+            cropperTabBanner: document.getElementById('cropperTabBanner'),
+            cropperImage: document.getElementById('cropperImage'),
+            cropperSelection: document.getElementById('cropperSelection'),
+            cropperCancelBtn: document.getElementById('cropperCancelBtn'),
+            cropperApplyBtn: document.getElementById('cropperApplyBtn'),
+            cropperContainer: document.getElementById('cropperContainer'),
+
             // Error messages
             firstNameError: document.getElementById('firstNameError'),
             lastNameError: document.getElementById('lastNameError'),
@@ -200,21 +212,21 @@ class ProfilePageManager {
 
     setupEventListeners() {
         if (this.elements.profileMenuBtn) {
-            this.elements.profileMenuBtn.addEventListener('click', (e) => {
+            this.elements.profileMenuBtn.addEventListener('mousedown', (e) => {
                 e.stopPropagation();
                 this.toggleMenu();
             });
         }
 
         if (this.elements.editProfileItem) {
-            this.elements.editProfileItem.addEventListener('click', () => {
+            this.elements.editProfileItem.addEventListener('mousedown', () => {
                 this.closeMenu();
                 this.openEditModal();
             });
         }
 
         // Close menu when clicking outside
-        document.addEventListener('click', (e) => {
+        document.addEventListener('mousedown', (e) => {
             if (this.elements.profileDropdown && 
                 this.elements.profileDropdown.classList.contains('show') && 
                 !this.elements.profileMenuBtn.contains(e.target) && 
@@ -226,7 +238,7 @@ class ProfilePageManager {
         this.viewingOtherUser = false;
 
         if (this.elements.viewAllRatingsBtn) {
-            this.elements.viewAllRatingsBtn.addEventListener('click', () => {
+            this.elements.viewAllRatingsBtn.addEventListener('mousedown', () => {
                 if (window.navigation) {
                     window.navigation.navigateToPage('ratings');
                 } else {
@@ -236,19 +248,19 @@ class ProfilePageManager {
         }
 
         if (this.elements.retryBtn) {
-            this.elements.retryBtn.addEventListener('click', () => this.loadProfile());
+            this.elements.retryBtn.addEventListener('mousedown', () => this.loadProfile());
         }
 
         if (this.elements.editProfileModalClose) {
-            this.elements.editProfileModalClose.addEventListener('click', () => this.closeEditModal());
+            this.elements.editProfileModalClose.addEventListener('mousedown', () => this.closeEditModal());
         }
 
         if (this.elements.cancelEditBtn) {
-            this.elements.cancelEditBtn.addEventListener('click', () => this.closeEditModal());
+            this.elements.cancelEditBtn.addEventListener('mousedown', () => this.closeEditModal());
         }
 
         if (this.elements.editProfileModal) {
-            this.elements.editProfileModal.addEventListener('click', (e) => {
+            this.elements.editProfileModal.addEventListener('mousedown', (e) => {
                 if (e.target === this.elements.editProfileModal) {
                     this.closeEditModal();
                 }
@@ -260,7 +272,7 @@ class ProfilePageManager {
         }
 
         if (this.elements.removePhotoBtn) {
-            this.elements.removePhotoBtn.addEventListener('click', () => this.handleRemovePhoto());
+            this.elements.removePhotoBtn.addEventListener('mousedown', () => this.handleRemovePhoto());
         }
 
         if (this.elements.bannerInput) {
@@ -268,7 +280,7 @@ class ProfilePageManager {
         }
 
         if (this.elements.removeBannerBtn) {
-            this.elements.removeBannerBtn.addEventListener('click', () => this.handleRemoveBanner());
+            this.elements.removeBannerBtn.addEventListener('mousedown', () => this.handleRemoveBanner());
         }
 
         if (this.elements.bioInput) {
@@ -276,12 +288,30 @@ class ProfilePageManager {
         }
 
         if (this.elements.togglePasswordBtn) {
-            this.elements.togglePasswordBtn.addEventListener('click', () => this.togglePasswordFields());
+            this.elements.togglePasswordBtn.addEventListener('mousedown', () => this.togglePasswordFields());
         }
 
         if (this.elements.editProfileForm) {
             this.elements.editProfileForm.addEventListener('submit', (e) => this.handleFormSubmit(e));
         }
+
+        // Cropper Event Listeners
+        if (this.elements.cropperModalClose) {
+            this.elements.cropperModalClose.addEventListener('mousedown', () => this.closeCropper());
+        }
+        if (this.elements.cropperCancelBtn) {
+            this.elements.cropperCancelBtn.addEventListener('mousedown', () => this.closeCropper());
+        }
+        if (this.elements.cropperApplyBtn) {
+            this.elements.cropperApplyBtn.addEventListener('mousedown', () => this.applyCrop());
+        }
+        if (this.elements.cropperTabAvatar) {
+            this.elements.cropperTabAvatar.addEventListener('mousedown', () => this.setCropperMode('avatar'));
+        }
+        if (this.elements.cropperTabBanner) {
+            this.elements.cropperTabBanner.addEventListener('mousedown', () => this.setCropperMode('banner'));
+        }
+        this.setupCropperDragAndDrop();
     }
 
     async setupFirebase() {
@@ -620,7 +650,7 @@ class ProfilePageManager {
 
         const cards = this.elements.recentRatingsList.querySelectorAll('.recent-rating-card');
         cards.forEach(card => {
-            card.addEventListener('click', () => {
+            card.addEventListener('mousedown', () => {
                 const movieId = card.getAttribute('data-movie-id');
                 if (movieId) {
                     const url = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`);
@@ -766,11 +796,21 @@ class ProfilePageManager {
             return;
         }
 
-        this.photoFile = file;
+        if (file.type === 'image/gif') {
+            this.photoFile = file;
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                this.photoPreview = reader.result;
+                this.updatePhotoPreview();
+                this.showToast(i18n.get('profile.cropper.gif_bypass') || 'GIF image cannot be cropped in browser, using original image.', 'success');
+            };
+            reader.readAsDataURL(file);
+            return;
+        }
+
         const reader = new FileReader();
         reader.onloadend = () => {
-            this.photoPreview = reader.result;
-            this.updatePhotoPreview();
+            this.openCropper(reader.result, 'avatar', file.type);
         };
         reader.readAsDataURL(file);
     }
@@ -824,11 +864,21 @@ class ProfilePageManager {
             return;
         }
 
-        this.bannerFile = file;
+        if (file.type === 'image/gif') {
+            this.bannerFile = file;
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                this.bannerPreview = reader.result;
+                this.updateBannerPreview();
+                this.showToast(i18n.get('profile.cropper.gif_bypass') || 'GIF image cannot be cropped in browser, using original image.', 'success');
+            };
+            reader.readAsDataURL(file);
+            return;
+        }
+
         const reader = new FileReader();
         reader.onloadend = () => {
-            this.bannerPreview = reader.result;
-            this.updateBannerPreview();
+            this.openCropper(reader.result, 'banner', file.type);
         };
         reader.readAsDataURL(file);
     }
@@ -841,6 +891,230 @@ class ProfilePageManager {
         }
         this.updateBannerPreview();
     }
+
+    // --- CROPPER LOGIC ---
+    openCropper(dataUrl, mode, fileType) {
+        this.cropperFileType = fileType;
+        this.currentCropperMode = mode;
+        if (this.elements.cropperImage) {
+            this.elements.cropperImage.src = dataUrl;
+        }
+        if (this.elements.cropperTabs) {
+            this.elements.cropperTabs.style.display = 'flex';
+        }
+        this.setCropperMode(mode);
+        if (this.elements.cropperModal) {
+            this.elements.cropperModal.style.display = 'flex';
+        }
+        // Wait for image to load to set initial selection
+        this.elements.cropperImage.onload = () => {
+            this.resetCropperSelection();
+        };
+    }
+
+    closeCropper() {
+        if (this.elements.cropperModal) {
+            this.elements.cropperModal.style.display = 'none';
+        }
+        if (this.elements.photoInput) this.elements.photoInput.value = '';
+        if (this.elements.bannerInput) this.elements.bannerInput.value = '';
+    }
+
+    setCropperMode(mode) {
+        this.currentCropperMode = mode;
+        if (this.elements.cropperTabAvatar) {
+            this.elements.cropperTabAvatar.classList.toggle('active', mode === 'avatar');
+        }
+        if (this.elements.cropperTabBanner) {
+            this.elements.cropperTabBanner.classList.toggle('active', mode === 'banner');
+        }
+        if (this.elements.cropperSelection) {
+            this.elements.cropperSelection.classList.toggle('mode-banner', mode === 'banner');
+        }
+        if (this.elements.cropperImage && this.elements.cropperImage.complete) {
+            this.resetCropperSelection();
+        }
+    }
+
+    resetCropperSelection() {
+        const img = this.elements.cropperImage;
+        const container = this.elements.cropperContainer;
+        if (!img || !container) return;
+        
+        const imgRect = img.getBoundingClientRect();
+        
+        let targetRatio = this.currentCropperMode === 'avatar' ? 1 : 3; // 3:1 for banner, giving it more height than 16:3
+        
+        let sizeW = imgRect.width * 0.8;
+        let sizeH = sizeW / targetRatio;
+        
+        if (sizeH > imgRect.height * 0.8) {
+            sizeH = imgRect.height * 0.8;
+            sizeW = sizeH * targetRatio;
+        }
+        
+        this.cropperData = {
+            x: (imgRect.width - sizeW) / 2,
+            y: (imgRect.height - sizeH) / 2,
+            w: sizeW,
+            h: sizeH
+        };
+        
+        this.updateCropperDOM();
+    }
+
+    updateCropperDOM() {
+        if (!this.elements.cropperSelection) return;
+        this.elements.cropperSelection.style.left = `${this.cropperData.x}px`;
+        this.elements.cropperSelection.style.top = `${this.cropperData.y}px`;
+        this.elements.cropperSelection.style.width = `${this.cropperData.w}px`;
+        this.elements.cropperSelection.style.height = `${this.cropperData.h}px`;
+    }
+
+    setupCropperDragAndDrop() {
+        if (!this.elements.cropperSelection || !this.elements.cropperContainer) return;
+        
+        this.isDraggingCropper = false;
+        this.isResizingCropper = false;
+        this.resizeHandle = null;
+        this.dragStartX = 0;
+        this.dragStartY = 0;
+
+        const selection = this.elements.cropperSelection;
+
+        const pointerDown = (e) => {
+            if (e.target.classList.contains('cropper-handle')) {
+                this.isResizingCropper = true;
+                this.resizeHandle = e.target.className.replace('cropper-handle ', '').trim();
+            } else if (e.target === selection || selection.contains(e.target)) {
+                this.isDraggingCropper = true;
+            } else {
+                return;
+            }
+            e.preventDefault();
+            this.dragStartX = e.clientX || e.touches?.[0].clientX;
+            this.dragStartY = e.clientY || e.touches?.[0].clientY;
+            this.initialCropperData = { ...this.cropperData };
+        };
+
+        const pointerMove = (e) => {
+            if (!this.isDraggingCropper && !this.isResizingCropper) return;
+            e.preventDefault();
+
+            const clientX = e.clientX || e.touches?.[0].clientX;
+            const clientY = e.clientY || e.touches?.[0].clientY;
+            const dx = clientX - this.dragStartX;
+            const dy = clientY - this.dragStartY;
+            const imgRect = this.elements.cropperImage.getBoundingClientRect();
+            
+            let targetRatio = this.currentCropperMode === 'avatar' ? 1 : 3;
+
+            if (this.isDraggingCropper) {
+                let newX = this.initialCropperData.x + dx;
+                let newY = this.initialCropperData.y + dy;
+                
+                // bounds
+                newX = Math.max(0, Math.min(newX, imgRect.width - this.cropperData.w));
+                newY = Math.max(0, Math.min(newY, imgRect.height - this.cropperData.h));
+                
+                this.cropperData.x = newX;
+                this.cropperData.y = newY;
+            } else if (this.isResizingCropper) {
+                let { x, y, w, h } = this.initialCropperData;
+                
+                let newW = w;
+                let newH = h;
+                let newX = x;
+                let newY = y;
+                
+                if (this.resizeHandle.includes('right')) newW = w + dx;
+                if (this.resizeHandle.includes('left')) { newW = w - dx; }
+                
+                if (newW < 50) newW = 50;
+                newH = newW / targetRatio;
+                
+                if (this.resizeHandle.includes('left')) {
+                    newX = x + (w - newW);
+                }
+                if (this.resizeHandle.includes('top')) {
+                    newY = y + (h - newH);
+                }
+                
+                if (newX < 0) { newW += newX; newX = 0; newH = newW / targetRatio; if(this.resizeHandle.includes('top')) newY = y + (h - newH); }
+                if (newY < 0) { newH += newY; newY = 0; newW = newH * targetRatio; if(this.resizeHandle.includes('left')) newX = x + (w - newW); }
+                if (newX + newW > imgRect.width) { newW = imgRect.width - newX; newH = newW / targetRatio; if(this.resizeHandle.includes('top')) newY = y + (h - newH); }
+                if (newY + newH > imgRect.height) { newH = imgRect.height - newY; newW = newH * targetRatio; if(this.resizeHandle.includes('left')) newX = x + (w - newW); }
+
+                this.cropperData = { x: newX, y: newY, w: newW, h: newH };
+            }
+            this.updateCropperDOM();
+        };
+
+        const pointerUp = () => {
+            this.isDraggingCropper = false;
+            this.isResizingCropper = false;
+        };
+
+        selection.addEventListener('mousedown', pointerDown);
+        selection.addEventListener('touchstart', pointerDown, {passive: false});
+        document.addEventListener('mousemove', pointerMove);
+        document.addEventListener('touchmove', pointerMove, {passive: false});
+        document.addEventListener('mouseup', pointerUp);
+        document.addEventListener('touchend', pointerUp);
+    }
+
+    applyCrop() {
+        if (!this.elements.cropperImage) return;
+        const img = this.elements.cropperImage;
+        const naturalW = img.naturalWidth;
+        const naturalH = img.naturalHeight;
+        const rect = img.getBoundingClientRect();
+        
+        const scaleX = naturalW / rect.width;
+        const scaleY = naturalH / rect.height;
+        
+        const cropX = this.cropperData.x * scaleX;
+        const cropY = this.cropperData.y * scaleY;
+        const cropW = this.cropperData.w * scaleX;
+        const cropH = this.cropperData.h * scaleY;
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = cropW;
+        canvas.height = cropH;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+        
+        // Note: Canvas toDataURL doesn't support outputting 'image/gif'. It will output PNG.
+        // If we strictly need to keep GIF animations, we cannot crop it via Canvas API.
+        // But we will at least use the original mime type or PNG fallback.
+        const outputMime = this.cropperFileType === 'image/gif' ? 'image/png' : (this.cropperFileType || 'image/jpeg');
+        const outputExt = outputMime.split('/')[1] === 'jpeg' ? 'jpg' : outputMime.split('/')[1];
+
+        const dataUrl = canvas.toDataURL(outputMime, 0.9);
+        const file = this.dataURLtoFile(dataUrl, `cropped-${this.currentCropperMode}-${Date.now()}.${outputExt}`);
+        
+        if (this.currentCropperMode === 'avatar') {
+            this.photoFile = file;
+            this.photoPreview = dataUrl;
+            this.updatePhotoPreview();
+        } else {
+            this.bannerFile = file;
+            this.bannerPreview = dataUrl;
+            this.updateBannerPreview();
+        }
+        
+        this.closeCropper();
+    }
+
+    dataURLtoFile(dataurl, filename) {
+        let arr = dataurl.split(','), mime = arr[0].match(/:(.*?);/)[1],
+            bstr = atob(arr[1]), n = bstr.length, u8arr = new Uint8Array(n);
+        while(n--){
+            u8arr[n] = bstr.charCodeAt(n);
+        }
+        return new File([u8arr], filename, {type:mime});
+    }
+    // --- END CROPPER LOGIC ---
 
     updateBioCharCount() {
         if (this.elements.bioInput && this.elements.bioCharCount) {
