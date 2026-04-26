@@ -485,6 +485,7 @@
             `;
             
             btn.onclick = (e) => {
+                if ('button' in e && e.button !== 0) return;
                 e.preventDefault();
                 e.stopPropagation();
                 handleWatchlistClick();

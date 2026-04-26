@@ -127,6 +127,21 @@
             </div>
         </div>
 
+        <!-- Pool Toolbar -->
+        <div class="pool-toolbar">
+            <div class="pool-search-wrap">
+                <input type="text" id="poolSearchInput" class="pool-search-input" placeholder="Найти фильм для пула...">
+                <div id="poolSearchResults" class="pool-search-results hidden"></div>
+            </div>
+            <button class="btn-secondary" id="showPoolBtn">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+                    <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+                </svg>
+                Пул (<span id="poolCount">0</span>)
+            </button>
+        </div>
+
         <!-- Result Section (Center) -->
         <div class="result-section">
             <div class="result-container" id="resultContainer">
@@ -160,6 +175,25 @@
                     </p>
                     <button id="tryAgainBtn" class="btn btn-primary-gradient mt-4" data-i18n="random.states.try_again">Try Again</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pool Modal -->
+    <div id="poolModal" class="pool-modal hidden">
+        <div class="pool-modal-inner">
+            <div class="pool-modal-header">
+                <span>Пул для рандомайзера</span>
+                <button class="btn-icon pool-modal-close-btn" id="closePoolModal">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div id="poolList" class="pool-list"></div>
+            <div class="pool-modal-footer">
+                <button class="btn-danger" id="clearPoolBtn">Очистить пул</button>
+                <button class="btn-roll-from-pool" id="rollFromPoolBtn">Крутить из пула</button>
             </div>
         </div>
     </div>

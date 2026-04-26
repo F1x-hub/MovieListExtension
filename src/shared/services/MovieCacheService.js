@@ -166,15 +166,37 @@ class MovieCacheService {
     }
 
     /**
-     * Helper to save to local storage
+     * Helper to save to local storage with simple eviction
      */
     saveToLocalStorage(id, data) {
+        // Don't cache placeholder data
+        if (data && (data.name === 'Loading...' || data.name === 'Unknown Movie')) {
+            return;
+        }
+
         try {
             localStorage.setItem(`kp_movie_${id}`, JSON.stringify(data));
         } catch (e) {
-            console.warn('LocalStorage full, clearing old cache...');
-            // Simple cleanup: remove old movie keys or clear all movie keys
-            // For now, simple error catch is enough
+            console.warn('LocalStorage full, clearing old cache entries...');
+            try {
+                // Simple eviction: remove 50 oldest/random movie keys
+                const keys = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key.startsWith('kp_movie_')) {
+                        keys.push(key);
+                    }
+                }
+                
+                // Sort or just take first 50
+                const keysToRemove = keys.slice(0, 50);
+                keysToRemove.forEach(k => localStorage.removeItem(k));
+                
+                // Try again
+                localStorage.setItem(`kp_movie_${id}`, JSON.stringify(data));
+            } catch (retryError) {
+                console.error('Failed to clear localStorage space:', retryError);
+            }
         }
     }
 

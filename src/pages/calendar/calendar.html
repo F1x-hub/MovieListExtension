@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calendar - Movie Rating Extension</title>
+
+    <link rel="stylesheet" href="../../shared/styles/common.css">
+    <link rel="stylesheet" href="../../shared/styles/theme.css">
+    <link rel="stylesheet" href="../../shared/styles/components.css">
+    <link rel="stylesheet" href="../../shared/styles/navigation.css">
+    <link rel="stylesheet" href="../../shared/styles/router.css">
+    <link rel="stylesheet" href="../../shared/styles/report-widget.css">
+    <link rel="stylesheet" href="calendar.css">
+
+    <link rel="preload" as="script" href="../../../libs/firebase-app-compat.js">
+    <link rel="preload" as="script" href="../../../libs/firebase-firestore-compat.js">
+    <link rel="preconnect" href="https://firebaseio.com">
+    <link rel="preconnect" href="https://firebasestorage.googleapis.com">
+    <link rel="dns-prefetch" href="https://api.themoviedb.org">
+</head>
+<body>
+    <!-- Navigation will be inserted here by Navigation.js -->
+
+    <main class="calendar-root">
+        <div class="calendar-header">
+            <h1 class="calendar-title">
+                Календарь
+                <span class="calendar-total-badge" id="calendarTotal"></span>
+            </h1>
+            <p class="calendar-subtitle">Ближайшие эпизоды сериалов со статусом «Смотрю»</p>
+        </div>
+
+        <div id="calendarContent" class="calendar-months">
+            <div class="calendar-loading" id="calendarLoading">
+                <div class="skeleton-month"></div>
+                <div class="skeleton-month"></div>
+            </div>
+        </div>
+
+        <div class="calendar-section" id="newsSection" style="display: none;">
+            <h2 class="calendar-section-title">Новости</h2>
+        </div>
+    </main>
+
+    <script defer src="../../../libs/firebase-app-compat.js"></script>
+    <script defer src="../../../libs/firebase-auth-compat.js"></script>
+    <script defer src="../../../libs/firebase-firestore-compat.js"></script>
+
+    <script defer src="../../shared/firestore.js"></script>
+    <script defer src="../../shared/config/kinopoisk.config.js"></script>
+    <script defer src="../../shared/services/UserService.js"></script>
+    <script defer src="../../shared/services/WatchlistService.js"></script>
+    <script defer src="../../shared/services/WatchingService.js"></script>
+    <script defer src="../../shared/services/FavoriteService.js"></script>
+    <script defer src="../../shared/services/CollectionService.js"></script>
+    <script defer src="../../shared/utils/Utils.js"></script>
+    <script defer src="../../shared/utils/IconUtils.js"></script>
+    <script defer src="../../shared/utils/Icons.js"></script>
+    <script defer src="../../shared/components/Navigation.js"></script>
+
+    <script type="module" src="calendar.js"></script>
+</body>
+</html>

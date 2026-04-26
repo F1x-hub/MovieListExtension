@@ -400,6 +400,12 @@
     color: white;
 }
 
+.nav-icon-btn.active {
+    background: rgba(255, 255, 255, 0.18);
+    color: white;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.18);
+}
+
 /* Light theme icon button styles */
 .light-theme .nav-icon-btn {
     color: #333;
@@ -407,6 +413,11 @@
 
 .light-theme .nav-icon-btn:hover {
     background: rgba(0, 0, 0, 0.05);
+    color: #000;
+}
+
+.light-theme .nav-icon-btn.active {
+    background: rgba(0, 0, 0, 0.08);
     color: #000;
 }
 
@@ -535,6 +546,7 @@
     gap: 10px;
     padding: 12px 16px;
     color: white;
+    text-decoration: none;
     cursor: pointer;
     transition: all 0.3s ease;
     font-size: 14px;

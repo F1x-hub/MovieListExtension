@@ -264,17 +264,25 @@ class RatingService {
                 }
             }
             
-            // Load all ratings for these movies in one query
-            const query = this.db.collection(this.collection)
-                .where('movieId', 'in', movieIds);
+            // Load all ratings for these movies in batch (Firestore 'in' limit is 30)
+            const CHUNK_SIZE = 30;
+            const movieIdChunks = [];
+            for (let i = 0; i < movieIds.length; i += CHUNK_SIZE) {
+                movieIdChunks.push(movieIds.slice(i, i + CHUNK_SIZE));
+            }
 
-            const results = await query.get();
+            const allResults = [];
+            for (const chunk of movieIdChunks) {
+                const query = this.db.collection(this.collection)
+                    .where('movieId', 'in', chunk);
+                const snapshot = await query.get();
+                snapshot.forEach(doc => allResults.push(doc.data()));
+            }
             
             // Group ratings by movieId and calculate averages
             const movieRatings = {};
             
-            results.forEach(doc => {
-                const data = doc.data();
+            allResults.forEach(data => {
                 const movieId = data.movieId;
                 
                 if (!movieRatings[movieId]) {

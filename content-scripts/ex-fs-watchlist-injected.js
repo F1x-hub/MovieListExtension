@@ -693,6 +693,7 @@
             dropdown.id = 'movieListDropdown';
             
             btn.onclick = async (e) => {
+                if ('button' in e && e.button !== 0) return;
                 e.preventDefault();
                 e.stopPropagation();
                 
@@ -778,7 +779,8 @@
                 inWatchlist ? Icons.CHECK : Icons.BOOKMARK,
                 inWatchlist
             );
-            watchlistItem.onclick = async () => {
+            watchlistItem.onclick = async (e) => {
+                if ('button' in e && e.button !== 0) return;
                 dropdown.classList.remove('active');
                 
                 if (inWatchlist) {
@@ -806,7 +808,8 @@
                 isFavorite ? Icons.HEART_FILLED : Icons.HEART,
                 isFavorite
             );
-            favoriteItem.onclick = async () => {
+            favoriteItem.onclick = async (e) => {
+                if ('button' in e && e.button !== 0) return;
                 if (isFavorite) await favoriteService.removeFromFavorites(user.uid, movieData.movieId);
                 else await favoriteService.addToFavorites(user.uid, movieData);
                 dropdown.classList.remove('active');
@@ -824,7 +827,8 @@
                 '',
                 !!userRating
             );
-            ratingItem.onclick = () => {
+            ratingItem.onclick = (e) => {
+                if ('button' in e && e.button !== 0) return;
                 dropdown.classList.remove('active');
                 showRatingModal(movieData, userRating?.rating, userRating?.comment || '');
             };
@@ -969,12 +973,13 @@
         
         // Close handlers
         const close = () => overlay.remove();
-        closeBtn.onclick = close;
-        cancelBtn.onclick = close;
-        overlay.onclick = (e) => { if (e.target === overlay) close(); };
+        closeBtn.onclick = (e) => { if ('button' in e && e.button !== 0) return; close(); };
+        cancelBtn.onclick = (e) => { if ('button' in e && e.button !== 0) return; close(); };
+        overlay.onclick = (e) => { if ('button' in e && e.button !== 0) return; if (e.target === overlay) close(); };
         
         // Save button handler
-        saveBtn.onclick = async () => {
+        saveBtn.onclick = async (e) => {
+            if ('button' in e && e.button !== 0) return;
             saveBtn.disabled = true;
             saveBtn.innerHTML = '<span>⏳</span><span>Saving...</span>';
             

@@ -28,10 +28,10 @@ class RutubeParser extends BaseParserService {
      * @returns {Promise<SearchResult|null>}
      */
     async search(title, year) {
-        console.log(`[DEBUG RutubeParser] search() called. title: "${title}", year: ${year}`);
+        console.log('[Rutube Search] query:', title);
         try {
             const searchUrl = `${this.baseUrl}/api/search/video/?query=${encodeURIComponent(title)}&page=1&per_page=10`;
-            console.log(`[DEBUG RutubeParser] Fetching: ${searchUrl}`);
+            console.log('[Rutube Search] запрос URL:', searchUrl);
 
             const response = await fetch(searchUrl, {
                 headers: {
@@ -39,11 +39,17 @@ class RutubeParser extends BaseParserService {
                 }
             });
 
+            console.log('[Rutube Search] статус ответа:', response.status);
+
             if (!response.ok) {
                 throw new Error(`Search failed: ${response.status}`);
             }
 
             const data = await response.json();
+            console.log('[Rutube Search] сырой ответ:', JSON.stringify(data).slice(0, 500));
+            console.log('[Rutube Search] кол-во результатов:', data?.results?.length ?? data?.items?.length ?? '???');
+            console.log('[Rutube Search] первый результат:', JSON.stringify(data?.results?.[0] ?? data?.items?.[0]));
+
             const results = data.results || [];
 
             if (results.length === 0) {
@@ -52,7 +58,8 @@ class RutubeParser extends BaseParserService {
             }
 
             // Find best match
-            const best = this._findBestMatch(results, title, year);
+            const searchYear = year || this._extractYear(title);
+            const best = this._pickBestResult(results, title, searchYear);
             if (!best) return null;
 
             const parsed = this.parsePageTitle(best.title || '');
@@ -72,6 +79,7 @@ class RutubeParser extends BaseParserService {
                 thumbnailUrl: best.thumbnail_url || null
             };
 
+            console.log('[Rutube Search] итоговый результат:', JSON.stringify(result));
             console.log(`[DEBUG RutubeParser] search result:`, result.url);
             return result;
 
@@ -298,48 +306,94 @@ class RutubeParser extends BaseParserService {
     // ─── Internal Helpers ────────────────────────────────────────────
 
     /**
-     * Find the best matching search result by title and year.
+     * Pick the best result from the search results array based on scoring.
      * @private
      */
-    _findBestMatch(results, targetTitle, year) {
-        const normalize = str => str.toLowerCase().replace(/[^a-zа-яё0-9]/g, '');
-        const normalizedTarget = normalize(targetTitle);
+    _pickBestResult(results, query, year) {
+        if (!results?.length) return null;
 
-        // Score each result
-        let bestScore = -1;
-        let bestResult = null;
+        // 1. Исключаем мусор
+        const cleaned = results.filter(item =>
+            !item.is_deleted &&
+            !item.is_livestream &&
+            !item.is_audio &&
+            !item.is_hidden &&
+            this._isNotTrailer(item.title)
+        );
 
-        for (const item of results) {
-            let score = 0;
-            const itemTitle = item.title || '';
-            const normalizedItem = normalize(itemTitle);
-
-            // Title similarity
-            if (normalizedItem.includes(normalizedTarget) || normalizedTarget.includes(normalizedItem)) {
-                score += 10;
-            } else {
-                // Partial match: check if all words from target appear in item
-                const targetWords = normalizedTarget.match(/[a-zа-яё0-9]+/g) || [];
-                const matchedWords = targetWords.filter(w => normalizedItem.includes(w));
-                score += (matchedWords.length / Math.max(targetWords.length, 1)) * 5;
-            }
-
-            // Year match bonus
-            if (year) {
-                const yearStr = year.toString();
-                const pubDate = item.publication_ts || item.created_ts || '';
-                if (pubDate.includes(yearStr)) {
-                    score += 3;
-                }
-            }
-
-            if (score > bestScore) {
-                bestScore = score;
-                bestResult = item;
-            }
+        if (!cleaned.length) {
+            console.log('[Rutube Search] No cleaned results, using first available');
+            return results[0];
         }
 
-        return bestScore > 0 ? bestResult : results[0];
+        // 2. Считаем скор для каждого
+        const scored = cleaned.map(item => {
+            const score = this._scoreResult(item, query, year);
+            console.log(`[Rutube Parse] scored item: "${item.title}", score: ${score}, duration: ${item.duration}`);
+            return { item, score };
+        });
+
+        // 3. Берём с максимальным скором
+        scored.sort((a, b) => b.score - a.score);
+        return scored[0].item;
+    }
+
+    /**
+     * Check if a title suggests it's a trailer or other non-full content.
+     * @private
+     */
+    _isNotTrailer(title) {
+        if (!title) return true;
+        const t = title.toLowerCase();
+        const trailerWords = ['трейлер', 'trailer', 'промо', 'promo', 'тизер', 'teaser',
+            'анонс', 'клип', 'нарезка', 'фрагмент', 'otryv'];
+        return !trailerWords.some(w => t.includes(w));
+    }
+
+    /**
+     * Score a search result based on various criteria.
+     * @private
+     */
+    _scoreResult(item, query, year) {
+        let score = 0;
+        const title = (item.title || '').toLowerCase();
+        const queryLower = (query || '').toLowerCase();
+
+        // Длительность — главный критерий
+        const duration = item.duration || 0;
+        if (duration >= 3600) score += 100;       // полный фильм (>60 мин)
+        else if (duration >= 1800) score += 60;   // короткий фильм / серия (>30 мин)
+        else if (duration >= 600) score += 20;    // короткий контент
+        else score -= 50;                         // трейлер/клип
+
+        // Год совпадает
+        if (year && title.includes(String(year))) score += 40;
+
+        // Совпадение по запросу
+        const queryWords = queryLower.split(/\s+/).filter(Boolean);
+        const matchedWords = queryWords.filter(w => title.includes(w));
+        score += matchedWords.length * 10;
+
+        // Категория "Фильмы" (id=4)
+        if (item.category?.id === 4) score += 20;
+
+        // Популярность (hits) — небольшой буст
+        score += Math.min(20, Math.floor((item.hits || 0) / 10000));
+
+        // is_official — небольшой буст
+        if (item.is_official) score += 10;
+
+        return score;
+    }
+
+    /**
+     * Extract year from a query string.
+     * @private
+     */
+    _extractYear(query) {
+        if (!query) return null;
+        const match = String(query).match(/\b(19|20)\d{2}\b/);
+        return match ? parseInt(match[0], 10) : null;
     }
 
     /**

@@ -120,6 +120,189 @@ async function getIdToken() {
     });
 }
 
+async function getStoredUser() {
+    return new Promise((resolve) => {
+        chrome.storage.local.get(['user', 'isAuthenticated'], (result) => {
+            if (result.user?.uid) {
+                resolve(result.user);
+                return;
+            }
+
+            resolve(null);
+        });
+    });
+}
+
+function toFirestoreValue(value) {
+    if (value === null || typeof value === 'undefined') {
+        return { nullValue: null };
+    }
+
+    if (typeof value === 'number') {
+        if (Number.isInteger(value)) {
+            return { integerValue: value.toString() };
+        }
+
+        return { doubleValue: value };
+    }
+
+    if (typeof value === 'boolean') {
+        return { booleanValue: value };
+    }
+
+    return { stringValue: String(value) };
+}
+
+function fromFirestoreValue(field) {
+    if (!field || typeof field !== 'object') {
+        return null;
+    }
+
+    if ('stringValue' in field) return field.stringValue;
+    if ('integerValue' in field) return Number(field.integerValue);
+    if ('doubleValue' in field) return Number(field.doubleValue);
+    if ('booleanValue' in field) return Boolean(field.booleanValue);
+    if ('timestampValue' in field) return field.timestampValue;
+    if ('nullValue' in field) return null;
+
+    if ('arrayValue' in field) {
+        return (field.arrayValue.values || []).map(fromFirestoreValue);
+    }
+
+    if ('mapValue' in field) {
+        const mapped = {};
+        Object.entries(field.mapValue.fields || {}).forEach(([key, value]) => {
+            mapped[key] = fromFirestoreValue(value);
+        });
+        return mapped;
+    }
+
+    return null;
+}
+
+function fromFirestoreDocument(document) {
+    const parsed = {
+        id: document.name ? document.name.split('/').pop() : null
+    };
+
+    Object.entries(document.fields || {}).forEach(([key, value]) => {
+        parsed[key] = fromFirestoreValue(value);
+    });
+
+    return parsed;
+}
+
+function buildEqualityFilter(fieldPath, value) {
+    return {
+        fieldFilter: {
+            field: { fieldPath },
+            op: 'EQUAL',
+            value: toFirestoreValue(value)
+        }
+    };
+}
+
+async function runStructuredQuery(token, structuredQuery) {
+    const projectId = 'movielistdb-13208';
+    const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`;
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ structuredQuery })
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Firestore error: ${response.status} ${errorText}`);
+    }
+
+    const results = await response.json();
+    return results
+        .filter((item) => item.document)
+        .map((item) => fromFirestoreDocument(item.document));
+}
+
+async function getItemsByStatusViaAPI(status) {
+    const user = await getStoredUser();
+    if (!user?.uid) {
+        throw new Error('User not authenticated');
+    }
+
+    const token = await getIdToken();
+    const mergedItems = new Map();
+
+    const favoritesQuery = {
+        from: [{ collectionId: 'favorites' }],
+        where: {
+            compositeFilter: {
+                op: 'AND',
+                filters: [
+                    buildEqualityFilter('userId', user.uid),
+                    buildEqualityFilter('status', status)
+                ]
+            }
+        }
+    };
+
+    try {
+        const favoritesItems = await runStructuredQuery(token, favoritesQuery);
+        favoritesItems.forEach((item) => {
+            const key = String(item.movieId || item.id);
+            mergedItems.set(key, item);
+        });
+    } catch (error) {
+        console.warn('[Background] Favorites status query failed:', error);
+    }
+
+    if (status === 'watching') {
+        const watchingQuery = {
+            from: [{ collectionId: 'watching' }],
+            where: buildEqualityFilter('userId', user.uid)
+        };
+
+        try {
+            const watchingItems = await runStructuredQuery(token, watchingQuery);
+            watchingItems.forEach((item) => {
+                const key = String(item.movieId || item.id);
+                if (!mergedItems.has(key)) {
+                    mergedItems.set(key, {
+                        ...item,
+                        status: 'watching'
+                    });
+                }
+            });
+        } catch (error) {
+            console.warn('[Background] Legacy watching query failed:', error);
+        }
+    } else if (status === 'plan_to_watch') {
+        const watchlistQuery = {
+            from: [{ collectionId: 'watchlist' }],
+            where: buildEqualityFilter('userId', user.uid)
+        };
+
+        try {
+            const watchlistItems = await runStructuredQuery(token, watchlistQuery);
+            watchlistItems.forEach((item) => {
+                const key = String(item.movieId || item.id);
+                if (!mergedItems.has(key)) {
+                    mergedItems.set(key, {
+                        ...item,
+                        status: 'plan_to_watch'
+                    });
+                }
+            });
+        } catch (error) {
+            console.warn('[Background] Legacy watchlist query failed:', error);
+        }
+    }
+
+    return Array.from(mergedItems.values());
+}
+
 async function checkAuthToken() {
     console.log('[Background] Checking auth token status...');
     chrome.storage.local.get(['user', 'authToken', 'authTokenExpiry', 'tokenValidationTimestamp', 'refreshToken'], async (result) => {
@@ -570,7 +753,17 @@ async function removeFromWatchlistViaAPI(userId, movieId) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.type === 'ADD_TO_WATCHLIST') {
+    if (message.action === 'getWatchlistByStatus') {
+        getItemsByStatusViaAPI(message.status || 'watching')
+            .then((items) => {
+                sendResponse({ success: true, items });
+            })
+            .catch((error) => {
+                console.error('[Background] Error loading items by status:', error);
+                sendResponse({ success: false, error: error.message, items: [] });
+            });
+        return true;
+    } else if (message.type === 'ADD_TO_WATCHLIST') {
         console.log('[Background] Received ADD_TO_WATCHLIST request for user:', message.userId);
         addToWatchlistViaAPI(message.userId, message.movieData)
             .then(() => {

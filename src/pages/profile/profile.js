@@ -208,32 +208,19 @@ class ProfilePageManager {
             bioError: document.getElementById('bioError'),
             passwordError: document.getElementById('passwordError')
         };
+
+        // UI State Manager
+        this.page = Utils.createPageStateManager({
+            loader: this.elements.loadingSection,
+            errorScreen: this.elements.errorState,
+            errorMessage: this.elements.errorMessage,
+            contentContainer: document.querySelector('.profile-content') // Assuming this exists or using body
+        });
     }
 
     setupEventListeners() {
-        if (this.elements.profileMenuBtn) {
-            this.elements.profileMenuBtn.addEventListener('mousedown', (e) => {
-                e.stopPropagation();
-                this.toggleMenu();
-            });
-        }
-
-        if (this.elements.editProfileItem) {
-            this.elements.editProfileItem.addEventListener('mousedown', () => {
-                this.closeMenu();
-                this.openEditModal();
-            });
-        }
-
-        // Close menu when clicking outside
-        document.addEventListener('mousedown', (e) => {
-            if (this.elements.profileDropdown && 
-                this.elements.profileDropdown.classList.contains('show') && 
-                !this.elements.profileMenuBtn.contains(e.target) && 
-                !this.elements.profileDropdown.contains(e.target)) {
-                this.closeMenu();
-            }
-        });
+        // Use centralized menu delegation
+        Utils.bindTabsAndMenus(document);
         
         this.viewingOtherUser = false;
 
@@ -336,7 +323,7 @@ class ProfilePageManager {
         const profileUserId = urlParams.get('userId');
         
         if (!profileUserId && !this.currentUser) {
-            this.showError('Please sign in to view your profile');
+            this.page.showError('Please sign in to view your profile');
             return;
         }
 
@@ -353,14 +340,14 @@ class ProfilePageManager {
         
         if (!targetUserId) {
             if (!this.currentUser) {
-                this.showError('Please sign in to view your profile');
+                this.page.showError('Please sign in to view your profile');
                 return;
             }
         }
 
         // Only show loading screen if we don't have cached profile
         if (!this.userProfile) {
-            this.showLoading(true);
+            this.page.showLoader();
         }
         
         this.viewingOtherUser = profileUserId && this.currentUser && profileUserId !== this.currentUser.uid;
@@ -372,7 +359,7 @@ class ProfilePageManager {
             ]);
 
             if (!profile) {
-                this.showError('Profile not found');
+                this.page.showError('Profile not found');
                 return;
             }
 
@@ -398,7 +385,7 @@ class ProfilePageManager {
                 console.warn('ProfilePage: Failed to save cache', cacheError);
             }
 
-            this.showLoading(false);
+            this.page.showContent();
         } catch (error) {
             console.error('Error loading profile:', error);
             
@@ -407,9 +394,8 @@ class ProfilePageManager {
             const hasFallback = await this.loadExpiredCacheFallback(targetUserId);
             
             if (!hasFallback) {
-                this.showError('Failed to load profile. Please check your connection.');
+                this.page.showError('Failed to load profile. Please check your connection.');
             }
-            this.showLoading(false);
         }
     }
 
@@ -626,7 +612,7 @@ class ProfilePageManager {
             const ratingDate = this.profileService.formatDate(rating.createdAt);
 
             return `
-                <div class="recent-rating-card" data-movie-id="${rating.movieId}">
+                <a href="${chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${rating.movieId}`)}" class="recent-rating-card" data-movie-id="${rating.movieId}">
                     <div class="poster">
                         ${posterUrl 
                             ? `<img src="${posterUrl}" alt="${movieTitle}" onerror="this.parentElement.innerHTML='<div class=\\'poster-placeholder\\'>🎬</div>'">`
@@ -642,7 +628,7 @@ class ProfilePageManager {
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
                 ${rating.rating}
                     </div>
-                </div>
+                </a>
             `;
         }).join('');
 
@@ -650,9 +636,11 @@ class ProfilePageManager {
 
         const cards = this.elements.recentRatingsList.querySelectorAll('.recent-rating-card');
         cards.forEach(card => {
-            card.addEventListener('mousedown', () => {
+            card.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return;
                 const movieId = card.getAttribute('data-movie-id');
                 if (movieId) {
+                    e.preventDefault();
                     const url = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`);
                     window.location.href = url;
                 }
@@ -787,12 +775,12 @@ class ProfilePageManager {
 
         const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
         if (!validTypes.includes(file.type)) {
-            this.showToast('Invalid file type. Use JPG, PNG, WEBP or GIF.', 'error');
+            Utils.showToast('Invalid file type. Use JPG, PNG, WEBP or GIF.', 'error');
             return;
         }
 
         if (file.size > 5 * 1024 * 1024) {
-            this.showToast('File size must be less than 5MB.', 'error');
+            Utils.showToast('File size must be less than 5MB.', 'error');
             return;
         }
 
@@ -802,7 +790,7 @@ class ProfilePageManager {
             reader.onloadend = () => {
                 this.photoPreview = reader.result;
                 this.updatePhotoPreview();
-                this.showToast(i18n.get('profile.cropper.gif_bypass') || 'GIF image cannot be cropped in browser, using original image.', 'success');
+                Utils.showToast(i18n.get('profile.cropper.gif_bypass') || 'GIF image cannot be cropped in browser, using original image.', 'success');
             };
             reader.readAsDataURL(file);
             return;
@@ -855,12 +843,12 @@ class ProfilePageManager {
 
         const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
         if (!validTypes.includes(file.type)) {
-            this.showToast('Invalid file type. Use JPG, PNG, WEBP or GIF.', 'error');
+            Utils.showToast('Invalid file type. Use JPG, PNG, WEBP or GIF.', 'error');
             return;
         }
 
         if (file.size > 5 * 1024 * 1024) {
-            this.showToast('File size must be less than 5MB.', 'error');
+            Utils.showToast('File size must be less than 5MB.', 'error');
             return;
         }
 
@@ -870,7 +858,7 @@ class ProfilePageManager {
             reader.onloadend = () => {
                 this.bannerPreview = reader.result;
                 this.updateBannerPreview();
-                this.showToast(i18n.get('profile.cropper.gif_bypass') || 'GIF image cannot be cropped in browser, using original image.', 'success');
+                Utils.showToast(i18n.get('profile.cropper.gif_bypass') || 'GIF image cannot be cropped in browser, using original image.', 'success');
             };
             reader.readAsDataURL(file);
             return;
@@ -1238,7 +1226,7 @@ class ProfilePageManager {
             this.userProfile = { ...this.userProfile, ...updateData };
             this.displayProfile();
             this.closeEditModal();
-            this.showToast('Profile updated successfully!', 'success');
+            Utils.showToast('Profile updated successfully!', 'success');
 
             if (window.navigation && window.navigation.updateUserDisplay) {
                 const updatedUser = firebaseManager.getCurrentUser();
@@ -1246,7 +1234,7 @@ class ProfilePageManager {
             }
         } catch (error) {
             console.error('Error saving profile:', error);
-            this.showToast(error.message || 'Failed to save profile. Please try again.', 'error');
+            Utils.showToast(error.message || 'Failed to save profile. Please try again.', 'error');
         } finally {
             this.setLoading(false);
         }
@@ -1360,40 +1348,7 @@ class ProfilePageManager {
         }
     }
 
-    showLoading(show) {
-        if (this.elements.loadingSection) {
-            this.elements.loadingSection.style.display = show ? 'flex' : 'none';
-        }
-        if (this.elements.errorState) {
-            this.elements.errorState.style.display = 'none';
-        }
-    }
-
-    showError(message) {
-        if (this.elements.errorState) {
-            this.elements.errorState.style.display = 'block';
-        }
-        if (this.elements.errorMessage) {
-            this.elements.errorMessage.textContent = message;
-        }
-        if (this.elements.loadingSection) {
-            this.elements.loadingSection.style.display = 'none';
-        }
-    }
-
-    showToast(message, type = 'success') {
-        if (this.elements.profileToast) {
-            this.elements.profileToast.textContent = message;
-            this.elements.profileToast.className = `toast-message ${type}`;
-            this.elements.profileToast.style.display = 'block';
-
-            setTimeout(() => {
-                if (this.elements.profileToast) {
-                    this.elements.profileToast.style.display = 'none';
-                }
-            }, 3000);
-        }
-    }
+    // showLoading, showError, showToast removed in favor of this.page and Utils.showToast
 }
 
 let profilePageManager;

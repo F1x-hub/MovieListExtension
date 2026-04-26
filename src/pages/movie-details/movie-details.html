@@ -34,16 +34,23 @@
     
     <!-- Movie Details Container -->
     <div class="movie-details-page-container">
-        
+        <!-- Loader -->
+        <div class="loading-state" id="loadingState" style="display: none;">
+            <div class="loading-spinner-large"></div>
+            <h3 class="loading-title" data-i18n="movie_details.loading">Загрузка информации о фильме...</h3>
+            <p class="loading-text" data-i18n="movie_details.wait">Пожалуйста, подождите</p>
+        </div>
+
+        <!-- Error State -->
+        <div class="error-state" id="errorState" style="display: none;">
+            <div class="error-icon">⚠️</div>
+            <h3 class="error-title" id="errorMessage">Failed to load movie</h3>
+            <button class="btn btn-primary" onclick="window.location.reload()">Retry</button>
+        </div>
         
         <!-- Movie Content Container -->
         <div class="movie-details-content" id="movieDetailsContainer">
             <!-- Movie details will be loaded here dynamically -->
-            <div class="loading-state" id="loadingState">
-                <div class="loading-spinner-large"></div>
-                <h3 class="loading-title" data-i18n="movie_details.loading">Загрузка информации о фильме...</h3>
-                <p class="loading-text" data-i18n="movie_details.wait">Пожалуйста, подождите</p>
-            </div>
         </div>
     </div>
 

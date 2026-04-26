@@ -14,6 +14,7 @@
     let currentVoiceoverOptions = []; // Shared state for voiceovers
     let permanentVideo = null; // Our single persistent video element
     let hlsInstance = null;
+    let lastRealSource = null;
     let pendingActiveEpisodeLabel = null; // Track clicked episode label
     
     // UI References (Module Level)
@@ -130,11 +131,35 @@
         script.onload = () => script.remove();
     } catch(e) {}
 
+    /**
+     * Проверяет, является ли src настоящим медиа-источником,
+     * а не HTML-страницей или пустышкой.
+     */
+    function isValidMediaSrc(src) {
+        if (!src || src === '' || src === 'about:blank') return false;
+        
+        // blob: URL — всегда валидный медиа-источник
+        if (src.startsWith('blob:')) return true;
+        
+        // Прямые медиа-форматы
+        if (/\.(mp4|webm|ogg|m3u8|mpd|ts|mkv)(\?|#|$)/i.test(src)) return true;
+        
+        // HLS/DASH манифесты через API-пути
+        if (/\/(manifest|playlist|stream|hls|dash|video)\//i.test(src)) return true;
+        
+        // data: URI (poster/thumbnail как video — редко, но допустимо)
+        if (src.startsWith('data:video/')) return true;
+        
+        // Всё остальное (embed-страницы, html-страницы) — не медиа
+        return false;
+    }
+
     // Function to change video source while preserving state
     function changeVideoSource(newSrc, autoPlay = true) {
         console.log(`[playerError] changeVideoSource called: url=${newSrc}, caller=${new Error().stack.split('\n')[2]}, timestamp=${Date.now()}`);
         if (!permanentVideo || !newSrc) return;
         
+        lastRealSource = newSrc; // Update tracker
         console.log('[MovieExtension] Changing video source to:', newSrc);
         
         // Save current state
@@ -278,12 +303,15 @@
             return;
         }
 
-        // Count all players in the entire document
-        const allVideos = document.querySelectorAll('video');
+        const allVideos = Array.from(document.querySelectorAll('video')).filter(v => v.dataset.ghost !== 'true' && !v.classList.contains('ghost-video'));
         const allIframes = document.querySelectorAll('iframe');
         const allNativeWrappers = document.querySelectorAll('.native-player-wrapper');
-        console.log('[DEBUG PlayerCleaner] DOM census: videos:', allVideos.length, 'iframes:', allIframes.length, 'native-player-wrappers:', allNativeWrappers.length);
-        allVideos.forEach((v, i) => console.log(`[DEBUG PlayerCleaner] video[${i}]: src=${v.src?.substring(0,80)}, parent=${v.parentElement?.className}, controls=${v.controls}`));
+        
+        // Only log census if there's something to potentially clean or if inside an iframe
+        if (allVideos.length > 0 || allIframes.length > 0 || window.self !== window.top) {
+            console.log('[DEBUG PlayerCleaner] DOM census: videos:', allVideos.length, 'iframes:', allIframes.length, 'native-player-wrappers:', allNativeWrappers.length);
+            allVideos.forEach((v, i) => console.log(`[DEBUG PlayerCleaner] video[${i}]: src=${v.src?.substring(0,80)}, parent=${v.parentElement?.className}, controls=${v.controls}`));
+        }
 
         // EARLY EXIT: If we already have a permanentVideo and it's inside our wrapper, we're done
         // BUG 2 FIX: Also verify the element is actually in the document (not detached)
@@ -291,11 +319,26 @@
             && document.contains(permanentVideo) 
             && permanentVideo.closest('.native-player-wrapper')) {
             // Before exiting, check if the site spawned a NEW video outside our wrapper
-            const outsideVideo = document.querySelector('video:not(.native-player-wrapper video)');
+            const outsideVideo = document.querySelector('video:not(.native-player-wrapper video):not(.ghost-video)');
             if (!outsideVideo || (!outsideVideo.src && !outsideVideo.currentSrc)) {
                 console.log('[DEBUG PlayerCleaner] permanentVideo is already safely mounted inside wrapper. Exiting.');
                 return;
             }
+            
+            // Validate: don't proceed to swap if the outside video has a non-media src
+            const outsideSrc = outsideVideo.src || outsideVideo.currentSrc || '';
+            if (outsideSrc && !isValidMediaSrc(outsideSrc)) {
+                console.log('[DEBUG PlayerCleaner] Outside video has invalid/non-media src, ignoring. src:', outsideSrc);
+                return;
+            }
+            
+            // Don't downgrade from a working blob: src to a non-blob src
+            const currentPermanentSrc = permanentVideo.src || permanentVideo.currentSrc || '';
+            if (isValidMediaSrc(currentPermanentSrc) && currentPermanentSrc.startsWith('blob:') && !outsideSrc.startsWith('blob:')) {
+                console.log('[DEBUG PlayerCleaner] permanentVideo has better blob src, refusing downgrade swap. newSrc:', outsideSrc);
+                return;
+            }
+            
             console.log('[DEBUG PlayerCleaner] permanentVideo mounted BUT new site video detected outside wrapper — proceeding to swap.');
         }
 
@@ -306,6 +349,21 @@
             // Player already initialized, check for new video from site
             const siteVideo = document.querySelector('video:not(.native-player-wrapper video)');
             if (siteVideo && siteVideo.src) {
+                const newSrc = siteVideo.src || siteVideo.currentSrc || '';
+                
+                // Validate: skip swap if new video has non-media src (e.g. embed page URL)
+                if (!isValidMediaSrc(newSrc)) {
+                    console.log('[DEBUG PlayerCleaner] New site video has invalid/non-media src, skipping swap. src:', newSrc);
+                    return;
+                }
+                
+                // Don't downgrade from a working blob: src to a non-blob src
+                const currentSrc = permanentVideo.src || permanentVideo.currentSrc || '';
+                if (isValidMediaSrc(currentSrc) && currentSrc.startsWith('blob:') && !newSrc.startsWith('blob:')) {
+                    console.log('[DEBUG PlayerCleaner] permanentVideo has better blob src, refusing downgrade swap. newSrc:', newSrc);
+                    return;
+                }
+                
                 console.log('[DEBUG PlayerCleaner] Detected new video from site (outside wrapper), swapping. siteVideo.src:', siteVideo.src?.substring(0,80));
                 console.log('[MovieExtension] Detected new video from site, swapping video element');
                 
@@ -467,13 +525,23 @@
         }
         
         if (!siteVideo) {
-            console.log('[DEBUG PlayerCleaner] No video found yet, waiting...');
+            // Only log if we are in an environment where we EXPECT a video
+            if (window.self !== window.top) {
+                console.log('[DEBUG PlayerCleaner] No video found yet, waiting...');
+            }
             return; // No video found yet
         }
         
         if (!siteVideo.src && !siteVideo.currentSrc && siteVideo.querySelectorAll('source').length === 0) {
             console.log('[DEBUG PlayerCleaner] Video has no source yet, waiting...');
             return; // Video has no source
+        }
+        
+        // Filter out video elements with non-media src (e.g. embed page URLs)
+        const candidateSrc = siteVideo.src || siteVideo.currentSrc || '';
+        if (candidateSrc && !isValidMediaSrc(candidateSrc)) {
+            console.log('[DEBUG PlayerCleaner] Site video has invalid/non-media src, skipping. src:', candidateSrc);
+            return;
         }
         
         // Extract source from site's video
@@ -488,6 +556,7 @@
         // IMPORTANT: Use site's original video element as our permanent element
         // This is critical for blob: URLs which are tied to the specific element
         permanentVideo = siteVideo;
+        lastRealSource = siteVideo.src || siteVideo.currentSrc; // Initial source track
         
         // Configure the existing video element
         permanentVideo.removeAttribute('controls'); // Remove native controls
@@ -527,6 +596,17 @@
             
             newContainer.className = 'native-player-wrapper';
             const PLAYER_WRAPPER_CLASS = 'native-player-wrapper';
+
+            // Global left-click enforcer for the custom player UI
+            const clickEnforcer = (e) => {
+                if ('button' in e && e.button !== 0) {
+                    e.stopPropagation();
+                    if (e.button === 1) e.preventDefault(); // Block middle click
+                }
+            };
+            newContainer.addEventListener('mousedown', clickEnforcer, true);
+            newContainer.addEventListener('mouseup', clickEnforcer, true);
+            newContainer.addEventListener('click', clickEnforcer, true);
             
             // Check if we are running in the extension modal context
             // If so, we want to respect the parent container's layout
@@ -809,6 +889,8 @@
                 .native-player-wrapper button:focus-visible {
                     outline: none !important;
                 }
+
+
             `;
             document.head.appendChild(subParams);
 
@@ -2637,6 +2719,7 @@
             
             // Helper to attach listeners to ANY video element
             const setupVideoListeners = (videoEl) => {
+                if (!videoEl || videoEl.dataset.ghost === 'true' || videoEl.classList.contains('ghost-video')) return;
                 console.log('[MovieExtension] Setting up listeners for video:', videoEl);
                 
                 // Remove old listeners if any (not easily possible with anonymous functions unless we track them, 
@@ -2730,6 +2813,11 @@
                 videoEl.addEventListener('error', (e) => {
                     console.error('[MovieExtension] Video Event: error', e);
                     hideLoader();
+                    
+                    const src = videoEl.src || videoEl.currentSrc || '';
+                    if (src && !isValidMediaSrc(src)) {
+                        console.warn('[MovieExtension] Error on video with non-media src — likely bad swap occurred. src:', src);
+                    }
                 });
                 
                 // Volume Enforcement
@@ -3589,6 +3677,7 @@
             newContainer.appendChild(bottomControls);
 
 
+
             // Communication with parent (Extension)
             // Notify parent that player is ready
             window.parent.postMessage({ type: 'PLAYER_READY' }, '*');
@@ -3779,7 +3868,7 @@
                 if (mutation.type === 'childList') {
                     // Check for new video elements added by the site
                     const addedVideos = Array.from(mutation.addedNodes)
-                        .filter(node => node.tagName === 'VIDEO');
+                        .filter(node => node.tagName === 'VIDEO' && node.dataset.ghost !== 'true' && !node.classList.contains('ghost-video'));
                     
                     for (const newVideo of addedVideos) {
                         // Skip if it's our own video
@@ -3836,6 +3925,11 @@
         
         // Call replacePlayer for initial setup
         replacePlayer();
+    }, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['src', 'currentSrc']
     });
     
     // waiting for body
@@ -3883,3 +3977,6 @@
     });
 
 })();
+
+
+

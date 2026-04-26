@@ -3,6 +3,7 @@ import '../../shared/services/SequelsParsingService.js';
 import '../../shared/services/SimilarMoviesParsingService.js';
 import '../../shared/services/TrailerParsingService.js';
 import '../../shared/services/SeasonsParsingService.js';
+
 // AniskipService.js is now lazy-loaded via LazyLoader when needed
 
 
@@ -21,6 +22,14 @@ class MovieDetailsManager {
         this.parserRegistry = window.parserRegistry || new ParserRegistry();
         this.progressService = new ProgressService();
         this.availableCollections = [];
+        
+        // UI State Manager
+        this.page = Utils.createPageStateManager({
+            loader: document.getElementById('loadingState'),
+            errorScreen: document.getElementById('errorState'),
+            errorMessage: document.getElementById('errorMessage'),
+            contentContainer: document.getElementById('movieDetailsContainer')
+        });
         
         // Video player state
         this.isPlaying = false;
@@ -59,6 +68,7 @@ class MovieDetailsManager {
         await i18n.init();
         i18n.translatePage();
         await this.initializeUI();
+
         
         // Listen for language changes
         chrome.runtime.onMessage.addListener((message) => {
@@ -83,6 +93,8 @@ class MovieDetailsManager {
             // Page containers
             movieDetailsContainer: document.getElementById('movieDetailsContainer'),
             loadingState: document.getElementById('loadingState'),
+            errorState: document.getElementById('errorState'),
+            errorMessage: document.getElementById('errorMessage'),
             backToSearchBtn: document.getElementById('backToSearchBtn'),
             
             // Rating Modal
@@ -289,44 +301,13 @@ class MovieDetailsManager {
         }
 
         // Tab navigation & Menu delegation
-        document.addEventListener('mousedown', (e) => {
-            // Close menus if clicking outside
-            if (!e.target.closest('.mc-menu-btn') && !e.target.closest('.mc-menu-dropdown')) {
-                document.querySelectorAll('.mc-menu-dropdown.active').forEach(menu => {
-                    menu.classList.remove('active');
-                });
-            }
-
-            if (e.target.closest('.mc-menu-btn')) {
-                e.stopPropagation();
-                const btn = e.target.closest('.mc-menu-btn');
-                const menu = btn.nextElementSibling;
-                if (menu && menu.classList.contains('mc-menu-dropdown')) {
-                    document.querySelectorAll('.mc-menu-dropdown.active').forEach(m => {
-                        if (m !== menu) m.classList.remove('active');
-                    });
-                    menu.classList.toggle('active');
-                }
-            }
-
-            if (e.target.classList.contains('tab-btn')) {
-                const tabName = e.target.dataset.tab;
-                document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-                e.target.classList.add('active');
-                document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.remove('active'));
-                const targetPane = document.getElementById(`tab-${tabName}`);
-                if (targetPane) targetPane.classList.add('active');
-            }
-
-            // Spoiler reveal delegation
-            const spoiler = e.target.closest('.spoiler-text');
-            if (spoiler && !spoiler.classList.contains('revealed')) {
-                spoiler.classList.add('revealed');
-            }
-        });
+        Utils.bindTabsAndMenus(document);
 
         // Action buttons delegation
         document.addEventListener('mousedown', (e) => {
+            // If it's not a left click, let the browser handle it (e.g. middle click for new tab)
+            if (e.button !== 0) return;
+
             const actionBtn = e.target.closest('[data-action]');
             if (!actionBtn) return;
             
@@ -339,6 +320,8 @@ class MovieDetailsManager {
                 this.toggleFavorite(ratingId, currentStatus, actionBtn, movieId);
             } else if (action === 'toggle-watching' && movieId) {
                 this.handleWatchingToggle(movieId, actionBtn);
+            } else if (action === 'toggle-watched' && movieId) {
+                this.handleWatchedToggle(movieId, actionBtn);
             } else if (action === 'toggle-watchlist' && movieId) {
                 this.handleWatchlistToggle(movieId, actionBtn);
             } else if (action === 'toggle-collection' && movieId) {
@@ -393,6 +376,11 @@ class MovieDetailsManager {
 
         this.setupImageErrorHandlers();
         this.initSelectionPopup();
+
+        // Global spoiler reveal logic
+        if (typeof Utils !== 'undefined') {
+            Utils.bindSpoilerReveal(document);
+        }
     }
 
     async initializeUI() {
@@ -423,7 +411,7 @@ class MovieDetailsManager {
         
         const isAuth = firebaseManager.isAuthenticated();
         if (!isAuth) {
-            this.showError(i18n.get('movie_details.login_required'));
+            this.page.showError(i18n.get('movie_details.login_required'));
             return;
         }
             // Pass !cachedLoaded to avoid showing loading spinner if we already have content
@@ -453,7 +441,7 @@ class MovieDetailsManager {
                 setTimeout(() => this.handleWatchClick(), 500);
             }
         } else {
-            this.showError(i18n.get('movie_details.not_found'));
+            this.page.showError(i18n.get('movie_details.not_found'));
         }
     }
 
@@ -466,7 +454,7 @@ class MovieDetailsManager {
                 // console.log('MovieDetails: Loaded from instant cache', movieId);
                 // Render immediately. displayMovieDetails handles missing currentUser gracefully.
                 this.displayMovieDetails(movie);
-                this.showLoading(false); 
+                this.page.hideLoader(); 
                 return true;
             }
         } catch (e) {
@@ -522,7 +510,7 @@ class MovieDetailsManager {
     async loadMovieById(movieId, shouldShowLoading = true, skipRender = false) {
         try {
             if (shouldShowLoading) {
-                this.showLoading(true);
+                this.page.showLoader();
             }
             
             const kinopoiskService = firebaseManager.getKinopoiskService();
@@ -583,9 +571,9 @@ class MovieDetailsManager {
             
         } catch (error) {
             console.error('Error loading movie:', error);
-            this.showError(`${i18n.get('movie_details.error_loading_movie') || 'Failed to load movie'}: ${error.message}`);
+            this.page.showError(`${i18n.get('movie_details.error_loading_movie') || 'Failed to load movie'}: ${error.message}`);
         } finally {
-            this.showLoading(false);
+            this.page.hideLoader();
         }
     }
 
@@ -654,23 +642,8 @@ class MovieDetailsManager {
         }
     }
 
-    showLoading(show) {
-        if (this.elements.loadingState) {
-            this.elements.loadingState.style.display = show ? 'flex' : 'none';
-        }
-    }
-
-    showError(message) {
-        this.elements.movieDetailsContainer.innerHTML = `
-            <div class="error-state">
-                <div class="error-icon">⚠️</div>
-                <h3 class="error-title">${i18n.get('movie_details.error_title')}</h3>
-                <p class="error-text">${this.escapeHtml(message)}</p>
-                <button class="btn btn-accent" onmousedown="window.location.href=chrome.runtime.getURL('src/pages/search/search.html')">
-                    ${i18n.get('movie_details.return_btn')}
-                </button>
-            </div>
-        `;
+    showContent() {
+        this.page.showContent();
     }
 
     cleanupOldPlayerCache(currentMovieId) {
@@ -757,6 +730,9 @@ class MovieDetailsManager {
         // Load Soundtrack - lazy-load SpotifyService when needed
         this.loadSoundtrack(movie);
 
+        // Show content after everything is ready
+        this.showContent();
+
         // Load Trailer
         const isSeries = movie.type && ['tv-series', 'mini-series', 'animated-series'].includes(movie.type);
         this.loadTrailer(movie.kinopoiskId, isSeries);
@@ -784,6 +760,7 @@ class MovieDetailsManager {
         
         const isFavorite = bookmarkStatus === 'favorite' || (userRating?.isFavorite === true);
         const isWatching = bookmarkStatus === 'watching';
+        const isWatched = bookmarkStatus === 'watched';
         const isInWatchlist = bookmarkStatus === 'plan_to_watch';
         const ratingId = userRating?.id || null;
         
@@ -882,21 +859,28 @@ class MovieDetailsManager {
                                             data-rating-id="${ratingId || 'null'}" 
                                             data-movie-id="${movie.kinopoiskId}"
                                             data-is-favorite="${isFavorite}">
-                                        <span class="mc-menu-item-icon">${isFavorite ? '💔' : '❤️'}</span>
+                                        <span class="mc-menu-item-icon">${isFavorite ? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>'}</span>
                                         <span class="mc-menu-item-text">${isFavorite ? i18n.get('movie_card.remove_favorite') : i18n.get('movie_card.add_favorite')}</span>
                                     </button>
                                     
                                     <button class="mc-menu-item ${isWatching ? 'active' : ''}" data-action="toggle-watching"
                                             data-movie-id="${movie.kinopoiskId}"
                                             data-is-watching="${isWatching}">
-                                        <span class="mc-menu-item-icon">👁️</span>
+                                        <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></span>
                                         <span class="mc-menu-item-text">${isWatching ? i18n.get('movie_card.remove_watching') : i18n.get('movie_card.add_watching')}</span>
+                                    </button>
+
+                                    <button class="mc-menu-item ${isWatched ? 'active' : ''}" data-action="toggle-watched"
+                                            data-movie-id="${movie.kinopoiskId}"
+                                            data-is-watched="${isWatched}">
+                                        <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></span>
+                                        <span class="mc-menu-item-text">${isWatched ? i18n.get('movie_card.remove_watched') : i18n.get('movie_card.add_watched')}</span>
                                     </button>
                                     
                                     <button class="mc-menu-item ${isInWatchlist ? 'active' : ''}" data-action="toggle-watchlist"
                                             data-movie-id="${movie.kinopoiskId}"
                                             data-is-in-watchlist="${isInWatchlist}">
-                                        <span class="mc-menu-item-icon">🔖</span>
+                                        <span class="mc-menu-item-icon">${isInWatchlist ? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>'}</span>
                                         <span class="mc-menu-item-text">${isInWatchlist ? i18n.get('movie_card.remove_watchlist') : i18n.get('movie_card.add_watchlist')}</span>
                                     </button>
                                     
@@ -1427,7 +1411,7 @@ class MovieDetailsManager {
                             </div>
                         ` : ''}
                     </div>
-                    ${rating.comment ? `<div class="user-rating-comment">${this.parseSpoilers(this.escapeHtml(rating.comment))}</div>` : ''}
+                    ${rating.comment ? `<div class="user-rating-comment">${Utils.parseSpoilers(this.escapeHtml(rating.comment))}</div>` : ''}
                 </div>
             `;
         }).join('');
@@ -1478,9 +1462,13 @@ class MovieDetailsManager {
     setupUsernameClickListeners() {
         document.querySelectorAll('.clickable-username').forEach(el => {
             el.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return;
                 e.stopPropagation();
                 const userId = el.getAttribute('data-user-id');
-                if (userId) window.location.href = chrome.runtime.getURL(`src/pages/profile/profile.html?userId=${userId}`);
+                if (userId) {
+                    e.preventDefault();
+                    window.location.href = chrome.runtime.getURL(`src/pages/profile/profile.html?userId=${userId}`);
+                }
             });
         });
     }
@@ -2234,6 +2222,8 @@ class MovieDetailsManager {
             this.currentHls = null;
         }
 
+
+
         // Clear any remaining content that wasn't part of the registry (e.g. error placeholders)
         if (this.elements.videoContainer.innerHTML) {
             this.elements.videoContainer.innerHTML = '';
@@ -2545,6 +2535,18 @@ class MovieDetailsManager {
             }
         });
 
+        // --- VidSrc embed source ---
+        const imdbId = this.selectedMovie?.externalId?.imdb;
+        if (imdbId) {
+            const btn = document.createElement('button');
+            btn.className = 'source-btn';
+            btn.setAttribute('data-value', `vidsrc:${imdbId}`);
+            btn.textContent = 'VidSrc';
+            this.elements.sourceButtonsContainer.appendChild(btn);
+            console.log(`[DEBUG populateSourceSelector] Added VidSrc button for imdb: ${imdbId}`);
+        }
+        // --- end VidSrc ---
+
         // Add fetched video sources (from iframe-based parsers like Ex-FS, KinoGo)
         let addedSources = 0;
         if (this.currentSources && this.currentSources.length > 0) {
@@ -2603,6 +2605,13 @@ class MovieDetailsManager {
             await this.saveLastSource(this.selectedMovie.kinopoiskId, url);
         }
         
+        // VidSrc embed source
+        if (url.startsWith('vidsrc:')) {
+            this.unmountActivePlayer();
+            this.loadVidSrcSource(url.replace('vidsrc:', ''));
+            return;
+        }
+
         // Check if this is a parser-based source (e.g. "parser:seasonvar")
         if (url.startsWith('parser:')) {
             const parserId = url.replace('parser:', '');
@@ -2799,6 +2808,42 @@ class MovieDetailsManager {
         this.elements.videoContainer.innerHTML = `<iframe src="${url}" allowfullscreen allow="autoplay; fullscreen" style="width: 100%; height: 100%; border: none;"></iframe>`;
     }
 
+    /**
+     * Build vidsrc-embed.ru URL for a movie or TV episode.
+     * @param {string} imdbId  - e.g. "tt0110912"
+     * @param {object} [opts]  - { season, episode } for TV
+     * @returns {string}
+     */
+    buildVidSrcUrl(imdbId, opts = {}) {
+        const base = 'https://vidsrc-embed.ru/embed';
+        const isSeries = this.selectedMovie?.type &&
+            ['tv-series', 'mini-series', 'animated-series', 'anime'].includes(this.selectedMovie.type);
+
+        if (isSeries) {
+            const s = opts.season || 1;
+            const e = opts.episode || 1;
+            return `${base}/tv?imdb=${imdbId}&season=${s}&episode=${e}&autoplay=1`;
+        }
+        return `${base}/movie?imdb=${imdbId}&autoplay=1`;
+    }
+
+    /**
+     * Load VidSrc embed player into the video container.
+     * @param {string} imdbId
+     */
+    loadVidSrcSource(imdbId) {
+        if (!imdbId) {
+            this.elements.videoContainer.innerHTML =
+                `<div class="video-placeholder"><span>IMDb ID не найден для этого фильма</span></div>`;
+            return;
+        }
+
+        const url = this.buildVidSrcUrl(imdbId);
+        console.log(`[VidSrc] Loading embed: ${url}`);
+        this.currentVideoUrl = url;
+        this.renderDefaultPlayer(url);
+    }
+
     async getLastSource(movieId) {
         if (!movieId) return null;
         try {
@@ -2945,6 +2990,7 @@ class MovieDetailsManager {
 
     setupCustomControls(video, wrapper) {
         console.log('[DEBUG setupCustomControls] Initializing controls for video:', video.id);
+
         const playPauseBtn = wrapper.querySelector('#playPauseBtn');
         const progressBarContainer = wrapper.querySelector('#progressBarContainer');
         const progressBar = wrapper.querySelector('#progressBar');
@@ -3102,6 +3148,8 @@ class MovieDetailsManager {
     }
 
 
+
+
     renderSimplePlayer() {
         const posterUrl = this.selectedMovie?.posterUrl || '';
         this.elements.videoContainer.innerHTML = `<div class="simple-player-container"><div class="simple-player-overlay" style="background-image: url('${posterUrl}')"><button class="play-pause-btn" id="mainPlayBtn"><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></button></div></div>`;
@@ -3113,7 +3161,7 @@ class MovieDetailsManager {
         if (!this.currentUser) return;
         const favoriteService = firebaseManager.getFavoriteService();
         
-        const buttons = document.querySelectorAll('[data-action="toggle-favorite"], [data-action="toggle-watching"], [data-action="toggle-watchlist"]');
+        const buttons = document.querySelectorAll('[data-action="toggle-favorite"], [data-action="toggle-watching"], [data-action="toggle-watched"], [data-action="toggle-watchlist"]');
         for (const button of buttons) {
             const movieId = button.getAttribute('data-movie-id');
             if (!movieId) continue;
@@ -3121,21 +3169,43 @@ class MovieDetailsManager {
             try {
                 const bookmark = await favoriteService.getBookmark(this.currentUser.uid, parseInt(movieId));
                 const action = button.getAttribute('data-action');
-                const textSpan = button.querySelector('.mc-menu-item-text');
                 
                 if (action === 'toggle-favorite') {
                     const isFavorite = bookmark?.status === 'favorite';
-                    button.classList.toggle('active', isFavorite);
-                    button.setAttribute('data-is-favorite', isFavorite);
-                    if (textSpan) textSpan.textContent = isFavorite ? i18n.get('movie_card.remove_favorite') : i18n.get('movie_card.add_favorite');
+                    Utils.toggleActionButton(button, isFavorite, {
+                        active: i18n.get('movie_card.remove_favorite'),
+                        inactive: i18n.get('movie_card.add_favorite')
+                    }, {
+                        active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>',
+                        inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>'
+                    });
                 } else if (action === 'toggle-watching') {
                     const isWatching = bookmark?.status === 'watching';
-                    button.classList.toggle('active', isWatching);
-                    if (textSpan) textSpan.textContent = isWatching ? i18n.get('movie_card.remove_watching') : i18n.get('movie_card.add_watching');
+                    Utils.toggleActionButton(button, isWatching, {
+                        active: i18n.get('movie_card.remove_watching'),
+                        inactive: i18n.get('movie_card.add_watching')
+                    }, {
+                        active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>',
+                        inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>'
+                    });
+                } else if (action === 'toggle-watched') {
+                    const isWatched = bookmark?.status === 'watched';
+                    Utils.toggleActionButton(button, isWatched, {
+                        active: i18n.get('movie_card.remove_watched'),
+                        inactive: i18n.get('movie_card.add_watched')
+                    }, {
+                        active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>',
+                        inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>'
+                    });
                 } else if (action === 'toggle-watchlist') {
                     const isInWatchlist = bookmark?.status === 'plan_to_watch';
-                    button.classList.toggle('active', isInWatchlist);
-                    if (textSpan) textSpan.textContent = isInWatchlist ? i18n.get('movie_card.remove_watchlist') : i18n.get('movie_card.add_watchlist');
+                    Utils.toggleActionButton(button, isInWatchlist, {
+                        active: i18n.get('movie_card.remove_watchlist'),
+                        inactive: i18n.get('movie_card.add_watchlist')
+                    }, {
+                        active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>',
+                        inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>'
+                    });
                 }
             } catch (e) { console.error('Error updating button:', e); }
         }
@@ -3155,14 +3225,14 @@ class MovieDetailsManager {
             }
             
             const newStatus = !currentStatus;
-            if (buttonElement) {
-                buttonElement.classList.toggle('active', newStatus);
-                buttonElement.setAttribute('data-is-favorite', newStatus);
-                const textSpan = buttonElement.querySelector('.mc-menu-item-text');
-                const iconSpan = buttonElement.querySelector('.mc-menu-item-icon');
-                if (textSpan) textSpan.textContent = newStatus ? i18n.get('movie_card.remove_favorite') : i18n.get('movie_card.add_favorite');
-                if (iconSpan) iconSpan.textContent = newStatus ? '💔' : '❤️';
-            }
+            Utils.toggleActionButton(buttonElement, newStatus, {
+                active: i18n.get('movie_card.remove_favorite'),
+                inactive: i18n.get('movie_card.add_favorite')
+            }, {
+                active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>',
+                inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>'
+            });
+            
             if (typeof Utils !== 'undefined') Utils.showToast(newStatus ? `❤️ ${i18n.get('movie_card.add_favorite')}` : i18n.get('movie_card.remove_favorite'), 'success');
         } catch (error) { console.error('Error toggling favorite:', error); }
     }
@@ -3180,9 +3250,41 @@ class MovieDetailsManager {
                 await favoriteService.addToFavorites(this.currentUser.uid, { ...this.selectedMovie, movieId }, 'watching');
             }
             
-            this.updateButtonState(buttonElement, 'watching', !isWatching);
-            if (typeof Utils !== 'undefined') Utils.showToast(!isWatching ? i18n.get('movie_card.add_watching') : i18n.get('movie_card.remove_watching'), 'success');
+            const newState = !isWatching;
+            Utils.toggleActionButton(buttonElement, newState, {
+                active: i18n.get('movie_card.remove_watching'),
+                inactive: i18n.get('movie_card.add_watching')
+            }, {
+                active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>',
+                inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>'
+            });
+            if (typeof Utils !== 'undefined') Utils.showToast(newState ? i18n.get('movie_card.add_watching') : i18n.get('movie_card.remove_watching'), 'success');
         } catch (error) { console.error('Error toggling watching:', error); }
+    }
+
+    async handleWatchedToggle(movieId, buttonElement) {
+        if (!this.currentUser) return;
+        try {
+            const favoriteService = firebaseManager.getFavoriteService();
+            const bookmark = await favoriteService.getBookmark(this.currentUser.uid, movieId);
+            const isWatched = bookmark?.status === 'watched';
+            
+            if (isWatched) {
+                await favoriteService.removeFromFavorites(this.currentUser.uid, movieId);
+            } else {
+                await favoriteService.addToFavorites(this.currentUser.uid, { ...this.selectedMovie, movieId }, 'watched');
+            }
+            
+            const newState = !isWatched;
+            Utils.toggleActionButton(buttonElement, newState, {
+                active: i18n.get('movie_card.remove_watched'),
+                inactive: i18n.get('movie_card.add_watched')
+            }, {
+                active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>',
+                inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>'
+            });
+            if (typeof Utils !== 'undefined') Utils.showToast(newState ? i18n.get('movie_card.add_watched') : i18n.get('movie_card.remove_watched'), 'success');
+        } catch (error) { console.error('Error toggling watched:', error); }
     }
 
     async handleWatchlistToggle(movieId, buttonElement) {
@@ -3198,8 +3300,15 @@ class MovieDetailsManager {
                 await favoriteService.addToFavorites(this.currentUser.uid, { ...this.selectedMovie, movieId }, 'plan_to_watch');
             }
             
-            this.updateButtonState(buttonElement, 'watchlist', !isInWatchlist);
-            if (typeof Utils !== 'undefined') Utils.showToast(!isInWatchlist ? i18n.get('movie_card.add_watchlist') : i18n.get('movie_card.remove_watchlist'), 'success');
+            const newState = !isInWatchlist;
+            Utils.toggleActionButton(buttonElement, newState, {
+                active: i18n.get('movie_card.remove_watchlist'),
+                inactive: i18n.get('movie_card.add_watchlist')
+            }, {
+                active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>',
+                inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>'
+            });
+            if (typeof Utils !== 'undefined') Utils.showToast(newState ? i18n.get('movie_card.add_watchlist') : i18n.get('movie_card.remove_watchlist'), 'success');
         } catch (error) { console.error('Error toggling watchlist:', error); }
     }
 
@@ -3228,19 +3337,7 @@ class MovieDetailsManager {
         } catch (error) { console.error('Error toggling collection:', error); }
     }
 
-    updateButtonState(button, type, isActive) {
-        if (!button) return;
-        const text = button.querySelector('.mc-menu-item-text');
-        button.classList.toggle('active', isActive);
-        
-        if (type === 'watching') {
-            button.setAttribute('data-is-watching', isActive);
-            if (text) text.textContent = isActive ? i18n.get('movie_card.remove_watching') : i18n.get('movie_card.add_watching');
-        } else if (type === 'watchlist') {
-            button.setAttribute('data-is-in-watchlist', isActive);
-            if (text) text.textContent = isActive ? i18n.get('movie_card.remove_watchlist') : i18n.get('movie_card.add_watchlist');
-        }
-    }
+    // updateButtonState removed in favor of Utils.toggleActionButton
 
     // Utility Methods
     formatVotes(num) {
@@ -3665,13 +3762,6 @@ class MovieDetailsManager {
         textarea.dispatchEvent(new Event('input'));
     }
 
-    parseSpoilers(text) {
-        if (!text) return '';
-        // Discord style spoilers: ||text||
-        return text.replace(/\|\|(.*?)\|\|/g, (match, p1) => {
-            return `<span class="spoiler-text" title="Click to show spoiler">${p1}</span>`;
-        });
-    }
 }
 
 

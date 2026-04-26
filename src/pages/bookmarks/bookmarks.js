@@ -55,6 +55,12 @@ class BookmarksPageManager {
             await this.loadBookmarks();
         }
         
+        // Standardized movie card navigation
+        Utils.bindMovieCardNavigation(this.elements.moviesGrid);
+        
+        // Spoiler reveal logic
+        Utils.bindSpoilerReveal(document);
+
         // Setup listener for cache invalidation from other contexts
         this.setupCacheInvalidationListener();
     }
@@ -96,7 +102,7 @@ class BookmarksPageManager {
                     this.allBookmarks = bkCache.bookmarks;
                     this.updateCounts();
                     this.applyFilters(); // This renders the grid
-                    this.hideLoading();
+                    this.page.showContent();
                     result.bookmarks = true;
                 }
             }
@@ -168,9 +174,15 @@ class BookmarksPageManager {
             customCollectionsList: document.getElementById('customCollectionsList'),
             createCollectionBtn: document.getElementById('createCollectionBtn'),
             collectionMenuBtn: document.getElementById('collectionMenuBtn'),
-            
-
         };
+
+        // UI State Manager
+        this.page = Utils.createPageStateManager({
+            loader: this.elements.loadingSection,
+            errorScreen: null, // No error screen in this file? Using alert/toast usually
+            errorMessage: null,
+            contentContainer: this.elements.moviesGrid
+        });
     }
 
     setupEventListeners() {
@@ -202,6 +214,9 @@ class BookmarksPageManager {
 
         // Event Delegation for Movie Cards
         this.elements.moviesGrid.addEventListener('mousedown', (e) => {
+            // If it's not a left click, let the browser handle it (e.g. middle click for new tab)
+            if (e.button !== 0) return;
+
             const target = e.target.closest('[data-action]');
             if (!target) return;
 
@@ -212,11 +227,6 @@ class BookmarksPageManager {
             if (!movieId && action !== 'view-details') return; // movieId might be needed, check logic
 
             switch (action) {
-                case 'view-details':
-                    if (movieId) {
-                        window.location.href = `../movie-details/movie-details.html?movieId=${movieId}`;
-                    }
-                    break;
                 case 'toggle-favorite':
                     // If currently favorite (is-favorite="true"), remove. Else set to favorite.
                     // Actually, we can just use the target's state or the movie's current state.
@@ -288,15 +298,8 @@ class BookmarksPageManager {
             });
         }
 
-        // Close dropdown when clicking outside
-        document.addEventListener('mousedown', (e) => {
-            const dropdown = document.querySelector('.collection-dropdown');
-            if (dropdown && !e.target.closest('.collection-menu-btn')) {
-                dropdown.remove();
-            }
-        });
-        
-
+        // Use centralized menu delegation
+        Utils.bindTabsAndMenus(document);
     }
 
     async handleToggleAction(movieId, targetStatus, button) {
@@ -329,9 +332,64 @@ class BookmarksPageManager {
                 movie.updatedAt = new Date(); // Optimistic update
             }
 
-            // Update UI (counts and grid)
+            // Update UI (counts)
             this.updateCounts();
-            this.applyFilters();
+            
+            // Update grid without full re-render
+            const card = this.elements.moviesGrid.querySelector(`[data-movie-id="${movieId}"]`);
+            if (card) {
+                const isFilteredOut = this.statusFilter !== 'all' && 
+                                     !this.statusFilter.startsWith('collection:') && 
+                                     this.statusFilter !== newStatus;
+                
+                if (isFilteredOut) {
+                    card.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+                    card.style.opacity = '0';
+                    card.style.transform = 'scale(0.95)';
+                    setTimeout(() => {
+                        if (card && card.parentNode) card.remove();
+                        const visibleCards = this.elements.moviesGrid.querySelectorAll('.movie-card-component:not([style*="opacity: 0"])');
+                        if (visibleCards.length === 0) {
+                            this.elements.emptyState.style.display = 'flex';
+                            this.elements.moviesGrid.style.display = 'none';
+                        }
+                    }, 300);
+                } else {
+                    const btnActions = [
+                        { action: 'favorite', statusMatch: 'favorite', iconOn: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>', iconOff: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>' },
+                        { action: 'watching', statusMatch: 'watching', iconOn: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>', iconOff: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>' },
+                        { action: 'watched', statusMatch: 'watched', iconOn: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>', iconOff: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>' },
+                        { action: 'watchlist', statusMatch: 'plan_to_watch', iconOn: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>', iconOff: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>' }
+                    ];
+                    
+                    btnActions.forEach(item => {
+                        const btn = card.querySelector(`[data-action="toggle-${item.action}"]`);
+                        if (btn) {
+                            const isActive = newStatus === item.statusMatch;
+                            btn.style.backgroundColor = isActive ? '#c0c0c0' : '';
+                            btn.style.color = isActive ? '#000' : '';
+                            
+                            const textSpan = btn.querySelector('.mc-menu-item-text');
+                            if (textSpan) {
+                                textSpan.style.fontWeight = isActive ? '500' : '';
+                                if (window.i18n) {
+                                    textSpan.textContent = window.i18n.get(`movie_card.${isActive ? 'remove' : 'add'}_${item.action}`);
+                                }
+                            }
+                            
+                            const iconSpan = btn.querySelector('.mc-menu-item-icon');
+                            if (iconSpan) {
+                                iconSpan.innerHTML = isActive ? item.iconOn : item.iconOff;
+                            }
+                            
+                            const attrName = item.action === 'watchlist' ? 'data-is-in-watchlist' : `data-is-${item.action}`;
+                            btn.setAttribute(attrName, isActive.toString());
+                        }
+                    });
+                }
+            } else if (this.statusFilter === newStatus) {
+                this.applyFilters();
+            }
             
             // Show toast (if Utils available)
             if (typeof Utils !== 'undefined') {
@@ -361,20 +419,24 @@ class BookmarksPageManager {
                     (m.kinopoiskId && String(m.kinopoiskId) !== String(movieId))
                 );
                 
-                // Also remove via DOM event if possible to animate, but easier to just re-render grid or remove element
+                // Update counts
+                this.updateCounts();
+                
                 const card = this.elements.moviesGrid.querySelector(`[data-movie-id="${movieId}"]`);
                 if (card) {
-                    card.classList.add('fade-out'); // Ensure css class exists
-                    setTimeout(() => card.remove(), 300);
+                    card.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+                    card.style.opacity = '0';
+                    card.style.transform = 'scale(0.95)';
+                    setTimeout(() => {
+                        if (card && card.parentNode) card.remove();
+                        const visibleCards = this.elements.moviesGrid.querySelectorAll('.movie-card-component:not([style*="opacity: 0"])');
+                        if (visibleCards.length === 0) {
+                            this.elements.emptyState.style.display = 'flex';
+                            this.elements.moviesGrid.style.display = 'none';
+                        }
+                    }, 300);
                 }
                 
-                // Update counts
-                // For simplified counts re-calc, we can just re-filter allBookmarks
-                // But we need to update 'allBookmarks' correctly first.
-                // Re-fetch is safest but slowest.
-                // Let's manually decrement. Or reload.
-                // Reloading is easiest to ensure consistency.
-                await this.loadBookmarks();
                 if (typeof Utils !== 'undefined') Utils.showToast('Removed from bookmarks', 'success');
             }
         } catch (error) {
@@ -460,7 +522,7 @@ class BookmarksPageManager {
     async loadBookmarks() {
         if (!this.currentUser) return;
 
-        this.showLoading();
+        this.page.showLoader();
         try {
             // Load ALL bookmarks initially to allow client-side filtering (efficient for < 1000 items)
             // If user has huge collection, we might need server-side filtering, but for now this is smoother
@@ -473,7 +535,7 @@ class BookmarksPageManager {
             console.error('Error loading bookmarks:', error);
             // Show error state?
         } finally {
-            this.hideLoading();
+            this.page.showContent();
 
             // Cache the loaded bookmarks
             if (this.currentUser && this.allBookmarks.length > 0) {
@@ -1389,15 +1451,7 @@ class BookmarksPageManager {
 
 
 
-    showLoading() {
-        this.elements.loadingSection.style.display = 'flex';
-        this.elements.moviesGrid.style.display = 'none';
-        this.elements.emptyState.style.display = 'none';
-    }
-
-    hideLoading() {
-        this.elements.loadingSection.style.display = 'none';
-    }
+    // Local showLoading/hideLoading removed in favor of this.page (PageStateManager)
 
     toggleCollectionMenuDropdown() {
         // Remove existing dropdown
