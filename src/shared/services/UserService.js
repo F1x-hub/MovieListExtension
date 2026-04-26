@@ -208,8 +208,10 @@ class UserService {
             
             for (let i = 0; i < userIds.length; i += batchSize) {
                 const batch = userIds.slice(i, i + batchSize);
+                // Use documentId() which indexs by the document ID directly, 
+                // more reliable than querying a 'userId' field even if it exists.
                 const query = this.db.collection(this.collection)
-                    .where('userId', 'in', batch);
+                    .where(firebase.firestore.FieldPath.documentId(), 'in', batch);
                 
                 const results = await query.get();
                 results.forEach(doc => {

@@ -40,6 +40,7 @@ class RatingsPageManager {
         this.initializeCustomDropdowns();
         this.setupEventListeners();
         this.loadFiltersFromStorage();
+        this.loadFiltersCollapseState();
         
         const urlParams = new URLSearchParams(window.location.search);
         const collectionId = urlParams.get('collection');
@@ -62,6 +63,12 @@ class RatingsPageManager {
                 console.error('Error loading collections:', e);
             }
         }
+        
+        // Standardized movie card navigation
+        Utils.bindMovieCardNavigation(this.moviesGrid);
+        
+        // Spoiler reveal logic
+        Utils.bindSpoilerReveal(document);
         
         await this.loadMovies();
     }
@@ -113,8 +120,24 @@ class RatingsPageManager {
             movieRatingInfo: document.getElementById('movieRatingInfo'),
             currentRatingInfo: document.getElementById('currentRatingInfo'),
             existingRatingValue: document.getElementById('existingRatingValue'),
-            existingRatingComment: document.getElementById('existingRatingComment')
+            existingRatingComment: document.getElementById('existingRatingComment'),
+            
+            // Active Filters
+            activeFiltersContainer: document.getElementById('activeFiltersContainer'),
+            activeFiltersList: document.getElementById('activeFiltersList'),
+            
+            // Toggle Filters
+            toggleFiltersBtn: document.getElementById('toggleFiltersBtn'),
+            filtersSection: document.querySelector('.filters-section')
         };
+
+        // UI State Manager
+        this.page = Utils.createPageStateManager({
+            loader: this.elements.loadingSection,
+            errorScreen: this.elements.errorState,
+            errorMessage: document.getElementById('errorMessage'),
+            contentContainer: this.elements.moviesGrid
+        });
     }
 
     initializeCustomDropdowns() {
@@ -238,10 +261,6 @@ class RatingsPageManager {
     }
 
     setupEventListeners() {
-        // Mode toggle removed - always using all-ratings mode
-        // this.elements.myRatingsBtn?.addEventListener('mousedown', () => this.setMode('my-ratings'));
-        // this.elements.allRatingsBtn?.addEventListener('mousedown', () => this.setMode('all-ratings'));
-        
         // Filters
         this.elements.movieSearchInput?.addEventListener('input', (e) => {
             this.filters.search = e.target.value;
@@ -275,11 +294,26 @@ class RatingsPageManager {
         
         this.elements.clearFiltersBtn?.addEventListener('mousedown', () => this.clearFilters());
         
+        // Active Filter Tags Click (Event Delegation)
+        this.elements.activeFiltersList?.addEventListener('mousedown', (e) => {
+            const removeBtn = e.target.closest('.remove-filter');
+            if (removeBtn) {
+                const filterType = removeBtn.dataset.filterType;
+                this.removeFilter(filterType);
+            }
+        });
+        
+        // Toggle Filters
+        this.elements.toggleFiltersBtn?.addEventListener('mousedown', () => this.toggleFilters());
+        
         // Retry button
         this.elements.retryBtn?.addEventListener('mousedown', () => this.loadMovies());
         
         // Event delegation for Movie Cards (Actions and Edit Rating)
         this.elements.moviesGrid?.addEventListener('mousedown', (e) => {
+            // If it's not a left click, let the browser handle it (e.g. middle click for new tab)
+            if (e.button !== 0) return;
+
             // Handle Edit Rating Button (legacy separate button outside menu if exists)
             const editBtn = e.target.closest('.edit-btn');
             if (editBtn) {
@@ -302,19 +336,16 @@ class RatingsPageManager {
             const ratingId = target.dataset.ratingId || target.closest('.movie-card-component')?.dataset.ratingId;
 
             switch (action) {
-                case 'view-details':
-                    if (movieId) {
-                        window.location.href = `../movie-details/movie-details.html?movieId=${movieId}`;
-                    }
-                    break;
                 case 'toggle-favorite':
-                    // Pass current status boolean from data attribute
-                    this.toggleFavorite(ratingId || movieId, target.dataset.isFavorite === 'true', target);
+                    Utils.toggleActionButton(target, 'favorite');
+                    this.toggleFavorite(ratingId || movieId, target.dataset.isFavorite === 'true', target, movieId);
                     break;
                 case 'toggle-watching':
+                    Utils.toggleActionButton(target, 'watching');
                     this.handleWatchingToggle(movieId, target);
                     break;
                 case 'toggle-watchlist':
+                    Utils.toggleActionButton(target, 'watchlist');
                     this.handleWatchlistToggle(movieId, target);
                     break;
                 case 'toggle-collection':
@@ -383,7 +414,7 @@ class RatingsPageManager {
                     if (user) {
                         this.loadMovies();
                     } else {
-                        this.showError('Please sign in to view your collection');
+                        this.page.showError('Please sign in to view your collection');
                     }
                 });
                 
@@ -395,16 +426,16 @@ class RatingsPageManager {
                             this.currentUser = retryUser;
                             this.loadMovies();
                         } else {
-                            this.showError('Please sign in to view your collection');
+                            this.page.showError('Please sign in to view your collection');
                         }
                     }
                 }, 2000);
             } else {
-                this.showError('Failed to initialize Firebase');
+                this.page.showError('Failed to initialize Firebase');
             }
         } catch (error) {
             console.error('Error setting up Firebase:', error);
-            this.showError(`Firebase setup failed: ${error.message}`);
+            this.page.showError(`Firebase setup failed: ${error.message}`);
         }
     }
 
@@ -415,31 +446,6 @@ class RatingsPageManager {
         }
     }
 
-    setMode(mode) {
-        this.currentMode = mode;
-        
-        // Update button states
-        this.elements.myRatingsBtn?.classList.toggle('active', mode === 'my-ratings');
-        this.elements.allRatingsBtn?.classList.toggle('active', mode === 'all-ratings');
-        
-        // Show/hide user filter based on mode
-        this.updateUserFilterVisibility();
-        
-        // Reset user filter when switching to my-ratings
-        if (mode === 'my-ratings') {
-            this.filters.user = '';
-            if (this.elements.userFilter) {
-                this.elements.userFilter.value = '';
-            }
-        }
-        
-        // Save to storage
-        localStorage.setItem('ratingsPageMode', mode);
-        
-        // Reload movies
-        this.loadMovies();
-    }
-    
     async loadCachedRatings() {
         try {
             if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
@@ -475,7 +481,7 @@ class RatingsPageManager {
                     this.populateYearFilter();
                     this.populateGenreFilter();
                     this.applyFilters();
-                    this.showLoading(false); // Ensure loading spinner is hidden
+                    this.page.showContent(); // Ensure content shown
                     
                     // Setup scroll observer if more exist
                     if (this.hasMore) {
@@ -540,23 +546,20 @@ class RatingsPageManager {
             return;
         }
         
-        
         // If we have content (cache), perform background update without spinner
         const isBackgroundUpdate = this.movies.length > 0;
         
         this.isLoading = true;
         if (!isBackgroundUpdate) {
-            this.showLoading(true);
+            this.page.showLoader();
         }
-        this.hideError();
         
         // Add a timeout to prevent infinite loading
         const loadingTimeout = setTimeout(() => {
             if (this.isLoading) {
                 console.warn('Loading timeout - forcing completion');
                 this.isLoading = false;
-                this.showLoading(false);
-                this.showError('Loading timed out. Please refresh the page.');
+                this.page.showError('Loading timed out. Please refresh the page.');
             }
         }, 30000); // 30 second timeout
         
@@ -567,10 +570,49 @@ class RatingsPageManager {
             let ratings = [];
             
             const result = await ratingService.getAllRatings(500);
-            ratings = result.ratings;
+            const rawFetchedRatings = result.ratings;
+
+            // Group ratings by movieId
+            const groupedRatingsMap = new Map();
+            const getTimestamp = (dateObj) => {
+                if (!dateObj) return 0;
+                if (dateObj.toDate) return dateObj.toDate().getTime();
+                if (dateObj.toMillis) return dateObj.toMillis();
+                if (dateObj.seconds) return dateObj.seconds * 1000;
+                return new Date(dateObj).getTime() || 0;
+            };
+
+            rawFetchedRatings.forEach(r => {
+                if (!groupedRatingsMap.has(r.movieId)) {
+                    groupedRatingsMap.set(r.movieId, {
+                        ...r, 
+                        allRaters: [r]
+                    });
+                } else {
+                    const existing = groupedRatingsMap.get(r.movieId);
+                    existing.allRaters.push(r);
+                    
+                    const existingTime = getTimestamp(existing.createdAt);
+                    const newTime = getTimestamp(r.createdAt);
+                    
+                    if (newTime > existingTime) {
+                         const allRaters = existing.allRaters;
+                         groupedRatingsMap.set(r.movieId, {
+                             ...r,
+                             allRaters: allRaters
+                         });
+                    }
+                }
+            });
+            
+            ratings = Array.from(groupedRatingsMap.values());
+            
+            // Sort allRaters internally by date ascending (oldest first)
+            ratings.forEach(r => {
+                r.allRaters.sort((a, b) => getTimestamp(a.createdAt) - getTimestamp(b.createdAt));
+            });
 
             // Fix: Fetch average ratings for ALL movies so they get cached
-            // The existing flow only fetched them for the visible batch, causing "N/A" on cache load
             try {
                 const movieIds = ratings.map(r => r.movieId);
                 if (movieIds.length > 0) {
@@ -578,7 +620,6 @@ class RatingsPageManager {
                     
                     ratings = ratings.map(rating => {
                         const avg = averageRatings[rating.movieId];
-                        // Only update if existing rating doesn't have average (though usually it won't)
                         return {
                             ...rating,
                             averageRating: avg ? avg.average : (rating.averageRating || 0),
@@ -588,10 +629,8 @@ class RatingsPageManager {
                 }
             } catch (err) {
                 console.warn('Failed to pre-fetch average ratings:', err);
-                // Continue without averages (will be N/A but at least page loads)
             }            
-            // Don't clear this.movies here to avoid flash
-            // this.movies = []; 
+            
             this.nextLoadIndex = 0;
             this.BATCH_SIZE = 6;
             this.hasMore = true;
@@ -599,13 +638,13 @@ class RatingsPageManager {
             // Load user profiles if needed
             await this.loadUserProfiles(ratings);
             
-            // Prepare new list without clearing existing one immediately (prevents flash)
+            // Prepare new list 
             this.allRawRatings = ratings;
             this.nextLoadIndex = 0;
             this.BATCH_SIZE = 6;
             this.hasMore = true;
 
-            // Load first batch manually to swap atomicly
+            // Load first batch manually
             const endIndex = Math.min(this.BATCH_SIZE, this.allRawRatings.length);
             const batch = this.allRawRatings.slice(0, endIndex);
             
@@ -641,13 +680,14 @@ class RatingsPageManager {
             this.saveRatingsToCache(ratings, this.allUsers);
             
             clearTimeout(loadingTimeout);
+            
+            this.page.showContent();
+            this.isLoading = false;
         } catch (error) {
             console.error('Error loading movies:', error);
             clearTimeout(loadingTimeout);
-            this.showError(`Failed to load movies: ${error.message}`);
-        } finally {
+            this.page.showError(`Failed to load movies: ${error.message}`);
             this.isLoading = false;
-            this.showLoading(false);
         }
     }
 
@@ -730,18 +770,51 @@ class RatingsPageManager {
 
     async loadUserProfiles(ratings) {
         try {
-            const userIds = [...new Set(ratings.map(r => r.userId).filter(Boolean))];
-            if (userIds.length === 0) return;
+            console.log(`[loadUserProfiles] Checking ${ratings.length} grouped items for user profiles...`);
+            
+            // Collect all unique user IDs (handling both userId and uid fields for robustness)
+            const userIdsSet = new Set();
+            ratings.forEach(r => {
+                if (r.userId) userIdsSet.add(String(r.userId).trim());
+                if (r.uid) userIdsSet.add(String(r.uid).trim());
+                if (r.allRaters) {
+                    r.allRaters.forEach(arter => {
+                        if (arter.userId) userIdsSet.add(String(arter.userId).trim());
+                        if (arter.uid) userIdsSet.add(String(arter.uid).trim());
+                    });
+                }
+            });
+            
+            const userIds = Array.from(userIdsSet).filter(Boolean);
+            console.log(`[loadUserProfiles] Found ${userIds.length} unique user IDs to fetch:`, userIds);
+            
+            if (userIds.length === 0) {
+                console.warn('[loadUserProfiles] No user IDs found to fetch.');
+                return;
+            }
             
             const userService = firebaseManager.getUserService();
             const userProfiles = await userService.getUserProfilesByIds(userIds);
+            console.log(`[loadUserProfiles] Successfully fetched ${userProfiles.length} profiles from database.`);
             
             this.userProfilesMap.clear();
             userProfiles.forEach(profile => {
-                this.userProfilesMap.set(profile.userId || profile.id, profile);
+                const id = String(profile.userId || profile.id || '').trim();
+                if (id) {
+                    this.userProfilesMap.set(id, profile);
+                    // Also indexing by profile.id if it's different, just in case
+                    if (profile.id && String(profile.id).trim() !== id) {
+                        this.userProfilesMap.set(String(profile.id).trim(), profile);
+                    }
+                }
             });
+            
+            console.log(`[loadUserProfiles] Map now contains ${this.userProfilesMap.size} user profiles.`);
+            if (this.userProfilesMap.size > 0) {
+                console.log(`[loadUserProfiles] Profile IDs in map:`, Array.from(this.userProfilesMap.keys()));
+            }
         } catch (error) {
-            console.error('Error loading user profiles:', error);
+            console.error('[loadUserProfiles] Error loading user profiles:', error);
         }
     }
 
@@ -820,13 +893,19 @@ class RatingsPageManager {
             try {
                 let movieData = cachedMovies[rating.movieId];
                 
-                if (!movieData) {
+                // Check if cached data is complete (sometimes search results cache partial data)
+                const isIncomplete = movieData && (
+                    !movieData.description || 
+                    !movieData.genres || 
+                    movieData.genres.length === 0 ||
+                    movieData.name === 'Loading...' ||
+                    movieData.name === 'Unknown Movie'
+                );
+
+                if (!movieData || isIncomplete) {
                     try {
-                        // console.log(`Cache miss for ${rating.movieId}, fetching from API... (${index + 1}/${ratings.length})`);
-                        // const apiStartTime = performance.now();
+                        // console.log(`Cache miss or incomplete for ${rating.movieId}, fetching from API... (${index + 1}/${ratings.length})`);
                         movieData = await kinopoiskService.getMovieById(rating.movieId);
-                        // const apiDuration = performance.now() - apiStartTime;
-                        // console.log(`API fetch for ${rating.movieId} took ${apiDuration.toFixed(2)}ms`);
                         
                         if (movieData) {
                             await movieCacheService.cacheMovie(movieData, true);
@@ -834,14 +913,16 @@ class RatingsPageManager {
                         }
                     } catch (fetchError) {
                         console.warn(`Failed to fetch movie ${rating.movieId} from API:`, fetchError);
-                        movieData = {
-                            kinopoiskId: rating.movieId,
-                            name: 'Unknown Movie',
-                            year: '',
-                            genres: [],
-                            description: '',
-                            posterUrl: ''
-                        };
+                        if (!movieData) {
+                            movieData = {
+                                kinopoiskId: rating.movieId,
+                                name: 'Unknown Movie',
+                                year: '',
+                                genres: [],
+                                description: '',
+                                posterUrl: ''
+                            };
+                        }
                         failures++;
                     }
                 } else {
@@ -1011,16 +1092,38 @@ class RatingsPageManager {
     }
 
     getDisplayNameForUser(userId, userDisplayName, userName, userEmail) {
-        if (!userId) {
-            return userDisplayName || userName || userEmail?.split('@')[0] || 'Unknown User';
-        }
+        const profileId = String(userId || '').trim();
+        let userProfile = profileId ? this.userProfilesMap.get(profileId) : null;
         
-        const userProfile = this.userProfilesMap.get(userId);
+        let targetDisplayName = null;
         if (userProfile && typeof Utils !== 'undefined' && Utils.getDisplayName) {
-            return Utils.getDisplayName(userProfile, null);
+            targetDisplayName = Utils.getDisplayName(userProfile, null);
+        } else {
+            // If the ID lookup failed, try searching the map for a profile matching the email or name as a last resort
+            if (userEmail || userDisplayName) {
+                for (const profile of this.userProfilesMap.values()) {
+                    if ((userEmail && profile.email === userEmail) || 
+                        (userDisplayName && profile.displayName === userDisplayName)) {
+                        userProfile = profile;
+                        targetDisplayName = Utils.getDisplayName(profile, null);
+                        break;
+                    }
+                }
+            }
+            
+            if (!targetDisplayName) {
+                targetDisplayName = userDisplayName || userName || userEmail?.split('@')[0] || 'Unknown User';
+            }
+        }
+
+        if (profileId === 'some_suspicious_id_or_debug_all') {
+             // Optional: specifically log for certain users
         }
         
-        return userDisplayName || userName || userEmail?.split('@')[0] || 'Unknown User';
+        if (this.debug) {
+            console.log(`[getDisplayNameForUser] ID: "${profileId}", Name: "${userDisplayName || 'N/A'}". Profile found: ${!!userProfile}. Resolved: "${targetDisplayName}"`);
+        }
+        return targetDisplayName;
     }
 
     getUserPhoto(userId, userPhoto) {
@@ -1037,19 +1140,22 @@ class RatingsPageManager {
         const usersMap = new Map();
         
         ratings.forEach(rating => {
-            if (rating.userId && (rating.userEmail || rating.userName)) {
-                const displayName = this.getDisplayNameForUser(
-                    rating.userId,
-                    rating.userDisplayName,
-                    rating.userName,
-                    rating.userEmail
-                );
-                usersMap.set(rating.userId, {
-                    id: rating.userId,
-                    email: rating.userEmail,
-                    displayName: displayName
-                });
-            }
+            const raters = rating.allRaters || [rating];
+            raters.forEach(r => {
+                if (r.userId && (r.userEmail || r.userName || r.userDisplayName)) {
+                    const displayName = this.getDisplayNameForUser(
+                        r.userId,
+                        r.userDisplayName,
+                        r.userName,
+                        r.userEmail
+                    );
+                    usersMap.set(r.userId, {
+                        id: r.userId,
+                        email: r.userEmail,
+                        displayName: displayName
+                    });
+                }
+            });
         });
         
         this.allUsers = Array.from(usersMap.values()).sort((a, b) => 
@@ -1123,9 +1229,10 @@ class RatingsPageManager {
         
         // User filter (only in all-ratings mode)
         if (this.filters.user && this.currentMode === 'all-ratings') {
-            filtered = filtered.filter(movie => 
-                movie.userId === this.filters.user
-            );
+            filtered = filtered.filter(movie => {
+                const raters = movie.allRaters || [movie];
+                return raters.some(r => r.userId === this.filters.user);
+            });
         }
         
         // Sort
@@ -1134,19 +1241,107 @@ class RatingsPageManager {
         this.filteredMovies = filtered;
         this.renderMovies();
         this.updateResultsInfo();
+        this.renderActiveTags();
         this.saveFiltersToStorage();
+    }
+
+    renderActiveTags() {
+        if (!this.elements.activeFiltersList) return;
+        
+        const tags = [];
+        
+        if (this.filters.search) {
+            tags.push({ type: 'search', label: `Search: ${this.filters.search}` });
+        }
+        
+        if (this.filters.genre) {
+            tags.push({ type: 'genre', label: `Genre: ${this.filters.genre}` });
+        }
+        
+        if (this.filters.year) {
+            tags.push({ type: 'year', label: `Year: ${this.filters.year}` });
+        }
+        
+        if (this.filters.avgRating) {
+            const label = this.getRatingFilterLabel(this.filters.avgRating);
+            tags.push({ type: 'avgRating', label: `Rating: ${label}` });
+        }
+        
+        if (this.filters.user) {
+            const user = this.allUsers.find(u => u.id === this.filters.user);
+            tags.push({ type: 'user', label: `User: ${user ? user.displayName : this.filters.user}` });
+        }
+        
+        // Render tags
+        this.elements.activeFiltersList.innerHTML = '';
+        
+        if (tags.length > 0) {
+            tags.forEach(tag => {
+                const tagEl = document.createElement('div');
+                tagEl.className = 'filter-tag';
+                tagEl.innerHTML = `
+                    <span>${tag.label}</span>
+                    <span class="remove-filter" data-filter-type="${tag.type}">×</span>
+                `;
+                this.elements.activeFiltersList.appendChild(tagEl);
+            });
+            this.elements.activeFiltersContainer.style.display = 'flex';
+        } else {
+            this.elements.activeFiltersContainer.style.display = 'none';
+        }
+    }
+
+    getRatingFilterLabel(value) {
+        const select = this.elements.avgRatingFilter;
+        if (!select) return value;
+        const option = Array.from(select.options).find(opt => opt.value === value);
+        return option ? option.textContent.trim() : value;
+    }
+
+    removeFilter(type) {
+        switch (type) {
+            case 'search':
+                this.filters.search = '';
+                if (this.elements.movieSearchInput) this.elements.movieSearchInput.value = '';
+                break;
+            case 'genre':
+                this.filters.genre = '';
+                this.updateDropdownValue('genreFilter', '');
+                break;
+            case 'year':
+                this.filters.year = '';
+                this.updateDropdownValue('yearFilter', '');
+                break;
+            case 'avgRating':
+                this.filters.avgRating = '';
+                this.updateDropdownValue('avgRatingFilter', '');
+                break;
+            case 'user':
+                this.filters.user = '';
+                this.updateDropdownValue('userFilter', '');
+                break;
+        }
+        this.applyFilters();
     }
 
     sortMovies(movies) {
         const [field, direction] = this.filters.sort.split('-');
         
+        const getTimestamp = (dateObj) => {
+            if (!dateObj) return 0;
+            if (dateObj.toDate) return dateObj.toDate().getTime();
+            if (dateObj.toMillis) return dateObj.toMillis();
+            if (dateObj.seconds) return dateObj.seconds * 1000;
+            return new Date(dateObj).getTime() || 0;
+        };
+
         movies.sort((a, b) => {
             let valueA, valueB;
             
             switch (field) {
                 case 'date':
-                    valueA = a.createdAt?.toDate?.() || new Date(a.createdAt) || new Date(0);
-                    valueB = b.createdAt?.toDate?.() || new Date(b.createdAt) || new Date(0);
+                    valueA = getTimestamp(a.createdAt);
+                    valueB = getTimestamp(b.createdAt);
                     break;
                 case 'rating':
                     valueA = a.rating || 0;
@@ -1221,44 +1416,141 @@ class RatingsPageManager {
                 // However, we remove it from the map to mark it as "used"
                 existingCards.delete(key);
                 
+                // create a temporary new card to extract the latest enriched HTML
+                const newCardHTML = this.createMovieCard(movieData);
+                
+                // Update movie title if changed (cache → enriched)
+                const titleEl = card.querySelector('.mc-title');
+                const newTitleEl = newCardHTML.querySelector('.mc-title');
+                if (titleEl && newTitleEl) {
+                    if (titleEl.textContent.trim() !== newTitleEl.textContent.trim()) {
+                        titleEl.textContent = newTitleEl.textContent;
+                        titleEl.title = newTitleEl.title;
+                    }
+                    if (!newTitleEl.classList.contains('mc-skeleton')) {
+                        titleEl.classList.remove('mc-skeleton');
+                    }
+                }
+
+                // Update movie poster if changed
+                const posterContainer = card.querySelector('.mc-poster-container');
+                const newPosterContainer = newCardHTML.querySelector('.mc-poster-container');
+                if (posterContainer && newPosterContainer && !newPosterContainer.classList.contains('mc-skeleton')) {
+                    posterContainer.classList.remove('mc-skeleton');
+                }
+
+                const posterEl = card.querySelector('.mc-poster');
+                const newPosterEl = newCardHTML.querySelector('.mc-poster');
+                if (posterEl && newPosterEl) {
+                    const newPosterSrc = newPosterEl.getAttribute('src');
+                    if (posterEl.getAttribute('src') !== newPosterSrc) {
+                        posterEl.src = newPosterSrc;
+                        posterEl.alt = newPosterEl.alt;
+                    }
+                }
+
+                // Update movie year
+                const yearEl = card.querySelector('.mc-year');
+                const newYearEl = newCardHTML.querySelector('.mc-year');
+                if (yearEl && newYearEl) {
+                    if (yearEl.textContent.trim() !== newYearEl.textContent.trim()) {
+                        yearEl.textContent = newYearEl.textContent;
+                    }
+                    if (!newYearEl.classList.contains('mc-skeleton')) {
+                        yearEl.classList.remove('mc-skeleton');
+                    }
+                }
+
+                // Update movie genres
+                const genresEl = card.querySelector('.mc-genres');
+                const newGenresEl = newCardHTML.querySelector('.mc-genres');
+                if (genresEl && newGenresEl) {
+                    if (genresEl.innerHTML !== newGenresEl.innerHTML) {
+                        genresEl.innerHTML = newGenresEl.innerHTML;
+                    }
+                    if (!newGenresEl.classList.contains('mc-skeleton')) {
+                        genresEl.classList.remove('mc-skeleton');
+                        genresEl.style.height = '';
+                        genresEl.style.borderRadius = '';
+                    }
+                }
+
+                // Update KP and IMDb ratings
+                const kpEl = card.querySelector('.mc-rating-kp');
+                const newKpEl = newCardHTML.querySelector('.mc-rating-kp');
+                if (kpEl && newKpEl && kpEl.textContent.trim() !== newKpEl.textContent.trim()) {
+                    kpEl.textContent = newKpEl.textContent;
+                }
+
+                const imdbEl = card.querySelector('.mc-rating-imdb');
+                const newImdbEl = newCardHTML.querySelector('.mc-rating-imdb');
+                if (imdbEl && newImdbEl && imdbEl.textContent.trim() !== newImdbEl.textContent.trim()) {
+                    imdbEl.textContent = newImdbEl.textContent;
+                }
+
+                // Update movie description
+                let descEl = card.querySelector('.mc-description');
+                const newDescEl = newCardHTML.querySelector('.mc-description');
+                if (newDescEl) {
+                    if (descEl) {
+                        if (descEl.textContent.trim() !== newDescEl.textContent.trim()) {
+                            descEl.textContent = newDescEl.textContent;
+                        }
+                    } else {
+                        // If description was missing but now exists, insert it after genres
+                        const genresArea = card.querySelector('.mc-genres');
+                        if (genresArea) {
+                            genresArea.insertAdjacentHTML('afterend', newDescEl.outerHTML);
+                        } else {
+                            const titleRow = card.querySelector('.mc-title-row');
+                            if (titleRow) {
+                                titleRow.insertAdjacentHTML('afterend', newDescEl.outerHTML);
+                            }
+                        }
+                    }
+                } else if (descEl) {
+                    descEl.remove();
+                }
+
                 // Update dynamic user info that might have been loaded after the cache
                 const userNameEl = card.querySelector('.mc-user-name');
-                if (userNameEl) {
-                    const newName = this.getDisplayNameForUser(
-                        movieData.userId, 
-                        movieData.userDisplayName, 
-                        movieData.userName, 
-                        movieData.userEmail
-                    );
-                    if (userNameEl.textContent.trim() !== newName) {
-                        userNameEl.textContent = newName;
+                const newUserNameEl = newCardHTML.querySelector('.mc-user-name');
+                if (userNameEl && newUserNameEl) {
+                    if (userNameEl.textContent.trim() !== newUserNameEl.textContent.trim()) {
+                        userNameEl.textContent = newUserNameEl.textContent;
                     }
-                    if (this.userProfilesMap.has(movieData.userId)) {
+                    if (this.userProfilesMap.has(movieData.userId || movieData.uid)) {
                         userNameEl.classList.remove('mc-skeleton');
                     }
                 }
                 
                 const userAvatarEl = card.querySelector('.mc-user-avatar');
-                if (userAvatarEl) {
-                    const newPhoto = this.getUserPhoto(movieData.userId, movieData.userPhoto);
+                const newUserAvatarEl = newCardHTML.querySelector('.mc-user-avatar');
+                if (userAvatarEl && newUserAvatarEl) {
+                    const newPhoto = newUserAvatarEl.getAttribute('src');
                     if (userAvatarEl.getAttribute('src') !== newPhoto) {
                         userAvatarEl.src = newPhoto;
                     }
-                    if (this.userProfilesMap.has(movieData.userId)) {
+                    if (this.userProfilesMap.has(movieData.userId || movieData.uid)) {
                         userAvatarEl.classList.remove('mc-skeleton');
+                    }
+                }
+                
+                // Update the raters popup if it exists
+                const oldPopup = card.querySelector('.mc-raters-popup');
+                const newPopup = newCardHTML.querySelector('.mc-raters-popup');
+                if (oldPopup && newPopup) {
+                    if (oldPopup.innerHTML !== newPopup.innerHTML) {
+                        oldPopup.innerHTML = newPopup.innerHTML;
                     }
                 }
 
                 // Update average rating if data has changed (e.g. cache → enriched data)
                 const avgRatingEl = card.querySelector('.mc-rating-avg');
-                if (avgRatingEl) {
-                    const avgRating = movieData.averageRating || 0;
-                    const rCount = movieData.ratingsCount || 0;
-                    const newAvgText = rCount > 0
-                        ? parseFloat(avgRating.toFixed(1)).toString()
-                        : (window.i18n?.get('movie_card.not_available') || 'N/A');
-                    if (avgRatingEl.textContent.trim() !== newAvgText) {
-                        avgRatingEl.textContent = newAvgText;
+                const newAvgRatingEl = newCardHTML.querySelector('.mc-rating-avg');
+                if (avgRatingEl && newAvgRatingEl) {
+                    if (avgRatingEl.textContent.trim() !== newAvgRatingEl.textContent.trim()) {
+                        avgRatingEl.textContent = newAvgRatingEl.textContent;
                     }
                 }
             }
@@ -1354,6 +1646,12 @@ class RatingsPageManager {
                         this.handleWatchingToggle(movieId, target);
                     }
                     break;
+                    
+                case 'toggle-watched':
+                    if (movieId) {
+                        this.handleWatchedToggle(movieId, target);
+                    }
+                    break;
             }
         });
 
@@ -1367,6 +1665,16 @@ class RatingsPageManager {
             if (usernameEl) {
                 e.stopPropagation();
                 const userId = usernameEl.getAttribute('data-user-id');
+                if (userId) {
+                    const url = chrome.runtime.getURL(`src/pages/profile/profile.html?userId=${userId}`);
+                    window.location.href = url;
+                }
+            }
+
+            const raterRow = e.target.closest('.mc-rater-row.clickable-rater');
+            if (raterRow) {
+                e.stopPropagation();
+                const userId = raterRow.getAttribute('data-user-id');
                 if (userId) {
                     const url = chrome.runtime.getURL(`src/pages/profile/profile.html?userId=${userId}`);
                     window.location.href = url;
@@ -1388,14 +1696,22 @@ class RatingsPageManager {
         // Enrich user data with correct photo from profile
         const enrichedData = {
             ...movieData,
-            userPhoto: this.getUserPhoto(movieData.userId, movieData.userPhoto),
+            userPhoto: this.getUserPhoto(movieData.userId || movieData.uid, movieData.userPhoto),
             userDisplayName: this.getDisplayNameForUser(
-                movieData.userId,
+                movieData.userId || movieData.uid,
                 movieData.userDisplayName,
                 movieData.userName,
                 movieData.userEmail
             )
         };
+        
+        if (enrichedData.allRaters) {
+            enrichedData.allRaters = enrichedData.allRaters.map(r => ({
+                ...r,
+                userPhoto: this.getUserPhoto(r.userId || r.uid, r.userPhoto),
+                userDisplayName: this.getDisplayNameForUser(r.userId || r.uid, r.userDisplayName, r.userName, r.userEmail)
+            }));
+        }
         
         // Clean titles
         if (enrichedData.name) enrichedData.name = Utils.cleanTitle(enrichedData.name);
@@ -1406,12 +1722,15 @@ class RatingsPageManager {
             showFavorite: !!movieData.rating,
             showWatching: !!movieData.rating,
             showWatchlist: !!movieData.rating,
+            showWatched: true,
             showUserInfo: true,
             showEditRating: false,
             showAddToCollection: false,
-            isWatching: movieData.isWatching || false,
-            isInWatchlist: movieData.isInWatchlist || false,
+            isWatching: movieData.isWatching || movieData.status === 'watching' || false,
+            isInWatchlist: movieData.isInWatchlist || movieData.status === 'plan_to_watch' || false,
+            isWatched: movieData.status === 'watched',
             userInfoLoading: !this.userProfilesMap.has(movieData.userId),
+            animeStyle: false,
             
             // Collections
             availableCollections: this.availableCollections || [],
@@ -1442,21 +1761,40 @@ class RatingsPageManager {
         
         if (type === 'favorite') {
             button.setAttribute('data-is-favorite', isActive);
-            const text = button.querySelector('.mc-menu-item-text');
-            const icon = button.querySelector('.mc-menu-item-icon');
-            if (text) text.textContent = isActive ? 'Remove from Favorites' : 'Add to Favorites';
-            if (icon) icon.textContent = isActive ? '💔' : '❤️';
-            button.classList.toggle('active', isActive);
+            Utils.toggleActionButton(button, isActive, {
+                active: 'Remove from Favorites',
+                inactive: 'Add to Favorites'
+            }, {
+                active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>',
+                inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>'
+            });
         } else if (type === 'watching') {
             button.setAttribute('data-is-watching', isActive);
-            const text = button.querySelector('.mc-menu-item-text');
-            if (text) text.textContent = isActive ? 'Remove from Watching' : 'Add to Watching';
-            button.classList.toggle('active', isActive);
+            Utils.toggleActionButton(button, isActive, {
+                active: 'Remove from Watching',
+                inactive: 'Add to Watching'
+            }, {
+                active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>',
+                inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>'
+            });
         } else if (type === 'watchlist') {
             button.setAttribute('data-is-in-watchlist', isActive);
-            const text = button.querySelector('.mc-menu-item-text');
-            if (text) text.textContent = isActive ? 'Remove from Plan to Watch' : 'Add to Plan to Watch';
-            button.classList.toggle('active', isActive);
+            Utils.toggleActionButton(button, isActive, {
+                active: 'Remove from Plan to Watch',
+                inactive: 'Add to Plan to Watch'
+            }, {
+                active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>',
+                inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>'
+            });
+        } else if (type === 'watched') {
+            button.setAttribute('data-is-watched', isActive);
+            Utils.toggleActionButton(button, isActive, {
+                active: 'Remove from Watched',
+                inactive: 'Add to Watched'
+            }, {
+                active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>',
+                inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>'
+            });
         }
     }
 
@@ -1480,10 +1818,12 @@ class RatingsPageManager {
         const favBtn = card.querySelector('[data-action="toggle-favorite"]');
         const watchBtn = card.querySelector('[data-action="toggle-watching"]');
         const planBtn = card.querySelector('[data-action="toggle-watchlist"]');
+        const watchedBtn = card.querySelector('[data-action="toggle-watched"]');
 
         this.updateButtonState(favBtn, 'favorite', movieData.status === 'favorite');
         this.updateButtonState(watchBtn, 'watching', movieData.status === 'watching');
         this.updateButtonState(planBtn, 'watchlist', movieData.status === 'plan_to_watch');
+        this.updateButtonState(watchedBtn, 'watched', movieData.status === 'watched');
     }
 
     async toggleFavorite(ratingId, currentStatus, buttonElement) {
@@ -1590,6 +1930,47 @@ class RatingsPageManager {
             if (window.navigation?.updateWatchingCount) window.navigation.updateWatchingCount();
         } catch (error) {
             console.error('Error toggling watching:', error);
+            if (typeof Utils !== 'undefined') Utils.showToast('Error updating status', 'error');
+        }
+    }
+
+    async handleWatchedToggle(movieId, buttonElement) {
+        if (!this.checkAuth()) return;
+
+        try {
+            const favoriteService = firebaseManager.getFavoriteService();
+            const movieData = this.filteredMovies.find(m => (m.movie?.kinopoiskId || m.movieId) == movieId);
+            if (!movieData) return;
+
+            const isWatched = movieData.status === 'watched';
+
+            if (isWatched) {
+                // Remove
+                await favoriteService.removeFromFavorites(this.currentUser.uid, movieId);
+                movieData.status = null;
+                
+                this.updateButtonState(buttonElement, 'watched', false);
+                if (typeof Utils !== 'undefined') Utils.showToast('Removed from Watched', 'success');
+            } else {
+                // Add to Watched
+                await favoriteService.addToFavorites(this.currentUser.uid, {
+                    ...movieData.movie,
+                    movieId: movieId
+                }, 'watched');
+                
+                movieData.isWatching = false;
+                movieData.isFavorite = false;
+                movieData.isInWatchlist = false;
+                movieData.status = 'watched';
+                
+                this.updateButtonState(buttonElement, 'watched', true);
+                this.refreshCardButtons(movieId);
+                
+                if (typeof Utils !== 'undefined') Utils.showToast('Added to Watched', 'success');
+            }
+
+        } catch (error) {
+            console.error('Error toggling watched:', error);
             if (typeof Utils !== 'undefined') Utils.showToast('Error updating status', 'error');
         }
     }
@@ -1799,7 +2180,7 @@ class RatingsPageManager {
                 <img src="${movie?.posterUrl || '/icons/icon48.png'}" 
                      alt="${movie?.name}" 
                      style="width: 150px; height: 200px; object-fit: cover; border-radius: 8px;"
-                     onerror="this.src='/icons/icon48.png'">
+                     onerror="Utils.handlePosterError(this)">
                 <div style="flex: 1;">
                     <h3 style="margin: 0 0 10px 0;">${this.escapeHtml(movie?.name || 'Unknown Movie')}</h3>
                     <p style="color: #666; margin: 0 0 10px 0;">${movie?.year || ''} • ${movie?.genres?.join(', ') || ''}</p>
@@ -1810,7 +2191,7 @@ class RatingsPageManager {
                     ${comment ? `
                         <div style="margin: 15px 0;">
                             <strong>My Comment:</strong><br>
-                            <em>"${this.escapeHtml(comment)}"</em>
+                            <em class="user-comment-text">"${Utils.parseSpoilers(this.escapeHtml(comment))}"</em>
                         </div>
                     ` : ''}
                 </div>
@@ -1857,7 +2238,7 @@ class RatingsPageManager {
         // Show current rating info
         this.elements.currentRatingInfo.style.display = 'block';
         this.elements.existingRatingValue.textContent = `${currentRating}/10`;
-        this.elements.existingRatingComment.textContent = currentComment || 'No comment';
+        this.elements.existingRatingComment.innerHTML = currentComment ? Utils.parseSpoilers(this.escapeHtml(currentComment)) : 'No comment';
         
         // Set form values
         this.elements.ratingSlider.value = currentRating;
@@ -1922,6 +2303,16 @@ class RatingsPageManager {
         this.selectedMovie = null;
     }
 
+    showEmptyState() {
+        if (this.elements.emptyState) this.elements.emptyState.style.display = 'flex';
+        if (this.elements.moviesGrid) this.elements.moviesGrid.style.display = 'none';
+    }
+
+    hideEmptyState() {
+        if (this.elements.emptyState) this.elements.emptyState.style.display = 'none';
+        // Grid visibility is handled by this.page.showContent()
+    }
+
     clearFilters() {
         this.filters = {
             search: '',
@@ -1932,14 +2323,7 @@ class RatingsPageManager {
             sort: 'date-desc'
         };
         
-        this.elements.movieSearchInput.value = '';
-        this.elements.genreFilter.value = '';
-        this.elements.yearFilter.value = '';
-        this.elements.avgRatingFilter.value = '';
-        if (this.elements.userFilter) {
-            this.elements.userFilter.value = '';
-        }
-        this.elements.sortFilter.value = 'date-desc';
+        if (this.elements.movieSearchInput) this.elements.movieSearchInput.value = '';
         
         this.updateDropdownValue('genreFilter', '');
         this.updateDropdownValue('yearFilter', '');
@@ -1965,31 +2349,7 @@ class RatingsPageManager {
         this.elements.resultsMode.textContent = 'All Ratings';
     }
 
-    showLoading(show) {
-        this.elements.loadingSection.style.display = show ? 'block' : 'none';
-        this.elements.moviesGrid.style.display = show ? 'none' : 'grid';
-    }
-
-    showEmptyState() {
-        this.elements.emptyState.style.display = 'flex';
-        this.elements.moviesGrid.style.display = 'none';
-    }
-
-    hideEmptyState() {
-        this.elements.emptyState.style.display = 'none';
-        this.elements.moviesGrid.style.display = 'grid';
-    }
-
-    showError(message) {
-        this.elements.errorState.style.display = 'block';
-        this.elements.loadingSection.style.display = 'none';
-        this.elements.moviesGrid.style.display = 'none';
-        document.getElementById('errorMessage').textContent = message;
-    }
-
-    hideError() {
-        this.elements.errorState.style.display = 'none';
-    }
+    // Local showLoading/showError/hideError removed in favor of this.page (PageStateManager)
 
     saveFiltersToStorage() {
         localStorage.setItem('ratingsPageFilters', JSON.stringify(this.filters));
@@ -2040,6 +2400,20 @@ class RatingsPageManager {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    toggleFilters() {
+        if (!this.elements.filtersSection) return;
+        
+        const isCollapsed = this.elements.filtersSection.classList.toggle('collapsed');
+        localStorage.setItem('ratingsFiltersCollapsed', isCollapsed);
+    }
+
+    loadFiltersCollapseState() {
+        const isCollapsed = localStorage.getItem('ratingsFiltersCollapsed') === 'true';
+        if (isCollapsed && this.elements.filtersSection) {
+            this.elements.filtersSection.classList.add('collapsed');
+        }
     }
 }
 

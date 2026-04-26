@@ -15,13 +15,18 @@
     border: 1px solid var(--theme-border);
     display: flex;
     flex-direction: column;
-    height: auto;
+    height: 100%;
     min-height: 400px;
     position: relative;
     z-index: 1; /* Establish stacking context */
-    /* Performance: skip rendering for off-screen cards */
-    content-visibility: auto;
-    contain-intrinsic-size: 0 500px;
+    text-decoration: none; /* Reset for <a> wrappers */
+    color: inherit;
+}
+
+.movie-card-component a {
+    text-decoration: none;
+    color: inherit;
+    display: block;
 }
 
 .movie-card-component:hover {
@@ -361,6 +366,9 @@
     color: #1a1a1a;
     text-shadow: none; /* Changed: Text shadow removed for clarity on light bg */
     flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .mc-user-info.clickable-username {
@@ -380,6 +388,148 @@
 .light-theme .mc-user-info.clickable-username:hover {
     background: #404040;
 }
+
+/* Multiple Raters Styles */
+.mc-user-info {
+    position: relative;
+    /* ensure z-index context so popup floats above everything */
+    z-index: 10;
+}
+
+.mc-raters-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: #ffffff;
+    background: var(--theme-bg-secondary); /* subtle gray, not full color block */
+    padding: 3px 8px;
+    border-radius: 12px;
+    margin-left: auto;
+    border: none;
+    box-shadow: none;
+    line-height: normal;
+    align-self: center; /* ensures it stays centered vertically in the flex container */
+    transform: translateY(-1px); /* optical adjustment if needed */
+}
+
+.light-theme .mc-raters-count {
+    background: rgba(0, 0, 0, 0.1);
+    color: #333;
+}
+
+.mc-raters-popup {
+    position: absolute;
+    bottom: calc(100% + 5px);
+    left: 0;
+    width: 250px;
+    background: rgba(30, 30, 32, 0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 8px 0;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(10px);
+    transition: all 0.3s ease;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    pointer-events: auto; /* allow interaction */
+    max-height: 250px;
+    overflow-y: auto;
+}
+
+.mc-user-info:hover .mc-raters-popup {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.mc-rater-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+    transition: background 0.2s ease;
+}
+
+.mc-rater-row.clickable-rater {
+    cursor: pointer;
+}
+
+.mc-rater-row.clickable-rater:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.light-theme .mc-rater-row.clickable-rater:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.mc-rater-row:not(:last-child) {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.mc-rater-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+.mc-rater-details {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+}
+
+.mc-rater-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: #fff;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mc-rater-date {
+    font-size: 10px;
+    color: #999;
+}
+
+.mc-rater-score {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 600;
+    color: #F5C518;
+    font-size: 16px;
+    margin-left: auto;
+    line-height: 1; /* align tightly with SVG */
+}
+
+.mc-rater-score svg {
+    flex-shrink: 0;
+    transform: translateY(-1px); /* slight optical lift to align with numbers */
+}
+
+.light-theme .mc-raters-popup {
+    background: rgba(255, 255, 255, 0.95);
+    border-color: rgba(0, 0, 0, 0.1);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+}
+.light-theme .mc-rater-row:not(:last-child) {
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+.light-theme .mc-rater-name { color: #222; }
+.light-theme .mc-rater-date { color: #666; }
+.light-theme .mc-raters-count { color: #0056b3; border-color: rgba(0,0,0,0.1); }
+
 
 .mc-user-rating {
     font-weight: 600;

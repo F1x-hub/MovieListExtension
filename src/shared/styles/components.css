@@ -608,3 +608,22 @@
         margin: 0 auto;
     }
 }
+
+/* Spoiler Text Rendering */
+.spoiler-text {
+    background: #4f545c; /* Discord-like grey for unrevealed spoilers */
+    color: transparent;
+    border-radius: var(--radius-sm);
+    padding: 0 2px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s, color 0.2s;
+    display: inline;
+}
+
+.spoiler-text.revealed {
+    background: rgba(255, 255, 255, 0.1);
+    color: inherit;
+    cursor: text;
+    user-select: text;
+}

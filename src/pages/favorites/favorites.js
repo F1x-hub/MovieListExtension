@@ -67,6 +67,14 @@ class FavoritesPageManager {
             existingRatingValue: document.getElementById('existingRatingValue'),
             existingRatingComment: document.getElementById('existingRatingComment')
         };
+
+        // UI State Manager
+        this.page = Utils.createPageStateManager({
+            loader: this.elements.loadingSection,
+            errorScreen: this.elements.errorState,
+            errorMessage: document.getElementById('errorMessage'),
+            contentContainer: this.elements.moviesGrid
+        });
     }
 
     initializeCustomDropdowns() {
@@ -282,8 +290,7 @@ class FavoritesPageManager {
         if (!this.currentUser) return;
 
         try {
-            this.showLoading();
-            this.hideError();
+            this.page.showLoader();
 
             const favoriteService = firebaseManager.getFavoriteService();
             const movieCacheService = firebaseManager.getMovieCacheService();
@@ -335,11 +342,10 @@ class FavoritesPageManager {
             }
 
             this.applyFilters();
-            this.hideLoading();
+            this.page.showContent();
         } catch (error) {
             console.error('Error loading favorites:', error);
-            this.showError('Failed to load favorites. Please try again.');
-            this.hideLoading();
+            this.page.showError('Failed to load favorites. Please try again.');
         }
     }
 
@@ -430,43 +436,9 @@ class FavoritesPageManager {
         const grid = this.elements.moviesGrid;
         if (!grid) return;
 
-        // Use event delegation for all card actions
-        grid.addEventListener('mousedown', async (e) => {
-            const target = e.target.closest('[data-action]');
-            if (!target) return;
-
-            e.stopPropagation();
-            const action = target.getAttribute('data-action');
-            const movieId = target.getAttribute('data-movie-id');
-            const ratingId = target.getAttribute('data-rating-id');
-
-            if (action === 'view-details' && movieId) {
-                const url = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`);
-                window.location.href = url;
-            } else if (action === 'resume-watching' && movieId) {
-                const url = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}&autoplay=true`);
-                window.location.href = url;
-            } else if (action === 'edit-rating' && ratingId && movieId) {
-                const favorite = this.favorites.find(f => f.id === ratingId);
-                if (favorite) {
-                    await this.showRatingModal(favorite);
-                }
-            } else if (action === 'remove-favorite' && ratingId) { // MovieCard specific action name ??
-                 // Note: MovieCard uses 'toggle-favorite' in menu, but we might have custom buttons.
-                 // The old code targeted .favorite-btn-remove. 
-                 // Let's check MovieCard data-action for remove.
-                 // It uses 'toggle-favorite'. If isFavorite is true, it removes.
-            } else if (action === 'toggle-favorite' && movieId) {
-                // Handle toggle favorite from menu
-                 const favorite = this.favorites.find(f => (f.movie?.kinopoiskId == movieId || f.movieId == movieId));
-                 if (favorite) {
-                     await this.removeFromFavorites(favorite.id);
-                 }
-            }
-        });
-        
-        // Keep old specific listeners if they exist outside of data-action (just in case)
-        // actually, let's just rely on delegation for the new card structure.
+        // Use centralized delegation for new cards
+        Utils.bindMovieCardNavigation(grid);
+        Utils.bindTabsAndMenus(grid);
     }
 
     async removeFromFavorites(ratingId) {
@@ -615,59 +587,7 @@ class FavoritesPageManager {
         }
     }
 
-    showLoading() {
-        if (this.elements.loadingSection) {
-            this.elements.loadingSection.style.display = 'flex';
-        }
-        if (this.elements.moviesGrid) {
-            this.elements.moviesGrid.style.display = 'none';
-        }
-        this.isLoading = true;
-    }
-
-    hideLoading() {
-        if (this.elements.loadingSection) {
-            this.elements.loadingSection.style.display = 'none';
-        }
-        if (this.elements.moviesGrid) {
-            this.elements.moviesGrid.style.display = 'grid';
-        }
-        this.isLoading = false;
-    }
-
-    showEmptyState() {
-        if (this.elements.emptyState) {
-            this.elements.emptyState.style.display = 'flex';
-        }
-        if (this.elements.moviesGrid) {
-            this.elements.moviesGrid.style.display = 'none';
-        }
-    }
-
-    hideEmptyState() {
-        if (this.elements.emptyState) {
-            this.elements.emptyState.style.display = 'none';
-        }
-        if (this.elements.moviesGrid) {
-            this.elements.moviesGrid.style.display = 'grid';
-        }
-    }
-
-    showError(message) {
-        if (this.elements.errorState) {
-            this.elements.errorState.style.display = 'flex';
-            const errorMessage = this.elements.errorState.querySelector('#errorMessage');
-            if (errorMessage) {
-                errorMessage.textContent = message;
-            }
-        }
-    }
-
-    hideError() {
-        if (this.elements.errorState) {
-            this.elements.errorState.style.display = 'none';
-        }
-    }
+    // Local showLoading/showError removed in favor of this.page (PageStateManager)
 
     formatDate(date) {
         const months = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];

@@ -14,6 +14,7 @@ class MovieCard {
             showFavorite = false,
             showWatchlist = false,
             showWatching = false,
+            showWatched = false,
             showUserInfo = false,
             showEditRating = false,
             showAddToCollection = false,
@@ -26,9 +27,6 @@ class MovieCard {
             showGenres = true, // New option
             showDescription = true, // New option
             animeStyle = false, // New: Use anime-style card design
-            isWatching = false,
-            isWatched = false,
-            isInWatchlist = false,
             watchingProgress = null,
             availableCollections = [], // New: List of all custom collections
             movieCollections = []      // New: List of collection IDs this movie is in
@@ -72,28 +70,38 @@ class MovieCard {
         const userEmail = data.userEmail;
         const userPhoto = data.userPhoto;
         
+        const isWatching = options.isWatching || data.isWatching || false;
+        const isWatched = options.isWatched || data.isWatched || false;
+        const isInWatchlist = options.isInWatchlist || data.isInWatchlist || false;
+        const isFavorite = data.isFavorite || options.isFavorite || false;
+
         // Truncate description
         const truncatedDescription = description.length > 150 
             ? description.substring(0, 150) + '...' 
             : description;
 
+        const isLoading = title === 'Loading...' || title === window.i18n?.get('movie_card.unknown_movie');
+
         // Create card element
         const card = document.createElement('div');
-        card.className = `movie-card-component fade-in${animeStyle ? ' anime-style' : ''}`;
+        card.className = `movie-card-component fade-in${animeStyle ? ' anime-style' : ''}${isLoading ? ' mc-is-loading' : ''}`;
         card.dataset.movieId = movie.kinopoiskId || data.movieId;
         if (data.id) card.dataset.ratingId = data.id;
 
+        const detailsUrl = movie.kinopoiskId || data.movieId 
+            ? chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movie.kinopoiskId || data.movieId}`)
+            : '#';
+
         // Build card HTML
         card.innerHTML = `
-            <div class="mc-poster-container">
+            <a href="${detailsUrl}" class="mc-poster-container ${isLoading ? 'mc-skeleton' : ''}" data-action="view-details" data-movie-id="${movie.kinopoiskId || data.movieId}">
                 <img src="${posterUrl}" 
                      alt="${this.escapeHtml(title)}" 
                      class="mc-poster" 
-                     loading="lazy"
                      decoding="async"
-                     onerror="this.src='/icons/icon48.png'">
+                     onerror="Utils.handlePosterError(this)">
                 ${animeStyle ? '<div class="mc-poster-overlay"></div>' : ''}
-            </div>
+            </a>
             
             ${showThreeDotMenu ? `
                     <button class="mc-menu-btn" data-menu="true" data-action="stop-propagation" title="Options">
@@ -104,33 +112,37 @@ class MovieCard {
                             <button class="mc-menu-item" data-action="toggle-favorite" 
                                     data-rating-id="${data.id}"
                                     data-movie-id="${movie.kinopoiskId || data.movieId}" 
-                                    data-is-favorite="${data.isFavorite === true}">
-                                <span class="mc-menu-item-icon">${data.isFavorite ? '💔' : '❤️'}</span>
-                                <span class="mc-menu-item-text">${data.isFavorite ? window.i18n?.get('movie_card.remove_favorite') : window.i18n?.get('movie_card.add_favorite')}</span>
+                                    data-is-favorite="${isFavorite}"
+                                    ${isFavorite ? 'style="background-color: #c0c0c0; color: #000;"' : ''}>
+                                <span class="mc-menu-item-icon">${isFavorite ? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>'}</span>
+                                <span class="mc-menu-item-text" ${isFavorite ? 'style="font-weight: 500;"' : ''}>${isFavorite ? window.i18n?.get('movie_card.remove_favorite') : window.i18n?.get('movie_card.add_favorite')}</span>
                             </button>
                         ` : ''}
                         ${showWatching ? `
                             <button class="mc-menu-item" data-action="toggle-watching"
                                     data-movie-id="${movie.kinopoiskId || data.movieId}"
-                                    data-is-watching="${isWatching}">
-                                <span class="mc-menu-item-icon">${isWatching ? '👁️' : '👁️'}</span>
-                                <span class="mc-menu-item-text">${isWatching ? window.i18n?.get('movie_card.remove_watching') : window.i18n?.get('movie_card.add_watching')}</span>
+                                    data-is-watching="${isWatching}"
+                                    ${isWatching ? 'style="background-color: #c0c0c0; color: #000;"' : ''}>
+                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></span>
+                                <span class="mc-menu-item-text" ${isWatching ? 'style="font-weight: 500;"' : ''}>${isWatching ? window.i18n?.get('movie_card.remove_watching') : window.i18n?.get('movie_card.add_watching')}</span>
                             </button>
                         ` : ''}
-                        ${options.showWatched ? `
+                        ${showWatched ? `
                             <button class="mc-menu-item" data-action="toggle-watched"
                                     data-movie-id="${movie.kinopoiskId || data.movieId}"
-                                    data-is-watched="${isWatched}">
-                                <span class="mc-menu-item-icon">${isWatched ? '✓' : '✓'}</span>
-                                <span class="mc-menu-item-text">${isWatched ? window.i18n?.get('movie_card.remove_watched') : window.i18n?.get('movie_card.add_watched')}</span>
+                                    data-is-watched="${isWatched}"
+                                    ${isWatched ? 'style="background-color: #c0c0c0; color: #000;"' : ''}>
+                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></span>
+                                <span class="mc-menu-item-text" ${isWatched ? 'style="font-weight: 500;"' : ''}>${isWatched ? window.i18n?.get('movie_card.remove_watched') : window.i18n?.get('movie_card.add_watched')}</span>
                             </button>
                         ` : ''}
                         ${showWatchlist ? `
                             <button class="mc-menu-item" data-action="toggle-watchlist"
                                     data-movie-id="${movie.kinopoiskId || data.movieId}"
-                                    data-is-in-watchlist="${isInWatchlist}">
-                                <span class="mc-menu-item-icon">${isInWatchlist ? '🔖' : '🔖'}</span>
-                                <span class="mc-menu-item-text">${isInWatchlist ? window.i18n?.get('movie_card.remove_watchlist') : window.i18n?.get('movie_card.add_watchlist')}</span>
+                                    data-is-in-watchlist="${isInWatchlist}"
+                                    ${isInWatchlist ? 'style="background-color: #c0c0c0; color: #000;"' : ''}>
+                                <span class="mc-menu-item-icon">${isInWatchlist ? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>'}</span>
+                                <span class="mc-menu-item-text" ${isInWatchlist ? 'style="font-weight: 500;"' : ''}>${isInWatchlist ? window.i18n?.get('movie_card.remove_watchlist') : window.i18n?.get('movie_card.add_watchlist')}</span>
                             </button>
                         ` : ''}
                         ${showEditRating ? `
@@ -138,42 +150,42 @@ class MovieCard {
                                     data-movie-id="${movie.kinopoiskId || data.movieId}"
                                     data-rating="${rating}"
                                     data-comment="${this.escapeHtml(data.comment || '')}">
-                                <span class="mc-menu-item-icon">✏️</span>
+                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></span>
                                 <span class="mc-menu-item-text">${window.i18n?.get('movie_card.edit_rating')}</span>
                             </button>
                         ` : ''}
                         ${showAddToCollection ? `
                             <button class="mc-menu-item" data-action="add-to-collection"
                                     data-movie-id="${movie.kinopoiskId || data.movieId}">
-                                <span class="mc-menu-item-icon">📁</span>
+                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></span>
                                 <span class="mc-menu-item-text">${window.i18n?.get('movie_card.add_collection')}</span>
                             </button>
                         ` : ''}
                         ${showRemoveFromWatching ? `
                             <button class="mc-menu-item" data-action="remove-from-watching"
                                     data-movie-id="${movie.kinopoiskId || data.movieId}">
-                                <span class="mc-menu-item-icon">❌</span>
+                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></span>
                                 <span class="mc-menu-item-text">Удалить из "Смотрю"</span>
                             </button>
                         ` : ''}
                         ${showRemoveFromWatched ? `
                             <button class="mc-menu-item" data-action="remove-from-watched"
                                     data-movie-id="${movie.kinopoiskId || data.movieId}">
-                                <span class="mc-menu-item-icon">❌</span>
+                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></span>
                                 <span class="mc-menu-item-text">Удалить из "Просмотрено"</span>
                             </button>
                         ` : ''}
                         ${showRemoveFromWatchlist ? `
                             <button class="mc-menu-item" data-action="remove-from-watchlist"
                                     data-movie-id="${movie.kinopoiskId || data.movieId}">
-                                <span class="mc-menu-item-icon">🗑️</span>
+                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></span>
                                 <span class="mc-menu-item-text">${window.i18n?.get('movie_card.remove')}</span>
                             </button>
                         ` : ''}
                         ${showRemoveFromBookmarks ? `
                             <button class="mc-menu-item" data-action="remove-from-bookmarks"
                                     data-movie-id="${movie.kinopoiskId || data.movieId}">
-                                <span class="mc-menu-item-icon">🗑️</span>
+                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></span>
                                 <span class="mc-menu-item-text">Удалить из закладок</span>
                             </button>
                         ` : ''}
@@ -185,7 +197,7 @@ class MovieCard {
                                 const isCustomIcon = col.icon && (col.icon.startsWith('data:') || col.icon.startsWith('https://') || col.icon.startsWith('http://'));
                                 const iconHtml = isCustomIcon 
                                     ? `<img src="${col.icon}" style="width: 16px; height: 16px; object-fit: cover; border-radius: 4px;">`
-                                    : (col.icon || '📁'); // Default folder icon if none
+                                    : (col.icon || '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>'); // Default folder icon if none
                                     
                                 return `
                                     <button class="mc-menu-item" data-action="toggle-collection"
@@ -195,7 +207,7 @@ class MovieCard {
                                         <span class="mc-menu-item-text" style="${isInCollection ? 'font-weight: 500; color: #fff;' : ''}">
                                             ${col.name}
                                         </span>
-                                        ${isInCollection ? '<span style="margin-left: auto; font-weight: bold; color: var(--accent-color, #4CAF50);">✓</span>' : ''}
+                                        ${isInCollection ? '<span style="margin-left: auto; font-weight: bold; color: var(--accent-color, #4CAF50);"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>' : ''}
                                     </button>
                                 `;
                             }).join('')}
@@ -206,18 +218,18 @@ class MovieCard {
             
             <div class="mc-content">
                 <div class="mc-title-row">
-                    <h3 class="mc-title mc-title-clickable" 
+                    <a href="${detailsUrl}" class="mc-title mc-title-link ${isLoading ? 'mc-skeleton' : ''}" 
                         title="${this.escapeHtml(title)}"
                         data-action="view-details"
                         data-movie-id="${movie.kinopoiskId || data.movieId}">
-                        ${this.escapeHtml(title)}
-                    </h3>
-                    ${year ? `<span class="mc-year">${year}</span>` : ''}
+                        ${isLoading ? '' : this.escapeHtml(title)}
+                    </a>
+                    ${year ? `<span class="mc-year">${year}</span>` : (isLoading ? '<span class="mc-year mc-skeleton" style="width: 40px; height: 1.2em; border-radius: 4px;"></span>' : '')}
                 </div>
                 
-                ${showGenres && genres.length > 0 ? `
-                    <div class="mc-genres">
-                        ${genres.slice(0, 3).map(genre => 
+                ${(showGenres && genres.length > 0) || isLoading ? `
+                    <div class="mc-genres ${isLoading ? 'mc-skeleton' : ''}" style="${isLoading ? 'height: 20px; border-radius: 4px;' : ''}">
+                        ${isLoading ? '' : genres.slice(0, 3).map(genre => 
                             `<span class="mc-genre-tag">${this.escapeHtml(genre)}</span>`
                         ).join('')}
                     </div>
@@ -239,12 +251,12 @@ class MovieCard {
                 ` : ''}
                 
                 ${animeStyle ? `
-                    <div class="mc-progress-display" data-action="${options.watchingProgress || isWatched ? 'resume-watching' : 'view-details'}" data-movie-id="${movie.kinopoiskId || data.movieId}">
+                    <${(options.watchingProgress || isWatched) ? 'div' : 'a href="' + detailsUrl + '"'} class="mc-progress-display" data-action="${options.watchingProgress || isWatched ? 'resume-watching' : 'view-details'}" data-movie-id="${movie.kinopoiskId || data.movieId}">
                         ${isWatched ? `
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #4ade80;">
                                     <polyline points="20 6 9 17 4 12"></polyline>
                                 </svg>
-                                <span class="mc-progress-text" style="color: #4ade80;">✓ ${window.i18n?.get('movie_card.add_watched') || 'Просмотрено'}</span>
+                                <span class="mc-progress-text" style="color: #4ade80;"> ${window.i18n?.get('movie_card.add_watched') || 'Просмотрено'}</span>
                             ` : options.watchingProgress ? `
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #4ade80;">
                                     <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"></path>
@@ -259,7 +271,7 @@ class MovieCard {
                                 </svg>
                                 <span class="mc-progress-text placeholder">Не смотрели</span>
                             `}
-                    </div>
+                    </${(options.watchingProgress || isWatched) ? 'div' : 'a'}>
                     
                     <div class="mc-rating-blocks">
                         ${kinopoiskRating > 0 ? `
@@ -305,13 +317,35 @@ class MovieCard {
                         <img src="${options.userInfoLoading ? 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==' : (userPhoto || '/icons/icon48.png')}" 
                              alt="${this.escapeHtml(userDisplayName || userEmail || 'User')}" 
                              class="mc-user-avatar ${options.userInfoLoading ? 'mc-skeleton' : ''}" 
-                             loading="lazy"
                              decoding="async"
-                             onerror="this.src='/icons/icon48.png'">
+                             onerror="Utils.handlePosterError(this)">
                         <span class="mc-user-name ${options.userInfoLoading ? 'mc-skeleton' : ''}">
                             ${this.escapeHtml(userDisplayName || userEmail?.split('@')[0] || 'User')}
                         </span>
                         ${rating > 0 ? `<span class="mc-user-rating"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> ${rating}</span>` : ''}
+                        
+                        ${data.allRaters && data.allRaters.length > 1 ? `
+                            <span class="mc-raters-count">+${data.allRaters.length - 1} ещё</span>
+                            <div class="mc-raters-popup">
+                                ${data.allRaters.map(r => {
+                                    const raterDate = r.createdAt?.seconds ? new Date(r.createdAt.seconds * 1000) : new Date(r.createdAt || Date.now());
+                                    const dateStr = raterDate.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                                    return `
+                                    <div class="mc-rater-row clickable-rater" data-user-id="${r.userId}">
+                                        <img src="${r.userPhoto || '/icons/icon48.png'}" class="mc-rater-avatar" onerror="Utils.handlePosterError(this)">
+                                        <div class="mc-rater-details">
+                                            <span class="mc-rater-name">${this.escapeHtml(r.userDisplayName || r.userEmail?.split('@')[0] || 'User')}</span>
+                                            <span class="mc-rater-date">${dateStr}</span>
+                                        </div>
+                                        <span class="mc-rater-score">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                                            ${r.rating}
+                                        </span>
+                                    </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        ` : ''}
                     </div>
                 ` : rating > 0 && !showUserInfo ? `
                     <div class="mc-my-rating">
@@ -495,9 +529,8 @@ class MovieCard {
                     <img src="${posterUrl}" 
                          alt="${this.escapeHtml(movieName)}" 
                          class="cmc-poster"
-                         loading="lazy"
                          decoding="async"
-                         onerror="this.src='/icons/icon48.png'">
+                         onerror="Utils.handlePosterError(this)">
                     
                     <div class="cmc-ratings">
                         ${kpRating > 0 ? `

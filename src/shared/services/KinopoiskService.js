@@ -70,12 +70,12 @@ class KinopoiskService {
             console.log(`KinopoiskService: Searching for "${query}" (normalized: "${cleanQuery}")`);
             
             const url = `${this.baseUrl}${KINOPOISK_CONFIG.ENDPOINTS.SEARCH}`;
+            // NOTE: Do NOT add sortField/sortType here — that disables the API's built-in
+            // relevance ranking (fuzzy match). Let the API rank by relevance naturally.
             const params = new URLSearchParams({
                 query: cleanQuery,
                 page: page.toString(),
-                limit: limit.toString(),
-                sortField: 'name', // Sort by name first
-                sortType: '1' // Ascending order for alphabetical sorting
+                limit: limit.toString()
             });
 
             // Add year range filters if provided
@@ -332,37 +332,77 @@ class KinopoiskService {
      * @returns {Array} - Sorted movies
      */
     sortMoviesByRelevance(movies, query) {
-        const queryLower = query.toLowerCase().trim();
-        
+        const queryLower = query.toLowerCase().trim().replace(/ё/g, 'е');
+
+        // Stem the query if the Snowball stemmer is available (handles Russian inflection:
+        // e.g. "соседства" (genitive) and "Соседство" (nominative) both stem to "сосед")
+        const stemmer = (typeof RussianStemmer !== 'undefined') ? RussianStemmer : null;
+        const queryStem = stemmer ? stemmer.stemPhrase(queryLower) : queryLower;
+
+        // Score a single movie against the query — higher = more relevant
+        const score = (movie) => {
+            const name    = (movie.name || '').toLowerCase().replace(/ё/g, 'е');
+            const altName = (movie.alternativeName || '').toLowerCase();
+
+            // ---- Tier 1-6: exact/prefix/contains matching on raw query ----
+
+            // Tier 1: exact match on primary or alternative name
+            if (name === queryLower || altName === queryLower) return 100;
+
+            // Tier 2: primary name starts with query
+            if (name.startsWith(queryLower)) return 80;
+
+            // Tier 3: alternative name starts with query
+            if (altName.startsWith(queryLower)) return 70;
+
+            // Tier 4: primary name contains query as a whole word
+            const safeQuery = queryLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const wordBoundary = new RegExp(`(^|\\s)${safeQuery}(\\s|$)`);
+            if (wordBoundary.test(name)) return 60;
+            if (wordBoundary.test(altName)) return 55;
+
+            // Tier 5: primary name contains query anywhere
+            if (name.includes(queryLower)) return 40;
+
+            // Tier 6: alternative name contains query anywhere
+            if (altName.includes(queryLower)) return 30;
+
+            // ---- Tier 7-9: stem-based matching (handles inflected Russian forms) ----
+            // e.g. query "соседства" stems to "соседств"
+            //   "Соседство"        → stem "соседств"      → exact → score 95  ✓ wins
+            //   "Шпион по соседству" → stem "шпион со…" → word  → score 35
+            if (stemmer && queryStem && queryStem !== queryLower) {
+                const nameStem    = stemmer.stemPhrase(name);
+                const altNameStem = stemmer.stemPhrase(altName);
+
+                const safeStem = queryStem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+                // Tier 7: the entire stemmed title IS the stemmed query (e.g. "Соседство")
+                if (nameStem === queryStem) return 95;
+
+                // Tier 7b: stemmed query appears as a whole token inside the stemmed title
+                const stemWordRe = new RegExp(`(^| )${safeStem}( |$)`);
+                if (stemWordRe.test(nameStem)) return 35;
+
+                // Tier 8: stemmed query is a substring of the stemmed title (any position)
+                if (nameStem.includes(queryStem)) return 20;
+
+                // Tier 9: same checks for alternativeName
+                if (altNameStem === queryStem) return 90;
+                if (stemWordRe.test(altNameStem)) return 30;
+                if (altNameStem.includes(queryStem)) return 15;
+            }
+
+            return 0;
+        };
+
         return movies.sort((a, b) => {
-            const aName = a.name.toLowerCase();
-            const bName = b.name.toLowerCase();
-            
-            // Exact match gets highest priority
-            const aExactMatch = aName === queryLower;
-            const bExactMatch = bName === queryLower;
-            
-            if (aExactMatch && !bExactMatch) return -1;
-            if (!aExactMatch && bExactMatch) return 1;
-            
-            // Starts with query gets second priority
-            const aStartsWith = aName.startsWith(queryLower);
-            const bStartsWith = bName.startsWith(queryLower);
-            
-            if (aStartsWith && !bStartsWith) return -1;
-            if (!aStartsWith && bStartsWith) return 1;
-            
-            // Contains query gets third priority
-            const aContains = aName.includes(queryLower);
-            const bContains = bName.includes(queryLower);
-            
-            if (aContains && !bContains) return -1;
-            if (!aContains && bContains) return 1;
-            
-            // Finally sort by popularity (votes.kp) descending
+            const scoreDiff = score(b) - score(a);
+            if (scoreDiff !== 0) return scoreDiff;
+
+            // Tiebreaker: most popular first (votes.kp)
             const aVotes = a.votes?.kp || 0;
             const bVotes = b.votes?.kp || 0;
-            
             return bVotes - aVotes;
         });
     }
@@ -568,15 +608,9 @@ class KinopoiskService {
             // Convert to lowercase for consistency
             normalized = normalized.toLowerCase();
             
-            // Replace common alternative spellings
-            const cyrillicReplacements = {
-                'ё': 'е',  // Replace ё with е
-                'й': 'и',  // Sometimes й causes issues
-            };
-            
-            for (const [from, to] of Object.entries(cyrillicReplacements)) {
-                normalized = normalized.replace(new RegExp(from, 'g'), to);
-            }
+            // Only replace ё→е (safe). Do NOT replace й→и — that breaks words
+            // like 'Бойцовский' → 'Боицовскии' which destroys search accuracy.
+            normalized = normalized.replace(/ё/g, 'е');
         }
         
         return normalized;

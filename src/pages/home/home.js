@@ -18,6 +18,14 @@ class HomePage {
         this.retryBtn = document.getElementById('retry-btn');
         this.contentContainer = document.getElementById('content');
         
+        // UI State Manager
+        this.page = Utils.createPageStateManager({
+            loader: this.loader,
+            errorScreen: this.errorScreen,
+            errorMessage: this.errorMessage,
+            contentContainer: this.contentContainer
+        });
+        
          // Featured Slider
         this.featuredSlider = document.getElementById('featured-slider');
         this.paginationContainer = document.getElementById('slider-pagination');
@@ -41,7 +49,6 @@ class HomePage {
 
     bindEvents() {
         this.retryBtn.addEventListener('mousedown', () => {
-            this.hideError();
             this.init();
         });
 
@@ -57,20 +64,10 @@ class HomePage {
         }
 
         // Delegate clicks for movie cards
-        this.contentContainer.addEventListener('mousedown', (e) => {
-            const card = e.target.closest('.movie-card, .featured-card');
-            if (card && card.dataset.href) {
-                // Open in search page with sourceUrl parameter
-                const url = card.dataset.href;
-                const searchUrl = chrome.runtime.getURL(`src/pages/search/search.html?sourceUrl=${encodeURIComponent(url)}`);
-                // Open in same tab (or different if needed, but user said "click on poster... open search.html")
-                window.location.href = searchUrl;
-            }
-        });
     }
 
     async init() {
-        this.showLoader();
+        this.page.showLoader();
         
         try {
             // 1. Check Cache
@@ -87,7 +84,7 @@ class HomePage {
                 }
                 
                 this.render(cached);
-                this.hideLoader();
+                this.page.showContent();
                 return;
             }
 
@@ -104,11 +101,14 @@ class HomePage {
             
             // 5. Render
             this.render(data);
-            this.hideLoader();
+            this.page.showContent();
+            
+            // Spoiler reveal logic
+            Utils.bindSpoilerReveal(document);
 
         } catch (error) {
-            console.error('HomePage: Init failed', error);
-            this.showError(error.message);
+            console.error('HomePage Init Error:', error);
+            this.page.showError('Произошла ошибка при загрузке данных: ' + error.message);
         }
     }
 
@@ -495,7 +495,7 @@ class HomePage {
         const href = item.href ? (item.href.startsWith('/') ? this.baseUrl + item.href : item.href) : '#';
 
         return `
-            <div class="movie-card" data-href="${href}">
+            <a href="${chrome.runtime.getURL(`src/pages/search/search.html?sourceUrl=${encodeURIComponent(href)}`)}" class="movie-card" data-href="${href}">
                 <img class="card-poster" src="${poster}" alt="${title}" loading="lazy">
                 <div class="card-info">
                     <h3 class="card-title">${title}</h3>
@@ -504,7 +504,7 @@ class HomePage {
                         ${quality}
                     </div>
                 </div>
-            </div>
+            </a>
         `;
     }
 
@@ -514,12 +514,12 @@ class HomePage {
         const href = item.href ? (item.href.startsWith('/') ? this.baseUrl + item.href : item.href) : '#';
 
         return `
-            <div class="featured-card" data-href="${href}">
+            <a href="${chrome.runtime.getURL(`src/pages/search/search.html?sourceUrl=${encodeURIComponent(href)}`)}" class="featured-card" data-href="${href}">
                 <img class="featured-poster" src="${poster}" alt="${title}" loading="lazy">
                 <div class="featured-overlay">
                     <h3 class="featured-title">${title}</h3>
                 </div>
-            </div>
+            </a>
         `;
     }
 
@@ -612,26 +612,7 @@ class HomePage {
         });
     }
 
-    showLoader() {
-        this.loader.style.display = 'flex';
-        this.errorScreen.style.display = 'none';
-        this.contentContainer.style.display = 'none';
-    }
-
-    hideLoader() {
-        this.loader.style.display = 'none';
-    }
-
-    showError(msg) {
-        this.hideLoader();
-        this.contentContainer.style.display = 'none';
-        this.errorScreen.style.display = 'flex';
-        this.errorMessage.textContent = msg || 'Произошла ошибка при загрузке данных';
-    }
-
-    hideError() {
-        this.errorScreen.style.display = 'none';
-    }
+    // Local showLoader/hideLoader/showError/hideError removed in favor of this.page (PageStateManager)
 }
 
 document.addEventListener('DOMContentLoaded', () => {

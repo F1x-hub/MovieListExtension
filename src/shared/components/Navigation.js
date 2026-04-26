@@ -129,6 +129,41 @@ class Navigation {
 
 
 
+    /**
+     * Get the absolute URL for a page
+     */
+    getPageUrl(page) {
+        switch (page) {
+            case 'home':
+                return chrome.runtime.getURL('src/pages/home/home.html');
+            case 'search':
+                return chrome.runtime.getURL('src/pages/search/search.html');
+            case 'ratings':
+                return chrome.runtime.getURL('src/pages/ratings/ratings.html');
+            case 'watchlist':
+                return chrome.runtime.getURL('src/pages/watchlist/watchlist.html');
+            case 'favorites':
+                return chrome.runtime.getURL('src/pages/favorites/favorites.html');
+            case 'watching':
+                return chrome.runtime.getURL('src/pages/watching/watching.html');
+            case 'bookmarks':
+                return chrome.runtime.getURL('src/pages/bookmarks/bookmarks.html');
+            case 'random':
+                return chrome.runtime.getURL('src/pages/random/random.html');
+            case 'profile':
+                return chrome.runtime.getURL('src/pages/profile/profile.html');
+            case 'settings':
+                return chrome.runtime.getURL('src/pages/settings/settings.html');
+            case 'admin':
+                return chrome.runtime.getURL('src/pages/admin/admin.html');
+            case 'calendar':
+                return chrome.runtime.getURL('src/pages/calendar/calendar.html');
+            default:
+                console.warn(`[Navigation] No URL mapping for page: "${page}", falling back to "#"`);
+                return '#';
+        }
+    }
+
     render() {
         // Check if navigation already exists in DOM
         const existingNav = document.querySelector('.nav-header');
@@ -171,7 +206,7 @@ class Navigation {
 
                 <div class="nav-container">
                     <!-- Logo Section -->
-                    <a href="#" class="nav-logo" id="navLogo">
+                    <a href="${this.getPageUrl('home')}" class="nav-logo" id="navLogo">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" class="nav-logo-image" style="fill: var(--theme-text-primary, currentColor);"><path d="M241.1 104.7h-162l149.8-44.03c5.09-1.52 7.34-5.32 5.81-10.41l-8.8-27.33c-4.1-12.65-16.27-16.87-27.97-13.5l-172.6 49c-12.87 3.94-20.3 16.5-16.36 30.35l6.04 23.68v111.8c0 12.55 10.16 23.76 23.48 23.76h97.2c5.5 0 8.35-4.89 7.75-8.29-.68-3.74-3.68-6.59-7.44-6.59H38.5c-4.94 0-7.38-4.29-7.38-7.5v-65.56h201.5v64.45c0 4.52-3.4 8.61-8.49 8.61H207.7c-5.09 0-8.15 3.99-8.15 7.44 0 4.34 3.59 7.44 7.84 7.44h16.74c12.97 0 24.59-10.89 24.59-23.69v-112c0-4.37-3.32-7.55-7.68-7.55zm-38.5-81.56c4.54-.86 7.25 2.51 8.05 5.47l5.16 19.29-23.18 6.53L170 33.45zm-50.31 14.94 22.63 20.98-35.67 10.62-21.8-20.98zM99.65 53.7l22.63 20.98L90.6 84.72 67.62 62.88zM23.69 84.79c-1.6-6.05 1.99-10.91 7.19-12.21l18.95-4.53 22.63 20.98-43.61 13.16zm7.51 34.79h42.29l-14.04 24.74H31.2zm46.23 24.74 15.55-24.33h36.61l-13.73 24.33zm55.82 0 14.83-24.33h37.65l-14.54 24.33zm56.69 0 14.14-23.92h28.6v23.92z"/><path d="M168.1 232.7c-5.38 0-8.44 3.92-8.44 7.51 0 4.6 3.79 7.78 7.94 7.78h8.22c4.87 0 7.93-3.79 7.93-7.78 0-4.41-3.83-7.51-7.67-7.51z"/></svg>
                     </a>
 
@@ -183,14 +218,14 @@ class Navigation {
                     <!-- Navigation Menu -->
                     <nav class="nav-menu" id="navMenu">
                         <div class="nav-item">
-                            <a href="#" class="nav-link" data-page="random" id="navRandom">
+                            <a href="${this.getPageUrl('random')}" class="nav-link" data-page="random" id="navRandom">
                                 <span class="nav-icon">${typeof Icons !== 'undefined' ? Icons.DICE : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect><circle cx="16" cy="16" r="2"></circle><circle cx="16" cy="8" r="2"></circle><circle cx="8" cy="16" r="2"></circle><circle cx="8" cy="8" r="2"></circle><circle cx="12" cy="12" r="2"></circle></svg>'}</span>
                                 <span data-i18n="navbar.random">Random</span>
                             </a>
                         </div>
 
                         <div class="nav-item">
-                            <a href="#" class="nav-link" data-page="ratings" id="navRatings">
+                            <a href="${this.getPageUrl('ratings')}" class="nav-link" data-page="ratings" id="navRatings">
                                 <span class="nav-icon">${typeof Icons !== 'undefined' ? Icons.STAR : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>'}</span>
                                 <span data-i18n="navbar.rated">Rated</span>
                             </a>
@@ -207,9 +242,14 @@ class Navigation {
                         </div>
 
                         <!-- Bookmarks Button -->
-                        <button class="nav-icon-btn" id="navBookmarksBtn" title="Bookmarks">
+                        <a href="${this.getPageUrl('bookmarks')}" class="nav-icon-btn" id="navBookmarksBtn" data-page="bookmarks" title="Bookmarks">
                             <span class="nav-icon">${typeof Icons !== 'undefined' ? Icons.BOOKMARK : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>'}</span>
-                        </button>
+                        </a>
+
+                        <!-- Calendar Button -->
+                        <a href="${this.getPageUrl('calendar')}" class="nav-icon-btn" id="navCalendarBtn" data-page="calendar" title="Calendar">
+                            <span class="nav-icon">${typeof Icons !== 'undefined' ? Icons.CALENDAR : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>'}</span>
+                        </a>
                     </div>
 
                     <!-- User Section -->
@@ -224,18 +264,18 @@ class Navigation {
                             
                             <!-- Dropdown Menu -->
                             <div class="nav-user-dropdown" id="navUserDropdown">
-                                <div class="nav-dropdown-item" id="navDropdownSettings">
+                                <a href="${this.getPageUrl('profile')}" class="nav-dropdown-item" id="navDropdownSettings">
                                     <span class="nav-dropdown-icon">${typeof Icons !== 'undefined' ? Icons.USER : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>'}</span>
                                     <span data-i18n="navbar.view_profile">View Profile</span>
-                                </div>
-                                <div class="nav-dropdown-item" id="navDropdownSettingsPage">
-                                    <span class="nav-dropdown-icon">${typeof Icons !== 'undefined' ? Icons.SETTINGS : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 512 512"><path d="M262.29,192.31a64,64,0,1,0,57.4,57.4A64.13,64.13,0,0,0,262.29,192.31ZM416.39,256a154.34,154.34,0,0,1-1.53,20.79l45.21,35.46A10.81,10.81,0,0,1,462.52,326l-42.77,74a10.81,10.81,0,0,1-13.14,4.59l-44.9-18.08a16.11,16.11,0,0,0-15.17,1.75A164.48,164.48,0,0,1,325,400.8a15.94,15.94,0,0,0-8.82,12.14l-6.73,47.89A11.08,11.08,0,0,1,298.77,470H213.23a11.11,11.11,0,0,1-10.69-8.87l-6.72-47.82a16.07,16.07,0,0,0-9-12.22,155.3,155.3,0,0,1-21.46-12.57,16,16,0,0,0-15.11-1.71l-44.89,18.07a10.81,10.81,0,0,1-13.14-4.58l-42.77-74a10.8,10.8,0,0,1,2.45-13.75l38.21-30a16.05,16.05,0,0,0,6-14.08c-.36-4.17-.58-8.33-.58-12.5s.21-8.27.58-12.35a16,16,0,0,0-6.07-13.94l-38.19-30A10.81,10.81,0,0,1,49.48,186l42.77-74a10.81,10.81,0,0,1,13.14-4.59l44.9,18.08a16.11,16.11,0,0,0,15.17-1.75A164.48,164.48,0,0,1,187,111.2a15.94,15.94,0,0,0,8.82-12.14l6.73-47.89A11.08,11.08,0,0,1,213.23,42h85.54a11.11,11.11,0,0,1,10.69,8.87l6.72,47.82a16.07,16.07,0,0,0,9,12.22,155.3,155.3,0,0,1,21.46,12.57,16,16,0,0,0,15.11,1.71l44.89-18.07a10.81,10.81,0,0,1,13.14,4.58l42.77,74a10.8,10.8,0,0,1-2.45,13.75l-38.21,30a16.05,16.05,0,0,0-6.05,14.08C416.17,247.67,416.39,251.83,416.39,256Z" style="fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round;stroke-width:32px"></path></svg>'}</span>
+                                </a>
+                                <a href="${this.getPageUrl('settings')}" class="nav-dropdown-item" id="navDropdownSettingsPage">
+                                    <span class="nav-dropdown-icon">${typeof Icons !== 'undefined' ? Icons.SETTINGS : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 512 512"><path d="M262.29,192.31a64,64,0,1,0,57.4,57.4A64.13,64.13,0,0,0,262.29,192.31ZM416.39,256a154.34,154.34,0,0,1-1.53,20.79l45.21,35.46A10.81,10.81,0,0,1,462.52,326l-42.77,74a10.81,10.81,0,0,1-13.14,4.59l-44.9-18.08a16.11,16.11,0,0,0-15.17,1.75A164.48,164.48,0,0,1,325,400.8a15.94,15.94,0,0,0-8.82,12.14l-6.73,47.89A11.08,11.08,0,0,1,298.77,470H213.23a11.11,11.11,0,0,1-10.69-8.87l-6.72-47.82a16.07,16.07,0,0,0-9-12.22,155.3,155.3,0,0,1-21.46-12.57,16,16,0,0,0-15.11-1.71l-44.89,18.07a10.81,10.81,0,0,1-13.14-4.58l-42.77,74a10.8,10.8,0,0,1,2.45-13.75l38.21-30a16.05,16.05,0,0,0,6-14.08c-.36-4.17-.58-8.33-.58-12.5s.21-8.27.58-12.35a16,16,0,0,0-6.07-13.94l-38.19-30A10.81,10.81,0,0,1,49.48,186l42.77-74a10.81,10.81,0,0,1,13.14-4.59l44.9,18.08a16.11,16.11,0,0,0,15.17-1.75A164.48,164.48,0,0,1,187,111.2a15.94,15.94,0,0,0,8.82-12.14l6.73-47.89A11.08,11.08,0,0,1,213.23,42h85.54a11.11,11.11,0,0,1,10.69,8.87l6.72,47.82a16.07,16.07,0,0,0,9,12.22,155.3,155.3,0,0,1,21.46,12.57,16,16,0,0,0,15.11,1.71l44.89-18.07a10.81,10.81,0,0,1,13.14,4.58l42.77,74a10.8,10.8,0,0,1-2.45,13.75l-38.21,30a16.05,16.05,0,0,0-6.05,14.08C416.17,247.67,416.39,251.83,416.39,256Z" style="fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round;stroke-width:32px"></path></svg>'}</span>
                                     <span data-i18n="navbar.settings">Settings</span>
-                                </div>
-                                <div class="nav-dropdown-item" id="navDropdownAdmin" style="display: none;">
+                                </a>
+                                <a href="${this.getPageUrl('admin')}" class="nav-dropdown-item" id="navDropdownAdmin" style="display: none;">
                                     <span class="nav-dropdown-icon">${typeof Icons !== 'undefined' ? Icons.ADMIN : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>'}</span>
                                     <span data-i18n="navbar.admin_panel">Admin Panel</span>
-                                </div>
+                                </a>
                                 <div class="nav-dropdown-item" id="navDropdownTheme">
                                     <span class="nav-dropdown-icon" id="navThemeIcon">
                                         ${typeof Icons !== 'undefined' ? Icons.THEME : '<svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20" style="width: 16px; height: 16px;"><path fill-rule="evenodd" d="M10.606 1.987a.75.75 0 0 1-.217.835 5.795 5.795 0 0 0 6.387 9.58.75.75 0 0 1 1.031.965A8.502 8.502 0 0 1 1.5 10a8.5 8.5 0 0 1 8.395-8.5.75.75 0 0 1 .711.487M8.004 3.288a7 7 0 1 0 7.421 11.137A7.295 7.295 0 0 1 8.004 3.288" clip-rule="evenodd"></path></svg>'}
@@ -273,7 +313,8 @@ class Navigation {
         const navMenu = document.getElementById('navMenu');
         
         if (mobileToggle && navMenu) {
-            mobileToggle.addEventListener('mousedown', () => {
+            mobileToggle.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return; // Only left click
                 navMenu.classList.toggle('active');
             });
         }
@@ -282,18 +323,20 @@ class Navigation {
         const navLinks = document.querySelectorAll('.nav-link');
         navLinks.forEach(link => {
             link.addEventListener('mousedown', (e) => {
+                // If it's not a left click, let the browser handle it (e.g. middle click for new tab)
+                if (e.button !== 0) return;
+                
                 e.preventDefault();
                 const page = link.dataset.page;
                 this.navigateToPage(page);
             });
         });
 
-
-
         // Logo click - go to popup/home
         const navLogo = document.getElementById('navLogo');
         if (navLogo) {
             navLogo.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return;
                 e.preventDefault();
                 this.navigateToPage('home');
             });
@@ -305,7 +348,8 @@ class Navigation {
         // Sign In button
         const signInBtn = document.getElementById('navSignInBtn');
         if (signInBtn) {
-            signInBtn.addEventListener('mousedown', () => {
+            signInBtn.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return;
                 this.handleSignIn();
             });
         }
@@ -320,12 +364,22 @@ class Navigation {
         const bookmarksBtn = document.getElementById('navBookmarksBtn');
         if (bookmarksBtn) {
             bookmarksBtn.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return;
                 // console.log('Bookmarks button clicked');
                 e.preventDefault();
                 this.navigateToPage('bookmarks');
             });
         } else {
             console.error('Bookmarks button not found in DOM during setup');
+        }
+
+        const calendarBtn = document.getElementById('navCalendarBtn');
+        if (calendarBtn) {
+            calendarBtn.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return;
+                e.preventDefault();
+                this.navigateToPage('calendar');
+            });
         }
 
         // Global delegation fallback for Bookmarks
@@ -374,7 +428,9 @@ class Navigation {
 
             // Settings dropdown item (View Profile)
             if (dropdownSettings) {
-                dropdownSettings.addEventListener('mousedown', () => {
+                dropdownSettings.addEventListener('mousedown', (e) => {
+                    if (e.button !== 0) return;
+                    e.preventDefault();
                     this.closeAllDropdowns();
                     this.navigateToPage('profile');
                 });
@@ -383,7 +439,9 @@ class Navigation {
             // Settings page dropdown item
             const dropdownSettingsPage = document.getElementById('navDropdownSettingsPage');
             if (dropdownSettingsPage) {
-                dropdownSettingsPage.addEventListener('mousedown', () => {
+                dropdownSettingsPage.addEventListener('mousedown', (e) => {
+                    if (e.button !== 0) return;
+                    e.preventDefault();
                     this.closeAllDropdowns();
                     this.navigateToPage('settings');
                 });
@@ -392,7 +450,9 @@ class Navigation {
             // Admin Panel dropdown item
             const dropdownAdmin = document.getElementById('navDropdownAdmin');
             if (dropdownAdmin) {
-                dropdownAdmin.addEventListener('mousedown', () => {
+                dropdownAdmin.addEventListener('mousedown', (e) => {
+                    if (e.button !== 0) return;
+                    e.preventDefault();
                     this.closeAllDropdowns();
                     this.navigateToPage('admin');
                 });
@@ -401,7 +461,8 @@ class Navigation {
             // Theme dropdown item
             const dropdownTheme = document.getElementById('navDropdownTheme');
             if (dropdownTheme) {
-                dropdownTheme.addEventListener('mousedown', () => {
+                dropdownTheme.addEventListener('mousedown', (e) => {
+                    if (e.button !== 0) return;
                     this.closeAllDropdowns();
                     this.showThemeModal();
                 });
@@ -409,7 +470,8 @@ class Navigation {
 
             // Logout dropdown item
             if (dropdownLogout) {
-                dropdownLogout.addEventListener('mousedown', () => {
+                dropdownLogout.addEventListener('mousedown', (e) => {
+                    if (e.button !== 0) return;
                     this.closeAllDropdowns();
                     this.handleLogout();
                 });
@@ -1323,7 +1385,7 @@ class Navigation {
 
     setActivePage(page) {
         // Remove active class from all links
-        const navLinks = document.querySelectorAll('.nav-link');
+        const navLinks = document.querySelectorAll('.nav-link, .nav-icon-btn[data-page]');
         navLinks.forEach(link => {
             link.classList.remove('active');
         });
@@ -1340,46 +1402,15 @@ class Navigation {
     navigateToPage(page) {
         // console.log(`[Navigation] navigateToPage called with page: ${page}`);
         
+        const url = this.getPageUrl(page);
+        if (!url || url === '#') {
+            console.warn(`[Navigation] No valid URL found for page: ${page}`);
+            return;
+        }
+
         // Check if we're in popup context
         if (window.location.pathname.includes('popup.html')) {
             // console.log('[Navigation] Context: Popup, opening in new tab');
-            // In popup, open new tabs as before
-            let url = '';
-            
-            switch (page) {
-                case 'home':
-                    url = chrome.runtime.getURL('src/pages/home/home.html');
-                    break;
-                case 'search':
-                    url = chrome.runtime.getURL('src/pages/search/search.html');
-                    break;
-                case 'ratings':
-                    url = chrome.runtime.getURL('src/pages/ratings/ratings.html');
-                    break;
-                case 'watchlist':
-                    url = chrome.runtime.getURL('src/pages/watchlist/watchlist.html');
-                    break;
-                case 'favorites':
-                    url = chrome.runtime.getURL('src/pages/favorites/favorites.html');
-                    break;
-                case 'watching':
-                    url = chrome.runtime.getURL('src/pages/watching/watching.html');
-                    break;
-                case 'bookmarks':
-                    url = chrome.runtime.getURL('src/pages/bookmarks/bookmarks.html');
-                    break;
-                case 'profile':
-                    url = chrome.runtime.getURL('src/pages/profile/profile.html');
-                    break;
-                case 'settings':
-                    url = chrome.runtime.getURL('src/pages/settings/settings.html');
-                    break;
-                default:
-                    console.warn(`[Navigation] Unknown page for popup: ${page}`);
-                    return;
-            }
-
-            // console.log(`[Navigation] Generated URL: ${url}`);
             if (url && chrome.tabs) {
                 chrome.tabs.create({ url });
             }
@@ -1388,54 +1419,7 @@ class Navigation {
 
         // For extension pages, use simple navigation on same tab
         // console.log('[Navigation] Context: Extension Page, navigating current tab');
-        let url = '';
-        
-        switch (page) {
-            case 'home':
-                url = chrome.runtime.getURL('src/pages/home/home.html');
-                break;
-            case 'search':
-                url = chrome.runtime.getURL('src/pages/search/search.html');
-                break;
-            case 'ratings':
-                url = chrome.runtime.getURL('src/pages/ratings/ratings.html');
-                break;
-            case 'watchlist':
-                url = chrome.runtime.getURL('src/pages/watchlist/watchlist.html');
-                break;
-            case 'favorites':
-                url = chrome.runtime.getURL('src/pages/favorites/favorites.html');
-                break;
-            case 'watching':
-                url = chrome.runtime.getURL('src/pages/watching/watching.html');
-                break;
-            case 'bookmarks':
-                url = chrome.runtime.getURL('src/pages/bookmarks/bookmarks.html');
-                break;
-            case 'random':
-                url = chrome.runtime.getURL('src/pages/random/random.html');
-                break;
-            case 'profile':
-                url = chrome.runtime.getURL('src/pages/profile/profile.html');
-                break;
-            case 'settings':
-                url = chrome.runtime.getURL('src/pages/settings/settings.html');
-                break;
-            case 'admin':
-                url = chrome.runtime.getURL('src/pages/admin/admin.html');
-                break;
-            default:
-                console.warn(`[Navigation] Unknown page for extension: ${page}`);
-                return;
-        }
-
-        // console.log(`[Navigation] Target URL: ${url}`);
-        if (url) {
-            // Navigate on same tab
-            window.location.href = url;
-        } else {
-            console.error('[Navigation] No URL generated');
-        }
+        window.location.href = url;
     }
 
     showProfileModal() {
@@ -1915,6 +1899,8 @@ if (typeof window !== 'undefined' && !window.location.pathname.includes('popup.h
             currentPage = 'search';
         } else if (window.location.pathname.includes('ratings.html') || window.location.pathname.includes('src/pages/ratings/')) {
             currentPage = 'ratings';
+        } else if (window.location.pathname.includes('calendar.html') || window.location.pathname.includes('src/pages/calendar/')) {
+            currentPage = 'calendar';
         } else if (window.location.pathname.includes('watchlist.html')) {
             currentPage = 'watchlist';
         } else if (window.location.pathname.includes('favorites.html')) {

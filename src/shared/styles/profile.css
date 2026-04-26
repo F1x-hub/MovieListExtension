@@ -323,6 +323,8 @@
     border: 1px solid var(--theme-border);
     transition: all 0.3s;
     cursor: pointer;
+    text-decoration: none;
+    color: inherit;
 }
 
 .recent-rating-card:hover {

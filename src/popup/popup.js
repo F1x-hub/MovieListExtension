@@ -40,6 +40,11 @@ class PopupManager {
         // Then initialize UI which might load ratings
         await this.initializeUI();
         
+        // Spoiler reveal logic
+        if (typeof Utils !== 'undefined') {
+            Utils.bindSpoilerReveal(document);
+        }
+
         // Trigger update check when popup opens
         chrome.runtime.sendMessage({ type: 'CHECK_FOR_UPDATES' });
     }
@@ -1570,11 +1575,11 @@ class PopupManager {
         const isCurrentUser = currentUser && rating.userId === currentUser.uid;
         
         ratingDiv.innerHTML = `
-            <img src="${posterUrl}" alt="${movieTitle}" class="rating-poster" onerror="this.src='/icons/icon48.png'">
+            <img src="${posterUrl}" alt="${movieTitle}" class="rating-poster" onerror="Utils.handlePosterError(this)">
             <div class="rating-content">
                 <div class="rating-header">
                     <div class="rating-user-info clickable-user" data-user-id="${rating.userId}">
-                        <img src="${userPhoto}" alt="${displayUserName}" class="rating-user-avatar" onerror="this.src='/icons/icon48.png'">
+                        <img src="${userPhoto}" alt="${displayUserName}" class="rating-user-avatar" onerror="Utils.handlePosterError(this)">
                         <span class="rating-user-name" title="${this.escapeHtml(displayUserName)}">${this.escapeHtml(this.truncateText(displayUserName, 20))}</span>
                     </div>
                     ${isCurrentUser ? `
@@ -1607,7 +1612,7 @@ class PopupManager {
                         <span class="rating-badge">${averageDisplay}</span>
                     </div>
                 </div>
-                ${rating.comment ? `<p class="rating-comment" title="${this.escapeHtml(rating.comment)}">${this.escapeHtml(this.truncateText(rating.comment, 100))}</p>` : ''}
+                ${rating.comment ? `<p class="rating-comment" title="${this.escapeHtml(rating.comment)}">${Utils.parseSpoilers(this.escapeHtml(this.truncateText(rating.comment, 100)))}</p>` : ''}
                 <p class="rating-timestamp">${timestamp}</p>
             </div>
         `;

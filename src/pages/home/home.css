@@ -28,6 +28,9 @@
     border-radius: 16px;
     overflow: hidden;
     transition: transform 0.3s, box-shadow 0.3s, opacity 0.3s;
+    text-decoration: none; /* Reset for <a> */
+    color: inherit;
+    display: block;
 }
 
 .featured-card:hover {
@@ -245,6 +248,8 @@
     border: 1px solid var(--theme-border);
     display: flex;
     flex-direction: column;
+    text-decoration: none; /* Reset for <a> */
+    color: inherit;
 }
 
 .movie-card:hover {

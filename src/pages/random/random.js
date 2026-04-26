@@ -34,11 +34,21 @@ class RandomManager {
 
         this.kinopoiskService = new KinopoiskService();
 
+        // ── Pool State ──
+        this.pool = [];        // [{ kpId, title, year, poster, rating }]
+        this.currentMovie = null;
+        this.POOL_KEY = 'randomPool';
+        this._searchTimer = null;
+        this.rollAnimRunning = false;
+        this.rollDrumOffset = 0;
+
         this.init();
+
     }
 
 
     async init() {
+        this._buildRollOverlay();
         await i18n.init();
         i18n.translatePage();
         
@@ -47,6 +57,7 @@ class RandomManager {
         this.setupSliders();
         this.loadPreferences(); 
         this.setupEventListeners();
+        await this.loadPool();
 
         // Listen for language changes
         chrome.runtime.onMessage.addListener((message) => {
@@ -279,6 +290,8 @@ class RandomManager {
                 this.toggleConfig(true); // Open config
             });
         }
+
+        this.setupPoolListeners();
     }
 
     toggleConfig(forceState = null) {
@@ -477,6 +490,7 @@ class RandomManager {
     }
 
     async displayMovie(movie) {
+        this.currentMovie = movie;  // ── Track current movie for pool feature
         this.elements.movieResult.innerHTML = '';
         
         // Use MovieCard component's compact detail view
@@ -488,12 +502,58 @@ class RandomManager {
             this.elements.movieResult.appendChild(card);
             this.showState('result');
             
+            // Inject Add-to-Pool FAB over poster
+            this._injectPoolFab(card, movie);
+
             // Setup delegation for any interactive elements
             this.setupCardDelegation();
 
         } else {
             console.error('MovieCard component not found');
         }
+    }
+
+    /** Inject "add to pool" button into the card header, right of the reload button */
+    _injectPoolFab(card, movie) {
+        const header = card.querySelector('.cmc-header');
+        if (!header) return;
+
+        const svgPlus = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
+        const svgCheck = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`;
+
+        const setAdded = () => {
+            btn.classList.add('in-pool');
+            btn.title = 'Убрать из пула';
+            btn.innerHTML = svgCheck;
+        };
+
+        const setRemoved = () => {
+            btn.classList.remove('in-pool');
+            btn.title = 'Добавить в пул';
+            btn.innerHTML = svgPlus;
+        };
+
+        const btn = document.createElement('button');
+        const inPool = this._isInPool(movie.kinopoiskId);
+        btn.className = 'cmc-pool-btn' + (inPool ? ' in-pool' : '');
+        btn.title = inPool ? 'Убрать из пула' : 'Добавить в пул';
+        btn.innerHTML = inPool ? svgCheck : svgPlus;
+
+        btn.addEventListener('click', () => {
+            const kpId = movie.kinopoiskId;
+            if (this._isInPool(kpId)) {
+                // Remove from pool
+                this.pool = this.pool.filter(m => m.kpId !== kpId);
+                this._savePool();
+                setRemoved();
+            } else {
+                // Add to pool
+                this._addCurrentMovieToPool();
+                setAdded();
+            }
+        });
+
+        header.appendChild(btn);
     }
     
     setupCardDelegation() {
@@ -502,6 +562,9 @@ class RandomManager {
         this.delegationSetup = true;
 
         this.elements.movieResult.addEventListener('mousedown', (e) => {
+             // If it's not a left click, let the browser handle it (e.g. middle click for new tab)
+             if (e.button !== 0) return;
+
              const target = e.target;
              const actionBtn = target.closest('[data-action]');
              if (!actionBtn) return;
@@ -516,33 +579,39 @@ class RandomManager {
                      icon.style.transform = 'rotate(360deg)';
                  }
                  
-                 // Trigger new search after a short delay for animation
+                 // Always roll a new random movie (pool rolls only via the pool modal)
                  setTimeout(() => {
                      this.findRandomMovie();
                  }, 300);
                  return;
              }
+
              
              const movieId = actionBtn.dataset.movieId;
              
              if (action === 'view-details') {
                  // Open details page
+                 e.preventDefault();
                  window.location.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`);
                  return;
              }
              
              // Handle other actions via helper
              if (window.firebaseManager) {
-                 this.handleAction(action, movieId, actionBtn);
+                 this.handleAction(action, movieId, actionBtn, e);
              }
         });
     }
     
-    async handleAction(action, movieId, btn) {
+    async handleAction(action, movieId, btn, e) {
+        // If it's not a left click, let the browser handle it
+        if (e && e.button !== 0) return;
+
         // Placeholder for quick actions
         // Ideally we should move action logic to a shared helper or mixin
         if (action === 'view-details') {
-             window.location.href = `../search/search.html?movieId=${movieId}`;
+             if (e) e.preventDefault();
+             window.location.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`);
         }
     }
 
@@ -556,6 +625,397 @@ class RandomManager {
         if (state === 'loading') this.elements.loadingState.style.display = 'block';
         if (state === 'result') this.elements.movieResult.style.display = 'flex'; // Flex for centering
         if (state === 'error') this.elements.errorState.style.display = 'block';
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  POOL FEATURE
+    // ════════════════════════════════════════════════════════════
+
+    /** Load pool from chrome.storage.local */
+    async loadPool() {
+        try {
+            const data = await chrome.storage.local.get(this.POOL_KEY);
+            this.pool = data[this.POOL_KEY] || [];
+            this._updatePoolUI();
+        } catch (e) {
+            console.warn('RandomManager: Failed to load pool', e);
+        }
+    }
+
+    /** Persist pool to chrome.storage.local and refresh counter */
+    async _savePool() {
+        try {
+            await chrome.storage.local.set({ [this.POOL_KEY]: this.pool });
+        } catch (e) {
+            console.warn('RandomManager: Failed to save pool', e);
+        }
+        this._updatePoolUI();
+    }
+
+    /** Update the pool count badge */
+    _updatePoolUI() {
+        const el = document.getElementById('poolCount');
+        if (el) el.textContent = this.pool.length;
+    }
+
+    /** Check if a kpId is already in the pool */
+    _isInPool(kpId) {
+        return this.pool.some(m => m.kpId === kpId);
+    }
+
+    /** Add the currently displayed movie to the pool */
+    _addCurrentMovieToPool() {
+        if (!this.currentMovie) return;
+        const kpId = this.currentMovie.kinopoiskId;
+        if (this._isInPool(kpId)) return;
+        this.pool.push({
+            kpId,
+            title: this.currentMovie.name || this.currentMovie.alternativeName,
+            year: this.currentMovie.year,
+            poster: this.currentMovie.posterUrl,
+            rating: this.currentMovie.kpRating
+        });
+        this._savePool();
+    }
+
+    /** Setup all pool-related event listeners */
+    setupPoolListeners() {
+        // Pool search input
+        const searchInput = document.getElementById('poolSearchInput');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                clearTimeout(this._searchTimer);
+                const q = e.target.value.trim();
+                const resultsEl = document.getElementById('poolSearchResults');
+                
+                if (q.length < 2) { 
+                    resultsEl.classList.add('hidden'); 
+                    searchInput.style.borderColor = '';
+                    return; 
+                }
+                
+                // Показываем что идёт отсчёт
+                searchInput.style.borderColor = 'var(--theme-text-secondary, #999)';
+                
+                this._searchTimer = setTimeout(() => {
+                    searchInput.style.borderColor = 'var(--accent-color, #e67e22)';
+                    this._searchForPool(q);
+                }, 1000);
+            });
+        }
+
+        // Close dropdown on outside click
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.pool-search-wrap')) {
+                const resultsEl = document.getElementById('poolSearchResults');
+                if (resultsEl) resultsEl.classList.add('hidden');
+            }
+        });
+
+        // Show pool modal
+        const showPoolBtn = document.getElementById('showPoolBtn');
+        if (showPoolBtn) {
+            showPoolBtn.addEventListener('click', () => {
+                this._renderPoolModal();
+                document.getElementById('poolModal').classList.remove('hidden');
+            });
+        }
+
+        // Close pool modal
+        const closePoolModal = document.getElementById('closePoolModal');
+        if (closePoolModal) {
+            closePoolModal.addEventListener('click', () => {
+                document.getElementById('poolModal').classList.add('hidden');
+            });
+        }
+
+        // Close modal on backdrop click
+        const poolModal = document.getElementById('poolModal');
+        if (poolModal) {
+            poolModal.addEventListener('click', (e) => {
+                if (e.target === poolModal) poolModal.classList.add('hidden');
+            });
+        }
+
+        // Clear pool
+        const clearPoolBtn = document.getElementById('clearPoolBtn');
+        if (clearPoolBtn) {
+            clearPoolBtn.addEventListener('click', () => {
+                this.pool = [];
+                this._savePool();
+                this._renderPoolModal();
+            });
+        }
+
+        // Roll from pool
+        const rollFromPoolBtn = document.getElementById('rollFromPoolBtn');
+        if (rollFromPoolBtn) {
+            rollFromPoolBtn.addEventListener('click', () => {
+                document.getElementById('poolModal').classList.add('hidden');
+                this._rollFromPool();
+            });
+        }
+    }
+
+    /** Search Kinopoisk and display dropdown results */
+    async _searchForPool(query) {
+        const resultsEl = document.getElementById('poolSearchResults');
+        resultsEl.innerHTML = '<div style="padding:12px;color:#999;font-size:13px">Поиск...</div>';
+        resultsEl.classList.remove('hidden');
+
+        try {
+            const data = await this.kinopoiskService.searchMovies(query, 1, 7);
+            const movies = data.docs || [];
+            this._renderSearchResults(movies, resultsEl);
+        } catch (err) {
+            resultsEl.innerHTML = '<div style="padding:12px;color:#e74c3c;font-size:13px">Ошибка поиска</div>';
+        }
+    }
+
+    /** Render dropdown search results */
+    _renderSearchResults(movies, container) {
+        if (!movies.length) {
+            container.innerHTML = '<div style="padding:12px;color:#999;font-size:13px">Ничего не найдено</div>';
+            return;
+        }
+        container.innerHTML = '';
+        movies.forEach(m => {
+            const kpId = m.kinopoiskId;
+            const inPool = this._isInPool(kpId);
+            const item = document.createElement('div');
+            item.className = 'pool-result-item';
+            item.innerHTML = `
+                <img src="${m.posterUrl || ''}" alt="" onerror="this.style.display='none'">
+                <div class="pool-result-meta">
+                    <div class="pool-result-title">${m.name || m.alternativeName || '—'}</div>
+                    <div class="pool-result-sub">${m.year || ''} · КП ${m.kpRating ? m.kpRating.toFixed(1) : '—'}</div>
+                </div>
+                <button class="pool-result-add${inPool ? ' added' : ''}" title="${inPool ? 'Уже в пуле' : 'Добавить'}">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                    </svg>
+                </button>`;
+            const addBtn = item.querySelector('.pool-result-add');
+            if (!inPool) {
+                addBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.pool.push({
+                        kpId,
+                        title: m.name || m.alternativeName,
+                        year: m.year,
+                        poster: m.posterUrl,
+                        rating: m.kpRating
+                    });
+                    this._savePool();
+                    addBtn.classList.add('added');
+                });
+            }
+            container.appendChild(item);
+        });
+    }
+
+    /** Render contents of the pool modal list */
+    _renderPoolModal() {
+        const list = document.getElementById('poolList');
+        list.innerHTML = '';
+        if (!this.pool.length) {
+            list.innerHTML = '<div class="pool-list-empty">Пул пуст. Добавляй фильмы через поиск или кнопку «+» на постере.</div>';
+            return;
+        }
+        this.pool.forEach((m, idx) => {
+            const item = document.createElement('div');
+            item.className = 'pool-list-item';
+            item.innerHTML = `
+                <img src="${m.poster || ''}" alt="" onerror="this.style.display='none'">
+                <div class="pool-list-item-meta">
+                    <div class="pool-list-item-title">${m.title || '—'}</div>
+                    <div class="pool-list-item-sub">${m.year || ''} · КП ${m.rating ? m.rating.toFixed(1) : '—'}</div>
+                </div>
+                <button class="pool-list-item-remove" title="Удалить из пула">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>`;
+
+            // Click on row → go to movie details page
+            item.addEventListener('click', (e) => {
+                if (e.target.closest('.pool-list-item-remove')) return;
+                const url = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${m.kpId}`);
+                window.location.href = url;
+            });
+
+            item.querySelector('.pool-list-item-remove').addEventListener('click', () => {
+                this.pool.splice(idx, 1);
+                this._savePool();
+                this._renderPoolModal();
+            });
+
+            list.appendChild(item);
+        });
+    }
+
+    /** Pick a random movie from the pool and display it */
+    _rollFromPool() {
+        if (!this.pool.length) return;
+        const winnerIdx = Math.floor(Math.random() * this.pool.length);
+        this._showRollAnimation(winnerIdx);
+    }
+
+    // ── Roll Animation ────────────────────────────────────────────
+
+    _buildRollOverlay() {
+        const el = document.createElement('div');
+        el.id = 'rollAnimOverlay';
+        el.className = 'roll-modal-overlay hidden';
+        el.innerHTML = `
+            <div class="roll-modal-box">
+                <div class="roll-title">Выбираем фильм...</div>
+                <div class="roll-drum-wrap" id="rollDrumWrap">
+                    <div class="roll-drum-track" id="rollDrumTrack"></div>
+                    <div class="roll-drum-border" id="rollDrumBorder"></div>
+                    <div class="roll-winner-badge" id="rollWinnerBadge">Выбран!</div>
+                </div>
+                <div class="roll-pool-chips" id="rollPoolChips"></div>
+                <div class="roll-actions" id="rollActions" style="display:none">
+                    <button class="roll-action-btn secondary" id="rollRerollBtn" style="flex:1" title="Перекрутить">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                    </button>
+                    <button class="roll-action-btn" id="rollGoBtn" style="flex:3">Смотреть</button>
+                </div>
+            </div>`;
+        document.body.appendChild(el);
+
+        // Закрыть по фону
+        el.addEventListener('click', (e) => {
+            if (e.target === el && !this.rollAnimRunning) {
+                el.classList.add('hidden');
+            }
+        });
+
+        // Перекрутить
+        const rerollBtn = el.querySelector('#rollRerollBtn');
+        if (rerollBtn) {
+            rerollBtn.addEventListener('click', () => {
+                this._rollFromPool();
+            });
+        }
+    }
+
+    _showRollAnimation(winnerIdx) {
+        const overlay = document.getElementById('rollAnimOverlay');
+        const track   = document.getElementById('rollDrumTrack');
+        const border  = document.getElementById('rollDrumBorder');
+        const badge   = document.getElementById('rollWinnerBadge');
+        const chips   = document.getElementById('rollPoolChips');
+        const goBtn   = document.getElementById('rollGoBtn');
+        const actionsBox = document.getElementById('rollActions');
+        const CARD_W  = 340;
+
+        border.classList.remove('winner');
+        badge.classList.remove('show');
+        actionsBox.style.display = 'none';
+        goBtn.disabled = true;
+        this.rollAnimRunning = true;
+        
+        // Reset offset so we always start from 0
+        this.rollDrumOffset = 0;
+
+        // Ensure we have enough laps regardless of pool size
+        const targetLap = Math.max(3, Math.ceil(20 / this.pool.length));
+        const totalLaps = targetLap + 2; // +2 for visual buffer at the end
+
+        // Собрать карточки
+        track.innerHTML = '';
+        for (let i = 0; i < totalLaps; i++) {
+            this.pool.forEach(m => {
+                const d = document.createElement('div');
+                d.className = 'roll-drum-card';
+                d.innerHTML = `
+                    <img src="${m.poster || ''}" alt=""
+                         onerror="this.style.background='#2a2a2a';this.removeAttribute('src')">
+                    <div class="roll-drum-card-meta">
+                        <div class="roll-drum-card-title">${m.title || '—'}</div>
+                        <div class="roll-drum-card-sub">${m.year || ''}</div>
+                    </div>
+                    <div class="roll-drum-card-rating">${m.rating ? parseFloat(m.rating).toFixed(1) : '—'}</div>`;
+                track.appendChild(d);
+            });
+        }
+
+        // Чипсы
+        chips.innerHTML = '';
+        this.pool.forEach((m, i) => {
+            const c = document.createElement('div');
+            c.className = 'roll-pool-chip';
+            c.id = `rollChip_${i}`;
+            c.textContent = m.title;
+            chips.appendChild(c);
+        });
+
+        overlay.classList.remove('hidden');
+
+        // Easing: замедление к концу
+        const easeOut = (t) => 1 - Math.pow(1 - t, 3);
+
+        const loopLen = this.pool.length * CARD_W;
+        // Целевая позиция: центр победителя по центру барабана
+        const wrapEl = document.getElementById('rollDrumWrap');
+        const drumCenter = wrapEl ? (wrapEl.offsetWidth || 340) / 2 : 170;
+        
+        const targetRaw  = -(targetLap * loopLen + winnerIdx * CARD_W + CARD_W / 2 - drumCenter);
+        const startOffset = 0;
+        const delta = targetRaw - startOffset;
+        const duration = 2600;
+        const startTime = performance.now();
+
+        const step = (now) => {
+            const elapsed = Math.min(now - startTime, duration);
+            const t = elapsed / duration;
+            const offset = startOffset + delta * easeOut(t);
+            track.style.transform = `translateX(${offset}px)`;
+
+            if (elapsed < duration) {
+                requestAnimationFrame(step);
+            } else {
+                // Финиш
+                this.rollAnimRunning = false;
+                border.classList.add('winner');
+                badge.classList.add('show');
+                const chip = document.getElementById(`rollChip_${winnerIdx}`);
+                if (chip) chip.classList.add('winner');
+
+                const winner = this.pool[winnerIdx];
+                goBtn.textContent = `Смотреть · ${winner.title}`;
+                actionsBox.style.display = 'flex';
+                goBtn.disabled = false;
+                goBtn.onclick = () => {
+                    overlay.classList.add('hidden');
+                    // Открыть страницу деталей фильма
+                    window.location.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${winner.kpId}`);
+                };
+            }
+        };
+        requestAnimationFrame(step);
+    }
+
+    /** Load and display a specific movie by Kinopoisk ID */
+    async _loadMovieById(kpId) {
+        this.showState('loading');
+        this.toggleConfig(false);
+        try {
+            if (window.firebaseManager) {
+                await window.firebaseManager.waitForAuthReady();
+            }
+            const movie = await this.kinopoiskService.getMovieById(kpId);
+            if (movie) {
+                this.displayMovie(movie);
+            } else {
+                this.showState('error');
+            }
+        } catch (error) {
+            console.error('RandomManager: Error loading movie by id:', error);
+            this.showState('error');
+        }
     }
 }
 

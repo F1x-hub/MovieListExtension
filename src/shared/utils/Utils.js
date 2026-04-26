@@ -427,6 +427,232 @@ class Utils {
             }
         }
     }
+
+    /**
+     * Enforce Left-Click only (LKM) on interactive elements within a given root element.
+     * Prevents middle/right-click from triggering custom UI event handlers, 
+     * but preserves the native context menu.
+     * @param {HTMLElement|Document} rootEl Element or document to attach the interceptor to
+     */
+    static enforceLeftClickOnly(rootEl) {
+        if (!rootEl || rootEl._leftClickEnforcerInstalled) return;
+        rootEl._leftClickEnforcerInstalled = true;
+
+        const enforcer = (e) => {
+            if (e.target.closest('a')) return;
+
+            if ('button' in e && e.button !== 0) {
+                e.stopPropagation();
+                // middle-click (button === 1) намеренно НЕ блокируем —
+                // браузер должен открыть ссылку в новой вкладке
+            }
+        };
+
+        rootEl.addEventListener('mousedown', enforcer, true);
+        rootEl.addEventListener('mouseup', enforcer, true);
+        rootEl.addEventListener('click', enforcer, true);
+    }
+
+    /**
+     * Открыть страницу фильма
+     * @param {string|number} movieId - ID фильма
+     * @param {boolean} newTab - Открыть в новой вкладке (default: false)
+     */
+    static openMoviePage(movieId, newTab = false) {
+        const url = chrome.runtime.getURL(
+            `src/pages/movie-details/movie-details.html?movieId=${movieId}`
+        );
+        if (newTab) {
+            window.open(url, '_blank');
+        } else {
+            window.location.href = url;
+        }
+    }
+
+    /**
+     * Навесить обработчики кликов на контейнер с карточками фильмов
+     * Поддерживает ЛКМ (переход) и СКМ/auxclick (новая вкладка)
+     * @param {HTMLElement} container - Контейнер с карточками
+     */
+    static bindMovieCardNavigation(container) {
+        if (!container || container._movieNavBound) return;
+        container._movieNavBound = true;
+
+        container.addEventListener('click', (e) => {
+            if (e.button !== 0) return;
+
+            // Prevent navigation if clicking inside the 3-dot menu or its dropdown
+            if (e.target.closest('.mc-menu-btn') || e.target.closest('.mc-menu-dropdown')) {
+                return;
+            }
+
+            const target = e.target.closest('[data-action="view-details"]');
+            if (!target) return;
+            const movieId = target.getAttribute('data-movie-id');
+            if (movieId) Utils.openMoviePage(movieId, false);
+        });
+
+        container.addEventListener('auxclick', (e) => {
+            if (e.button !== 1) return;
+
+            // Prevent navigation if clicking inside the 3-dot menu or its dropdown
+            if (e.target.closest('.mc-menu-btn') || e.target.closest('.mc-menu-dropdown')) {
+                return;
+            }
+
+            const target = e.target.closest('[data-action="view-details"]');
+            if (!target) return;
+            e.preventDefault();
+            const movieId = target.getAttribute('data-movie-id');
+            if (movieId) Utils.openMoviePage(movieId, true);
+        });
+    }
+
+    /**
+     * Парсинг спойлеров в тексте (Discord-style ||текст||)
+     * @param {string} text - Текст с тегами спойлера
+     * @returns {string} - HTML со спойлерами
+     */
+    static parseSpoilers(text) {
+        if (!text) return '';
+        return text.replace(/\|\|(.*?)\|\|/g, (match, p1) => {
+            return `<span class="spoiler-text" title="Click to show spoiler">${p1}</span>`;
+        });
+    }
+
+    /**
+     * Навесить делегирование раскрытия спойлеров на контейнер
+     * @param {HTMLElement|Document} container
+     */
+    static bindSpoilerReveal(container) {
+        if (!container || container._spoilerBound) return;
+        container._spoilerBound = true;
+        container.addEventListener('click', (e) => {
+            const spoiler = e.target.closest('.spoiler-text');
+            if (spoiler && !spoiler.classList.contains('revealed')) {
+                spoiler.classList.add('revealed');
+            }
+        });
+    }
+
+    /**
+     * Обработчик ошибки загрузки постера — подставляет fallback
+     * @param {HTMLImageElement} img - Элемент изображения
+     * @param {string} fallback - Путь к fallback изображению
+     */
+    static handlePosterError(img, fallback = '../../icons/icon128-black.png') {
+        if (!img) return;
+        img.onerror = null; // предотвращаем бесконечную рекурсию
+        img.src = fallback;
+    }
+
+    /**
+     * Get a parameter from the URL
+     * @param {string} param - Parameter name
+     * @returns {string|null}
+     */
+    static getUrlParam(param) {
+        return new URLSearchParams(window.location.search).get(param);
+    }
+
+    /**
+     * Управление состояниями страницы (loader / error / content)
+     * @param {Object} els - { loader, errorScreen, errorMessage, contentContainer }
+     */
+    static createPageStateManager(els) {
+        return {
+            showLoader() {
+                if (els.loader)           els.loader.style.display = 'flex';
+                if (els.errorScreen)      els.errorScreen.style.display = 'none';
+                if (els.contentContainer) els.contentContainer.style.display = 'none';
+            },
+            hideLoader() {
+                if (els.loader) els.loader.style.display = 'none';
+            },
+            showContent() {
+                if (els.loader)           els.loader.style.display = 'none';
+                if (els.errorScreen)      els.errorScreen.style.display = 'none';
+                if (els.contentContainer) els.contentContainer.style.display = '';
+            },
+            showError(msg) {
+                if (els.loader)           els.loader.style.display = 'none';
+                if (els.contentContainer) els.contentContainer.style.display = 'none';
+                if (els.errorScreen)      els.errorScreen.style.display = 'flex';
+                if (els.errorMessage)     els.errorMessage.textContent = msg || 'Unknown error';
+            }
+        };
+    }
+
+    /**
+     * Универсальный делегат для табов и меню
+     * @param {HTMLElement} rootEl - Корень для делегации (обычно document)
+     */
+    static bindTabsAndMenus(rootEl) {
+        rootEl.addEventListener('mousedown', (e) => {
+            // Табы
+            const tabBtn = e.target.closest('.tab-btn');
+            if (tabBtn) {
+                const tabName = tabBtn.dataset.tab;
+                const container = tabBtn.closest('.tabs-container') || document;
+                
+                container.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                tabBtn.classList.add('active');
+                
+                container.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+                const pane = container.querySelector(`#tab-${tabName}`);
+                if (pane) pane.classList.add('active');
+                return;
+            }
+
+            // Меню (Dropdowns)
+            const menuBtn = e.target.closest('.mc-menu-btn');
+            if (menuBtn) {
+                e.stopPropagation();
+                const menu = menuBtn.nextElementSibling;
+                if (menu?.classList.contains('mc-menu-dropdown')) {
+                    document.querySelectorAll('.mc-menu-dropdown.active').forEach(m => {
+                        if (m !== menu) m.classList.remove('active');
+                    });
+                    menu.classList.toggle('active');
+                }
+                return;
+            }
+
+            // Закрытие меню при клике вне
+            if (!e.target.closest('.mc-menu-dropdown')) {
+                document.querySelectorAll('.mc-menu-dropdown.active').forEach(m => m.classList.remove('active'));
+            }
+        });
+    }
+
+    /**
+     * Синхронизация состояния кнопок действий (Favorite / Watchlist)
+     * @param {HTMLElement} btn - Элемент кнопки
+     * @param {boolean} isActive - Активно ли состояние
+     * @param {Object} labels - { active: '...', inactive: '...' }
+     * @param {Object} icons - { active: '...', inactive: '...' }
+     */
+    static toggleActionButton(btn, isActive, labels = {}, icons = {}) {
+        if (!btn) return;
+        
+        btn.classList.toggle('active', isActive);
+        btn.setAttribute('data-active', isActive);
+        
+        const textEl = btn.querySelector('.mc-menu-item-text') || btn;
+        if (labels.active && labels.inactive) {
+            textEl.textContent = isActive ? labels.active : labels.inactive;
+        }
+
+        const iconEl = btn.querySelector('svg, i');
+        if (iconEl && icons.active && icons.inactive) {
+            iconEl.outerHTML = isActive ? icons.active : icons.inactive;
+        }
+    }
+}
+
+// Automatically apply the global interceptor to the document IF we are in an extension page
+if (typeof document !== 'undefined' && typeof window !== 'undefined' && window.location.protocol === 'chrome-extension:') {
+    Utils.enforceLeftClickOnly(document);
 }
 
 // Export for use in other modules
