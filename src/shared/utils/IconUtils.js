@@ -9,7 +9,6 @@ const IconUtils = {
      * @returns {string} - Relative path to the icon
      */
     getIconPath: (theme, size) => {
-        const suffix = theme === 'light' ? '-black' : '-white';
         // Default to white/standard if not light theme
         if (theme !== 'light') {
             return `/icons/icon${size}-white.png`;

@@ -1,6 +1,17 @@
 
 import { i18n } from '../../shared/i18n/I18n.js';
 
+const PREVIEW_POSTERS = [
+    'https://avatars.mds.yandex.net/get-kinopoisk-image/1900700/3bdf439f-3507-4250-ad68-07f9026466f3/300x450', // The Shawshank Redemption
+    'https://avatars.mds.yandex.net/get-kinopoisk-image/1946459/5c9e1b75-f53a-4eb1-b757-b0d4078a3a1b/300x450', // The Green Mile
+    'https://avatars.mds.yandex.net/get-kinopoisk-image/1599028/0b76b22e-4734-4bc8-8aa0-c9c05e1975e5/300x450', // Pulp Fiction
+    'https://avatars.mds.yandex.net/get-kinopoisk-image/1601783/b3c50165-3850-4f5b-9d40-f6afcb39fa8a/300x450', // Inception
+    'https://avatars.mds.yandex.net/get-kinopoisk-image/4303601/bb966b1a-acda-4c00-ac9d-eb7c27bc3748/300x450', // The Matrix
+    'https://avatars.mds.yandex.net/get-kinopoisk-image/1946459/57b5afc1-2856-42d4-a035-77649cc744a5/300x450', // Interstellar
+    'https://avatars.mds.yandex.net/get-kinopoisk-image/1946459/4ab77112-70b8-4cc3-b68e-ad72776c5b96/300x450', // Fight Club
+    'https://avatars.mds.yandex.net/get-kinopoisk-image/1721753/5661d4a0-d120-410e-bdf1-e8df81c8b368/300x450'  // Forrest Gump
+];
+
 /**
  * RandomManager - Controller for the Random Movie page
  */
@@ -458,8 +469,8 @@ class RandomManager {
             restoreTags(prefs.countries, 'country', 'include');
             restoreTags(prefs.excludeCountries, 'country', 'exclude');
 
-        } catch (e) {
-            console.error('Failed to load preferences', e);
+        } catch {
+            console.error('Failed to load preferences');
         }
     }
 
@@ -498,15 +509,45 @@ class RandomManager {
             // Create compact detailed card
             const card = MovieCard.createCompactDetail(movie);
             
+            // Setup poster zoom listener
+            const posterImg = card.querySelector('.cmc-poster');
+            if (posterImg && typeof window.ImageLightbox !== 'undefined') {
+                posterImg.style.cursor = 'zoom-in';
+                posterImg.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    window.ImageLightbox.show(posterImg.src);
+                });
+            }
+            
             this.elements.movieResult.innerHTML = '';
             this.elements.movieResult.appendChild(card);
-            this.showState('result');
             
             // Inject Add-to-Pool FAB over poster
             this._injectPoolFab(card, movie);
 
             // Setup delegation for any interactive elements
             this.setupCardDelegation();
+
+            // Smooth Unblur Transition before showing result
+            const skeletonPoster = document.getElementById('skeletonPosterImg');
+            if (skeletonPoster && this.elements.loadingState.style.display !== 'none') {
+                // 1. Stop dynamic spinning
+                if (this._posterSpinInterval) {
+                    clearInterval(this._posterSpinInterval);
+                    this._posterSpinInterval = null;
+                }
+                
+                // 2. Focus on actual movie poster
+                skeletonPoster.src = movie.posterUrl || '/icons/icon48.png';
+                skeletonPoster.classList.remove('spinning');
+                
+                // 3. Wait for blur-out transition (350ms in CSS)
+                setTimeout(() => {
+                    this.showState('result');
+                }, 350);
+            } else {
+                this.showState('result');
+            }
 
         } else {
             console.error('MovieCard component not found');
@@ -621,10 +662,63 @@ class RandomManager {
         this.elements.movieResult.style.display = 'none';
         this.elements.errorState.style.display = 'none';
 
-        if (state === 'initial') this.elements.initialState.style.display = 'block';
-        if (state === 'loading') this.elements.loadingState.style.display = 'block';
-        if (state === 'result') this.elements.movieResult.style.display = 'flex'; // Flex for centering
-        if (state === 'error') this.elements.errorState.style.display = 'block';
+        if (state === 'initial') {
+            this._stopPosterSpinning();
+            this.elements.initialState.style.display = 'block';
+        }
+        if (state === 'loading') {
+            this._startPosterSpinning();
+            this.elements.loadingState.style.display = 'block';
+        }
+        if (state === 'result') {
+            this._stopPosterSpinning();
+            this.elements.movieResult.style.display = 'flex'; // Flex for centering
+        }
+        if (state === 'error') {
+            this._stopPosterSpinning();
+            this.elements.errorState.style.display = 'block';
+        }
+    }
+
+    _startPosterSpinning() {
+        this._stopPosterSpinning(); // Safety check
+
+        const imgEl = document.getElementById('skeletonPosterImg');
+        if (!imgEl) return;
+
+        imgEl.classList.add('spinning');
+
+        // Gather candidates
+        let candidates = [...PREVIEW_POSTERS];
+        if (this.pool && this.pool.length > 0) {
+            const poolPosters = this.pool.map(m => m.poster).filter(Boolean);
+            if (poolPosters.length > 0) {
+                candidates = [...poolPosters, ...candidates];
+            }
+        }
+
+        let idx = 0;
+        // Pre-cache posters by loading them into hidden Image objects to ensure instant changes
+        candidates.forEach(url => {
+            const temp = new Image();
+            temp.src = url;
+        });
+
+        this._posterSpinInterval = setInterval(() => {
+            idx = (idx + 1) % candidates.length;
+            imgEl.src = candidates[idx];
+        }, 70);
+    }
+
+    _stopPosterSpinning() {
+        if (this._posterSpinInterval) {
+            clearInterval(this._posterSpinInterval);
+            this._posterSpinInterval = null;
+        }
+        const imgEl = document.getElementById('skeletonPosterImg');
+        if (imgEl) {
+            imgEl.classList.remove('spinning');
+        }
     }
 
     // ════════════════════════════════════════════════════════════
@@ -637,8 +731,8 @@ class RandomManager {
             const data = await chrome.storage.local.get(this.POOL_KEY);
             this.pool = data[this.POOL_KEY] || [];
             this._updatePoolUI();
-        } catch (e) {
-            console.warn('RandomManager: Failed to load pool', e);
+        } catch {
+            console.warn('RandomManager: Failed to load pool');
         }
     }
 
@@ -646,8 +740,8 @@ class RandomManager {
     async _savePool() {
         try {
             await chrome.storage.local.set({ [this.POOL_KEY]: this.pool });
-        } catch (e) {
-            console.warn('RandomManager: Failed to save pool', e);
+        } catch {
+            console.warn('RandomManager: Failed to save pool');
         }
         this._updatePoolUI();
     }
@@ -663,6 +757,17 @@ class RandomManager {
         return this.pool.some(m => m.kpId === kpId);
     }
 
+    /** Calculate days in pool based on calendar dates */
+    _getDaysInPool(addedAt) {
+        if (!addedAt) return 0;
+        const addedDate = new Date(addedAt);
+        if (isNaN(addedDate.getTime())) return 0;
+        const today = new Date();
+        const d1 = new Date(addedDate.getFullYear(), addedDate.getMonth(), addedDate.getDate());
+        const d2 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        return Math.max(0, Math.round((d2 - d1) / (1000 * 60 * 60 * 24)));
+    }
+
     /** Add the currently displayed movie to the pool */
     _addCurrentMovieToPool() {
         if (!this.currentMovie) return;
@@ -673,7 +778,8 @@ class RandomManager {
             title: this.currentMovie.name || this.currentMovie.alternativeName,
             year: this.currentMovie.year,
             poster: this.currentMovie.posterUrl,
-            rating: this.currentMovie.kpRating
+            rating: this.currentMovie.kpRating,
+            addedAt: new Date().toISOString()
         });
         this._savePool();
     }
@@ -702,11 +808,21 @@ class RandomManager {
                     this._searchForPool(q);
                 }, 1000);
             });
+
+            // Re-show results on click if they are hidden but query exists
+            searchInput.addEventListener('click', () => {
+                const q = searchInput.value.trim();
+                const resultsEl = document.getElementById('poolSearchResults');
+                if (q.length >= 2 && resultsEl && resultsEl.innerHTML.trim() !== '') {
+                    resultsEl.classList.remove('hidden');
+                }
+            });
         }
 
         // Close dropdown on outside click
         document.addEventListener('click', (e) => {
-            if (!e.target.closest('.pool-search-wrap')) {
+            // Ignore if clicking inside search wrap or on the lightbox overlay
+            if (!e.target.closest('.pool-search-wrap') && !e.target.closest('#shared-image-lightbox-overlay')) {
                 const resultsEl = document.getElementById('poolSearchResults');
                 if (resultsEl) resultsEl.classList.add('hidden');
             }
@@ -767,7 +883,7 @@ class RandomManager {
             const data = await this.kinopoiskService.searchMovies(query, 1, 7);
             const movies = data.docs || [];
             this._renderSearchResults(movies, resultsEl);
-        } catch (err) {
+        } catch {
             resultsEl.innerHTML = '<div style="padding:12px;color:#e74c3c;font-size:13px">Ошибка поиска</div>';
         }
     }
@@ -795,6 +911,20 @@ class RandomManager {
                         <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                     </svg>
                 </button>`;
+
+            // Click handling: lightbox for image, navigation for row
+            item.addEventListener('click', (e) => {
+                if (e.target.closest('.pool-result-add')) return;
+
+                if (e.target.tagName.toLowerCase() === 'img' && typeof window.ImageLightbox !== 'undefined') {
+                    window.ImageLightbox.show(e.target.src);
+                    return;
+                }
+
+                const url = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${kpId}`);
+                window.location.href = url;
+            });
+
             const addBtn = item.querySelector('.pool-result-add');
             if (!inPool) {
                 addBtn.addEventListener('click', (e) => {
@@ -804,7 +934,8 @@ class RandomManager {
                         title: m.name || m.alternativeName,
                         year: m.year,
                         poster: m.posterUrl,
-                        rating: m.kpRating
+                        rating: m.kpRating,
+                        addedAt: new Date().toISOString()
                     });
                     this._savePool();
                     addBtn.classList.add('added');
@@ -822,7 +953,30 @@ class RandomManager {
             list.innerHTML = '<div class="pool-list-empty">Пул пуст. Добавляй фильмы через поиск или кнопку «+» на постере.</div>';
             return;
         }
+
+        // Calculate total weight to show the actual percentage chance for each movie
+        let totalWeight = 0;
+        const weights = this.pool.map(m => {
+            const diffDays = this._getDaysInPool(m.addedAt);
+            return 1.0 + diffDays * 0.01;
+        });
+        weights.forEach(w => { totalWeight += w; });
+
         this.pool.forEach((m, idx) => {
+            const addedDate = m.addedAt ? new Date(m.addedAt) : new Date();
+            const diffDays = this._getDaysInPool(m.addedAt);
+            const bonusPercent = diffDays;
+            const weight = 1.0 + diffDays * 0.01;
+            const chancePercent = totalWeight > 0 ? ((weight / totalWeight) * 100).toFixed(1) : '0.0';
+
+            let dateStr;
+            const today = new Date();
+            if (today.toDateString() === addedDate.toDateString()) {
+                dateStr = 'сегодня';
+            } else {
+                dateStr = addedDate.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
+            }
+
             const item = document.createElement('div');
             item.className = 'pool-list-item';
             item.innerHTML = `
@@ -830,6 +984,11 @@ class RandomManager {
                 <div class="pool-list-item-meta">
                     <div class="pool-list-item-title">${m.title || '—'}</div>
                     <div class="pool-list-item-sub">${m.year || ''} · КП ${m.rating ? m.rating.toFixed(1) : '—'}</div>
+                    <div class="pool-list-item-bonus">
+                        <span>Добавлен: ${dateStr}</span>
+                        <span class="bonus-tag" title="Базовый шанс + ${bonusPercent}% (+1% за каждый день)">+${bonusPercent}%</span>
+                        <span class="chance-tag" title="Итоговый шанс выпадения">${chancePercent}%</span>
+                    </div>
                 </div>
                 <button class="pool-list-item-remove" title="Удалить из пула">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
@@ -840,9 +999,22 @@ class RandomManager {
             // Click on row → go to movie details page
             item.addEventListener('click', (e) => {
                 if (e.target.closest('.pool-list-item-remove')) return;
+                
+                // If click on poster, show lightbox instead of navigating
+                if (e.target.tagName.toLowerCase() === 'img' && typeof window.ImageLightbox !== 'undefined') {
+                    window.ImageLightbox.show(e.target.src);
+                    return;
+                }
+                
                 const url = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${m.kpId}`);
                 window.location.href = url;
             });
+            
+            // Add zoom-in cursor to poster
+            const img = item.querySelector('img');
+            if (img) {
+                img.style.cursor = 'zoom-in';
+            }
 
             item.querySelector('.pool-list-item-remove').addEventListener('click', () => {
                 this.pool.splice(idx, 1);
@@ -857,7 +1029,25 @@ class RandomManager {
     /** Pick a random movie from the pool and display it */
     _rollFromPool() {
         if (!this.pool.length) return;
-        const winnerIdx = Math.floor(Math.random() * this.pool.length);
+
+        // Weighted selection based on days in pool (base weight = 1.0, +1% of base weight per day)
+        let totalWeight = 0;
+        const weights = this.pool.map(m => {
+            const diffDays = this._getDaysInPool(m.addedAt);
+            return 1.0 + diffDays * 0.01;
+        });
+        weights.forEach(w => { totalWeight += w; });
+
+        let random = Math.random() * totalWeight;
+        let winnerIdx = 0;
+        for (let i = 0; i < this.pool.length; i++) {
+            random -= weights[i];
+            if (random <= 0) {
+                winnerIdx = i;
+                break;
+            }
+        }
+
         this._showRollAnimation(winnerIdx);
     }
 
@@ -988,7 +1178,11 @@ class RandomManager {
                 goBtn.textContent = `Смотреть · ${winner.title}`;
                 actionsBox.style.display = 'flex';
                 goBtn.disabled = false;
-                goBtn.onclick = () => {
+                goBtn.onclick = async () => {
+                    // Remove from pool
+                    this.pool = this.pool.filter(m => m.kpId !== winner.kpId);
+                    await this._savePool();
+
                     overlay.classList.add('hidden');
                     // Открыть страницу деталей фильма
                     window.location.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${winner.kpId}`);

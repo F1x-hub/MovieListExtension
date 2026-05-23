@@ -99,7 +99,7 @@ class CollectionService {
             }
         } catch (error) {
             console.error('Error saving collections:', error);
-            throw new Error(`Failed to save collections: ${error.message}`);
+            throw new Error(`Failed to save collections: ${error.message}`, { cause: error });
         }
     }
 

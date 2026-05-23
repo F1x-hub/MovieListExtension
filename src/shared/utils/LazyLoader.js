@@ -120,3 +120,7 @@ class LazyLoader {
         return this._cache.has(url);
     }
 }
+
+if (typeof window !== 'undefined') {
+    window.LazyLoader = LazyLoader;
+}

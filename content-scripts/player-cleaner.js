@@ -5,7 +5,9 @@
 
     // Only run if we are in an iframe (optional, but good practice since we expect to be embedded)
     if (window.self === window.top) {
+        // Top level window
     } else {
+        // Inside iframe
     }
 
     let observer = null;
@@ -19,7 +21,6 @@
     
     // UI References (Module Level)
     let episodeDropdown = null;
-    let seasonDropdown = null;
     
     // Anime Skip State
     let animeSkipData = null; // { startTime, endTime, episodeLength }
@@ -129,7 +130,9 @@
         script.src = chrome.runtime.getURL('content-scripts/suppress-errors.js');
         (document.head || document.documentElement).appendChild(script);
         script.onload = () => script.remove();
-    } catch(e) {}
+    } catch {
+        // Silent catch
+    }
 
     /**
      * Проверяет, является ли src настоящим медиа-источником,
@@ -173,7 +176,9 @@
         // Stop previous loading if any
         try {
             permanentVideo.pause();
-        } catch(e) {}
+        } catch {
+            // Ignore pause error
+        }
         
         // Find active subtitle track
         const tracks = Array.from(permanentVideo.textTracks || []);
@@ -205,7 +210,7 @@
             // Catch load errors
             try {
                 permanentVideo.load(); 
-            } catch(e) {
+            } catch {
                 console.log('[MovieExtension] Load interrupted (expected)');
             }
         }
@@ -303,15 +308,12 @@
             return;
         }
 
+        // Count all players in the entire document
         const allVideos = Array.from(document.querySelectorAll('video')).filter(v => v.dataset.ghost !== 'true' && !v.classList.contains('ghost-video'));
         const allIframes = document.querySelectorAll('iframe');
         const allNativeWrappers = document.querySelectorAll('.native-player-wrapper');
-        
-        // Only log census if there's something to potentially clean or if inside an iframe
-        if (allVideos.length > 0 || allIframes.length > 0 || window.self !== window.top) {
-            console.log('[DEBUG PlayerCleaner] DOM census: videos:', allVideos.length, 'iframes:', allIframes.length, 'native-player-wrappers:', allNativeWrappers.length);
-            allVideos.forEach((v, i) => console.log(`[DEBUG PlayerCleaner] video[${i}]: src=${v.src?.substring(0,80)}, parent=${v.parentElement?.className}, controls=${v.controls}`));
-        }
+        console.log('[DEBUG PlayerCleaner] DOM census: videos:', allVideos.length, 'iframes:', allIframes.length, 'native-player-wrappers:', allNativeWrappers.length);
+        allVideos.forEach((v, i) => console.log(`[DEBUG PlayerCleaner] video[${i}]: src=${v.src?.substring(0,80)}, parent=${v.parentElement?.className}, controls=${v.controls}`));
 
         // EARLY EXIT: If we already have a permanentVideo and it's inside our wrapper, we're done
         // BUG 2 FIX: Also verify the element is actually in the document (not detached)
@@ -382,26 +384,17 @@
                     currentTime: 0 // Start from beginning for new episode
                 };
                 
-                // Save active subtitle
-                let activeSubtitle = null;
-                const tracks = Array.from(permanentVideo.textTracks || []);
-                const activeTrack = tracks.find(t => t.mode === 'showing');
-                if (activeTrack) {
-                    activeSubtitle = {
-                        label: activeTrack.label,
-                        language: activeTrack.language
-                    };
-                }
+                // Note: activeSubtitle was previously used here, but we now use restoreSubtitlesLogic which relies on localStorage
                 
                 // Remove old video
                 const oldVideo = permanentVideo;
                 if (oldVideo) {
                     oldVideo.pause();
                     oldVideo.removeAttribute('src'); // Detach source
-                    oldVideo.removeAttribute('src'); // Detach source
-                    try { oldVideo.load(); } catch(e) {} // Force release of media resources
+                    try { oldVideo.load(); } catch {
+                        // Force release of media resources
+                    }
                     oldVideo.remove(); // Remove from DOM
-                    oldVideo.src = ''; // Double check
                 }
                 permanentVideo = null; // Clear reference strictly before reassigning
                 
@@ -520,15 +513,13 @@
                 // Check content for keywords
                 const text = el.textContent || '';
                 if (text.includes('Original') || text.includes('Dubbing') || text.includes('Дубляж') || text.includes('TVShows')) {
+                    // List detected
                 }
             });
         }
         
         if (!siteVideo) {
-            // Only log if we are in an environment where we EXPECT a video
-            if (window.self !== window.top) {
-                console.log('[DEBUG PlayerCleaner] No video found yet, waiting...');
-            }
+            console.log('[DEBUG PlayerCleaner] No video found yet, waiting...');
             return; // No video found yet
         }
         
@@ -595,7 +586,6 @@
             // script.remove(); removed from here
             
             newContainer.className = 'native-player-wrapper';
-            const PLAYER_WRAPPER_CLASS = 'native-player-wrapper';
 
             // Global left-click enforcer for the custom player UI
             const clickEnforcer = (e) => {
@@ -890,7 +880,42 @@
                     outline: none !important;
                 }
 
-
+                /* Ghost Player Tooltip */
+                .ghost-tooltip {
+                    display:         none;
+                    position:        fixed;
+                    z-index:         2147483642;
+                    pointer-events:  none;
+                    flex-direction:  column;
+                    align-items:     center;
+                    gap:             4px;
+                    filter:          drop-shadow(0 4px 16px rgba(0,0,0,.7));
+                    opacity:         0;
+                    transform:       translateY(6px);
+                    transition:      opacity .15s ease, transform .15s ease;
+                }
+                .ghost-tooltip--visible {
+                    opacity:   1;
+                    transform: translateY(0);
+                }
+                .ghost-video {
+                    width:         200px;
+                    height:        112px;
+                    object-fit:    cover;
+                    border-radius: 6px;
+                    border:        1.5px solid rgba(255,255,255,.15);
+                    background:    #111;
+                    display:       block;
+                }
+                .ghost-time-label {
+                    font-size:      12px;
+                    font-weight:    600;
+                    color:          #fff;
+                    background:     rgba(0,0,0,.65);
+                    padding:        2px 8px;
+                    border-radius:  4px;
+                    letter-spacing: .03em;
+                }
             `;
             document.head.appendChild(subParams);
 
@@ -1040,7 +1065,7 @@
                 
                 dropdowns.forEach(dropdown => {
                     // Try to find header text to identify if this is Seasons or Episodes
-                    let headerText = '';
+                    let headerText;
                     const headerSpan = dropdown.querySelector('span[class*="headText_"]');
                     if (headerSpan) {
                         headerText = headerSpan.textContent || '';
@@ -1450,135 +1475,7 @@
             // --- SERIES / SEASON SELECTORS START ---
 
 
-            const createCustomDropdown = (items, placeholder, onSelect) => {
-                const container = document.createElement('div');
-                container.style.position = 'relative';
-                container.style.marginLeft = '10px';
-                container.style.pointerEvents = 'auto'; // Ensure clickable
-                container.className = 'custom-series-dropdown'; 
 
-                const trigger = document.createElement('button');
-                trigger.style.background = 'rgba(0, 0, 0, 0.6)';
-                trigger.style.border = '1px solid rgba(255, 255, 255, 0.2)';
-                trigger.style.borderRadius = '4px';
-                trigger.style.color = 'white';
-                trigger.style.padding = '8px 12px';
-                trigger.style.cursor = 'pointer';
-                trigger.style.fontSize = '14px';
-                trigger.style.lineHeight = '1.2';
-                trigger.style.boxSizing = 'border-box';
-                trigger.style.height = '35.2px';
-                trigger.style.display = 'flex';
-                trigger.style.alignItems = 'center';
-                trigger.style.gap = '5px';
-                trigger.style.backdropFilter = 'blur(4px)';
-
-                // Find active item
-                let activeItem = items.find(i => i.isActive) || items[0];
-                const activeLabel = document.createElement('span');
-                activeLabel.textContent = activeItem ? activeItem.label : placeholder;
-                trigger.appendChild(activeLabel);
-
-                const arrow = document.createElement('div');
-                arrow.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
-                trigger.appendChild(arrow);
-
-                container.appendChild(trigger);
-
-                // Dropdown Menu
-                const menu = document.createElement('div');
-                menu.style.position = 'absolute';
-                menu.style.top = '100%';
-                menu.style.left = '0';
-                menu.style.width = 'max-content';
-                menu.style.minWidth = '100%';
-                menu.style.maxHeight = '300px';
-                menu.style.overflowY = 'auto';
-                menu.style.background = 'rgba(28, 28, 30, 0.95)';
-                menu.style.border = '1px solid rgba(255, 255, 255, 0.1)';
-                menu.style.borderRadius = '4px';
-                menu.style.marginTop = '4px';
-                menu.style.display = 'none';
-                menu.style.flexDirection = 'column';
-                menu.style.zIndex = '2147483642';
-                menu.style.boxShadow = '0 4px 12px rgba(0,0,0,0.5)';
-
-                items.forEach(item => {
-                    const option = document.createElement('div');
-                    option.style.padding = '8px 12px';
-                    option.style.cursor = 'pointer';
-                    option.style.color = item.isActive ? '#4da6ff' : 'white'; 
-                    option.style.fontSize = '13px';
-                    option.style.transition = 'background 0.2s';
-                    option.textContent = item.label;
-
-                    option.addEventListener('mouseenter', () => {
-                        option.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-                    });
-                    option.addEventListener('mouseleave', () => {
-                        option.style.backgroundColor = 'transparent';
-                    });
-
-                    option.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        activeLabel.textContent = item.label;
-                        menu.style.display = 'none';
-                        if (onSelect) onSelect(item);
-                    });
-
-                    menu.appendChild(option);
-                });
-
-                container.appendChild(menu);
-
-                // Toggle
-                trigger.addEventListener('click', (e) => {
-                    e.stopPropagation(); // prevent window click
-                    // close others
-                    document.querySelectorAll('.custom-series-dropdown > div').forEach(el => {
-                         if (el !== menu) el.style.display = 'none';
-                    });
-                    menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
-                });
-
-                // Close on outside click
-                document.addEventListener('click', (e) => {
-                    if (!container.contains(e.target)) {
-                        menu.style.display = 'none';
-                    }
-                });
-
-                // Update items method
-                container.updateItems = (newItems) => {
-                    menu.innerHTML = '';
-                    items = newItems; // update closure
-                    activeItem = items.find(i => i.isActive) || items[0];
-                    activeLabel.textContent = activeItem ? activeItem.label : placeholder;
-                    
-                    items.forEach(item => {
-                        const option = document.createElement('div');
-                        option.textContent = item.label;
-                        option.style.padding = '8px 12px';
-                        option.style.cursor = 'pointer';
-                        option.style.color = item.isActive ? '#4da6ff' : 'white';
-                         option.style.fontSize = '13px';
-                        option.style.transition = 'background 0.2s';
-                        
-                        option.addEventListener('mouseenter', () => option.style.backgroundColor = 'rgba(255, 255, 255, 0.1)');
-                        option.addEventListener('mouseleave', () => option.style.backgroundColor = 'transparent');
-                        
-                        option.addEventListener('click', (e) => {
-                            e.stopPropagation();
-                            activeLabel.textContent = item.label;
-                            menu.style.display = 'none';
-                            if (onSelect) onSelect(item);
-                        });
-                        menu.appendChild(option);
-                    });
-                };
-
-                return container;
-            };
 
             // --- Watched Episodes Persistence ---
             const getWatchedKey = () => `movieExtension_watched_${window.location.pathname}`;
@@ -1587,7 +1484,7 @@
                 try {
                     const key = getWatchedKey();
                     return JSON.parse(localStorage.getItem(key) || '[]');
-                } catch (e) { return []; }
+                } catch { return []; }
             };
 
             const markEpisodeAsWatched = (label) => {
@@ -1598,7 +1495,9 @@
                         watched.push(label);
                         localStorage.setItem(key, JSON.stringify(watched));
                     }
-                } catch (e) {}
+                } catch {
+                    // Ignore error
+                }
             };
 
             const createHorizontalEpisodeSelector = (items, seasons, placeholder, onSelect) => {
@@ -3291,6 +3190,7 @@
                         });
                     });
                 } else {
+                    // No tracks
                 }
                 
                 renderSubMenuView('Субтитры', items);
@@ -3676,7 +3576,42 @@
             bottomControls.appendChild(rightControls);
             newContainer.appendChild(bottomControls);
 
+            // INITIALIZE GHOST PLAYER FOR IFRAME
+            if (typeof GhostPlayer !== 'undefined') {
+                console.log('[DEBUG PlayerCleaner] Initializing GhostPlayer for iframe...');
+                window._iframeGhostPlayer = new GhostPlayer({
+                    progressContainer: progressContainer,
+                    getActiveVideo: () => permanentVideo || document.querySelector('video'),
+                    getCurrentUrl: () => {
+                        if (lastRealSource && !lastRealSource.startsWith('blob:')) return lastRealSource;
+                        
+                        // 1. Try our own hlsInstance
+                        if (hlsInstance && hlsInstance.url && !hlsInstance.url.startsWith('blob:')) {
+                            return hlsInstance.url;
+                        }
 
+                        // 2. Try window.hls (site's own instance)
+                        if (window.hls && window.hls.url && !window.hls.url.startsWith('blob:')) {
+                            return window.hls.url;
+                        }
+
+                        // 3. Scan performance entries for .m3u8
+                        try {
+                            const entries = performance.getEntriesByType('resource');
+                            const hlsEntry = entries.find(e => e.name.includes('.m3u8') && !e.name.includes('ghost-preview'));
+                            if (hlsEntry) return hlsEntry.name;
+                        } catch {
+                            // Ignore error
+                        }
+
+                        // 4. Fallback to current video source
+                        const vid = permanentVideo || document.querySelector('video');
+                        return vid ? (vid.src || vid.currentSrc) : null;
+                    },
+                    getCurrentHls: () => hlsInstance || window.hls || null,
+                    HlsClass: (typeof Hls !== 'undefined') ? Hls : null,
+                });
+            }
 
             // Communication with parent (Extension)
             // Notify parent that player is ready
@@ -3744,7 +3679,7 @@
         // <div class="menu_..."><div class="item_...">Name</div></div>
         
         // Find potential menu containers by partial class or structure
-        const candidates = [];
+
         
         // Look for items with "item_" class prefix which is common in provided snippet
         const items = document.querySelectorAll('[class*="item_"]');
@@ -3784,7 +3719,7 @@
             }
 
             if (bestParent) {
-                extractAndRender(bestParent.children, container);
+                extractAndRender(bestParent.children);
                 return;
             }
         }
@@ -3822,12 +3757,13 @@
         });
 
         if (bestTextParent && maxTextCount >= 2) {
-             extractAndRender(bestTextParent.children, container);
+             extractAndRender(bestTextParent.children);
         } else {
+            // No voiceover found
         }
     }
 
-    function extractAndRender(childrenCollection, container) {
+    function extractAndRender(childrenCollection) {
         const voiceoverOptions = [];
         Array.from(childrenCollection).forEach(child => {
             const text = child.textContent.trim();
@@ -3925,11 +3861,6 @@
         
         // Call replacePlayer for initial setup
         replacePlayer();
-    }, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ['src', 'currentSrc']
     });
     
     // waiting for body
@@ -3979,4 +3910,240 @@
 })();
 
 
+// ─── GHOST PLAYER CLASS ───
+class GhostPlayer {
+    constructor({ progressContainer, getActiveVideo, getCurrentUrl, getCurrentHls, HlsClass }) {
+        this._progressContainer = progressContainer;
+        this._getActiveVideo   = getActiveVideo;   // () => video element
+        this._getCurrentUrl    = getCurrentUrl;    // () => string | null
+        this._getCurrentHls    = getCurrentHls;    // () => Hls instance | null
+        this._Hls              = HlsClass;         // Hls constructor (lazy-loaded)
 
+        this._ghostHls   = null;
+        this._lastUrl    = null;
+        this._debounce   = null;
+
+        this._tooltip    = null;
+        this._ghostVideo = null;
+        this._timeLabel  = null;
+
+        console.log('[GhostPlayer] constructor — progressContainer:', progressContainer);
+        console.log('[GhostPlayer] constructor — HlsClass available:', !!HlsClass);
+        console.log('[GhostPlayer] constructor — HlsClass.isSupported:', HlsClass ? HlsClass.isSupported() : 'N/A');
+
+        this._build();
+        this._bind();
+
+        console.log('[GhostPlayer] initialized ✓  tooltip appended to body:', document.body.contains(this._tooltip));
+    }
+
+    // ─── DOM ──────────────────────────────────────────────────────────────────
+
+    _build() {
+        this._tooltip = document.createElement('div');
+        this._tooltip.className = 'ghost-tooltip';
+        this._tooltip.setAttribute('aria-hidden', 'true');
+
+        this._ghostVideo = document.createElement('video');
+        this._ghostVideo.className   = 'ghost-video';
+        this._ghostVideo.dataset.ghost = "true"; // Tag it for other scripts
+        this._ghostVideo.muted       = true;
+        this._ghostVideo.preload     = 'none';
+        this._ghostVideo.controls    = false;
+        this._ghostVideo.playsInline = true;
+
+        this._timeLabel = document.createElement('span');
+        this._timeLabel.className = 'ghost-time-label';
+
+        this._tooltip.appendChild(this._ghostVideo);
+        this._tooltip.appendChild(this._timeLabel);
+        document.body.appendChild(this._tooltip);
+
+        console.log('[GhostPlayer] _build — DOM created. tooltip classes:', this._tooltip.className);
+    }
+
+    // ─── Events ───────────────────────────────────────────────────────────────
+
+    _bind() {
+        this._onMove  = this._handleMove.bind(this);
+        this._onLeave = this._handleLeave.bind(this);
+
+        this._progressContainer.addEventListener('mousemove',  this._onMove);
+        this._progressContainer.addEventListener('mouseleave', this._onLeave);
+
+        console.log('[GhostPlayer] _bind — mousemove / mouseleave attached to:', this._progressContainer?.id || this._progressContainer?.className || this._progressContainer);
+    }
+
+    _handleMove(e) {
+        const video = this._getActiveVideo();
+
+        if (!video) {
+            console.warn('[GhostPlayer] _handleMove — getActiveVideo() returned null, skipping');
+            return;
+        }
+        if (!video.duration || isNaN(video.duration)) {
+            console.warn('[GhostPlayer] _handleMove — video.duration invalid:', video.duration, '| readyState:', video.readyState, '| src:', video.src?.substring(0, 60));
+            return;
+        }
+
+        const rect     = this._progressContainer.getBoundingClientRect();
+        const ratio    = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+        const seekTime = ratio * video.duration;
+
+        console.log(`[GhostPlayer] _handleMove — ratio=${ratio.toFixed(2)}, seekTime=${seekTime.toFixed(1)}s, duration=${video.duration.toFixed(1)}s`);
+
+        this._showTooltip(e.clientX, rect.top, seekTime);
+
+        clearTimeout(this._debounce);
+        this._debounce = setTimeout(() => this._seekGhost(seekTime), 120);
+    }
+
+    _handleLeave() {
+        console.log('[GhostPlayer] _handleLeave — hiding tooltip');
+        clearTimeout(this._debounce);
+        this._tooltip.classList.remove('ghost-tooltip--visible');
+
+        // Небольшая задержка перед реальным hide — плавный fade-out
+        setTimeout(() => {
+            if (!this._tooltip.classList.contains('ghost-tooltip--visible')) {
+                this._tooltip.style.display = 'none';
+            }
+        }, 200);
+    }
+
+    // ─── Core ─────────────────────────────────────────────────────────────────
+
+    _seekGhost(time) {
+        const url = this._getCurrentUrl();
+        console.log(`[GhostPlayer] _seekGhost — time=${time.toFixed(1)}s, url=${url?.substring(0, 80) ?? 'null'}`);
+
+        if (!url) {
+            console.warn('[GhostPlayer] _seekGhost — no URL, aborting');
+            return;
+        }
+
+        if (url !== this._lastUrl) {
+            console.log('[GhostPlayer] _seekGhost — new URL detected, calling _initSource');
+            this._initSource(url);
+            this._lastUrl = url;
+        }
+
+        // Ждём метаданных, потом сикаем
+        const doSeek = () => {
+            console.log(`[GhostPlayer] doSeek — setting currentTime=${time.toFixed(1)}s, readyState=${this._ghostVideo.readyState}`);
+            this._ghostVideo.currentTime = time;
+            this._ghostVideo.pause();
+        };
+
+        if (this._ghostVideo.readyState >= 1) {
+            doSeek();
+        } else {
+            console.log('[GhostPlayer] _seekGhost — waiting for loadedmetadata (readyState=' + this._ghostVideo.readyState + ')');
+            this._ghostVideo.addEventListener('loadedmetadata', doSeek, { once: true });
+        }
+    }
+
+    _initSource(url) {
+        console.log('[GhostPlayer] _initSource — url:', url?.substring(0, 80));
+
+        // Уничтожаем предыдущий HLS инстанс
+        if (this._ghostHls) {
+            console.log('[GhostPlayer] _initSource — destroying previous ghostHls');
+            this._ghostHls.destroy();
+            this._ghostHls = null;
+        }
+        this._ghostVideo.removeAttribute('src');
+
+        const isHlsUrl = !!(url && (url.includes('.m3u8') || (url.startsWith('blob:') && this._getCurrentHls())));
+        console.log(`[GhostPlayer] _initSource — isHlsUrl=${isHlsUrl}, Hls available=${!!this._Hls}, Hls.isSupported=${this._Hls ? this._Hls.isSupported() : 'N/A'}`);
+
+        if (isHlsUrl && this._Hls && this._Hls.isSupported()) {
+            console.log('[GhostPlayer] _initSource — using HLS.js instance for ghost');
+            this._ghostHls = new this._Hls({
+                maxBufferLength:    8,
+                maxMaxBufferLength: 16,
+                startFragPrefetch:  true,
+            });
+            this._ghostHls.on(this._Hls.Events.MANIFEST_PARSED, () => {
+                console.log('[GhostPlayer] ghostHls — MANIFEST_PARSED ✓');
+            });
+            this._ghostHls.on(this._Hls.Events.ERROR, (event, data) => {
+                console.error('[GhostPlayer] ghostHls ERROR —', data.type, data.details);
+            });
+            this._ghostHls.loadSource(url);
+            this._ghostHls.attachMedia(this._ghostVideo);
+        } else if (isHlsUrl && this._ghostVideo && this._ghostVideo.canPlayType('application/vnd.apple.mpegurl')) {
+            // Нативный HLS (Safari)
+            console.log('[GhostPlayer] _initSource — using native HLS (Safari)');
+            this._ghostVideo.src = url;
+            this._ghostVideo.load();
+        } else {
+            // MP4 или прямая ссылка
+            // NEW: Ignore blob URLs if we don't have HLS.js (likely they are MediaSource blobs that can't be reused)
+            if (url.startsWith('blob:') && !this._Hls) {
+                console.warn('[GhostPlayer] _initSource — skipping blob URL because HlsClass is unavailable');
+                return;
+            }
+            console.log('[GhostPlayer] _initSource — using direct src (non-HLS or HLS.js not supported)');
+            this._ghostVideo.src = url;
+            this._ghostVideo.load();
+        }
+
+        this._ghostVideo.addEventListener('loadedmetadata', () => {
+            console.log(`[GhostPlayer] ghostVideo — loadedmetadata ✓  duration=${this._ghostVideo.duration?.toFixed(1)}s`);
+        }, { once: true });
+
+        this._ghostVideo.addEventListener('error', (e) => {
+            console.error('[GhostPlayer] ghostVideo error —', this._ghostVideo.error?.code, this._ghostVideo.error?.message);
+        }, { once: true });
+    }
+
+    // ─── UI ───────────────────────────────────────────────────────────────────
+
+    _showTooltip(clientX, barTop, time) {
+        this._tooltip.style.display = 'flex';
+        // Принудительный reflow, чтобы offsetWidth был актуален
+        const w = this._tooltip.offsetWidth || 180;
+        const h = this._tooltip.offsetHeight || 116;
+
+        let left = clientX - w / 2;
+        left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+
+        const top = barTop - h - 14; // Relative to viewport, no scroll needed for position: fixed
+
+        this._tooltip.style.left = `${left}px`;
+        this._tooltip.style.top  = `${top}px`;
+
+        this._timeLabel.textContent = this._formatTime(time);
+        
+        // Use requestAnimationFrame to ensure display: flex is applied before adding visibility class
+        requestAnimationFrame(() => {
+            this._tooltip.classList.add('ghost-tooltip--visible');
+        });
+
+        console.log(`[GhostPlayer] _showTooltip — left=${left}px, top=${top}px, time=${this._formatTime(time)}, display=${this._tooltip.style.display}, classes=${this._tooltip.className}`);
+    }
+
+    _formatTime(seconds) {
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = Math.floor(seconds % 60);
+        const mm = String(m).padStart(2, '0');
+        const ss = String(s).padStart(2, '0');
+        return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+    }
+
+    // ─── Lifecycle ────────────────────────────────────────────────────────────
+
+    destroy() {
+        console.log('[GhostPlayer] destroy — cleaning up');
+        clearTimeout(this._debounce);
+        this._progressContainer.removeEventListener('mousemove',  this._onMove);
+        this._progressContainer.removeEventListener('mouseleave', this._onLeave);
+        if (this._ghostHls) {
+            this._ghostHls.destroy();
+            this._ghostHls = null;
+        }
+        this._tooltip.remove();
+    }
+}

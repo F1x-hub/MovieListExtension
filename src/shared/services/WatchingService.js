@@ -68,7 +68,7 @@ class WatchingService {
             return { id: docId, movedFrom, ...watchingData };
         } catch (error) {
             console.error('Error adding to watching:', error);
-            throw new Error(`Failed to add to watching: ${error.message}`);
+            throw new Error(`Failed to add to watching: ${error.message}`, { cause: error });
         }
     }
 
@@ -100,7 +100,7 @@ class WatchingService {
             return true;
         } catch (error) {
             console.error('Error removing from watching:', error);
-            throw new Error(`Failed to remove from watching: ${error.message}`);
+            throw new Error(`Failed to remove from watching: ${error.message}`, { cause: error });
         }
     }
 
@@ -124,7 +124,7 @@ class WatchingService {
             if (['addedAt', 'movieTitle', 'releaseYear', 'avgRating'].includes(sortBy)) {
                 try {
                     query = query.orderBy(sortBy, order);
-                } catch (e) {
+                } catch {
                     // If index is missing, fallback to default order or memory sort
                     console.warn(`Index missing for sort ${sortBy}, falling back to memory sort`);
                 }
@@ -158,7 +158,7 @@ class WatchingService {
                      const dateB = b.addedAt?.toDate?.() || new Date(0);
                      return dateB - dateA;
                 });
-            } catch (fallbackError) {
+            } catch {
                 return [];
             }
         }

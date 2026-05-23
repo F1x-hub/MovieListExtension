@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="../../shared/styles/movie-card.css">
     <link rel="stylesheet" href="random.css">
     <link rel="stylesheet" href="../../shared/styles/report-widget.css">
+    <link rel="stylesheet" href="../../shared/styles/image-lightbox.css">
 </head>
 <body>
     <!-- Navigation will be inserted here by Navigation.js -->
@@ -158,9 +159,33 @@
                     </button>
                 </div>
 
-                <div id="loadingState" class="loading-state" style="display: none;">
-                    <div class="spinner-modern"></div>
-                    <p data-i18n="random.states.searching">Searching specifically for you...</p>
+                <div id="loadingState" class="loading-skeleton-card" style="display: none;">
+                    <div class="skeleton-layout">
+                        <div class="skeleton-poster-section">
+                            <div class="skeleton-poster-wheel">
+                                <img id="skeletonPosterImg" class="skeleton-poster-img spinning" src="../../../icons/icon128-white.png" alt="">
+                            </div>
+                            <div class="skeleton-ratings">
+                                <div class="skeleton-rating-badge"></div>
+                                <div class="skeleton-rating-badge"></div>
+                            </div>
+                        </div>
+                        <div class="skeleton-info">
+                            <div class="skeleton-header">
+                                <div class="skeleton-title"></div>
+                                <div class="skeleton-subtitle"></div>
+                            </div>
+                            <div class="skeleton-meta-grid">
+                                <div class="skeleton-meta-item"></div>
+                                <div class="skeleton-meta-item"></div>
+                                <div class="skeleton-meta-item"></div>
+                                <div class="skeleton-meta-item"></div>
+                                <div class="skeleton-meta-item"></div>
+                                <div class="skeleton-meta-item"></div>
+                            </div>
+                            <p style="margin-top: 16px; color: var(--text-secondary); font-size: 14px; font-weight: 500; text-align: center;" data-i18n="random.states.searching">Searching specifically for you...</p>
+                        </div>
+                    </div>
                 </div>
 
                 <div id="movieResult" class="movie-result" style="display: none;">
@@ -218,6 +243,7 @@
     <script src="../../shared/components/Navigation.js"></script>
     <script src="../../shared/firestore.js"></script>
     <script src="../../shared/components/MovieCard.js"></script>
+    <script src="../../shared/components/ImageLightbox.js"></script>
     <script src="random.js" type="module"></script>
     <script defer src="../../shared/components/ReportWidget.js"></script>
 </body>

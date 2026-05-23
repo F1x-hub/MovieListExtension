@@ -91,7 +91,7 @@ class FavoriteService {
             return { id: docId, ...favoriteData };
         } catch (error) {
             console.error('Error adding to bookmarks:', error);
-            throw new Error(`Failed to add to bookmarks: ${error.message}`);
+            throw new Error(`Failed to add to bookmarks: ${error.message}`, { cause: error });
         }
     }
 
@@ -121,7 +121,7 @@ class FavoriteService {
             return true;
         } catch (error) {
             console.error('Error updating status:', error);
-            throw new Error(`Failed to update status: ${error.message}`);
+            throw new Error(`Failed to update status: ${error.message}`, { cause: error });
         }
     }
 
@@ -153,7 +153,7 @@ class FavoriteService {
             return true;
         } catch (error) {
             console.error('Error removing from bookmarks:', error);
-            throw new Error(`Failed to remove from bookmarks: ${error.message}`);
+            throw new Error(`Failed to remove from bookmarks: ${error.message}`, { cause: error });
         }
     }
 

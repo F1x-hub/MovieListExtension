@@ -4,6 +4,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Gemini AI config
+.gemini/
+
 # Environment variables
 .env
 .env.local
@@ -54,3 +57,8 @@ build/
 # Documentation (except README.md)
 *.md
 !README.md
+!AGENT.md
+!docs/TASKS.md
+
+# Telegram Bot
+telegram-bot/

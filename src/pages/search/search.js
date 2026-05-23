@@ -641,21 +641,31 @@ class SearchManager {
     }
 
     async performSearch() {
-        const query = this.elements.searchInput.value.trim();
-        if (!query) {
-            Utils.showToast(i18n.get('search.error_query'), 'warning');
-            return;
+        if (this._isSearching) return;
+        this._isSearching = true;
+
+        try {
+            const query = this.elements.searchInput.value.trim();
+            if (!query) {
+                Utils.showToast(i18n.get('search.error_query'), 'warning');
+                return;
+            }
+            
+            // Hide search history dropdown
+            this.hideSearchHistory();
+            
+            // Add to search history
+            await this.searchHistoryService.addToHistory(query);
+            
+            this.currentQuery = query;
+            this.currentPage = 1;
+            await this.searchMovies();
+        } finally {
+            // Add a delay before allowing the next search to prevent API rate limiting
+            setTimeout(() => {
+                this._isSearching = false;
+            }, 800);
         }
-        
-        // Hide search history dropdown
-        this.hideSearchHistory();
-        
-        // Add to search history
-        await this.searchHistoryService.addToHistory(query);
-        
-        this.currentQuery = query;
-        this.currentPage = 1;
-        await this.searchMovies();
     }
 
     async searchMovies() {
@@ -674,7 +684,6 @@ class SearchManager {
             }
             
             const kinopoiskService = firebaseManager.getKinopoiskService();
-            const movieCacheService = firebaseManager.getMovieCacheService();
             
             // Check if API is configured
             if (!kinopoiskService.isConfigured()) {
@@ -689,7 +698,7 @@ class SearchManager {
             const searchResults = await kinopoiskService.searchMovies(
                 this.currentQuery,
                 this.currentPage,
-                20,
+                10,
                 filters
             );
             
@@ -812,7 +821,7 @@ class SearchManager {
                     try {
                         const rating = await ratingService.getRating(this.currentUser.uid, movieId);
                         return { movieId, rating };
-                    } catch (error) {
+                    } catch {
                         return { movieId, rating: null };
                     }
                 });
@@ -938,7 +947,7 @@ class SearchManager {
             // Check for legacy/invalid awards data (missing name or using old property names)
             if (movie.awards && movie.awards.length > 0) {
                 const firstAward = movie.awards[0];
-                const isLegacy = !firstAward.name || firstAward.hasOwnProperty('winning'); // Old format used 'winning' instead of 'win'
+                const isLegacy = !firstAward.name || Object.prototype.hasOwnProperty.call(firstAward, 'winning'); // Old format used 'winning' instead of 'win'
                 
                 if (isLegacy) {
                     console.log('[Awards Debug] ⚠ Detected legacy/invalid awards data, forcing re-parse');
@@ -1011,7 +1020,7 @@ class SearchManager {
                         // For now we just display them.
                      }
                 }
-            } catch (imagesError) {
+            } catch {
                 // Silently handle image loading errors
             }
             
@@ -1375,7 +1384,6 @@ class SearchManager {
         const votes = movie.votes?.kp || 0;
         const imdbVotes = movie.votes?.imdb || 0;
         
-        const isRated = !!userRating;
         const isFavorite = bookmarkStatus === 'favorite' || (userRating?.isFavorite === true);
         const isWatching = bookmarkStatus === 'watching';
         const isWatched = bookmarkStatus === 'watched';
@@ -1828,8 +1836,8 @@ class SearchManager {
                      console.log('Preloaded sources count:', sources.length);
                  }
              }
-        } catch (e) {
-            console.warn('Preload failed:', e);
+        } catch {
+            console.warn('Preload failed');
         }
     }
 
@@ -1846,7 +1854,7 @@ class SearchManager {
                 return null;
             }
             return cached.sources;
-        } catch (e) {
+        } catch {
             return null;
         }
     }
@@ -1859,8 +1867,8 @@ class SearchManager {
                 sources: sources
             };
             localStorage.setItem(key, JSON.stringify(data));
-        } catch (e) {
-            console.warn('Failed to cache sources', e);
+        } catch {
+            console.warn('Failed to cache sources');
         }
     }
 
@@ -1868,7 +1876,6 @@ class SearchManager {
         const posterUrl = movie.posterUrl || '/icons/icon48.png';
         const year = movie.year || '';
         const genres = movie.genres?.join(', ') || '';
-        const countries = movie.countries?.join(', ') || '';
         const kpRating = movie.kpRating || 0;
         const imdbRating = movie.imdbRating || 0;
         const duration = movie.duration || 0;
@@ -2585,7 +2592,6 @@ class SearchManager {
                 // Update button state (menu item)
                 if (buttonElement) {
                     const textSpan = buttonElement.querySelector('.mc-menu-item-text');
-                    const iconSpan = buttonElement.querySelector('.mc-menu-item-icon');
                         
                     buttonElement.classList.remove('active');
                     buttonElement.title = 'Add to Watchlist';
@@ -2748,7 +2754,7 @@ class SearchManager {
                 const fallbackType = img.getAttribute('data-fallback');
                 
                 switch (fallbackType) {
-                    case 'poster':
+                    case 'poster': {
                         // Hide image and show placeholder for movie cards
                         img.style.display = 'none';
                         const placeholder = img.nextElementSibling;
@@ -2756,8 +2762,9 @@ class SearchManager {
                             placeholder.style.display = 'flex';
                         }
                         break;
+                    }
                     
-                    case 'detail':
+                    case 'detail': {
                         // Hide image and show placeholder for detail page
                         img.style.display = 'none';
                         const detailPlaceholder = img.nextElementSibling;
@@ -2765,6 +2772,7 @@ class SearchManager {
                             detailPlaceholder.style.display = 'flex';
                         }
                         break;
+                    }
                     
                     case 'modal':
                     case 'rating-modal':
@@ -3378,13 +3386,13 @@ class SearchManager {
     getLastSource(movieId) {
         try {
             return localStorage.getItem(`last_source_${movieId}`);
-        } catch (e) { return null; }
+        } catch { return null; }
     }
 
     saveLastSource(movieId, url) {
         try {
             localStorage.setItem(`last_source_${movieId}`, url);
-        } catch (e) { }
+        } catch { /* Ignore */ }
     }
 
     renderSimplePlayer() {
@@ -3473,7 +3481,7 @@ class SearchManager {
                     urlObj.searchParams.set('autoplay', '1');
                     urlObj.searchParams.set('mute', '0'); 
                     url = urlObj.toString();
-                } catch (e) {
+                } catch {
                     if (url.includes('?')) {
                         url += '&autoplay=1';
                     } else {

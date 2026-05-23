@@ -93,7 +93,7 @@
                 try {
                     // Extract base64 part from URL (e.g., /help/aHR0cHMlM0ElMkYlMkZ3d3cua2lub3BvaXNrLnJ1JTJGZmlsbSUyRjYzNDk0NCUyRg==/)
                     // Match everything after /help/ until the next / or end of string
-                    const base64Match = href.match(/\/help\/([^\/\?&#]+)/);
+                    const base64Match = href.match(/\/help\/([^/?&#]+)/);
                     if (base64Match && base64Match[1]) {
                         const base64String = base64Match[1];
                         // Decode base64
@@ -114,7 +114,7 @@
             }
             
             // Try direct match in href (non-encoded links)
-            const match = href.match(/kinopoisk\.ru\/film\/(\d+)/i) || href.match(/film[\/=](\d+)/i);
+            const match = href.match(/kinopoisk\.ru\/film\/(\d+)/i) || href.match(/film[/=](\d+)/i);
             if (match && match[1]) {
                 const kpId = parseInt(match[1]);
                 console.log(`[MovieList Extension] Found Kinopoisk ID in link: ${kpId}`);
@@ -138,7 +138,7 @@
                             console.log(`[MovieList Extension] Found Kinopoisk ID in script base64: ${kpId}`);
                             return kpId;
                         }
-                    } catch (e) {
+                    } catch {
                         // Ignore decode errors
                     }
                 }
@@ -147,7 +147,7 @@
                 const match = script.textContent.match(/kinopoisk\.ru\/film\/(\d+)/i) ||
                               script.textContent.match(/kinopoiskID["\s:=]+(\d+)/i) ||
                               script.textContent.match(/kp["\s:=]+(\d+)/i) ||
-                              script.textContent.match(/film[\/=](\d+)/i);
+                              script.textContent.match(/film[/=](\d+)/i);
                 if (match && match[1]) {
                     const kpId = parseInt(match[1]);
                     console.log(`[MovieList Extension] Found Kinopoisk ID in script: ${kpId}`);

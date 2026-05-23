@@ -350,7 +350,6 @@ class WatchingPageManager {
             showEditRating: false,
             showAddToCollection: true,
             showThreeDotMenu: true,
-            showThreeDotMenu: true,
             showRemoveFromWatchlist: false, // This is watching list, not watchlist
             showRemoveFromWatching: true, // Enable remove button
             watchingProgress: this.getFormattedProgress(item.movieId) // Pass progress string
@@ -668,7 +667,6 @@ class WatchingPageManager {
 }
 
 // Initialize watching page manager when DOM is loaded
-let watchingPage;
 document.addEventListener('DOMContentLoaded', () => {
-    watchingPage = new WatchingPageManager();
+    new WatchingPageManager();
 });

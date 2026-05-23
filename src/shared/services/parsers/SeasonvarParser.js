@@ -704,7 +704,6 @@ class SeasonvarParser extends BaseParserService {
             const transList = doc.querySelectorAll('.pgs-trans li[data-translate]');
             
             const translations = [];
-            let activeTranslationId = null;
 
             transList.forEach(li => {
                 const id = li.getAttribute('data-translate');
@@ -723,7 +722,7 @@ class SeasonvarParser extends BaseParserService {
                     const fullUrl = url.startsWith('/') ? this.baseUrl + url : url;
                     
                     if (isActive) {
-                        activeTranslationId = id;
+                        // activeTranslationId = id; // redundant
                     }
 
                     translations.push({
@@ -758,7 +757,7 @@ class SeasonvarParser extends BaseParserService {
                                       active: k === '0'
                                   });
                              });
-                         } catch (e) { }
+                            } catch { /* Ignore */ }
                      } else {
                          // Simple string format
                          let u = val.replace(/['"]/g, '');
@@ -770,8 +769,8 @@ class SeasonvarParser extends BaseParserService {
                              url: u,
                              active: true
                          });
-                         activeTranslationId = '0';
-                     }
+                          // activeTranslationId = '0'; // redundant
+                      }
                  }
             }
             
@@ -970,9 +969,7 @@ class SeasonvarParser extends BaseParserService {
             console.log('Найденный блок tabs-result:', tabsResult ? 'Да' : 'Нет');
             console.log('Извлеченные данные сезонов:', seasons);
 
-            // Identify seasons with missing episode counts (likely the one corresponding to 'url' or active tab)
-            // and fetch them to get accurate count from playlist
-            const results = [];
+            // Identify seasons with missing episode counts
             const fetchPromises = seasons.map(async (s) => {
                 if (s.episodes_count === 0) {
                      try {

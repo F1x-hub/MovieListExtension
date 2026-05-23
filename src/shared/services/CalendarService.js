@@ -255,7 +255,7 @@ async function getTmdbId(item) {
                 );
                 const bestMatch = isSeries ? chooseBestTvMatch(item, data.results) : chooseBestMovieMatch(item, data.results);
                 if (bestMatch?.id) return bestMatch.id;
-            } catch (e) {}
+            } catch { /* Ignore */ }
         }
 
         // b. Try without Year
@@ -265,7 +265,7 @@ async function getTmdbId(item) {
             );
             const bestMatch = isSeries ? chooseBestTvMatch(item, data.results) : chooseBestMovieMatch(item, data.results);
             if (bestMatch?.id) return bestMatch.id;
-        } catch (e) {}
+        } catch { /* Ignore */ }
     }
 
     console.warn(`[Calendar] Could not find ${tmdbType} on TMDB after trying all titles:`, allTitles[0]);

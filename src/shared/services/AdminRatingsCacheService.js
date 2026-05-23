@@ -44,7 +44,7 @@ class AdminRatingsCacheService {
             
             const age = Date.now() - parseInt(timestamp, 10);
             return age < this.CACHE_TTL;
-        } catch (e) {
+        } catch {
             return false;
         }
     }
@@ -60,7 +60,7 @@ class AdminRatingsCacheService {
             
             const age = Date.now() - parseInt(timestamp, 10);
             return age < this.CACHE_TTL;
-        } catch (e) {
+        } catch {
             return false;
         }
     }
@@ -75,7 +75,7 @@ class AdminRatingsCacheService {
             if (!timestamp) return Infinity;
             
             return Math.round((Date.now() - parseInt(timestamp, 10)) / 1000 / 60);
-        } catch (e) {
+        } catch {
             return Infinity;
         }
     }

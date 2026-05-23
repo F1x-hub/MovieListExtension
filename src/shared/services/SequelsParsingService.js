@@ -170,7 +170,7 @@ class SequelsParsingService {
             }
 
             return cacheEntry.data;
-        } catch (e) {
+        } catch {
             return null;
         }
     }

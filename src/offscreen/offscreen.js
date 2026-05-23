@@ -31,7 +31,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             sendResponse({ success: true });
             return false;
 
-        case 'RADIO_SET_SOURCE':
+        case 'RADIO_SET_SOURCE': {
             // Change stream URL. Stop current playback first.
             const wasPlaying = !audio.paused;
             audio.pause();
@@ -45,6 +45,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
             sendResponse({ success: true, resumed: false });
             return false;
+        }
 
         case 'RADIO_SET_VOLUME':
             audio.volume = message.volume;

@@ -588,8 +588,7 @@ class WatchlistPageManager {
 }
 
 // Initialize watchlist page manager when DOM is loaded
-let watchlistPage;
 document.addEventListener('DOMContentLoaded', () => {
-    watchlistPage = new WatchlistPageManager();
+    new WatchlistPageManager();
 });
 

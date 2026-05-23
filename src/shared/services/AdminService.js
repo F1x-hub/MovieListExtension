@@ -41,8 +41,8 @@ class AdminService {
                 
                 // Fetch stats concurrently via Promise.all
                 // `count().get()` is an optimized feature in modern Firestore, we use try/catch fallback
-                let ratingsCount = 0;
-                let collectionCount = 0;
+                let ratingsCount;
+                let collectionCount;
                 
                 try {
                     const [ratingsSnapshot, collectionSnapshot] = await Promise.all([
@@ -51,7 +51,7 @@ class AdminService {
                     ]);
                     ratingsCount = ratingsSnapshot.data().count;
                     collectionCount = collectionSnapshot.data().count;
-                } catch (e) {
+                } catch {
                     console.warn(`[AdminService] count() failed, falling back to .get() for user ${doc.id}`);
                     const [ratingsSnapshot, collectionSnapshot] = await Promise.all([
                         this.db.collection('ratings').where('userId', '==', doc.id).get(),
@@ -79,7 +79,7 @@ class AdminService {
             });
         } catch (error) {
             console.error('Error getting all users:', error);
-            throw new Error(`Failed to fetch users: ${error.message}`);
+            throw new Error(`Failed to fetch users: ${error.message}`, { cause: error });
         }
     }
 
@@ -107,8 +107,8 @@ class AdminService {
             const userPromises = snapshot.docs.map(async (doc) => {
                 const userData = doc.data();
                 
-                let ratingsCount = 0;
-                let collectionCount = 0;
+                let ratingsCount;
+                let collectionCount;
                 
                 try {
                     const [ratingsSnapshot, collectionSnapshot] = await Promise.all([
@@ -117,7 +117,7 @@ class AdminService {
                     ]);
                     ratingsCount = ratingsSnapshot.data().count;
                     collectionCount = collectionSnapshot.data().count;
-                } catch (e) {
+                } catch {
                     const [ratingsSnapshot, collectionSnapshot] = await Promise.all([
                         this.db.collection('ratings').where('userId', '==', doc.id).get(),
                         this.db.collection('collections').where('userId', '==', doc.id).get()
@@ -139,7 +139,7 @@ class AdminService {
             return { users, lastDoc, hasMore };
         } catch (error) {
             console.error('Error getting users page:', error);
-            throw new Error(`Failed to fetch users page: ${error.message}`);
+            throw new Error(`Failed to fetch users page: ${error.message}`, { cause: error });
         }
     }
 
@@ -208,7 +208,7 @@ class AdminService {
             return deletionStats;
         } catch (error) {
             console.error('Error deleting user:', error);
-            throw new Error(`Failed to delete user: ${error.message}`);
+            throw new Error(`Failed to delete user: ${error.message}`, { cause: error });
         }
     }
 
@@ -251,7 +251,7 @@ class AdminService {
             };
         } catch (error) {
             console.error('Error getting deletion preview:', error);
-            throw new Error(`Failed to get deletion preview: ${error.message}`);
+            throw new Error(`Failed to get deletion preview: ${error.message}`, { cause: error });
         }
     }
 
@@ -319,7 +319,7 @@ class AdminService {
             return ratings;
         } catch (error) {
             console.error('Error getting all ratings with details:', error);
-            throw new Error(`Failed to fetch ratings: ${error.message}`);
+            throw new Error(`Failed to fetch ratings: ${error.message}`, { cause: error });
         }
     }
 
@@ -387,7 +387,7 @@ class AdminService {
             return deletionStats;
         } catch (error) {
             console.error('Error deleting rating as admin:', error);
-            throw new Error(`Failed to delete rating: ${error.message}`);
+            throw new Error(`Failed to delete rating: ${error.message}`, { cause: error });
         }
     }
 
@@ -419,7 +419,7 @@ class AdminService {
             };
         } catch (error) {
             console.error('Error clearing movie cache as admin:', error);
-            throw new Error(`Failed to clear movie cache: ${error.message}`);
+            throw new Error(`Failed to clear movie cache: ${error.message}`, { cause: error });
         }
     }
 
@@ -475,7 +475,7 @@ class AdminService {
             return results;
         } catch (error) {
             console.error('Error in bulk delete:', error);
-            throw new Error(`Bulk delete failed: ${error.message}`);
+            throw new Error(`Bulk delete failed: ${error.message}`, { cause: error });
         }
     }
 
@@ -530,7 +530,7 @@ class AdminService {
             return results;
         } catch (error) {
             console.error('Error in bulk update:', error);
-            throw new Error(`Bulk update failed: ${error.message}`);
+            throw new Error(`Bulk update failed: ${error.message}`, { cause: error });
         }
     }
 
@@ -569,7 +569,7 @@ class AdminService {
             return results;
         } catch (error) {
             console.error('Error in bulk cache clear:', error);
-            throw new Error(`Bulk cache clear failed: ${error.message}`);
+            throw new Error(`Bulk cache clear failed: ${error.message}`, { cause: error });
         }
     }
 }

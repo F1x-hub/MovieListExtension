@@ -257,12 +257,13 @@ class BookmarksPageManager {
                 case 'remove-from-bookmarks':
                     this.handleRemoveBookmark(movieId);
                     break;
-                case 'toggle-collection':
+                case 'toggle-collection': {
                     const collectionId = target.dataset.collectionId;
                     if (collectionId) {
                         this.handleToggleCollection(movieId, collectionId, target);
                     }
                     break;
+                }
                 case 'resume-watching':
                     // Redirect to search page with autoplay=true
                     if (movieId) {
@@ -566,7 +567,7 @@ class BookmarksPageManager {
         };
 
         this.allBookmarks.forEach(item => {
-            if (counts.hasOwnProperty(item.status)) {
+            if (Object.prototype.hasOwnProperty.call(counts, item.status)) {
                 counts[item.status]++;
             }
         });
@@ -893,9 +894,9 @@ class BookmarksPageManager {
                         canvas.height = standardSize;
 
                         // Calculate center crop
-                        let sourceX = 0;
-                        let sourceY = 0;
-                        let sourceSize = 0;
+                        let sourceX;
+                        let sourceY;
+                        let sourceSize;
 
                         if (width > height) {
                             sourceSize = height;
@@ -1003,7 +1004,7 @@ class BookmarksPageManager {
             if (!iconsGrid) return;
 
             // Get saved custom icons from local storage
-            let savedIcons = [];
+            let savedIcons;
             if (this.collectionService) {
                 savedIcons = await this.collectionService.getSavedIcons();
             } else {

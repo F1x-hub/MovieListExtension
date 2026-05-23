@@ -180,7 +180,6 @@ class Navigation {
         
         // Determine initial visibility based on cache
         const userProfileDisplay = hasCachedUser ? 'block' : 'none';
-        const signInDisplay = hasCachedUser ? 'none' : 'none'; // Initially hidden, will be shown by auth check if needed
 
         const navHTML = `
             <header class="nav-header">
@@ -386,6 +385,7 @@ class Navigation {
         document.addEventListener('mousedown', (e) => {
             const btn = e.target.closest('#navBookmarksBtn');
             if (btn) {
+                // Future handling for bookmarks global clicks
             }
         });
 
@@ -598,7 +598,7 @@ class Navigation {
                 chrome.storage.local.get('animeRadioSource', resolve);
             });
             currentSource = data.animeRadioSource || 'anison';
-        } catch (e) { /* default */ }
+        } catch { /* default */ }
 
         // Helper to send commands to the offscreen radio via background
         const radioCmd = (type, data = {}) => {
@@ -614,7 +614,7 @@ class Navigation {
             if (!state || state.error || currentStreamUrl !== targetBaseUrl) {
                 radioCmd('RADIO_SET_SOURCE', { streamUrl: STREAM_URLS[currentSource] });
             }
-        } catch (e) {
+        } catch {
             radioCmd('RADIO_SET_SOURCE', { streamUrl: STREAM_URLS[currentSource] });
         }
 
@@ -710,7 +710,7 @@ class Navigation {
                         posterEl.style.display = 'block';
                     }
                 }
-            } catch (e) {
+            } catch {
                 // Metadata fetch failed, not critical
             }
         };
@@ -751,7 +751,7 @@ class Navigation {
                 }
                 updateVolumeIcon(state.isMuted ? 0 : state.volume);
             }
-        } catch (e) {
+        } catch {
             // Offscreen not created yet — that's fine, defaults are used
         }
 
@@ -1548,7 +1548,7 @@ class Navigation {
             if (file) {
                 try {
                     photo = await firebaseManager.uploadAvatar(file);
-                } catch (err) {
+                } catch {
                     alert('Avatar upload failed');
                     return;
                 }
