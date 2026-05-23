@@ -127,14 +127,10 @@ const RussianStemmer = (() => {
             // Also try removing a preceding participle suffix
             const part2 = removeLongest(adjResult, rv, PARTICIPLE_2);
             if (part2 !== null) return part2;
-            const part1Candidates = PARTICIPLE_1.map(p => adjResult + p).filter(
-                c => base === c + '' // conceptual check — try removing part1 before adj
-            );
             // Actually: try participle_2 then participle_1 before the adjective
             const part1 = removeLongest(adjResult, rv, PARTICIPLE_1);
             // only valid if the character before adjective ending was а or я
             if (part1 !== null) {
-                const idx = adjResult.length - (base.length - adjResult.length); // not needed
                 return part1;
             }
             return adjResult;

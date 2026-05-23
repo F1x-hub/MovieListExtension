@@ -358,7 +358,9 @@ class AniskipService {
                     return data.skipTimes;
                 }
             }
-        } catch (e) {}
+        } catch {
+            // Error ignored
+        }
 
         try {
             const url = `${this.aniskipApiUrl}/skip-times/${malId}/${episodeNumber}?types=op`;
@@ -402,7 +404,9 @@ class AniskipService {
                     skipTimes: skipTimes,
                     timestamp: Date.now()
                 }));
-            } catch (e) {}
+            } catch {
+                // Error ignored
+            }
 
             return skipTimes;
 

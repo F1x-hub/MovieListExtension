@@ -373,7 +373,7 @@ class CollectionPageManager {
                             if (movieData) {
                                 await movieCacheService.cacheMovie(movieData, true);
                             }
-                        } catch (fetchError) {
+                        } catch {
                             movieData = {
                                 kinopoiskId: rating.movieId,
                                 name: 'Unknown Movie',

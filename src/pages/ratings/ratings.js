@@ -14,7 +14,8 @@ class RatingsPageManager {
             search: '',
             genre: '',
             year: '',
-            avgRating: '',
+            avgRatingFrom: 1.0,
+            avgRatingTo: 10.0,
             user: '',
             sort: 'date-desc'
         };
@@ -84,7 +85,13 @@ class RatingsPageManager {
             movieSearchInput: document.getElementById('movieSearchInput'),
             genreFilter: document.getElementById('genreFilter'),
             yearFilter: document.getElementById('yearFilter'),
-            avgRatingFilter: document.getElementById('avgRatingFilter'),
+            avgRatingSlider: document.getElementById('avgRatingSlider'),
+            avgRatingFrom: document.getElementById('avgRatingFrom'),
+            avgRatingTo: document.getElementById('avgRatingTo'),
+            avgRatingMinDisplay: document.getElementById('avgRatingMinDisplay'),
+            avgRatingMaxDisplay: document.getElementById('avgRatingMaxDisplay'),
+            avgRatingTrack: document.getElementById('avgRatingTrack'),
+            avgRatingRange: document.getElementById('avgRatingRange'),
             userFilter: document.getElementById('userFilter'),
             userFilterGroup: document.getElementById('userFilterGroup'),
             sortFilter: document.getElementById('sortFilter'),
@@ -277,10 +284,21 @@ class RatingsPageManager {
             this.applyFilters();
         });
         
-        this.elements.avgRatingFilter?.addEventListener('change', (e) => {
-            this.filters.avgRating = e.target.value;
-            this.applyFilters();
-        });
+        // Rating Range Slider
+        if (this.elements.avgRatingFrom && this.elements.avgRatingTo) {
+            this.initDoubleSlider(
+                this.elements.avgRatingFrom,
+                this.elements.avgRatingTo,
+                this.elements.avgRatingMinDisplay,
+                this.elements.avgRatingMaxDisplay,
+                this.elements.avgRatingRange,
+                (min, max) => {
+                    this.filters.avgRatingFrom = parseFloat(min);
+                    this.filters.avgRatingTo = parseFloat(max);
+                    this.applyFilters();
+                }
+            );
+        }
         
         this.elements.userFilter?.addEventListener('change', (e) => {
             this.filters.user = e.target.value;
@@ -348,17 +366,19 @@ class RatingsPageManager {
                     Utils.toggleActionButton(target, 'watchlist');
                     this.handleWatchlistToggle(movieId, target);
                     break;
-                case 'toggle-collection':
+                case 'toggle-collection': {
                     const collectionId = target.dataset.collectionId;
                     if (collectionId) {
                         this.handleToggleCollection(movieId, collectionId, target);
                     }
                     break;
-                 case 'edit-rating':
+                }
+                 case 'edit-rating': {
                      const r = parseInt(target.dataset.rating || 0);
                      const c = target.dataset.comment || '';
                      this.editRating(movieId, r, c);
                      break;
+                 }
             }
         });
         
@@ -503,7 +523,9 @@ class RatingsPageManager {
                 if (localData) {
                     movieData = JSON.parse(localData);
                 }
-            } catch (e) {}
+            } catch {
+                // Ignore local storage parse error
+            }
             
             const fallbackMovie = {
                 kinopoiskId: rating.movieId,
@@ -1220,10 +1242,9 @@ class RatingsPageManager {
         }
         
         // Average rating filter
-        if (this.filters.avgRating) {
-            const [min, max] = this.filters.avgRating.split('-').map(Number);
+        if (this.filters.avgRatingFrom !== 1.0 || this.filters.avgRatingTo !== 10.0) {
             filtered = filtered.filter(movie => 
-                movie.averageRating >= min && movie.averageRating <= max
+                movie.averageRating >= this.filters.avgRatingFrom && movie.averageRating <= this.filters.avgRatingTo
             );
         }
         
@@ -1262,9 +1283,11 @@ class RatingsPageManager {
             tags.push({ type: 'year', label: `Year: ${this.filters.year}` });
         }
         
-        if (this.filters.avgRating) {
-            const label = this.getRatingFilterLabel(this.filters.avgRating);
-            tags.push({ type: 'avgRating', label: `Rating: ${label}` });
+        if (this.filters.avgRatingFrom !== 1.0 || this.filters.avgRatingTo !== 10.0) {
+            tags.push({ 
+                type: 'avgRating', 
+                label: `Rating: ${this.filters.avgRatingFrom.toFixed(1)} - ${this.filters.avgRatingTo.toFixed(1)}` 
+            });
         }
         
         if (this.filters.user) {
@@ -1291,12 +1314,7 @@ class RatingsPageManager {
         }
     }
 
-    getRatingFilterLabel(value) {
-        const select = this.elements.avgRatingFilter;
-        if (!select) return value;
-        const option = Array.from(select.options).find(opt => opt.value === value);
-        return option ? option.textContent.trim() : value;
-    }
+
 
     removeFilter(type) {
         switch (type) {
@@ -1313,8 +1331,13 @@ class RatingsPageManager {
                 this.updateDropdownValue('yearFilter', '');
                 break;
             case 'avgRating':
-                this.filters.avgRating = '';
-                this.updateDropdownValue('avgRatingFilter', '');
+                this.filters.avgRatingFrom = 1.0;
+                this.filters.avgRatingTo = 10.0;
+                if (this.elements.avgRatingFrom) this.elements.avgRatingFrom.value = 1.0;
+                if (this.elements.avgRatingTo) this.elements.avgRatingTo.value = 10.0;
+                // Trigger slider update visually
+                const event = new Event('input');
+                this.elements.avgRatingFrom?.dispatchEvent(event);
                 break;
             case 'user':
                 this.filters.user = '';
@@ -1322,6 +1345,52 @@ class RatingsPageManager {
                 break;
         }
         this.applyFilters();
+    }
+
+    initDoubleSlider(fromInput, toInput, fromDisplay, toDisplay, sliderRange, onChange) {
+        const updateSlider = () => {
+            const min = parseFloat(fromInput.value);
+            const max = parseFloat(toInput.value);
+
+            if (min > max) {
+                if (event?.target === fromInput) {
+                    fromInput.value = max;
+                } else {
+                    toInput.value = min;
+                }
+            }
+
+            const finalMin = Math.min(parseFloat(fromInput.value), parseFloat(toInput.value));
+            const finalMax = Math.max(parseFloat(fromInput.value), parseFloat(toInput.value));
+
+            fromDisplay.textContent = finalMin.toFixed(1);
+            toDisplay.textContent = finalMax.toFixed(1);
+
+            // Update track highlights
+            const percent1 = ((finalMin - 1) / 9) * 100;
+            const percent2 = ((finalMax - 1) / 9) * 100;
+            
+            sliderRange.style.left = percent1 + '%';
+            sliderRange.style.width = (percent2 - percent1) + '%';
+        };
+
+        const handleInput = (e) => {
+            updateSlider();
+        };
+
+        const handleChange = (e) => {
+            const min = Math.min(parseFloat(fromInput.value), parseFloat(toInput.value));
+            const max = Math.max(parseFloat(fromInput.value), parseFloat(toInput.value));
+            onChange(min, max);
+        };
+
+        fromInput.addEventListener('input', handleInput);
+        toInput.addEventListener('input', handleInput);
+        fromInput.addEventListener('change', handleChange);
+        toInput.addEventListener('change', handleChange);
+
+        // Initial update
+        updateSlider();
     }
 
     sortMovies(movies) {
@@ -2318,18 +2387,22 @@ class RatingsPageManager {
             search: '',
             genre: '',
             year: '',
-            avgRating: '',
+            avgRatingFrom: 1.0,
+            avgRatingTo: 10.0,
             user: '',
             sort: 'date-desc'
         };
         
         if (this.elements.movieSearchInput) this.elements.movieSearchInput.value = '';
-        
         this.updateDropdownValue('genreFilter', '');
         this.updateDropdownValue('yearFilter', '');
-        this.updateDropdownValue('avgRatingFilter', '');
         this.updateDropdownValue('userFilter', '');
-        this.updateDropdownValue('sortFilter', 'date-desc');
+        
+        // Reset slider
+        if (this.elements.avgRatingFrom) this.elements.avgRatingFrom.value = 1.0;
+        if (this.elements.avgRatingTo) this.elements.avgRatingTo.value = 10.0;
+        const event = new Event('input');
+        this.elements.avgRatingFrom?.dispatchEvent(event);
         
         this.applyFilters();
     }

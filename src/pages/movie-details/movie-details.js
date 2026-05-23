@@ -22,6 +22,10 @@ class MovieDetailsManager {
         this.parserRegistry = window.parserRegistry || new ParserRegistry();
         this.progressService = new ProgressService();
         this.availableCollections = [];
+
+        // Admin status — default false; will be overridden by cached value immediately
+        // and then confirmed (and re-cached) once Firebase auth resolves.
+        this.isAdmin = false;
         
         // UI State Manager
         this.page = Utils.createPageStateManager({
@@ -137,27 +141,7 @@ class MovieDetailsManager {
         };
     }
 
-    initPlayerRegistry() {
-        const parsers = this.parserRegistry.getAll();
-        for (const parser of parsers) {
-            if (this.playerRegistry[parser.id]) continue;
-            
-            const container = document.createElement('div');
-            container.id = `player-preload-${parser.id}`;
-            container.style.cssText = 'display:none; position:absolute; width:0; height:0; overflow:hidden;';
-            document.body.appendChild(container);
-            
-            this.playerRegistry[parser.id] = {
-                container,
-                video: null,
-                initialized: false,
-                ready: false,
-                parserId: parser.id,
-                sources: null,
-                renderOptions: null
-            };
-        }
-    }
+
 
     setupEventListeners() {
         // Player resolution tracking
@@ -345,6 +329,13 @@ class MovieDetailsManager {
                     this.handleWatchClick();
                 }
             }
+
+            if (e.target.classList.contains('announce-movie-btn') || e.target.closest('.announce-movie-btn')) {
+                e.stopPropagation();
+                if (this.selectedMovie) {
+                    this.showAnnounceModal(this.selectedMovie);
+                }
+            }
         });
 
         // Preload player on hover over watch button
@@ -397,13 +388,27 @@ class MovieDetailsManager {
             }
         }
 
-        // 1. Try to load from local cache IMMEDIATELY (bypass auth)
+        // 1. Read cached admin status BEFORE first paint so the announce button
+        //    appears immediately without a second re-render.
+        try {
+            const stored = await chrome.storage.local.get('cached_is_admin');
+            if (stored.cached_is_admin === true) {
+                this.isAdmin = true;
+                console.log('[admin] Loaded isAdmin=true from storage cache');
+            }
+        } catch (e) {
+            console.warn('[admin] Could not read cached isAdmin:', e);
+        }
+
+        // 2. Try to load from local cache IMMEDIATELY (bypass auth)
+        //    isAdmin is already set from storage cache above, so the announce
+        //    button will be rendered correctly on the first paint.
         let cachedLoaded = false;
         if (movieId) {
             cachedLoaded = this.loadCachedMovieImmediately(movieId);
         }
 
-        // Wait for firebaseManager
+        // 3. Wait for Firebase auth to confirm the real admin status
         if (!window.firebaseManager) {
             await this.waitForFirebaseManager();
         }
@@ -414,14 +419,27 @@ class MovieDetailsManager {
             this.page.showError(i18n.get('movie_details.login_required'));
             return;
         }
-            // Pass !cachedLoaded to avoid showing loading spinner if we already have content
-            // Pass cachedLoaded to skip re-render if we already displayed cached data
-            // Pass !cachedLoaded to avoid showing loading spinner if we already have content
-            // Pass cachedLoaded to skip re-render if we already displayed cached data
         
         this.currentUser = firebaseManager.getCurrentUser();
-        
-        // Load collections
+
+        // 4. Check admin status from Firestore and persist it to storage
+        const prevIsAdmin = this.isAdmin;
+        this.isAdmin = false;
+        try {
+            const userService = firebaseManager.getUserService();
+            if (userService && this.currentUser) {
+                const profile = await userService.getUserProfile(this.currentUser.uid);
+                this.isAdmin = profile?.isAdmin === true;
+                // Persist for next page load so we don't need to re-render
+                await chrome.storage.local.set({ cached_is_admin: this.isAdmin });
+                console.log('[admin] isAdmin confirmed from Firestore:', this.isAdmin);
+            }
+        } catch (e) {
+            console.error('[admin] Could not check admin status:', e);
+            // Fall back to the cached value we already have
+            this.isAdmin = prevIsAdmin;
+        }
+
         if (typeof CollectionService !== 'undefined') {
             this.collectionService = new CollectionService();
             try {
@@ -432,7 +450,10 @@ class MovieDetailsManager {
         }
         
         if (movieId) {
-            await this.loadMovieById(movieId, !cachedLoaded, cachedLoaded);
+            // Skip re-render if cache was shown AND admin status matches what was
+            // already rendered (i.e. no change that would affect the announce button).
+            const skipRender = cachedLoaded && (this.isAdmin === prevIsAdmin);
+            await this.loadMovieById(movieId, !cachedLoaded, skipRender);
             this.initPlayerRegistry();
             if (this.selectedMovie) {
                 this.preloadAllPlayers(movieId);
@@ -546,7 +567,9 @@ class MovieDetailsManager {
                         movie.frames = images;
                         hasNewFrames = true;
                     }
-                } catch (e) {}
+                } catch {
+                    // Ignore frame fetch errors
+                }
             }
             
             this.preloadSources(movie);
@@ -641,6 +664,149 @@ class MovieDetailsManager {
             });
         }
     }
+
+    // ─── Announce Modal ────────────────────────────────────────────────────────
+
+    showAnnounceModal(movie) {
+        const modal = document.getElementById('announceModal');
+        if (!modal) return;
+
+        // Заполнить превью
+        const poster = document.getElementById('announcePreviewPoster');
+        if (poster) poster.src = movie.posterUrl || '';
+
+        const title = movie.name || movie.alternativeName || '';
+        const titleEl = document.getElementById('announcePreviewTitle');
+        if (titleEl) titleEl.textContent = title;
+
+        const yearEl = document.getElementById('announcePreviewYear');
+        if (yearEl) yearEl.textContent = movie.year ? `${movie.year} г.` : '';
+
+        const rawDesc = movie.description || '';
+        const shortDesc = rawDesc.length > 200 ? rawDesc.slice(0, 200) + '...' : rawDesc;
+        const descEl = document.getElementById('announcePreviewDesc');
+        if (descEl) descEl.textContent = shortDesc;
+
+
+
+        // Дефолтные дата/время — завтра в 12:00
+        const now = new Date();
+        now.setDate(now.getDate() + 1);
+        now.setHours(12, 0, 0, 0);
+
+        const dateInput = document.getElementById('announceDate');
+        if (dateInput) dateInput.value = now.toISOString().split('T')[0];
+
+        const timeInput = document.getElementById('announceTime');
+        if (timeInput) timeInput.value = '12:00';
+
+        // Привязать события формы (однократно через флаг)
+        if (!this._announceEventsSetup) {
+            this._announceEventsSetup = true;
+
+            document.getElementById('closeAnnounceBtn')?.addEventListener('mousedown', () => this.closeAnnounceModal());
+            document.getElementById('cancelAnnounceBtn')?.addEventListener('mousedown', () => this.closeAnnounceModal());
+            document.getElementById('sendAnnounceBtn')?.addEventListener('mousedown', () => this.sendAnnounce());
+            document.getElementById('announceModal')?.addEventListener('mousedown', (e) => {
+                if (e.target === document.getElementById('announceModal')) this.closeAnnounceModal();
+            });
+        }
+
+        // Проверить доступность бота
+        this.checkBotStatus();
+
+        modal.style.display = 'flex';
+    }
+
+    closeAnnounceModal() {
+        const modal = document.getElementById('announceModal');
+        if (modal) modal.style.display = 'none';
+    }
+
+    async checkBotStatus() {
+        const dot = document.getElementById('announceBotStatusDot');
+        const text = document.getElementById('announceBotStatusText');
+        if (!dot || !text) return;
+
+        dot.className = 'announce-bot-status-dot';
+        text.textContent = 'Проверка бота...';
+
+        try {
+            const response = await chrome.runtime.sendMessage({ type: 'CHECK_BOT_STATUS' });
+            if (response?.ok) {
+                dot.className = 'announce-bot-status-dot online';
+                text.textContent = 'Бот онлайн';
+            } else {
+                dot.className = 'announce-bot-status-dot offline';
+                text.textContent = 'Бот недоступен. Запустите telegram-bot/index.js';
+            }
+        } catch {
+            dot.className = 'announce-bot-status-dot offline';
+            text.textContent = 'Бот недоступен. Запустите telegram-bot/index.js';
+        }
+    }
+
+    async sendAnnounce() {
+        const movie = this.selectedMovie;
+        if (!movie) return;
+
+        const text = movie.description || '';
+        const date = document.getElementById('announceDate')?.value;
+        const time = document.getElementById('announceTime')?.value;
+
+        if (!date || !time) {
+            Utils.showToast('Укажите дату и время', 'warning');
+            return;
+        }
+
+        const scheduledAt = new Date(`${date}T${time}`).getTime();
+        if (isNaN(scheduledAt) || scheduledAt <= Date.now()) {
+            Utils.showToast('Выберите дату и время в будущем', 'warning');
+            return;
+        }
+
+        // Format exactly how it should be displayed, to prevent Vercel timezone shifts
+        const [year, month, day] = date.split('-');
+        const rawDateStr = `${day}.${month}.${year}, ${time}`;
+
+        const btn = document.getElementById('sendAnnounceBtn');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Отправка...';
+        }
+
+        try {
+            const response = await chrome.runtime.sendMessage({
+                type: 'SCHEDULE_ANNOUNCE',
+                movie: {
+                    kinopoiskId: movie.kinopoiskId,
+                    name: movie.name || movie.alternativeName || '',
+                    year: movie.year || '',
+                    posterUrl: movie.posterUrl || '',
+                    description: text,
+                },
+                scheduledAt,
+                rawDateStr
+            });
+
+            if (response?.success) {
+                Utils.showToast(`Анонс запланирован на ${rawDateStr}`, 'success');
+                this.closeAnnounceModal();
+            } else {
+                Utils.showToast(response?.error || 'Ошибка при планировании', 'error');
+            }
+        } catch (err) {
+            console.error('[MovieDetails] Announce send error:', err);
+            Utils.showToast('Не удалось отправить задание. Убедитесь, что бот запущен.', 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg> Запланировать`;
+            }
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
 
     showContent() {
         this.page.showContent();
@@ -745,8 +911,7 @@ class MovieDetailsManager {
     createDetailedMovieCard(movie, userRating = null, bookmarkStatus = null) {
         const posterUrl = movie.posterUrl || '/icons/icon48.png';
         const year = movie.year || '';
-        const genres = movie.genres?.join(', ') || '';
-        const countries = movie.countries?.join(', ') || '';
+
         const kpRating = movie.kpRating || 0;
         const imdbRating = movie.imdbRating || 0;
         const duration = movie.duration || 0;
@@ -845,6 +1010,11 @@ class MovieDetailsManager {
                                 <span class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></span>
                                 ${i18n.get('movie_details.rate_title')}
                             </button>
+                            ${this.isAdmin ? `
+                            <button class="btn btn-lg announce-movie-btn" data-movie-id="${movie.kinopoiskId}">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248l-2.04 9.613c-.147.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.566-4.46c.537-.194 1.006.131.907.607z"/></svg>
+                                Анонсировать
+                            </button>` : ''}
                         </div>
                     </div>
                     
@@ -1411,7 +1581,7 @@ class MovieDetailsManager {
                             </div>
                         ` : ''}
                     </div>
-                    ${rating.comment ? `<div class="user-rating-comment">${Utils.parseSpoilers(this.escapeHtml(rating.comment))}</div>` : ''}
+                    ${rating.comment ? `<div class="user-rating-comment">${Utils.parseSpoilers(Utils.linkify(this.escapeHtml(rating.comment)))}</div>` : ''}
                 </div>
             `;
         }).join('');
@@ -1640,11 +1810,11 @@ class MovieDetailsManager {
             const cached = JSON.parse(data);
             if (Date.now() - cached.timestamp > 24 * 60 * 60 * 1000) { localStorage.removeItem(`movie_sources_${movieId}`); return null; }
             return cached.sources;
-        } catch (e) { return null; }
+        } catch { return null; }
     }
 
     saveSourcesToCache(movieId, sources) {
-        try { localStorage.setItem(`movie_sources_${movieId}`, JSON.stringify({ timestamp: Date.now(), sources })); } catch (e) {}
+        try { localStorage.setItem(`movie_sources_${movieId}`, JSON.stringify({ timestamp: Date.now(), sources })); } catch { /* Ignore */ }
     }
 
     async handleWatchClick() {
@@ -1675,7 +1845,7 @@ class MovieDetailsManager {
             }
         }
 
-        const movieId = this.selectedMovie.kinopoiskId;
+
         
         // Prefer custom (native video) players for preload mount; skip iframe-only parsers
         const initializedCustomParser = Object.keys(this.playerRegistry).find(parserId => {
@@ -2282,10 +2452,10 @@ class MovieDetailsManager {
                 
                 let seriesInfo = null, seasons = [];
                 if (parser.getSeriesInfo) {
-                    try { seriesInfo = await parser.getSeriesInfo(searchResult.url); } catch(e) {}
+                    try { seriesInfo = await parser.getSeriesInfo(searchResult.url); } catch { /* Ignore */ }
                 }
                 if (parser.getSeasons) {
-                    try { seasons = await parser.getSeasons(searchResult.url); } catch(e) {}
+                    try { seasons = await parser.getSeasons(searchResult.url); } catch { /* Ignore */ }
                 }
                 
                 entry.container.innerHTML = '';
@@ -2461,7 +2631,7 @@ class MovieDetailsManager {
         if (iframe?.contentWindow) {
             try { 
                 iframe.contentWindow.postMessage({ type: 'PAUSE' }, '*'); 
-            } catch(e) {}
+            } catch { /* Ignore */ }
         }
         
         const playerElement = this.elements.videoContainer.querySelector('.player-clean')
@@ -2489,9 +2659,9 @@ class MovieDetailsManager {
                     if (f.contentWindow) {
                         f.contentWindow.postMessage({ type: 'RESET_PERMANENT_VIDEO' }, '*');
                     }
-                } catch(e) {}
+                } catch { /* Ignore */ }
             });
-        } catch(e) {}
+        } catch { /* Ignore */ }
         
         entry.container.style.display = 'none';
         this.activePlayerId = null;
@@ -2879,7 +3049,7 @@ class MovieDetailsManager {
             console.warn('[saveLastSource] Error:', e);
             try {
                 localStorage.setItem(`last_source_${movieId}`, sourceKey);
-            } catch (e2) {}
+            } catch { /* Ignore */ }
         }
     }
 
@@ -2900,7 +3070,7 @@ class MovieDetailsManager {
             } else {
                 console.log('[DEBUG togglePlayPause] Choosing IFRAME player');
                 let url = this.currentVideoUrl;
-                try { const u = new URL(url); u.searchParams.set('autoplay', '1'); url = u.toString(); } catch (e) { url += url.includes('?') ? '&autoplay=1' : '?autoplay=1'; }
+                try { const u = new URL(url); u.searchParams.set('autoplay', '1'); url = u.toString(); } catch { url += url.includes('?') ? '&autoplay=1' : '?autoplay=1'; }
                 this.elements.videoContainer.innerHTML = `<iframe src="${url}" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture" style="width:100%; height:100%; border:none;"></iframe>`;
             }
         } else {
@@ -3650,7 +3820,6 @@ class MovieDetailsManager {
         let popup = null;
 
         const handleSelection = () => {
-            const selection = window.getSelection();
             const selectedText = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd).trim();
 
             if (selectedText.length > 0 && document.activeElement === textarea) {
@@ -3766,9 +3935,8 @@ class MovieDetailsManager {
 
 
 // Initialize when DOM is loaded
-let movieDetailsManager;
 document.addEventListener('DOMContentLoaded', () => {
-    movieDetailsManager = new MovieDetailsManager();
+    new MovieDetailsManager();
 });
 
 // Alias for compatibility

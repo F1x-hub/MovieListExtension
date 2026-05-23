@@ -49,6 +49,20 @@ class KinopoiskService {
                 } // Else, fall through to return the failed response
             }
             
+            // Handle 429 Too Many Requests
+            if (response.status === 429) {
+                console.warn(`KinopoiskService: 429 Too Many Requests. Waiting before retry...`);
+                // Wait for 1 second, or respect Retry-After header if present
+                const retryAfter = response.headers.get('Retry-After');
+                const delay = retryAfter ? parseInt(retryAfter) * 1000 : 1000;
+                await new Promise(resolve => setTimeout(resolve, delay));
+                
+                // Retry if we still have attempts
+                if (attempt < maxAttempts - 1) {
+                    continue;
+                }
+            }
+            
             return response;
         }
 
@@ -129,7 +143,7 @@ class KinopoiskService {
                 };
             }
             
-            throw new Error(`Failed to search movies: ${error.message}`);
+            throw new Error(`Failed to search movies: ${error.message}`, { cause: error });
         }
     }
 
@@ -240,7 +254,7 @@ class KinopoiskService {
             return movieData;
         } catch (error) {
             console.error('Error getting movie details:', error);
-            throw new Error(`Failed to get movie details: ${error.message}`);
+            throw new Error(`Failed to get movie details: ${error.message}`, { cause: error });
         }
     }
 
@@ -564,7 +578,7 @@ class KinopoiskService {
             const year = date.getFullYear();
             
             return `${day} ${month} ${year}`;
-        } catch (e) {
+        } catch {
             return dateStr;
         }
     }

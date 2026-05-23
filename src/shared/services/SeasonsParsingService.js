@@ -57,8 +57,6 @@ class SeasonsParsingService {
     parseSeriesPage(html) {
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
-        const seasons = [];
-
         // Strategy: Look for season containers.
         // KP structure varies, but often key info is in script tags (Next.js data) or specific encoding.
         // Parsing raw HTML for episodes is brittle on KP.
@@ -70,16 +68,9 @@ class SeasonsParsingService {
         try {
             const nextDataScript = doc.getElementById('__NEXT_DATA__');
             if (nextDataScript) {
-                const data = JSON.parse(nextDataScript.textContent);
-                // Traverse data to find seasons info
-                // This is highly dependent on internal structure
-                // generic traverse to find "seasons"
-                // console.log('[SeasonsParser] Found NEXT_DATA, attempting extraction');
-                
-                // This is a guess-work based on typical Next.js props structure for media sites
-                // We won't implement deep traversal blindly without examples.
+                JSON.parse(nextDataScript.textContent);
             }
-        } catch(e) {
+        } catch (e) {
             console.warn('[SeasonsParser] JSON parsing failed', e);
         }
 
@@ -118,7 +109,7 @@ class SeasonsParsingService {
             }
 
             return cacheEntry.data;
-        } catch (e) {
+        } catch {
             return null;
         }
     }

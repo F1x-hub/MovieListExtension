@@ -110,7 +110,7 @@ class KinogoParser extends BaseParserService {
 
             // Extract year from "Год выпуска:" label
             // HTML pattern: <b>Год выпуска:</b><a href="...">2012</a>
-            let foundYear = null;
+            let foundYear;
             const cardText = card.innerHTML;
             const yearLabelMatch = cardText.match(/Год\s*выпуска\s*:?\s*<\/b>\s*(?:<a[^>]*>)?\s*(\d{4})/i)
                 || cardText.match(/Год\s*выпуска\s*:?\s*(\d{4})/i);

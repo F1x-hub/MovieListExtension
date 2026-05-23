@@ -1259,7 +1259,6 @@ class PopupManager {
             const fetchStartTime = performance.now();
             // Force fetch first page
             const result = await ratingsCacheService.fetchAndCacheRatings(this.ITEMS_PER_PAGE, null);
-            const ratings = result.ratings;
             const fetchEndTime = performance.now();
             const fetchTime = Math.round(fetchEndTime - fetchStartTime);
             

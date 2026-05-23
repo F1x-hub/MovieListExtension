@@ -75,7 +75,7 @@ class WatchlistService {
             return { id: docId, movedFrom, ...watchlistData };
         } catch (error) {
             console.error('Error adding to watchlist:', error);
-            throw new Error(`Failed to add to watchlist: ${error.message}`);
+            throw new Error(`Failed to add to watchlist: ${error.message}`, { cause: error });
         }
     }
 
@@ -107,7 +107,7 @@ class WatchlistService {
             return true;
         } catch (error) {
             console.error('Error removing from watchlist:', error);
-            throw new Error(`Failed to remove from watchlist: ${error.message}`);
+            throw new Error(`Failed to remove from watchlist: ${error.message}`, { cause: error });
         }
     }
 

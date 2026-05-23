@@ -156,7 +156,7 @@ class RatingService {
             return result;
         } catch (error) {
             console.error('Error adding/updating rating:', error);
-            throw new Error(`Failed to save rating: ${error.message}`);
+            throw new Error(`Failed to save rating: ${error.message}`, { cause: error });
         }
     }
 
@@ -481,7 +481,7 @@ class RatingService {
             return true;
         } catch (error) {
             console.error('Error deleting rating:', error);
-            throw new Error(`Failed to delete rating: ${error.message}`);
+            throw new Error(`Failed to delete rating: ${error.message}`, { cause: error });
         }
     }
 
@@ -633,7 +633,7 @@ class RatingService {
             return updateCount;
         } catch (error) {
             console.error('Error updating user profile in ratings:', error);
-            throw new Error(`Failed to update user profile in ratings: ${error.message}`);
+            throw new Error(`Failed to update user profile in ratings: ${error.message}`, { cause: error });
         }
     }
 

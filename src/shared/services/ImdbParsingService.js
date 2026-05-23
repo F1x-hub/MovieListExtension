@@ -99,7 +99,6 @@ class ImdbParsingService {
             if (votes === 0) {
                 const aggregateContainer = doc.querySelector('[data-testid="hero-rating-bar__aggregate-rating"]');
                 if (aggregateContainer) {
-                    const textContent = aggregateContainer.textContent;
                      // Regex to find things like "2.4M", "20K", "123" that are NOT the rating
                      // This is risky but a fallback.
                      // Better fallback: standard IMDb classes sometimes used for votes like .sc-bde20123-3 (changes dynamically)

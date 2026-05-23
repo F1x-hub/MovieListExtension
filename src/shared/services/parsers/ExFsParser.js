@@ -130,7 +130,6 @@ class ExFsParser extends BaseParserService {
                 const titleText = titleElement.textContent.trim();
                 
                 if (this.isTitleMatch(titleText, targetTitle)) {
-                    let foundYear = null;
                     let yearMatch = link.textContent.match(/\b(19|20)\d{2}\b/);
                     
                     if (!yearMatch) {
@@ -144,7 +143,7 @@ class ExFsParser extends BaseParserService {
                         }
                     }
 
-                    foundYear = yearMatch ? yearMatch[0] : null;
+                    const foundYear = yearMatch ? yearMatch[0] : null;
 
                     matches.push({
                         title: titleText,

@@ -24,7 +24,7 @@ class MovieCacheService {
                     // Check local cache expiry (7 days for local to be safe, or just utilize it)
                     // For now, let's treat local cache as valid if present to maximize speed
                     return parsed;
-                } catch (e) {
+                } catch {
                     localStorage.removeItem(localKey);
                 }
             }
@@ -75,7 +75,7 @@ class MovieCacheService {
                     try {
                         const parsed = JSON.parse(localData);
                         cachedMovies[id] = parsed;
-                    } catch (e) {
+                    } catch {
                         missingIds.push(id);
                     }
                 } else {
@@ -161,7 +161,7 @@ class MovieCacheService {
             return { id: movieId, ...cacheData };
         } catch (error) {
             console.error('Error caching movie:', error);
-            throw new Error(`Failed to cache movie: ${error.message}`);
+            throw new Error(`Failed to cache movie: ${error.message}`, { cause: error });
         }
     }
 
@@ -176,7 +176,7 @@ class MovieCacheService {
 
         try {
             localStorage.setItem(`kp_movie_${id}`, JSON.stringify(data));
-        } catch (e) {
+        } catch {
             console.warn('LocalStorage full, clearing old cache entries...');
             try {
                 // Simple eviction: remove 50 oldest/random movie keys
@@ -225,7 +225,9 @@ class MovieCacheService {
                     const parsed = JSON.parse(existingLocal);
                     const updatedLocal = { ...parsed, ...updateData, lastUpdated: new Date().toISOString() };
                     localStorage.setItem(localKey, JSON.stringify(updatedLocal));
-                } catch (e) {}
+                } catch {
+                    // Ignore parsing errors for individual cached items
+                }
             }
 
             await docRef.update(updatePayload);
@@ -233,7 +235,7 @@ class MovieCacheService {
             return { id: updatedDoc.id, ...updatedDoc.data() };
         } catch (error) {
             console.error('Error updating movie cache:', error);
-            throw new Error(`Failed to update movie cache: ${error.message}`);
+            throw new Error(`Failed to update movie cache: ${error.message}`, { cause: error });
         }
     }
 
@@ -495,7 +497,7 @@ class MovieCacheService {
             return true;
         } catch (error) {
             console.error('Error clearing movie cache:', error);
-            throw new Error(`Failed to clear cache for movie ${kinopoiskId}: ${error.message}`);
+            throw new Error(`Failed to clear cache for movie ${kinopoiskId}: ${error.message}`, { cause: error });
         }
     }
 }

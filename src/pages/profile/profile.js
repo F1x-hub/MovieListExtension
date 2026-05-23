@@ -81,7 +81,9 @@ class ProfilePageManager {
                     }
                     
                     // Hide loading immediately if we have data
-                    this.showLoading(false);
+                    if (this.page) {
+                        this.page.showContent();
+                    }
                 } else {
                     console.log('ProfilePage: Cache expired for', targetUserId);
                 }
@@ -106,7 +108,9 @@ class ProfilePageManager {
                 if (cache.stats) {
                     this.displayStatistics(cache.stats);
                 }
-                this.showLoading(false);
+                if (this.page) {
+                    this.page.showContent();
+                }
                 return true;
             }
         } catch (error) {
@@ -128,7 +132,6 @@ class ProfilePageManager {
             profileJoinDate: document.getElementById('profileJoinDate'),
             joinDateText: document.getElementById('joinDateText'),
             profileFavoriteGenre: document.getElementById('profileFavoriteGenre'),
-            favoriteGenreText: document.getElementById('favoriteGenreText'),
             favoriteGenreText: document.getElementById('favoriteGenreText'),
             profileMenu: document.getElementById('profileMenu'),
             profileMenuBtn: document.getElementById('profileMenuBtn'),
@@ -223,6 +226,30 @@ class ProfilePageManager {
         Utils.bindTabsAndMenus(document);
         
         this.viewingOtherUser = false;
+
+        // Profile Menu interactions
+        if (this.elements.profileMenuBtn) {
+            this.elements.profileMenuBtn.addEventListener('mousedown', (e) => {
+                e.stopPropagation();
+                this.toggleMenu();
+            });
+        }
+
+        if (this.elements.editProfileItem) {
+            this.elements.editProfileItem.addEventListener('mousedown', () => {
+                this.closeMenu();
+                this.openEditModal();
+            });
+        }
+
+        // Close menu on outside click
+        document.addEventListener('mousedown', (e) => {
+            if (this.elements.profileDropdown && this.elements.profileDropdown.classList.contains('show')) {
+                if (!e.target.closest('#profileMenu')) {
+                    this.closeMenu();
+                }
+            }
+        });
 
         if (this.elements.viewAllRatingsBtn) {
             this.elements.viewAllRatingsBtn.addEventListener('mousedown', () => {
@@ -502,7 +529,7 @@ class ProfilePageManager {
                 try {
                     const date = profile.createdAt.toDate ? profile.createdAt.toDate() : new Date(profile.createdAt);
                     joinDate = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-                } catch (e) {
+                } catch {
                     joinDate = '';
                 }
             }
@@ -1011,7 +1038,6 @@ class ProfilePageManager {
                 let { x, y, w, h } = this.initialCropperData;
                 
                 let newW = w;
-                let newH = h;
                 let newX = x;
                 let newY = y;
                 
@@ -1019,7 +1045,7 @@ class ProfilePageManager {
                 if (this.resizeHandle.includes('left')) { newW = w - dx; }
                 
                 if (newW < 50) newW = 50;
-                newH = newW / targetRatio;
+                let newH = newW / targetRatio;
                 
                 if (this.resizeHandle.includes('left')) {
                     newX = x + (w - newW);

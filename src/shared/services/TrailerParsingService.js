@@ -83,9 +83,7 @@ class TrailerParsingService {
             
             // Fallback for poster if not found above
             if (!posterUrl) {
-                // Try to find an img tag that might be the preview
-                 const img = window.kinopoiskService?.getMovieImages ? null : null; // We don't have access to service here easily
-                 // Use a default or leave null to let UI handle it with movie poster
+                // Use a default or leave null to let UI handle it with movie poster
             }
 
             // Duration: "справа снизу на постере" implies it's an element overlaid on the poster.
@@ -162,7 +160,7 @@ class TrailerParsingService {
             }
 
             return cacheEntry.data;
-        } catch (e) {
+        } catch {
             return null;
         }
     }

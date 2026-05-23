@@ -30,7 +30,7 @@
         const message = args.map(arg => {
             try {
                 return typeof arg === 'object' ? JSON.stringify(arg) : String(arg);
-            } catch (e) {
+            } catch {
                 return '';
             }
         }).join(' ');
@@ -108,7 +108,7 @@
             } else {
                 message = String(reason);
             }
-        } catch (e) {
+        } catch {
             message = '';
         }
 

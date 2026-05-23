@@ -558,12 +558,12 @@ class FirebaseManager {
                             return;
                         }
 
-                        let token = null;
+                        let token;
                         try {
                             const url = new URL(responseUrl);
                             const params = new URLSearchParams(url.hash.substring(1));
                             token = params.get('access_token');
-                        } catch (e) {
+                        } catch {
                             reject(new Error('Failed to parse the response URL'));
                             return;
                         }
@@ -591,7 +591,7 @@ class FirebaseManager {
                 );
             });
         } catch (error) {
-            throw error;
+            throw new Error(`Google Sign-In failed: ${error.message}`, { cause: error });
         }
     }
 
@@ -618,7 +618,7 @@ class FirebaseManager {
                 this.tokenRefreshTimeout = null;
             }
         } catch (error) {
-            throw error;
+            throw new Error(`Sign out failed: ${error.message}`, { cause: error });
         }
     }
 
@@ -637,7 +637,7 @@ class FirebaseManager {
             }
             return userCredential.user;
         } catch (error) {
-            throw error;
+            throw new Error(`Email sign-in failed: ${error.message}`, { cause: error });
         }
     }
 
@@ -656,7 +656,7 @@ class FirebaseManager {
             }
             return userCredential.user;
         } catch (error) {
-            throw error;
+            throw new Error(`User creation failed: ${error.message}`, { cause: error });
         }
     }
 
@@ -783,7 +783,7 @@ class FirebaseManager {
             await recordRef.delete();
             return true;
         } catch (error) {
-            throw error;
+            throw new Error(`Delete record failed: ${error.message}`, { cause: error });
         }
     }
 
@@ -808,7 +808,7 @@ class FirebaseManager {
                     callback(records);
                 });
         } catch (error) {
-            throw error;
+            throw new Error(`Listen to records failed: ${error.message}`, { cause: error });
         }
     }
 
@@ -1094,14 +1094,8 @@ class FirebaseManager {
     }
 }
 
-let firebaseManager;
-
-if (window.firebaseManager) {
-    // Singleton: if already exists, use it
-    firebaseManager = window.firebaseManager;
-} else {
-    firebaseManager = new FirebaseManager();
-    window.firebaseManager = firebaseManager;
+if (!window.firebaseManager) {
+    window.firebaseManager = new FirebaseManager();
 }
 
 setTimeout(() => {

@@ -131,7 +131,7 @@ class Utils {
         if (typeof obj === 'object') {
             const clonedObj = {};
             for (const key in obj) {
-                if (obj.hasOwnProperty(key)) {
+                if (Object.prototype.hasOwnProperty.call(obj, key)) {
                     clonedObj[key] = Utils.deepClone(obj[key]);
                 }
             }
@@ -233,7 +233,7 @@ class Utils {
         try {
             await navigator.clipboard.writeText(text);
             return true;
-        } catch (err) {
+        } catch {
             // Fallback for older browsers
             const textArea = document.createElement('textarea');
             textArea.value = text;
@@ -242,7 +242,7 @@ class Utils {
             try {
                 document.execCommand('copy');
                 return true;
-            } catch (err) {
+            } catch {
                 return false;
             } finally {
                 document.body.removeChild(textArea);
@@ -505,6 +505,20 @@ class Utils {
             e.preventDefault();
             const movieId = target.getAttribute('data-movie-id');
             if (movieId) Utils.openMoviePage(movieId, true);
+        });
+    }
+
+    /**
+     * Преобразует ссылки в тексте в кликабельные HTML-теги <a>
+     * @param {string} text - Исходный текст (уже экранированный HTML)
+     * @returns {string} - Текст с кликабельными ссылками
+     */
+    static linkify(text) {
+        if (!text) return '';
+        // Регулярное выражение для поиска URL (http, https)
+        const urlRegex = /(https?:\/\/[^\s<]+)/g;
+        return text.replace(urlRegex, (url) => {
+            return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="chat-link" style="color: #667eea; text-decoration: underline;">${url}</a>`;
         });
     }
 

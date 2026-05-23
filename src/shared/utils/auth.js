@@ -25,7 +25,6 @@ class AuthManager {
                 AuthManager.STORAGE_KEYS.AUTH_TOKEN,
                 AuthManager.STORAGE_KEYS.AUTH_TOKEN_EXPIRY,
                 AuthManager.STORAGE_KEYS.IS_AUTHENTICATED,
-                AuthManager.STORAGE_KEYS.IS_AUTHENTICATED,
                 AuthManager.STORAGE_KEYS.TOKEN_VALIDATION_TIMESTAMP,
                 AuthManager.STORAGE_KEYS.REFRESH_TOKEN
             ], (result) => {
@@ -45,7 +44,6 @@ class AuthManager {
                     user: result.user,
                     authToken: result.authToken,
                     authTokenExpiry: result.authTokenExpiry,
-                    isAuthenticated: result.isAuthenticated,
                     isAuthenticated: result.isAuthenticated,
                     tokenValidationTimestamp: result.tokenValidationTimestamp,
                     refreshToken: result.refreshToken
@@ -98,7 +96,6 @@ class AuthManager {
                 AuthManager.STORAGE_KEYS.AUTH_TOKEN_EXPIRY,
                 AuthManager.STORAGE_KEYS.IS_AUTHENTICATED,
                 AuthManager.STORAGE_KEYS.TOKEN_VALIDATION_TIMESTAMP,
-                AuthManager.STORAGE_KEYS.TOKEN_VALIDATION_TIMESTAMP,
                 AuthManager.STORAGE_KEYS.AUTH_TIMESTAMP,
                 AuthManager.STORAGE_KEYS.REFRESH_TOKEN
             ], () => {
@@ -132,7 +129,6 @@ class AuthManager {
                 [AuthManager.STORAGE_KEYS.AUTH_TOKEN]: authToken,
                 [AuthManager.STORAGE_KEYS.AUTH_TOKEN_EXPIRY]: authTokenExpiry,
                 [AuthManager.STORAGE_KEYS.IS_AUTHENTICATED]: true,
-                [AuthManager.STORAGE_KEYS.TOKEN_VALIDATION_TIMESTAMP]: tokenValidationTimestamp,
                 [AuthManager.STORAGE_KEYS.TOKEN_VALIDATION_TIMESTAMP]: tokenValidationTimestamp,
                 [AuthManager.STORAGE_KEYS.AUTH_TIMESTAMP]: Date.now()
             };

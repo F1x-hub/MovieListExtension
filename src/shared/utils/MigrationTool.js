@@ -99,7 +99,7 @@ class MigrationTool {
 
         } catch (error) {
             console.error('Migration failed:', error);
-            throw new Error(`Migration failed: ${error.message}`);
+            throw new Error(`Migration failed: ${error.message}`, { cause: error });
         }
     }
 }

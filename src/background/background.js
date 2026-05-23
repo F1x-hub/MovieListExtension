@@ -69,14 +69,7 @@ function updateIconFromStorage() {
     });
 }
 
-let firebaseManagerInstance = null;
 
-async function getFirebaseManagerInExtension() {
-    // Load Firebase in extension context (popup or background)
-    // This is a simplified version that assumes Firebase is already loaded
-    // In practice, this would need to load Firebase scripts
-    return firebaseManagerInstance;
-}
 
 async function getIdToken() {
     return new Promise((resolve, reject) => {
@@ -312,7 +305,6 @@ async function checkAuthToken() {
         }
 
         const now = Date.now();
-        const TOKEN_REFRESH_THRESHOLD = 55 * 60 * 1000; // Refresh if expires in less than 5 minutes (assuming 1h token)
         
         // Check if token is expired or about to expire
         const isExpired = !result.authTokenExpiry || now >= result.authTokenExpiry;
@@ -908,6 +900,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             .then(token => sendResponse({ success: true, token: token }))
             .catch(error => sendResponse({ success: false, error: error.message }));
         return true;
+    } else if (message.type === 'CHECK_BOT_STATUS') {
+        fetch('https://movie-preview-bot.vercel.app/api/schedule')
+            .then(res => sendResponse({ ok: res.ok }))
+            .catch(() => sendResponse({ ok: false }));
+        return true;
+    } else if (message.type === 'SCHEDULE_ANNOUNCE') {
+        fetch('https://movie-preview-bot.vercel.app/api/schedule', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer KJjiiuj132ag'
+            },
+            body: JSON.stringify({
+                movie: message.movie,
+                scheduledAt: message.scheduledAt,
+                rawDateStr: message.rawDateStr
+            })
+        })
+        .then(async (res) => {
+            const data = await res.json();
+            sendResponse({ success: res.ok, error: data.error });
+        })
+        .catch(err => {
+            sendResponse({ success: false, error: err.message });
+        });
+        return true;
     } else if (message.type === 'RADIO_GET_METADATA') {
         // Handle metadata fetch in background (not relay to offscreen)
         fetchAnisonMetadata()
@@ -964,7 +982,7 @@ async function checkExtensionPagesOpen() {
                 await chrome.runtime.sendMessage({ type: 'RADIO_STOP', target: 'offscreen-radio' });
                 await chrome.offscreen.closeDocument();
             }
-        } catch (e) {
+        } catch {
             // Offscreen already closed or error, ignore
         }
     }

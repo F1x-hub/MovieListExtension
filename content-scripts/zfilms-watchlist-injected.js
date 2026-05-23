@@ -96,12 +96,12 @@
                         return kpId;
                     }
                 }
-            } catch (e) {
+            } catch {
                 // Ignore decode errors
             }
             
             // Try direct match in href
-            const match = href.match(/kinopoisk\.ru\/film\/(\d+)/i) || href.match(/film[\/=](\d+)/i);
+            const match = href.match(/kinopoisk\.ru\/film\/(\d+)/i) || href.match(/film[/=](\d+)/i);
             if (match && match[1]) {
                 const kpId = parseInt(match[1]);
                 console.log(`[MovieList Extension] Found Kinopoisk ID in link: ${kpId}`);
@@ -113,7 +113,7 @@
         const playerIframe = document.querySelector('.player-wrapper iframe, iframe[src*="m7-club"], iframe[src*="cdn.m7-club"]');
         if (playerIframe && playerIframe.src) {
             // URL format: //cdn.m7-club.com/v/5515508?trr=...
-            const match = playerIframe.src.match(/[\/=](\d{7,8})(?:\?|$)/);
+            const match = playerIframe.src.match(/[/=](\d{7,8})(?:\?|$)/);
             if (match && match[1]) {
                 const kpId = parseInt(match[1]);
                 console.log(`[MovieList Extension] Found Kinopoisk ID in player iframe: ${kpId}`);
@@ -125,7 +125,7 @@
         const iframes = document.querySelectorAll('iframe[src*="kp"], iframe[src*="kinopoisk"]');
         for (const iframe of iframes) {
             if (iframe.src) {
-                const match = iframe.src.match(/kp[=:]?(\d+)/i) || iframe.src.match(/kinopoiskID["\s:=]+(\d+)/i) || iframe.src.match(/film[\/=](\d+)/i);
+                const match = iframe.src.match(/kp[=:]?(\d+)/i) || iframe.src.match(/kinopoiskID["\s:=]+(\d+)/i) || iframe.src.match(/film[/=](\d+)/i);
                 if (match && match[1]) {
                     const kpId = parseInt(match[1]);
                     console.log(`[MovieList Extension] Found Kinopoisk ID in iframe: ${kpId}`);
@@ -141,7 +141,7 @@
                 const match = script.textContent.match(/kinopoisk\.ru\/film\/(\d+)/i) ||
                               script.textContent.match(/kinopoiskID["\s:=]+(\d+)/i) ||
                               script.textContent.match(/kp["\s:=]+(\d+)/i) ||
-                              script.textContent.match(/film[\/=](\d+)/i);
+                              script.textContent.match(/film[/=](\d+)/i);
                 if (match && match[1]) {
                     const kpId = parseInt(match[1]);
                     console.log(`[MovieList Extension] Found Kinopoisk ID in script: ${kpId}`);

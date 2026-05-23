@@ -1363,18 +1363,6 @@ class AdminPanelManager {
         }
     }
 
-    async clearMovieCache(movieId, movieData) {
-        if (!movieId) return;
-
-        try {
-            // Only clear local cache
-            this.cacheService.removeMoviesFromCache([movieId]);
-            this.showSuccessMessage(`Кэш очищен для фильма`);
-        } catch (error) {
-            console.error('Error clearing movie cache:', error);
-            this.showError(`Failed to clear cache: ${error.message}`);
-        }
-    }
 
     async bulkUpdateInfo() {
         const check = this.cacheService.checkWriteAccess();
@@ -1525,8 +1513,8 @@ class AdminPanelManager {
             // Close modal
             this.hideDeleteRatingModal();
             
-            // Reload ratings
-            await this.loadRatings();
+            // Reload movies/ratings
+            await this.loadMovies();
             
             // Show success message
             this.showSuccessMessage('Rating deleted successfully');
@@ -1580,8 +1568,8 @@ class AdminPanelManager {
             // 3. Clear local cache for this movie to ensure immediate update in UI
             localStorage.removeItem(`kp_movie_${movieId}`);
 
-            // 4. Reload ratings to reflect changes
-            await this.loadRatings();
+            // 4. Reload movies/ratings to reflect changes
+            await this.loadMovies();
 
             this.showSuccessMessage(`Updated info for "${movieTitle}"`);
 

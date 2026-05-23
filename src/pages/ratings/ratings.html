@@ -94,31 +94,17 @@
                     <!-- Average Rating Filter -->
                     <div class="filter-group">
                         <label class="filter-label" data-i18n="ratings.filters.avg_rating">Average Rating</label>
-                        <div class="custom-dropdown" data-dropdown="avgRatingFilter">
-                            <button type="button" class="dropdown-trigger" id="avgRatingFilterTrigger">
-                                <span class="dropdown-value" data-i18n="ratings.filters.any_average">Any Average</span>
-                                <span class="dropdown-arrow"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
-                            </button>
-                            <div class="dropdown-list" id="avgRatingFilterList">
-                                <div class="dropdown-option" data-value="">Any Average</div>
-                                <div class="dropdown-option" data-value="9-10">9.0 - 10 ⭐</div>
-                                <div class="dropdown-option" data-value="8.5-10">8.5+ ⭐</div>
-                                <div class="dropdown-option" data-value="8-10">8.0+ ⭐</div>
-                                <div class="dropdown-option" data-value="7.5-10">7.5+ ⭐</div>
-                                <div class="dropdown-option" data-value="7-10">7.0+ ⭐</div>
-                                <div class="dropdown-option" data-value="6-10">6.0+ ⭐</div>
-                                <div class="dropdown-option" data-value="5-10">5.0+ ⭐</div>
+                        <div class="range-slider-container" id="avgRatingSlider">
+                            <div class="slider-values">
+                                <span id="avgRatingMinDisplay">1.0</span>
+                                <span id="avgRatingMaxDisplay">10.0</span>
                             </div>
-                            <select class="filter-select-hidden" id="avgRatingFilter">
-                                <option value="">Any Average</option>
-                                <option value="9-10">9.0 - 10</option>
-                                <option value="8.5-10">8.5+</option>
-                                <option value="8-10">8.0+</option>
-                                <option value="7.5-10">7.5+</option>
-                                <option value="7-10">7.0+</option>
-                                <option value="6-10">6.0+</option>
-                                <option value="5-10">5.0+</option>
-                            </select>
+                            <div class="slider-track-wrapper">
+                                <div class="slider-track" id="avgRatingTrack"></div>
+                                <div class="slider-range" id="avgRatingRange"></div>
+                                <input type="range" id="avgRatingFrom" class="range-input" min="1.0" max="10.0" value="1.0" step="0.1">
+                                <input type="range" id="avgRatingTo" class="range-input" min="1.0" max="10.0" value="10.0" step="0.1">
+                            </div>
                         </div>
                     </div>
 

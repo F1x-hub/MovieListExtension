@@ -387,7 +387,7 @@ class HomePage {
                         originalPoster = this.baseUrl + originalPoster;
                     }
                 }
-            } catch (e) {
+            } catch {
                 // Failed to parse URL, keep original
             }
         }
@@ -618,7 +618,7 @@ class HomePage {
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize Navigation
     if (typeof Navigation !== 'undefined') {
-        const navigation = new Navigation();
+        new Navigation();
         console.log('HomePage: Navigation initialized');
     } else {
         console.error('HomePage: Navigation class not found');

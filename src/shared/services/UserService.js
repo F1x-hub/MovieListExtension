@@ -103,7 +103,7 @@ class UserService {
             }
         } catch (error) {
             console.error('Error creating/updating user profile:', error);
-            throw new Error(`Failed to save user profile: ${error.message}`);
+            throw new Error(`Failed to save user profile: ${error.message}`, { cause: error });
         }
     }
 
@@ -167,7 +167,7 @@ class UserService {
             return { id: userId, ...updatedDoc.data() };
         } catch (error) {
             console.error('Error updating user profile:', error);
-            throw new Error(`Failed to update user profile: ${error.message}`);
+            throw new Error(`Failed to update user profile: ${error.message}`, { cause: error });
         }
     }
 
@@ -192,7 +192,7 @@ class UserService {
             return { id: userId, ...updatedDoc.data() };
         } catch (error) {
             console.error('Error updating user stats:', error);
-            throw new Error(`Failed to update user stats: ${error.message}`);
+            throw new Error(`Failed to update user stats: ${error.message}`, { cause: error });
         }
     }
 
@@ -288,7 +288,7 @@ class UserService {
             return true;
         } catch (error) {
             console.error('Error deleting user profile:', error);
-            throw new Error(`Failed to delete user profile: ${error.message}`);
+            throw new Error(`Failed to delete user profile: ${error.message}`, { cause: error });
         }
     }
 

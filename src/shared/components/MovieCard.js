@@ -417,9 +417,7 @@ class MovieCard {
      * @returns {HTMLElement} - The compact movie card element
      */
     static createCompactDetail(movie, options = {}) {
-        const {
-            onWatch = null // callback when "Watch" button is clicked
-        } = options;
+        // options is currently unused but kept for future extensions
 
         // Helper to get person names by profession
         const getPersonsByProfession = (persons, profession) => {
@@ -447,7 +445,7 @@ class MovieCard {
             try {
                 const date = new Date(dateStr);
                 return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
-            } catch (e) {
+            } catch {
                 return dateStr;
             }
         };
@@ -486,12 +484,9 @@ class MovieCard {
 
         // Financial
         const budget = formatCurrency(movie.budget);
-        const feesUsa = formatCurrency(movie.fees?.usa);
         const feesWorld = formatCurrency(movie.fees?.world);
-        const feesRussia = formatCurrency(movie.fees?.russia);
 
         // Premiere dates
-        const premiereRussia = formatDate(movie.premiere?.russia);
         const premiereWorld = formatDate(movie.premiere?.world);
 
         // Build meta items array (only items with values)

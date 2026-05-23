@@ -138,6 +138,64 @@
         </div>
     </div>
 
+    <!-- Announce Modal -->
+    <div id="announceModal" class="modal-overlay" style="display: none;">
+        <div class="modal announce-modal">
+            <div class="modal-header announce-modal-header">
+                <h2 class="modal-title">Запланировать анонс</h2>
+                <button class="modal-close" id="closeAnnounceBtn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="modal-body announce-modal-body">
+
+                <!-- Preview блока анонса -->
+                <div class="announce-preview">
+                    <img id="announcePreviewPoster" class="announce-preview-poster" src="" alt="Постер">
+                    <div class="announce-preview-info">
+                        <h3 id="announcePreviewTitle" class="announce-preview-title"></h3>
+                        <p id="announcePreviewYear" class="announce-preview-year"></p>
+                        <p id="announcePreviewDesc" class="announce-preview-desc"></p>
+                    </div>
+                </div>
+
+                <!-- Telegram preview label -->
+                <div class="announce-tg-label">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248l-2.04 9.613c-.147.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.566-4.46c.537-.194 1.006.131.907.607z"/></svg>
+                    Предпросмотр Telegram-сообщения
+                </div>
+
+
+
+                <!-- Дата и время -->
+                <div class="announce-form-row">
+                    <div class="announce-form-group">
+                        <label class="announce-label" for="announceDate">Дата отправки</label>
+                        <input type="date" id="announceDate" class="announce-input">
+                    </div>
+                    <div class="announce-form-group">
+                        <label class="announce-label" for="announceTime">Время отправки</label>
+                        <input type="time" id="announceTime" class="announce-input">
+                    </div>
+                </div>
+
+                <!-- Статус бота -->
+                <div class="announce-bot-status" id="announceBotStatus">
+                    <span class="announce-bot-status-dot" id="announceBotStatusDot"></span>
+                    <span id="announceBotStatusText">Проверка бота...</span>
+                </div>
+
+            </div>
+            <div class="announce-modal-footer">
+                <button class="btn btn-secondary" id="cancelAnnounceBtn">Отмена</button>
+                <button class="btn btn-announce-send" id="sendAnnounceBtn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>
+                    Запланировать
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Restored Player Floating Button (Hidden by default) -->
     <div id="restorePlayerBtn" class="restore-player-btn" style="display: none;">
         <span class="restore-icon">▶</span>

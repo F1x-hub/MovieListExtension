@@ -335,7 +335,7 @@ class SimilarMoviesParsingService {
             }
 
             return url;
-        } catch (e) {
+        } catch {
             return null;
         }
     }
