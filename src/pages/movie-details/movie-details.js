@@ -1497,47 +1497,399 @@ class MovieDetailsManager {
     }
 
     async loadAndDisplayUserRatings(movieId) {
+        return this.setupRatingsListener(movieId);
+    }
+
+    async setupRatingsListener(movieId) {
+        // Отписываемся от предыдущего слушателя (смена фильма)
+        this.destroyRatingsListener();
+
         const ratingsSection = document.getElementById('userRatingsSection');
         if (!ratingsSection) return;
-        
+
         const loadingEl = ratingsSection.querySelector('.user-ratings-loading');
         const contentEl = ratingsSection.querySelector('.user-ratings-content');
-        
-        try {
-            loadingEl.style.display = 'flex';
-            contentEl.innerHTML = '';
-            
-            const ratingService = firebaseManager.getRatingService();
-            const userService = firebaseManager.getUserService();
-            const currentUser = firebaseManager.getCurrentUser();
-            
-            const ratings = await ratingService.getMovieRatings(parseInt(movieId), 50);
-            
-            if (ratings.length === 0) {
-                contentEl.innerHTML = `<div class="user-ratings-empty"><p>${i18n.get('movie_details.empty_reviews')}</p></div>`;
-                loadingEl.style.display = 'none';
+
+        if (loadingEl) loadingEl.style.display = 'flex';
+        if (contentEl) contentEl.innerHTML = '';
+
+        // Карта профилей пользователей (кеш на время жизни страницы)
+        if (!this._userProfileCache) this._userProfileCache = new Map();
+
+        // Используем onAuthStateChanged напрямую от Firebase для надежности
+        const auth = firebaseManager.auth;
+
+        if (this._unsubscribeAuthWait) {
+            this._unsubscribeAuthWait();
+            this._unsubscribeAuthWait = null;
+        }
+
+        this._unsubscribeAuthWait = auth.onAuthStateChanged(async (user) => {
+            // Сразу отписываемся — нужен только первый вызов при инициализации/смене пользователя
+            if (this._unsubscribeAuthWait) {
+                this._unsubscribeAuthWait();
+                this._unsubscribeAuthWait = null;
+            }
+
+            if (!user) {
+                console.warn('[RatingsListener] No authenticated user, skipping listener');
+                if (loadingEl) loadingEl.style.display = 'none';
                 return;
             }
-            
-            const userIds = [...new Set(ratings.map(r => r.userId))];
-            const userProfiles = await userService.getUserProfilesByIds(userIds);
-            const userProfileMap = new Map(userProfiles.map(u => [u.userId || u.id, u]));
-            
-            if (currentUser) {
-                const currentUserProfile = await userService.getUserProfile(currentUser.uid);
-                if (currentUserProfile) userProfileMap.set(currentUser.uid, currentUserProfile);
-            }
-            
-            contentEl.innerHTML = this.createUserRatingsSection(ratings, userProfileMap, currentUser?.uid);
-            this.setupRatingMenuListeners();
-            this.setupUsernameClickListeners();
-            
-        } catch (error) {
-            console.error('Error loading user ratings:', error);
-            contentEl.innerHTML = `<div class="user-ratings-error"><p>${i18n.get('movie_details.error_loading_reviews')}</p></div>`;
-        } finally {
-            loadingEl.style.display = 'none';
+
+            console.log('[RatingsListener] Auth ready, starting snapshot for movieId:', movieId);
+            await this._startSnapshot(movieId, user, ratingsSection, loadingEl, contentEl);
+        });
+    }
+
+    async _startSnapshot(movieId, currentUser, ratingsSection, loadingEl, contentEl) {
+        const db = firebaseManager.db;
+        if (!db) {
+            console.error('[RatingsListener] Firestore not initialized');
+            if (contentEl) contentEl.innerHTML = `<div class="user-ratings-error"><p>${i18n.get('movie_details.error_loading_reviews')}</p></div>`;
+            if (loadingEl) loadingEl.style.display = 'none';
+            return;
         }
+
+        this._currentMovieId = movieId;
+        const userService = firebaseManager.getUserService();
+
+        // Флаг первого снимка — нужен, чтобы отобразить спиннер только однажды
+        let isFirstSnapshot = true;
+
+        // Инициализируем контейнер списка
+        this._ratingsListEl = null;
+
+        // Приводим ID фильма к правильному типу данных для точного сопоставления
+        const targetMovieId = typeof movieId === 'number' ? movieId : (Number(movieId) || movieId);
+
+        // Top-level коллекция с фильтром по movieId
+        const collectionRef = db
+            .collection('ratings')
+            .where('movieId', '==', targetMovieId)
+            .orderBy('createdAt', 'desc')
+            .limit(50);
+
+        this._ratingsUnsubscribe = collectionRef.onSnapshot(
+            { includeMetadataChanges: true },
+            async (snapshot) => {
+                // Оффлайн-уведомление
+                if (snapshot.metadata.fromCache && !navigator.onLine) {
+                    this._showOfflineBanner(ratingsSection);
+                } else {
+                    this._hideOfflineBanner(ratingsSection);
+                }
+
+                // Ждём профили новых пользователей (только для добавленных)
+                const addedDocs = snapshot.docChanges().filter(c => c.type === 'added');
+                const newUserIds = addedDocs
+                    .map(c => c.doc.data().userId)
+                    .filter(uid => uid && !this._userProfileCache.has(uid));
+
+                if (newUserIds.length > 0) {
+                    try {
+                        const profiles = await userService.getUserProfilesByIds([...new Set(newUserIds)]);
+                        profiles.forEach(p => {
+                            const key = p.userId || p.id;
+                            if (key) this._userProfileCache.set(key, p);
+                        });
+                    } catch (e) {
+                        console.warn('[RatingsListener] Failed to load user profiles:', e);
+                    }
+                }
+
+                // Также обновляем профиль текущего пользователя, если нужен
+                if (currentUser && !this._userProfileCache.has(currentUser.uid)) {
+                    try {
+                        const p = await userService.getUserProfile(currentUser.uid);
+                        if (p) this._userProfileCache.set(currentUser.uid, p);
+                    } catch (e) { /* ignore */ }
+                }
+
+                if (isFirstSnapshot) {
+                    isFirstSnapshot = false;
+
+                    if (snapshot.empty) {
+                        if (contentEl) contentEl.innerHTML = `<div class="user-ratings-empty"><p>${i18n.get('movie_details.empty_reviews')}</p></div>`;
+                        if (loadingEl) loadingEl.style.display = 'none';
+                        return;
+                    }
+
+                    // Начальный рендер: строим контейнер целиком
+                    const allRatings = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                    const html = this.createUserRatingsSection(allRatings, this._userProfileCache, currentUser?.uid);
+                    if (contentEl) contentEl.innerHTML = html;
+
+                    this._ratingsListEl = contentEl?.querySelector('.user-ratings-list');
+                    this.setupRatingMenuListeners();
+                    this.setupUsernameClickListeners();
+                    if (loadingEl) loadingEl.style.display = 'none';
+                    return;
+                }
+
+                // Инкрементальные обновления
+                for (const change of snapshot.docChanges()) {
+                    const rating = { id: change.doc.id, ...change.doc.data() };
+                    switch (change.type) {
+                        case 'added':    await this._onRatingAdded(rating, currentUser?.uid, contentEl); break;
+                        case 'modified': this._onRatingModified(rating, currentUser?.uid); break;
+                        case 'removed':  this._onRatingRemoved(rating.id); break;
+                    }
+                }
+            },
+            (error) => {
+                console.error('[RatingsListener] Snapshot error:', error);
+                if (typeof Utils !== 'undefined') {
+                    Utils.showToast(i18n.get('movie_details.error_loading_reviews') || 'Ошибка загрузки отзывов', 'error');
+                }
+                if (contentEl && !contentEl.querySelector('.user-ratings-list')) {
+                    contentEl.innerHTML = `<div class="user-ratings-error"><p>${i18n.get('movie_details.error_loading_reviews')}</p></div>`;
+                }
+                if (loadingEl) loadingEl.style.display = 'none';
+            }
+        );
+
+        // Регистрируем обработчики отписки (идемпотентны)
+        if (!this._ratingsListenerPageBound) {
+            this._ratingsListenerPageBound = true;
+
+            window.addEventListener('beforeunload', () => this.destroyRatingsListener());
+
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'hidden') {
+                    this.destroyRatingsListener();
+                } else if (document.visibilityState === 'visible' && this._currentMovieId) {
+                    this.setupRatingsListener(this._currentMovieId);
+                }
+            });
+        }
+    }
+
+    /** Отписывается от текущего onSnapshot-слушателя */
+    destroyRatingsListener() {
+        if (this._unsubscribeAuthWait) {
+            this._unsubscribeAuthWait();
+            this._unsubscribeAuthWait = null;
+        }
+        if (this._ratingsUnsubscribe) {
+            this._ratingsUnsubscribe();
+            this._ratingsUnsubscribe = null;
+        }
+    }
+
+    /** Показывает баннер «нет соединения» внутри секции рейтингов */
+    _showOfflineBanner(ratingsSection) {
+        if (ratingsSection.querySelector('.ratings-offline-banner')) return;
+        const banner = document.createElement('div');
+        banner.className = 'ratings-offline-banner';
+        banner.textContent = '⚡ Нет соединения — данные могут быть устаревшими';
+        ratingsSection.prepend(banner);
+    }
+
+    /** Удаляет баннер «нет соединения» */
+    _hideOfflineBanner(ratingsSection) {
+        ratingsSection.querySelector('.ratings-offline-banner')?.remove();
+    }
+
+    /**
+     * Строит DOM-элемент карточки рейтинга.
+     * Используется как для первичного рендера, так и для инкрементального.
+     */
+    _buildRatingCard(rating, currentUserId) {
+        const userProfile  = this._userProfileCache?.get(rating.userId);
+        const userName     = userProfile?.displayName || rating.userName || 'Пользователь';
+        const userPhoto    = userProfile?.photoURL   || '/icons/icon48.png';
+        const isCurrentUser = currentUserId && rating.userId === currentUserId;
+
+        let dateStr = '';
+        if (rating.createdAt) {
+            const dateObj = rating.createdAt.toDate ? rating.createdAt.toDate() : new Date(rating.createdAt);
+            if (!isNaN(dateObj.getTime())) {
+                const d = dateObj.getDate().toString().padStart(2, '0');
+                const m = (dateObj.getMonth() + 1).toString().padStart(2, '0');
+                const y = dateObj.getFullYear();
+                dateStr = `<span class="user-rating-date">${d}.${m}.${y}</span>`;
+            }
+        }
+
+        const menuHtml = isCurrentUser ? `
+            <div class="user-rating-menu">
+                <button class="user-rating-menu-btn" data-rating-id="${rating.id}"><span>⋯</span></button>
+                <div class="user-rating-menu-dropdown" id="menu-${rating.id}" style="display: none;">
+                    <button class="menu-item" data-rating-id="${rating.id}" data-action="edit"><span class="menu-icon">✏️</span><span>${i18n.get('movie_details.edit')}</span></button>
+                    <button class="menu-item delete-item" data-rating-id="${rating.id}" data-action="delete"><span class="menu-icon">🗑️</span><span>${i18n.get('movie_details.delete')}</span></button>
+                </div>
+            </div>` : '';
+
+        const commentHtml = rating.comment
+            ? `<div class="user-rating-comment">${Utils.parseSpoilers(Utils.linkify(this.escapeHtml(rating.comment)))}</div>`
+            : '';
+
+        const card = document.createElement('div');
+        card.className = `user-rating-card${isCurrentUser ? ' current-user' : ''}`;
+        card.dataset.ratingId = rating.id;
+        card.innerHTML = `
+            <div class="user-rating-header">
+                <img src="${userPhoto}" alt="${this.escapeHtml(userName)}" class="user-rating-avatar" loading="lazy" decoding="async" onerror="this.src='/icons/icon48.png'">
+                <div class="user-rating-info">
+                    <div class="user-rating-name-row">
+                        <span class="user-rating-name clickable-username" data-user-id="${rating.userId}">${this.escapeHtml(userName)}</span>
+                        ${dateStr}
+                    </div>
+                    <div class="user-rating-score">⭐ ${rating.rating}/10</div>
+                </div>
+                ${menuHtml}
+            </div>
+            ${commentHtml}
+        `;
+        return card;
+    }
+
+    /**
+     * Обрабатывает событие «added» от onSnapshot.
+     * Не дублирует карточку текущего пользователя, если она уже есть (оптимистичный UI).
+     */
+    async _onRatingAdded(rating, currentUserId, contentEl) {
+        // Если секция пустая (empty-state), очищаем её и создаём список
+        if (contentEl) {
+            const emptyEl = contentEl.querySelector('.user-ratings-empty');
+            if (emptyEl) {
+                const container = document.createElement('div');
+                container.className = 'user-ratings-container';
+                container.innerHTML = `<h4 class="user-ratings-title">${i18n.get('movie_details.user_ratings_title')}</h4>`;
+                const list = document.createElement('div');
+                list.className = 'user-ratings-list';
+                container.appendChild(list);
+                contentEl.innerHTML = '';
+                contentEl.appendChild(container);
+                this._ratingsListEl = list;
+            }
+        }
+
+        if (!this._ratingsListEl) {
+            this._ratingsListEl = contentEl?.querySelector('.user-ratings-list');
+        }
+        if (!this._ratingsListEl) return;
+
+        // Не дублируем, если карточка уже есть (оптимистичное добавление при сабмите)
+        if (this._ratingsListEl.querySelector(`[data-rating-id="${rating.id}"]`)) return;
+
+        const card = this._buildRatingCard(rating, currentUserId);
+        card.classList.add('rating-card-entering');
+        // Новые оценки — в начало списка
+        this._ratingsListEl.prepend(card);
+        // Форсируем reflow для анимации
+        void card.offsetWidth;
+        card.classList.remove('rating-card-entering');
+        card.classList.add('rating-card-visible');
+
+        // Переинициализируем слушатели меню только для новой карточки
+        card.querySelectorAll('.user-rating-menu-btn').forEach(btn => {
+            btn.addEventListener('mousedown', (e) => {
+                e.stopPropagation();
+                const ratingId = btn.getAttribute('data-rating-id');
+                const menu = document.getElementById(`menu-${ratingId}`);
+                document.querySelectorAll('.user-rating-menu-dropdown').forEach(m => {
+                    if (m.id !== `menu-${ratingId}`) m.style.display = 'none';
+                });
+                if (menu) {
+                    const isVisible = menu.style.display === 'block';
+                    if (!isVisible) {
+                        const rect = btn.getBoundingClientRect();
+                        menu.style.top = `${rect.bottom + 5}px`;
+                        menu.style.left = `${rect.right - 160}px`;
+                        menu.style.display = 'block';
+                    } else {
+                        menu.style.display = 'none';
+                    }
+                }
+            });
+        });
+        card.querySelectorAll('.menu-item').forEach(item => {
+            item.addEventListener('mousedown', async (e) => {
+                e.stopPropagation();
+                const ratingId = item.getAttribute('data-rating-id');
+                const action   = item.getAttribute('data-action');
+                document.getElementById(`menu-${ratingId}`)?.style && (document.getElementById(`menu-${ratingId}`).style.display = 'none');
+                if (action === 'edit')   this.showRatingModal(this.selectedMovie);
+                else if (action === 'delete') this.deleteUserRating(ratingId);
+            });
+        });
+        card.querySelectorAll('.clickable-username').forEach(el => {
+            el.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return;
+                e.stopPropagation();
+                const userId = el.getAttribute('data-user-id');
+                if (userId) {
+                    e.preventDefault();
+                    window.location.href = chrome.runtime.getURL(`src/pages/profile/profile.html?userId=${userId}`);
+                }
+            });
+        });
+    }
+
+    /** Обрабатывает событие «modified» — обновляет только изменившиеся данные в DOM */
+    _onRatingModified(rating, currentUserId) {
+        const existingCard = document.querySelector(`[data-rating-id="${rating.id}"]`);
+        if (!existingCard) return;
+
+        // Обновляем счёт
+        const scoreEl = existingCard.querySelector('.user-rating-score');
+        if (scoreEl) scoreEl.textContent = `⭐ ${rating.rating}/10`;
+
+        // Обновляем комментарий
+        let commentEl = existingCard.querySelector('.user-rating-comment');
+        if (rating.comment) {
+            const newHtml = Utils.parseSpoilers(Utils.linkify(this.escapeHtml(rating.comment)));
+            if (commentEl) {
+                commentEl.innerHTML = newHtml;
+            } else {
+                commentEl = document.createElement('div');
+                commentEl.className = 'user-rating-comment';
+                commentEl.innerHTML = newHtml;
+                existingCard.appendChild(commentEl);
+            }
+        } else if (commentEl) {
+            commentEl.remove();
+        }
+
+        // Пульс-анимация при изменении
+        existingCard.classList.add('rating-card-updated');
+        setTimeout(() => existingCard.classList.remove('rating-card-updated'), 600);
+    }
+
+    /** Обрабатывает событие «removed» — убирает карточку с анимацией */
+    _onRatingRemoved(ratingId) {
+        const existingCard = document.querySelector(`[data-rating-id="${ratingId}"]`);
+        if (!existingCard) return;
+
+        existingCard.classList.add('rating-card-leaving');
+        
+        const removeCard = () => {
+            if (!existingCard.isConnected) return; // уже удалён
+            existingCard.remove();
+
+                if (this._ratingsListEl && this._ratingsListEl.children.length === 0) {
+                    const contentEl = document.querySelector('#userRatingsSection .user-ratings-content');
+                    if (contentEl) {
+                    contentEl.innerHTML = `<div class="user-ratings-empty"><p>${i18n.get('movie_details.empty_reviews')}</p></div>`;
+                }
+            }
+        };
+
+        const fallbackTimer = setTimeout(removeCard, 400);
+
+        existingCard.addEventListener('animationend', () => {
+            clearTimeout(fallbackTimer);
+            existingCard.remove();
+            // Если список опустел — показать empty-state
+            if (this._ratingsListEl && this._ratingsListEl.children.length === 0) {
+                const contentEl = document.querySelector('#userRatingsSection .user-ratings-content');
+                if (contentEl) {
+                    contentEl.innerHTML = `<div class="user-ratings-empty"><p>${i18n.get('movie_details.empty_reviews')}</p></div>`;
+                }
+            }
+        }, { once: true });
     }
 
     createUserRatingsSection(ratings, userProfileMap, currentUserId) {

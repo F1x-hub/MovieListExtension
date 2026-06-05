@@ -467,8 +467,8 @@ class ProfilePageManager {
         if (photoURL) {
             // Check if imageCacheService is ready
             if (this.imageCacheService && typeof this.imageCacheService.getCachedImage === 'function') {
-                // Try to get from cache first
-                this.imageCacheService.getCachedImage(profile.uid || this.currentUser?.uid, 'avatar').then(cachedAvatar => {
+                // Try to get from cache first, passing photoURL to check if the URL has changed
+                this.imageCacheService.getCachedImage(profile.uid || this.currentUser?.uid, 'avatar', photoURL).then(cachedAvatar => {
                     if (cachedAvatar) {
                         if (this.elements.profilePhotoImg) {
                             this.elements.profilePhotoImg.src = cachedAvatar;
@@ -562,8 +562,8 @@ class ProfilePageManager {
             if (profile.bannerURL) {
                 // Check if imageCacheService is ready
                 if (this.imageCacheService && typeof this.imageCacheService.getCachedImage === 'function') {
-                    // Try to get from cache first
-                    this.imageCacheService.getCachedImage(profile.uid || this.currentUser?.uid, 'banner').then(cachedBanner => {
+                    // Try to get from cache first, passing bannerURL to check if the URL has changed
+                    this.imageCacheService.getCachedImage(profile.uid || this.currentUser?.uid, 'banner', profile.bannerURL).then(cachedBanner => {
                         if (cachedBanner) {
                             this.elements.profileCover.style.backgroundImage = `url('${cachedBanner}')`;
                             this.elements.profileCover.classList.add('has-banner');
@@ -1194,7 +1194,7 @@ class ProfilePageManager {
                 photoURL = uploadResult.photoURL;
                 photoPath = uploadResult.photoPath;
                 // Cache the new avatar immediately
-                await this.imageCacheService.cacheImage(this.currentUser.uid, 'avatar', this.photoFile);
+                await this.imageCacheService.cacheImage(this.currentUser.uid, 'avatar', this.photoFile, photoURL);
             } else if (!this.photoPreview && this.userProfile.photoPath) {
                 await firebaseManager.deleteProfilePhoto(this.userProfile.photoPath);
                 photoURL = '';
@@ -1211,7 +1211,7 @@ class ProfilePageManager {
                 bannerURL = uploadResult.bannerURL;
                 bannerPath = uploadResult.bannerPath;
                 // Cache the new banner immediately
-                await this.imageCacheService.cacheImage(this.currentUser.uid, 'banner', this.bannerFile);
+                await this.imageCacheService.cacheImage(this.currentUser.uid, 'banner', this.bannerFile, bannerURL);
             } else if (!this.bannerPreview && this.userProfile.bannerPath) {
                 await firebaseManager.deleteBanner(this.userProfile.bannerPath);
                 bannerURL = '';

@@ -242,9 +242,12 @@ class RatingService {
      * @returns {Promise<Object>} - Map of movieId to {average, count}
      */
     async getBatchMovieAverageRatings(movieIds) {
+        const startTime = performance.now();
+        console.group('[RatingService] getBatchMovieAverageRatings');
         try {
             // Check chrome.storage cache first
             if (chrome && chrome.storage && chrome.storage.local) {
+                // NOTE: Using all IDs in a key is very risky and inefficient
                 const cacheKey = `averageRatings_${movieIds.sort().join('_')}`;
                 const cacheTimestampKey = `${cacheKey}_timestamp`;
                 const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
@@ -255,15 +258,18 @@ class RatingService {
                     if (result[cacheKey] && result[cacheTimestampKey]) {
                         const age = Date.now() - result[cacheTimestampKey];
                         if (age < CACHE_DURATION) {
-                            console.log('Using cached batch average ratings from chrome.storage');
+                            console.log(`[RatingService] Using cached batch averages. Time: ${(performance.now() - startTime).toFixed(2)}ms`);
+                            console.groupEnd();
                             return result[cacheKey];
                         }
                     }
                 } catch (cacheError) {
-                    console.warn('Error reading from chrome.storage cache:', cacheError);
+                    console.warn('[RatingService] Error reading from chrome.storage cache:', cacheError);
                 }
             }
             
+            console.log(`[RatingService] Cache miss. Fetching averages for ${movieIds.length} movies from Firestore...`);
+
             // Load all ratings for these movies in batch (Firestore 'in' limit is 30)
             const CHUNK_SIZE = 30;
             const movieIdChunks = [];
@@ -279,6 +285,8 @@ class RatingService {
                 snapshot.forEach(doc => allResults.push(doc.data()));
             }
             
+            console.log(`[RatingService] Firestore fetched ${allResults.length} raw ratings for calculations`);
+
             // Group ratings by movieId and calculate averages
             const movieRatings = {};
             
@@ -317,14 +325,17 @@ class RatingService {
                         [cacheTimestampKey]: Date.now()
                     });
                 } catch (cacheError) {
-                    console.warn('Error caching to chrome.storage:', cacheError);
+                    console.warn('[RatingService] Error caching to chrome.storage:', cacheError);
                 }
             }
             
+            console.log(`[RatingService] Batch average calculation complete. Time: ${(performance.now() - startTime).toFixed(2)}ms`);
+            console.groupEnd();
             return averages;
             
         } catch (error) {
-            console.error('Error batch loading average ratings:', error);
+            console.error('[RatingService] Error batch loading average ratings:', error);
+            console.groupEnd();
             
             // Fallback: return empty averages
             const averages = {};

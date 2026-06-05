@@ -13,9 +13,10 @@ class ImageCacheService {
      * Get cached image data
      * @param {string} userId - User ID
      * @param {string} type - 'avatar' or 'banner'
+     * @param {string|null} expectedUrl - The expected URL for the image
      * @returns {Promise<string|null>} - Base64 image data or null
      */
-    async getCachedImage(userId, type) {
+    async getCachedImage(userId, type, expectedUrl = null) {
         try {
             const result = await chrome.storage.local.get(this.CACHE_KEY);
             const cache = result[this.CACHE_KEY] || {};
@@ -25,6 +26,12 @@ class ImageCacheService {
             }
 
             const item = cache[userId][type];
+            
+            // Check if the URL has changed or if it's an old cache entry without a URL
+            if (expectedUrl && (!item.url || item.url !== expectedUrl)) {
+                await this.invalidateCache(userId, type);
+                return null;
+            }
             
             // Check expiry
             if (Date.now() - item.timestamp > this.CACHE_EXPIRY) {
@@ -44,8 +51,9 @@ class ImageCacheService {
      * @param {string} userId - User ID
      * @param {string} type - 'avatar' or 'banner'
      * @param {string|Blob} data - Base64 string or Blob
+     * @param {string|null} url - The URL of the image
      */
-    async cacheImage(userId, type, data) {
+    async cacheImage(userId, type, data, url = null) {
         try {
             let base64Data = data;
             if (data instanceof Blob) {
@@ -61,6 +69,7 @@ class ImageCacheService {
 
             cache[userId][type] = {
                 data: base64Data,
+                url: url,
                 timestamp: Date.now()
             };
 
@@ -162,7 +171,7 @@ class ImageCacheService {
         try {
             const response = await fetch(url);
             const blob = await response.blob();
-            await this.cacheImage(userId, type, blob);
+            await this.cacheImage(userId, type, blob, url);
         } catch (error) {
             console.error(`Error fetching image to cache (${type}):`, error);
         }
