@@ -63,32 +63,47 @@ class MovieCacheService {
      * @returns {Promise<Object>} - Map of movieId to cached movie data
      */
     async getBatchCachedMovies(kinopoiskIds) {
+        const startTime = performance.now();
+        console.group('[MovieCache] getBatchCachedMovies');
+        const uniqueIds = Array.from(new Set(kinopoiskIds.map(id => id?.toString()).filter(Boolean)));
+        console.log(`Checking cache for ${uniqueIds.length} movies...`);
         try {
             const cachedMovies = {};
-            const missingIds = [];
+            const missingFromLocal = [];
 
             // 1. Check LocalStorage first for all IDs
-            kinopoiskIds.forEach(id => {
+            uniqueIds.forEach(id => {
                 const localKey = `kp_movie_${id}`;
                 const localData = localStorage.getItem(localKey);
                 if (localData) {
                     try {
                         const parsed = JSON.parse(localData);
-                        cachedMovies[id] = parsed;
+                        const touched = { ...parsed, _lru: Date.now() };
+                        cachedMovies[id] = touched;
+                        try {
+                            localStorage.setItem(localKey, JSON.stringify(touched));
+                        } catch {
+                            // Keep the cache hit even if touching LRU fails due to quota pressure.
+                        }
                     } catch {
-                        missingIds.push(id);
+                        localStorage.removeItem(localKey);
+                        missingFromLocal.push(id);
                     }
                 } else {
-                    missingIds.push(id);
+                    missingFromLocal.push(id);
                 }
             });
 
-            if (missingIds.length === 0) {
+            console.log(`[MovieCache] LocalStorage hits: ${Object.keys(cachedMovies).length}, misses: ${missingFromLocal.length}`);
+
+            if (missingFromLocal.length === 0) {
+                console.log(`[MovieCache] All movies found in LocalStorage. Time: ${(performance.now() - startTime).toFixed(2)}ms`);
+                console.groupEnd();
                 return cachedMovies;
             }
 
             // 2. Check Firestore for missing IDs
-            const docIds = missingIds.map(id => id.toString());
+            const docIds = missingFromLocal.map(id => id.toString());
             
             // Chunk requests if too many
             const chunks = [];
@@ -96,6 +111,8 @@ class MovieCacheService {
             for (let i = 0; i < docIds.length; i += CHUNK_SIZE) {
                 chunks.push(docIds.slice(i, i + CHUNK_SIZE));
             }
+
+            console.log(`[MovieCache] Fetching ${missingFromLocal.length} movies from Firestore in ${chunks.length} chunks...`);
 
             for (const chunk of chunks) {
                 const query = this.db.collection(this.collection)
@@ -117,15 +134,20 @@ class MovieCacheService {
                         // Save to local storage for next time
                         this.saveToLocalStorage(kinopoiskId, movieData);
                     } else {
+                        console.log(`[MovieCache] Cache expired for ${kinopoiskId} (${(cacheAge / 3600000).toFixed(1)}h old). Deleting...`);
                         doc.ref.delete().catch(console.warn);
                     }
                 });
             }
             
+            const totalFound = Object.keys(cachedMovies).length;
+            console.log(`[MovieCache] Total found: ${totalFound}/${uniqueIds.length}. Time: ${(performance.now() - startTime).toFixed(2)}ms`);
+            console.groupEnd();
             return cachedMovies;
             
         } catch (error) {
-            console.error('Error batch checking cache:', error);
+            console.error('[MovieCache] Error batch checking cache:', error);
+            console.groupEnd();
             return {};
         }
     }
@@ -174,26 +196,38 @@ class MovieCacheService {
             return;
         }
 
+        const localKey = `kp_movie_${id}`;
+        const payload = {
+            ...data,
+            _lru: Date.now()
+        };
+
         try {
-            localStorage.setItem(`kp_movie_${id}`, JSON.stringify(data));
+            localStorage.setItem(localKey, JSON.stringify(payload));
         } catch {
             console.warn('LocalStorage full, clearing old cache entries...');
             try {
-                // Simple eviction: remove 50 oldest/random movie keys
-                const keys = [];
+                const entries = [];
                 for (let i = 0; i < localStorage.length; i++) {
                     const key = localStorage.key(i);
                     if (key.startsWith('kp_movie_')) {
-                        keys.push(key);
+                        let lru = 0;
+                        try {
+                            const cached = JSON.parse(localStorage.getItem(key));
+                            lru = cached?._lru || new Date(cached?.lastUpdated || 0).getTime() || 0;
+                        } catch {
+                            lru = 0;
+                        }
+                        entries.push({ key, lru });
                     }
                 }
-                
-                // Sort or just take first 50
-                const keysToRemove = keys.slice(0, 50);
-                keysToRemove.forEach(k => localStorage.removeItem(k));
-                
+
+                entries.sort((a, b) => a.lru - b.lru);
+                const removeCount = Math.max(1, Math.ceil(entries.length * 0.3));
+                entries.slice(0, removeCount).forEach(({ key }) => localStorage.removeItem(key));
+
                 // Try again
-                localStorage.setItem(`kp_movie_${id}`, JSON.stringify(data));
+                localStorage.setItem(localKey, JSON.stringify(payload));
             } catch (retryError) {
                 console.error('Failed to clear localStorage space:', retryError);
             }

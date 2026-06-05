@@ -1581,37 +1581,20 @@ class RatingsPageManager {
                     descEl.remove();
                 }
 
-                // Update dynamic user info that might have been loaded after the cache
-                const userNameEl = card.querySelector('.mc-user-name');
-                const newUserNameEl = newCardHTML.querySelector('.mc-user-name');
-                if (userNameEl && newUserNameEl) {
-                    if (userNameEl.textContent.trim() !== newUserNameEl.textContent.trim()) {
-                        userNameEl.textContent = newUserNameEl.textContent;
+                // Update user info section (avatar, name, rating, raters count, raters popup)
+                const oldUserInfo = card.querySelector('.mc-user-info');
+                const newUserInfo = newCardHTML.querySelector('.mc-user-info');
+                if (oldUserInfo && newUserInfo) {
+                    if (oldUserInfo.innerHTML !== newUserInfo.innerHTML) {
+                        oldUserInfo.innerHTML = newUserInfo.innerHTML;
                     }
-                    if (this.userProfilesMap.has(movieData.userId || movieData.uid)) {
-                        userNameEl.classList.remove('mc-skeleton');
+                } else if (!oldUserInfo && newUserInfo) {
+                    const contentEl = card.querySelector('.mc-content');
+                    if (contentEl) {
+                        contentEl.appendChild(newUserInfo.cloneNode(true));
                     }
-                }
-                
-                const userAvatarEl = card.querySelector('.mc-user-avatar');
-                const newUserAvatarEl = newCardHTML.querySelector('.mc-user-avatar');
-                if (userAvatarEl && newUserAvatarEl) {
-                    const newPhoto = newUserAvatarEl.getAttribute('src');
-                    if (userAvatarEl.getAttribute('src') !== newPhoto) {
-                        userAvatarEl.src = newPhoto;
-                    }
-                    if (this.userProfilesMap.has(movieData.userId || movieData.uid)) {
-                        userAvatarEl.classList.remove('mc-skeleton');
-                    }
-                }
-                
-                // Update the raters popup if it exists
-                const oldPopup = card.querySelector('.mc-raters-popup');
-                const newPopup = newCardHTML.querySelector('.mc-raters-popup');
-                if (oldPopup && newPopup) {
-                    if (oldPopup.innerHTML !== newPopup.innerHTML) {
-                        oldPopup.innerHTML = newPopup.innerHTML;
-                    }
+                } else if (oldUserInfo && !newUserInfo) {
+                    oldUserInfo.remove();
                 }
 
                 // Update average rating if data has changed (e.g. cache → enriched data)
