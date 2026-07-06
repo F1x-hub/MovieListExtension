@@ -127,6 +127,14 @@ MIT License
 ## История изменений
 
 <details open>
+<summary>Версия 1.2.8</summary>
+
+### Features
+- Сделан заголовок карточки рулетки кликабельным для перехода к деталям фильма
+
+</details>
+
+<details>
 <summary>Версия 1.2.7</summary>
 
 ### Fixes

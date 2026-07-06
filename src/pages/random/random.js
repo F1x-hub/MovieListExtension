@@ -1082,6 +1082,17 @@ class RandomManager {
             }
         });
 
+        // Делегирование клика для заголовка фильма
+        const track = el.querySelector('#rollDrumTrack');
+        if (track) {
+            track.addEventListener('click', (e) => {
+                const titleEl = e.target.closest('.roll-drum-card-title');
+                if (titleEl && titleEl.dataset.kpid) {
+                    window.location.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${titleEl.dataset.kpid}`);
+                }
+            });
+        }
+
         // Перекрутить
         const rerollBtn = el.querySelector('#rollRerollBtn');
         if (rerollBtn) {
@@ -1124,7 +1135,7 @@ class RandomManager {
                     <img src="${m.poster || ''}" alt=""
                          onerror="this.style.background='#2a2a2a';this.removeAttribute('src')">
                     <div class="roll-drum-card-meta">
-                        <div class="roll-drum-card-title">${m.title || '—'}</div>
+                        <div class="roll-drum-card-title" style="cursor: pointer;" data-kpid="${m.kpId}" title="Открыть детали фильма">${m.title || '—'}</div>
                         <div class="roll-drum-card-sub">${m.year || ''}</div>
                     </div>
                     <div class="roll-drum-card-rating">${m.rating ? parseFloat(m.rating).toFixed(1) : '—'}</div>`;
