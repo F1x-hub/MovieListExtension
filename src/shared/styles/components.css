@@ -39,15 +39,30 @@
 }
 
 .btn-primary {
-    background: linear-gradient(135deg, #4A5C6A 0%, #5B6F7F 100%);
-    color: #FFFFFF;
+    background: linear-gradient(135deg, #ffffff 0%, #e4e4e7 100%);
+    color: #09090b;
+    border: 1px solid rgba(255, 255, 255, 0.15);
     box-shadow: var(--shadow-sm);
+    font-weight: 600;
 }
 
 .btn-primary:hover:not(:disabled) {
-    background: linear-gradient(135deg, #5B6F7F 0%, #6B8090 100%);
+    background: linear-gradient(135deg, #f4f4f5 0%, #d4d4d8 100%);
+    color: #000000;
     transform: translateY(-2px);
-    box-shadow: var(--shadow-md);
+    box-shadow: 0 6px 20px rgba(255, 255, 255, 0.2);
+}
+
+.light-theme .btn-primary {
+    background: linear-gradient(135deg, #09090b 0%, #27272a 100%);
+    color: #ffffff;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.light-theme .btn-primary:hover:not(:disabled) {
+    background: linear-gradient(135deg, #18181b 0%, #3f3f46 100%);
+    color: #ffffff;
+    box-shadow: 0 6px 20px rgba(9, 9, 11, 0.2);
 }
 
 .btn-accent {
@@ -584,6 +599,77 @@
 .error-text {
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
+}
+
+/* Shared, localized blocking error dialog */
+.app-error-dialog[hidden] {
+    display: none;
+}
+
+.app-error-dialog {
+    padding: var(--space-md);
+}
+
+.app-error-dialog__modal {
+    width: min(440px, calc(100vw - 2 * var(--space-lg)));
+    padding: var(--space-2xl);
+    text-align: center;
+    border: 1px solid rgba(239, 68, 68, 0.28);
+}
+
+.app-error-dialog__icon {
+    width: 52px;
+    height: 52px;
+    margin: 0 auto var(--space-lg);
+    display: grid;
+    place-items: center;
+    border: 2px solid var(--danger);
+    border-radius: 50%;
+    color: var(--danger);
+    font-size: 30px;
+    font-weight: 700;
+}
+
+.app-error-dialog__title {
+    margin: 0 0 var(--space-sm);
+    color: var(--text-primary);
+    font-size: var(--font-size-xl);
+}
+
+.app-error-dialog__message {
+    margin: 0 auto;
+    max-width: 360px;
+    color: var(--text-secondary);
+    line-height: 1.55;
+}
+
+.app-error-dialog__details {
+    margin-top: var(--space-lg);
+    text-align: left;
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+}
+
+.app-error-dialog__details pre {
+    max-height: 120px;
+    margin: var(--space-sm) 0 0;
+    padding: var(--space-sm);
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: var(--radius-sm);
+}
+
+.app-error-dialog__actions {
+    display: flex;
+    justify-content: center;
+    gap: var(--space-sm);
+    margin-top: var(--space-xl);
+}
+
+body.app-error-dialog-open {
+    overflow: hidden;
 }
 
 /* Responsive adjustments */

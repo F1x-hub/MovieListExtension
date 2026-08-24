@@ -38,8 +38,8 @@ class ReportWidget {
 
             <!-- Widget Button -->
             <div id="reportWidgetContainer" class="report-widget-container">
-                <button id="reportWidgetBtn" class="report-widget-btn" title="Сообщить об ошибке / Предложить улучшение">
-                    ›
+                <button id="reportWidgetBtn" class="report-widget-btn" title="Сообщить об ошибке / Предложить улучшение" aria-label="Report issue">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                 </button>
             </div>
 
@@ -47,7 +47,9 @@ class ReportWidget {
             <div id="reportWidgetDrawer" class="report-widget-drawer">
                 <div class="report-drawer-header">
                     <h3>Сообщить об ошибке / Предложить улучшение</h3>
-                    <button id="reportWidgetCloseBtn" class="report-close-btn" title="Закрыть">✕</button>
+                    <button id="reportWidgetCloseBtn" class="report-close-btn" title="Закрыть" aria-label="Close">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
                 </div>
                 
                 <div class="report-drawer-body">
@@ -60,13 +62,18 @@ class ReportWidget {
 
                     <div class="report-file-upload">
                         <label for="reportWidgetFile" class="report-file-label">
-                            <span id="reportWidgetFileLabelText">📎 Прикрепить скриншот (до 5 МБ)</span>
+                            <span id="reportWidgetFileLabelText">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+                                Прикрепить скриншот (до 5 МБ)
+                            </span>
                         </label>
                         <input type="file" id="reportWidgetFile" class="report-file-input" accept="image/jpeg, image/png, image/webp">
                         
                         <div id="reportWidgetPreviewContainer" class="report-preview-container">
                             <img id="reportWidgetPreviewImg" class="report-preview-image" src="" alt="Preview">
-                            <button id="reportWidgetRemovePhotoBtn" class="report-remove-photo-btn" title="Удалить фото">✕</button>
+                            <button id="reportWidgetRemovePhotoBtn" class="report-remove-photo-btn" title="Удалить фото" aria-label="Remove">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -233,7 +240,7 @@ class ReportWidget {
         this.fileInput.value = '';
         this.previewImg.src = '';
         this.previewContainer.style.display = 'none';
-        this.fileLabelText.textContent = '📎 Прикрепить скриншот (до 5 МБ)';
+        this.fileLabelText.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg> Прикрепить скриншот (до 5 МБ)';
         this.validateForm();
     }
 

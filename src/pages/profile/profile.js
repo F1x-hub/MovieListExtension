@@ -14,11 +14,20 @@ class ProfilePageManager {
         this.profileService = null;
         this.userService = null;
         this.imageCacheService = window.imageCacheService;
+        this.progressService = typeof ProgressService !== 'undefined' ? new ProgressService() : null;
         this.isLoading = false;
         this.photoFile = null;
         this.photoPreview = null;
         this.bannerFile = null;
         this.bannerPreview = null;
+        
+        // Infinite scroll state for recent ratings
+        this.ratingsOffset = 0;
+        this.ratingsLimit = 10;
+        this.hasMoreRatings = true;
+        this.isLoadingMoreRatings = false;
+        this.ratingsObserver = null;
+        this.ratingsUserId = null;
         
         this.init();
     }
@@ -131,8 +140,8 @@ class ProfilePageManager {
             profileBio: document.getElementById('profileBio'),
             profileJoinDate: document.getElementById('profileJoinDate'),
             joinDateText: document.getElementById('joinDateText'),
-            profileFavoriteGenre: document.getElementById('profileFavoriteGenre'),
-            favoriteGenreText: document.getElementById('favoriteGenreText'),
+            profileTopGenres: document.getElementById('profileTopGenres'),
+            topGenresContainer: document.getElementById('topGenresContainer'),
             profileMenu: document.getElementById('profileMenu'),
             profileMenuBtn: document.getElementById('profileMenuBtn'),
             profileDropdown: document.getElementById('profileDropdown'),
@@ -145,8 +154,16 @@ class ProfilePageManager {
             statFavorites: document.getElementById('statFavorites'),
             statWatchlist: document.getElementById('statWatchlist'),
 
+            // Personal dashboard
+            continueWatchingSection: document.getElementById('continueWatchingSection'),
+            continueWatchingContent: document.getElementById('continueWatchingContent'),
+            profileTasteGenres: document.getElementById('profileTasteGenres'),
+            ratingDistribution: document.getElementById('ratingDistribution'),
+
             // Recent ratings
             recentRatingsList: document.getElementById('recentRatingsList'),
+            recentRatingsSentinel: document.getElementById('recentRatingsSentinel'),
+            recentRatingsLoader: document.getElementById('recentRatingsLoader'),
             viewAllRatingsBtn: document.getElementById('viewAllRatingsBtn'),
 
             // Loading and error states
@@ -176,7 +193,6 @@ class ProfilePageManager {
             bioInput: document.getElementById('bioInput'),
             bioCharCount: document.getElementById('bioCharCount'),
             displayNameFormatInput: document.getElementById('displayNameFormatInput'),
-            favoriteGenreInput: document.getElementById('favoriteGenreInput'),
             twitterInput: document.getElementById('twitterInput'),
             instagramInput: document.getElementById('instagramInput'),
             facebookInput: document.getElementById('facebookInput'),
@@ -225,6 +241,17 @@ class ProfilePageManager {
         // Use centralized menu delegation
         Utils.bindTabsAndMenus(document);
         
+        // Image fallback handler for recent ratings poster
+        document.addEventListener('error', (e) => {
+            if (e.target && e.target.tagName === 'IMG' && e.target.closest('.recent-rating-card .poster')) {
+                const posterContainer = e.target.parentElement;
+                if (posterContainer) {
+                    const placeholderSvg = (typeof Icons !== 'undefined' && Icons.MOVIE_CLAPPER) ? Icons.MOVIE_CLAPPER : '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line></svg>';
+                    posterContainer.innerHTML = `<div class="poster-placeholder">${placeholderSvg}</div>`;
+                }
+            }
+        }, true);
+        
         this.viewingOtherUser = false;
 
         // Profile Menu interactions
@@ -238,6 +265,14 @@ class ProfilePageManager {
         if (this.elements.editProfileItem) {
             this.elements.editProfileItem.addEventListener('mousedown', () => {
                 this.closeMenu();
+                this.openEditModal();
+            });
+        }
+
+        const headerEditBtn = document.getElementById('headerEditBtn');
+        if (headerEditBtn) {
+            headerEditBtn.addEventListener('mousedown', (e) => {
+                e.preventDefault();
                 this.openEditModal();
             });
         }
@@ -357,6 +392,24 @@ class ProfilePageManager {
         firebaseManager.initializeServices();
         this.userService = firebaseManager.getUserService();
         this.profileService = new ProfileService(firebaseManager);
+
+        // Listen for cross-tab auth state changes
+        window.addEventListener('authStateChanged', async (e) => {
+            const user = e.detail?.user;
+            const urlParams = new URLSearchParams(window.location.search);
+            const profileUserId = urlParams.get('userId');
+            
+            if (!user && !profileUserId) {
+                this.currentUser = null;
+                this.userProfile = null;
+                this.page.showError('Пожалуйста, войдите в аккаунт для просмотра профиля');
+            } else if (user && (!this.currentUser || this.currentUser.uid !== user.uid)) {
+                this.currentUser = user;
+                if (!profileUserId) {
+                    await this.loadProfile();
+                }
+            }
+        });
     }
 
     async loadProfile() {
@@ -393,7 +446,10 @@ class ProfilePageManager {
             this.userProfile = { ...profile, stats, uid: targetUserId };
             this.displayProfile();
             this.displayStatistics(stats);
-            await this.loadRecentRatings(targetUserId);
+            await Promise.allSettled([
+                this.loadRecentRatings(targetUserId),
+                this.viewingOtherUser ? Promise.resolve() : this.loadPersonalDashboard(targetUserId)
+            ]);
 
             // Save to cache
             try {
@@ -451,7 +507,7 @@ class ProfilePageManager {
             if (isUsernameFirst) {
                 this.elements.profileUsername.textContent = fullName;
             } else {
-                this.elements.profileUsername.textContent = username;
+                this.elements.profileUsername.textContent = username ? `@${username.replace(/^@/, '')}` : '';
             }
         }
 
@@ -543,18 +599,23 @@ class ProfilePageManager {
             this.elements.profileJoinDate.style.display = 'none';
         }
 
-        if (this.elements.profileFavoriteGenre && profile.favoriteGenre) {
-            this.elements.favoriteGenreText.textContent = `${i18n.get('profile.favorite_genre')}: ${profile.favoriteGenre}`;
-            this.elements.profileFavoriteGenre.style.display = 'flex';
-        } else if (this.elements.profileFavoriteGenre) {
-            this.elements.profileFavoriteGenre.style.display = 'none';
+        if (this.elements.profileTopGenres && this.elements.topGenresContainer) {
+            const topGenres = Array.isArray(profile.topGenres) ? profile.topGenres : [];
+            if (topGenres.length > 0) {
+                this.elements.topGenresContainer.innerHTML = topGenres
+                    .map(genre => `<span class="profile-genre-badge">${Utils.escapeHtml(genre)}</span>`)
+                    .join('');
+                this.elements.profileTopGenres.style.display = 'flex';
+            } else {
+                this.elements.profileTopGenres.style.display = 'none';
+            }
         }
 
         if (this.elements.profileMenu) {
             if (this.viewingOtherUser) {
                 this.elements.profileMenu.style.display = 'none';
             } else {
-                this.elements.profileMenu.style.display = 'block';
+                this.elements.profileMenu.style.display = 'flex';
             }
         }
 
@@ -605,15 +666,153 @@ class ProfilePageManager {
         if (this.elements.statWatchlist) {
             this.elements.statWatchlist.textContent = stats.watchlistCount || 0;
         }
+
+        this.renderTasteProfile(stats);
+    }
+
+    async loadPersonalDashboard(userId) {
+        const section = this.elements.continueWatchingSection;
+        if (this.viewingOtherUser) {
+            section?.setAttribute('hidden', '');
+            return;
+        }
+        section?.removeAttribute('hidden');
+        if (!userId || !this.profileService) return;
+
+        try {
+            const watching = this.profileService.favoriteService
+                ? await this.profileService.favoriteService.getFavorites(userId, 'watching', 'updatedAt', 'desc')
+                : [];
+            const progress = this.progressService ? await this.progressService.getAllProgress() : {};
+            this.renderContinueWatching(watching, progress);
+        } catch (error) {
+            console.warn('ProfilePage: Could not load personal dashboard:', error);
+            this.renderContinueWatching([], {});
+        }
+    }
+
+    renderContinueWatching(watchingItems = [], progressMap = {}) {
+        const container = this.elements.continueWatchingContent;
+        if (!container) return;
+
+        const items = (Array.isArray(watchingItems) ? watchingItems : [])
+            .map(item => {
+                const movieId = item.movieId || item.id;
+                const progress = progressMap[String(movieId)] || null;
+                return { ...item, movieId, progress };
+            })
+            .filter(item => item.movieId)
+            .sort((a, b) => {
+                const aUpdated = Number(a.progress?.updatedAt || 0);
+                const bUpdated = Number(b.progress?.updatedAt || 0);
+                return bUpdated - aUpdated;
+            })
+            .slice(0, 3);
+
+        if (items.length === 0) {
+            container.innerHTML = `
+                <div class="dashboard-empty-state">
+                    <span class="dashboard-empty-state__mark">+</span>
+                    <div>
+                        <strong>${Utils.escapeHtml(i18n.get('profile.continue_watching.empty_title'))}</strong>
+                        <span>${Utils.escapeHtml(i18n.get('profile.continue_watching.empty_text'))}</span>
+                    </div>
+                </div>`;
+            return;
+        }
+
+        container.innerHTML = `<div class="continue-watching-items">${items.map(item => this.createContinueWatchingHTML(item)).join('')}</div>`;
+    }
+
+    createContinueWatchingHTML(item) {
+        const movieId = encodeURIComponent(item.movieId);
+        const title = item.movieTitleRu || item.movieTitle || item.name || i18n.get('profile.unknown_title');
+        const posterUrl = item.posterPath || item.posterUrl || '';
+        const progress = item.progress || {};
+        const duration = Number(progress.duration || 0);
+        const timestamp = Number(progress.timestamp || 0);
+        const percent = duration > 0 ? Math.min(99, Math.max(4, Math.round((timestamp / duration) * 100))) : 8;
+        const episodeLabel = [progress.seasonLabel, progress.episodeLabel].filter(Boolean).join(' · ');
+        const meta = episodeLabel || i18n.get('profile.continue_watching.start_here');
+        const safeTitle = Utils.escapeHtml(title);
+        const safePoster = Utils.escapeHtml(posterUrl);
+        const moviePlaceholder = (typeof Icons !== 'undefined' && Icons.MOVIE_CLAPPER) ? Icons.MOVIE_CLAPPER : '';
+        const poster = safePoster
+            ? `<img src="${safePoster}" alt="${safeTitle}" loading="lazy" decoding="async">`
+            : `<div class="poster-placeholder">${moviePlaceholder}</div>`;
+
+        return `
+            <a class="continue-watching-item" href="${chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`)}" data-movie-id="${movieId}">
+                <div class="poster">${poster}</div>
+                <div class="continue-watching-info">
+                    <span class="continue-watching-eyebrow">${Utils.escapeHtml(i18n.get('profile.continue_watching.eyebrow'))}</span>
+                    <h3 class="continue-watching-title">${safeTitle}</h3>
+                    <p class="continue-watching-meta">${Utils.escapeHtml(meta)}</p>
+                    <div class="continue-watching-progress" aria-label="${Utils.escapeHtml(i18n.get('profile.continue_watching.progress'))}"><span style="width: ${percent}%"></span></div>
+                    <span class="continue-watching-percent">${percent}%</span>
+                </div>
+                <span class="continue-watching-action" aria-hidden="true">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                </span>
+            </a>`;
+    }
+
+    renderTasteProfile(stats = {}) {
+        const genresContainer = this.elements.profileTasteGenres;
+        const topGenres = Array.isArray(this.userProfile?.topGenres) ? this.userProfile.topGenres : [];
+
+        if (genresContainer) {
+            genresContainer.innerHTML = topGenres.length > 0
+                ? topGenres.slice(0, 4).map(genre => `<span class="taste-genre-chip">${Utils.escapeHtml(genre)}</span>`).join('')
+                : `<span class="taste-empty">${Utils.escapeHtml(i18n.get('profile.taste.empty'))}</span>`;
+        }
+
+        this.renderRatingDistribution(stats.ratingDistribution || []);
+    }
+
+    renderRatingDistribution(distribution = []) {
+        const container = this.elements.ratingDistribution;
+        if (!container) return;
+
+        const values = Array.isArray(distribution) ? distribution : [];
+        const maxCount = Math.max(...values.map(item => Number(item.count || 0)), 0);
+        if (maxCount === 0) {
+            container.innerHTML = `<span class="taste-empty">${Utils.escapeHtml(i18n.get('profile.taste.distribution_empty'))}</span>`;
+            return;
+        }
+
+        container.innerHTML = values.slice().reverse().map(item => {
+            const rating = Number(item.rating || 0);
+            const count = Number(item.count || 0);
+            const width = count > 0 ? Math.max(8, Math.round((count / maxCount) * 100)) : 0;
+            return `
+                <div class="rating-distribution__row">
+                    <span>${rating}</span>
+                    <div class="rating-distribution__bar"><span style="width: ${width}%"></span></div>
+                    <span class="rating-distribution__count">${count}</span>
+                </div>`;
+        }).join('');
     }
 
     async loadRecentRatings(userId = null) {
         const targetUserId = userId || (this.currentUser ? this.currentUser.uid : null);
         if (!targetUserId) return;
 
+        this.ratingsUserId = targetUserId;
+        this.ratingsOffset = 0;
+        this.ratingsLimit = 10;
+        this.hasMoreRatings = true;
+        this.isLoadingMoreRatings = false;
+
         try {
-            const ratings = await this.profileService.getRecentRatings(targetUserId, 10);
+            const ratings = await this.profileService.getRecentRatings(targetUserId, this.ratingsLimit, 0);
             this.displayRecentRatings(ratings);
+            this.ratingsOffset = ratings.length;
+            if (ratings.length < this.ratingsLimit) {
+                this.hasMoreRatings = false;
+            } else {
+                this.setupRatingsInfiniteScroll();
+            }
         } catch (error) {
             console.error('Error loading recent ratings:', error);
             if (this.elements.recentRatingsList) {
@@ -622,46 +821,158 @@ class ProfilePageManager {
         }
     }
 
+    setupRatingsInfiniteScroll() {
+        if (this.ratingsObserver) {
+            this.ratingsObserver.disconnect();
+        }
+
+        const sentinel = this.elements.recentRatingsSentinel || document.getElementById('recentRatingsSentinel');
+        if (sentinel && 'IntersectionObserver' in window) {
+            this.ratingsObserver = new IntersectionObserver((entries) => {
+                if (entries[0].isIntersecting && this.hasMoreRatings && !this.isLoadingMoreRatings) {
+                    this.loadMoreRecentRatings();
+                }
+            }, {
+                rootMargin: '250px'
+            });
+            this.ratingsObserver.observe(sentinel);
+        }
+
+        if (!this.ratingsScrollHandler) {
+            this.ratingsScrollHandler = () => {
+                if (this.hasMoreRatings && !this.isLoadingMoreRatings) {
+                    const scrollPosition = window.innerHeight + window.scrollY;
+                    const threshold = document.body.offsetHeight - 500;
+                    if (scrollPosition >= threshold) {
+                        this.loadMoreRecentRatings();
+                    }
+                }
+            };
+            window.addEventListener('scroll', this.ratingsScrollHandler, { passive: true });
+        }
+    }
+
+    async loadMoreRecentRatings() {
+        if (!this.ratingsUserId || !this.hasMoreRatings || this.isLoadingMoreRatings) return;
+
+        this.isLoadingMoreRatings = true;
+        if (this.elements.recentRatingsLoader) {
+            this.elements.recentRatingsLoader.style.display = 'block';
+        }
+
+        try {
+            const newRatings = await this.profileService.getRecentRatings(this.ratingsUserId, this.ratingsLimit, this.ratingsOffset);
+            if (newRatings.length < this.ratingsLimit) {
+                this.hasMoreRatings = false;
+            }
+
+            if (newRatings.length > 0) {
+                this.ratingsOffset += newRatings.length;
+                this.appendRecentRatings(newRatings);
+            }
+        } catch (error) {
+            console.error('Error loading more recent ratings:', error);
+        } finally {
+            this.isLoadingMoreRatings = false;
+            if (this.elements.recentRatingsLoader) {
+                this.elements.recentRatingsLoader.style.display = 'none';
+            }
+        }
+    }
+
+    createRatingCardHTML(rating, ratedPrefix) {
+        const movie = rating.movie || {};
+        const movieTitle = movie.name || movie.alternativeName || 'Unknown Movie';
+        const movieYear = movie.year ? ` (${movie.year})` : '';
+        const posterUrl = movie.posterUrl || '';
+        const genres = (movie.genres || []).map(g => g.name || g).join(', ') || 'Unknown';
+        const ratingDate = this.profileService.formatDate(rating.createdAt);
+        const placeholderSvg = (typeof Icons !== 'undefined' && Icons.MOVIE_CLAPPER) ? Icons.MOVIE_CLAPPER : '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line></svg>';
+
+        return `
+            <a href="${chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${rating.movieId}`)}" class="recent-rating-card" data-movie-id="${rating.movieId}">
+                <div class="poster">
+                    ${posterUrl 
+                        ? `<img src="${posterUrl}" alt="${movieTitle}" loading="lazy" decoding="async">`
+                        : `<div class="poster-placeholder">${placeholderSvg}</div>`
+                    }
+                </div>
+                <div class="info">
+                    <div class="title">${movieTitle}${movieYear}</div>
+                    <div class="genres">${genres}</div>
+                    <div class="date">${ratedPrefix}${ratingDate}</div>
+                </div>
+                <div class="rating">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                    <span>${rating.rating}</span>
+                </div>
+            </a>
+        `;
+    }
+
     displayRecentRatings(ratings) {
         if (!this.elements.recentRatingsList) return;
 
         if (ratings.length === 0) {
-            this.elements.recentRatingsList.innerHTML = '<p style="color: #94a3b8; text-align: center; padding: 20px;">No ratings yet. Start rating movies!</p>';
+            const emptyText = i18n.currentLocale === 'ru' 
+                ? 'Оценок пока нет. Начните оценивать фильмы!' 
+                : 'No ratings yet. Start rating movies!';
+            this.elements.recentRatingsList.innerHTML = `<p style="color: var(--theme-text-muted); text-align: center; padding: 32px 20px; font-size: 0.95rem;">${emptyText}</p>`;
             return;
         }
 
-        const ratingsHTML = ratings.map(rating => {
-            const movie = rating.movie || {};
-            const movieTitle = movie.name || movie.alternativeName || 'Unknown Movie';
-            const movieYear = movie.year ? ` (${movie.year})` : '';
-            const posterUrl = movie.posterUrl || '';
-            const genres = (movie.genres || []).map(g => g.name || g).join(', ') || 'Unknown';
-            const ratingDate = this.profileService.formatDate(rating.createdAt);
+        const ratedPrefix = i18n.currentLocale === 'ru' ? 'Оценено: ' : 'Rated: ';
+        
+        // Deduplicate ratings array by movieId
+        const uniqueRatings = [];
+        const seenMovieIds = new Set();
+        for (const rating of ratings) {
+            const movieId = String(rating.movieId || rating.id);
+            if (!seenMovieIds.has(movieId)) {
+                seenMovieIds.add(movieId);
+                uniqueRatings.push(rating);
+            }
+        }
 
-            return `
-                <a href="${chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${rating.movieId}`)}" class="recent-rating-card" data-movie-id="${rating.movieId}">
-                    <div class="poster">
-                        ${posterUrl 
-                            ? `<img src="${posterUrl}" alt="${movieTitle}" onerror="this.parentElement.innerHTML='<div class=\\'poster-placeholder\\'>🎬</div>'">`
-                            : '<div class="poster-placeholder">🎬</div>'
-                        }
-                    </div>
-                    <div class="info">
-                        <div class="title">${movieTitle}${movieYear}</div>
-                        <div class="genres">${genres}</div>
-                        <div class="date">Оценено: ${ratingDate}</div>
-                    </div>
-                    <div class="rating">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-                ${rating.rating}
-                    </div>
-                </a>
-            `;
-        }).join('');
-
+        const ratingsHTML = uniqueRatings.map(rating => this.createRatingCardHTML(rating, ratedPrefix)).join('');
         this.elements.recentRatingsList.innerHTML = ratingsHTML;
+        this.bindRatingCardListeners(this.elements.recentRatingsList);
+    }
 
-        const cards = this.elements.recentRatingsList.querySelectorAll('.recent-rating-card');
+    appendRecentRatings(ratings) {
+        if (!this.elements.recentRatingsList || ratings.length === 0) return;
+
+        const ratedPrefix = i18n.currentLocale === 'ru' ? 'Оценено: ' : 'Rated: ';
+        const existingMovieIds = new Set(
+            Array.from(this.elements.recentRatingsList.querySelectorAll('.recent-rating-card'))
+                .map(el => el.getAttribute('data-movie-id'))
+                .filter(Boolean)
+        );
+
+        const newUniqueRatings = [];
+        for (const rating of ratings) {
+            const movieId = String(rating.movieId || rating.id);
+            if (!existingMovieIds.has(movieId)) {
+                existingMovieIds.add(movieId);
+                newUniqueRatings.push(rating);
+            }
+        }
+
+        if (newUniqueRatings.length === 0) return;
+
+        const tempContainer = document.createElement('div');
+        tempContainer.innerHTML = newUniqueRatings.map(rating => this.createRatingCardHTML(rating, ratedPrefix)).join('');
+
+        const fragment = document.createDocumentFragment();
+        const newCards = Array.from(tempContainer.children);
+        newCards.forEach(card => fragment.appendChild(card));
+
+        this.elements.recentRatingsList.appendChild(fragment);
+        this.bindRatingCardListeners(tempContainer);
+    }
+
+    bindRatingCardListeners(container) {
+        const cards = container.querySelectorAll('.recent-rating-card');
         cards.forEach(card => {
             card.addEventListener('mousedown', (e) => {
                 if (e.button !== 0) return;
@@ -723,7 +1034,6 @@ class ProfilePageManager {
         const lastName = profile.lastName || '';
         const username = profile.username || this.userService.generateUsernameFromEmail(profile.email);
         const bio = profile.bio || '';
-        const favoriteGenre = profile.favoriteGenre || '';
         const displayNameFormat = profile.displayNameFormat || 'fullname';
         const socialLinks = profile.socialLinks || { twitter: '', instagram: '', facebook: '' };
         const photoURL = profile.photoURL || '';
@@ -744,9 +1054,6 @@ class ProfilePageManager {
         }
         if (this.elements.displayNameFormatInput) {
             this.elements.displayNameFormatInput.value = displayNameFormat;
-        }
-        if (this.elements.favoriteGenreInput) {
-            this.elements.favoriteGenreInput.value = favoriteGenre;
         }
         if (this.elements.twitterInput) {
             this.elements.twitterInput.value = socialLinks.twitter || '';
@@ -1154,12 +1461,7 @@ class ProfilePageManager {
             username: this.elements.usernameInput?.value.trim() || '',
             bio: this.elements.bioInput?.value.trim() || '',
             displayNameFormat: this.elements.displayNameFormatInput?.value || 'fullname',
-            favoriteGenre: this.elements.favoriteGenreInput?.value || '',
-            socialLinks: {
-                twitter: this.elements.twitterInput?.value.trim() || '',
-                instagram: this.elements.instagramInput?.value.trim() || '',
-                facebook: this.elements.facebookInput?.value.trim() || ''
-            }
+            socialLinks: this.userProfile?.socialLinks || {}
         };
 
         const errors = this.validateForm(formData);
@@ -1231,7 +1533,6 @@ class ProfilePageManager {
                 displayName,
                 bio: formData.bio,
                 displayNameFormat: formData.displayNameFormat,
-                favoriteGenre: formData.favoriteGenre,
                 socialLinks: formData.socialLinks,
                 photoURL,
                 photoPath,
@@ -1383,4 +1684,3 @@ document.addEventListener('DOMContentLoaded', () => {
     profilePageManager = new ProfilePageManager();
     window.profilePageManager = profilePageManager;
 });
-

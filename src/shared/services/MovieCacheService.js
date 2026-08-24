@@ -6,6 +6,38 @@ class MovieCacheService {
     constructor(firebaseManager) {
         this.db = firebaseManager.db;
         this.collection = 'movies';
+        this.localMovieCachePrefix = 'local_movie_cache_';
+    }
+
+    getLocalMovieCacheKey(kinopoiskId) {
+        return `${this.localMovieCachePrefix}${kinopoiskId}`;
+    }
+
+    async getLocalMovieCache(kinopoiskId) {
+        if (typeof chrome === 'undefined' || !chrome.storage?.local) return null;
+        const key = this.getLocalMovieCacheKey(kinopoiskId);
+        const stored = await chrome.storage.local.get(key);
+        return stored[key] || null;
+    }
+
+    async setLocalMovieCache(kinopoiskId, data) {
+        if (typeof chrome === 'undefined' || !chrome.storage?.local) return;
+        try {
+            const key = this.getLocalMovieCacheKey(kinopoiskId);
+            await chrome.storage.local.set({ [key]: { ...data, id: String(kinopoiskId) } });
+        } catch (error) {
+            console.warn(`[MovieCacheService] Failed to set local storage cache for ${kinopoiskId}:`, error);
+        }
+    }
+
+    async removeLocalMovieCache(kinopoiskId) {
+        if (typeof chrome === 'undefined' || !chrome.storage?.local) return;
+        await chrome.storage.local.remove(this.getLocalMovieCacheKey(kinopoiskId));
+    }
+
+    isMetadataCacheValid(movie) {
+        const lastUpdated = new Date(movie?.lastUpdated || 0).getTime();
+        return Number.isFinite(lastUpdated) && Date.now() - lastUpdated < KINOPOISK_CONFIG.CACHE_DURATION;
     }
 
     /**
@@ -15,42 +47,22 @@ class MovieCacheService {
      */
     async getCachedMovie(kinopoiskId) {
         try {
-            // Check localStorage first (fastest)
-            const localKey = `kp_movie_${kinopoiskId}`;
-            const localData = localStorage.getItem(localKey);
-            if (localData) {
-                try {
-                    const parsed = JSON.parse(localData);
-                    // Check local cache expiry (7 days for local to be safe, or just utilize it)
-                    // For now, let's treat local cache as valid if present to maximize speed
-                    return parsed;
-                } catch {
-                    localStorage.removeItem(localKey);
-                }
-            }
-
-            // Fallback to Firestore
             const docRef = this.db.collection(this.collection).doc(kinopoiskId.toString());
             const doc = await docRef.get();
-            
-            if (doc.exists) {
+            if (doc.exists && doc.data().hasCommunityRating === true) {
                 const data = doc.data();
-                // Check if cache is still valid (24 hours)
-                const cacheAge = Date.now() - new Date(data.lastUpdated).getTime();
-                const maxAge = KINOPOISK_CONFIG.CACHE_DURATION;
-                
-                if (cacheAge < maxAge) {
+                if (this.isMetadataCacheValid(data)) {
                     const movieData = { id: doc.id, ...data };
-                    // Update local storage
                     this.saveToLocalStorage(kinopoiskId, movieData);
                     return movieData;
-                } else {
-                    // Cache expired, remove it
-                    await docRef.delete();
-                    return null;
                 }
+                return { id: doc.id, ...data, _cacheExpired: true };
             }
-            return null;
+
+            const localMovie = await this.getLocalMovieCache(kinopoiskId);
+            return localMovie && this.isMetadataCacheValid(localMovie)
+                ? localMovie
+                : (localMovie ? { ...localMovie, _cacheExpired: true } : null);
         } catch (error) {
             console.error('Error getting cached movie:', error);
             return null;
@@ -69,41 +81,7 @@ class MovieCacheService {
         console.log(`Checking cache for ${uniqueIds.length} movies...`);
         try {
             const cachedMovies = {};
-            const missingFromLocal = [];
-
-            // 1. Check LocalStorage first for all IDs
-            uniqueIds.forEach(id => {
-                const localKey = `kp_movie_${id}`;
-                const localData = localStorage.getItem(localKey);
-                if (localData) {
-                    try {
-                        const parsed = JSON.parse(localData);
-                        const touched = { ...parsed, _lru: Date.now() };
-                        cachedMovies[id] = touched;
-                        try {
-                            localStorage.setItem(localKey, JSON.stringify(touched));
-                        } catch {
-                            // Keep the cache hit even if touching LRU fails due to quota pressure.
-                        }
-                    } catch {
-                        localStorage.removeItem(localKey);
-                        missingFromLocal.push(id);
-                    }
-                } else {
-                    missingFromLocal.push(id);
-                }
-            });
-
-            console.log(`[MovieCache] LocalStorage hits: ${Object.keys(cachedMovies).length}, misses: ${missingFromLocal.length}`);
-
-            if (missingFromLocal.length === 0) {
-                console.log(`[MovieCache] All movies found in LocalStorage. Time: ${(performance.now() - startTime).toFixed(2)}ms`);
-                console.groupEnd();
-                return cachedMovies;
-            }
-
-            // 2. Check Firestore for missing IDs
-            const docIds = missingFromLocal.map(id => id.toString());
+            const docIds = uniqueIds.map(id => id.toString());
             
             // Chunk requests if too many
             const chunks = [];
@@ -112,7 +90,7 @@ class MovieCacheService {
                 chunks.push(docIds.slice(i, i + CHUNK_SIZE));
             }
 
-            console.log(`[MovieCache] Fetching ${missingFromLocal.length} movies from Firestore in ${chunks.length} chunks...`);
+            console.log(`[MovieCache] Checking ${uniqueIds.length} movies in Firestore in ${chunks.length} chunks...`);
 
             for (const chunk of chunks) {
                 const query = this.db.collection(this.collection)
@@ -124,18 +102,28 @@ class MovieCacheService {
                     const kinopoiskId = parseInt(doc.id);
                     const data = doc.data();
                     
-                    // Check if cache is still valid
-                    const cacheAge = Date.now() - new Date(data.lastUpdated).getTime();
-                    const maxAge = KINOPOISK_CONFIG.CACHE_DURATION;
-                    
-                    if (cacheAge < maxAge) {
+                    if (data.hasCommunityRating === true && this.isMetadataCacheValid(data)) {
                         const movieData = { id: doc.id, ...data };
                         cachedMovies[kinopoiskId] = movieData;
-                        // Save to local storage for next time
                         this.saveToLocalStorage(kinopoiskId, movieData);
-                    } else {
-                        console.log(`[MovieCache] Cache expired for ${kinopoiskId} (${(cacheAge / 3600000).toFixed(1)}h old). Deleting...`);
-                        doc.ref.delete().catch(console.warn);
+                    } else if (data.hasCommunityRating === true) {
+                        cachedMovies[kinopoiskId] = { id: doc.id, ...data, _cacheExpired: true };
+                    }
+                });
+            }
+
+            const localKeys = uniqueIds
+                .filter(id => !cachedMovies[id])
+                .map(id => this.getLocalMovieCacheKey(id));
+            if (localKeys.length > 0 && typeof chrome !== 'undefined' && chrome.storage?.local) {
+                const localMovies = await chrome.storage.local.get(localKeys);
+                uniqueIds.forEach(id => {
+                    if (cachedMovies[id]) return;
+                    const localMovie = localMovies[this.getLocalMovieCacheKey(id)];
+                    if (localMovie) {
+                        cachedMovies[id] = this.isMetadataCacheValid(localMovie)
+                            ? localMovie
+                            : { ...localMovie, _cacheExpired: true };
                     }
                 });
             }
@@ -160,30 +148,55 @@ class MovieCacheService {
      */
     async cacheMovie(movieData, isRated = false) {
         try {
-            // Remove the check that prevented caching unrated movies
-            // We want to cache viewed movies to save API calls
+            if (!movieData || !movieData.kinopoiskId) return null;
             
             const movieId = movieData.kinopoiskId.toString();
             
             const cacheData = {
                 ...movieData,
                 lastUpdated: new Date().toISOString(),
-                cachedAt: firebase.firestore.FieldValue.serverTimestamp(),
-                hasRatings: isRated // Set correctly based on argument
+                cachedAt: firebase.firestore.FieldValue.serverTimestamp()
             };
 
-            // Save to LocalStorage immediately
-            this.saveToLocalStorage(movieId, { id: movieId, ...movieData, lastUpdated: new Date().toISOString() });
+            // CRITICAL: API metadata caching must NEVER overwrite ratings parsed from public KP/IMDb pages
+            // nor community rating aggregates managed by the Cloud Function / RatingService.
+            delete cacheData.kpRating;
+            delete cacheData.imdbRating;
+            if (cacheData.votes) {
+                const { kp, imdb, ...nonRatingVotes } = cacheData.votes;
+                if (Object.keys(nonRatingVotes).length > 0) {
+                    cacheData.votes = nonRatingVotes;
+                } else {
+                    delete cacheData.votes;
+                }
+            }
 
-            // Save to Firestore asynchronously (don't block UI)
-            this.db.collection(this.collection).doc(movieId)
-                .set(cacheData, { merge: true })
-                .catch(err => console.error('Background Firestore cache update failed:', err));
+            // Strip all protected community aggregate fields from the metadata object
+            // to ensure set(cacheData, { merge: true }) can NEVER overwrite or clear aggregates.
+            delete cacheData.hasRatings;
+            delete cacheData.hasCommunityRating;
+            delete cacheData.ratingsCount;
+            delete cacheData.ratingsSum;
+            delete cacheData.avgRating;
+            delete cacheData.lastRatingUpdatedAt;
+
+            const movieRef = this.db.collection(this.collection).doc(movieId);
+            const existingMovie = await movieRef.get();
+            const isCommunityRated = existingMovie.exists && existingMovie.data().hasCommunityRating === true;
+
+            if (isCommunityRated) {
+                // Merge pure metadata into existing Firestore document without touching aggregate fields
+                await movieRef.set(cacheData, { merge: true });
+                this.saveToLocalStorage(movieId, { id: movieId, ...movieData, lastUpdated: cacheData.lastUpdated });
+            } else {
+                // Keep purely unrated movies in local cache to avoid polluting Firestore
+                await this.setLocalMovieCache(movieId, { ...movieData, lastUpdated: cacheData.lastUpdated });
+            }
 
             return { id: movieId, ...cacheData };
         } catch (error) {
-            console.error('Error caching movie:', error);
-            throw new Error(`Failed to cache movie: ${error.message}`, { cause: error });
+            console.warn('[MovieCacheService] Warning while caching movie:', error);
+            return { id: movieData.kinopoiskId || movieData.id, ...movieData };
         }
     }
 
@@ -251,22 +264,25 @@ class MovieCacheService {
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             };
 
-            // Update local storage
-            const localKey = `kp_movie_${movieId}`;
-            const existingLocal = localStorage.getItem(localKey);
-            if (existingLocal) {
-                try {
-                    const parsed = JSON.parse(existingLocal);
-                    const updatedLocal = { ...parsed, ...updateData, lastUpdated: new Date().toISOString() };
-                    localStorage.setItem(localKey, JSON.stringify(updatedLocal));
-                } catch {
-                    // Ignore parsing errors for individual cached items
-                }
+            // Strip protected aggregate fields from metadata payload
+            delete updatePayload.hasRatings;
+            delete updatePayload.hasCommunityRating;
+            delete updatePayload.ratingsCount;
+            delete updatePayload.ratingsSum;
+            delete updatePayload.avgRating;
+            delete updatePayload.lastRatingUpdatedAt;
+
+            const movieDoc = await docRef.get();
+            if (movieDoc.exists && movieDoc.data().hasCommunityRating === true) {
+                await docRef.set(updatePayload, { merge: true });
+                const updatedDoc = await docRef.get();
+                return { id: updatedDoc.id, ...updatedDoc.data() };
             }
 
-            await docRef.update(updatePayload);
-            const updatedDoc = await docRef.get();
-            return { id: updatedDoc.id, ...updatedDoc.data() };
+            const localMovie = await this.getLocalMovieCache(movieId);
+            const updatedLocalMovie = { ...(localMovie || {}), ...updateData, kinopoiskId: Number(kinopoiskId), lastUpdated: updatePayload.lastUpdated };
+            await this.setLocalMovieCache(movieId, updatedLocalMovie);
+            return { id: movieId, ...updatedLocalMovie };
         } catch (error) {
             console.error('Error updating movie cache:', error);
             throw new Error(`Failed to update movie cache: ${error.message}`, { cause: error });
@@ -359,21 +375,8 @@ class MovieCacheService {
      */
     async getCachedMoviesByIds(kinopoiskIds) {
         try {
-            const movies = [];
-            const batchSize = 10; // Firestore 'in' query limit
-            
-            for (let i = 0; i < kinopoiskIds.length; i += batchSize) {
-                const batch = kinopoiskIds.slice(i, i + batchSize);
-                const query = this.db.collection(this.collection)
-                    .where('kinopoiskId', 'in', batch);
-                
-                const results = await query.get();
-                results.forEach(doc => {
-                    movies.push({ id: doc.id, ...doc.data() });
-                });
-            }
-            
-            return movies;
+            const movieMap = await this.getBatchCachedMovies(kinopoiskIds);
+            return Object.values(movieMap);
         } catch (error) {
             console.error('Error getting cached movies by IDs:', error);
             return [];
@@ -381,8 +384,115 @@ class MovieCacheService {
     }
 
     /**
+     * Get rated movies filtered by avgRating from movies collection (server-side pagination)
+     * @param {Object} options - { minAvgRating, maxAvgRating, sortBy, sortDir, limit, lastDoc }
+     * @returns {Promise<Object>} - { movies, hasMore, lastDoc }
+     *
+     * NOTE: orderBy(documentId()) is used as a tie-breaker for stable pagination.
+     * documentId() always exists on every document — it is safe and will NOT filter out any docs.
+     * The real cause of disappearing movies was documents missing `lastRatingUpdatedAt`,
+     * which is now guaranteed by the `aggregateMovieRatings` Cloud Function trigger.
+     */
+    async getMoviesByAvgRating({ minAvgRating = 1.0, maxAvgRating = 10.0, sortBy = 'lastRatingUpdatedAt', sortDir = 'desc', limit = 6, lastDoc = null } = {}) {
+        try {
+            const isFilterActive = minAvgRating > 1.0 || maxAvgRating < 10.0;
+
+            let query = this.db.collection(this.collection)
+                .where('hasCommunityRating', '==', true);
+
+            let unorderedQuery = this.db.collection(this.collection)
+                .where('hasCommunityRating', '==', true);
+
+            const firestoreSortField = sortBy === 'date' ? 'lastRatingUpdatedAt' : (sortBy === 'rating' ? 'avgRating' : (sortBy === 'title' ? 'name' : sortBy));
+
+            if (isFilterActive) {
+                query = query
+                    .where('avgRating', '>=', minAvgRating)
+                    .where('avgRating', '<=', maxAvgRating)
+                    .orderBy('avgRating', 'desc');
+                unorderedQuery = unorderedQuery
+                    .where('avgRating', '>=', minAvgRating)
+                    .where('avgRating', '<=', maxAvgRating);
+            } else {
+                if (firestoreSortField) {
+                    query = query.orderBy(firestoreSortField, sortDir);
+                }
+            }
+
+            // Tie-breaker for stable pagination when multiple docs share the same sort value.
+            // documentId() always exists — safe to use as secondary orderBy.
+            query = query.orderBy(firebase.firestore.FieldPath.documentId(), sortDir);
+
+            // Fetch one extra document to reliably detect if there are more pages.
+            query = query.limit(limit + 1);
+
+            if (lastDoc) {
+                query = query.startAfter(lastDoc);
+            }
+
+            const snapshot = await query.get();
+            const allDocs = snapshot.docs;
+
+            const hasMore = allDocs.length > limit;
+            const pageDocs = hasMore ? allDocs.slice(0, limit) : allDocs;
+            let movies = pageDocs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            // Firestore excludes documents that do not have an orderBy field. On the
+            // final page, merge those documents from an unsorted query so they remain
+            // visible while the aggregate repair is investigated.
+            if (!hasMore && firestoreSortField === 'lastRatingUpdatedAt') {
+                const unorderedSnapshot = await unorderedQuery.get();
+                const missingSortFieldDocs = unorderedSnapshot.docs.filter(doc => {
+                    const value = doc.data().lastRatingUpdatedAt;
+                    return value === undefined || value === null;
+                });
+
+                if (missingSortFieldDocs.length > 0) {
+                    console.error('[MovieCache] Ratings query excluded rated movies without lastRatingUpdatedAt', {
+                        missingCount: missingSortFieldDocs.length,
+                        movieIds: missingSortFieldDocs.map(doc => doc.id)
+                    });
+
+                    const fallbackMovies = missingSortFieldDocs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    const getFallbackTimestamp = movie => {
+                        const value = movie.updatedAt || movie.lastUpdated || 0;
+                        if (typeof value?.toMillis === 'function') return value.toMillis();
+                        if (typeof value?.toDate === 'function') return value.toDate().getTime();
+                        if (typeof value?.seconds === 'number') return value.seconds * 1000;
+                        const parsed = new Date(value).getTime();
+                        return Number.isNaN(parsed) ? 0 : parsed;
+                    };
+
+                    movies = [...movies, ...fallbackMovies].sort((a, b) => {
+                        const aTimestamp = getFallbackTimestamp(a);
+                        const bTimestamp = getFallbackTimestamp(b);
+                        return sortDir === 'asc' ? aTimestamp - bTimestamp : bTimestamp - aTimestamp;
+                    });
+                }
+            }
+
+            const nextLastDoc = pageDocs.length > 0 ? pageDocs[pageDocs.length - 1] : null;
+
+            console.log(`[MovieCache] getMoviesByAvgRating: returned ${movies.length} movies, hasMore=${hasMore}`);
+
+            return {
+                movies,
+                hasMore,
+                lastDoc: nextLastDoc
+            };
+        } catch (error) {
+            console.error('Error querying movies by avgRating:', error);
+            throw error;
+        }
+    }
+
+    /**
      * Remove expired cache entries
      * @returns {Promise<number>} - Number of removed entries
+     *
+     * ⚠️ CRITICAL: Never delete documents with hasCommunityRating: true.
+     * Those documents contain avgRating, ratingsCount, lastRatingUpdatedAt which
+     * are queried by the ratings page. Deleting them causes movies to disappear.
      */
     async cleanupExpiredCache() {
         try {
@@ -394,16 +504,23 @@ class MovieCacheService {
                 .limit(100); // Process in batches
             
             const results = await query.get();
-            const batch = this.db.batch();
             let count = 0;
+            let skippedRated = 0;
             
             results.forEach(doc => {
-                batch.delete(doc.ref);
+                const data = doc.data();
+                // NEVER delete documents with community ratings — they are the
+                // source of truth for the ratings page query.
+                if (data.hasCommunityRating) {
+                    skippedRated++;
+                    return;
+                }
+                console.warn(`[MovieCache] Found unrated Firestore cache document ${doc.id}; cleanup is handled by cleanupUnratedMovies Cloud Function`);
                 count++;
             });
             
-            if (count > 0) {
-                await batch.commit();
+            if (skippedRated > 0) {
+                console.log(`[MovieCache] cleanupExpiredCache: skipped ${skippedRated} rated movies, found ${count} expired unrated entries`);
             }
             
             return count;
@@ -428,29 +545,8 @@ class MovieCacheService {
      * @returns {Promise<number>} - Number of removed movies
      */
     async cleanupUnratedMovies(ratedMovieIds) {
-        try {
-            const snapshot = await this.db.collection(this.collection).get();
-            const batch = this.db.batch();
-            let count = 0;
-            
-            snapshot.forEach(doc => {
-                const movieId = parseInt(doc.data().kinopoiskId);
-                if (!ratedMovieIds.includes(movieId)) {
-                    batch.delete(doc.ref);
-                    count++;
-                }
-            });
-            
-            if (count > 0) {
-                await batch.commit();
-                console.log(`Removed ${count} unrated movies from cache`);
-            }
-            
-            return count;
-        } catch (error) {
-            console.error('Error cleaning up unrated movies:', error);
-            return 0;
-        }
+        console.warn('[MovieCache] cleanupUnratedMovies is disabled on the client; use cleanupUnratedMovies Cloud Function instead');
+        return 0;
     }
 
     /**
@@ -517,8 +613,15 @@ class MovieCacheService {
             const doc = await docRef.get();
             
             if (doc.exists) {
-                await docRef.delete();
-                console.log(`Cleared Firestore cache for movie ${movieId}`);
+                const data = doc.data();
+                if (data.hasCommunityRating) {
+                    // Don't delete the entire document — only clear KP metadata fields
+                    // while preserving rating aggregate fields
+                    console.log(`Clearing KP metadata cache for movie ${movieId} (preserving rating data)`);
+                    // We keep: hasCommunityRating, lastRatingUpdatedAt, ratingsCount, avgRating, ratingsSum, hasRatings
+                    // We clear: lastUpdated (to force re-fetch of KP metadata on next access)
+                    await docRef.set({ lastUpdated: null }, { merge: true });
+                }
             }
             
             // Remove from localStorage
@@ -527,6 +630,7 @@ class MovieCacheService {
                 localStorage.removeItem(localKey);
                 console.log(`Cleared localStorage cache for movie ${movieId}`);
             }
+            await this.removeLocalMovieCache(movieId);
             
             return true;
         } catch (error) {

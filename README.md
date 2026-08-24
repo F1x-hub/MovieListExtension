@@ -7,7 +7,7 @@ series, cartoons, and anime.
 
 <p>
   <img src="https://img.shields.io/badge/MANIFEST-V3-1687c9?style=flat-square&logo=googlechrome&logoColor=white" alt="Manifest V3">
-  <img src="https://img.shields.io/badge/VERSION-1.2.7-69b500?style=flat-square" alt="Version 1.2.7">
+  <img src="https://img.shields.io/badge/VERSION-1.2.8-69b500?style=flat-square" alt="Version 1.2.8">
   <img src="https://img.shields.io/badge/JAVASCRIPT-ES6%2B-f0d000?style=flat-square&logo=javascript&logoColor=111827" alt="JavaScript ES6+">
   <img src="https://img.shields.io/badge/VANILLA-ES6%2B-e2c400?style=flat-square" alt="Vanilla ES6+">
   <img src="https://img.shields.io/badge/AUTHOR-FIX-f47721?style=flat-square" alt="Author Fix">
@@ -191,6 +191,7 @@ manifest and package version remain the source of truth for the build version.
 - Reorganize README into concise product, setup, architecture, and security sections.
 - Make each release entry independently collapsible with native HTML details blocks.
 - Add a centered badge strip for the manifest, version, stack, author, and license.
+- Set the extension and package metadata version to 1.2.8.
 
 </details>
 

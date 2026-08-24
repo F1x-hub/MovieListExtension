@@ -6,37 +6,41 @@
 /* Default Dark Theme Variables */
 :root {
     /* Background Colors */
-    --theme-bg-primary: #262627;
-    --theme-bg-secondary: #3a3a3a;
-    --theme-bg-tertiary: #3a3a3a;
-    --theme-bg-card: #3a3a3a;
+    --theme-bg-primary: #09090b;
+    --theme-bg-secondary: #121214;
+    --theme-bg-tertiary: #18181b;
+    --theme-bg-card: rgba(24, 24, 27, 0.65);
     
     /* Text Colors */
-    --theme-text-primary: #ffffff;
-    --theme-text-secondary: #ffffff;
-    --theme-text-muted: #ffffff;
-    --theme-stat-color: #ffffff;
+    --theme-text-primary: #f4f4f5;
+    --theme-text-secondary: #a1a1aa;
+    --theme-text-muted: #71717a;
+    --theme-stat-color: #fafafa;
     
     /* Border Colors */
-    --theme-border: rgba(255, 255, 255, 0.1);
-    --theme-border-hover: rgba(255, 255, 255, 0.2);
+    --theme-border: rgba(255, 255, 255, 0.08);
+    --theme-border-hover: rgba(255, 255, 255, 0.16);
+
+    /* Accent Colors (Amber Obsidian-Zinc) */
+    --theme-accent: #fbbf24;
+    --theme-accent-hover: #f59e0b;
     
     /* Input Colors */
-    --theme-input-bg: #3a3a3a;
-    --theme-input-border: rgba(255, 255, 255, 0.1);
-    --theme-input-text: #ffffff;
+    --theme-input-bg: #121214;
+    --theme-input-border: rgba(255, 255, 255, 0.08);
+    --theme-input-text: #f4f4f5;
     
     /* Hover & Active States */
-    --theme-hover-bg: rgba(255, 255, 255, 0.1);
-    --theme-active-bg: rgba(255, 255, 255, 0.15);
+    --theme-hover-bg: rgba(255, 255, 255, 0.06);
+    --theme-active-bg: rgba(255, 255, 255, 0.1);
     
     /* Filter State Colors (Dark Theme) */
-    --filter-include-bg: rgba(34, 197, 94, 0.15);
-    --filter-include-border: #22c55e;
-    --filter-include-text: #4ade80;
-    --filter-exclude-bg: rgba(239, 68, 68, 0.15);
-    --filter-exclude-border: #ef4444;
-    --filter-exclude-text: #f87171;
+    --filter-include-bg: rgba(16, 185, 129, 0.1);
+    --filter-include-border: #10b981;
+    --filter-include-text: #34d399;
+    --filter-exclude-bg: rgba(244, 63, 94, 0.1);
+    --filter-exclude-border: #f43f5e;
+    --filter-exclude-text: #fb7185;
     --filter-neutral-bg: transparent;
     --filter-neutral-border: var(--theme-border);
 }
@@ -44,63 +48,72 @@
 /* Light Theme Variables */
 .light-theme {
     /* Background Colors */
-    --theme-bg-primary: #cecece;
-    --theme-bg-secondary: #CECECE;
-    --theme-bg-tertiary: #e9ecef;
-    --theme-bg-card: #ededed;
+    --theme-bg-primary: #f4f4f5;
+    --theme-bg-secondary: #ffffff;
+    --theme-bg-tertiary: #e4e4e7;
+    --theme-bg-card: rgba(255, 255, 255, 0.85);
     
     /* Text Colors */
-    --theme-text-primary: #000000;
-    --theme-text-secondary: #000000;
-    --theme-text-muted: #6c757d;
-    --theme-stat-color: #000000;
+    --theme-text-primary: #09090b;
+    --theme-text-secondary: #52525b;
+    --theme-text-muted: #71717a;
+    --theme-stat-color: #18181b;
     
     /* Border Colors */
-    --theme-border: rgba(0, 0, 0, 0.1);
-    --theme-border-hover: rgba(0, 0, 0, 0.2);
+    --theme-border: rgba(9, 9, 11, 0.08);
+    --theme-border-hover: rgba(9, 9, 11, 0.16);
+
+    /* Accent Colors (Amber Obsidian-Zinc Light) */
+    --theme-accent: #d97706;
+    --theme-accent-hover: #b45309;
     
     /* Input Colors */
     --theme-input-bg: #ffffff;
-    --theme-input-border: #ced4da;
-    --theme-input-text: #333335;
+    --theme-input-border: rgba(9, 9, 11, 0.12);
+    --theme-input-text: #09090b;
     
     /* Hover & Active States */
-    --theme-hover-bg: rgba(0, 0, 0, 0.05);
-    --theme-active-bg: rgba(0, 0, 0, 0.1);
+    --theme-hover-bg: rgba(9, 9, 11, 0.04);
+    --theme-active-bg: rgba(9, 9, 11, 0.08);
     
     /* Update existing common variables for light theme */
-    --primary-bg: #cecece;
-    --secondary-bg: #ededed;
-    --accent-bg: #e9ecef;
+    --primary-bg: #f4f4f5;
+    --secondary-bg: #ffffff;
+    --accent-bg: #e4e4e7;
     
-    /* Accent colors for light theme - dark/black */
-    --accent-color: #333335;
-    --accent-hover: #1a1a1a;
-    --accent-light: #4a4a4a;
+    /* Accent colors for light theme */
+    --accent-color: #18181b;
+    --accent-hover: #09090b;
+    --accent-light: #27272a;
     
-    --text-primary: #000000;
-    --text-secondary: #000000;
-    --text-muted: #6c757d;
-    --text-accent: #000000;
+    --text-primary: #09090b;
+    --text-secondary: #52525b;
+    --text-muted: #a1a1aa;
+    --text-accent: #09090b;
     
     /* Card backgrounds */
-    --gradient-card: linear-gradient(135deg, rgba(0, 0, 0, 0.03) 0%, rgba(0, 0, 0, 0.01) 100%);
+    --gradient-card: linear-gradient(135deg, rgba(9, 9, 11, 0.02) 0%, rgba(9, 9, 11, 0.005) 100%);
     
     /* Shadows for light theme */
-    --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.08);
-    --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.12);
-    --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.15);
-    --shadow-xl: 0 12px 24px rgba(0, 0, 0, 0.18);
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.03);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 10px 10px -5px rgba(0, 0, 0, 0.03);
     
     /* Filter State Colors (Light Theme) */
-    --filter-include-bg: rgba(22, 163, 74, 0.12);
-    --filter-include-border: #16a34a;
-    --filter-include-text: #15803d;
-    --filter-exclude-bg: rgba(220, 38, 38, 0.12);
-    --filter-exclude-border: #dc2626;
-    --filter-exclude-text: #b91c1c;
+    --filter-include-bg: rgba(16, 185, 129, 0.08);
+    --filter-include-border: #10b981;
+    --filter-include-text: #047857;
+    --filter-exclude-bg: rgba(225, 29, 72, 0.08);
+    --filter-exclude-border: #e11d48;
+    --filter-exclude-text: #be123c;
     --filter-neutral-bg: transparent;
     --filter-neutral-border: var(--theme-border);
+}
+
+body {
+    background: var(--theme-bg-primary);
+    color: var(--theme-text-primary);
 }
 
 /* Smooth theme transitions */

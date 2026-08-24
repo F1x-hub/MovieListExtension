@@ -25,64 +25,105 @@
             </div>
             <div class="update-actions">
                 <button id="updateBtn" class="btn-update" data-i18n="popup.update.btn">Update</button>
-                <button id="dismissUpdateBtn" class="btn-dismiss">✕</button>
+                <button id="dismissUpdateBtn" class="btn-dismiss" aria-label="Dismiss"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
             </div>
         </div>
 
-        <!-- Header -->
+        <!-- Header (Row 1: 42px) -->
         <header class="popup-header">
             <div class="popup-title-container">
                 <a href="#" class="popup-logo" id="popupLogo" title="Go to Home">
-                    <img src="../../../icons/icon48-white.png" alt="Logo" class="popup-logo-img">
+                    <img src="../shared/assets/icons/app/icon48-white.png" alt="Logo" class="popup-logo-img">
                 </a>
                 <h1 class="popup-title" data-i18n="popup.header.title">Movie Ratings</h1>
             </div>
+            <div class="header-actions-group" id="headerActionsGroup" style="display: none;">
+                <button type="button" id="refreshBtn" class="btn-icon-header" title="Refresh" data-i18n="[title]popup.content.refresh" aria-label="Refresh">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                </button>
+                <button type="button" id="openFullBtn" class="btn-icon-header" title="Open Full Page" data-i18n="[title]popup.content.view_all" aria-label="Open Full Page">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                </button>
+                <div class="avatar-container" id="avatarContainer">
+                    <button type="button" id="userAvatarBtn" class="avatar-btn" aria-label="User Menu" aria-haspopup="true" aria-expanded="false">
+                        <img id="userAvatar" class="user-avatar" src="" alt="User Avatar" style="display: none;">
+                        <span id="userAvatarFallback" class="avatar-fallback"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></span>
+                    </button>
+                    <!-- Avatar Dropdown Menu (190px) -->
+                    <div id="avatarDropdown" class="avatar-dropdown">
+                        <div class="avatar-dropdown-header">
+                            <span id="userName" class="dropdown-username">User</span>
+                        </div>
+                        <div class="dropdown-divider"></div>
+                        <button type="button" id="profileMenuBtn" class="dropdown-item">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                            <span data-i18n="popup.content.profile">Мой профиль</span>
+                        </button>
+                        <button type="button" id="settingsBtn" class="dropdown-item">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                            <span data-i18n="popup.content.settings">Настройки</span>
+                        </button>
+                        <div class="dropdown-divider"></div>
+                        <button type="button" id="logoutBtn" class="dropdown-item logout-item">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                            <span data-i18n="popup.content.logout">Выйти из аккаунта</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
             <div class="auth-status" id="authStatus">
-                <span class="status-indicator" id="statusIndicator"></span>
                 <span id="statusText" data-i18n="popup.header.not_authenticated">Not authenticated</span>
             </div>
         </header>
 
         <!-- Initial Loading -->
-        <div class="initial-loading" id="initialLoading" style="display: flex; justify-content: center; align-items: center; padding: 60px 20px;">
-            <div class="loading-spinner"></div>
+        <div class="initial-loading app-loader app-loader--section" id="initialLoading" style="display: flex;" role="status" aria-label="Loading ratings">
+            <div class="app-loader__indicator" aria-hidden="true"></div>
         </div>
 
         <!-- Auth Section -->
         <div class="auth-section" id="authSection" style="display: none;">
             <div class="auth-container">
+                <!-- Inline Auth Error Banner -->
+                <div id="authErrorMessage" class="auth-error-banner" style="display: none;" role="alert"></div>
+
                 <!-- Login Form -->
                 <div id="loginFormSection" class="auth-content active">
                     <!-- Step 1 Elements -->
                     <div id="loginStep1">
                         <!-- Google Button -->
-                        <button id="googleLoginBtn" class="btn btn-google">
+                        <button type="button" id="googleLoginBtn" class="btn btn-google">
                             <svg class="google-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="20px" height="20px">
                                 <path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"/>
                                 <path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/>
                                 <path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/>
                                 <path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"/>
                             </svg>
-                            <span data-i18n="popup.auth.google_btn">Продолжить с Google</span>
+                            <span class="btn-text" data-i18n="popup.auth.google_btn">Продолжить с Google</span>
                         </button>
 
-                        <div class="auth-divider"></div>
+                        <div class="auth-divider">
+                            <span class="auth-divider-text" data-i18n="popup.auth.or">или</span>
+                        </div>
 
-                        <form id="loginEmailForm" class="auth-form">
+                        <form id="loginEmailForm" class="auth-form" novalidate>
                             <div class="form-group">
                                 <label for="loginEmail" data-i18n="popup.auth.email_label">Электронная почта</label>
-                                <input type="email" id="loginEmail" class="form-input" placeholder="Ваш адрес электронной почты" data-i18n="[placeholder]popup.auth.email_placeholder" required>
+                                <input type="email" id="loginEmail" class="form-input" placeholder="Ваш адрес электронной почты" data-i18n="[placeholder]popup.auth.email_placeholder" required autocomplete="email">
+                                <div class="field-error-message" id="loginEmailError" style="display: none;"></div>
                             </div>
-                            <button type="submit" class="btn btn-primary btn-block" data-i18n="popup.auth.login_btn">Войти</button>
+                            <button type="submit" id="loginEmailSubmitBtn" class="btn btn-primary btn-block">
+                                <span class="btn-text" data-i18n="popup.auth.login_btn">Войти</span>
+                            </button>
                         </form>
                     </div>
 
                     <!-- Step 2 Elements (Initially Hidden) -->
                     <div id="loginStep2" style="display: none;">
-                        <form id="loginPasswordForm" class="auth-form">
+                        <form id="loginPasswordForm" class="auth-form" novalidate>
                             <div class="form-group">
-                                <label data-i18n="popup.auth.email_label">Электронная почта</label>
-                                <div id="staticEmail" class="static-input-text"></div>
+                                <label for="staticEmail" data-i18n="popup.auth.email_label">Электронная почта</label>
+                                <input type="text" id="staticEmail" class="form-input static-input-field" readonly aria-readonly="true" tabindex="-1">
                             </div>
                             <div class="form-group">
                                 <div class="label-row">
@@ -90,20 +131,23 @@
                                     <a href="#" class="forgot-password-link" data-i18n="popup.auth.forgot_password">Забыли пароль?</a>
                                 </div>
                                 <div class="password-input-wrapper">
-                                    <input type="password" id="loginPassword" class="form-input" placeholder="Ваш пароль" data-i18n="[placeholder]popup.auth.password_placeholder" required>
-                                    <button type="button" class="toggle-password" title="Show password"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
+                                    <input type="password" id="loginPassword" class="form-input" placeholder="Ваш пароль" data-i18n="[placeholder]popup.auth.password_placeholder" required autocomplete="current-password">
+                                    <button type="button" class="toggle-password" title="Show password" aria-label="Show password" aria-pressed="false"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
                                 </div>
+                                <div class="field-error-message" id="loginPasswordError" style="display: none;"></div>
                             </div>
-                            <button type="submit" class="btn btn-gradient btn-block" data-i18n="popup.auth.login_btn">Войти</button>
+                            <button type="submit" id="loginPasswordSubmitBtn" class="btn btn-primary btn-block">
+                                <span class="btn-text" data-i18n="popup.auth.login_btn">Войти</span>
+                            </button>
                             
                             <div class="auth-switch back-nav">
-                                <a href="#" id="backToEmailBtn" data-i18n="popup.auth.back">← Назад</a>
+                                <button type="button" id="backToEmailBtn" class="btn-text-link" data-i18n="popup.auth.back">← Назад</button>
                             </div>
                         </form>
                     </div>
                     
                     <div id="loginFooter" class="auth-switch">
-                         <p><span data-i18n="popup.auth.no_account">Нет аккаунта?</span> <a href="#" id="showRegisterLink" data-i18n="popup.auth.register_btn">Регистрация</a></p>
+                         <p><span data-i18n="popup.auth.no_account">Нет аккаунта?</span> <button type="button" id="showRegisterLink" class="btn-text-link" data-i18n="popup.auth.register_btn">Регистрация</button></p>
                     </div>
                 </div>
 
@@ -112,80 +156,109 @@
                     <!-- Step 1: Basic Info -->
                     <div id="registerStep1">
                          <!-- Google Button (Visible on Step 1) -->
-                        <button id="googleRegisterBtn" class="btn btn-google">
+                        <button type="button" id="googleRegisterBtn" class="btn btn-google">
                             <svg class="google-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="20px" height="20px">
                                 <path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"/>
                                 <path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/>
                                 <path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/>
                                 <path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"/>
                             </svg>
-                            <span data-i18n="popup.auth.google_btn">Продолжить с Google</span>
+                            <span class="btn-text" data-i18n="popup.auth.google_btn">Продолжить с Google</span>
                         </button>
 
-                        <div class="auth-divider"></div>
+                        <div class="auth-divider">
+                            <span class="auth-divider-text" data-i18n="popup.auth.or">или</span>
+                        </div>
 
-                        <form id="registerInfoForm" class="auth-form">
+                        <form id="registerInfoForm" class="auth-form" novalidate>
                             <div class="form-row">
                                 <div class="form-group">
                                     <label for="registerFirstName" data-i18n="popup.auth.first_name_label">Имя</label>
-                                    <input type="text" id="registerFirstName" class="form-input" placeholder="Ваше имя" data-i18n="[placeholder]popup.auth.first_name_placeholder" required>
+                                    <input type="text" id="registerFirstName" class="form-input" placeholder="Ваше имя" data-i18n="[placeholder]popup.auth.first_name_placeholder" required autocomplete="given-name">
+                                    <div class="field-error-message" id="registerFirstNameError" style="display: none;"></div>
                                 </div>
                                 <div class="form-group">
                                     <label for="registerLastName" data-i18n="popup.auth.last_name_label">Фамилия</label>
-                                    <input type="text" id="registerLastName" class="form-input" placeholder="Ваша фамилия" data-i18n="[placeholder]popup.auth.last_name_placeholder" required>
+                                    <input type="text" id="registerLastName" class="form-input" placeholder="Ваша фамилия" data-i18n="[placeholder]popup.auth.last_name_placeholder" required autocomplete="family-name">
+                                    <div class="field-error-message" id="registerLastNameError" style="display: none;"></div>
                                 </div>
                             </div>
                             <div class="form-group">
                                 <label for="registerEmail" data-i18n="popup.auth.email_label">Электронная почта</label>
-                                <input type="email" id="registerEmail" class="form-input" placeholder="Ваш адрес электронной почты" data-i18n="[placeholder]popup.auth.email_placeholder" required>
+                                <input type="email" id="registerEmail" class="form-input" placeholder="Ваш адрес электронной почты" data-i18n="[placeholder]popup.auth.email_placeholder" required autocomplete="email">
+                                <div class="field-error-message" id="registerEmailError" style="display: none;"></div>
                             </div>
-                            <button type="submit" class="btn btn-primary btn-block" data-i18n="popup.auth.register_info">Продолжить</button>
+                            <button type="submit" id="registerInfoSubmitBtn" class="btn btn-primary btn-block">
+                                <span class="btn-text" data-i18n="popup.auth.register_info">Продолжить</span>
+                            </button>
                         </form>
                     </div>
 
                     <!-- Step 2: Password Creation -->
                     <div id="registerStep2" style="display: none;">
-                        <form id="registerPasswordForm" class="auth-form">
+                        <form id="registerPasswordForm" class="auth-form" novalidate>
                             <div class="form-row">
                                 <div class="form-group">
-                                    <label data-i18n="popup.auth.first_name_label">Имя</label>
-                                    <div id="staticName" class="static-input-text"></div>
+                                    <label for="staticName" data-i18n="popup.auth.first_name_label">Имя</label>
+                                    <input type="text" id="staticName" class="form-input static-input-field" readonly aria-readonly="true" tabindex="-1">
                                 </div>
                                 <div class="form-group">
-                                    <label data-i18n="popup.auth.last_name_label">Фамилия</label>
-                                    <div id="staticSurname" class="static-input-text"></div>
+                                    <label for="staticSurname" data-i18n="popup.auth.last_name_label">Фамилия</label>
+                                    <input type="text" id="staticSurname" class="form-input static-input-field" readonly aria-readonly="true" tabindex="-1">
                                 </div>
                             </div>
                             <div class="form-group">
-                                <label data-i18n="popup.auth.email_label">Электронная почта</label>
-                                <div id="staticRegisterEmail" class="static-input-text"></div>
+                                <label for="staticRegisterEmail" data-i18n="popup.auth.email_label">Электронная почта</label>
+                                <input type="text" id="staticRegisterEmail" class="form-input static-input-field" readonly aria-readonly="true" tabindex="-1">
                             </div>
 
                             <div class="form-group">
                                 <label for="registerPassword" data-i18n="popup.auth.password_label">Пароль</label>
                                 <div class="password-input-wrapper">
-                                    <input type="password" id="registerPassword" class="form-input" placeholder="Придумайте пароль" data-i18n="[placeholder]popup.auth.password_placeholder" required minlength="6">
-                                    <button type="button" class="toggle-password" title="Show password"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
+                                    <input type="password" id="registerPassword" class="form-input" placeholder="Придумайте пароль" data-i18n="[placeholder]popup.auth.password_placeholder" required minlength="6" autocomplete="new-password">
+                                    <button type="button" class="toggle-password" title="Show password" aria-label="Show password" aria-pressed="false"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
                                 </div>
+                                <div class="field-error-message" id="registerPasswordError" style="display: none;"></div>
                             </div>
                             <div class="form-group">
                                 <label for="registerConfirmPassword" data-i18n="popup.auth.confirm_password_label">Повторите пароль</label>
                                 <div class="password-input-wrapper">
-                                    <input type="password" id="registerConfirmPassword" class="form-input" placeholder="Повторите пароль" data-i18n="[placeholder]popup.auth.confirm_password_placeholder" required minlength="6">
-                                    <button type="button" class="toggle-password" title="Show password"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
+                                    <input type="password" id="registerConfirmPassword" class="form-input" placeholder="Повторите пароль" data-i18n="[placeholder]popup.auth.confirm_password_placeholder" required minlength="6" autocomplete="new-password">
+                                    <button type="button" class="toggle-password" title="Show password" aria-label="Show password" aria-pressed="false"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
                                 </div>
+                                <div class="field-error-message" id="registerConfirmPasswordError" style="display: none;"></div>
                             </div>
 
-                            <button type="submit" class="btn btn-gradient btn-block" data-i18n="popup.auth.create_account">Зарегистрироваться</button>
+                            <button type="submit" id="registerFinalSubmitBtn" class="btn btn-primary btn-block">
+                                <span class="btn-text" data-i18n="popup.auth.create_account">Зарегистрироваться</span>
+                            </button>
 
                             <div class="auth-switch back-nav">
-                                <a href="#" id="backToRegisterInfoBtn" data-i18n="popup.auth.back">← Назад</a>
+                                <button type="button" id="backToRegisterInfoBtn" class="btn-text-link" data-i18n="popup.auth.back">← Назад</button>
                             </div>
                         </form>
                     </div>
 
                      <div id="registerFooter" class="auth-switch">
-                        <p><span data-i18n="popup.auth.have_account">Уже есть аккаунт?</span> <a href="#" id="showLoginLink" data-i18n="popup.auth.login_btn">Войти</a></p>
+                        <p><span data-i18n="popup.auth.have_account">Уже есть аккаунт?</span> <button type="button" id="showLoginLink" class="btn-text-link" data-i18n="popup.auth.login_btn">Войти</button></p>
+                    </div>
+                </div>
+
+                <!-- Approval Status Section -->
+                <div id="approvalStatusSection" class="auth-content approval-status-section" style="display: none;">
+                    <div class="approval-status-card">
+                        <div class="approval-status-icon-wrapper" id="approvalStatusIconWrapper">
+                            <span class="approval-status-icon" id="approvalStatusIcon"></span>
+                        </div>
+                        <h2 class="approval-status-title" id="approvalStatusTitle">Заявка на рассмотрении</h2>
+                        <p class="approval-status-message" id="approvalStatusMessage">
+                            Ваш аккаунт успешно создан и ожидает подтверждения администратором.
+                        </p>
+                        <div class="approval-status-actions">
+                            <button type="button" id="approvalBackToLoginBtn" class="btn btn-primary btn-block">
+                                <span id="approvalBackBtnText" data-i18n="popup.approval.back_to_login">Вернуться ко входу</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -193,54 +266,55 @@
 
         <!-- Main Content -->
         <div class="main-content" id="mainContent" style="display: none;">
-            <!-- User Actions -->
-            <div class="user-actions">
-                <div class="user-info">
-                    <img id="userAvatar" class="user-avatar" src="" alt="User Avatar" style="display: none;">
-                    <span id="userName">User</span>
+            <!-- Controls Bar (Row 2: 36px) -->
+            <div class="controls-bar" id="controlsBar">
+                <!-- Chips Layer (Default View) -->
+                <div class="chips-layer" id="chipsLayer">
+                    <div class="filter-chips-group">
+                        <button type="button" class="filter-chip active" id="filterAllRatings" data-filter="all">Все</button>
+                        <button type="button" class="filter-chip" id="filterMyRatings" data-filter="my">Мои</button>
+                    </div>
+                    <button type="button" id="searchToggleBtn" class="btn-search-toggle" aria-label="Поиск" title="Поиск фильмов">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    </button>
                 </div>
-                <div class="feed-actions">
-                    <button id="settingsBtn" class="btn btn-ghost btn-sm" data-i18n="popup.content.settings">Settings</button>
-                    <button id="logoutBtn" class="btn btn-secondary btn-sm" data-i18n="popup.content.logout">Sign Out</button>
-                </div>
-            </div>
-            
-            <!-- Search Section -->
-            <div class="search-section">
-                <div class="search-container">
-                    <input type="text" id="searchInput" class="search-input" placeholder="Search movies..." data-i18n="[placeholder]popup.content.search_placeholder">
-                    <button id="searchIconBtn" class="search-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></button>
-                    <div id="searchResults" class="search-results" style="display: none;"></div>
+
+                <!-- Search Layer (Active Search View) -->
+                <div class="search-layer" id="searchLayer">
+                    <div class="search-input-wrapper">
+                        <span class="search-input-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                        </span>
+                        <input type="text" id="searchInput" class="compact-search-input" placeholder="Поиск фильмов..." data-i18n="[placeholder]popup.content.search_placeholder" autocomplete="off">
+                        <button type="button" id="searchCloseBtn" class="search-close-btn" aria-label="Закрыть поиск">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        </button>
+                    </div>
+                    <div id="searchResults" class="compact-search-results" style="display: none;"></div>
                 </div>
             </div>
 
             <!-- Feed Section -->
             <div class="feed-section">
-                <div class="feed-header">
-                    <h2 class="feed-title" data-i18n="popup.content.recent_ratings">Recent Ratings</h2>
-                    <div class="feed-actions">
-                        <button id="viewAllRatingsBtn" class="btn btn-primary btn-sm" data-i18n="popup.content.view_all">View All Ratings</button>
-                        <button id="refreshBtn" class="btn btn-ghost btn-sm" data-i18n="popup.content.refresh">Refresh</button>
-                    </div>
-                </div>
-                
                 <div class="feed-content" id="feedContent">
                     <div class="empty-state">
                         <div class="empty-state-icon"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="2" ry="2"></rect><path d="M16 6 22 2"></path><path d="M22 6 2 6"></path><path d="M7 6 2 2"></path><path d="M12 6 7 2"></path><path d="M17 6 12 2"></path></svg></div>
                         <h3 class="empty-state-title" data-i18n="popup.content.empty_title">No ratings yet</h3>
                         <p class="empty-state-text" data-i18n="popup.content.empty_text">Start rating movies to see them here!</p>
                     </div>
-                </div>
-                <!-- Infinite Scroll Trigger -->
-                <div id="infiniteScrollTrigger" class="infinite-scroll-trigger" style="display: none; justify-content: center; padding: 20px;">
-                    <div class="loading-spinner" style="width: 24px; height: 24px; border-width: 3px;"></div>
+                    <!-- Infinite Scroll Trigger -->
+                    <div id="infiniteScrollTrigger" class="infinite-scroll-trigger" style="display: none; justify-content: center; padding: 12px;">
+                        <div class="app-loader app-loader--inline app-loader--compact" role="status" aria-label="Loading more ratings">
+                            <div class="app-loader__indicator" aria-hidden="true"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
             
-            <!-- Loading overlay - moved outside feed-section to avoid overflow clipping -->
-            <div class="loading" id="loading" style="display: none;">
-                <div class="loading-spinner"></div>
-                <span data-i18n="popup.content.loading">Loading...</span>
+            <!-- Loading overlay -->
+            <div class="loading app-loader app-loader--section" id="loading" style="display: none;" role="status" aria-live="polite">
+                <div class="app-loader__indicator" aria-hidden="true"></div>
+                <span class="app-loader__label" data-i18n="popup.content.loading">Loading...</span>
             </div>
         </div>
 
@@ -254,6 +328,7 @@
     <script src="../../libs/firebase-auth-compat.js"></script>
     <script src="../shared/config/kinopoisk.config.js"></script>
     <script src="../shared/services/ImdbParsingService.js"></script>
+    <script src="../shared/services/TmdbFallbackQueueService.js"></script>
     <script src="../shared/services/KinopoiskService.js"></script>
     <script src="../shared/services/MovieCacheService.js"></script>
     <script src="../shared/services/RatingService.js"></script>
@@ -266,6 +341,7 @@
     <script src="../shared/utils/Icons.js"></script>
     <script src="../shared/utils/IconUtils.js"></script>
     <script src="../shared/utils/auth.js"></script>
+    <script src="../shared/components/BackToTop.js"></script>
     <script src="../shared/components/Navigation.js"></script>
     <script src="../shared/firestore.js"></script>
     <script type="module" src="popup.js"></script>

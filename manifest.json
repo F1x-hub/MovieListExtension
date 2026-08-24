@@ -1,16 +1,16 @@
 {
   "manifest_version": 3,
   "name": "Movie Rating Extension",
-  "version": "1.2.7",
+  "version": "1.2.8",
   "description": "Rate and discover movies with community ratings and Kinopoisk integration",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAn9oH6UpxDe3c/EWktNAbNvu9I9EOVjEW4VsEvSYgmEEmWb9Bn2NyMpWyUkG5QsEOHEO+3DQfCS5XN81BKOvsnHJst/1od7ZBp2lXS0Sr0QAAQY0FDZvQ6hnSamDPcw81y6q2NNNnynjLB9z9+AoyW3bEo/DRhBpbqOGHJgOD+rNbOTClSoreH1TggttLyEcDgN/nI7rc3QCSiE7helDgZLOOgmjBdILPZIDxg1XQM5SmPOOry0gcawh2B4Pp2ciQ3p5OuUzVYNG503+rlPUIoZ1BIZkTCnx8ezYJCXXhmMxXQwcpMVnNwmShr/Kzf+J3OehTusS0S332mk3tQAqvlwIDAQAB",
   "permissions": [
     "identity",
     "tabs",
     "storage",
+    "unlimitedStorage",
     "scripting",
     "downloads",
-    "alarms",
     "alarms",
     "notifications",
     "nativeMessaging",
@@ -31,15 +31,22 @@
     "https://*.firebaseio.com/*",
     "https://*.googleapis.com/*",
     "https://api.kinopoisk.dev/*",
+    "https://api.poiskkino.dev/*",
+    "https://api.themoviedb.org/*",
+    "https://www.youtube.com/*",
     "https://firebasestorage.googleapis.com/*",
     "https://*.firebasestorage.app/*",
     "https://ex-fs.net/*",
     "https://zfilms-hd.by/*",
     "https://hdrezka.co/*",
     "https://www.kinopoisk.ru/*",
+    "https://kinopoisk.ru/*",
+    "https://*.kinopoisk.ru/*",
     "https://widgets.kinopoisk.ru/*",
     "https://www.imdb.com/*",
+    "https://www.the-numbers.com/*",
     "https://kinogo.inc/*",
+    "https://kinogo.my/*",
     "https://api.github.com/*",
     "https://github.com/*",
     "https://api.namy.ws/*",
@@ -50,8 +57,22 @@
     "https://seasonvar.ru/*",
     "http://seasonvar.ru/*",
     "https://fix.kinogo.luxury/*",
+    "https://*.kinogo.la/*",
+    "https://kinogo.la/*",
+    "https://*.kinogo.film/*",
+    "https://kinogo.film/*",
+    "https://*.kinogo.is/*",
+    "https://kinogo.is/*",
+    "https://*.kinogo.gg/*",
+    "https://kinogo.gg/*",
+    "https://*.ortified.ws/*",
+    "https://*.cinemar.cc/*",
+    "https://*.stravers.live/*",
+    "https://*.allarknow.online/*",
     "https://anison.fm/*",
     "https://rutube.ru/*",
+    "https://*.rutube.ru/*",
+    "https://*.rtbcdn.ru/*",
     "http://localhost:3579/*",
     "http://127.0.0.1:3579/*"
   ],
@@ -71,9 +92,9 @@
     "default_popup": "src/popup/popup.html",
     "default_title": "Movie Rating Extension",
     "default_icon": {
-      "16": "icons/icon16-black.png",
-      "48": "icons/icon48-black.png",
-      "128": "icons/icon128-black.png"
+      "16": "src/shared/assets/icons/app/icon16-black.png",
+      "48": "src/shared/assets/icons/app/icon48-black.png",
+      "128": "src/shared/assets/icons/app/icon128-black.png"
     }
   },
   "side_panel": {
@@ -84,9 +105,9 @@
     "open_in_tab": true
   },
   "icons": {
-    "16": "icons/icon16-black.png",
-    "48": "icons/icon48-black.png",
-    "128": "icons/icon128-black.png"
+    "16": "src/shared/assets/icons/app/icon16-black.png",
+    "48": "src/shared/assets/icons/app/icon48-black.png",
+    "128": "src/shared/assets/icons/app/icon128-black.png"
   },
   "web_accessible_resources": [
     {
@@ -115,7 +136,7 @@
         "src/shared/config/*.js",
         "src/shared/utils/*.js",
         "src/shared/components/*.js",
-        "icons/*.png",
+        "src/shared/assets/**/*",
         "libs/*.js",
         "src/shared/firestore.js",
         "content-scripts/*.js"
@@ -179,6 +200,21 @@
     },
     {
       "matches": [
+        "https://www.kinopoisk.ru/new-search*",
+        "https://kinopoisk.ru/new-search*",
+        "https://www.kinopoisk.ru/film/*",
+        "https://kinopoisk.ru/film/*",
+        "https://www.kinopoisk.ru/series/*",
+        "https://kinopoisk.ru/series/*"
+      ],
+      "js": [
+        "content-scripts/kinopoisk-search-scraper.js"
+      ],
+      "all_frames": true,
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
         "https://www.imdb.com/*"
       ],
       "js": [
@@ -192,7 +228,16 @@
     {
       "matches": [
         "https://kinogo.inc/*",
-        "https://fix.kinogo.luxury/*"
+        "https://kinogo.my/*",
+        "https://fix.kinogo.luxury/*",
+        "https://kinogo.la/*",
+        "https://*.kinogo.la/*",
+        "https://kinogo.film/*",
+        "https://*.kinogo.film/*",
+        "https://kinogo.is/*",
+        "https://*.kinogo.is/*",
+        "https://kinogo.gg/*",
+        "https://*.kinogo.gg/*"
       ],
       "js": [
         "content-scripts/kinogo-watchlist.js"
@@ -207,10 +252,15 @@
         "*://*.namy.ws/*",
         "*://*.lumex.cloud/*",
         "*://*.variyt.ws/*",
+        "*://*.ortified.ws/*",
+        "*://*.cinemar.cc/*",
+        "*://*.stravers.live/*",
+        "*://*.allarknow.online/*",
         "https://widgets.kinopoisk.ru/*"
       ],
       "js": [
         "src/shared/lib/hls.min.js",
+        "src/shared/services/PlayerSourceLifecycle.js",
         "content-scripts/player-cleaner.js"
       ],
       "run_at": "document_end",

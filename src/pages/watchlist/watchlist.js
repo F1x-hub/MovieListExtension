@@ -210,16 +210,28 @@ class WatchlistPageManager {
 
         await firebaseManager.waitForAuthReady();
         this.currentUser = firebaseManager.getCurrentUser();
-        
-        if (!this.currentUser) {
-            // Redirect to popup for sign in
-            window.location.href = chrome.runtime.getURL('src/popup/popup.html');
-            return;
-        }
+
+        // Listen for cross-tab auth state changes
+        window.addEventListener('authStateChanged', async (e) => {
+            const user = e.detail?.user;
+            if (!user) {
+                this.currentUser = null;
+                this.watchlist = [];
+                this.filteredWatchlist = [];
+                this.renderWatchlist();
+                this.showError('Для просмотра списка "Буду смотреть" необходимо войти в аккаунт.');
+            } else if (!this.currentUser || this.currentUser.uid !== user.uid) {
+                this.currentUser = user;
+                await this.loadWatchlist();
+            }
+        });
     }
 
     async loadWatchlist() {
-        if (!this.currentUser) return;
+        if (!this.currentUser) {
+            this.showError('Для просмотра списка "Буду смотреть" необходимо войти в аккаунт.');
+            return;
+        }
 
         try {
             this.showLoading();
@@ -236,6 +248,20 @@ class WatchlistPageManager {
                 sortBy,
                 sortOrder
             );
+
+            const movieCacheService = firebaseManager.getMovieCacheService();
+            const movieIds = this.watchlist.map(item => item.movieId).filter(Boolean);
+            const cachedMovies = await movieCacheService.getBatchCachedMovies(movieIds);
+            this.watchlist = this.watchlist.map(item => {
+                const cachedMovie = cachedMovies[item.movieId];
+                if (!cachedMovie) return item;
+                return {
+                    ...item,
+                    kpRating: cachedMovie.kpRating ?? item.kpRating,
+                    imdbRating: cachedMovie.imdbRating ?? item.imdbRating,
+                    votes: { ...(item.votes || {}), ...(cachedMovie.votes || {}) }
+                };
+            });
 
             this.applyFilters();
             this.hideLoading();
@@ -324,7 +350,8 @@ class WatchlistPageManager {
                 genres: item.genres || [],
                 description: item.description || '',
                 kpRating: item.kpRating || 0,
-                imdbRating: item.imdbRating || 0
+                imdbRating: item.imdbRating || 0,
+                votes: item.votes || {}
             },
             movieId: item.movieId,
             averageRating: item.avgRating || 0,
@@ -414,13 +441,13 @@ class WatchlistPageManager {
         
         // Set movie info
         if (this.elements.movieRatingInfo) {
-            const posterUrl = movieData.posterPath || '/icons/icon48.png';
+            const posterUrl = movieData.posterPath || '/src/shared/assets/icons/app/icon48.png';
             const title = movieData.movieTitle || 'Unknown Movie';
             const year = movieData.releaseYear || '';
             
             this.elements.movieRatingInfo.innerHTML = `
                 <div class="movie-rating-poster">
-                    <img src="${posterUrl}" alt="${title}" onerror="this.src='/icons/icon48.png'">
+                    <img src="${posterUrl}" alt="${title}" onerror="this.src='/src/shared/assets/icons/app/icon48.png'">
                 </div>
                 <div class="movie-rating-info">
                     <h3>${this.escapeHtml(title)}</h3>
@@ -591,4 +618,3 @@ class WatchlistPageManager {
 document.addEventListener('DOMContentLoaded', () => {
     new WatchlistPageManager();
 });
-

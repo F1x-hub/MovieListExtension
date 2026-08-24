@@ -272,6 +272,52 @@ class FavoriteService {
     }
 
     /**
+     * Get bookmarks for multiple movies in batch
+     * @param {string} userId - User ID
+     * @param {Array<number>} movieIds - Array of Kinopoisk movie IDs
+     * @returns {Promise<Object>} - Map of movieId to bookmark data
+     */
+    async getBookmarksBatch(userId, movieIds) {
+        try {
+            if (!userId || !movieIds || movieIds.length === 0) {
+                return {};
+            }
+
+            const cleanMovieIds = [...new Set(movieIds.map(id => Number(id)).filter(Boolean))];
+            if (cleanMovieIds.length === 0) {
+                return {};
+            }
+
+            const CHUNK_SIZE = 30;
+            const chunks = [];
+            for (let i = 0; i < cleanMovieIds.length; i += CHUNK_SIZE) {
+                chunks.push(cleanMovieIds.slice(i, i + CHUNK_SIZE));
+            }
+
+            const bookmarksMap = {};
+
+            for (const chunk of chunks) {
+                const query = this.db.collection(this.collection)
+                    .where('userId', '==', userId)
+                    .where('movieId', 'in', chunk);
+                
+                const snapshot = await query.get();
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    if (data && data.movieId) {
+                        bookmarksMap[data.movieId] = { id: doc.id, ...data };
+                    }
+                });
+            }
+
+            return bookmarksMap;
+        } catch (error) {
+            console.error('Error checking bookmarks batch:', error);
+            return {};
+        }
+    }
+
+    /**
      * Search bookmarks
      */
     async searchFavorites(userId, searchTerm, status = 'all') {

@@ -1,5 +1,85 @@
 export const locales = {
     en: {
+        errors: {
+            actions: {
+                retry: "Try again",
+                back: "Go back",
+                close: "Close"
+            },
+            details: "Technical details",
+            generic: {
+                title: "Something went wrong",
+                message: "We couldn't complete this request. Please try again later."
+            },
+            kinopoisk: {
+                daily_limit: {
+                    title: "Kinopoisk API limit reached",
+                    message: "Kinopoisk data is temporarily unavailable. Please try again later. {time}"
+                },
+                unavailable: {
+                    title: "Kinopoisk is temporarily unavailable",
+                    message: "The Kinopoisk service did not respond. Please try again."
+                },
+                auth: {
+                    title: "Kinopoisk API authentication failed",
+                    message: "The Kinopoisk API key was rejected. Check the configured key or endpoint."
+                },
+                access: {
+                    title: "Kinopoisk API access denied",
+                    message: "The configured Kinopoisk endpoint refused access to this request."
+                },
+                rate_limit: {
+                    title: "Kinopoisk requests are temporarily limited",
+                    message: "Too many Kinopoisk requests were made. Please try again shortly."
+                },
+                server: {
+                    title: "Kinopoisk server error",
+                    message: "Kinopoisk returned a server error. Please try again later."
+                },
+                network: {
+                    title: "Kinopoisk connection error",
+                    message: "The extension could not connect to Kinopoisk. Check your connection and try again."
+                }
+            },
+            tmdb: {
+                unavailable: {
+                    title: "TMDB is temporarily unavailable",
+                    message: "Movie data could not be loaded from TMDB. Please try again."
+                }
+            },
+            auth: {
+                required: {
+                    title: "Sign-in required",
+                    message: "Please sign in to continue."
+                }
+            },
+            movie: {
+                not_found: {
+                    title: "Movie not found",
+                    message: "The requested movie could not be found."
+                }
+            },
+            person: {
+                invalid: {
+                    title: "Invalid person link",
+                    message: "The person link is invalid or incomplete."
+                },
+                not_found: {
+                    title: "Person not found",
+                    message: "The requested person could not be found."
+                },
+                provider: {
+                    title: "Person data is unavailable",
+                    message: "Person information could not be loaded. Please try again."
+                }
+            },
+            playback: {
+                unavailable: {
+                    title: "Playback unavailable",
+                    message: "The video source could not be loaded. Please try another source."
+                }
+            }
+        },
         bookmarks: {
             title: "Bookmarks",
             sidebar: {
@@ -78,6 +158,23 @@ export const locales = {
             },
             recent_ratings: "Recent Ratings",
             view_all: "View All",
+            open_list: "Open list",
+            unknown_title: "Unknown title",
+            continue_watching: {
+                title: "Continue watching",
+                subtitle: "Return to something you already started.",
+                eyebrow: "Watching now",
+                start_here: "Ready to start",
+                progress: "Viewing progress",
+                empty_title: "Your current watch will appear here",
+                empty_text: "Add a movie or series to your Watching list."
+            },
+            taste: {
+                title: "My taste",
+                subtitle: "What appears most often in your ratings.",
+                empty: "Rate a few movies to reveal your favorite genres.",
+                distribution_empty: "Your rating distribution will appear here."
+            },
             edit_profile: "Edit Profile",
             loading: "Loading profile...",
             error: "Failed to load profile",
@@ -174,6 +271,7 @@ export const locales = {
             remove_bookmarks: "Remove from Bookmarks",
             kinopoisk: "Kinopoisk",
             imdb: "IMDb",
+            tmdb: "TMDB",
             avg_rating: "Avg Rating",
             my_rating: "My Rating",
             unknown_movie: "Unknown Movie",
@@ -279,6 +377,7 @@ export const locales = {
             select_source: "Select a source",
             loading_player: "Loading player...",
             error_title: "Error",
+            error_loading_movie: "Failed to load movie",
             not_found: "Movie not found. Return to search.",
             login_required: "Please log in to watch the movie.",
             return_btn: "Return to Search",
@@ -305,14 +404,21 @@ export const locales = {
                 fees_russia: "Fees in Russia:",
                 premiere_russia: "Premiere in Russia:",
                 premiere_world: "Premiere in World:",
+                premiere_digital: "Digital Release:",
+                audience: "Audience",
                 age_rating: "Age Rating:",
+                rating_mpaa: "MPAA Rating",
                 duration: "Duration:",
                 hours: "h",
                 minutes: "min"
             },
             description: "Description",
+            no_description: "No description available",
             sequels: "Sequels and Prequels",
             similar_movies: "Similar Movies",
+            similar_series: "Similar Series",
+            similar_cartoons: "Similar Cartoons",
+            similar_anime: "Similar",
             frames: "Movie Frames",
             user_ratings_title: "User Ratings",
             loading_reviews: "Loading reviews...",
@@ -345,6 +451,7 @@ export const locales = {
             }
         },
         search: {
+            hero_badge: "Search Movies & TV Series",
             placeholder: "Search for movies...",
             recent_searches: "Recent Searches",
             clear_history: "Clear all history",
@@ -394,6 +501,7 @@ export const locales = {
             },
             auth: {
                 google_btn: "Continue with Google",
+                or: "or",
                 email_label: "Email Address",
                 email_placeholder: "Your email address",
                 password_label: "Password",
@@ -414,7 +522,20 @@ export const locales = {
                 create_account: "Create Account",
                 password_min_length: "Password must be at least 6 characters long",
                 passwords_dont_match: "Passwords do not match",
-                fill_all: "Please fill in all fields"
+                fill_all: "Please fill in all fields",
+                loading_login: "Signing in...",
+                loading_register: "Creating account...",
+                loading_checking: "Checking...",
+                loading_google: "Signing in..."
+            },
+            approval: {
+                pending_registered_title: "Application Under Review",
+                pending_registered_msg: "Your account has been successfully registered and is waiting for administrator approval. Once approved, you will receive full access to the extension.",
+                pending_login_title: "Account Awaiting Approval",
+                pending_login_msg: "Your registration is currently under review by the administrator. Access will be granted once approved.",
+                rejected_title: "Access Restricted",
+                rejected_msg: "Your registration was rejected by the administrator.",
+                back_to_login: "Back to Sign In"
             },
             content: {
                 search_placeholder: "Search movies...",
@@ -427,9 +548,131 @@ export const locales = {
                 empty_text: "Start rating movies to see them here!",
                 loading: "Loading..."
             }
+        },
+        person_details: {
+            loading: "Loading person details...",
+            wait: "Please wait",
+            error_title: "Information not found",
+            error_text: "Failed to load person information",
+            invalid_link: "Invalid person link",
+            not_found: "Person information not found",
+            provider_error: "Temporary provider failure. Please try again later.",
+            back: "Back",
+            retry: "Retry",
+            home: "Home",
+            biography: "Biography",
+            show_all_bio: "Show full biography",
+            hide_bio: "Hide",
+            facts: "Facts",
+            show_more_facts: "Show more facts",
+            hide_facts: "Hide",
+            known_for: "Known For",
+            previous_movies: "Previous movies",
+            next_movies: "Next movies",
+            filmography: "Filmography",
+            filmography_empty: "Filmography unavailable",
+            all_media: "All",
+            movies_media: "Movies",
+            series_media: "Series",
+            show_more: "Show more",
+            show_less: "Show less",
+            acting: "Acting",
+            directing: "Directing",
+            writing: "Writing",
+            production: "Production",
+            music: "Music",
+            other: "Other Work",
+            birthday: "Birthday",
+            birthplace: "Birthplace",
+            deathday: "Date of death",
+            age: "Age",
+            years_old: "years old",
+            years_at_death: "years old at death",
+            aliases: "Other names",
+            show_more_aliases: "Show more"
         }
     },
     ru: {
+        errors: {
+            actions: {
+                retry: "Повторить",
+                back: "Вернуться назад",
+                close: "Закрыть"
+            },
+            details: "Технические детали",
+            generic: {
+                title: "Что-то пошло не так",
+                message: "Не удалось выполнить запрос. Попробуйте ещё раз позже."
+            },
+            kinopoisk: {
+                daily_limit: {
+                    title: "Лимит Kinopoisk API исчерпан",
+                    message: "Данные Kinopoisk временно недоступны. Попробуйте позже. {time}"
+                },
+                unavailable: {
+                    title: "Kinopoisk временно недоступен",
+                    message: "Сервис Kinopoisk не ответил. Попробуйте ещё раз."
+                },
+                auth: {
+                    title: "Ошибка авторизации Kinopoisk API",
+                    message: "Ключ Kinopoisk API отклонён. Проверьте ключ или endpoint."
+                },
+                access: {
+                    title: "Доступ к Kinopoisk API отклонён",
+                    message: "Настроенный endpoint Kinopoisk отказал в доступе к запросу."
+                },
+                rate_limit: {
+                    title: "Kinopoisk временно ограничил запросы",
+                    message: "Было отправлено слишком много запросов. Попробуйте через несколько секунд."
+                },
+                server: {
+                    title: "Ошибка сервера Kinopoisk",
+                    message: "Kinopoisk вернул ошибку сервера. Попробуйте позже."
+                },
+                network: {
+                    title: "Ошибка соединения с Kinopoisk",
+                    message: "Не удалось подключиться к Kinopoisk. Проверьте соединение и повторите попытку."
+                }
+            },
+            tmdb: {
+                unavailable: {
+                    title: "TMDB временно недоступен",
+                    message: "Не удалось загрузить данные фильма из TMDB. Попробуйте ещё раз."
+                }
+            },
+            auth: {
+                required: {
+                    title: "Требуется вход",
+                    message: "Войдите в аккаунт, чтобы продолжить."
+                }
+            },
+            movie: {
+                not_found: {
+                    title: "Фильм не найден",
+                    message: "Запрошенный фильм не удалось найти."
+                }
+            },
+            person: {
+                invalid: {
+                    title: "Некорректная ссылка на персону",
+                    message: "Ссылка на персону неполная или содержит ошибку."
+                },
+                not_found: {
+                    title: "Персона не найдена",
+                    message: "Запрошенную персону не удалось найти."
+                },
+                provider: {
+                    title: "Данные персоны недоступны",
+                    message: "Не удалось загрузить информацию о персоне. Попробуйте ещё раз."
+                }
+            },
+            playback: {
+                unavailable: {
+                    title: "Воспроизведение недоступно",
+                    message: "Не удалось загрузить источник видео. Попробуйте другой источник."
+                }
+            }
+        },
         bookmarks: {
             title: "Закладки",
             sidebar: {
@@ -508,6 +751,23 @@ export const locales = {
             },
             recent_ratings: "Недавние оценки",
             view_all: "Все оценки",
+            open_list: "Открыть список",
+            unknown_title: "Без названия",
+            continue_watching: {
+                title: "Продолжить просмотр",
+                subtitle: "Вернитесь к тому, что уже начали.",
+                eyebrow: "Смотрю сейчас",
+                start_here: "Можно начать",
+                progress: "Прогресс просмотра",
+                empty_title: "Здесь появится ваш текущий просмотр",
+                empty_text: "Добавьте фильм или сериал в список «Смотрю»."
+            },
+            taste: {
+                title: "Мой вкус",
+                subtitle: "Что чаще всего появляется в ваших оценках.",
+                empty: "Оцените несколько фильмов, чтобы увидеть любимые жанры.",
+                distribution_empty: "Здесь появится распределение ваших оценок."
+            },
             edit_profile: "Редактировать",
             loading: "Загрузка профиля...",
             error: "Не удалось загрузить профиль",
@@ -604,7 +864,8 @@ export const locales = {
             remove_bookmarks: "Из закладок",
             kinopoisk: "Кинопоиск",
             imdb: "IMDb",
-            avg_rating: "Средний рейтинг",
+            tmdb: "TMDB",
+            avg_rating: "Средний",
             my_rating: "Моя оценка",
             unknown_movie: "Неизвестный фильм",
             not_available: "—"
@@ -709,6 +970,7 @@ export const locales = {
             select_source: "Выберите источник",
             loading_player: "Загрузка плеера...",
             error_title: "Ошибка",
+            error_loading_movie: "Ошибка загрузки фильма",
             not_found: "Фильм не найден. Вернитесь к поиску.",
             login_required: "Пожалуйста, войдите в систему для просмотра фильма",
             return_btn: "Вернуться к поиску",
@@ -735,14 +997,21 @@ export const locales = {
                 fees_russia: "Сборы в России:",
                 premiere_russia: "Премьера в России:",
                 premiere_world: "Премьера в мире:",
+                premiere_digital: "Цифровой релиз:",
+                audience: "Зрители",
                 age_rating: "Возраст:",
+                rating_mpaa: "Рейтинг MPAA",
                 duration: "Время:",
                 hours: "ч",
                 minutes: "мин"
             },
             description: "Описание",
+            no_description: "Описание отсутствует",
             sequels: "Сиквелы и приквелы",
             similar_movies: "Похожие фильмы",
+            similar_series: "Похожие сериалы",
+            similar_cartoons: "Похожие мультфильмы",
+            similar_anime: "Похожее",
             frames: "Кадры из фильма",
             user_ratings_title: "Оценки пользователей",
             loading_reviews: "Загрузка отзывов...",
@@ -775,6 +1044,7 @@ export const locales = {
             }
         },
         search: {
+            hero_badge: "Поиск фильмов и сериалов",
             placeholder: "Поиск фильмов...",
             recent_searches: "История поиска",
             clear_history: "Очистить историю",
@@ -824,6 +1094,7 @@ export const locales = {
             },
             auth: {
                 google_btn: "Продолжить с Google",
+                or: "или",
                 email_label: "Электронная почта",
                 email_placeholder: "Ваш адрес электронной почты",
                 password_label: "Пароль",
@@ -844,7 +1115,20 @@ export const locales = {
                 create_account: "Зарегистрироваться",
                 password_min_length: "Пароль должен быть не менее 6 символов",
                 passwords_dont_match: "Пароли не совпадают",
-                fill_all: "Пожалуйста, заполните все поля"
+                fill_all: "Пожалуйста, заполните все поля",
+                loading_login: "Вход...",
+                loading_register: "Создание аккаунта...",
+                loading_checking: "Проверка...",
+                loading_google: "Вход через Google..."
+            },
+            approval: {
+                pending_registered_title: "Заявка на рассмотрении",
+                pending_registered_msg: "Ваш аккаунт успешно создан и ожидает подтверждения администратором. После одобрения вы получите полный доступ к расширению.",
+                pending_login_title: "Аккаунт ожидает подтверждения",
+                pending_login_msg: "Ваша регистрация находится на рассмотрении у администратора. Доступ будет открыт сразу после проверки.",
+                rejected_title: "Доступ ограничен",
+                rejected_msg: "Ваша регистрация была отклонена администратором.",
+                back_to_login: "Вернуться ко входу"
             },
             content: {
                 search_placeholder: "Поиск фильмов...",
@@ -857,6 +1141,48 @@ export const locales = {
                 empty_text: "Оцените фильмы, чтобы увидеть их здесь!",
                 loading: "Загрузка..."
             }
+        },
+        person_details: {
+            loading: "Загрузка информации о персоне...",
+            wait: "Пожалуйста, подождите",
+            error_title: "Информация не найдена",
+            error_text: "Не удалось загрузить информацию о персоне",
+            invalid_link: "Неверная ссылка на персону",
+            not_found: "Информация о персоне не найдена",
+            provider_error: "Временная ошибка сервиса. Попробуйте позже.",
+            back: "Назад",
+            retry: "Повторить",
+            home: "На главную",
+            biography: "Биография",
+            show_all_bio: "Показать полностью",
+            hide_bio: "Скрыть",
+            facts: "Факты",
+            show_more_facts: "Показать ещё факты",
+            hide_facts: "Скрыть",
+            known_for: "Известен по",
+            previous_movies: "Предыдущие фильмы",
+            next_movies: "Следующие фильмы",
+            filmography: "Фильмография",
+            filmography_empty: "Фильмография недоступна",
+            all_media: "Все",
+            movies_media: "Фильмы",
+            series_media: "Сериалы",
+            show_more: "Показать ещё",
+            show_less: "Скрыть",
+            acting: "Актёрские работы",
+            directing: "Режиссура",
+            writing: "Сценарии",
+            production: "Продюсирование",
+            music: "Музыка",
+            other: "Другие работы",
+            birthday: "Дата рождения",
+            birthplace: "Место рождения",
+            deathday: "Дата смерти",
+            age: "Возраст",
+            years_old: "лет",
+            years_at_death: "лет на момент смерти",
+            aliases: "Другие имена",
+            show_more_aliases: "Показать ещё"
         }
     }
 };

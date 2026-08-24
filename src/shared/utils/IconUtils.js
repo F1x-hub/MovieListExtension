@@ -11,9 +11,9 @@ const IconUtils = {
     getIconPath: (theme, size) => {
         // Default to white/standard if not light theme
         if (theme !== 'light') {
-            return `/icons/icon${size}-white.png`;
+            return `/src/shared/assets/icons/app/icon${size}-white.png`;
         }
-        return `/icons/icon${size}-black.png`;
+        return `/src/shared/assets/icons/app/icon${size}-black.png`;
     },
 
     /**

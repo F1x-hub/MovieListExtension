@@ -184,6 +184,13 @@ class AdminRatingsCacheService {
     }
 
     /**
+     * Clear users cache (alias for invalidateUsersCache)
+     */
+    clearUsersCache() {
+        this.invalidateUsersCache();
+    }
+
+    /**
      * Clear all cache
      */
     clearCache() {

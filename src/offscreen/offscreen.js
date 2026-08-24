@@ -4,11 +4,42 @@
  * All control is done via chrome.runtime messages.
  */
 const audio = document.getElementById('radio');
+const scraperFrame = document.getElementById('scraperFrame');
 
 // Default volume
-audio.volume = 0.8;
+if (audio) {
+    audio.volume = 0.8;
+}
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    // --- Kinopoisk Scraper Iframe Control ---
+    if (message.target === 'offscreen-scraper') {
+        switch (message.type) {
+            case 'LOAD_SEARCH_FRAME':
+                if (scraperFrame) {
+                    console.log('[Offscreen] Loading scraper iframe:', message.searchUrl);
+                    scraperFrame.src = message.searchUrl || 'about:blank';
+                    sendResponse({ success: true });
+                } else {
+                    sendResponse({ success: false, error: 'scraperFrame not found' });
+                }
+                return false;
+
+            case 'CLEANUP_SEARCH_FRAME':
+                if (scraperFrame) {
+                    console.log('[Offscreen] Cleaning up scraper iframe');
+                    scraperFrame.src = 'about:blank';
+                    sendResponse({ success: true });
+                } else {
+                    sendResponse({ success: false });
+                }
+                return false;
+
+            default:
+                return false;
+        }
+    }
+
     if (message.target !== 'offscreen-radio') return false;
 
     switch (message.type) {

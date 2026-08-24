@@ -4,7 +4,8 @@ let initialState = {
     displayMode: 'popup',
     language: 'en',
     showAnimeRadio: false,
-    animeRadioSource: 'anison'
+    animeRadioSource: 'anison',
+    showGames: false
 };
 
 let currentState = { ...initialState };
@@ -33,6 +34,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const animeRadioToggle = document.getElementById('animeRadioToggle');
     const radioSourceGroup = document.getElementById('radioSourceGroup');
     const radioSourceRadios = document.getElementsByName('radioSource');
+
+    // Mini Games Elements
+    const gamesToggle = document.getElementById('gamesToggle');
     
     // Sidebar Navigation Elements
     const sidebarLinks = document.querySelectorAll('.sidebar-link');
@@ -89,7 +93,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             currentState.displayMode !== initialState.displayMode ||
             currentState.language !== initialState.language ||
             currentState.showAnimeRadio !== initialState.showAnimeRadio ||
-            currentState.animeRadioSource !== initialState.animeRadioSource;
+            currentState.animeRadioSource !== initialState.animeRadioSource ||
+            currentState.showGames !== initialState.showGames;
             
         if (isDirty) {
             saveBtn.style.backgroundColor = '#22c55e';
@@ -144,7 +149,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         displayMode: 'popup',
         language: 'en',
         showAnimeRadio: false,
-        animeRadioSource: 'anison'
+        animeRadioSource: 'anison',
+        showGames: false
     };
 
     /**
@@ -180,6 +186,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 radio.checked = (radio.value === currentState.animeRadioSource);
             }
         }
+
+        // Mini games toggle
+        if (gamesToggle) {
+            gamesToggle.checked = currentState.showGames;
+            const gamesBtn = document.getElementById('navGamesBtn');
+            if (gamesBtn) {
+                gamesBtn.style.display = currentState.showGames ? 'inline-flex' : 'none';
+            }
+        }
     }
 
     /**
@@ -187,13 +202,14 @@ document.addEventListener('DOMContentLoaded', async () => {
      */
     async function loadSettings() {
         try {
-            const result = await chrome.storage.local.get(['displayMode', 'language', 'showAnimeRadio', 'animeRadioSource']);
+            const result = await chrome.storage.local.get(['displayMode', 'language', 'showAnimeRadio', 'animeRadioSource', 'showGames']);
             
             initialState = {
                 displayMode: result.displayMode || DEFAULT_SETTINGS.displayMode,
                 language: result.language || i18n.currentLocale || DEFAULT_SETTINGS.language,
                 showAnimeRadio: result.showAnimeRadio ?? false,
-                animeRadioSource: result.animeRadioSource || 'anison'
+                animeRadioSource: result.animeRadioSource || 'anison',
+                showGames: result.showGames ?? false
             };
             
             currentState = { ...initialState };
@@ -221,7 +237,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 displayMode: currentState.displayMode,
                 language: currentState.language,
                 showAnimeRadio: currentState.showAnimeRadio,
-                animeRadioSource: currentState.animeRadioSource
+                animeRadioSource: currentState.animeRadioSource,
+                showGames: currentState.showGames
             });
 
             // If language changed, ensure i18n saves it globally depending on how it's structured, but i18n.setLanguage was already called on preview.
@@ -232,7 +249,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     displayMode: currentState.displayMode,
                     language: currentState.language,
                     showAnimeRadio: currentState.showAnimeRadio,
-                    animeRadioSource: currentState.animeRadioSource
+                    animeRadioSource: currentState.animeRadioSource,
+                    showGames: currentState.showGames
                 }
             });
 
@@ -319,6 +337,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             const radioBlock = document.getElementById('navigationLeft');
             if (radioBlock) {
                 radioBlock.style.display = e.target.checked ? 'flex' : 'none';
+            }
+        });
+    }
+
+    if (gamesToggle) {
+        gamesToggle.addEventListener('change', (e) => {
+            currentState.showGames = e.target.checked;
+            updateDirtyState();
+            
+            const gamesBtn = document.getElementById('navGamesBtn');
+            if (gamesBtn) {
+                gamesBtn.style.display = e.target.checked ? 'inline-flex' : 'none';
             }
         });
     }

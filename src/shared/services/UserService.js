@@ -32,12 +32,13 @@ class UserService {
                 photoURL: userData.photoURL || userData.photo || '',
                 photoPath: userData.photoPath || '',
                 email: userData.email || '',
-                createdAt: userData.createdAt || firebase.firestore.FieldValue.serverTimestamp(),
-                updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                createdAt: userData.createdAt || (typeof firebase !== 'undefined' && firebase.firestore ? firebase.firestore.FieldValue.serverTimestamp() : new Date()),
+                updatedAt: (typeof firebase !== 'undefined' && firebase.firestore) ? firebase.firestore.FieldValue.serverTimestamp() : new Date(),
                 bio: userData.bio || '',
                 displayNameFormat: userData.displayNameFormat || 'fullname',
-                favoriteGenre: userData.favoriteGenre || '',
+                topGenres: userData.topGenres || [],
                 isAdmin: userData.isAdmin || false, // Admin status, defaults to false
+                approvalStatus: 'pending', // Explicit approvalStatus for newly created accounts
                 socialLinks: userData.socialLinks || {
                     twitter: '',
                     instagram: '',
@@ -53,7 +54,7 @@ class UserService {
                     averageRating: 0,
                     favoritesCount: 0,
                     watchlistCount: 0,
-                    joinDate: userData.createdAt || firebase.firestore.FieldValue.serverTimestamp()
+                    joinDate: userData.createdAt || (typeof firebase !== 'undefined' && firebase.firestore ? firebase.firestore.FieldValue.serverTimestamp() : new Date())
                 }
             };
 
@@ -78,7 +79,6 @@ class UserService {
                 if (userData.usernameLower !== undefined) updateData.usernameLower = userData.usernameLower;
                 if (userData.bio !== undefined) updateData.bio = userData.bio;
                 if (userData.displayNameFormat !== undefined) updateData.displayNameFormat = userData.displayNameFormat;
-                if (userData.favoriteGenre !== undefined) updateData.favoriteGenre = userData.favoriteGenre;
                 if (userData.photoPath !== undefined) updateData.photoPath = userData.photoPath;
                 // Preserve isAdmin status - never override unless explicitly set
                 if (userData.isAdmin !== undefined) updateData.isAdmin = userData.isAdmin;
@@ -155,7 +155,7 @@ class UserService {
 
             const updatePayload = {
                 ...updateData,
-                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                updatedAt: (typeof firebase !== 'undefined' && firebase.firestore) ? firebase.firestore.FieldValue.serverTimestamp() : new Date()
             };
 
             if (updateData.username && !updateData.usernameLower) {
@@ -184,7 +184,7 @@ class UserService {
             const updateData = {
                 'stats.totalRatings': stats.totalRatings || 0,
                 'stats.averageRating': stats.averageRating || 0,
-                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                updatedAt: (typeof firebase !== 'undefined' && firebase.firestore) ? firebase.firestore.FieldValue.serverTimestamp() : new Date()
             };
 
             await userRef.update(updateData);
@@ -325,6 +325,8 @@ class UserService {
                     facebook: ''
                 };
             }
+
+            userProfile.topGenres = Array.isArray(userProfile.topGenres) ? userProfile.topGenres : [];
 
             return userProfile;
         } catch (error) {

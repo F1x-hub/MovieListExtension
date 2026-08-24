@@ -4,6 +4,7 @@ class I18n {
     constructor() {
         this.currentLocale = 'en'; // Default
         this.locales = locales;
+        this.localeListeners = new Set();
     }
 
     async init() {
@@ -42,9 +43,22 @@ class I18n {
             this.currentLocale = lang;
             await chrome.storage.sync.set({ language: lang });
             this.translatePage();
+            this.localeListeners.forEach((listener) => {
+                try {
+                    listener(lang);
+                } catch (error) {
+                    console.warn('[I18n] Locale listener failed:', error);
+                }
+            });
             return true;
         }
         return false;
+    }
+
+    onLocaleChange(listener) {
+        if (typeof listener !== 'function') return () => {};
+        this.localeListeners.add(listener);
+        return () => this.localeListeners.delete(listener);
     }
 
     translatePage() {
@@ -105,8 +119,10 @@ class I18n {
 }
 
 export const i18n = new I18n();
+export { I18n };
 
 // Expose to window for non-module scripts
 if (typeof window !== 'undefined') {
     window.i18n = i18n;
+    window.I18n = I18n;
 }

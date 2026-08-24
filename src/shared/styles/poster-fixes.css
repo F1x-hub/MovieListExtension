@@ -42,8 +42,12 @@
 .movie-poster[src*="undefined"]::after,
 .movie-poster[src*="null"]::after,
 .movie-poster[src*="placeholder"]::after {
-    content: "🎬";
-    font-size: var(--font-size-3xl);
+    content: "";
+    width: 36px;
+    height: 36px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='2' width='20' height='20' rx='2.18' ry='2.18'%3E%3C/rect%3E%3Cline x1='7' y1='2' x2='7' y2='22'%3E%3C/line%3E%3Cline x1='17' y1='2' x2='17' y2='22'%3E%3C/line%3E%3Cline x1='2' y1='12' x2='22' y2='12'%3E%3C/line%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
     opacity: 0.7;
 }
 
@@ -127,8 +131,12 @@
 }
 
 .movie-poster[data-loading="true"]::after {
-    content: "⏳";
-    font-size: var(--font-size-lg);
+    content: "";
+    width: 24px;
+    height: 24px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'%3E%3C/circle%3E%3Cpolyline points='12 6 12 12 16 14'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
     opacity: 0.6;
     animation: pulse 1.5s ease-in-out infinite;
 }
@@ -151,7 +159,11 @@
 .movie-poster[src*="broken"]::after,
 .movie-poster[src*="error"]::after,
 .movie-poster[src*="404"]::after {
-    content: "🚫";
-    font-size: var(--font-size-2xl);
+    content: "";
+    width: 32px;
+    height: 32px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'%3E%3C/circle%3E%3Cline x1='4.93' y1='4.93' x2='19.07' y2='19.07'%3E%3C/line%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
     opacity: 0.7;
 }

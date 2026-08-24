@@ -8,12 +8,15 @@ class RatingService {
         this.collection = 'ratings';
     }
 
-    async invalidateRatingsCache(userId) {
+    async invalidateRatingsCache(userId = null) {
         try {
             if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-                const cacheKey = `ratings_cache_${userId}`;
-                await chrome.storage.local.remove([cacheKey]);
-                console.log('RatingService: Ratings cache invalidated for', userId);
+                const allStorage = await chrome.storage.local.get(null);
+                const keysToRemove = Object.keys(allStorage).filter(k => k.startsWith('ratings_cache_') || k === 'recent_ratings_cache');
+                if (keysToRemove.length > 0) {
+                    await chrome.storage.local.remove(keysToRemove);
+                    console.log('RatingService: Invalidated ratings caches:', keysToRemove);
+                }
             }
         } catch (error) {
             console.warn('RatingService: Failed to invalidate cache', error);
@@ -24,18 +27,68 @@ class RatingService {
      * Clear all cached average ratings from chrome.storage.local
      * These are stored under keys like 'averageRatings_...' by getBatchMovieAverageRatings
      */
-    async invalidateAverageRatingsCache() {
+    async invalidateAverageRatingsCache(movieId = null) {
         try {
             if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-                const allData = await chrome.storage.local.get(null);
-                const keysToRemove = Object.keys(allData).filter(key => key.startsWith('averageRatings_'));
-                if (keysToRemove.length > 0) {
-                    await chrome.storage.local.remove(keysToRemove);
-                    console.log(`RatingService: Cleared ${keysToRemove.length} average ratings cache entries`);
+                if (movieId) {
+                    const result = await chrome.storage.local.get(['average_ratings_dict']);
+                    const dict = result.average_ratings_dict || {};
+                    if (dict[movieId]) {
+                        delete dict[movieId];
+                        await chrome.storage.local.set({ average_ratings_dict: dict });
+                        console.log(`RatingService: Invalidated average rating cache for movie ${movieId}`);
+                    }
+                } else {
+                    await chrome.storage.local.remove(['average_ratings_dict']);
+                    console.log('RatingService: Invalidated entire average ratings cache');
                 }
             }
         } catch (error) {
             console.warn('RatingService: Failed to invalidate average ratings cache', error);
+        }
+    }
+
+    async migrateAverageRatingsCache() {
+        try {
+            if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return {};
+            
+            const allData = await chrome.storage.local.get(null);
+            const newDict = {};
+            const keysToRemove = [];
+
+            Object.keys(allData).forEach(key => {
+                if (key.startsWith('averageRatings_') && !key.endsWith('_timestamp')) {
+                    const averages = allData[key];
+                    const timestamp = allData[`${key}_timestamp`] || Date.now();
+                    
+                    if (averages && typeof averages === 'object') {
+                        Object.keys(averages).forEach(movieId => {
+                            const val = averages[movieId];
+                            if (val && typeof val === 'object') {
+                                newDict[movieId] = {
+                                    average: val.average || 0,
+                                    count: val.count || 0,
+                                    updatedAt: timestamp
+                                };
+                            }
+                        });
+                    }
+                    keysToRemove.push(key);
+                    keysToRemove.push(`${key}_timestamp`);
+                }
+            });
+
+            if (Object.keys(newDict).length > 0) {
+                await chrome.storage.local.set({ average_ratings_dict: newDict });
+                if (keysToRemove.length > 0) {
+                    await chrome.storage.local.remove(keysToRemove);
+                }
+                console.log(`RatingService: Successfully migrated legacy average ratings cache into average_ratings_dict. Removed legacy keys: ${keysToRemove.length}`);
+            }
+            return newDict;
+        } catch (error) {
+            console.error('RatingService: Failed to migrate average ratings cache:', error);
+            return {};
         }
     }
 
@@ -62,57 +115,105 @@ class RatingService {
                 throw new Error('Comment must be 500 characters or less');
             }
 
-            // Check if rating already exists
+            // Find existing rating doc via query before transaction
             const existingRating = await this.getRating(userId, movieId);
             
-            const ratingData = {
-                userId,
-                userName,
-                userPhoto,
-                movieId,
-                rating,
-                comment: comment.trim(),
-                createdAt: existingRating ? existingRating.createdAt : firebase.firestore.FieldValue.serverTimestamp(),
-                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-            };
-
-            // Set isFavorite and favoritedAt fields for new ratings
-            if (!existingRating) {
-                ratingData.isFavorite = false;
-                ratingData.favoritedAt = null;
-            } else {
-                // Preserve existing favorite status if updating
-                if (existingRating.isFavorite !== undefined) {
-                    ratingData.isFavorite = existingRating.isFavorite;
-                }
-                if (existingRating.favoritedAt !== undefined) {
-                    ratingData.favoritedAt = existingRating.favoritedAt;
-                }
-            }
+            const ratingVal = Number(rating);
+            const movieRef = this.db.collection('movies').doc(movieId.toString());
+            const ratingRef = existingRating?.id 
+                ? this.db.collection(this.collection).doc(existingRating.id)
+                : this.db.collection(this.collection).doc();
+            const localMovieCache = await this.getLocalMovieCacheForPromotion(movieId);
 
             let result;
-            if (existingRating) {
-                // Update existing rating
-                const ratingRef = this.db.collection(this.collection).doc(existingRating.id);
-                await ratingRef.update(ratingData);
-                result = { id: existingRating.id, ...ratingData };
-            } else {
-                // Create new rating
-                const docRef = await this.db.collection(this.collection).add(ratingData);
-                result = { id: docRef.id, ...ratingData };
-                
-                // Cache movie if it's the first rating and we have movie data
-                if (movieData) {
-                    try {
-                        const movieCacheService = window.firebaseManager?.getMovieCacheService();
-                        if (movieCacheService) {
-                            await movieCacheService.cacheRatedMovie(movieData);
-                            console.log('Movie cached after first rating:', movieData.name);
-                        }
-                    } catch (cacheError) {
-                        console.warn('Failed to cache movie after rating:', cacheError.message);
-                        // Don't fail the rating if caching fails
+            let promotedFromLocalCache = false;
+
+            await this.db.runTransaction(async (transaction) => {
+                // 1. READ DocumentReferences inside transaction
+                const movieDoc = await transaction.get(movieRef);
+                const ratingDoc = await transaction.get(ratingRef);
+
+                const currentMovieData = movieDoc.exists ? movieDoc.data() : {};
+                let ratingsSum = Number(currentMovieData.ratingsSum) || 0;
+                let ratingsCount = Number(currentMovieData.ratingsCount) || 0;
+
+                const ratingData = {
+                    userId,
+                    userName,
+                    userPhoto,
+                    movieId,
+                    rating: ratingVal,
+                    comment: comment.trim(),
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+
+                const actualExistingData = ratingDoc.exists ? ratingDoc.data() : null;
+
+                // 2. WRITE operations inside transaction
+                if (actualExistingData) {
+                    ratingData.createdAt = actualExistingData.createdAt || firebase.firestore.FieldValue.serverTimestamp();
+                    if (actualExistingData.isFavorite !== undefined) ratingData.isFavorite = actualExistingData.isFavorite;
+                    if (actualExistingData.favoritedAt !== undefined) ratingData.favoritedAt = actualExistingData.favoritedAt;
+
+                    transaction.update(ratingRef, ratingData);
+                    result = { id: ratingRef.id, ...ratingData };
+
+                    const oldRating = Number(actualExistingData.rating) || 0;
+                    ratingsSum += (ratingVal - oldRating);
+                } else {
+                    ratingData.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+                    ratingData.isFavorite = false;
+                    ratingData.favoritedAt = null;
+
+                    transaction.set(ratingRef, ratingData);
+                    result = { id: ratingRef.id, ...ratingData };
+
+                    ratingsSum += ratingVal;
+                    ratingsCount += 1;
+                }
+
+                const avgRating = ratingsCount > 0 ? Math.round((ratingsSum / ratingsCount) * 10) / 10 : 0;
+
+                const movieUpdates = {
+                    ratingsSum,
+                    ratingsCount,
+                    avgRating,
+                    hasCommunityRating: ratingsCount > 0,
+                    hasRatings: ratingsCount > 0,
+                    lastRatingUpdatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                };
+
+                if (movieDoc.exists) {
+                    transaction.update(movieRef, movieUpdates);
+                } else {
+                    promotedFromLocalCache = Boolean(localMovieCache);
+                    transaction.set(movieRef, {
+                        ...localMovieCache,
+                        kinopoiskId: movieId,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
+                        ...movieUpdates
+                    });
+                }
+            });
+
+            await this.verifyMovieRatingAggregate(movieRef, movieId);
+
+            if (promotedFromLocalCache) {
+                await this.removeLocalMovieCacheAfterPromotion(movieId);
+            }
+
+            // Always cache movie metadata when rating to ensure name, poster, and flags are set in Firestore
+            if (movieData) {
+                try {
+                    const movieCacheService = window.firebaseManager?.getMovieCacheService();
+                    if (movieCacheService) {
+                        await movieCacheService.cacheMovie(movieData, true);
+                        console.log('Movie cached after rating:', movieData.name || movieData.kinopoiskId);
                     }
+                } catch (cacheError) {
+                    console.warn('Failed to cache movie after rating:', cacheError.message);
                 }
             }
 
@@ -125,12 +226,11 @@ class RatingService {
                 }
             } catch (cacheError) {
                 console.warn('Failed to clear ratings cache after rating update:', cacheError.message);
-                // Don't fail the rating if cache clearing fails
             }
 
             // Invalidate average ratings cache (getBatchMovieAverageRatings uses its own cache)
             try {
-                await this.invalidateAverageRatingsCache();
+                await this.invalidateAverageRatingsCache(movieId);
             } catch (cacheError) {
                 console.warn('Failed to clear average ratings cache after rating update:', cacheError.message);
             }
@@ -147,16 +247,85 @@ class RatingService {
                 }
             } catch (watchlistError) {
                 console.warn('Failed to remove from watchlist after rating:', watchlistError.message);
-                // Don't fail the rating if watchlist removal fails
             }
 
             // Invalidate cache
             await this.invalidateRatingsCache(userId);
 
+            // Recalculate top-3 genres for user asynchronously
+            this.recalculateUserTopGenres(userId).catch(err => {
+                console.warn('RatingService: Non-critical failure in topGenres recalculation:', err);
+            });
+
             return result;
         } catch (error) {
             console.error('Error adding/updating rating:', error);
             throw new Error(`Failed to save rating: ${error.message}`, { cause: error });
+        }
+    }
+
+    async getLocalMovieCacheForPromotion(movieId) {
+        try {
+            if (typeof chrome === 'undefined' || !chrome.storage?.local) return null;
+            const key = `local_movie_cache_${movieId}`;
+            const stored = await chrome.storage.local.get(key);
+            const cachedMovie = stored[key];
+            if (!cachedMovie || typeof cachedMovie !== 'object') return null;
+
+            const { id, _lru, _cacheExpired, cachedAt, ...movieFields } = cachedMovie;
+            return movieFields;
+        } catch (error) {
+            console.warn('RatingService: Failed to read local movie cache for promotion', error);
+            return null;
+        }
+    }
+
+    async removeLocalMovieCacheAfterPromotion(movieId) {
+        try {
+            if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+                await chrome.storage.local.remove(`local_movie_cache_${movieId}`);
+            }
+        } catch (error) {
+            console.warn('RatingService: Failed to remove promoted local movie cache', error);
+        }
+    }
+
+    /**
+     * Logs incomplete rating aggregates immediately after a rating write.
+     * @param {firebase.firestore.DocumentReference} movieRef Movie document reference
+     * @param {number} movieId Kinopoisk movie ID
+     * @returns {Promise<void>}
+     */
+    async verifyMovieRatingAggregate(movieRef, movieId) {
+        try {
+            const movieSnapshot = await movieRef.get();
+            const data = movieSnapshot.exists ? movieSnapshot.data() : null;
+            const isComplete = Boolean(
+                data &&
+                data.hasCommunityRating === true &&
+                data.hasRatings === true &&
+                Number.isFinite(Number(data.ratingsCount)) &&
+                Number(data.ratingsCount) > 0 &&
+                Number.isFinite(Number(data.avgRating)) &&
+                data.lastRatingUpdatedAt
+            );
+
+            if (!isComplete) {
+                console.error('[RatingService] Incomplete movie rating aggregate after rating write', {
+                    movieId,
+                    exists: movieSnapshot.exists,
+                    hasCommunityRating: data?.hasCommunityRating,
+                    hasRatings: data?.hasRatings,
+                    ratingsCount: data?.ratingsCount,
+                    avgRating: data?.avgRating,
+                    lastRatingUpdatedAt: data?.lastRatingUpdatedAt
+                });
+            }
+        } catch (error) {
+            console.error('[RatingService] Failed to verify movie rating aggregate after rating write', {
+                movieId,
+                error: error.message
+            });
         }
     }
 
@@ -245,94 +414,58 @@ class RatingService {
         const startTime = performance.now();
         console.group('[RatingService] getBatchMovieAverageRatings');
         try {
-            // Check chrome.storage cache first
-            if (chrome && chrome.storage && chrome.storage.local) {
-                // NOTE: Using all IDs in a key is very risky and inefficient
-                const cacheKey = `averageRatings_${movieIds.sort().join('_')}`;
-                const cacheTimestampKey = `${cacheKey}_timestamp`;
-                const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
-                
-                try {
-                    const result = await chrome.storage.local.get([cacheKey, cacheTimestampKey]);
-                    
-                    if (result[cacheKey] && result[cacheTimestampKey]) {
-                        const age = Date.now() - result[cacheTimestampKey];
-                        if (age < CACHE_DURATION) {
-                            console.log(`[RatingService] Using cached batch averages. Time: ${(performance.now() - startTime).toFixed(2)}ms`);
-                            console.groupEnd();
-                            return result[cacheKey];
-                        }
-                    }
-                } catch (cacheError) {
-                    console.warn('[RatingService] Error reading from chrome.storage cache:', cacheError);
-                }
-            }
-            
-            console.log(`[RatingService] Cache miss. Fetching averages for ${movieIds.length} movies from Firestore...`);
-
-            // Load all ratings for these movies in batch (Firestore 'in' limit is 30)
-            const CHUNK_SIZE = 30;
-            const movieIdChunks = [];
-            for (let i = 0; i < movieIds.length; i += CHUNK_SIZE) {
-                movieIdChunks.push(movieIds.slice(i, i + CHUNK_SIZE));
+            if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) {
+                return await this.fetchAverageRatingsFromFirestore(movieIds);
             }
 
-            const allResults = [];
-            for (const chunk of movieIdChunks) {
-                const query = this.db.collection(this.collection)
-                    .where('movieId', 'in', chunk);
-                const snapshot = await query.get();
-                snapshot.forEach(doc => allResults.push(doc.data()));
-            }
-            
-            console.log(`[RatingService] Firestore fetched ${allResults.length} raw ratings for calculations`);
+            // Read the dict cache
+            let result = await chrome.storage.local.get(['average_ratings_dict']);
+            let dict = result.average_ratings_dict;
 
-            // Group ratings by movieId and calculate averages
-            const movieRatings = {};
-            
-            allResults.forEach(data => {
-                const movieId = data.movieId;
-                
-                if (!movieRatings[movieId]) {
-                    movieRatings[movieId] = { ratings: [], count: 0 };
-                }
-                
-                movieRatings[movieId].ratings.push(data.rating);
-                movieRatings[movieId].count++;
-            });
-            
-            // Calculate averages
+            // If empty, run migration
+            if (!dict || Object.keys(dict).length === 0) {
+                dict = await this.migrateAverageRatingsCache();
+            }
+
+            const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+            const now = Date.now();
             const averages = {};
-            for (const movieId of movieIds) {
-                if (movieRatings[movieId]) {
-                    const ratings = movieRatings[movieId].ratings;
-                    const total = ratings.reduce((sum, rating) => sum + rating, 0);
-                    const average = Math.round((total / ratings.length) * 10) / 10;
-                    averages[movieId] = { average, count: ratings.length };
+            const cacheMissIds = [];
+
+            movieIds.forEach(id => {
+                const cached = dict[id];
+                if (cached && (now - cached.updatedAt) < CACHE_DURATION) {
+                    averages[id] = {
+                        average: cached.average,
+                        count: cached.count
+                    };
                 } else {
-                    averages[movieId] = { average: 0, count: 0 };
+                    cacheMissIds.push(id);
                 }
-            }
-            
-            // Cache results in chrome.storage
-            if (chrome && chrome.storage && chrome.storage.local) {
-                const cacheKey = `averageRatings_${movieIds.sort().join('_')}`;
-                const cacheTimestampKey = `${cacheKey}_timestamp`;
+            });
+
+            if (cacheMissIds.length > 0) {
+                console.log(`[RatingService] Cache miss for ${cacheMissIds.length} of ${movieIds.length} movies. Fetching from Firestore...`);
+                const freshAverages = await this.fetchAverageRatingsFromFirestore(cacheMissIds);
                 
-                try {
-                    await chrome.storage.local.set({
-                        [cacheKey]: averages,
-                        [cacheTimestampKey]: Date.now()
-                    });
-                } catch (cacheError) {
-                    console.warn('[RatingService] Error caching to chrome.storage:', cacheError);
-                }
+                // Merge fresh averages into dict
+                Object.keys(freshAverages).forEach(id => {
+                    dict[id] = {
+                        average: freshAverages[id].average,
+                        count: freshAverages[id].count,
+                        updatedAt: now
+                    };
+                    averages[id] = freshAverages[id];
+                });
+
+                // Write dict back to storage
+                await chrome.storage.local.set({ average_ratings_dict: dict });
+            } else {
+                console.log(`[RatingService] Using cached average ratings. Time: ${(performance.now() - startTime).toFixed(2)}ms`);
             }
-            
-            console.log(`[RatingService] Batch average calculation complete. Time: ${(performance.now() - startTime).toFixed(2)}ms`);
+
             console.groupEnd();
             return averages;
-            
         } catch (error) {
             console.error('[RatingService] Error batch loading average ratings:', error);
             console.groupEnd();
@@ -346,17 +479,62 @@ class RatingService {
         }
     }
 
+    async fetchAverageRatingsFromFirestore(movieIds) {
+        // Load all ratings for these movies in batch (Firestore 'in' limit is 30)
+        const CHUNK_SIZE = 30;
+        const movieIdChunks = [];
+        for (let i = 0; i < movieIds.length; i += CHUNK_SIZE) {
+            movieIdChunks.push(movieIds.slice(i, i + CHUNK_SIZE));
+        }
+
+        const allResults = [];
+        for (const chunk of movieIdChunks) {
+            const query = this.db.collection(this.collection)
+                .where('movieId', 'in', chunk);
+            const snapshot = await query.get();
+            snapshot.forEach(doc => allResults.push(doc.data()));
+        }
+
+        const movieRatings = {};
+        allResults.forEach(data => {
+            const movieId = data.movieId;
+            if (!movieRatings[movieId]) {
+                movieRatings[movieId] = { ratings: [], count: 0 };
+            }
+            movieRatings[movieId].ratings.push(data.rating);
+            movieRatings[movieId].count++;
+        });
+
+        const averages = {};
+        for (const movieId of movieIds) {
+            if (movieRatings[movieId]) {
+                const ratings = movieRatings[movieId].ratings;
+                const total = ratings.reduce((sum, rating) => sum + rating, 0);
+                const average = Math.round((total / ratings.length) * 10) / 10;
+                averages[movieId] = { average, count: ratings.length };
+            } else {
+                averages[movieId] = { average: 0, count: 0 };
+            }
+        }
+        return averages;
+    }
+
     /**
      * Get all ratings chronologically (for feed)
      * @param {number} limit - Maximum number of ratings to return
-     * @param {string} lastDocId - Last document ID for pagination
+     * @param {string|DocumentSnapshot} lastDocInput - Last document ID or snapshot for pagination
+     * @param {string|null} userId - Optional user ID to filter ratings
      * @returns {Promise<Object>} - Ratings and pagination info
      */
-    async getAllRatings(limit = 50, lastDocInput = null) {
+    async getAllRatings(limit = 50, lastDocInput = null, userId = null) {
         try {
-            let query = this.db.collection(this.collection)
-                .orderBy('createdAt', 'desc')
-                .limit(limit);
+            let query = this.db.collection(this.collection);
+
+            if (userId) {
+                query = query.where('userId', '==', userId);
+            }
+
+            query = query.orderBy('createdAt', 'desc').limit(limit);
 
             if (lastDocInput) {
                 if (typeof lastDocInput === 'string') {
@@ -483,16 +661,125 @@ class RatingService {
                 throw new Error('Unauthorized to delete this rating');
             }
 
-            await ratingRef.delete();
+            const ratingData = ratingDoc.data();
+            const movieId = ratingData?.movieId;
+
+            if (movieId) {
+                const movieRef = this.db.collection('movies').doc(movieId.toString());
+                await this.db.runTransaction(async (transaction) => {
+                    // 1. All READ operations first
+                    const freshRatingDoc = await transaction.get(ratingRef);
+                    if (!freshRatingDoc.exists) {
+                        return;
+                    }
+                    const movieDoc = await transaction.get(movieRef);
+
+                    // 2. All WRITE operations second
+                    const freshRatingData = freshRatingDoc.data();
+                    transaction.delete(ratingRef);
+
+                    if (movieDoc.exists) {
+                        const currentMovieData = movieDoc.data();
+                        let ratingsSum = Math.max(0, (currentMovieData.ratingsSum || 0) - (freshRatingData.rating || 0));
+                        let ratingsCount = Math.max(0, (currentMovieData.ratingsCount || 0) - 1);
+                        let avgRating = ratingsCount > 0 ? Math.round((ratingsSum / ratingsCount) * 10) / 10 : 0;
+
+                        transaction.update(movieRef, {
+                            ratingsSum,
+                            ratingsCount,
+                            avgRating,
+                            hasCommunityRating: ratingsCount > 0,
+                            hasRatings: ratingsCount > 0,
+                            lastRatingUpdatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    }
+                });
+            } else {
+                await ratingRef.delete();
+            }
             
             // Invalidate cache
             await this.invalidateRatingsCache(userId);
-            await this.invalidateAverageRatingsCache();
+            await this.invalidateAverageRatingsCache(movieId);
+
+            // Recalculate top-3 genres for user asynchronously
+            this.recalculateUserTopGenres(userId).catch(err => {
+                console.warn('RatingService: Non-critical failure in topGenres recalculation:', err);
+            });
 
             return true;
         } catch (error) {
             console.error('Error deleting rating:', error);
             throw new Error(`Failed to delete rating: ${error.message}`, { cause: error });
+        }
+    }
+
+    /**
+     * Recalculate user's top-3 genres from all their ratings and update users/{userId}.topGenres
+     * @param {string} userId - Firebase Auth user ID
+     * @returns {Promise<Array<string>>} - Array of top 0-3 genre names
+     */
+    async recalculateUserTopGenres(userId) {
+        try {
+            if (!userId) return [];
+
+            const ratingsQuery = this.db.collection('ratings')
+                .where('userId', '==', userId);
+
+            const snapshot = await ratingsQuery.get();
+            const userRef = this.db.collection('users').doc(userId);
+
+            if (snapshot.empty) {
+                await userRef.update({
+                    topGenres: [],
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                return [];
+            }
+
+            const movieIdsSet = new Set();
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                if (data.movieId) {
+                    movieIdsSet.add(data.movieId.toString());
+                }
+            });
+
+            const movieIds = Array.from(movieIdsSet);
+            if (movieIds.length === 0) {
+                await userRef.update({
+                    topGenres: [],
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                return [];
+            }
+
+            const movieCacheService = window.firebaseManager?.getMovieCacheService();
+            let cachedMovies = {};
+            if (movieCacheService) {
+                cachedMovies = await movieCacheService.getBatchCachedMovies(movieIds);
+            }
+
+            const allGenres = [];
+            Object.values(cachedMovies).forEach(movie => {
+                if (Array.isArray(movie?.genres)) {
+                    allGenres.push(...movie.genres);
+                }
+            });
+
+            const topGenres = typeof calculateTopGenres === 'function'
+                ? calculateTopGenres(allGenres, 3)
+                : [];
+
+            await userRef.update({
+                topGenres,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+
+            return topGenres;
+        } catch (error) {
+            console.warn('RatingService: Failed to recalculate top genres:', error);
+            return [];
         }
     }
 

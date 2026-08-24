@@ -2,6 +2,8 @@ try {
     importScripts('../shared/config/kinopoisk.config.js');
     importScripts('../shared/utils/IconUtils.js');
     importScripts('../shared/config/spotify.config.js');
+    importScripts('../shared/config/theNumbersMappings.js');
+    importScripts('../shared/services/TheNumbersService.js');
 } catch (e) {
     console.error('Failed to import scripts:', e);
 }
@@ -9,24 +11,43 @@ try {
 chrome.runtime.onInstalled.addListener(() => {
     console.log('Movie Rating Extension installed');
     updateIconFromStorage();
+    setupTheNumbersRefreshAlarm();
 });
 
 chrome.runtime.onStartup.addListener(() => {
     updateIconFromStorage();
     setupAuthCheckAlarm();
+    setupTheNumbersRefreshAlarm();
 });
 
 function setupAuthCheckAlarm() {
     chrome.alarms.create('authCheck', { periodInMinutes: 60 });
 }
 
+function setupTheNumbersRefreshAlarm() {
+    chrome.alarms.create('theNumbersRefresh', { periodInMinutes: 24 * 60 });
+}
+
 chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === 'authCheck') {
         checkAuthToken();
+    } else if (alarm.name === 'theNumbersRefresh') {
+        refreshTrackedTheNumbersMovies();
     } else if (alarm.name === 'checkUpdates') {
         checkForUpdates();
     }
 });
+
+async function refreshTrackedTheNumbersMovies() {
+    if (typeof TheNumbersService !== 'function') return;
+    try {
+        const service = new TheNumbersService();
+        const results = await service.refreshTrackedMovies();
+        console.info('[TheNumbers] Daily refresh completed', results);
+    } catch (error) {
+        console.warn('[TheNumbers] Daily refresh failed:', error);
+    }
+}
 
 // Listen for storage changes from other parts of the extension
 chrome.storage.onChanged.addListener(async (changes, areaName) => {
@@ -881,20 +902,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 sendResponse({ success: false, error: error.message });
             });
         return true;
-    } else if (message.type === 'FETCH_HTML') {
-        fetch(message.url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-        })
-        .then(response => {
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            return response.text();
-        })
-        .then(html => sendResponse({ success: true, data: html }))
-        .catch(error => sendResponse({ success: false, error: error.message }));
-        
-        return true; // Keep channel open for async response
     } else if (message.type === 'GET_SPOTIFY_TOKEN') {
         getSpotifyToken()
             .then(token => sendResponse({ success: true, token: token }))
@@ -935,6 +942,57 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 sendResponse({ error: err.message });
             });
         return true;
+    } else if (message.type === 'KINOPOISK_OFFSCREEN_SCRAPE') {
+        // Coordinate browser-based search scraping via hidden offscreen iframe
+        handleKinopoiskOffscreenScrape(message.query, message.timeoutMs || 8000, {
+            requireRating: message.requireRating === true,
+            requestKey: message.requestKey,
+            priority: message.priority,
+            sessionId: message.sessionId
+        })
+            .then(result => sendResponse(result))
+            .catch(err => {
+                console.warn('[Background] Offscreen scrape error:', err);
+                sendResponse({ success: false, reason: err.message, items: [] });
+            });
+        return true;
+    } else if (message.type === 'KINOPOISK_MOVIE_RATINGS_OFFSCREEN') {
+        handleKinopoiskMoviePageRatingsOffscreen(message.kinopoiskId, message.timeoutMs || 8000, {
+            mediaType: message.mediaType,
+            requestKey: message.requestKey,
+            priority: message.priority,
+            sessionId: message.sessionId
+        })
+            .then(result => sendResponse(result))
+            .catch(err => {
+                console.warn('[Background] KP movie-page rating scrape error:', err);
+                sendResponse({ success: false, reason: err.message, ratings: null });
+            });
+        return true;
+    } else if (message.type === 'KINOPOISK_OFFSCREEN_CANCEL') {
+        const cancelled = cancelSearchRequest({
+            requestKey: message.requestKey || null,
+            requestId: message.requestId || null
+        });
+        sendResponse({ success: cancelled });
+        return false;
+    } else if (message.target === 'kinopoisk-search-coordinator') {
+        // Message from content script running inside the scraper iframe
+        if (_currentSearchRequest?.provider === 'kinopoisk'
+            || _currentSearchRequest?.provider === 'kinopoisk-detail') {
+            if (!message.requestId || !_currentSearchRequest.requestId || message.requestId === _currentSearchRequest.requestId) {
+                if (message.type === 'SCRAPE_RESULT_SUCCESS') {
+                    _currentSearchRequest.finish({ success: true, items: message.items || [] });
+                } else if (message.type === 'SCRAPE_MOVIE_RATINGS_SUCCESS') {
+                    _currentSearchRequest.finish({ success: true, ratings: message.ratings || null });
+                } else if (message.type === 'SCRAPE_RESULT_BLOCKED') {
+                    _currentSearchRequest.finish({ success: false, reason: message.reason || 'SCRAPE_BLOCKED_EVEN_WITH_SESSION', items: [] });
+                } else {
+                    _currentSearchRequest.finish({ success: false, reason: message.reason || 'SCRAPE_TIMEOUT', items: [] });
+                }
+            }
+        }
+        return false;
     } else if (message.type && message.type.startsWith('RADIO_')) {
         // Relay radio messages to the offscreen document
         ensureOffscreen()
@@ -948,8 +1006,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 });
 
-// --- Offscreen Document for Radio ---
+// --- Offscreen Document Coordinator (Radio & Search Scraper) ---
 let _offscreenPromise = null;
+let _currentSearchRequest = null;
+const _searchQueue = [];
+const _searchInFlight = new Map();
+const _recentSearchResults = new Map();
+let _searchSequence = 0;
+const SEARCH_RESULT_CACHE_TTL_MS = 30_000;
+
+const SEARCH_PRIORITY_WEIGHT = {
+    'visible-identity': 100,
+    'visible-ratings': 90,
+    'below-viewport': 40,
+    retry: 10
+};
+
 async function ensureOffscreen() {
     if (_offscreenPromise) return _offscreenPromise;
     _offscreenPromise = (async () => {
@@ -958,8 +1030,8 @@ async function ensureOffscreen() {
             if (!existing) {
                 await chrome.offscreen.createDocument({
                     url: 'src/offscreen/offscreen.html',
-                    reasons: ['AUDIO_PLAYBACK'],
-                    justification: 'Persistent anime radio playback across extension pages'
+                    reasons: ['AUDIO_PLAYBACK', 'DOM_SCRAPING', 'IFRAME_SCRIPTING'],
+                    justification: 'Background audio playback and browser-context search scraping'
                 });
             }
         } finally {
@@ -967,6 +1039,225 @@ async function ensureOffscreen() {
         }
     })();
     return _offscreenPromise;
+}
+
+async function handleKinopoiskOffscreenScrape(query, timeoutMs = 8000, options = {}) {
+    if (!query) return { success: false, reason: 'EMPTY_QUERY', items: [] };
+    return enqueueSearchRequest({
+        provider: 'kinopoisk',
+        query,
+        timeoutMs,
+        requireRating: options.requireRating === true,
+        requestKey: options.requestKey,
+        priority: options.priority || 'visible-identity',
+        sessionId: options.sessionId || null
+    });
+}
+
+async function handleKinopoiskMoviePageRatingsOffscreen(kinopoiskId, timeoutMs = 8000, options = {}) {
+    const numericId = Number(kinopoiskId);
+    if (!Number.isInteger(numericId) || numericId <= 0) {
+        return { success: false, reason: 'INVALID_KINOPOISK_ID', ratings: null };
+    }
+
+    return enqueueSearchRequest({
+        provider: 'kinopoisk-detail',
+        query: String(numericId),
+        mediaType: options.mediaType || null,
+        timeoutMs,
+        requestKey: options.requestKey || `kp-detail:${numericId}:${options.mediaType || 'movie'}`,
+        priority: options.priority || 'visible-ratings',
+        sessionId: options.sessionId || null
+    });
+}
+
+function getSearchRequestKey(item) {
+    if (item.requestKey) return String(item.requestKey);
+    return `${item.provider}:${String(item.query || '').trim().toLowerCase()}:${item.requireRating ? 'rating' : 'identity'}:${item.mediaType || ''}`;
+}
+
+function getSearchPriorityWeight(priority) {
+    return SEARCH_PRIORITY_WEIGHT[priority] || SEARCH_PRIORITY_WEIGHT['below-viewport'];
+}
+
+function enqueueSearchRequest(item) {
+    const requestKey = getSearchRequestKey(item);
+    const recent = _recentSearchResults.get(requestKey);
+    if (recent && recent.expiresAt > Date.now()) {
+        return Promise.resolve({
+            ...recent.result,
+            metrics: {
+                ...recent.result.metrics,
+                cacheHit: true,
+                inFlightHit: false,
+                queueWaitMs: 0,
+                serviceMs: 0
+            }
+        });
+    }
+    if (recent) _recentSearchResults.delete(requestKey);
+
+    const existing = _searchInFlight.get(requestKey);
+    if (existing) {
+        existing.inFlightHits += 1;
+        existing.consumerCount += 1;
+        return existing.promise;
+    }
+
+    const entry = {
+        ...item,
+        requestKey,
+        sequence: ++_searchSequence,
+        enqueuedAt: Date.now(),
+        inFlightHits: 0,
+        consumerCount: 1,
+        resolve: null,
+        promise: null,
+        finish: null,
+        requestId: null
+    };
+    entry.promise = new Promise(resolve => { entry.resolve = resolve; });
+    _searchInFlight.set(requestKey, entry);
+    _searchQueue.push(entry);
+    processSearchQueue();
+    return entry.promise;
+}
+
+function pickNextSearchIndex() {
+    let bestIndex = 0;
+    let bestScore = -Infinity;
+    const now = Date.now();
+    _searchQueue.forEach((item, index) => {
+        const ageBoost = Math.min(30, Math.max(0, now - item.enqueuedAt) / 1000);
+        const score = getSearchPriorityWeight(item.priority) + ageBoost;
+        if (score > bestScore || (score === bestScore && item.sequence < _searchQueue[bestIndex].sequence)) {
+            bestScore = score;
+            bestIndex = index;
+        }
+    });
+    return bestIndex;
+}
+
+function cancelSearchRequest({ requestKey = null, requestId = null } = {}) {
+    const entry = requestKey ? _searchInFlight.get(requestKey) : _currentSearchRequest;
+    if (!entry || (requestId && entry.requestId && requestId !== entry.requestId)) return false;
+
+    if (entry.consumerCount > 1) {
+        entry.consumerCount -= 1;
+        return true;
+    }
+
+    if (entry === _currentSearchRequest && typeof entry.finish === 'function') {
+        entry.finish({ success: false, reason: 'REQUEST_CANCELLED', items: [] });
+        return true;
+    }
+
+    const index = _searchQueue.indexOf(entry);
+    if (index >= 0) _searchQueue.splice(index, 1);
+    _searchInFlight.delete(entry.requestKey);
+    entry.resolve({
+        success: false,
+        reason: 'REQUEST_CANCELLED',
+        items: [],
+        requestId: entry.requestId,
+        metrics: {
+            requestId: entry.requestId,
+            requestKey: entry.requestKey,
+            provider: entry.provider,
+            queueWaitMs: Date.now() - entry.enqueuedAt,
+            serviceMs: 0,
+            totalMs: Date.now() - entry.enqueuedAt,
+            cacheHit: false,
+            inFlightHit: entry.inFlightHits > 0,
+            timeoutReason: 'REQUEST_CANCELLED'
+        }
+    });
+    return true;
+}
+
+async function processSearchQueue() {
+    if (_currentSearchRequest || _searchQueue.length === 0) {
+        return;
+    }
+
+    const item = _searchQueue.splice(pickNextSearchIndex(), 1)[0];
+    _currentSearchRequest = item;
+    const { provider, query, timeoutMs, resolve, requireRating, mediaType } = item;
+    const requestId = Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    const queueWaitMs = Date.now() - item.enqueuedAt;
+    const serviceStartedAt = Date.now();
+    let timeoutId = null;
+    let isDone = false;
+
+    const ratingFlag = requireRating ? '&agy_rating_1' : '';
+    const searchUrl = provider === 'kinopoisk-detail'
+            ? `https://www.kinopoisk.ru/${mediaType === 'tv-series' || mediaType === 'series' ? 'series' : 'film'}/${encodeURIComponent(query)}/#agy_req_${requestId}`
+        : `https://www.kinopoisk.ru/new-search/?text=${encodeURIComponent(query)}#agy_req_${requestId}${ratingFlag}`;
+
+    const finish = (result) => {
+        if (isDone) return;
+        isDone = true;
+        if (timeoutId) clearTimeout(timeoutId);
+        const metrics = {
+            requestId,
+            requestKey: item.requestKey,
+            provider,
+            queueWaitMs,
+            serviceMs: Date.now() - serviceStartedAt,
+            totalMs: Date.now() - item.enqueuedAt,
+            cacheHit: false,
+            inFlightHit: item.inFlightHits > 0,
+            timeoutReason: result?.reason && /TIMEOUT|CANCELLED/i.test(result.reason)
+                ? result.reason
+                : null
+        };
+        const finalResult = { ...result, requestId, metrics };
+        _currentSearchRequest = null;
+        _searchInFlight.delete(item.requestKey);
+        if (finalResult.success || finalResult.reason === 'SCRAPE_RESULT_SUCCESS') {
+            _recentSearchResults.set(item.requestKey, {
+                expiresAt: Date.now() + SEARCH_RESULT_CACHE_TTL_MS,
+                result: finalResult
+            });
+        }
+
+        // The iframe is the single physical resource. Wait for cleanup to be
+        // acknowledged before allowing the next request to load a URL.
+        Promise.resolve(chrome.runtime.sendMessage({
+            target: 'offscreen-scraper',
+            type: 'CLEANUP_SEARCH_FRAME'
+        })).catch(() => {}).finally(() => {
+            resolve(finalResult);
+            setTimeout(processSearchQueue, 50);
+        });
+    };
+
+    item.requestId = requestId;
+    item.finish = finish;
+    _currentSearchRequest = item;
+
+    try {
+        await ensureOffscreen();
+    } catch (err) {
+        console.warn('[Background] Offscreen creation error:', err);
+        finish({ success: false, reason: 'OFFSCREEN_INIT_FAILED', items: [] });
+        return;
+    }
+
+    if (isDone || _currentSearchRequest !== item) return;
+
+    timeoutId = setTimeout(() => {
+        finish({ success: false, reason: 'BACKGROUND_TIMEOUT', items: [] });
+    }, timeoutMs);
+
+    chrome.runtime.sendMessage({
+        target: 'offscreen-scraper',
+        type: 'LOAD_SEARCH_FRAME',
+        searchUrl,
+        requestId
+    }).catch(err => {
+        finish({ success: false, reason: 'OFFSCREEN_MESSAGE_FAILED', error: err.message, items: [] });
+    });
 }
 
 // --- Auto-stop radio when all extension pages are closed ---
@@ -1060,14 +1351,14 @@ async function fetchKinopoiskWithRotation(url, options = {}) {
 
 async function searchKinopoiskMovie(kpId, title, year) {
     if (kpId) {
-        const response = await fetchKinopoiskWithRotation(`https://api.kinopoisk.dev/v1.4/movie/${kpId}`);
+        const response = await fetchKinopoiskWithRotation(`https://api.poiskkino.dev/v1.4/movie/${kpId}`);
         if (!response.ok) {
             throw new Error(`Kinopoisk API error: ${response.status}`);
         }
         return await response.json();
     } else if (title) {
         // Search with more results to find the best match
-        const response = await fetchKinopoiskWithRotation(`https://api.kinopoisk.dev/v1.4/movie/search?page=1&limit=10&query=${encodeURIComponent(title)}`);
+        const response = await fetchKinopoiskWithRotation(`https://api.poiskkino.dev/v1.4/movie/search?page=1&limit=10&query=${encodeURIComponent(title)}`);
         if (!response.ok) {
             throw new Error(`Kinopoisk API error: ${response.status}`);
         }

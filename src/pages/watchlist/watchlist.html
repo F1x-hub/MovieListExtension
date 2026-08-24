@@ -20,7 +20,7 @@
     <link rel="preload" as="script" href="../../../libs/firebase-firestore-compat.js">
     <link rel="preconnect" href="https://firebaseio.com">
     <link rel="preconnect" href="https://firebasestorage.googleapis.com">
-    <link rel="dns-prefetch" href="https://api.kinopoisk.dev">
+    <link rel="dns-prefetch" href="https://api.poiskkino.dev">
     <link rel="stylesheet" href="../../shared/styles/report-widget.css">
 </head>
 <body>
@@ -90,9 +90,9 @@
             </div>
 
             <!-- Loading State -->
-            <div class="loading-section" id="loadingSection">
-                <div class="loading-spinner"></div>
-                <p>Loading your watchlist...</p>
+            <div class="loading-section app-loader app-loader--page" id="loadingSection" role="status" aria-live="polite">
+                <div class="app-loader__indicator" aria-hidden="true"></div>
+                <p class="app-loader__label">Loading your watchlist...</p>
             </div>
 
             <!-- Movies Grid -->
@@ -128,7 +128,7 @@
                     <div class="rating-header-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #eab308;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></div>
                     <h2 class="modal-title" id="ratingModalTitle">Rate This Movie</h2>
                 </div>
-                <button class="modal-close" id="ratingModalClose">×</button>
+                <button class="modal-close" id="ratingModalClose" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
             </div>
             <div class="modal-body">
                 <div class="movie-rating-card" id="movieRatingInfo">
@@ -202,6 +202,7 @@
     <script defer src="../../shared/services/RatingsCacheService.js"></script>
     <script defer src="../../shared/services/RatingService.js"></script>
     <script defer src="../../shared/services/MovieCacheService.js"></script>
+    <script defer src="../../shared/services/TmdbFallbackQueueService.js"></script>
     <script defer src="../../shared/services/KinopoiskService.js"></script>
     <script defer src="../../shared/services/UserService.js"></script>
     <script defer src="../../shared/services/WatchlistService.js"></script>
@@ -216,6 +217,7 @@
 
     <!-- Components -->
     <script defer src="../../shared/components/MovieCard.js"></script>
+    <script defer src="../../shared/components/BackToTop.js"></script>
     <script defer src="../../shared/components/Navigation.js"></script>
     <script defer src="../../shared/components/Router.js"></script>
 
@@ -224,4 +226,3 @@
     <script defer src="../../shared/components/ReportWidget.js"></script>
 </body>
 </html>
-

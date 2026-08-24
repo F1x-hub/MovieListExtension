@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Каталог | Movie Rating Extension</title>
+    <link rel="stylesheet" href="../../shared/styles/common.css">
+    <link rel="stylesheet" href="../../shared/styles/theme.css">
+    <link rel="stylesheet" href="../../shared/styles/components.css">
+    <link rel="stylesheet" href="../../shared/styles/navigation.css">
+    <link rel="stylesheet" href="../../shared/styles/movie-card.css">
+    <link rel="stylesheet" href="../../shared/styles/report-widget.css">
+    <link rel="stylesheet" href="catalog.css">
+</head>
+<body>
+    <main class="catalog-page" id="catalogPage">
+        <div class="catalog-shell">
+            <header class="catalog-hero">
+                <div class="catalog-hero__eyebrow">КАТАЛОГ / DISCOVERY</div>
+                <div class="catalog-hero__row">
+                    <div>
+                        <h1 id="catalogTitle">Все фильмы</h1>
+                        <p id="catalogDescription">Игровые фильмы без анимации</p>
+                    </div>
+                    <div class="catalog-hero__count" id="catalogCount" aria-live="polite">—</div>
+                </div>
+            </header>
+
+            <nav class="catalog-tabs" aria-label="Направление каталога">
+                <a href="catalog.html?category=films" data-catalog-category="films">Фильмы</a>
+                <a href="catalog.html?category=series" data-catalog-category="series">Сериалы</a>
+                <a href="catalog.html?category=cartoons" data-catalog-category="cartoons">Мультфильмы</a>
+                <a href="catalog.html?category=anime" data-catalog-category="anime">Аниме</a>
+            </nav>
+
+            <section class="catalog-controls" aria-label="Фильтры каталога">
+                <div class="catalog-control catalog-control--wide">
+                    <label for="catalogSort">Сортировка</label>
+                    <select id="catalogSort">
+                        <option value="popularity.desc">Популярные</option>
+                        <option value="vote_average.desc">По рейтингу</option>
+                        <option value="primary_release_date.desc">Новые фильмы</option>
+                    </select>
+                </div>
+                <div class="catalog-control">
+                    <label for="catalogYearFrom">Год от</label>
+                    <input id="catalogYearFrom" type="number" min="1870" max="2100" inputmode="numeric" placeholder="—">
+                </div>
+                <div class="catalog-control">
+                    <label for="catalogYearTo">Год до</label>
+                    <input id="catalogYearTo" type="number" min="1870" max="2100" inputmode="numeric" placeholder="—">
+                </div>
+                <div class="catalog-control catalog-control--wide">
+                    <label for="catalogGenre">Жанр</label>
+                    <select id="catalogGenre">
+                        <option value="">Все жанры</option>
+                        <option value="28">Боевик</option>
+                        <option value="12">Приключения</option>
+                        <option value="35">Комедия</option>
+                        <option value="80">Криминал</option>
+                        <option value="18">Драма</option>
+                        <option value="14">Фэнтези</option>
+                        <option value="27">Ужасы</option>
+                        <option value="9648">Детектив</option>
+                        <option value="10749">Мелодрама</option>
+                        <option value="878">Фантастика</option>
+                        <option value="53">Триллер</option>
+                    </select>
+                </div>
+                <div class="catalog-control catalog-control--country">
+                    <label for="catalogCountry">Страна</label>
+                    <input id="catalogCountry" type="text" maxlength="2" pattern="[A-Za-z]{2}" placeholder="RU" aria-label="Код страны, например RU">
+                </div>
+                <button class="catalog-reset" id="catalogReset" type="button">Сбросить</button>
+            </section>
+
+            <div class="catalog-status" id="catalogStatus" role="status" aria-live="polite"></div>
+
+            <section class="catalog-results" aria-label="Фильмы каталога">
+                <div class="catalog-grid" id="catalogGrid"></div>
+                <div class="catalog-empty" id="catalogEmpty" hidden>
+                    <div class="catalog-empty__mark">∅</div>
+                    <h2>Ничего не найдено</h2>
+                    <p>Измени фильтры или попробуй другое направление.</p>
+                    <button class="catalog-action" id="catalogEmptyReset" type="button">Сбросить фильтры</button>
+                </div>
+                <div class="catalog-error" id="catalogError" hidden>
+                    <h2>Каталог временно недоступен</h2>
+                    <p id="catalogErrorMessage">Не удалось загрузить эту страницу.</p>
+                    <button class="catalog-action" id="catalogRetry" type="button">Повторить</button>
+                </div>
+            </section>
+
+            <div class="catalog-load-more" id="catalogLoadMore" hidden>
+                <button class="catalog-action catalog-action--primary" id="catalogLoadMoreButton" type="button">Загрузить ещё</button>
+            </div>
+            <div class="catalog-sentinel" id="catalogSentinel" aria-hidden="true"></div>
+            <div class="catalog-progress" id="catalogProgress" hidden>
+                <span class="catalog-progress__dot"></span>
+                <span>Загружаем следующую страницу</span>
+            </div>
+        </div>
+    </main>
+
+    <script defer src="../../../libs/firebase-app-compat.js"></script>
+    <script defer src="../../../libs/firebase-auth-compat.js"></script>
+    <script defer src="../../../libs/firebase-firestore-compat.js"></script>
+    <script defer src="../../shared/firestore.js"></script>
+    <script defer src="../../shared/services/QuotaTrackerService.js"></script>
+    <script defer src="../../shared/config/kinopoisk.config.js"></script>
+    <script defer src="../../shared/config/tmdb.config.js"></script>
+    <script defer src="../../shared/config/catalogCategories.js"></script>
+    <script defer src="../../shared/utils/MediaClassifier.js"></script>
+    <script defer src="../../shared/services/TMDBService.js"></script>
+    <script defer src="../../shared/services/KinopoiskService.js"></script>
+    <script defer src="../../shared/services/KinopoiskPersonHtmlService.js"></script>
+    <script defer src="../../shared/services/KinopoiskRatingParsingService.js"></script>
+    <script defer src="../../shared/services/ImdbParsingService.js"></script>
+    <script defer src="../../shared/services/MovieRatingsEnrichmentService.js"></script>
+    <script defer src="../../shared/services/CatalogService.js"></script>
+    <script defer src="../../shared/errors/AppError.js"></script>
+    <script defer src="../../shared/errors/ErrorRegistry.js"></script>
+    <script defer src="../../shared/errors/modules/ProviderErrorModules.js"></script>
+    <script defer src="../../shared/errors/ErrorNormalizer.js"></script>
+    <script defer src="../../shared/errors/ErrorPresentation.js"></script>
+    <script defer src="../../shared/errors/ErrorDialog.js"></script>
+    <script defer src="../../shared/utils/Utils.js"></script>
+    <script defer src="../../shared/utils/IconUtils.js"></script>
+    <script defer src="../../shared/utils/Icons.js"></script>
+    <script defer src="../../shared/components/BackToTop.js"></script>
+    <script defer src="../../shared/components/Navigation.js"></script>
+    <script defer src="../../shared/components/MovieCard.js"></script>
+    <script defer src="../home/HomeMovieNavigationService.js"></script>
+    <script defer src="../home/HomeRenderer.js"></script>
+    <script type="module" src="../../shared/i18n/I18n.js"></script>
+    <script defer src="catalog.js"></script>
+    <script defer src="../../shared/components/ReportWidget.js"></script>
+</body>
+</html>

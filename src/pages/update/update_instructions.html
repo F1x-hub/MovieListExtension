@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Обновление расширения</title>
+    <link rel="stylesheet" href="../../shared/styles/back-to-top.css">
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -110,7 +111,7 @@
             <p>Скопируйте команду ниже и выполните её в <b>PowerShell</b> (запущенном от имени администратора):</p>
             <div id="commandBlock" class="code-block">Генерация команды...</div>
             <button id="copyBtn">Скопировать команду</button>
-            <span id="copyMsg" class="success-msg">✅ Скопировано!</span>
+            <span id="copyMsg" class="success-msg"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><polyline points="20 6 9 17 4 12"></polyline></svg>Скопировано!</span>
         </div>
 
         <div class="step">
@@ -124,6 +125,7 @@
         </div>
     </div>
 
+    <script src="../../shared/components/BackToTop.js"></script>
     <script src="update_instructions.js"></script>
 </body>
 </html>

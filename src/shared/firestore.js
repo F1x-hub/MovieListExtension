@@ -8,6 +8,7 @@ class FirebaseManager {
         this.auth = null;
         this.user = null;
         this.isInitialized = false;
+        this.isAuthReady = false;
         this.tokenRefreshTimeout = null; // For scheduled token refresh
         this.init();
     }
@@ -46,8 +47,44 @@ class FirebaseManager {
 
             this.auth.onAuthStateChanged((user) => {
                 this.user = user;
+                this.isAuthReady = true;
                 this.onAuthStateChanged(user);
             });
+
+            // Listen for cross-tab/cross-context auth state changes via chrome.storage
+            if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+                chrome.storage.onChanged.addListener(async (changes, namespace) => {
+                    if (namespace === 'local' && (changes.user !== undefined || changes.isAuthenticated !== undefined)) {
+                        const newStorageUser = changes.user ? changes.user.newValue : null;
+
+                        const currentUid = this.user ? this.user.uid : null;
+                        const newUid = newStorageUser ? newStorageUser.uid : null;
+
+                        if (currentUid !== newUid) {
+                            if (!newStorageUser) {
+                                this.user = null;
+                                if (this.auth && this.auth.currentUser) {
+                                    try {
+                                        await this.auth.signOut();
+                                    } catch {
+                                        // Ignore signOut error during cross-tab sync
+                                    }
+                                }
+                            } else {
+                                if (this.auth && this.auth.currentUser && this.auth.currentUser.uid === newUid) {
+                                    this.user = this.auth.currentUser;
+                                } else {
+                                    this.user = newStorageUser;
+                                }
+                            }
+
+                            window.dispatchEvent(new CustomEvent('authStateChanged', {
+                                detail: { user: this.user, isAuthenticated: !!this.user, source: 'cross_tab_sync' }
+                            }));
+                        }
+                    }
+                });
+            }
         } catch (error) {
             console.error('Firebase initialization error:', error);
             this.isInitialized = false;
@@ -841,22 +878,35 @@ class FirebaseManager {
         return this.user || (this.auth ? this.auth.currentUser : null);
     }
 
-    async waitForAuthReady() {
+    async waitForAuthReady(timeoutMs = 1000) {
+        if (this.isAuthReady) {
+            return this.getCurrentUser();
+        }
+
         return new Promise((resolve) => {
-            if (this.user !== null) {
-                resolve();
-                return;
+            let timer = null;
+            let handler = null;
+            let unsubscribe = null;
+
+            const finish = () => {
+                if (timer) clearTimeout(timer);
+                if (handler) window.removeEventListener('authStateChanged', handler);
+                if (unsubscribe) unsubscribe();
+                resolve(this.getCurrentUser());
+            };
+
+            timer = setTimeout(finish, timeoutMs);
+
+            handler = () => {
+                finish();
+            };
+            window.addEventListener('authStateChanged', handler);
+
+            if (this.auth && typeof this.auth.onAuthStateChanged === 'function') {
+                unsubscribe = this.auth.onAuthStateChanged(() => {
+                    finish();
+                });
             }
-
-            const unsubscribe = this.auth.onAuthStateChanged((user) => {
-                unsubscribe();
-                resolve();
-            });
-
-            setTimeout(() => {
-                unsubscribe();
-                resolve();
-            }, 3000);
         });
     }
 
@@ -1091,6 +1141,78 @@ class FirebaseManager {
             this.watchingService = new WatchingService(this);
         }
         return this.watchingService;
+    }
+
+    getHomeCacheService() {
+        if (!this.homeCacheService) {
+            if (typeof HomeCacheService === 'undefined') {
+                throw new Error('HomeCacheService class not found. Check if HomeCacheService.js is loaded.');
+            }
+            this.homeCacheService = new HomeCacheService(this);
+        }
+        return this.homeCacheService;
+    }
+
+    getIdMappingService() {
+        if (!this.idMappingService) {
+            if (typeof IdMappingService === 'undefined') {
+                throw new Error('IdMappingService class not found. Check if IdMappingService.js is loaded.');
+            }
+            this.idMappingService = new IdMappingService(this.getKinopoiskService?.());
+        }
+        return this.idMappingService;
+    }
+
+    getTMDBService() {
+        if (!this.tmdbService) {
+            if (typeof TMDBService === 'undefined') {
+                throw new Error('TMDBService class not found. Check if TMDBService.js is loaded.');
+            }
+            this.tmdbService = new TMDBService();
+        }
+        return this.tmdbService;
+    }
+
+    getMediaAggregatorService() {
+        if (!this.mediaAggregatorService) {
+            if (typeof MediaAggregatorService === 'undefined') {
+                throw new Error('MediaAggregatorService class not found. Check if MediaAggregatorService.js is loaded.');
+            }
+            this.mediaAggregatorService = new MediaAggregatorService({
+                kinopoiskService: this.getKinopoiskService?.(),
+                tmdbService: this.getTMDBService?.(),
+                idMappingService: this.getIdMappingService?.(),
+                movieCacheService: this.getMovieCacheService?.()
+            });
+        }
+        return this.mediaAggregatorService;
+    }
+
+    getRecommendationService() {
+        if (!this.recommendationService) {
+            if (typeof RecommendationService === 'undefined') {
+                throw new Error('RecommendationService class not found. Check if RecommendationService.js is loaded.');
+            }
+            this.recommendationService = new RecommendationService({
+                tmdbService: this.getTMDBService?.(),
+                idMappingService: this.getIdMappingService?.()
+            });
+        }
+        return this.recommendationService;
+    }
+
+    getFranchiseService() {
+        if (!this.franchiseService) {
+            if (typeof FranchiseService === 'undefined') {
+                throw new Error('FranchiseService class not found. Check if FranchiseService.js is loaded.');
+            }
+            this.franchiseService = new FranchiseService({
+                tmdbService: this.getTMDBService?.(),
+                idMappingService: this.getIdMappingService?.(),
+                kinopoiskService: this.getKinopoiskService?.()
+            });
+        }
+        return this.franchiseService;
     }
 }
 

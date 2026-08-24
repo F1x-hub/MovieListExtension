@@ -1,6 +1,7 @@
 /**
+ * @deprecated Retired in Phase 1I-B. Replaced by RecommendationService (TMDB Recommendations + Deficit Fallback).
  * SimilarMoviesParsingService - Parses movie posters from kinopoisk.ru pages
- * Used to fetch high-quality posters for similar movies section
+ * Retained strictly for backwards-compatibility reference.
  */
 class SimilarMoviesParsingService {
     constructor() {

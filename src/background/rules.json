@@ -46,5 +46,129 @@
                 "xmlhttprequest"
             ]
         }
+    },
+    {
+        "id": 3,
+        "priority": 1,
+        "action": {
+            "type": "modifyHeaders",
+            "responseHeaders": [
+                {
+                    "header": "access-control-allow-origin",
+                    "operation": "set",
+                    "value": "*"
+                },
+                {
+                    "header": "access-control-allow-methods",
+                    "operation": "set",
+                    "value": "GET, POST, OPTIONS, HEAD"
+                },
+                {
+                    "header": "access-control-allow-headers",
+                    "operation": "set",
+                    "value": "*"
+                }
+            ]
+        },
+        "condition": {
+            "urlFilter": "api.poiskkino.dev",
+            "resourceTypes": [
+                "xmlhttprequest"
+            ]
+        }
+    },
+    {
+        "id": 4,
+        "priority": 1,
+        "action": {
+            "type": "modifyHeaders",
+            "responseHeaders": [
+                {
+                    "header": "access-control-allow-origin",
+                    "operation": "set",
+                    "value": "*"
+                },
+                {
+                    "header": "access-control-allow-methods",
+                    "operation": "set",
+                    "value": "GET, POST, OPTIONS, HEAD"
+                },
+                {
+                    "header": "access-control-allow-headers",
+                    "operation": "set",
+                    "value": "*"
+                }
+            ]
+        },
+        "condition": {
+            "urlFilter": "api.kinopoisk.dev",
+            "resourceTypes": [
+                "xmlhttprequest"
+            ]
+        }
+    },
+    {
+        "id": 5,
+        "priority": 1,
+        "action": {
+            "type": "modifyHeaders",
+            "responseHeaders": [
+                {
+                    "header": "access-control-allow-origin",
+                    "operation": "set",
+                    "value": "*"
+                },
+                {
+                    "header": "access-control-allow-methods",
+                    "operation": "set",
+                    "value": "GET, POST, OPTIONS, HEAD"
+                },
+                {
+                    "header": "access-control-allow-headers",
+                    "operation": "set",
+                    "value": "*"
+                }
+            ]
+        },
+        "condition": {
+            "urlFilter": "rutube.ru",
+            "resourceTypes": [
+                "xmlhttprequest",
+                "media",
+                "other"
+            ]
+        }
+    },
+    {
+        "id": 6,
+        "priority": 1,
+        "action": {
+            "type": "modifyHeaders",
+            "responseHeaders": [
+                {
+                    "header": "access-control-allow-origin",
+                    "operation": "set",
+                    "value": "*"
+                },
+                {
+                    "header": "access-control-allow-methods",
+                    "operation": "set",
+                    "value": "GET, POST, OPTIONS, HEAD"
+                },
+                {
+                    "header": "access-control-allow-headers",
+                    "operation": "set",
+                    "value": "*"
+                }
+            ]
+        },
+        "condition": {
+            "urlFilter": "rtbcdn.ru",
+            "resourceTypes": [
+                "xmlhttprequest",
+                "media",
+                "other"
+            ]
+        }
     }
 ]

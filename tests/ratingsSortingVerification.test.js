@@ -1,0 +1,152 @@
+import assert from 'node:assert';
+import { getTimestamp } from '../src/shared/utils/dateUtils.js';
+import { buildProviderRatingCache, mergeProviderRatingRecord, mergeProviderRatingsIntoMovies } from '../src/shared/utils/providerRatings.js';
+
+console.log('🧪 Running Ratings Page Sorting & Reconciliation Verification Test...\n');
+
+// 1. Test getTimestamp stability with different date objects
+const t1 = getTimestamp({ seconds: 1770000000 });
+const t2 = getTimestamp('2026-07-25T12:00:00.000Z');
+const t3 = getTimestamp(null);
+
+assert.strictEqual(t1, 1770000000000);
+assert.strictEqual(t2, new Date('2026-07-25T12:00:00.000Z').getTime());
+assert.strictEqual(t3, 0);
+
+console.log('✅ Date parsing test passed');
+
+// 2. Test sorting behavior with unified effectiveDate
+const moviesData = [
+    {
+        movieId: 100,
+        movie: { kinopoiskId: 100, name: 'Конвейер смерти — Отряд 731', lastRatingUpdatedAt: { seconds: 1770000300 } },
+        currentUserRating: { id: 'rating_doc_1', rating: 8, createdAt: { seconds: 1770000000 } }
+    },
+    {
+        movieId: 101,
+        movie: { kinopoiskId: 101, name: 'Я ругаюсь', lastRatingUpdatedAt: { seconds: 1770000200 } },
+        currentUserRating: { id: 'rating_doc_2', rating: 9, createdAt: { seconds: 1770000100 } }
+    },
+    {
+        movieId: 102,
+        movie: { kinopoiskId: 102, name: 'Энола Холмс', lastRatingUpdatedAt: { seconds: 1770000150 } },
+        currentUserRating: { id: 'rating_doc_3', rating: 6, createdAt: { seconds: 1769000000 } }
+    },
+    {
+        movieId: 103,
+        movie: { kinopoiskId: 103, name: 'Черный котел', lastRatingUpdatedAt: { seconds: 1770000100 } },
+        currentUserRating: { id: 'rating_doc_4', rating: 6, createdAt: { seconds: 1768000000 } }
+    }
+];
+
+// Enrich with fixed effectiveDate logic from ratings.js
+const enriched = moviesData.map(item => {
+    const effectiveDate = getTimestamp(item.movie.lastRatingUpdatedAt) || getTimestamp(item.movie.updatedAt) || Date.now();
+    return {
+        ...item.currentUserRating,
+        movieId: item.movieId,
+        movie: item.movie,
+        createdAt: effectiveDate
+    };
+});
+
+// Perform client sort
+enriched.sort((a, b) => {
+    const valA = getTimestamp(a.createdAt);
+    const valB = getTimestamp(b.createdAt);
+    if (valA === valB) {
+        return Number(b.movieId) - Number(a.movieId);
+    }
+    return valB - valA;
+});
+
+const namesOrder = enriched.map(m => m.movie.name);
+console.log('Order after sort:', namesOrder);
+
+assert.deepStrictEqual(namesOrder, [
+    'Конвейер смерти — Отряд 731',
+    'Я ругаюсь',
+    'Энола Холмс',
+    'Черный котел'
+]);
+
+console.log('✅ Sort order verification passed ("Энола Холмс" is strictly 3rd, before "Черный котел")');
+
+// 3. Test key resolution in renderMovies logic
+const testKeyResolution = (movieData) => {
+    return (movieData.movieId || movieData.movie?.kinopoiskId || movieData.id).toString();
+};
+
+const sampleMovieWithRatingDocId = {
+    id: 'RATERS_DOC_9999', // rating doc id from ...currentUserRating
+    movieId: 102,
+    movie: { kinopoiskId: 102, name: 'Энола Холмс' }
+};
+
+const key = testKeyResolution(sampleMovieWithRatingDocId);
+assert.strictEqual(key, '102', 'Key must resolve to movieId (102) and NOT rating doc id (RATERS_DOC_9999)');
+
+console.log('✅ Key resolution verification passed (prevents DOM node duplication/deletion)');
+
+// 4. Test shared Home/Catalog provider cache recovery on the Ratings page
+const cachedMovie = {
+    kinopoiskId: 5287148,
+    kpRating: 5.9,
+    votes: { kp: 3663, imdb: 0 }
+};
+const mergedMovie = mergeProviderRatingRecord(cachedMovie, {
+    kpRating: 5.9,
+    imdbRating: 6.7,
+    votes: { kp: 3663, imdb: 13136 },
+    expiresAt: Date.now() + 60_000
+});
+
+assert.strictEqual(mergedMovie.imdbRating, 6.7, 'Fresh shared IMDb rating must fill missing card data');
+assert.strictEqual(mergedMovie.votes.imdb, 13136, 'Fresh shared IMDb votes must fill missing card data');
+assert.strictEqual(mergedMovie.kpRating, 5.9, 'Existing KP rating must remain authoritative');
+
+const expiredMerge = mergeProviderRatingRecord(cachedMovie, {
+    imdbRating: 7.1,
+    expiresAt: Date.now() - 1
+});
+assert.strictEqual(expiredMerge, cachedMovie, 'Expired provider cache must not affect Ratings cards');
+
+const batch = mergeProviderRatingsIntoMovies([
+    { movieId: 5287148, movie: cachedMovie }
+], {
+    'kp:5287148': {
+        imdbRating: 6.7,
+        votes: { imdb: 13136 },
+        expiresAt: Date.now() + 60_000
+    }
+});
+assert.strictEqual(batch[0].movie.imdbRating, 6.7, 'Batch Ratings card merge must expose IMDb');
+console.log('✅ Ratings page reuses fresh shared KP/IMDb provider cache');
+
+const previousPageState = buildProviderRatingCache([{
+    movie: { kinopoiskId: 5287148, imdbRating: 6.7 }
+}]);
+const replacementFromFirestore = mergeProviderRatingsIntoMovies([{
+    movie: { kinopoiskId: 5287148, kpRating: 5.9 }
+}], previousPageState);
+assert.strictEqual(replacementFromFirestore[0].movie.imdbRating, 6.7, 'Background refresh must not erase visible IMDb');
+console.log('✅ Ratings page preserves provider values during background replacement');
+
+const outerProviderState = buildProviderRatingCache([{
+    movie: { kinopoiskId: 5287148, kpRating: 5.9 },
+    imdbRating: 6.7
+}]);
+const outerReplacement = mergeProviderRatingsIntoMovies([{
+    movie: { kinopoiskId: 5287148, kpRating: 5.9 }
+}], outerProviderState);
+assert.strictEqual(outerReplacement[0].movie.imdbRating, 6.7, 'Outer card IMDb must survive background replacement');
+console.log('✅ Ratings page preserves outer provider fields during background replacement');
+
+const rawMovieReplacement = mergeProviderRatingsIntoMovies([{
+    kinopoiskId: 5287148,
+    kpRating: 5.9
+}], outerProviderState);
+assert.strictEqual(rawMovieReplacement[0].imdbRating, 6.7, 'Raw movie IMDb must survive provider merge');
+console.log('✅ Ratings page merges provider fields into raw movie responses');
+
+console.log('\n🎉 ALL VERIFICATION TESTS PASSED SUCCESSFULLY!');

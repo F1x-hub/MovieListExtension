@@ -5,12 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Profile - Movie Rating Extension</title>
     
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
     <!-- Styles -->
     <link rel="stylesheet" href="../../shared/styles/common.css">
     <link rel="stylesheet" href="../../shared/styles/theme.css">
     <link rel="stylesheet" href="../../shared/styles/components.css">
     <link rel="stylesheet" href="../../shared/styles/navigation.css">
     <link rel="stylesheet" href="../../shared/styles/profile.css">
+    <link rel="stylesheet" href="../../shared/styles/report-widget.css">
     
     <!-- Firebase -->
     <script src="../../../libs/firebase-app-compat.js"></script>
@@ -23,22 +29,25 @@
     <script src="../../shared/services/RatingsCacheService.js"></script>
     <script src="../../shared/services/RatingService.js"></script>
     <script src="../../shared/services/MovieCacheService.js"></script>
+    <script src="../../shared/services/TmdbFallbackQueueService.js"></script>
     <script src="../../shared/services/KinopoiskService.js"></script>
     <script src="../../shared/services/UserService.js"></script>
     <script src="../../shared/services/WatchlistService.js"></script>
     <script src="../../shared/services/WatchingService.js"></script>
     <script src="../../shared/services/FavoriteService.js"></script>
     <script src="../../shared/services/CollectionService.js"></script>
+    <script src="../../shared/services/ProgressService.js"></script>
     <script src="../../shared/services/ImageCacheService.js"></script>
     <script src="../../shared/services/ProfileService.js"></script>
     <script src="../../shared/utils/Utils.js"></script>
+    <script src="../../shared/utils/genreStats.js"></script>
     <script src="../../shared/utils/IconUtils.js"></script>
     <script src="../../shared/utils/Icons.js"></script>
     
     <!-- Components -->
+    <script src="../../shared/components/BackToTop.js"></script>
     <script src="../../shared/components/Navigation.js"></script>
     <script src="../../shared/components/Router.js"></script>
-    <link rel="stylesheet" href="../../shared/styles/report-widget.css">
 </head>
 <body>
     <!-- Navigation will be inserted here by Navigation.js -->
@@ -48,91 +57,201 @@
         <div class="profile-container">
             <!-- Profile Header -->
             <div class="profile-header" id="profileHeader">
-                <div class="profile-cover"></div>
-                <div class="profile-content">
-                    <div class="profile-photo" id="profilePhoto">
-                        <img id="profilePhotoImg" src="" alt="Profile" style="display: none;">
-                        <div class="profile-photo-placeholder" id="profilePhotoPlaceholder">
-                            <span id="profileInitials">U</span>
-                        </div>
-                    </div>
-                    <div class="profile-info">
-                        <h1 class="profile-name primary-name" id="profileName">Loading...</h1>
-                        <p class="profile-username secondary-name" id="profileUsername">username</p>
-                        <p class="profile-bio" id="profileBio" style="display: none;"></p>
-                        <div class="profile-meta" id="profileMeta">
-                            <span class="meta-item" id="profileJoinDate" style="display: none;">
-                                <span class="meta-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg></span>
-                                <span id="joinDateText"></span>
-                            </span>
-                            <span class="meta-item" id="profileFavoriteGenre" style="display: none;">
-                                <span class="meta-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 100 100" fill="currentColor"><path d="M43.309 79.586c.012.422-.148.832-.445 1.137a1.566 1.566 0 0 1-2.25 0 1.57 1.57 0 0 1-.446-1.137c0-3.348-3.543-6.07-7.898-6.07s-7.898 2.722-7.898 6.07a1.57 1.57 0 0 1-1.57 1.57 1.57 1.57 0 0 1-1.575-1.57c0-5.078 4.953-9.21 11.043-9.21 6.086 0 11.04 4.128 11.04 9.21m6.246-24.363a1.57 1.57 0 0 0-1.57 1.57 4.437 4.437 0 0 1-8.871 0 1.57 1.57 0 0 0-3.14 0 7.577 7.577 0 1 0 15.152 0 1.566 1.566 0 0 0-1.57-1.57m-23.016 1.57a1.573 1.573 0 0 0-2.7-1.137 1.58 1.58 0 0 0-.44 1.137 4.437 4.437 0 1 1-8.875 0 1.576 1.576 0 0 0-1.57-1.613 1.56 1.56 0 0 0-1.126.477 1.57 1.57 0 0 0-.445 1.136 7.578 7.578 0 1 0 15.156 0m72.148-21.09c.09 9.188-3.437 16.617-10.488 22.094-.043.035-.078.063-.121.102a1.5 1.5 0 0 1-.555.32c-.05.016-.093.031-.148.055a27.2 27.2 0 0 1-10.32 2.11 28.4 28.4 0 0 1-16.18-5.434c-.844 11.832-3.258 21.348-7.207 28.352-4.914 8.71-12.285 13.797-21.914 15.12-.063.008-.11.02-.18.032l.004-.004a1.5 1.5 0 0 1-.644 0c-.063-.012-.11-.023-.18-.031-9.625-1.32-17-6.41-21.91-15.117-4.79-8.492-7.324-20.668-7.531-36.207l-.004.004a4.2 4.2 0 0 1 2.129-3.653 57.5 57.5 0 0 1 27.742-8.828h.148c4.293.2 8.55.903 12.684 2.094q-1.799-2.69-3.574-5.668a3.98 3.98 0 0 1 .012-4A52.7 52.7 0 0 1 58.427 7.325q.06-.04.125-.074a52.73 52.73 0 0 1 26.066-5.707 3.97 3.97 0 0 1 3.468 1.992c6.946 12.41 10.516 23.234 10.602 32.168zM58.058 47.055c0-.136.008-.547-.633-.941h-.004a54.45 54.45 0 0 0-26.168-8.36A54.5 54.5 0 0 0 5.085 46.11c-.64.395-.636.809-.632.941.199 15 2.597 26.676 7.125 34.703 4.468 7.918 10.879 12.352 19.602 13.555l.074.012.07-.012c8.723-1.199 15.137-5.632 19.602-13.555 4.531-8.023 6.93-19.699 7.133-34.699zm37.488-11.32c-.086-8.402-3.516-18.723-10.203-30.668-.058-.101-.207-.367-.82-.386l.004.003a49.6 49.6 0 0 0-24.47 5.325A49.7 49.7 0 0 0 43.21 28.536c-.293.539-.133.804-.075.902 1.942 3.262 3.922 6.273 5.891 8.973v-.004a62 62 0 0 1 10.043 5.035 4.19 4.19 0 0 1 2.125 3.656q-.029 2.11-.11 4.13c8.259 6.3 16.478 7.651 25.11 4.136l.043-.02.039-.031c6.32-4.906 9.351-11.312 9.27-19.578m-12.414-4.93a1.57 1.57 0 0 0-.574 2.145c1.492 2.586-.047 6.277-3.43 8.235a8.17 8.17 0 0 1-5.297 1.097 4.8 4.8 0 0 1-3.547-2.242 1.57 1.57 0 0 0-2.144-.578 1.576 1.576 0 0 0-.578 2.148 7.9 7.9 0 0 0 5.781 3.778c.516.078 1.043.12 1.566.12a11.64 11.64 0 0 0 5.786-1.6c4.89-2.821 6.937-8.438 4.578-12.524a1.57 1.57 0 0 0-2.14-.578zm-15.312 1a7.06 7.06 0 0 0-9.648-2.581 7.06 7.06 0 0 0-2.582 9.644 1.567 1.567 0 0 0 2.16.606 1.565 1.565 0 0 0 .558-2.172 3.922 3.922 0 0 1 6.793-3.922 1.57 1.57 0 0 0 2.72-1.57zM83 17.28a7.064 7.064 0 0 0-7.945 10.351 1.572 1.572 0 1 0 2.722-1.57 3.923 3.923 0 0 1 1.453-5.32 3.926 3.926 0 0 1 5.34 1.402 1.574 1.574 0 0 0 2.125.539c.735-.426 1-1.363.594-2.113A7.02 7.02 0 0 0 83 17.278z"/></svg></span>
-                                <span id="favoriteGenreText"></span>
-                            </span>
-                        </div>
-                        <div class="profile-menu" id="profileMenu" style="display: none;">
-                            <button class="btn-profile-menu" id="profileMenuBtn">
-                                <span class="menu-icon">⋮</span>
-                            </button>
-                            <div class="profile-dropdown" id="profileDropdown">
-                                <button class="dropdown-item" id="editProfileItem">
-                                    <span class="dropdown-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></span>
-                                    <span data-i18n="profile.edit_profile">Edit Profile</span>
-                                </button>
+                <!-- Cover Banner -->
+                <div class="profile-cover">
+                    <div class="profile-cover-gradient"></div>
+                </div>
+                
+                <!-- Action & Avatar row directly below cover -->
+                <div class="profile-nav-bar">
+                    <!-- Floating Avatar -->
+                    <div class="profile-photo-wrapper">
+                        <div class="profile-photo" id="profilePhoto">
+                            <img id="profilePhotoImg" src="" alt="Profile" style="display: none;">
+                            <div class="profile-photo-placeholder" id="profilePhotoPlaceholder">
+                                <span id="profileInitials">U</span>
                             </div>
                         </div>
                     </div>
+
+                    <!-- Header Actions -->
+                    <div class="profile-actions-wrapper" id="profileMenu" style="display: none;">
+                        <button class="btn-profile-action" id="headerEditBtn" type="button">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                            <span data-i18n="profile.edit_profile">Edit Profile</span>
+                        </button>
+                        <button class="btn-profile-menu" id="profileMenuBtn" type="button" aria-label="More options" style="display: none;">
+                            <span class="menu-icon">⋮</span>
+                        </button>
+                        <div class="profile-dropdown" id="profileDropdown" style="display: none;">
+                            <button class="dropdown-item" id="editProfileItem" type="button">
+                                <span class="dropdown-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></span>
+                                <span data-i18n="profile.edit_profile">Edit Profile</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- User Information (Cleanly positioned below cover, no border intersection!) -->
+                <div class="profile-details">
+                    <div class="profile-titles">
+                        <h1 class="profile-name primary-name" id="profileName">Loading...</h1>
+                        <p class="profile-username secondary-name" id="profileUsername">@username</p>
+                    </div>
+
+                    <!-- Bio Description -->
+                    <p class="profile-bio" id="profileBio" style="display: none;"></p>
+
+                    <!-- Metadata Badges -->
+                    <div class="profile-meta" id="profileMeta">
+                        <span class="meta-item" id="profileJoinDate" style="display: none;">
+                            <span class="meta-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg></span>
+                            <span id="joinDateText"></span>
+                        </span>
+                        <div class="meta-item top-genres-meta-item" id="profileTopGenres" style="display: none;">
+                            <span class="meta-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></span>
+                            <div class="top-genres-container" id="topGenresContainer"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- Statistics Section -->
+            <!-- Statistics Grid -->
             <div class="profile-stats" id="profileStats">
-                <div class="stat-card">
+                <!-- Stat 1: Total Ratings -->
+                <a class="stat-card stat-card--link" data-stat="ratings" href="../ratings/ratings.html" aria-label="Open all ratings">
+                    <div class="stat-card-glow"></div>
+                    <div class="stat-header">
+                        <span class="stat-icon ratings-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                        </span>
+                        <span class="stat-label" data-i18n="profile.stats.rated">Movies Rated</span>
+                    </div>
                     <span class="stat-value" id="statTotalRatings">0</span>
-                    <span class="stat-label" data-i18n="profile.stats.rated">Movies Rated</span>
-                </div>
-                <div class="stat-card">
+                </a>
+
+                <!-- Stat 2: Average Rating -->
+                <a class="stat-card stat-card--link" data-stat="average" href="../ratings/ratings.html" aria-label="Open all ratings">
+                    <div class="stat-card-glow"></div>
+                    <div class="stat-header">
+                        <span class="stat-icon average-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                        </span>
+                        <span class="stat-label" data-i18n="profile.stats.average">Average Rating</span>
+                    </div>
                     <span class="stat-value" id="statAverageRating">0.0</span>
-                    <span class="stat-label" data-i18n="profile.stats.average">Average Rating</span>
-                </div>
-                <div class="stat-card">
+                </a>
+
+                <!-- Stat 3: Watching / Favorites -->
+                <a class="stat-card stat-card--link" data-stat="favorites" href="../bookmarks/bookmarks.html?filter=watching" aria-label="Open watching list">
+                    <div class="stat-card-glow"></div>
+                    <div class="stat-header">
+                        <span class="stat-icon favorites-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+                        </span>
+                        <span class="stat-label" data-i18n="profile.stats.favorites">Watching</span>
+                    </div>
                     <span class="stat-value" id="statFavorites">0</span>
-                    <span class="stat-label" data-i18n="profile.stats.favorites">Favorites</span>
-                </div>
-                <div class="stat-card">
+                </a>
+
+                <!-- Stat 4: Watchlist -->
+                <a class="stat-card stat-card--link" data-stat="watchlist" href="../bookmarks/bookmarks.html?filter=plan_to_watch" aria-label="Open plan to watch list">
+                    <div class="stat-card-glow"></div>
+                    <div class="stat-header">
+                        <span class="stat-icon watchlist-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>
+                        </span>
+                        <span class="stat-label" data-i18n="profile.stats.watchlist">Watchlist</span>
+                    </div>
                     <span class="stat-value" id="statWatchlist">0</span>
-                    <span class="stat-label" data-i18n="profile.stats.watchlist">Watchlist</span>
-                </div>
+                </a>
             </div>
 
-            <!-- Recent Ratings Section -->
+            <!-- Personal Dashboard -->
+            <div class="profile-dashboard" id="profileDashboard">
+                <section class="profile-dashboard-card continue-watching-card" id="continueWatchingSection">
+                    <div class="dashboard-section-header">
+                        <div class="section-header-title-group">
+                            <span class="section-header-icon dashboard-section-icon dashboard-section-icon--watching">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                            </span>
+                            <div>
+                                <h2 class="section-title" data-i18n="profile.continue_watching.title">Продолжить просмотр</h2>
+                                <p class="dashboard-section-subtitle" data-i18n="profile.continue_watching.subtitle">Вернитесь к тому, что уже начали.</p>
+                            </div>
+                        </div>
+                        <a class="dashboard-section-link" href="../bookmarks/bookmarks.html?filter=watching" data-i18n="profile.open_list">Открыть список</a>
+                    </div>
+                    <div class="continue-watching-content" id="continueWatchingContent">
+                        <div class="dashboard-empty-state">
+                            <span class="dashboard-empty-state__mark">+</span>
+                            <div>
+                                <strong data-i18n="profile.continue_watching.empty_title">Здесь появится ваш текущий просмотр</strong>
+                                <span data-i18n="profile.continue_watching.empty_text">Добавьте фильм или сериал в список «Смотрю».</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="profile-dashboard-card taste-card" id="profileTasteSection">
+                    <div class="dashboard-section-header">
+                        <div class="section-header-title-group">
+                            <span class="section-header-icon dashboard-section-icon dashboard-section-icon--taste">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+                            </span>
+                            <div>
+                                <h2 class="section-title" data-i18n="profile.taste.title">Мой вкус</h2>
+                                <p class="dashboard-section-subtitle" data-i18n="profile.taste.subtitle">Что чаще всего появляется в ваших оценках.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="taste-content" id="tasteContent">
+                        <div class="taste-genres" id="profileTasteGenres"></div>
+                        <div class="rating-distribution" id="ratingDistribution"></div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Recent Ratings Showcase -->
             <div class="recent-ratings-section">
                 <div class="section-header">
-                    <h2 class="section-title">
-                        <span class="section-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg></span>
-                        <span data-i18n="profile.recent_ratings">Recent Ratings</span>
-                    </h2>
-                    <button class="btn-view-all" id="viewAllRatingsBtn" data-i18n="profile.view_all">
-                        View All
+                    <div class="section-header-title-group">
+                        <span class="section-header-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                        </span>
+                        <h2 class="section-title" data-i18n="profile.recent_ratings">Recent Ratings</h2>
+                    </div>
+                    <button class="btn-view-all" id="viewAllRatingsBtn" type="button">
+                        <span data-i18n="profile.view_all">View All</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                     </button>
                 </div>
+                
                 <div class="recent-ratings-list" id="recentRatingsList">
-                    <div class="loading-spinner-small"></div>
+                    <div class="app-loader app-loader--inline app-loader--compact" role="status" aria-label="Loading recent ratings">
+                        <div class="app-loader__indicator" aria-hidden="true"></div>
+                    </div>
                 </div>
+                <div id="recentRatingsLoader" class="app-loader app-loader--inline app-loader--compact" role="status" aria-label="Loading more ratings" style="display: none; margin: 20px auto;">
+                    <div class="app-loader__indicator" aria-hidden="true"></div>
+                </div>
+                <div id="recentRatingsSentinel" style="height: 20px; margin-top: 10px;"></div>
             </div>
 
             <!-- Loading State -->
-            <div class="loading-section" id="loadingSection">
-                <div class="loading-spinner"></div>
-                <p data-i18n="profile.loading">Loading profile...</p>
+            <div class="loading-section app-loader app-loader--page" id="loadingSection" role="status" aria-live="polite">
+                <div class="app-loader__indicator" aria-hidden="true"></div>
+                <p class="app-loader__label" data-i18n="profile.loading">Loading profile...</p>
             </div>
 
             <!-- Error State -->
             <div class="error-state" id="errorState" style="display: none;">
-                <div class="error-state-icon"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #ef4444;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></div>
+                <div class="error-state-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                </div>
                 <h3 class="error-state-title">Something went wrong</h3>
                 <p class="error-state-text" id="errorMessage" data-i18n="profile.error">Failed to load profile</p>
-                <button class="error-state-btn" id="retryBtn" data-i18n="profile.try_again">Try Again</button>
+                <button class="error-state-btn" id="retryBtn" type="button" data-i18n="profile.try_again">Try Again</button>
             </div>
         </div>
     </main>
@@ -140,87 +259,101 @@
     <!-- Edit Profile Modal -->
     <div class="modal-overlay" id="editProfileModal" style="display: none;">
         <div class="modal-content edit-profile-modal">
+            <!-- Modal Header -->
             <header class="modal-header">
-                <h2 class="modal-title">
-                    <span class="modal-icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></span>
-                    <span data-i18n="profile.edit_modal.title">Edit Profile</span>
-                </h2>
-                <button class="modal-close" id="editProfileModalClose">×</button>
+                <div class="modal-title-group">
+                    <span class="modal-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                    </span>
+                    <div>
+                        <h2 class="modal-title" data-i18n="profile.edit_modal.title">Edit Profile</h2>
+                    </div>
+                </div>
+                <button class="modal-close" id="editProfileModalClose" type="button" aria-label="Close modal">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
             </header>
+
+            <!-- Modal Form -->
             <form id="editProfileForm" class="modal-body">
-                <!-- Profile Images (Banner & Avatar) -->
-                <div class="form-group profile-edit-images-container">
-                    <!-- Banner -->
-                    <div class="banner-upload-wrapper">
-                        <label class="banner-preview-wrapper" for="bannerInput">
-                            <div class="banner-preview" id="bannerPreview">
-                                <img id="bannerPreviewImg" src="" alt="Banner Preview" style="display: none;">
-                                <div class="banner-placeholder" id="bannerPlaceholder">
-                                    <span class="banner-icon"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></span>
-                                    <span>No Banner Selected</span>
+                <!-- Visual Media Customization Card -->
+                <div class="edit-section-card">
+                    <div class="profile-edit-images-container">
+                        <!-- Banner Upload Area -->
+                        <div class="banner-upload-wrapper">
+                            <label class="banner-preview-wrapper" for="bannerInput" title="Click to upload banner">
+                                <div class="banner-preview" id="bannerPreview">
+                                    <img id="bannerPreviewImg" src="" alt="Banner Preview" style="display: none;">
+                                    <div class="banner-placeholder" id="bannerPlaceholder">
+                                        <span class="banner-icon"><svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></span>
+                                        <span data-i18n="profile.edit_modal.upload_banner">Upload Banner</span>
+                                    </div>
+                                    <div class="preview-overlay">
+                                        <span class="overlay-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg></span>
+                                        <span class="overlay-text" data-i18n="profile.edit_modal.upload_banner">Change Banner</span>
+                                    </div>
                                 </div>
-                                <div class="preview-overlay">
-                                    <span class="overlay-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg></span>
-                                    <span class="overlay-text">Изменить обложку</span>
-                                </div>
-                            </div>
-                        </label>
-                        <input type="file" id="bannerInput" accept="image/png,image/jpeg,image/webp,image/gif" style="display: none;">
-                        <button type="button" class="btn-remove-overlay banner-remove" id="removeBannerBtn" style="display: none;" title="Удалить обложку">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                        </button>
-                    </div>
+                            </label>
+                            <input type="file" id="bannerInput" accept="image/png,image/jpeg,image/webp,image/gif" style="display: none;">
+                            <button type="button" class="btn-remove-overlay banner-remove" id="removeBannerBtn" style="display: none;" title="Remove Banner">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            </button>
+                        </div>
 
-                    <!-- Avatar -->
-                    <div class="photo-upload-wrapper">
-                        <label class="photo-preview-wrapper" for="photoInput">
-                            <div class="photo-preview" id="photoPreview">
-                                <img id="photoPreviewImg" src="" alt="Preview" style="display: none;">
-                                <div class="photo-placeholder" id="photoPlaceholder">
-                                    <span id="photoInitials">U</span>
+                        <!-- Avatar Upload Area -->
+                        <div class="photo-upload-wrapper">
+                            <label class="photo-preview-wrapper" for="photoInput" title="Click to upload avatar">
+                                <div class="photo-preview" id="photoPreview">
+                                    <img id="photoPreviewImg" src="" alt="Preview" style="display: none;">
+                                    <div class="photo-placeholder" id="photoPlaceholder">
+                                        <span id="photoInitials">U</span>
+                                    </div>
+                                    <div class="preview-overlay">
+                                        <span class="overlay-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg></span>
+                                    </div>
                                 </div>
-                                <div class="preview-overlay">
-                                    <span class="overlay-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg></span>
-                                    <span class="overlay-text">Изменить фото</span>
-                                </div>
-                            </div>
-                        </label>
-                        <input type="file" id="photoInput" accept="image/png,image/jpeg,image/webp,image/gif" style="display: none;">
-                        <button type="button" class="btn-remove-overlay photo-remove" id="removePhotoBtn" style="display: none;" title="Удалить фото">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                        </button>
+                            </label>
+                            <input type="file" id="photoInput" accept="image/png,image/jpeg,image/webp,image/gif" style="display: none;">
+                            <button type="button" class="btn-remove-overlay photo-remove" id="removePhotoBtn" style="display: none;" title="Remove Avatar">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            </button>
+                        </div>
                     </div>
                 </div>
 
-                <!-- First Name -->
-                <div class="form-group">
-                    <label for="firstNameInput" data-i18n="profile.edit_modal.first_name">First Name *</label>
-                    <input type="text" id="firstNameInput" name="firstName" maxlength="50" required>
-                    <span class="error-message" id="firstNameError"></span>
-                </div>
+                <!-- Personal Information Grid -->
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label for="firstNameInput" data-i18n="profile.edit_modal.first_name">First Name *</label>
+                        <input type="text" id="firstNameInput" name="firstName" maxlength="50" placeholder="e.g. Alex" required>
+                        <span class="error-message" id="firstNameError"></span>
+                    </div>
 
-                <!-- Last Name -->
-                <div class="form-group">
-                    <label for="lastNameInput" data-i18n="profile.edit_modal.last_name">Last Name *</label>
-                    <input type="text" id="lastNameInput" name="lastName" maxlength="50" required>
-                    <span class="error-message" id="lastNameError"></span>
+                    <div class="form-group">
+                        <label for="lastNameInput" data-i18n="profile.edit_modal.last_name">Last Name *</label>
+                        <input type="text" id="lastNameInput" name="lastName" maxlength="50" placeholder="e.g. Mercer" required>
+                        <span class="error-message" id="lastNameError"></span>
+                    </div>
                 </div>
 
                 <!-- Username -->
                 <div class="form-group">
                     <label for="usernameInput" data-i18n="profile.edit_modal.username">Username *</label>
-                    <input type="text" id="usernameInput" name="username" minlength="3" maxlength="20" pattern="[a-zA-Z0-9_]+" required>
+                    <div class="input-with-prefix">
+                        <span class="input-prefix">@</span>
+                        <input type="text" id="usernameInput" name="username" minlength="3" maxlength="20" pattern="[a-zA-Z0-9_]+" placeholder="username" required>
+                    </div>
                     <span class="error-message" id="usernameError"></span>
                     <p class="input-hint">3-20 characters, letters, numbers, and underscores only</p>
                 </div>
 
                 <!-- Bio -->
                 <div class="form-group">
-                    <label for="bioInput" data-i18n="profile.edit_modal.bio">Bio / About Me</label>
-                    <textarea id="bioInput" name="bio" rows="3" maxlength="200" placeholder="Tell us about yourself..."></textarea>
-                    <div class="char-count">
-                        <span id="bioCharCount">0</span>/200
+                    <div class="label-with-meta">
+                        <label for="bioInput" data-i18n="profile.edit_modal.bio">Bio / About Me</label>
+                        <span class="char-count"><span id="bioCharCount">0</span>/200</span>
                     </div>
+                    <textarea id="bioInput" name="bio" rows="3" maxlength="200" placeholder="Tell the community about your favorite movies, directors, or genres..."></textarea>
                     <span class="error-message" id="bioError"></span>
                 </div>
 
@@ -231,69 +364,37 @@
                         <option value="fullname">First Name + Last Name</option>
                         <option value="username">Username</option>
                     </select>
-                    <p class="input-hint">Choose what to display in the navigation bar</p>
                 </div>
 
-                <!-- Favorite Genre -->
-                <div class="form-group">
-                    <label for="favoriteGenreInput" data-i18n="profile.edit_modal.favorite_genre">Favorite Genre</label>
-                    <select id="favoriteGenreInput" name="favoriteGenre">
-                        <option value="">Select genre...</option>
-                        <option value="Action">Action</option>
-                        <option value="Adventure">Adventure</option>
-                        <option value="Animation">Animation</option>
-                        <option value="Comedy">Comedy</option>
-                        <option value="Crime">Crime</option>
-                        <option value="Documentary">Documentary</option>
-                        <option value="Drama">Drama</option>
-                        <option value="Family">Family</option>
-                        <option value="Fantasy">Fantasy</option>
-                        <option value="Horror">Horror</option>
-                        <option value="Romance">Romance</option>
-                        <option value="Sci-Fi">Sci-Fi</option>
-                        <option value="Thriller">Thriller</option>
-                    </select>
-                </div>
-
-                <!-- Social Links -->
-                <div class="form-section">
-                    <h3 class="form-section-title" data-i18n="profile.edit_modal.social_links">Social Links (optional)</h3>
-                    <div class="form-group">
-                        <label for="twitterInput">Twitter</label>
-                        <input type="url" id="twitterInput" name="twitter" placeholder="https://twitter.com/username">
-                    </div>
-                    <div class="form-group">
-                        <label for="instagramInput">Instagram</label>
-                        <input type="url" id="instagramInput" name="instagram" placeholder="https://instagram.com/username">
-                    </div>
-                    <div class="form-group">
-                        <label for="facebookInput">Facebook</label>
-                        <input type="url" id="facebookInput" name="facebook" placeholder="https://facebook.com/username">
-                    </div>
-                </div>
-
-                <!-- Password Section (for email users) -->
+                <!-- Password / Security Section (for email users) -->
                 <div class="form-section" id="passwordSection" style="display: none;">
-                    <h3 class="form-section-title">Change Password</h3>
-                    <button type="button" class="btn-toggle-password" id="togglePasswordBtn">Change Password</button>
-                    <div id="passwordFields" style="display: none;">
+                    <div class="form-section-header">
+                        <div class="form-section-title-group">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                            <h3 class="form-section-title">Security & Password</h3>
+                        </div>
+                        <button type="button" class="btn-toggle-password" id="togglePasswordBtn">Change Password</button>
+                    </div>
+                    <div id="passwordFields" style="display: none;" class="password-fields-container">
                         <div class="form-group">
                             <label for="currentPasswordInput">Current Password</label>
-                            <input type="password" id="currentPasswordInput" name="currentPassword">
+                            <input type="password" id="currentPasswordInput" name="currentPassword" placeholder="••••••••">
                         </div>
-                        <div class="form-group">
-                            <label for="newPasswordInput">New Password</label>
-                            <input type="password" id="newPasswordInput" name="newPassword" minlength="6">
-                        </div>
-                        <div class="form-group">
-                            <label for="confirmPasswordInput">Confirm New Password</label>
-                            <input type="password" id="confirmPasswordInput" name="confirmPassword" minlength="6">
+                        <div class="form-row-2">
+                            <div class="form-group">
+                                <label for="newPasswordInput">New Password</label>
+                                <input type="password" id="newPasswordInput" name="newPassword" minlength="6" placeholder="Min. 6 characters">
+                            </div>
+                            <div class="form-group">
+                                <label for="confirmPasswordInput">Confirm New Password</label>
+                                <input type="password" id="confirmPasswordInput" name="confirmPassword" minlength="6" placeholder="Repeat new password">
+                            </div>
                         </div>
                         <span class="error-message" id="passwordError"></span>
                     </div>
                 </div>
-
             </form>
+
             <!-- Form Footer -->
             <footer class="modal-footer">
                 <button type="button" class="btn-secondary" id="cancelEditBtn" data-i18n="profile.edit_modal.cancel">Cancel</button>
@@ -302,6 +403,7 @@
                     <span id="saveBtnLoading" style="display: none;">Saving...</span>
                 </button>
             </footer>
+            
             <div id="profileToast" class="toast-message" style="display: none;"></div>
         </div>
     </div>
@@ -310,16 +412,22 @@
     <div class="modal-overlay" id="cropperModal" style="display: none; z-index: 10001;">
         <div class="modal-content cropper-modal">
             <div class="modal-header">
-                <h2 class="modal-title">
-                    <span class="modal-icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v14a2 2 0 0 0 2 2h14"></path><path d="M18 22V8a2 2 0 0 0-2-2H2"></path></svg></span>
-                    <span data-i18n="profile.cropper.title">Crop Image</span>
-                </h2>
-                <button class="modal-close" id="cropperModalClose">×</button>
+                <div class="modal-title-group">
+                    <span class="modal-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v14a2 2 0 0 0 2 2h14"></path><path d="M18 22V8a2 2 0 0 0-2-2H2"></path></svg>
+                    </span>
+                    <h2 class="modal-title" data-i18n="profile.cropper.title">Crop Image</h2>
+                </div>
+                <button class="modal-close" id="cropperModalClose" type="button" aria-label="Close cropper">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
             </div>
+
             <div class="cropper-tabs" id="cropperTabs" style="display: none;">
-                <button class="cropper-tab active" id="cropperTabAvatar" data-mode="avatar" data-i18n="profile.cropper.avatar">Avatar</button>
-                <button class="cropper-tab" id="cropperTabBanner" data-mode="banner" data-i18n="profile.cropper.banner">Banner</button>
+                <button class="cropper-tab active" id="cropperTabAvatar" data-mode="avatar" type="button" data-i18n="profile.cropper.avatar">Avatar (1:1)</button>
+                <button class="cropper-tab" id="cropperTabBanner" data-mode="banner" type="button" data-i18n="profile.cropper.banner">Banner (3:1)</button>
             </div>
+
             <div class="modal-body cropper-body">
                 <div class="cropper-container" id="cropperContainer">
                     <img id="cropperImage" src="" alt="Image to crop">
@@ -331,9 +439,10 @@
                     </div>
                 </div>
             </div>
+
             <div class="modal-footer">
                 <button type="button" class="btn-secondary" id="cropperCancelBtn" data-i18n="profile.cropper.cancel">Cancel</button>
-                <button type="button" class="btn-primary" id="cropperApplyBtn" data-i18n="profile.cropper.apply">Apply</button>
+                <button type="button" class="btn-primary" id="cropperApplyBtn" data-i18n="profile.cropper.apply">Apply Crop</button>
             </div>
         </div>
     </div>
@@ -343,4 +452,3 @@
     <script defer src="../../shared/components/ReportWidget.js"></script>
 </body>
 </html>
-

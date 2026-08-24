@@ -26,26 +26,39 @@ class BookmarksPageManager {
         this.initializeElements();
         this.setupEventListeners();
 
-        // Initialize ProgressService early so cached data renders with progress info
+        // Initialize Services early so cached data renders with full metadata, progress, and ratings
         if (typeof ProgressService !== 'undefined') {
             this.progressService = new ProgressService();
+        }
+        if (typeof MovieCacheService !== 'undefined') {
+            this.movieCacheService = new MovieCacheService(typeof window !== 'undefined' ? window.firebaseManager : null);
+        }
+        if (typeof CollectionService !== 'undefined') {
+            this.collectionService = new CollectionService();
         }
 
         await i18n.init();
         i18n.translatePage();
 
+        // Check URL query parameters for initial filter (e.g. ?filter=plan_to_watch, ?filter=watching)
+        const urlParams = new URLSearchParams(window.location.search);
+        let filterParam = urlParams.get('filter');
+        if (filterParam) {
+            if (filterParam === 'watchlist') filterParam = 'plan_to_watch';
+            if (filterParam === 'favorites') filterParam = 'favorite';
+            this.setFilter(filterParam);
+        }
+
         // Load cached data immediately for instant render
         const cacheHit = await this.loadCachedData();
         
-        if (typeof CollectionService !== 'undefined') {
-            this.collectionService = new CollectionService();
-        }
-        
-        if (typeof MovieCacheService !== 'undefined' && typeof window.firebaseManager !== 'undefined') {
-            this.movieCacheService = new MovieCacheService(window.firebaseManager);
-        }
-        
         await this.setupFirebase();
+        
+        if (window.firebaseManager?.getMovieCacheService) {
+            this.movieCacheService = window.firebaseManager.getMovieCacheService();
+        } else if (this.movieCacheService && window.firebaseManager?.db) {
+            this.movieCacheService.db = window.firebaseManager.db;
+        }
         
         // Only fetch from server if cache was not found
         if (!cacheHit.collections) {
@@ -456,7 +469,7 @@ class BookmarksPageManager {
         try {
             // Check if checkmark exists (it's a span with margin-left: auto)
             // We can look for the specific content or style
-            let checkSpan = Array.from(buttonElement.children).find(child => child.textContent.includes('✓'));
+            let checkSpan = Array.from(buttonElement.children).find(child => child.classList?.contains('mc-collection-check') || child.textContent.includes('✓') || child.querySelector('svg'));
             const isChecked = !!checkSpan;
             
             if (isChecked) {
@@ -467,7 +480,8 @@ class BookmarksPageManager {
                 }
             } else {
                 const newCheck = document.createElement('span');
-                newCheck.textContent = '✓';
+                newCheck.className = 'mc-collection-check';
+                newCheck.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
                 newCheck.style.marginLeft = 'auto';
                 newCheck.style.fontWeight = 'bold';
                 newCheck.style.color = 'var(--accent-color, #4CAF50)';
@@ -505,23 +519,40 @@ class BookmarksPageManager {
             buttonElement.innerHTML = originalHtml;
             if (typeof Utils !== 'undefined') Utils.showToast('Error updating collection', 'error');
         }
-    }
-    async setupFirebase() {
+    }    async setupFirebase() {
         if (typeof firebaseManager === 'undefined') {
             throw new Error('Firebase Manager not available');
         }
         await firebaseManager.waitForAuthReady();
         this.currentUser = firebaseManager.getCurrentUser();
         
-        if (!this.currentUser) {
-            window.location.href = chrome.runtime.getURL('src/popup/popup.html');
+        if (this.currentUser) {
+            this.favoriteService = firebaseManager.getFavoriteService();
         }
 
-        this.favoriteService = firebaseManager.getFavoriteService();
+        // Listen for cross-tab auth state changes
+        window.addEventListener('authStateChanged', async (e) => {
+            const user = e.detail?.user;
+            if (!user) {
+                this.currentUser = null;
+                this.allBookmarks = [];
+                this.filteredBookmarks = [];
+                this.updateCounts();
+                this.applyFilters();
+                this.page.showError('Для просмотра закладок необходимо войти в аккаунт.');
+            } else if (!this.currentUser || this.currentUser.uid !== user.uid) {
+                this.currentUser = user;
+                this.favoriteService = firebaseManager.getFavoriteService();
+                await this.loadBookmarks();
+            }
+        });
     }
 
     async loadBookmarks() {
-        if (!this.currentUser) return;
+        if (!this.currentUser) {
+            this.page.showError('Для просмотра закладок необходимо войти в аккаунт.');
+            return;
+        }
 
         this.page.showLoader();
         try {
@@ -621,7 +652,7 @@ class BookmarksPageManager {
             const isCustomIcon = col.icon && (col.icon.startsWith('data:') || col.icon.startsWith('https://') || col.icon.startsWith('http://'));
             const iconHtml = isCustomIcon 
                 ? `<img src="${col.icon}" style="width: 20px; height: 20px; object-fit: cover; border-radius: 4px;">`
-                : (col.icon || '🎬');
+                : (col.icon || '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line></svg>');
 
             return `
                 <button class="sidebar-item collection-item ${this.activeCollectionId === col.id ? 'active' : ''}" data-collection-id="${col.id}">
@@ -760,7 +791,7 @@ class BookmarksPageManager {
                                 align-items: center;
                                 gap: 6px;
                             ">
-                                <span>📁</span> Upload Custom Icon
+                                <span><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></span> Upload Custom Icon
                             </button>
                             <div id="customIconPreview" style="
                                 margin-top: 8px;
@@ -1312,6 +1343,16 @@ class BookmarksPageManager {
 
     async renderGrid(movies) {
         const grid = this.elements.moviesGrid;
+        let cachedMovies = {};
+
+        if (this.movieCacheService) {
+            try {
+                const movieIds = movies.map(movie => movie.movieId || movie.kinopoiskId).filter(Boolean);
+                cachedMovies = await this.movieCacheService.getBatchCachedMovies(movieIds);
+            } catch (error) {
+                console.warn('BookmarksPage: Could not load cached card ratings', error);
+            }
+        }
         
         // Fetch all progress data
         let allProgress = {};
@@ -1332,20 +1373,34 @@ class BookmarksPageManager {
         this.elements.moviesGrid.classList.add('anime-grid'); // Enable anime-style grid spacing
 
         movies.forEach(movieData => {
+            const movieId = movieData.movieId || movieData.kinopoiskId;
+            const cachedMovie = cachedMovies[movieId] || cachedMovies[String(movieId)] || cachedMovies[Number(movieId)];
             // Prepare movie object for card with normalized fields
             const rawName = movieData.name || movieData.movieTitle || 'Unknown Movie';
             const cleanName = Utils.cleanTitle(rawName);
+
+            const kpScore = cachedMovie?.kpRating || cachedMovie?.ratingKp || cachedMovie?.ratingKinopoisk 
+                || (typeof cachedMovie?.rating === 'object' ? cachedMovie.rating?.kp : null)
+                || movieData.kpRating || movieData.ratingKp 
+                || (typeof movieData.rating === 'object' ? movieData.rating?.kp : null)
+                || (typeof movieData.rating === 'number' ? movieData.rating : null) || 0;
+
+            const imdbScore = cachedMovie?.imdbRating || cachedMovie?.ratingImdb 
+                || (typeof cachedMovie?.rating === 'object' ? cachedMovie.rating?.imdb : null)
+                || movieData.imdbRating || movieData.ratingImdb 
+                || (typeof movieData.rating === 'object' ? movieData.rating?.imdb : null) || 0;
             
             const movieObj = {
-                kinopoiskId: movieData.movieId || movieData.kinopoiskId,
+                kinopoiskId: movieId,
                 name: cleanName,
-                originalName: movieData.originalName || movieData.movieTitleOriginal,
-                year: movieData.year || movieData.releaseYear,
-                posterUrl: movieData.posterUrl || movieData.posterPath,
-                kpRating: movieData.kpRating || movieData.rating || 0,
-                imdbRating: movieData.imdbRating || 0,
-                genres: movieData.genres || [],
-                description: movieData.description
+                originalName: movieData.originalName || movieData.movieTitleOriginal || cachedMovie?.originalName || cachedMovie?.alternativeName || '',
+                year: movieData.year || movieData.releaseYear || cachedMovie?.year || cachedMovie?.releaseYear || '',
+                posterUrl: movieData.posterUrl || movieData.posterPath || cachedMovie?.posterUrl || cachedMovie?.posterPath || cachedMovie?.poster || '',
+                kpRating: Number(kpScore) || 0,
+                imdbRating: Number(imdbScore) || 0,
+                votes: { ...(movieData.votes || {}), ...(cachedMovie?.votes || {}) },
+                genres: (Array.isArray(movieData.genres) && movieData.genres.length > 0) ? movieData.genres : (cachedMovie?.genres || []),
+                description: movieData.description || cachedMovie?.description || ''
             };
 
             const cardData = {
@@ -1418,7 +1473,7 @@ class BookmarksPageManager {
                 watchingProgress: progressText,
                 showThreeDotMenu: true,
                 showBookmarkStatus: true,
-                animeStyle: true, // Enable anime-style card design
+                animeStyle: false, // Standard clean card design
                 // Enable status toggles (like in Rated page)
                 showFavorite: true,
                 showWatching: true,
@@ -1444,10 +1499,6 @@ class BookmarksPageManager {
             card.setAttribute('data-action', 'view-details');
             card.setAttribute('data-movie-id', cardData.movieId);
         });
-        
-        // Attach delegation for dynamic card events if needed
-        // Assuming MovieCard handles its own menu events which bubble up or are handled globally
-        // Usually we need to handle specific actions here if MovieCard doesn't do it all
     }
 
 

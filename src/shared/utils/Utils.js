@@ -3,15 +3,227 @@
  */
 class Utils {
     /**
-     * Escape HTML to prevent XSS attacks
-     * @param {string} text - Text to escape
+     * Check whether cached movie metadata is sufficient for the detail views.
+     * Budget and box-office fields are intentionally excluded: they are
+     * legitimately unavailable for many films.
+     * @param {Object|null|undefined} movie - Cached movie metadata
+     * @returns {boolean} True when description, genres, and persons are present
+     */
+    static hasDetailedMovieInfo(movie) {
+        return Boolean(movie) &&
+            Boolean(movie.description?.trim()) &&
+            Array.isArray(movie.genres) && movie.genres.length > 0 &&
+            Array.isArray(movie.persons) && movie.persons.length > 0;
+    }
+
+    /**
+     * Safely extract a trimmed genre name from string, number, or object ({name: '...'}, {genre: '...'}).
+     * @param {string|Object|number} genre - Genre candidate
+     * @returns {string} Clean trimmed genre string
+     */
+    static extractGenreName(genre) {
+        if (!genre && genre !== 0) return '';
+        if (typeof genre === 'string') return genre.trim();
+        if (typeof genre === 'object') {
+            const name = genre.name || genre.genre || '';
+            return typeof name === 'string' ? name.trim() : (name ? String(name).trim() : '');
+        }
+        return String(genre).trim();
+    }
+
+    /**
+     * Safely normalize an array of genres into an array of non-empty strings.
+     * @param {Array<string|Object|number>} genres - Array of genres
+     * @returns {Array<string>} Clean array of genre strings
+     */
+    static normalizeGenres(genres) {
+        if (!Array.isArray(genres)) return [];
+        return genres
+            .map(g => Utils.extractGenreName(g))
+            .filter(Boolean);
+    }
+
+    /**
+     * Safely format genres for display.
+     * @param {Array<string|Object|number>} genres - Array of genres
+     * @param {number} [limit] - Optional max items
+     * @returns {string} Comma-separated genre string
+     */
+    static formatGenres(genres, limit) {
+        const normalized = Utils.normalizeGenres(genres);
+        const sliced = typeof limit === 'number' ? normalized.slice(0, limit) : normalized;
+        return sliced.join(', ');
+    }
+
+    /**
+     * Safely extract a trimmed country name from string or object ({name: '...'}, {country: '...'}).
+     * @param {string|Object} country - Country candidate
+     * @returns {string} Clean trimmed country string
+     */
+    static extractCountryName(country) {
+        if (!country) return '';
+        if (typeof country === 'string') return country.trim();
+        if (typeof country === 'object') {
+            const name = country.name || country.country || '';
+            return typeof name === 'string' ? name.trim() : (name ? String(name).trim() : '');
+        }
+        return String(country).trim();
+    }
+
+    /**
+     * Safely normalize an array of countries into an array of non-empty strings.
+     * @param {Array<string|Object>} countries - Array of countries
+     * @returns {Array<string>} Clean array of country strings
+     */
+    static normalizeCountries(countries) {
+        if (!Array.isArray(countries)) return [];
+        return countries
+            .map(c => Utils.extractCountryName(c))
+            .filter(Boolean);
+    }
+
+    /**
+     * Safely format countries for display.
+     * @param {Array<string|Object>} countries - Array of countries
+     * @param {number} [limit] - Optional max items
+     * @returns {string} Comma-separated country string
+     */
+    static formatCountries(countries, limit) {
+        const normalized = Utils.normalizeCountries(countries);
+        const sliced = typeof limit === 'number' ? normalized.slice(0, limit) : normalized;
+        return sliced.join(', ');
+    }
+
+    /**
+     * Safely extract a pure numeric Kinopoisk ID from various object shapes
+     * (Kinopoisk API docs, Firestore bookmarks, local cache objects, ratings).
+     * Handles and sanitizes composite Firestore doc IDs (e.g. "userId_12345").
+     * @param {Object|number|string} item - Movie object, DTO, or ID candidate
+     * @returns {number|null} Clean numeric Kinopoisk ID, or null if invalid
+     */
+    static extractKinopoiskId(item) {
+        if (item === null || item === undefined) return null;
+
+        // Direct number
+        if (typeof item === 'number' && Number.isInteger(item) && item > 0) {
+            return item;
+        }
+
+        // Direct string
+        if (typeof item === 'string') {
+            const trimmed = item.trim();
+            if (/^\d+$/.test(trimmed)) {
+                const parsed = parseInt(trimmed, 10);
+                return parsed > 0 ? parsed : null;
+            }
+            if (trimmed.includes('_')) {
+                const parts = trimmed.split('_');
+                const lastPart = parts[parts.length - 1];
+                if (/^\d+$/.test(lastPart)) {
+                    const parsed = parseInt(lastPart, 10);
+                    return parsed > 0 ? parsed : null;
+                }
+            }
+            return null;
+        }
+
+        if (typeof item !== 'object') return null;
+
+        // 1. Direct kinopoiskId field (highest priority)
+        const kpId = item.kinopoiskId || item.kpId;
+        if (typeof kpId === 'number' && Number.isInteger(kpId) && kpId > 0) {
+            return kpId;
+        }
+        if (typeof kpId === 'string' && /^\d+$/.test(kpId.trim())) {
+            const parsed = parseInt(kpId.trim(), 10);
+            if (parsed > 0) return parsed;
+        }
+
+        // 2. movieId field (used by FavoriteService, RatingService, Watchlist)
+        const movieId = item.movieId;
+        if (typeof movieId === 'number' && Number.isInteger(movieId) && movieId > 0) {
+            return movieId;
+        }
+        if (typeof movieId === 'string' && /^\d+$/.test(movieId.trim())) {
+            const parsed = parseInt(movieId.trim(), 10);
+            if (parsed > 0) return parsed;
+        }
+
+        // 3. Nested movie object (e.g. item.movie)
+        if (item.movie && typeof item.movie === 'object') {
+            const nestedId = Utils.extractKinopoiskId(item.movie);
+            if (nestedId) return nestedId;
+        }
+
+        // 4. item.id (only if pure numeric integer or numeric string without composite separator)
+        const rawId = item.id;
+        if (typeof rawId === 'number' && Number.isInteger(rawId) && rawId > 0) {
+            return rawId;
+        }
+        if (typeof rawId === 'string') {
+            const trimmedId = rawId.trim();
+            if (/^\d+$/.test(trimmedId)) {
+                const parsed = parseInt(trimmedId, 10);
+                if (parsed > 0) return parsed;
+            }
+            // If composite ID like "${userId}_${movieId}", extract trailing numeric ID as fallback
+            if (trimmedId.includes('_')) {
+                const parts = trimmedId.split('_');
+                const lastPart = parts[parts.length - 1];
+                if (/^\d+$/.test(lastPart)) {
+                    const parsed = parseInt(lastPart, 10);
+                    if (parsed > 0) return parsed;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Escape HTML to prevent XSS attacks (generic string escaping primitive)
+     * @param {string|number|boolean} text - Primitive to escape
      * @returns {string} - Escaped text
      */
     static escapeHtml(text) {
-        if (!text) return '';
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        if (text === null || text === undefined) return '';
+        const str = String(text);
+        if (typeof document !== 'undefined' && document.createElement) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+        return str
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    /**
+     * Normalize a rating comment/review across string and legacy structured object schemas.
+     * Contract:
+     * - string -> trimmed string
+     * - { text: "hello" } -> "hello"
+     * - { comment: "hello" } -> "hello"
+     * - null / undefined -> ""
+     * - unknown object / other -> "" (Never stringify unknown objects into "[object Object]")
+     * @param {*} value - Raw comment value from rating DTO
+     * @returns {string} Clean normalized comment string
+     */
+    static normalizeRatingComment(value) {
+        if (value === null || value === undefined) return '';
+        if (typeof value === 'string') return value.trim();
+        if (typeof value === 'object') {
+            if (typeof value.text === 'string') return value.text.trim();
+            if (typeof value.comment === 'string') return value.comment.trim();
+            return '';
+        }
+        if (typeof value === 'number' || typeof value === 'boolean') {
+            return String(value).trim();
+        }
+        return '';
     }
 
     /**
@@ -457,13 +669,49 @@ class Utils {
      * Открыть страницу фильма
      * @param {string|number} movieId - ID фильма
      * @param {boolean} newTab - Открыть в новой вкладке (default: false)
+     * @param {Object} options - Optional route metadata, including tmdbId
      */
-    static openMoviePage(movieId, newTab = false) {
+    static openMoviePage(movieId, newTab = false, options = {}) {
+        const tmdbQuery = options.tmdbId ? `&tmdbId=${encodeURIComponent(options.tmdbId)}` : '';
+        const typeQuery = options.mediaType ? `&mediaType=${encodeURIComponent(options.mediaType)}` : '';
+        const sourceQuery = options.source ? `&source=${encodeURIComponent(options.source)}` : '';
+        const titleQuery = options.title ? `&title=${encodeURIComponent(options.title)}` : '';
+        const yearQuery = options.year ? `&year=${encodeURIComponent(options.year)}` : '';
         const url = chrome.runtime.getURL(
-            `src/pages/movie-details/movie-details.html?movieId=${movieId}`
+            `src/pages/movie-details/movie-details.html?movieId=${encodeURIComponent(movieId)}${tmdbQuery}${typeQuery}${sourceQuery}${titleQuery}${yearQuery}`
         );
         if (newTab) {
-            window.open(url, '_blank');
+            const targetWindow = options.targetWindow;
+            if (targetWindow && !targetWindow.closed) {
+                targetWindow.location.href = url;
+            } else {
+                window.open(url, '_blank');
+            }
+        } else {
+            window.location.href = url;
+        }
+    }
+
+    /**
+     * Open an immediate internal loading route for a TMDB-only Home card.
+     * The Kinopoisk HTML lookup is performed by the details page after the
+     * navigation, so the user always gets instant visual feedback.
+     */
+    static openMovieResolutionPage(info, newTab = false, targetWindow = null) {
+        const params = new URLSearchParams({
+            resolveTmdbId: String(info.tmdbId || ''),
+            source: 'home-tmdb-only',
+            title: String(info.title || ''),
+            originalTitle: String(info.alternativeName || ''),
+            year: String(info.year || ''),
+            mediaType: String(info.mediaType || 'movie')
+        });
+        const url = chrome.runtime.getURL(
+            `src/pages/movie-details/movie-details.html?${params.toString()}`
+        );
+        if (newTab) {
+            if (targetWindow && !targetWindow.closed) targetWindow.location.href = url;
+            else window.open(url, '_blank');
         } else {
             window.location.href = url;
         }
@@ -474,38 +722,197 @@ class Utils {
      * Поддерживает ЛКМ (переход) и СКМ/auxclick (новая вкладка)
      * @param {HTMLElement} container - Контейнер с карточками
      */
-    static bindMovieCardNavigation(container) {
+    static bindMovieCardNavigation(container, options = {}) {
         if (!container || container._movieNavBound) return;
         container._movieNavBound = true;
 
+        /**
+         * Extract card metadata from the click target.
+         */
+        function _extractCardInfo(e) {
+            const target = e.target.closest('[data-action="view-details"]') || e.target.closest('.featured-card');
+            if (!target) return null;
+
+            const cardEl = target.closest('.movie-card-component, .featured-card') || target;
+            const movieId = target.getAttribute('data-movie-id') || cardEl.getAttribute('data-movie-id') || '';
+            const titleEl = cardEl.querySelector('.mc-title, .featured-title, .card-title');
+            const title = target.getAttribute('data-movie-title') || cardEl.getAttribute('data-movie-title')
+                || titleEl?.textContent?.trim() || target.getAttribute('title') || target.getAttribute('alt') || 'Unknown';
+            const alternativeName = target.getAttribute('data-movie-original-title')
+                || cardEl.getAttribute('data-movie-original-title') || '';
+            const year = target.getAttribute('data-movie-year') || cardEl.getAttribute('data-movie-year') || '';
+            const tmdbId = target.getAttribute('data-tmdb-id') || cardEl.getAttribute('data-tmdb-id') || '';
+            const mediaType = target.getAttribute('data-media-type') || cardEl.getAttribute('data-media-type') || 'movie';
+            const isTmdbOnly = target.getAttribute('data-is-tmdb-only') === 'true'
+                || cardEl.getAttribute('data-is-tmdb-only') === 'true';
+            const hasValidId = movieId && movieId !== 'null' && movieId !== 'undefined' && movieId !== '';
+
+            return { target, cardEl, movieId: hasValidId ? movieId : null, tmdbId, title, alternativeName, year, mediaType, isTmdbOnly };
+        }
+
+        async function _resolveAndOpen(info, newTab = false, targetWindow = null) {
+            if (info.movieId) {
+                const routeOptions = info.isTmdbOnly ? {
+                    tmdbId: info.tmdbId,
+                    mediaType: info.mediaType,
+                    source: 'home-tmdb-only',
+                    title: info.title,
+                    year: info.year
+                } : {};
+                if (targetWindow) routeOptions.targetWindow = targetWindow;
+                Utils.openMoviePage(info.movieId, newTab, routeOptions);
+                return;
+            }
+            if (info.isTmdbOnly) {
+                Utils.openMovieResolutionPage(info, newTab, targetWindow);
+                return;
+            }
+            if (typeof options.resolveMovie !== 'function') return;
+
+            console.log('[MovieCardNavigation] Resolving TMDB-only card through Kinopoisk HTML:', {
+                tmdbId: info.tmdbId,
+                title: info.title,
+                year: info.year,
+                mediaType: info.mediaType
+            });
+
+            const resolved = await options.resolveMovie(info);
+            const resolvedId = resolved?.kinopoiskId || resolved?.movieId || resolved;
+            if (!resolvedId) {
+                if (targetWindow && !targetWindow.closed) targetWindow.close();
+                if (typeof options.onResolveFailure === 'function') {
+                    options.onResolveFailure(info);
+                }
+                return;
+            }
+
+            info.cardEl.setAttribute('data-movie-id', String(resolvedId));
+            info.target.setAttribute('data-movie-id', String(resolvedId));
+            info.target.setAttribute('href', chrome.runtime.getURL(
+                `src/pages/movie-details/movie-details.html?movieId=${encodeURIComponent(resolvedId)}${info.tmdbId ? `&tmdbId=${encodeURIComponent(info.tmdbId)}` : ''}`
+            ));
+            console.log('[MovieCardNavigation] TMDB-only card resolved:', {
+                tmdbId: info.tmdbId,
+                title: info.title,
+                kinopoiskId: resolvedId
+            });
+            Utils.openMoviePage(resolvedId, newTab, {
+                tmdbId: info.tmdbId,
+                mediaType: info.mediaType,
+                source: 'home-tmdb-only',
+                title: info.title,
+                year: info.year,
+                targetWindow
+            });
+        }
+
+        // Left-click handler
         container.addEventListener('click', (e) => {
             if (e.button !== 0) return;
+            if (e.target.closest('.mc-menu-btn') || e.target.closest('.mc-menu-dropdown')) return;
 
-            // Prevent navigation if clicking inside the 3-dot menu or its dropdown
-            if (e.target.closest('.mc-menu-btn') || e.target.closest('.mc-menu-dropdown')) {
-                return;
-            }
+            const info = _extractCardInfo(e);
+            if (!info || (!info.movieId && !info.isTmdbOnly && typeof options.resolveMovie !== 'function')) return;
 
-            const target = e.target.closest('[data-action="view-details"]');
-            if (!target) return;
-            const movieId = target.getAttribute('data-movie-id');
-            if (movieId) Utils.openMoviePage(movieId, false);
+            e.preventDefault();
+
+            console.log('[MovieCardNavigation] Card clicked (LKM):', {
+                title: info.title,
+                movieId: info.movieId,
+                href: info.target.getAttribute('href')
+            });
+
+            _resolveAndOpen(info, false).catch(error => {
+                console.warn('[MovieCardNavigation] TMDB-only card resolution failed:', error);
+            });
         });
 
+        // Middle-click handler
         container.addEventListener('auxclick', (e) => {
             if (e.button !== 1) return;
+            if (e.target.closest('.mc-menu-btn') || e.target.closest('.mc-menu-dropdown')) return;
 
-            // Prevent navigation if clicking inside the 3-dot menu or its dropdown
-            if (e.target.closest('.mc-menu-btn') || e.target.closest('.mc-menu-dropdown')) {
-                return;
-            }
+            const info = _extractCardInfo(e);
+            if (!info || (!info.movieId && !info.isTmdbOnly && typeof options.resolveMovie !== 'function')) return;
 
-            const target = e.target.closest('[data-action="view-details"]');
-            if (!target) return;
             e.preventDefault();
-            const movieId = target.getAttribute('data-movie-id');
-            if (movieId) Utils.openMoviePage(movieId, true);
+
+            // Reserve the tab during the trusted user gesture. The actual
+            // destination is known only after the asynchronous HTML lookup.
+            const targetWindow = window.open('about:blank', '_blank');
+
+            console.log('[MovieCardNavigation] Card clicked (Middle-Click):', {
+                title: info.title,
+                movieId: info.movieId,
+                href: info.target.getAttribute('href')
+            });
+
+            _resolveAndOpen(info, true, targetWindow).catch(error => {
+                if (targetWindow && !targetWindow.closed) targetWindow.close();
+                console.warn('[MovieCardNavigation] TMDB-only middle-click resolution failed:', error);
+            });
         });
+
+    }
+
+    /**
+     * Extract a YouTube video ID and optional start time from a public URL.
+     *
+     * The parser intentionally accepts only known YouTube hosts and URL shapes;
+     * arbitrary URLs containing the word "youtube" must remain ordinary links.
+     * @param {string} value - Raw or HTML-escaped URL
+     * @returns {{id: string, startSeconds: number}|null}
+     */
+    static extractYouTubeVideoInfo(value) {
+        if (typeof value !== 'string' || !value.trim()) return null;
+
+        const normalized = value
+            .replace(/&amp;/gi, '&')
+            .replace(/&quot;/gi, '"')
+            .trim()
+            .replace(/[),.;!?]+$/, '');
+
+        let url;
+        try {
+            url = new URL(normalized);
+        } catch {
+            return null;
+        }
+
+        const hostname = url.hostname.toLowerCase().replace(/^www\./, '');
+        const allowedHosts = new Set(['youtube.com', 'm.youtube.com', 'youtu.be', 'youtube-nocookie.com']);
+        if (!allowedHosts.has(hostname)) return null;
+
+        const pathParts = url.pathname.split('/').filter(Boolean);
+        let id = '';
+
+        if (hostname === 'youtu.be') {
+            id = pathParts[0] || '';
+        } else if (pathParts[0] === 'watch') {
+            id = url.searchParams.get('v') || '';
+        } else if (['embed', 'live', 'shorts', 'v', 'e'].includes(pathParts[0])) {
+            id = pathParts[1] || '';
+        }
+
+        if (!/^[A-Za-z0-9_-]{11}$/.test(id)) return null;
+
+        const timeValue = url.searchParams.get('start') || url.searchParams.get('t') || '';
+        let startSeconds = 0;
+        if (/^\d+$/.test(timeValue)) {
+            startSeconds = Number.parseInt(timeValue, 10);
+        } else {
+            const timeMatch = timeValue.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/i);
+            if (timeMatch && timeMatch[0]) {
+                startSeconds = (Number.parseInt(timeMatch[1] || '0', 10) * 3600)
+                    + (Number.parseInt(timeMatch[2] || '0', 10) * 60)
+                    + Number.parseInt(timeMatch[3] || '0', 10);
+            }
+        }
+
+        return {
+            id,
+            startSeconds: Number.isSafeInteger(startSeconds) && startSeconds > 0 ? startSeconds : 0
+        };
     }
 
     /**
@@ -518,7 +925,13 @@ class Utils {
         // Регулярное выражение для поиска URL (http, https)
         const urlRegex = /(https?:\/\/[^\s<]+)/g;
         return text.replace(urlRegex, (url) => {
-            return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="chat-link" style="color: #667eea; text-decoration: underline;">${url}</a>`;
+            const youtubeInfo = Utils.extractYouTubeVideoInfo(url);
+            const youtubeClass = youtubeInfo ? ' chat-link--youtube' : '';
+            const youtubeDataAttrs = youtubeInfo
+                ? ` data-youtube-id="${Utils.escapeHtml(youtubeInfo.id)}"${youtubeInfo.startSeconds ? ` data-youtube-start="${youtubeInfo.startSeconds}"` : ''}`
+                : '';
+
+            return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="chat-link${youtubeClass}"${youtubeDataAttrs} style="color: #667eea; text-decoration: underline;">${url}</a>`;
         });
     }
 
@@ -554,7 +967,7 @@ class Utils {
      * @param {HTMLImageElement} img - Элемент изображения
      * @param {string} fallback - Путь к fallback изображению
      */
-    static handlePosterError(img, fallback = '../../icons/icon128-black.png') {
+    static handlePosterError(img, fallback = '/src/shared/assets/icons/app/icon128-black.png') {
         if (!img) return;
         img.onerror = null; // предотвращаем бесконечную рекурсию
         img.src = fallback;
@@ -576,6 +989,7 @@ class Utils {
     static createPageStateManager(els) {
         return {
             showLoader() {
+                if (window.errorDialog) window.errorDialog.hide();
                 if (els.loader)           els.loader.style.display = 'flex';
                 if (els.errorScreen)      els.errorScreen.style.display = 'none';
                 if (els.contentContainer) els.contentContainer.style.display = 'none';
@@ -584,15 +998,25 @@ class Utils {
                 if (els.loader) els.loader.style.display = 'none';
             },
             showContent() {
+                if (window.errorDialog) window.errorDialog.hide();
                 if (els.loader)           els.loader.style.display = 'none';
                 if (els.errorScreen)      els.errorScreen.style.display = 'none';
                 if (els.contentContainer) els.contentContainer.style.display = '';
             },
-            showError(msg) {
+            showError(error, options = {}) {
                 if (els.loader)           els.loader.style.display = 'none';
                 if (els.contentContainer) els.contentContainer.style.display = 'none';
+                if (window.errorDialog?.show) {
+                    window.errorDialog.show(error, {
+                        ...options,
+                        onRetry: options.onRetry || els.onRetry,
+                        onBack: options.onBack || els.onBack
+                    });
+                    if (els.errorScreen) els.errorScreen.style.display = 'none';
+                    return;
+                }
                 if (els.errorScreen)      els.errorScreen.style.display = 'flex';
-                if (els.errorMessage)     els.errorMessage.textContent = msg || 'Unknown error';
+                if (els.errorMessage)     els.errorMessage.textContent = error || 'Unknown error';
             }
         };
     }
@@ -634,7 +1058,13 @@ class Utils {
 
             // Закрытие меню при клике вне
             if (!e.target.closest('.mc-menu-dropdown')) {
-                document.querySelectorAll('.mc-menu-dropdown.active').forEach(m => m.classList.remove('active'));
+                rootEl.querySelectorAll('.mc-menu-dropdown.active').forEach(m => m.classList.remove('active'));
+            }
+        });
+
+        rootEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                rootEl.querySelectorAll('.mc-menu-dropdown.active').forEach(m => m.classList.remove('active'));
             }
         });
     }

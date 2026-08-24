@@ -31,7 +31,6 @@ class ParserRegistry {
             console.warn(`[ParserRegistry] Parser "${parser.id}" already registered, overwriting`);
         }
         this.parsers.set(parser.id, parser);
-        console.log(`[DEBUG ParserRegistry] Registered parser: ${parser.id} (${parser.name}), total: ${this.parsers.size}`);
 
         // Auto-add to priority order if not already present
         if (!this.priorityOrder.includes(parser.id)) {
@@ -73,18 +72,15 @@ class ParserRegistry {
      * 
      * @param {string} title - Movie/series title
      * @param {string|number|null} year - Release year
+     * @param {Object} [options] - Provider-specific search options
      * @returns {Promise<SearchResult[]>} Successful results from all parsers
      */
-    async searchAll(title, year) {
-        console.log(`[DEBUG ParserRegistry] searchAll called. title: "${title}", year: ${year}`);
+    async searchAll(title, year, options = {}) {
         const parsers = this.getAll();
-        console.log(`[DEBUG ParserRegistry] searchAll: ${parsers.length} parsers to search:`, parsers.map(p => p.id));
         
         const results = await Promise.allSettled(
             parsers.map(async (parser) => {
-                console.log(`[DEBUG ParserRegistry] Searching parser: ${parser.id}...`);
-                const result = await parser.cachedSearch(title, year);
-                console.log(`[DEBUG ParserRegistry] Parser ${parser.id} search result:`, result ? `found (url: ${result.url?.substring(0,60)})` : 'null');
+                const result = await parser.cachedSearch(title, year, options);
                 if (result) {
                     // Ensure parserId is set
                     result.parserId = parser.id;
@@ -93,11 +89,9 @@ class ParserRegistry {
             })
         );
 
-        const filtered = results
+        return results
             .filter(r => r.status === 'fulfilled' && r.value)
             .map(r => r.value);
-        console.log(`[DEBUG ParserRegistry] searchAll results: ${filtered.length} sources found from ${parsers.length} parsers`);
-        return filtered;
     }
 
     /**

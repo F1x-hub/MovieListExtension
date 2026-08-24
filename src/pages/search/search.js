@@ -1,4 +1,7 @@
 import { i18n } from '../../shared/i18n/I18n.js';
+import { isSpidermanMovie } from '../../shared/config/spidermanMovies.js';
+import { isStarWarsMovie } from '../../shared/config/starwarsMovies.js';
+import { getRatingIconMarkup } from '../../shared/components/RatingIcons.js';
 
 /**
  * SearchManager - Controller for the movie search page
@@ -21,6 +24,21 @@ class SearchManager {
         this.isPlaying = false;
         this.currentVideoUrl = '';
         this.availableCollections = []; // Store for menu
+
+        // Infinite Scroll State
+        this.CHUNK_SIZE = 12;
+        this.scrapedPool = [];
+        this.renderedMovieIds = new Set();
+        this.hasMore = false;
+        this.isLoadingMore = false;
+        this.consecutiveAutoLoads = 0;
+        this.MAX_CONSECUTIVE_AUTO_LOADS = 2;
+        this.isCircuitBreakerTripped = false;
+        this.lastLoadMoreTime = 0;
+        this.MIN_LOAD_MORE_INTERVAL_MS = 400;
+        this.apiFallbackPage = 1;
+        this.observer = null;
+        this._isSearching = false;
 
         // UI State Manager (for search results area)
         const _psm = Utils.createPageStateManager({
@@ -72,8 +90,8 @@ class SearchManager {
             // Re-initialize filters to update their labels
             this.initializeFilters();
             
-            if (this.currentResults?.docs?.length > 0) {
-                await this.displayResults();
+            if (this.currentQuery) {
+                await this.searchMovies();
             }
         }
     }
@@ -109,10 +127,8 @@ class SearchManager {
             resultsHeader: document.getElementById('resultsHeader'),
             resultsInfo: document.getElementById('resultsInfo'),
             resultsGrid: document.getElementById('resultsGrid'),
-            pagination: document.getElementById('pagination'),
-            prevPageBtn: document.getElementById('prevPageBtn'),
-            nextPageBtn: document.getElementById('nextPageBtn'),
-            pageInfo: document.getElementById('pageInfo'),
+            infiniteScrollTrigger: document.getElementById('infiniteScrollTrigger'),
+            searchEndOfResults: document.getElementById('searchEndOfResults'),
             
             // Modals
             movieModal: document.getElementById('movieModal'),
@@ -165,7 +181,7 @@ class SearchManager {
             this.elements.searchInput.addEventListener('input', (e) => this.handleSearchInput(e));
         }
         if (this.elements.searchBtn) {
-            this.elements.searchBtn.addEventListener('mousedown', () => this.performSearch());
+            this.elements.searchBtn.addEventListener('click', () => this.performSearch());
         }
         
         // Search History
@@ -192,13 +208,11 @@ class SearchManager {
             this.elements.applyFiltersBtn.addEventListener('mousedown', () => this.applyFilters());
         }
         
-        // Pagination
-        if (this.elements.prevPageBtn) {
-            this.elements.prevPageBtn.addEventListener('mousedown', () => this.previousPage());
-        }
-        if (this.elements.nextPageBtn) {
-            this.elements.nextPageBtn.addEventListener('mousedown', () => this.nextPage());
-        }
+        // Infinite scroll observer & scroll event listener (circuit breaker reset)
+        this.setupIntersectionObserver();
+        window.addEventListener('scroll', () => {
+            this.consecutiveAutoLoads = 0;
+        }, { passive: true });
         
         // Modals
         if (this.elements.modalClose) {
@@ -440,6 +454,18 @@ class SearchManager {
         const movieId = urlParams.get('movieId');
         const query = urlParams.get('q') || urlParams.get('query'); // Support both 'q' and 'query'
         const sourceUrl = urlParams.get('sourceUrl');
+        const legacyCatalogType = urlParams.get('type');
+
+        // Preserve old Home/bookmark links while keeping search.html focused
+        // on text search. Category pages now have their own paginated owner.
+        if (!movieId && !query && !sourceUrl && legacyCatalogType) {
+            const category = typeof window.normalizeCatalogCategory === 'function'
+                ? window.normalizeCatalogCategory(legacyCatalogType)
+                : 'films';
+            const catalogUrl = chrome.runtime.getURL(`src/pages/catalog/catalog.html?category=${encodeURIComponent(category)}`);
+            window.location.replace(catalogUrl);
+            return;
+        }
         
         if (movieId) {
             // Redirect to new movie-details page (backward compatibility)
@@ -633,48 +659,97 @@ class SearchManager {
                 item.classList.remove('filter-include', 'filter-exclude', 'selected');
                 checkbox.checked = false;
             }
-            
             item.setAttribute('data-filter-state', newState);
         });
         
         return item;
     }
 
+    setupIntersectionObserver() {
+        const options = {
+            root: null, // Viewport
+            rootMargin: '200px',
+            threshold: 0.1
+        };
+        
+        this.observer = new IntersectionObserver((entries) => {
+            const entry = entries[0];
+            if (entry && entry.isIntersecting && this.hasMore && !this.isLoadingMore && !this.isCircuitBreakerTripped) {
+                this.loadMoreResults();
+            }
+        }, options);
+        
+        if (this.elements.infiniteScrollTrigger) {
+            this.observer.observe(this.elements.infiniteScrollTrigger);
+        }
+    }
+
+    showTrigger() {
+        const el = this.elements.infiniteScrollTrigger;
+        if (!el) return;
+        if (this.observer) this.observer.unobserve(el);
+        el.style.display = 'flex';
+        if (this.observer) this.observer.observe(el);
+    }
+
+    hideTrigger() {
+        const el = this.elements.infiniteScrollTrigger;
+        if (!el) return;
+        if (this.observer) this.observer.unobserve(el);
+        el.style.display = 'none';
+    }
+
+    showEndOfResults() {
+        if (this.elements.searchEndOfResults) {
+            this.elements.searchEndOfResults.style.display = 'flex';
+        }
+    }
+
+    hideEndOfResults() {
+        if (this.elements.searchEndOfResults) {
+            this.elements.searchEndOfResults.style.display = 'none';
+        }
+    }
+
     async performSearch() {
+        if (this._isSearching) return;
+
+        const query = this.elements.searchInput.value.trim();
+        if (!query) {
+            Utils.showToast(i18n.get('search.error_query'), 'warning');
+            return;
+        }
+        
+        // Hide search history dropdown
+        this.hideSearchHistory();
+        
+        // Add to search history
+        await this.searchHistoryService.addToHistory(query);
+        
+        this.currentQuery = query;
+        this.currentPage = 1;
+        await this.searchMovies();
+    }
+
+    async searchMovies() {
         if (this._isSearching) return;
         this._isSearching = true;
 
         try {
-            const query = this.elements.searchInput.value.trim();
-            if (!query) {
-                Utils.showToast(i18n.get('search.error_query'), 'warning');
-                return;
-            }
-            
-            // Hide search history dropdown
-            this.hideSearchHistory();
-            
-            // Add to search history
-            await this.searchHistoryService.addToHistory(query);
-            
-            this.currentQuery = query;
-            this.currentPage = 1;
-            await this.searchMovies();
-        } finally {
-            // Add a delay before allowing the next search to prevent API rate limiting
-            setTimeout(() => {
-                this._isSearching = false;
-            }, 800);
-        }
-    }
-
-    async searchMovies() {
-        try {
-            // Clear old results immediately to prevent flickering
+            // Reset infinite scroll state
             this.currentResults = { docs: [], total: 0, pages: 0 };
+            this.scrapedPool = [];
+            this.renderedMovieIds.clear();
+            this.hasMore = false;
+            this.isLoadingMore = false;
+            this.consecutiveAutoLoads = 0;
+            this.isCircuitBreakerTripped = false;
+            this.apiFallbackPage = 1;
+            
             this.elements.resultsGrid.innerHTML = '';
             this.elements.resultsHeader.style.display = 'none';
-            this.elements.pagination.style.display = 'none';
+            this.hideTrigger();
+            this.hideEndOfResults();
             
             this.page.setLoading(true);
             
@@ -694,46 +769,67 @@ class SearchManager {
             // Get current filters
             const filters = this.getSelectedFilters();
             
-            // Search movies with year range filter if available
+            // Search movies (first page / scrape candidates pool)
             const searchResults = await kinopoiskService.searchMovies(
                 this.currentQuery,
-                this.currentPage,
-                10,
+                1,
+                30,
                 filters
             );
             
             // Apply client-side filtering (for filters not supported by API)
-            let filteredResults = searchResults;
+            let filteredDocs = searchResults?.docs || [];
             if (searchResults && searchResults.docs) {
-                // Apply genre/country/year filters; do NOT pre-filter by kpRating —
-                // many valid movies (anime, series, new releases) have kpRating=0 in search results.
-                const filteredDocs = this.applyClientSideFilters(searchResults.docs, filters);
-                filteredResults = {
-                    ...searchResults,
-                    docs: filteredDocs,
-                    total: filteredDocs.length
-                };
+                filteredDocs = this.applyClientSideFilters(searchResults.docs, filters);
             }
             
-            // Note: Movies are no longer cached here to save database quota
-            // They will be cached only when users rate them
+            this.currentResults = {
+                ...searchResults,
+                docs: filteredDocs,
+                total: searchResults?.totalScraped || searchResults?.total || filteredDocs.length
+            };
             
-            this.currentResults = filteredResults;
+            if (filteredDocs.length === 0) {
+                this.displayEmptyResults();
+                return;
+            }
             
-            if (filteredResults && filteredResults.docs) {
-                await this.displayResults();
+            // Show results header
+            this.elements.resultsHeader.style.display = 'flex';
+            this.elements.resultsInfo.textContent = i18n.get('search.found_count').replace('{count}', this.currentResults.total);
+            this.elements.resultsGrid.classList.remove('single-item');
+            
+            const isScrapeSource = searchResults?.searchSource?.includes('scrape');
+            if (isScrapeSource) {
+                this.scrapedPool = [...filteredDocs];
+                const firstChunk = this.scrapedPool.splice(0, this.CHUNK_SIZE);
+                
+                // If there are more items in scrape pool or potential API fallback
+                const hasFilters = filters.yearFrom || (filters.genresInclude && filters.genresInclude.length > 0) || (filters.countriesInclude && filters.countriesInclude.length > 0);
+                // Scraper returns up to 25-30 top matches. If total scraped is < 20 (e.g. 11), all matches are already in memory.
+                this.hasMore = this.scrapedPool.length > 0 || (filteredDocs.length >= 20 && !hasFilters);
+                
+                await this.renderMovieCardsChunk(firstChunk, false);
             } else {
-                this.currentResults = { docs: [], total: 0, pages: 0 };
-                await this.displayResults();
+                // Direct API search
+                const firstChunk = filteredDocs.slice(0, this.CHUNK_SIZE);
+                if (filteredDocs.length > this.CHUNK_SIZE) {
+                    this.scrapedPool = filteredDocs.slice(this.CHUNK_SIZE);
+                }
+                this.hasMore = filteredDocs.length > this.CHUNK_SIZE || (searchResults.pages && searchResults.pages > 1);
+                
+                await this.renderMovieCardsChunk(firstChunk, false);
             }
             
         } catch (error) {
             console.error('Search error:', error);
             
-            // Provide more user-friendly error messages
             let errorMessage = i18n.get('search.error_generic');
-            
-            if (error.message.includes('500')) {
+            if (error.message.includes('DAILY_LIMIT_REACHED') || error.message.includes('403')) {
+                this.isCircuitBreakerTripped = true;
+                this.hasMore = false;
+                errorMessage = i18n.get('search.error_forbidden');
+            } else if (error.message.includes('500')) {
                 if (this.hasCyrillic(this.currentQuery)) {
                     errorMessage = i18n.get('search.error_cyrillic').replace('{query}', this.currentQuery);
                 } else {
@@ -741,8 +837,6 @@ class SearchManager {
                 }
             } else if (error.message.includes('404')) {
                 errorMessage = i18n.get('search.error_not_found');
-            } else if (error.message.includes('403')) {
-                errorMessage = i18n.get('search.error_forbidden');
             } else if (error.message.includes('network') || error.message.includes('fetch')) {
                 errorMessage = i18n.get('search.error_network');
             }
@@ -750,73 +844,137 @@ class SearchManager {
             Utils.showToast(errorMessage, 'error');
         } finally {
             this.page.setLoading(false);
+            setTimeout(() => {
+                this._isSearching = false;
+            }, 400);
         }
     }
 
-    async waitForFirebaseManager() {
-        return new Promise((resolve) => {
-            if (window.firebaseManager && window.firebaseManager.isInitialized) {
-                resolve();
-                return;
-            }
-            
-            const onReady = () => {
-                window.removeEventListener('firebaseManagerReady', onReady);
-                resolve();
-            };
-            window.addEventListener('firebaseManagerReady', onReady);
-            
-            let attempts = 0;
-            const maxAttempts = 50;
-            
-            const checkInterval = setInterval(() => {
-                attempts++;
-                
-                if (window.firebaseManager && window.firebaseManager.isInitialized) {
-                    clearInterval(checkInterval);
-                    window.removeEventListener('firebaseManagerReady', onReady);
-                    resolve();
-                }
-                
-                if (attempts >= maxAttempts) {
-                    clearInterval(checkInterval);
-                    window.removeEventListener('firebaseManagerReady', onReady);
-                    resolve();
-                }
-            }, 100);
-        });
-    }
-
-    async displayResults() {
-        if (this.currentResults.docs.length === 0) {
-            this.elements.resultsGrid.classList.add('single-item');
-            this.elements.resultsGrid.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-state-icon"><svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></div>
-                    <h3 class="empty-state-title" data-i18n="search.no_results_title">${i18n.get('search.no_results_title')}</h3>
-                    <p class="empty-state-text" data-i18n="search.no_results_text">${i18n.get('search.no_results_text')}</p>
-                </div>
-            `;
-            this.elements.resultsHeader.style.display = 'none';
-            this.elements.pagination.style.display = 'none';
+    async loadMoreResults() {
+        if (this.isLoadingMore || !this.hasMore || this.isCircuitBreakerTripped) return;
+        
+        const now = performance.now();
+        if (now - this.lastLoadMoreTime < this.MIN_LOAD_MORE_INTERVAL_MS) return;
+        
+        if (this.consecutiveAutoLoads >= this.MAX_CONSECUTIVE_AUTO_LOADS) {
+            console.warn('SearchManager: Circuit breaker tripped after consecutive auto-loads without scroll');
             return;
         }
         
-        // Show results header
-        this.elements.resultsHeader.style.display = 'flex';
-        this.elements.resultsInfo.textContent = i18n.get('search.found_count').replace('{count}', this.currentResults.total);
+        this.consecutiveAutoLoads++;
+        this.lastLoadMoreTime = now;
+        this.isLoadingMore = true;
+        this.showTrigger();
         
-        // Remove single-item class for grid layout
-        this.elements.resultsGrid.classList.remove('single-item');
+        try {
+            // Priority 1: Serve from in-memory pool (scraped candidates)
+            if (this.scrapedPool.length > 0) {
+                const nextChunk = this.scrapedPool.splice(0, this.CHUNK_SIZE);
+                if (this.scrapedPool.length === 0) {
+                    const filters = this.getSelectedFilters();
+                    const hasFilters = filters.yearFrom || (filters.genresInclude && filters.genresInclude.length > 0) || (filters.countriesInclude && filters.countriesInclude.length > 0);
+                    // For scrape queries with < 20 items or active filters, all items are exhausted
+                    if (this.renderedMovieIds.size < 20 || hasFilters) {
+                        this.hasMore = false;
+                    }
+                }
+                await this.renderMovieCardsChunk(nextChunk, true);
+                return;
+            }
+            
+            // Priority 2: API Fallback for additional pages
+            const kinopoiskService = firebaseManager?.getKinopoiskService();
+            if (!kinopoiskService || !kinopoiskService.isConfigured()) {
+                this.hasMore = false;
+                this.hideTrigger();
+                this.showEndOfResults();
+                return;
+            }
+            
+            this.apiFallbackPage++;
+            const filters = this.getSelectedFilters();
+            const fallbackResults = await kinopoiskService.searchMovies(
+                this.currentQuery,
+                this.apiFallbackPage,
+                this.CHUNK_SIZE,
+                { ...filters, skipScraper: true }
+            );
+            
+            let docs = fallbackResults?.docs || [];
+            if (docs.length > 0) {
+                docs = this.applyClientSideFilters(docs, filters);
+                // Deduplicate against already rendered movie IDs
+                const uniqueNewMovies = docs.filter(m => !this.renderedMovieIds.has(m.kinopoiskId) && !this.renderedMovieIds.has(String(m.kinopoiskId)));
+                
+                if (uniqueNewMovies.length > 0) {
+                    this.hasMore = fallbackResults.docs.length >= this.CHUNK_SIZE && (fallbackResults.pages ? this.apiFallbackPage < fallbackResults.pages : true);
+                    await this.renderMovieCardsChunk(uniqueNewMovies, true);
+                } else if (fallbackResults.docs.length >= this.CHUNK_SIZE) {
+                    this.hasMore = this.apiFallbackPage < (fallbackResults.pages || 10);
+                } else {
+                    this.hasMore = false;
+                }
+            } else {
+                this.hasMore = false;
+            }
+            
+            if (!this.hasMore) {
+                this.hideTrigger();
+                this.showEndOfResults();
+            }
+        } catch (error) {
+            console.error('Error loading more search results:', error);
+            if (error.message.includes('DAILY_LIMIT_REACHED') || error.message.includes('403')) {
+                this.isCircuitBreakerTripped = true;
+                this.hasMore = false;
+                Utils.showToast(i18n.get('search.error_forbidden'), 'error');
+            }
+            this.hideTrigger();
+        } finally {
+            this.isLoadingMore = false;
+        }
+    }
+
+    displayEmptyResults() {
+        this.elements.resultsGrid.classList.add('single-item');
+        this.elements.resultsGrid.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon"><svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></div>
+                <h3 class="empty-state-title" data-i18n="search.no_results_title">${i18n.get('search.no_results_title')}</h3>
+                <p class="empty-state-text" data-i18n="search.no_results_text">${i18n.get('search.no_results_text')}</p>
+            </div>
+        `;
+        this.elements.resultsHeader.style.display = 'none';
+        this.hideTrigger();
+        this.hideEndOfResults();
+    }
+
+    async renderMovieCardsChunk(movies, append = true) {
+        if (!movies || movies.length === 0) {
+            if (!append) this.displayEmptyResults();
+            return;
+        }
+        
+        if (!append) {
+            this.elements.resultsGrid.innerHTML = '';
+        }
+        
+        // Register rendered IDs for deduplication
+        movies.forEach(m => {
+            if (m.kinopoiskId) {
+                this.renderedMovieIds.add(m.kinopoiskId);
+                this.renderedMovieIds.add(String(m.kinopoiskId));
+                this.renderedMovieIds.add(Number(m.kinopoiskId));
+            }
+        });
         
         // Load user ratings for movies if user is logged in
         let userRatingsMap = {};
-        if (this.currentUser) {
+        if (this.currentUser && window.firebaseManager) {
             try {
                 const ratingService = firebaseManager.getRatingService();
-                const movieIds = this.currentResults.docs.map(m => m.kinopoiskId);
+                const movieIds = movies.map(m => m.kinopoiskId).filter(Boolean);
                 
-                // Use Promise.all for parallel fetching
                 const ratingPromises = movieIds.map(async (movieId) => {
                     try {
                         const rating = await ratingService.getRating(this.currentUser.uid, movieId);
@@ -833,14 +991,13 @@ class SearchManager {
                     }
                 });
             } catch (error) {
-                console.error('Error loading user ratings:', error);
+                console.error('Error loading user ratings for chunk:', error);
             }
         }
         
-        // Display movie cards with user ratings
-        this.elements.resultsGrid.innerHTML = ''; // Clear existing content
+        const fragment = document.createDocumentFragment();
         
-        this.currentResults.docs.forEach(movie => {
+        movies.forEach(movie => {
             // Clean title
             if (movie.name) movie.name = Utils.cleanTitle(movie.name);
             if (movie.nameRu) movie.nameRu = Utils.cleanTitle(movie.nameRu);
@@ -855,23 +1012,21 @@ class SearchManager {
                 movie: movie,
                 id: ratingId,
                 isFavorite: isFavorite,
-                // Pass user rating if exists
                 rating: userRating ? userRating.rating : 0,
                 comment: userRating ? userRating.comment : '',
             };
             
             // Options for MovieCard
             const cardOptions = {
+                variant: 'search',
                 showFavorite: true,
                 showWatching: true,
                 showWatchlist: true,
-                showUserInfo: false, // Don't show user info on search results
+                showUserInfo: false,
                 showAverageRating: true,
                 showThreeDotMenu: true,
-                showEditRating: false, // Edit is handled via menu or modal
-                showAddToCollection: false, // Use collections list instead
-                
-                // Pass collections
+                showEditRating: false,
+                showAddToCollection: false,
                 availableCollections: this.availableCollections || [],
                 movieCollections: (this.availableCollections || [])
                     .filter(c => c.movieIds && (c.movieIds.includes(Number(movie.kinopoiskId)) || c.movieIds.includes(String(movie.kinopoiskId))))
@@ -885,21 +1040,24 @@ class SearchManager {
             cardElement.setAttribute('data-action', 'view-details');
             cardElement.setAttribute('data-movie-id', movie.kinopoiskId);
             
-            this.elements.resultsGrid.appendChild(cardElement);
+            fragment.appendChild(cardElement);
         });
         
-        // Update button states
+        this.elements.resultsGrid.appendChild(fragment);
+        
+        // Update button states for newly added cards
         if (this.currentUser) {
             this.updateButtonStates().catch(err => console.error('Error updating button states:', err));
         }
         
-        // Show pagination
-        this.elements.pagination.style.display = 'flex';
-        this.elements.pageInfo.textContent = i18n.get('search.page_info')
-            .replace('{current}', this.currentPage)
-            .replace('{total}', this.currentResults.pages);
-        this.elements.prevPageBtn.disabled = this.currentPage <= 1;
-        this.elements.nextPageBtn.disabled = this.currentPage >= this.currentResults.pages;
+        // Update trigger / end of results indicator visibility
+        if (this.hasMore) {
+            this.showTrigger();
+            this.hideEndOfResults();
+        } else {
+            this.hideTrigger();
+            this.showEndOfResults();
+        }
     }
 
     // Removed createMovieCard method as it is replaced by MovieCard component
@@ -1299,24 +1457,27 @@ class SearchManager {
                         ${isCurrentUser ? `
                             <div class="user-rating-menu">
                                 <button class="user-rating-menu-btn" data-rating-id="${rating.id}" aria-label="${i18n.get('movie_details.user_ratings_title')}">
-                                    <span>⋮</span>
+                                    <span><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg></span>
                                 </button>
                                 <div class="user-rating-menu-dropdown" id="menu-${rating.id}" style="display: none;">
                                     <button class="menu-item edit-item" data-rating-id="${rating.id}" data-action="edit">
-                                        <span class="menu-icon">✏️</span>
+                                        <span class="menu-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></span>
                                         <span>${i18n.get('movie_details.edit')}</span>
                                     </button>
                                     <button class="menu-item delete-item" data-rating-id="${rating.id}" data-action="delete">
-                                        <span class="menu-icon">🗑️</span>
+                                        <span class="menu-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></span>
                                         <span>${i18n.get('movie_details.delete')}</span>
                                     </button>
                                 </div>
                             </div>
                         ` : ''}
                     </div>
-                    ${rating.comment ? `
-                        <div class="user-rating-comment">${Utils.parseSpoilers(this.escapeHtml(rating.comment))}</div>
-                    ` : ''}
+                    ${(() => {
+                        const normalizedComment = Utils.normalizeRatingComment(rating.comment);
+                        return normalizedComment ? `
+                            <div class="user-rating-comment">${Utils.parseSpoilers(this.escapeHtml(normalizedComment))}</div>
+                        ` : '';
+                    })()}
                     <div class="user-rating-date">${formattedDate}</div>
                 </div>
             `;
@@ -1375,8 +1536,8 @@ class SearchManager {
     createDetailedMovieCard(movie, userRating = null, bookmarkStatus = null) {
         const posterUrl = movie.posterUrl || '/icons/icon48.png';
         const year = movie.year || '';
-        const genres = movie.genres?.join(', ') || '';
-        const countries = movie.countries?.join(', ') || '';
+        const genres = typeof Utils !== 'undefined' && Utils.formatGenres ? Utils.formatGenres(movie.genres) : (movie.genres?.join(', ') || '');
+        const countries = typeof Utils !== 'undefined' && Utils.formatCountries ? Utils.formatCountries(movie.countries) : (movie.countries?.join(', ') || '');
         const kpRating = movie.kpRating || 0;
         const imdbRating = movie.imdbRating || 0;
         const duration = movie.duration || 0;
@@ -1449,11 +1610,11 @@ class SearchManager {
                 <div class="movie-detail-header">
                     <div class="movie-detail-poster-container">
                         <img src="${posterUrl}" alt="${movie.name}" class="movie-detail-page-poster" data-fallback="detail">
-                        <div class="movie-poster-placeholder" style="display: none;">🎬</div>
+                        <div class="movie-poster-placeholder" style="display: none;"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg></div>
                         <!-- Menu Button -->
                         <div class="mc-menu-container" style="position: absolute; top: 10px; right: 10px; z-index: 20;">
                             <button class="mc-menu-btn" title="More options">
-                                <span>⋮</span>
+                                <span><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg></span>
                             </button>
                             <div class="mc-menu-dropdown">
                                 <button class="mc-menu-item ${isFavorite ? 'active' : ''}" data-action="toggle-favorite" 
@@ -1493,7 +1654,7 @@ class SearchManager {
                                         const isCustomIcon = col.icon && (col.icon.startsWith('data:') || col.icon.startsWith('https://') || col.icon.startsWith('http://'));
                                         const iconHtml = isCustomIcon 
                                             ? `<img src="${col.icon}" style="width: 16px; height: 16px; object-fit: cover; border-radius: 4px;">`
-                                            : (col.icon || '📁');
+                                            : (col.icon || '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>');
                                             
                                         return `
                                             <button class="mc-menu-item" data-action="toggle-collection"
@@ -1503,7 +1664,7 @@ class SearchManager {
                                                 <span class="mc-menu-item-text" style="${isInCollection ? 'font-weight: 500; color: #fff;' : ''}">
                                                     ${col.name}
                                                 </span>
-                                                ${isInCollection ? '<span style="margin-left: auto; font-weight: bold; color: var(--accent-color, #4CAF50);">✓</span>' : ''}
+                                                ${isInCollection ? '<span class="mc-collection-check" style="margin-left: auto; font-weight: bold; color: var(--accent-color, #4CAF50);"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>' : ''}
                                             </button>
                                         `;
                                     }).join('')}
@@ -1690,7 +1851,7 @@ class SearchManager {
                                                     <div class="actor-photo-container">
                                                         ${photoUrl ? 
                                                             `<img src="${photoUrl}" alt="${this.escapeHtml(name)}" class="actor-photo" loading="lazy">` : 
-                                                            `<div class="actor-placeholder">🎭</div>`
+                                                            `<div class="actor-placeholder"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></div>`
                                                         }
                                                     </div>
                                                     <div class="actor-info">
@@ -1848,8 +2009,9 @@ class SearchManager {
             if (!data) return null;
             
             const cached = JSON.parse(data);
-            // Check expiry (24h)
-            if (Date.now() - cached.timestamp > 24 * 60 * 60 * 1000) {
+            const defaultTtl = 15 * 60 * 1000;
+            const ttl = typeof cached.ttl === 'number' ? cached.ttl : defaultTtl;
+            if (Date.now() - cached.timestamp > ttl) {
                 localStorage.removeItem(key);
                 return null;
             }
@@ -1862,8 +2024,14 @@ class SearchManager {
     saveSourcesToCache(movieId, sources) {
         try {
             const key = `movie_sources_${movieId}`;
+            const hasShortLivedTokens = Array.isArray(sources) && sources.some(s => {
+                const u = s?.url || '';
+                return u.includes('cinemar.cc') || u.includes('stravers.live') || u.includes('allarknow.online');
+            });
+            const ttl = hasShortLivedTokens ? (5 * 60 * 1000) : (15 * 60 * 1000);
             const data = {
                 timestamp: Date.now(),
+                ttl: ttl,
                 sources: sources
             };
             localStorage.setItem(key, JSON.stringify(data));
@@ -1875,7 +2043,7 @@ class SearchManager {
     createMovieDetailHTML(movie) {
         const posterUrl = movie.posterUrl || '/icons/icon48.png';
         const year = movie.year || '';
-        const genres = movie.genres?.join(', ') || '';
+        const genres = typeof Utils !== 'undefined' && Utils.formatGenres ? Utils.formatGenres(movie.genres) : (movie.genres?.join(', ') || '');
         const kpRating = movie.kpRating || 0;
         const imdbRating = movie.imdbRating || 0;
         const duration = movie.duration || 0;
@@ -1921,17 +2089,22 @@ class SearchManager {
         this.elements.ratingMoviePoster.src = movie.posterUrl || '/icons/icon48.png';
         this.elements.ratingMoviePoster.alt = movie.name;
         this.elements.ratingMovieTitle.textContent = movie.name;
-        this.elements.ratingMovieMeta.textContent = `${movie.year} • ${movie.genres?.slice(0, 3).join(', ')}`;
+        this.elements.ratingMovieMeta.textContent = `${movie.year} • ${(typeof Utils !== 'undefined' && Utils.formatGenres ? Utils.formatGenres(movie.genres, 3) : (movie.genres?.slice(0, 3).join(', ') || ''))}`;
         
         // 2. Generate Stars
         this.elements.ratingStars.innerHTML = '';
-        const starSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
+        const isSpiderman = isSpidermanMovie(movie);
+        const isStarWars = isStarWarsMovie(movie);
+        const ratingIcon = getRatingIconMarkup({ isSpiderman, isStarWars });
 
         for (let i = 1; i <= 10; i++) {
             const btn = document.createElement('button');
             btn.className = 'star-rating-btn';
+            btn.classList.toggle('spiderman-rating-btn', isSpiderman);
+            btn.classList.toggle('starwars-rating-btn', isStarWars);
             btn.dataset.rating = i;
-            btn.innerHTML = starSvg;
+            btn.setAttribute('aria-label', `Оценить на ${i} из 10`);
+            btn.innerHTML = ratingIcon;
             this.elements.ratingStars.appendChild(btn);
         }
         
@@ -1943,11 +2116,12 @@ class SearchManager {
             this.currentRating = existingRating.rating;
             this.updateStarVisuals(this.currentRating, false);
             
-            this.elements.ratingComment.value = existingRating.comment || '';
-            this.elements.charCount.textContent = (existingRating.comment || '').length;
+            const normalizedComment = Utils.normalizeRatingComment(existingRating.comment);
+            this.elements.ratingComment.value = normalizedComment;
+            this.elements.charCount.textContent = normalizedComment.length;
             
             // Show review section if there is a comment
-            this.isReviewVisible = !!existingRating.comment;
+            this.isReviewVisible = !!normalizedComment;
             this.elements.reviewContainer.style.display = this.isReviewVisible ? 'block' : 'none';
         } else {
             this.currentRating = 0;
@@ -2284,20 +2458,6 @@ class SearchManager {
         return filters;
     }
 
-    previousPage() {
-        if (this.currentPage > 1) {
-            this.currentPage--;
-            this.searchMovies();
-        }
-    }
-
-    nextPage() {
-        if (this.currentPage < this.currentResults.pages) {
-            this.currentPage++;
-            this.searchMovies();
-        }
-    }
-
     goBack() {
         window.close();
     }
@@ -2320,36 +2480,36 @@ class SearchManager {
             
             // Genre include filter (movie must have at least one of these genres)
             if (filters.genresInclude && filters.genresInclude.length > 0) {
-                const movieGenres = movie.genres || [];
+                const movieGenres = typeof Utils !== 'undefined' && Utils.normalizeGenres ? Utils.normalizeGenres(movie.genres) : (movie.genres || []);
                 const hasIncludedGenre = filters.genresInclude.some(genre => 
-                    movieGenres.some(mg => mg.toLowerCase() === genre.toLowerCase())
+                    movieGenres.some(mg => (typeof mg === 'string' ? mg.toLowerCase() : '') === genre.toLowerCase())
                 );
                 if (!hasIncludedGenre) return false;
             }
             
             // Genre exclude filter (movie must not have any of these genres)
             if (filters.genresExclude && filters.genresExclude.length > 0) {
-                const movieGenres = movie.genres || [];
+                const movieGenres = typeof Utils !== 'undefined' && Utils.normalizeGenres ? Utils.normalizeGenres(movie.genres) : (movie.genres || []);
                 const hasExcludedGenre = filters.genresExclude.some(genre => 
-                    movieGenres.some(mg => mg.toLowerCase() === genre.toLowerCase())
+                    movieGenres.some(mg => (typeof mg === 'string' ? mg.toLowerCase() : '') === genre.toLowerCase())
                 );
                 if (hasExcludedGenre) return false;
             }
             
             // Country include filter (movie must be from at least one of these countries)
             if (filters.countriesInclude && filters.countriesInclude.length > 0) {
-                const movieCountries = movie.countries || [];
+                const movieCountries = typeof Utils !== 'undefined' && Utils.normalizeCountries ? Utils.normalizeCountries(movie.countries) : (movie.countries || []);
                 const hasIncludedCountry = filters.countriesInclude.some(country => 
-                    movieCountries.some(mc => mc.toLowerCase() === country.toLowerCase())
+                    movieCountries.some(mc => (typeof mc === 'string' ? mc.toLowerCase() : '') === country.toLowerCase())
                 );
                 if (!hasIncludedCountry) return false;
             }
             
             // Country exclude filter (movie must not be from any of these countries)
             if (filters.countriesExclude && filters.countriesExclude.length > 0) {
-                const movieCountries = movie.countries || [];
+                const movieCountries = typeof Utils !== 'undefined' && Utils.normalizeCountries ? Utils.normalizeCountries(movie.countries) : (movie.countries || []);
                 const hasExcludedCountry = filters.countriesExclude.some(country => 
-                    movieCountries.some(mc => mc.toLowerCase() === country.toLowerCase())
+                    movieCountries.some(mc => (typeof mc === 'string' ? mc.toLowerCase() : '') === country.toLowerCase())
                 );
                 if (hasExcludedCountry) return false;
             }
@@ -2555,7 +2715,7 @@ class SearchManager {
             
             if (typeof Utils !== 'undefined') {
                 if (newStatus) {
-                    Utils.showToast('❤️ Добавлено в Избранное', 'success');
+                    Utils.showToast('Добавлено в Избранное', 'success');
                 } else {
                     Utils.showToast('Удалено из Избранного', 'success');
                 }
@@ -2632,7 +2792,7 @@ class SearchManager {
                 await watchlistService.addToWatchlist(this.currentUser.uid, movieData);
 
                 if (typeof Utils !== 'undefined') {
-                    Utils.showToast('Добавлено в Watchlist ✓', 'success');
+                    Utils.showToast('Добавлено в Watchlist', 'success');
                 }
             }
 
@@ -2807,103 +2967,24 @@ class SearchManager {
     showFrameModal(frameUrl, frameIndex) {
         const movie = this.selectedMovie;
         if (!movie) return;
-        
-        // Use displayFrames (the ones actually shown in grid) instead of all frames
+
         const frames = movie.displayFrames || [];
         if (frames.length === 0) return;
-        
-        let frameModal = document.getElementById('frameModal');
-        if (!frameModal) {
-            frameModal = document.createElement('div');
-            frameModal.id = 'frameModal';
-            frameModal.className = 'modal-overlay';
-            frameModal.innerHTML = `
-                <div class="modal frame-modal">
-                    <div class="modal-header">
-                        <h2 class="modal-title">Кадр из фильма</h2>
-                        <button class="modal-close" id="frameModalClose">×</button>
-                    </div>
-                    <div class="modal-body frame-modal-body">
-                        <button class="frame-modal-nav prev" id="frameNavPrev">‹</button>
-                        <img id="frameModalImage" src="" alt="Кадр из фильма" class="frame-modal-image">
-                        <button class="frame-modal-nav next" id="frameNavNext">›</button>
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(frameModal);
-            
-            // Add close handler
-            frameModal.addEventListener('click', (e) => {
-                if (e.target === frameModal || e.target.id === 'frameModalClose') {
-                    frameModal.style.display = 'none';
-                }
-            });
-            
-            const prevBtn = document.getElementById('frameNavPrev');
-            const nextBtn = document.getElementById('frameNavNext');
-            
-            prevBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const currentIndex = parseInt(prevBtn.dataset.currentIndex || '0');
-                if (currentIndex > 0) {
-                    this.showFrameAtIndex(frames, currentIndex - 1);
-                }
-            });
-            
-            nextBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const currentIndex = parseInt(nextBtn.dataset.currentIndex || '0');
-                if (currentIndex < frames.length - 1) {
-                    this.showFrameAtIndex(frames, currentIndex + 1);
-                }
-            });
-            
-            document.addEventListener('keydown', (e) => {
-                if (frameModal.style.display !== 'none' && frameModal.style.display) {
-                    if (e.key === 'ArrowLeft') {
-                        e.preventDefault();
-                        prevBtn.click();
-                    } else if (e.key === 'ArrowRight') {
-                        e.preventDefault();
-                        nextBtn.click();
-                    } else if (e.key === 'Escape') {
-                        e.preventDefault();
-                        frameModal.style.display = 'none';
-                    }
-                }
-            });
+
+        // Build URL array for ImageLightbox
+        const urls = frames.map(f =>
+            f.url || f.previewUrl || (f.poster && f.poster.url) || ''
+        ).filter(Boolean);
+
+        if (urls.length === 0) return;
+
+        if (window.ImageLightbox) {
+            window.ImageLightbox.show(urls, Math.max(0, frameIndex));
         }
-        
-        this.showFrameAtIndex(frames, frameIndex);
-        frameModal.style.display = 'flex';
     }
-    
-    showFrameAtIndex(frames, index) {
-        if (index < 0 || index >= frames.length) return;
-        
-        const frame = frames[index];
-        const frameUrl = frame.url || frame.previewUrl || (frame.poster && frame.poster.url);
-        if (!frameUrl) return;
-        
-        const frameImage = document.getElementById('frameModalImage');
-        const prevBtn = document.getElementById('frameNavPrev');
-        const nextBtn = document.getElementById('frameNavNext');
-        
-        frameImage.classList.add('fade-out');
-        
-        setTimeout(() => {
-            frameImage.src = frameUrl;
-            frameImage.classList.remove('fade-out');
-            frameImage.classList.add('fade-in');
-            
-            if (prevBtn && nextBtn) {
-                prevBtn.dataset.currentIndex = index;
-                nextBtn.dataset.currentIndex = index;
-                prevBtn.disabled = index === 0;
-                nextBtn.disabled = index === frames.length - 1;
-            }
-        }, 150);
-    }
+
+    // showFrameAtIndex is now handled internally by ImageLightbox; kept as no-op for safety
+    showFrameAtIndex(frames, index) {}
 
     // Search History Methods
     async showSearchHistory() {
@@ -3693,7 +3774,7 @@ class SearchManager {
         
         try {
             // Check if checkmark exists
-            let checkSpan = Array.from(buttonElement.children).find(child => child.textContent.includes('✓'));
+            let checkSpan = Array.from(buttonElement.children).find(child => child.classList?.contains('mc-collection-check') || child.textContent.includes('✓') || child.querySelector('svg'));
             const isChecked = !!checkSpan;
             
             if (isChecked) {
@@ -3704,7 +3785,8 @@ class SearchManager {
                 }
             } else {
                 const newCheck = document.createElement('span');
-                newCheck.textContent = '✓';
+                newCheck.className = 'mc-collection-check';
+                newCheck.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
                 newCheck.style.marginLeft = 'auto';
                 newCheck.style.fontWeight = 'bold';
                 newCheck.style.color = 'var(--accent-color, #4CAF50)';

@@ -24,9 +24,9 @@ class ImdbParsingService {
                     'Accept-Language': 'en-US,en;q=0.9', // Request English content
                 }
             });
-            
+
             console.log(`[ImdbParser] Response status: ${response.status}`);
-            
+
             if (!response.ok) {
                 console.warn(`[ImdbParser] ❌ Failed to load IMDb page: ${response.status}`);
                 return null;
@@ -58,7 +58,7 @@ class ImdbParsingService {
             // Use data-testid for more reliable selection as requested
             const ratingElement = doc.querySelector('[data-testid="hero-rating-bar__aggregate-rating__score"] span:first-child');
             let rating = 0;
-            
+
             if (ratingElement) {
                 rating = parseFloat(ratingElement.textContent.trim());
             }
@@ -70,46 +70,41 @@ class ImdbParsingService {
             // or just rely on the structure inside "data-testid='hero-rating-bar__aggregate-rating'"
 
             // Votes parsing
-            // Structure: 
+            // Structure:
             // <div class="sc-4dc495c1-0 fUqjJu"> (Parent)
             //   <div data-testid="hero-rating-bar__aggregate-rating__score">...</div> (Rating)
-            //   <div class="..."></div> (Spacer/Separator)
+            //   <div class="..." ></div> (Spacer/Separator)
             //   <div class="sc-4dc495c1-3 eNfgcR">20K</div> (Votes)
             // </div>
-            
+
             let votes = 0;
             const scoreElement = doc.querySelector('[data-testid="hero-rating-bar__aggregate-rating__score"]');
-            
+
             if (scoreElement && scoreElement.parentElement) {
                 // The votes are usually the 3rd child of the shared parent
                 const parent = scoreElement.parentElement;
                 const children = parent.children;
-                
+
                 if (children.length >= 3) {
                     // Try the 3rd child (index 2)
                     const votesElement = children[2];
                     if (votesElement) {
-                         const voteText = votesElement.textContent.trim();
-                         votes = this.parseVotes(voteText);
+                        const voteText = votesElement.textContent.trim();
+                        votes = this.parseVotes(voteText);
                     }
                 }
             }
-            
+
             // Fallback: search within the aggregate container if strictly structured parsing fails
             if (votes === 0) {
                 const aggregateContainer = doc.querySelector('[data-testid="hero-rating-bar__aggregate-rating"]');
                 if (aggregateContainer) {
-                     // Regex to find things like "2.4M", "20K", "123" that are NOT the rating
-                     // This is risky but a fallback.
-                     // Better fallback: standard IMDb classes sometimes used for votes like .sc-bde20123-3 (changes dynamically)
-                     
-                     // Let's stick to the relative positioning logic as primary, but if that fails, 
-                     // try to find any text in the container that matches vote patterns
+                    // Keep the original relative-position parsing as the primary path.
                 }
             }
 
             console.log(`[ImdbParser] Parsed: Rating=${rating}, Votes=${votes}`);
-            
+
             if (rating > 0) {
                 return { rating, votes };
             }
@@ -123,21 +118,21 @@ class ImdbParsingService {
 
     /**
      * Parse vote string (e.g. "20K", "1.5M", "2,345") into number
-     * @param {string} voteStr 
+     * @param {string} voteStr
      * @returns {number}
      */
     parseVotes(voteStr) {
         if (!voteStr) return 0;
-        
+
         const str = voteStr.toUpperCase().replace(/,/g, '');
         let multiplier = 1;
-        
+
         if (str.endsWith('K')) {
             multiplier = 1000;
         } else if (str.endsWith('M')) {
             multiplier = 1000000;
         }
-        
+
         const num = parseFloat(str.replace(/[KM]/g, ''));
         return Math.round(num * multiplier);
     }
@@ -147,3 +142,5 @@ class ImdbParsingService {
 if (typeof window !== 'undefined') {
     window.ImdbParsingService = ImdbParsingService;
 }
+if (typeof globalThis !== 'undefined') globalThis.ImdbParsingService = ImdbParsingService;
+if (typeof module !== 'undefined' && module.exports) module.exports = ImdbParsingService;

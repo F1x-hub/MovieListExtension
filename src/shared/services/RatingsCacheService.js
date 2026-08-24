@@ -12,17 +12,32 @@ class RatingsCacheService {
         this.AVERAGE_RATINGS_TIMESTAMP_KEY = 'average_ratings_timestamp';
         this.CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
         this.MAX_CACHED_RATINGS = 50;
+        this.consecutiveCriticalErrors = 0;
+        this.MAX_CONSECUTIVE_CRITICAL_ERRORS = 3;
+    }
+
+    getCacheKey(userId = null) {
+        return userId ? `${this.CACHE_KEY}_${userId}` : this.CACHE_KEY;
+    }
+
+    getCacheTimestampKey(userId = null) {
+        return userId ? `${this.CACHE_TIMESTAMP_KEY}_${userId}` : this.CACHE_TIMESTAMP_KEY;
+    }
+
+    getCacheHashKey(userId = null) {
+        return userId ? `${this.CACHE_HASH_KEY}_${userId}` : this.CACHE_HASH_KEY;
     }
 
     /**
      * Get cached ratings or fetch from server if cache is invalid
      * @param {number} limit - Maximum number of ratings to return
+     * @param {string|null} userId - Optional user ID
      * @returns {Promise<Array>} - Array of ratings with movie data
      */
-    async getCachedRatings(limit = 50) {
+    async getCachedRatings(limit = 50, userId = null) {
         try {
             // First try to get cached data
-            const cachedData = await this.getCacheData();
+            const cachedData = await this.getCacheData(userId);
             
             if (cachedData && this.isCacheValid(cachedData.timestamp)) {
                 console.log('Using cached ratings data');
@@ -31,11 +46,11 @@ class RatingsCacheService {
 
             // Cache is invalid or doesn't exist, fetch from server
             console.log('Cache invalid or missing, fetching from server');
-            return await this.fetchAndCacheRatings(limit);
+            return await this.fetchAndCacheRatings(limit, null, userId);
         } catch (error) {
             console.error('Error getting cached ratings:', error);
             // Fallback to server fetch
-            return await this.fetchAndCacheRatings(limit);
+            return await this.fetchAndCacheRatings(limit, null, userId);
         }
     }
 
@@ -43,19 +58,19 @@ class RatingsCacheService {
      * Get cached ratings with smart refresh logic
      * @param {number} limit - Maximum number of ratings to return
      * @param {string} lastDocId - Last document ID for pagination (if null, fetches first page)
+     * @param {string|null} userId - Optional user ID
      * @returns {Promise<{ratings: Array, isFromCache: boolean, lastDocId: string, hasMore: boolean}>}
      */
-    async getCachedRatingsWithBackgroundRefresh(limit = 50, lastDocId = null) {
+    async getCachedRatingsWithBackgroundRefresh(limit = 50, lastDocId = null, userId = null) {
         const startTime = performance.now();
         try {
             console.log('⏱️ [RatingsCacheService] Starting getCachedRatingsWithBackgroundRefresh');
-            
             
             const cacheReadStart = performance.now();
             
             // Only use cache for the first page (no lastDocId)
             if (!lastDocId) {
-                const cachedData = await this.getCacheData();
+                const cachedData = await this.getCacheData(userId);
                 const cacheReadTime = Math.round(performance.now() - cacheReadStart);
                 console.log(`⏱️ [RatingsCacheService] Cache read: ${cacheReadTime}ms`);
                 
@@ -70,7 +85,7 @@ class RatingsCacheService {
                         console.log(`✅ [RatingsCacheService] Found ${ratings.length} valid cached ratings (total time: ${Math.round(performance.now() - startTime)}ms)`);
                         
                         // Start background refresh (non-blocking) for first page
-                        this.refreshCacheInBackground(limit).catch(error => {
+                        this.refreshCacheInBackground(limit, userId).catch(error => {
                             console.error('❌ [RatingsCacheService] Error refreshing cache in background:', error);
                         });
                         
@@ -87,7 +102,7 @@ class RatingsCacheService {
                     } else {
                         console.log('⏱️ [RatingsCacheService] Cache expired, fetching fresh data');
                         // Cache expired, fetch fresh data instead of showing stale data
-                        const result = await this.fetchAndCacheRatings(limit, null);
+                        const result = await this.fetchAndCacheRatings(limit, null, userId);
                         console.log(`⏱️ [RatingsCacheService] Fresh data fetched (total time: ${Math.round(performance.now() - startTime)}ms)`);
                         return { ...result, isFromCache: false };
                     }
@@ -98,13 +113,13 @@ class RatingsCacheService {
 
             console.log('⏱️ [RatingsCacheService] No cache available or pagination request, fetching from server');
             // No cache available, fetch from server
-            const result = await this.fetchAndCacheRatings(limit, lastDocId);
+            const result = await this.fetchAndCacheRatings(limit, lastDocId, userId);
             console.log(`⏱️ [RatingsCacheService] Server data fetched (total time: ${Math.round(performance.now() - startTime)}ms)`);
             return { ...result, isFromCache: false };
         } catch (error) {
             console.error('❌ [RatingsCacheService] Error getting cached ratings with background refresh:', error);
             console.log('⏱️ [RatingsCacheService] Falling back to server fetch');
-            const result = await this.fetchAndCacheRatings(limit, lastDocId);
+            const result = await this.fetchAndCacheRatings(limit, lastDocId, userId);
             console.log(`⏱️ [RatingsCacheService] Fallback fetch completed (total time: ${Math.round(performance.now() - startTime)}ms)`);
             return { ...result, isFromCache: false };
         }
@@ -113,12 +128,13 @@ class RatingsCacheService {
     /**
      * Refresh cache in background without blocking UI
      * @param {number} limit - Maximum number of ratings to fetch
+     * @param {string|null} userId - Optional user ID
      */
-    async refreshCacheInBackground(limit = 50) {
+    async refreshCacheInBackground(limit = 50, userId = null) {
         const startTime = performance.now();
         try {
             console.log('🔄 [RatingsCacheService] Starting background cache refresh');
-            const result = await this.fetchAndCacheRatings(limit, null);
+            const result = await this.fetchAndCacheRatings(limit, null, userId);
             const totalTime = Math.round(performance.now() - startTime);
             console.log(`✅ [RatingsCacheService] Background cache refresh completed in ${totalTime}ms`);
             return result.ratings;
@@ -133,9 +149,10 @@ class RatingsCacheService {
      * Fetch ratings from server and cache them
      * @param {number} limit - Maximum number of ratings to fetch
      * @param {string|DocumentSnapshot} lastCursor - Last document ID (string) or snapshot for pagination
-     * @returns {Promise<{ratings: Array, lastDocId: string, lastDoc: DocumentSnapshot, hasMore: boolean}>}
+     * @param {string|null} userId - Optional user ID to filter
+     * @returns {Promise<{ratings: Array, lastDocId: string, lastDoc: DocumentSnapshot, hasMore: boolean, criticalError?: boolean}>}
      */
-    async fetchAndCacheRatings(limit = 50, lastCursor = null) {
+    async fetchAndCacheRatings(limit = 50, lastCursor = null, userId = null) {
         const startTime = performance.now();
         try {
             // 🔍 Diagnostic: log exactly what cursor type was received
@@ -144,12 +161,13 @@ class RatingsCacheService {
                 cursorType: lastCursor === null ? 'null' : typeof lastCursor,
                 cursorIsSnapshot: lastCursor !== null && typeof lastCursor === 'object',
                 cursorId: lastCursor?.id ?? lastCursor, // log .id if snapshot, raw string otherwise
-                cursorClass: lastCursor?.constructor?.name ?? 'N/A'
+                cursorClass: lastCursor?.constructor?.name ?? 'N/A',
+                userId: userId || 'all'
             });
             
             const fetchStart = performance.now();
             const ratingService = this.firebaseManager.getRatingService();
-            const result = await ratingService.getAllRatings(limit, lastCursor);
+            const result = await ratingService.getAllRatings(limit, lastCursor, userId);
             const ratings = result.ratings;
             const fetchTime = Math.round(performance.now() - fetchStart);
             console.log(`⏱️ [RatingsCacheService] getAllRatings from Firebase: ${fetchTime}ms (${ratings.length} ratings)`);
@@ -164,14 +182,14 @@ class RatingsCacheService {
 
             // Enrich ratings with movie data
             const enrichStart = performance.now();
-            await this.enrichRatingsWithMovieData(ratings);
+            const enrichResult = await this.enrichRatingsWithMovieData(ratings);
             const enrichTime = Math.round(performance.now() - enrichStart);
             console.log(`⏱️ [RatingsCacheService] enrichRatingsWithMovieData: ${enrichTime}ms`);
 
             // Cache the enriched ratings ONLY if it's the first page (no cursor)
             if (!lastCursor) {
                 const cacheStart = performance.now();
-                await this.cacheRatings(ratings);
+                await this.cacheRatings(ratings, userId);
                 const cacheTime = Math.round(performance.now() - cacheStart);
                 console.log(`⏱️ [RatingsCacheService] cacheRatings: ${cacheTime}ms`);
             } else {
@@ -185,7 +203,8 @@ class RatingsCacheService {
                 ratings,
                 lastDocId: result.lastDocId,
                 lastDoc: result.lastDoc, // Propagate the snapshot for better pagination performance
-                hasMore: result.hasMore
+                hasMore: enrichResult?.criticalError ? false : result.hasMore,
+                criticalError: enrichResult?.criticalError || false
             };
         } catch (error) {
             const totalTime = Math.round(performance.now() - startTime);
@@ -203,6 +222,7 @@ class RatingsCacheService {
         const movieCacheService = this.firebaseManager.getMovieCacheService();
         const kinopoiskService = this.firebaseManager.getKinopoiskService();
         const movieIds = [...new Set(ratings.map(r => r.movieId))];
+        let hasCriticalQuotaOr403 = false;
         
         try {
             const movieCacheStart = performance.now();
@@ -228,12 +248,25 @@ class RatingsCacheService {
                         const movieFetchTime = Math.round(performance.now() - movieFetchStart);
                         if (movieData) {
                             movieMap.set(movieData.kinopoiskId, movieData);
-                            await movieCacheService.cacheRatedMovie(movieData);
+                            try {
+                                await movieCacheService.cacheRatedMovie(movieData);
+                            } catch (cacheErr) {
+                                console.error(`❌ [RatingsCacheService] Failed to cache movie ${movieId}:`, cacheErr);
+                                const isQuota = cacheErr.message?.includes('quota') || cacheErr.message?.includes('Resource::kQuotaBytes') || cacheErr.name === 'QuotaExceededError';
+                                if (isQuota) {
+                                    hasCriticalQuotaOr403 = true;
+                                }
+                            }
                             console.log(`⏱️ [RatingsCacheService] Movie ${index+1}/${missingMovieIds.length}: ${movieData.name} (${movieFetchTime}ms)`);
                         }
                     } catch (error) {
                         const movieFetchTime = Math.round(performance.now() - movieFetchStart);
                         console.error(`❌ [RatingsCacheService] Failed to fetch movie ${movieId} (${movieFetchTime}ms):`, error);
+                        const is403 = error.message?.includes('403') || error.message?.includes('Forbidden');
+                        const isQuota = error.message?.includes('quota') || error.message?.includes('Resource::kQuotaBytes');
+                        if (is403 || isQuota) {
+                            hasCriticalQuotaOr403 = true;
+                        }
                     }
                 });
                 
@@ -256,11 +289,25 @@ class RatingsCacheService {
             const mapTime = Math.round(performance.now() - mapStart);
             console.log(`⏱️ [RatingsCacheService] Map movies to ratings: ${mapTime}ms`);
             
+            if (hasCriticalQuotaOr403) {
+                this.consecutiveCriticalErrors++;
+                console.warn(`⚠️ [RatingsCacheService] Critical API/Storage error encountered (consecutive: ${this.consecutiveCriticalErrors}/${this.MAX_CONSECUTIVE_CRITICAL_ERRORS})`);
+            } else {
+                this.consecutiveCriticalErrors = 0;
+            }
+
+            const criticalErrorTripped = this.consecutiveCriticalErrors >= this.MAX_CONSECUTIVE_CRITICAL_ERRORS;
+            if (criticalErrorTripped) {
+                console.error(`🚨 [RatingsCacheService] CRITICAL CIRCUIT BREAKER TRIPPED: ${this.consecutiveCriticalErrors} consecutive quota/403 errors. Halting further pagination to protect storage and API quotas.`);
+            }
+
             const totalTime = Math.round(performance.now() - startTime);
             console.log(`✅ [RatingsCacheService] enrichRatingsWithMovieData completed in ${totalTime}ms`);
+            return { criticalError: criticalErrorTripped };
         } catch (error) {
             const totalTime = Math.round(performance.now() - startTime);
             console.error(`❌ [RatingsCacheService] Error enriching ratings with movie data (${totalTime}ms):`, error);
+            return { criticalError: false };
         }
     }
 
@@ -340,8 +387,9 @@ class RatingsCacheService {
     /**
      * Cache ratings data in chrome.storage.local
      * @param {Array} ratings - Ratings to cache
+     * @param {string|null} userId - Optional user ID
      */
-    async cacheRatings(ratings) {
+    async cacheRatings(ratings, userId = null) {
         try {
             // Check if chrome.storage is available
             if (!chrome || !chrome.storage || !chrome.storage.local) {
@@ -351,15 +399,18 @@ class RatingsCacheService {
 
             const timestamp = Date.now();
             const hash = this.generateRatingsHash(ratings);
+            const cacheKey = this.getCacheKey(userId);
+            const timestampKey = this.getCacheTimestampKey(userId);
+            const hashKey = this.getCacheHashKey(userId);
             
             const cacheData = {
-                [this.CACHE_KEY]: ratings.slice(0, this.MAX_CACHED_RATINGS),
-                [this.CACHE_TIMESTAMP_KEY]: timestamp,
-                [this.CACHE_HASH_KEY]: hash
+                [cacheKey]: ratings.slice(0, this.MAX_CACHED_RATINGS),
+                [timestampKey]: timestamp,
+                [hashKey]: hash
             };
 
             await chrome.storage.local.set(cacheData);
-            console.log(`RatingsCacheService: Cached ${ratings.length} ratings at ${new Date(timestamp).toISOString()}`);
+            console.log(`RatingsCacheService: Cached ${ratings.length} ratings for user ${userId || 'all'} at ${new Date(timestamp).toISOString()}`);
         } catch (error) {
             console.error('Error caching ratings:', error);
         }
@@ -367,9 +418,10 @@ class RatingsCacheService {
 
     /**
      * Get cached data from chrome.storage.local
+     * @param {string|null} userId - Optional user ID
      * @returns {Promise<Object|null>} - Cached data or null
      */
-    async getCacheData() {
+    async getCacheData(userId = null) {
         try {
             // Check if chrome.storage is available
             if (!chrome || !chrome.storage || !chrome.storage.local) {
@@ -377,22 +429,26 @@ class RatingsCacheService {
                 return null;
             }
 
+            const cacheKey = this.getCacheKey(userId);
+            const timestampKey = this.getCacheTimestampKey(userId);
+            const hashKey = this.getCacheHashKey(userId);
+
             const result = await chrome.storage.local.get([
-                this.CACHE_KEY,
-                this.CACHE_TIMESTAMP_KEY,
-                this.CACHE_HASH_KEY
+                cacheKey,
+                timestampKey,
+                hashKey
             ]);
 
-            if (!result[this.CACHE_KEY] || !result[this.CACHE_TIMESTAMP_KEY]) {
-                console.log('RatingsCacheService: No cached data found');
+            if (!result[cacheKey] || !result[timestampKey]) {
+                console.log(`RatingsCacheService: No cached data found for user ${userId || 'all'}`);
                 return null;
             }
 
-            console.log(`RatingsCacheService: Found cached data with ${result[this.CACHE_KEY].length} ratings`);
+            console.log(`RatingsCacheService: Found cached data with ${result[cacheKey].length} ratings for user ${userId || 'all'}`);
             return {
-                ratings: result[this.CACHE_KEY],
-                timestamp: result[this.CACHE_TIMESTAMP_KEY],
-                hash: result[this.CACHE_HASH_KEY]
+                ratings: result[cacheKey],
+                timestamp: result[timestampKey],
+                hash: result[hashKey]
             };
         } catch (error) {
             console.error('Error getting cache data:', error);
@@ -435,16 +491,17 @@ class RatingsCacheService {
 
     /**
      * Check if there are new ratings by comparing hashes
+     * @param {string|null} userId - Optional user ID
      * @returns {Promise<boolean>} - True if there are new ratings
      */
-    async hasNewRatings() {
+    async hasNewRatings(userId = null) {
         try {
-            const cachedData = await this.getCacheData();
+            const cachedData = await this.getCacheData(userId);
             if (!cachedData || !cachedData.hash) return true;
 
             // Fetch latest ratings to compare
             const ratingService = this.firebaseManager.getRatingService();
-            const result = await ratingService.getAllRatings(10); // Just check first 10
+            const result = await ratingService.getAllRatings(10, null, userId); // Just check first 10
             const newHash = this.generateRatingsHash(result.ratings);
 
             return newHash !== cachedData.hash;
@@ -456,16 +513,36 @@ class RatingsCacheService {
 
     /**
      * Clear all cached ratings data
+     * @param {string|null} userId - Optional user ID
      */
-    async clearCache() {
+    async clearCache(userId = null) {
         try {
-            await chrome.storage.local.remove([
+            const keysToRemove = [
                 this.CACHE_KEY,
                 this.CACHE_TIMESTAMP_KEY,
                 this.CACHE_HASH_KEY,
                 this.AVERAGE_RATINGS_CACHE_KEY,
                 this.AVERAGE_RATINGS_TIMESTAMP_KEY
-            ]);
+            ];
+
+            if (userId) {
+                keysToRemove.push(
+                    this.getCacheKey(userId),
+                    this.getCacheTimestampKey(userId),
+                    this.getCacheHashKey(userId)
+                );
+            }
+
+            if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+                const allStorage = await chrome.storage.local.get(null);
+                Object.keys(allStorage).forEach(k => {
+                    if (k.startsWith('recent_ratings_')) {
+                        keysToRemove.push(k);
+                    }
+                });
+            }
+
+            await chrome.storage.local.remove([...new Set(keysToRemove)]);
             console.log('Ratings cache cleared');
         } catch (error) {
             console.error('Error clearing cache:', error);

@@ -93,6 +93,15 @@
     background: white;
 }
 
+.mc-menu-btn:focus-visible {
+    outline: 2px solid var(--theme-text-primary, #f4f4f5);
+    outline-offset: 2px;
+}
+
+.light-theme .mc-menu-btn:focus-visible {
+    outline-color: var(--theme-text-primary, #09090b);
+}
+
 .mc-menu-icon {
     font-size: 20px;
     font-weight: bold;
@@ -322,6 +331,47 @@
     color: var(--success);
 }
 
+.mc-rating-none {
+    color: var(--theme-text-muted, #64748b) !important;
+    font-weight: 500 !important;
+    background: none !important;
+    -webkit-text-fill-color: initial !important;
+}
+
+.mc-ratings-row.mc-ratings-unreleased {
+    justify-content: center;
+}
+
+.mc-unreleased-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--radius-md, 8px);
+    color: var(--theme-text-secondary, #94a3b8);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.2px;
+    width: 100%;
+    box-sizing: border-box;
+    text-align: center;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.mc-unreleased-badge .mc-unreleased-icon {
+    color: #f59e0b;
+    flex-shrink: 0;
+}
+
+.light-theme .mc-unreleased-badge {
+    background: rgba(0, 0, 0, 0.04);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    color: var(--theme-text-secondary, #64748b);
+}
+
 /* User Info Section */
 .mc-user-info {
     display: flex;
@@ -437,9 +487,25 @@
     z-index: 100;
     display: flex;
     flex-direction: column;
-    pointer-events: auto; /* allow interaction */
+    pointer-events: auto;
+    overflow: visible;
+}
+
+/* Inner scrollable container for rater rows */
+.mc-raters-popup-inner {
     max-height: 250px;
     overflow-y: auto;
+}
+
+/* Invisible bridge to cover the gap between popup and trigger */
+.mc-raters-popup::before {
+    content: '';
+    position: absolute;
+    bottom: -10px;
+    left: 0;
+    right: 0;
+    height: 10px;
+    background: transparent;
 }
 
 .mc-user-info:hover .mc-raters-popup {
@@ -922,6 +988,254 @@ span.mc-user-name.mc-skeleton {
     background: #ffffff;
 }
 
+/* ==========================================================================
+   Search Variant Card Styling (.mc-variant-search)
+   Obsidian-Zinc, 2:3 aspect-ratio poster, compact floating badges
+   ========================================================================== */
+
+.movie-card-component.mc-variant-search {
+    background: rgba(24, 24, 27, 0.65);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-radius: var(--radius-lg, 16px);
+    border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
+    min-height: unset;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: visible;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+    transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.movie-card-component.mc-variant-search:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
+    border-color: rgba(255, 255, 255, 0.2);
+    z-index: 10;
+}
+
+.mc-variant-search .mc-poster-container {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 2 / 3;
+    height: auto;
+    border-radius: var(--radius-lg, 16px) var(--radius-lg, 16px) 0 0;
+    overflow: hidden;
+    background-color: #121214;
+    flex-shrink: 0;
+}
+
+.mc-variant-search .mc-poster {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    display: block;
+    transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.mc-variant-search:hover .mc-poster {
+    transform: scale(1.04);
+}
+
+.mc-variant-search .mc-poster-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 45%;
+    background: linear-gradient(to top, rgba(18, 18, 20, 0.75) 0%, rgba(18, 18, 20, 0) 100%);
+    pointer-events: none;
+    z-index: 2;
+}
+
+/* Floating Rating Badges */
+.mc-variant-search .mc-badges-overlay {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    z-index: 5;
+    pointer-events: none;
+}
+
+.mc-variant-search .mc-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 6px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    font-weight: 700;
+    line-height: 1;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.mc-variant-search .mc-badge-star {
+    font-size: 10px;
+}
+
+.mc-badge-kp {
+    background: rgba(255, 90, 0, 0.9);
+    color: #ffffff;
+    border: 1px solid rgba(255, 120, 40, 0.5);
+}
+
+.mc-badge-imdb {
+    background: rgba(245, 197, 24, 0.92);
+    color: #000000;
+    border: 1px solid rgba(255, 220, 80, 0.6);
+    font-weight: 800;
+}
+
+.mc-badge-source {
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.15px;
+}
+
+.mc-badge-user {
+    background: rgba(147, 51, 234, 0.9);
+    color: #ffffff;
+    border: 1px solid rgba(192, 132, 252, 0.5);
+}
+
+.mc-badge-loading {
+    min-width: 54px;
+    min-height: 16px;
+    background: rgba(82, 82, 91, 0.72);
+    color: rgba(255, 255, 255, 0.72);
+    border: 1px solid rgba(161, 161, 170, 0.22);
+    animation: mcRatingSkeletonPulse 1.2s ease-in-out infinite;
+}
+
+.mc-badge-unavailable {
+    background: rgba(39, 39, 42, 0.82);
+    color: rgba(255, 255, 255, 0.72);
+    border: 1px solid rgba(161, 161, 170, 0.28);
+}
+
+.mc-rating-skeleton-label {
+    font-size: 9px;
+    font-weight: 800;
+}
+
+.mc-rating-skeleton-value {
+    width: 18px;
+    height: 7px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.34);
+}
+
+@keyframes mcRatingSkeletonPulse {
+    0%, 100% { opacity: 0.55; }
+    50% { opacity: 1; }
+}
+
+/* Three-dot menu positioning in search variant */
+.mc-variant-search .mc-menu-btn {
+    top: 8px;
+    right: 8px;
+    width: 32px;
+    height: 32px;
+    background: rgba(18, 18, 20, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 10;
+}
+
+.mc-variant-search .mc-menu-btn:hover {
+    background: rgba(30, 30, 35, 0.9);
+    border-color: rgba(255, 255, 255, 0.25);
+    transform: scale(1.05);
+}
+
+/* Content block in search variant */
+.mc-variant-search .mc-content {
+    padding: 10px 12px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    border-radius: 0 0 var(--radius-lg, 16px) var(--radius-lg, 16px);
+}
+
+.mc-variant-search .mc-title-row {
+    display: flex;
+    width: 100%;
+}
+
+.mc-variant-search .mc-title {
+    font-size: 13.5px;
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--theme-text-primary, #ffffff);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: normal;
+    height: 2.7em; /* Exactly 2 lines (1.35 * 2) to guarantee uniform card height */
+}
+
+.mc-variant-search .mc-meta-subtitle {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--theme-text-secondary, #a1a1aa);
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-height: 1.3em;
+}
+
+/* Light Theme overrides for Search Variant */
+.light-theme .movie-card-component.mc-variant-search {
+    background: rgba(255, 255, 255, 0.9);
+    border-color: rgba(9, 9, 11, 0.08);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+}
+
+.light-theme .movie-card-component.mc-variant-search:hover {
+    border-color: rgba(9, 9, 11, 0.2);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.1);
+}
+
+.light-theme .mc-variant-search .mc-poster-container {
+    background-color: #e4e4e7;
+}
+
+.light-theme .mc-variant-search .mc-poster-overlay {
+    background: linear-gradient(to top, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 100%);
+}
+
+.light-theme .mc-variant-search .mc-title {
+    color: #09090b;
+}
+
+.light-theme .mc-variant-search .mc-meta-subtitle {
+    color: #71717a;
+}
+
+.light-theme .mc-variant-search .mc-menu-btn {
+    background: rgba(255, 255, 255, 0.85);
+    border-color: rgba(0, 0, 0, 0.1);
+}
+
+.light-theme .mc-variant-search .mc-menu-btn:hover {
+    background: #ffffff;
+    border-color: rgba(0, 0, 0, 0.2);
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
     .mc-title {
@@ -936,3 +1250,25 @@ span.mc-user-name.mc-skeleton {
         min-width: 80px;
     }
 }
+
+/* Resolving Loading State for On-The-Fly Navigation */
+.movie-card-component.mc-resolving,
+.featured-card.mc-resolving {
+    pointer-events: none;
+    opacity: 0.75;
+    position: relative;
+    animation: mcResolvingPulse 1.2s ease-in-out infinite;
+    cursor: wait !important;
+}
+
+@keyframes mcResolvingPulse {
+    0%, 100% {
+        opacity: 0.75;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.45;
+        transform: scale(0.985);
+    }
+}
+

@@ -1,6 +1,6 @@
 /**
- * WatchingService - Service for managing user's "currently watching" list
- * Handles adding, removing, and retrieving movies that the user is currently watching
+ * @deprecated Legacy service for managing the separate 'watching' Firestore collection.
+ * Do NOT use for new features. Use FavoriteService instead (unified 'favorites' collection with status='watching').
  */
 class WatchingService {
     constructor(firebaseManager) {
