@@ -114,17 +114,30 @@ switches do not silently overwrite the user's explicit season or episode choice.
    `src/shared/config/tmdb.config.example.js` and create the local
    `src/shared/config/tmdb.config.js` with your TMDB Read Access Token(s).
 
-3. Configure Firebase for the target project and deploy the rules/functions that
+3. Configure the Kinopoisk proxy secret in Firebase Secret Manager. Store a JSON
+   array of keys; the command prompts for the value and never writes it to the
+   extension source:
+
+   ```bash
+   firebase functions:secrets:set KINOPOISK_API_KEYS --project movielistdb-13208
+   ```
+
+   Deploy the proxy before installing the updated extension. The proxy requires
+   a Firebase ID token and returns `AUTH_REQUIRED`, `KP_QUOTA_EXHAUSTED`, or
+   `KP_UPSTREAM_UNAVAILABLE` without exposing provider credentials. After the
+   new flow is verified, revoke any previously exposed Kinopoisk keys.
+
+4. Configure Firebase for the target project and deploy the rules/functions that
    belong to that environment. Keep credentials and service-account files out of
    version control.
 
-4. Build the extension:
+5. Build the extension:
 
    ```bash
    npm run build
    ```
 
-5. Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**,
+6. Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**,
    and select the generated `dist/` directory.
 
 ## Development commands
@@ -159,7 +172,8 @@ files live under `src/`; `dist/` is generated output and must not be edited by h
 - Provider availability and HTML layouts can change without notice; provider
   adapters include fallbacks, caching, and bounded retry behavior where possible.
 - Kinopoisk and other provider quotas are guarded by rotation and circuit-breaker
-  logic. Avoid adding unbounded background requests.
+  logic. Kinopoisk API keys belong only to Firebase Secret Manager; client API
+  requests must use the authenticated `kinopoiskProxy` and avoid unbounded calls.
 - The Numbers integration is an opt-in, low-volume HTML adapter and is not a
   substitute for a licensed data feed.
 - Generated files in `dist/` should always be refreshed through the npm build
@@ -192,6 +206,19 @@ manifest and package version remain the source of truth for the build version.
 - Keep the TMDB token in Firebase Secret Manager instead of exposing it to the extension.
 - Remove runtime references to the ignored local TMDB config file from extension pages.
 - Treat the Firebase TMDB proxy as a configured discovery provider without a local token.
+- Normalize object-shaped genres in popup rating cards.
+- Keep legacy rated movies visible when pagination fields are missing.
+- Resolve popup rating titles when cached and rating movie IDs use different types.
+- Repair visible legacy rating cards that lack cached movie metadata.
+- Keep rated movies visible when their aggregate average is stale or missing.
+- Normalize legacy string movie IDs in rating and aggregate queries.
+- Recover popup movie metadata from legacy localStorage when the KP API is unavailable.
+- Route Kinopoisk API requests through an authenticated Firebase proxy backed by Secret Manager.
+- Provision the temporary Kinopoisk API secret version used by the proxy rollout.
+- Keep the random-page error icon centered with its message.
+- Restore three orphaned rated movie projections with metadata and aggregates.
+- Promote cached movie metadata when a rating caller omits movieData.
+- Document the ratings projection integrity and prevention plan.
 
 </details>
 

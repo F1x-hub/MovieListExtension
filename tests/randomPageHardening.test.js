@@ -134,6 +134,25 @@ global.MovieCard = MovieCard;
 // Test Suite
 // -------------------------------------------------------------
 
+// 0. Test Error State Layout Contract
+console.log('--- 0. Testing error-state keeps its centered flex layout ---');
+{
+    const randomJs = fs.readFileSync(path.join(__dirname, '../src/pages/random/random.js'), 'utf8');
+    const randomCss = fs.readFileSync(path.join(__dirname, '../src/pages/random/random.css'), 'utf8');
+
+    assert.match(
+        randomJs,
+        /this\.elements\.errorState\.style\.display\s*=\s*['"]flex['"]/,
+        'Error state must be shown as flex so the icon remains centered'
+    );
+    assert.match(
+        randomCss,
+        /\.error-state\s*\{[\s\S]*?display:\s*flex;/,
+        'Random page error state must define a flex column layout'
+    );
+    console.log('  âœ… Error icon, message, and retry button share the centered layout');
+}
+
 // 1. Test MovieCard.createCompactDetail with year
 console.log('--- 1. Testing MovieCard.createCompactDetail with year ---');
 {

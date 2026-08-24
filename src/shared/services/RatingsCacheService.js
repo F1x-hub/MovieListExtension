@@ -41,7 +41,7 @@ class RatingsCacheService {
             
             if (cachedData && this.isCacheValid(cachedData.timestamp)) {
                 console.log('Using cached ratings data');
-                return cachedData.ratings.slice(0, limit);
+                return await this.repairCachedRatings(cachedData, limit, userId);
             }
 
             // Cache is invalid or doesn't exist, fetch from server
@@ -79,7 +79,7 @@ class RatingsCacheService {
                     if (this.isCacheValid(cachedData.timestamp)) {
                         // Return valid cached data immediately
                         const sliceStart = performance.now();
-                        const ratings = cachedData.ratings.slice(0, limit);
+                        const ratings = await this.repairCachedRatings(cachedData, limit, userId);
                         const sliceTime = Math.round(performance.now() - sliceStart);
                         console.log(`⏱️ [RatingsCacheService] Slice ratings: ${sliceTime}ms`);
                         console.log(`✅ [RatingsCacheService] Found ${ratings.length} valid cached ratings (total time: ${Math.round(performance.now() - startTime)}ms)`);
@@ -123,6 +123,54 @@ class RatingsCacheService {
             console.log(`⏱️ [RatingsCacheService] Fallback fetch completed (total time: ${Math.round(performance.now() - startTime)}ms)`);
             return { ...result, isFromCache: false };
         }
+    }
+
+    /**
+     * Repair cached ratings that were stored without movie metadata.
+     * This is intentionally limited to the requested page so a legacy cache
+     * does not block the popup unless it contains an incomplete visible card.
+     * @param {Object} cachedData - Cached ratings payload
+     * @param {number} limit - Maximum number of ratings to return
+     * @param {string|null} userId - Optional user ID
+     * @returns {Promise<Array>} - Ratings with repaired movie metadata when available
+     */
+    async repairCachedRatings(cachedData, limit, userId = null) {
+        const ratings = cachedData.ratings.slice(0, limit);
+        const incompleteRatings = ratings.filter(rating => (
+            rating?.movieId && !rating.movie?.name
+        ));
+
+        if (incompleteRatings.length === 0) {
+            return ratings;
+        }
+
+        console.warn(`⚠️ [RatingsCacheService] Repairing ${incompleteRatings.length} cached ratings without movie metadata`);
+        await this.enrichRatingsWithMovieData(incompleteRatings);
+
+        // Persist the repaired objects so this migration runs only once per card.
+        if (incompleteRatings.some(rating => rating.movie?.name)) {
+            await this.cacheRatings(cachedData.ratings, userId);
+        }
+
+        return ratings;
+    }
+
+    /**
+     * Normalize Kinopoisk IDs before using them as map keys.
+     * Firestore ratings can contain a string while movie cache DTOs use a number.
+     * @param {number|string|null|undefined} movieId - Kinopoisk movie ID
+     * @returns {string|null} - Stable map key
+     */
+    normalizeMovieId(movieId) {
+        if (movieId === null || movieId === undefined) return null;
+
+        const value = String(movieId).trim();
+        if (!value) return null;
+
+        const numericValue = Number(value);
+        return Number.isInteger(numericValue) && numericValue > 0
+            ? String(numericValue)
+            : value;
     }
 
     /**
@@ -221,7 +269,15 @@ class RatingsCacheService {
         const startTime = performance.now();
         const movieCacheService = this.firebaseManager.getMovieCacheService();
         const kinopoiskService = this.firebaseManager.getKinopoiskService();
-        const movieIds = [...new Set(ratings.map(r => r.movieId))];
+        const seenMovieIds = new Set();
+        const movieIds = ratings
+            .map(rating => rating.movieId)
+            .filter(movieId => {
+                const normalizedId = this.normalizeMovieId(movieId);
+                if (!normalizedId || seenMovieIds.has(normalizedId)) return false;
+                seenMovieIds.add(normalizedId);
+                return true;
+            });
         let hasCriticalQuotaOr403 = false;
         
         try {
@@ -230,11 +286,15 @@ class RatingsCacheService {
             const cachedMoviesObj = await movieCacheService.getBatchCachedMovies(movieIds);
             // Convert object to array format for compatibility
             const cachedMovies = Object.values(cachedMoviesObj);
-            const movieMap = new Map(cachedMovies.map(m => [m.kinopoiskId, m]));
+            const movieMap = new Map();
+            cachedMovies.forEach(movie => {
+                const normalizedId = this.normalizeMovieId(movie?.kinopoiskId);
+                if (normalizedId) movieMap.set(normalizedId, movie);
+            });
             const movieCacheTime = Math.round(performance.now() - movieCacheStart);
             console.log(`⏱️ [RatingsCacheService] getBatchCachedMovies: ${movieCacheTime}ms (${cachedMovies.length}/${movieIds.length} cached)`);
             
-            const missingMovieIds = movieIds.filter(id => !movieMap.has(id));
+            const missingMovieIds = movieIds.filter(id => !movieMap.has(this.normalizeMovieId(id)));
             
             if (missingMovieIds.length > 0) {
                 console.log(`⏱️ [RatingsCacheService] Fetching ${missingMovieIds.length} movies from Kinopoisk API in parallel...`);
@@ -247,7 +307,8 @@ class RatingsCacheService {
                         const movieData = await kinopoiskService.getMovieById(movieId);
                         const movieFetchTime = Math.round(performance.now() - movieFetchStart);
                         if (movieData) {
-                            movieMap.set(movieData.kinopoiskId, movieData);
+                            const normalizedId = this.normalizeMovieId(movieData.kinopoiskId);
+                            if (normalizedId) movieMap.set(normalizedId, movieData);
                             try {
                                 await movieCacheService.cacheRatedMovie(movieData);
                             } catch (cacheErr) {
@@ -284,7 +345,8 @@ class RatingsCacheService {
             
             const mapStart = performance.now();
             ratings.forEach(rating => {
-                rating.movie = movieMap.get(rating.movieId);
+                const movie = movieMap.get(this.normalizeMovieId(rating.movieId));
+                if (movie) rating.movie = movie;
             });
             const mapTime = Math.round(performance.now() - mapStart);
             console.log(`⏱️ [RatingsCacheService] Map movies to ratings: ${mapTime}ms`);

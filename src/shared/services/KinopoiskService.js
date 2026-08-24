@@ -61,7 +61,7 @@ function isQuotaExhaustedError(error) {
 }
 
 async function responseIndicatesDailyLimit(response) {
-    if (!response || ![402, 403].includes(Number(response.status))) return false;
+    if (!response || ![402, 403, 503].includes(Number(response.status))) return false;
 
     try {
         const body = typeof response.clone === 'function'
@@ -70,10 +70,40 @@ async function responseIndicatesDailyLimit(response) {
                 ? await response.json()
                 : null;
         const text = JSON.stringify(body || '').toLowerCase();
-        return /daily[_ -]?limit|daily[_ -]?quota|quota[_ -]?exhausted|суточн|лимит/.test(text);
+        return /daily[_ -]?limit|daily[_ -]?quota|quota[_ -]?exhausted|kp_quota_exhausted|суточн|лимит/.test(text);
     } catch {
         return false;
     }
+}
+
+const DEFAULT_KINOPOISK_PROXY_URL = 'https://us-central1-movielistdb-13208.cloudfunctions.net/kinopoiskProxy';
+
+async function getKinopoiskIdToken() {
+    if (typeof firebase !== 'undefined' && typeof firebase.auth === 'function') {
+        try {
+            const currentUser = firebase.auth().currentUser;
+            if (currentUser?.getIdToken) {
+                return await currentUser.getIdToken();
+            }
+        } catch (error) {
+            console.warn('KinopoiskService: Firebase token lookup failed:', error?.message || error);
+        }
+    }
+
+    if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+        const response = await chrome.runtime.sendMessage({ type: 'GET_ID_TOKEN' });
+        if (response?.success && response.token) return response.token;
+    }
+
+    throw new KinopoiskAuthError(401);
+}
+
+function getKinopoiskProxyErrorCode(response) {
+    if (!response || typeof response.clone !== 'function') return Promise.resolve('');
+
+    return response.clone().json()
+        .then(body => body?.error?.code || body?.code || '')
+        .catch(() => '');
 }
 
 class KinopoiskService {
@@ -87,10 +117,10 @@ class KinopoiskService {
     }
 
     /**
-     * Internal fetch method that automatically handles 403 API key rotation
-     * @param {string} url - API URL
+     * Internal fetch method that routes Kinopoisk API traffic through Firebase.
+     * @param {string} url - Kinopoisk API URL
      * @param {Object} options - Fetch options
-     * @returns {Promise<Response>} - Fetch response
+     * @returns {Promise<Response>} - Proxy response
      */
     async _fetchWithRotation(url, options = {}) {
         const quotaState = typeof globalThis !== 'undefined' ? globalThis.kinopoiskQuota : null;
@@ -101,95 +131,62 @@ class KinopoiskService {
             throw new QuotaExhaustedError();
         }
 
-        const maxAttempts = typeof KINOPOISK_CONFIG.API_KEYS !== 'undefined' 
-            ? KINOPOISK_CONFIG.API_KEYS.length 
-            : 1;
-            
-        let lastResponse = null;
-
-        for (let attempt = 0; attempt < maxAttempts; attempt++) {
-            const currentKey = typeof KINOPOISK_CONFIG.API_KEYS !== 'undefined' 
-                ? KINOPOISK_CONFIG.API_KEY 
-                : this.apiKey;
-            
-            const fetchOptions = { ...options };
-            fetchOptions.headers = {
-                'Accept': 'application/json',
-                ...options.headers,
-                'X-API-KEY': currentKey
-            };
-            if (options.body && !fetchOptions.headers['Content-Type']) {
-                fetchOptions.headers['Content-Type'] = 'application/json';
+        let targetUrl;
+        try {
+            targetUrl = new URL(url);
+            const apiOrigin = new URL(this.baseUrl).origin;
+            if (targetUrl.origin !== apiOrigin || !targetUrl.pathname.startsWith('/v1.4/')) {
+                throw new Error('Kinopoisk proxy rejected an invalid target URL');
             }
-            
-            let response;
-            try {
-                globalThis.quotaTracker?.track('KinopoiskService.fetchWithRotation', 'network');
-                response = await fetch(url, fetchOptions);
-            } catch (netErr) {
-                if (netErr?.name === 'AbortError') throw netErr;
-                console.warn(`KinopoiskService: Network fetch error on attempt ${attempt + 1}/${maxAttempts}:`, netErr.message);
-                if (attempt < maxAttempts - 1) {
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                    continue;
-                }
-                throw new KinopoiskNetworkError(netErr.message, netErr);
-            }
-
-            lastResponse = response;
-
-            if (response.status === 401 || response.status === 403 || response.status === 402) {
-                console.warn(`KinopoiskService: ${response.status} Error with current key. Rotating to next key...`);
-                const isDailyLimit = await responseIndicatesDailyLimit(response);
-                if (typeof KINOPOISK_CONFIG.rotateKey === 'function') {
-                    KINOPOISK_CONFIG.rotateKey();
-                    this.apiKey = KINOPOISK_CONFIG.API_KEY;
-                }
-                
-                if (attempt < maxAttempts - 1) {
-                    globalThis.quotaTracker?.track('KinopoiskService.fetchWithRotation', 'retry');
-                    continue;
-                }
-
-                if (response.status === 401) throw new KinopoiskAuthError(response.status);
-                if (isDailyLimit && typeof quotaState?.markQuotaExhausted === 'function') {
-                    await quotaState.markQuotaExhausted();
-                }
-                if (isDailyLimit) throw new QuotaExhaustedError();
-                throw new KinopoiskAccessError(response.status);
-            }
-            
-            // Handle 429 Too Many Requests
-            if (response.status === 429) {
-                console.warn(`KinopoiskService: 429 Too Many Requests. Waiting before retry...`);
-                // Wait for 1 second, or respect Retry-After header if present
-                const retryAfter = response.headers.get('Retry-After');
-                const delay = retryAfter ? parseInt(retryAfter, 10) * 1000 : 1000;
-                await new Promise(resolve => setTimeout(resolve, delay));
-                
-                // Retry if we still have attempts
-                if (attempt < maxAttempts - 1) {
-                    globalThis.quotaTracker?.track('KinopoiskService.fetchWithRotation', 'retry');
-                    continue;
-                }
-
-                throw new KinopoiskRateLimitError(delay);
-            }
-
-            // Handle 5xx Server Errors (e.g. 502, 503, 504)
-            if (response.status >= 500) {
-                console.warn(`KinopoiskService: Server error ${response.status} (${response.statusText || 'Server Error'}).`);
-                if (attempt < maxAttempts - 1) {
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                    continue;
-                }
-                throw new KinopoiskServerError(response.status);
-            }
-            
-            return response;
+        } catch (error) {
+            throw new KinopoiskNetworkError(error.message, error);
         }
 
-        return lastResponse;
+        const proxyUrl = new URL(KINOPOISK_CONFIG.PROXY_URL || DEFAULT_KINOPOISK_PROXY_URL);
+        proxyUrl.searchParams.set('path', `${targetUrl.pathname}${targetUrl.search}`);
+
+        let response;
+        try {
+            const token = await getKinopoiskIdToken();
+            globalThis.quotaTracker?.track('KinopoiskService.fetchWithRotation', 'network');
+            response = await fetch(proxyUrl.toString(), {
+                ...options,
+                headers: {
+                    'Accept': 'application/json',
+                    ...options.headers,
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+        } catch (netErr) {
+            if (netErr?.name === 'AbortError') throw netErr;
+            throw netErr instanceof KinopoiskAuthError
+                ? netErr
+                : new KinopoiskNetworkError(netErr.message, netErr);
+        }
+
+        const proxyErrorCode = await getKinopoiskProxyErrorCode(response);
+        if (response.status === 401 || proxyErrorCode === 'AUTH_REQUIRED') {
+            throw new KinopoiskAuthError(response.status || 401);
+        }
+
+        if (response.status === 503 && (proxyErrorCode === 'KP_QUOTA_EXHAUSTED' || await responseIndicatesDailyLimit(response))) {
+            if (typeof quotaState?.markQuotaExhausted === 'function') {
+                await quotaState.markQuotaExhausted();
+            }
+            throw new QuotaExhaustedError();
+        }
+
+        if (response.status === 429) {
+            const retryAfter = Number.parseInt(response.headers?.get?.('Retry-After'), 10);
+            const delay = Number.isFinite(retryAfter) ? retryAfter * 1000 : null;
+            throw new KinopoiskRateLimitError(delay);
+        }
+
+        if (response.status >= 500) {
+            throw new KinopoiskServerError(response.status);
+        }
+
+        return response;
     }
 
     /**
@@ -1499,11 +1496,11 @@ class KinopoiskService {
     }
 
     /**
-     * Check if API key is configured
-     * @returns {boolean} - True if API key is set
+     * Check if the authenticated API proxy is configured.
+     * @returns {boolean} - True when a proxy endpoint is available
      */
     isConfigured() {
-        return this.apiKey && this.apiKey !== 'YOUR_KINOPOISK_API_KEY_HERE';
+        return Boolean(KINOPOISK_CONFIG.PROXY_URL || DEFAULT_KINOPOISK_PROXY_URL);
     }
 
     /**
