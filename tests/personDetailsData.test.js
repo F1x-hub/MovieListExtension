@@ -9,7 +9,7 @@ import IdMappingService from '../src/shared/services/IdMappingService.js';
 console.log('🧪 Running Phase 2D PersonDetails Data Service & Pipeline Tests...\n');
 
 // Load configurations
-vm.runInThisContext(fs.readFileSync('src/shared/config/tmdb.config.js', 'utf8'));
+vm.runInThisContext(fs.readFileSync('src/shared/config/tmdb.config.example.js', 'utf8'));
 vm.runInThisContext(fs.readFileSync('src/shared/config/kinopoisk.config.js', 'utf8'));
 globalThis.TMDB_CONFIG = TMDB_CONFIG;
 globalThis.KINOPOISK_CONFIG = KINOPOISK_CONFIG;

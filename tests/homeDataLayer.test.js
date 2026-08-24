@@ -7,7 +7,7 @@ import KINOPOISK_CONFIG from '../src/shared/config/kinopoisk.config.js';
 import IdMappingService from '../src/shared/services/IdMappingService.js';
 import MediaClassifier from '../src/shared/utils/MediaClassifier.js';
 import TMDBService from '../src/shared/services/TMDBService.js';
-import TMDB_CONFIG from '../src/shared/config/tmdb.config.js';
+import TMDB_CONFIG from '../src/shared/config/tmdb.config.example.js';
 
 globalThis.KINOPOISK_CONFIG = KINOPOISK_CONFIG;
 globalThis.TMDB_CONFIG = TMDB_CONFIG;
@@ -1512,4 +1512,3 @@ runTests().catch(err => {
     console.error('❌ Test failed:', err);
     process.exit(1);
 });
-

@@ -2,6 +2,7 @@
 // Copy this file to tmdb.config.js and insert your TMDB Read Access Tokens / API Keys.
 const TMDB_CONFIG = {
     BASE_URL: 'https://api.themoviedb.org/3',
+    TMDB_PROXY_URL: 'https://us-central1-movielistdb-13208.cloudfunctions.net/tmdbProxy',
 
     // TMDB API Read Access Tokens / API Keys
     API_KEYS: [],
@@ -32,5 +33,3 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
     self.TMDB_CONFIG = TMDB_CONFIG;
 }
-
-export { TMDB_CONFIG };

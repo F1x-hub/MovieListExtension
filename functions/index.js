@@ -1,10 +1,93 @@
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onRequest } = require("firebase-functions/v2/https");
+const { defineSecret } = require("firebase-functions/params");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
 
 initializeApp();
 const db = getFirestore();
+const TMDB_API_TOKEN = defineSecret("TMDB_API_TOKEN");
+
+function setTmdbCors(req, res) {
+  const origin = req.headers.origin;
+  if (!origin || origin.startsWith("chrome-extension://") || origin.startsWith("http://localhost")) {
+    if (origin) res.set("Access-Control-Allow-Origin", origin);
+    res.set("Vary", "Origin");
+    res.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.set("Access-Control-Allow-Headers", "Content-Type");
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Bounded TMDB proxy for extension clients without a local token.
+ * The token is injected from Firebase Secret Manager and never reaches the client.
+ */
+exports.tmdbProxy = onRequest(
+  {
+    region: "us-central1",
+    timeoutSeconds: 60,
+    memory: "256MiB",
+    secrets: [TMDB_API_TOKEN],
+  },
+  async (req, res) => {
+    if (!setTmdbCors(req, res)) {
+      res.status(403).json({ error: "Origin is not allowed" });
+      return;
+    }
+
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+    if (req.method !== "GET") {
+      res.status(405).json({ error: "Only GET requests are supported" });
+      return;
+    }
+
+    const rawTarget = typeof req.query.url === "string" ? req.query.url : "";
+    if (!rawTarget || rawTarget.length > 4096) {
+      res.status(400).json({ error: "A valid TMDB target URL is required" });
+      return;
+    }
+
+    let targetUrl;
+    try {
+      targetUrl = new URL(rawTarget);
+    } catch {
+      res.status(400).json({ error: "TMDB target URL is invalid" });
+      return;
+    }
+
+    if (targetUrl.origin !== "https://api.themoviedb.org" || !targetUrl.pathname.startsWith("/3/")) {
+      res.status(400).json({ error: "TMDB target URL is not allowed" });
+      return;
+    }
+
+    const token = TMDB_API_TOKEN.value();
+    if (!token) {
+      res.status(503).json({ error: "TMDB proxy is not configured" });
+      return;
+    }
+
+    try {
+      const upstream = await fetch(targetUrl, {
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const body = await upstream.text();
+      res.status(upstream.status);
+      res.set("Content-Type", upstream.headers.get("content-type") || "application/json");
+      res.send(body);
+    } catch (error) {
+      console.error("[tmdbProxy] Upstream request failed:", error);
+      res.status(502).json({ error: "TMDB upstream request failed" });
+    }
+  }
+);
 
 /**
  * Trigger on Firestore ratings document create, update, or delete (v2).

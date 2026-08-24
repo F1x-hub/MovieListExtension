@@ -1,6 +1,6 @@
 const assert = require('assert');
 const KINOPOISK_CONFIG = require('../src/shared/config/kinopoisk.config.js');
-const TMDB_CONFIG = require('../src/shared/config/tmdb.config.js');
+const TMDB_CONFIG = require('../src/shared/config/tmdb.config.example.js');
 globalThis.KINOPOISK_CONFIG = KINOPOISK_CONFIG;
 globalThis.TMDB_CONFIG = TMDB_CONFIG;
 const KinopoiskService = require('../src/shared/services/KinopoiskService.js');
