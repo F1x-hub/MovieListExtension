@@ -98,8 +98,8 @@
                     </div>
                 </header>
 
-                <div id="loadingSection" class="loading-section">
-                    <div class="spinner"></div>
+                <div id="loadingSection" class="loading-section app-loader app-loader--section" role="status" aria-live="polite">
+                    <div class="app-loader__indicator" aria-label="Loading bookmarks"></div>
                 </div>
 
                 <div id="moviesGrid" class="movies-grid">
@@ -115,15 +115,12 @@
         </div>
     </main>
 
-    <!-- Modals -->
-
-
-    <!-- Scripts -->
     <!-- Scripts -->
     <script src="../../../libs/firebase-app-compat.js"></script>
     <script src="../../../libs/firebase-firestore-compat.js"></script>
     <script src="../../../libs/firebase-auth-compat.js"></script>
     <script src="../../shared/firestore.js"></script>
+    <script defer src="../../shared/config/kinopoisk.config.js"></script>
     
     <script src="../../shared/services/UserService.js"></script>
     <script src="../../shared/services/MovieCacheService.js"></script>
@@ -131,11 +128,11 @@
     <script src="../../shared/services/FavoriteService.js"></script>
     <script src="../../shared/services/CollectionService.js"></script>
     <script src="../../shared/services/ProgressService.js"></script>
-
     
     <script src="../../shared/utils/Utils.js"></script>
     <script src="../../shared/utils/Icons.js"></script>
     <script src="../../shared/components/MovieCard.js"></script>
+    <script src="../../shared/components/BackToTop.js"></script>
     <script src="../../shared/components/Navigation.js"></script>
     
     <script type="module" src="bookmarks.js"></script>

@@ -279,15 +279,28 @@ class FavoritesPageManager {
 
         await firebaseManager.waitForAuthReady();
         this.currentUser = firebaseManager.getCurrentUser();
-        
-        if (!this.currentUser) {
-            window.location.href = chrome.runtime.getURL('src/popup/popup.html');
-            return;
-        }
+
+        // Listen for cross-tab auth state changes
+        window.addEventListener('authStateChanged', async (e) => {
+            const user = e.detail?.user;
+            if (!user) {
+                this.currentUser = null;
+                this.favorites = [];
+                this.filteredFavorites = [];
+                this.renderFavorites();
+                this.page.showError('Для просмотра избранного необходимо войти в аккаунт.');
+            } else if (!this.currentUser || this.currentUser.uid !== user.uid) {
+                this.currentUser = user;
+                await this.loadFavorites();
+            }
+        });
     }
 
     async loadFavorites() {
-        if (!this.currentUser) return;
+        if (!this.currentUser) {
+            this.page.showError('Для просмотра избранного необходимо войти в аккаунт.');
+            return;
+        }
 
         try {
             this.page.showLoader();
@@ -479,13 +492,13 @@ class FavoritesPageManager {
         
         // Set movie info
         if (this.elements.movieRatingInfo) {
-            const posterUrl = movie?.posterUrl || '/icons/icon48.png';
+            const posterUrl = movie?.posterUrl || '/src/shared/assets/icons/app/icon48.png';
             const title = movie?.name || favorite.movieTitle || 'Unknown Movie';
             const year = movie?.year || favorite.releaseYear || '';
             
             this.elements.movieRatingInfo.innerHTML = `
                 <div class="movie-rating-poster">
-                    <img src="${posterUrl}" alt="${title}" onerror="this.src='/icons/icon48.png'">
+                    <img src="${posterUrl}" alt="${title}" onerror="this.src='/src/shared/assets/icons/app/icon48.png'">
                 </div>
                 <div class="movie-rating-info">
                     <h3>${this.escapeHtml(title)}</h3>

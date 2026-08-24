@@ -244,21 +244,26 @@ class CollectionPageManager {
                 await firebaseManager.waitForAuthReady();
                 
                 const currentUser = firebaseManager.getCurrentUser();
-                
                 if (currentUser) {
                     this.currentUser = currentUser;
                 }
-                
-                if (!this.currentUser) {
-                    setTimeout(() => {
-                        const retryUser = firebaseManager.getCurrentUser();
-                        if (retryUser) {
-                            this.currentUser = retryUser;
-                        } else {
-                            window.location.href = chrome.runtime.getURL('src/popup/popup.html');
-                        }
-                    }, 2000);
-                }
+
+                // Listen for cross-tab auth state changes
+                window.addEventListener('authStateChanged', async (e) => {
+                    const user = e.detail?.user;
+                    if (!user) {
+                        this.currentUser = null;
+                        this.collection = null;
+                        this.movies = [];
+                        this.filteredMovies = [];
+                        this.renderCollection();
+                        this.showError('Для просмотра коллекции необходимо войти в аккаунт.');
+                    } else if (!this.currentUser || this.currentUser.uid !== user.uid) {
+                        this.currentUser = user;
+                        this.initializeCollectionService();
+                        await this.loadCollection();
+                    }
+                });
             } else {
                 this.showError('Failed to initialize Firebase');
             }
@@ -662,7 +667,7 @@ class CollectionPageManager {
 
     showLoading(show) {
         if (this.elements.loadingSection) {
-            this.elements.loadingSection.style.display = show ? 'block' : 'none';
+            this.elements.loadingSection.style.display = show ? 'flex' : 'none';
         }
         if (this.elements.moviesGrid) {
             this.elements.moviesGrid.style.display = show ? 'none' : 'grid';

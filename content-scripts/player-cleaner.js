@@ -17,10 +17,286 @@
     let permanentVideo = null; // Our single persistent video element
     let hlsInstance = null;
     let lastRealSource = null;
+    let activePlaybackRetry = null;
+    let activeRequestGuard = () => true;
+    let activeWrapperListenerScope = null;
+    let activeWrapper = null;
+    let observerRoot = null;
     let pendingActiveEpisodeLabel = null; // Track clicked episode label
+    let structuredPlaybackState = null; // Structured provider playback state (Phase 5B)
+    let canonicalPickerRequested = false;
+    let providerContentErrorReported = false;
     
-    // UI References (Module Level)
     let episodeDropdown = null;
+
+    console.info('[KinoGoBridgeTrace] cleaner initialized', {
+        location: window.location.href.split('?')[0],
+        hostname: window.location.hostname,
+        isTopLevel: window.self === window.top,
+        readyState: document.readyState
+    });
+
+    const reportProviderContentError = () => {
+        if (providerContentErrorReported || !document.body) return false;
+        const bodyText = String(document.body.innerText || document.body.textContent || '')
+            .replace(/\s+/g, ' ')
+            .trim();
+        const normalized = bodyText.toLowerCase();
+        const notFound = normalized.includes('запрашиваемый контент не найден')
+            || normalized.includes('requested content was not found')
+            || normalized.includes('content not found');
+        if (!notFound) return false;
+
+        providerContentErrorReported = true;
+        console.warn('[KinoGoBridgeTrace] provider content error detected', {
+            location: window.location.href,
+            hostname: window.location.hostname,
+            message: bodyText.slice(0, 240)
+        });
+        window.parent?.postMessage({
+            type: 'PLAYER_SOURCE_STATE',
+            state: 'error',
+            reason: 'provider-content-not-found',
+            providerId: 'kinogo',
+            url: window.location.href
+        }, '*');
+        return true;
+    };
+
+    const scheduleProviderContentErrorCheck = () => {
+        [0, 250, 750, 1500].forEach(delay => {
+            setTimeout(reportProviderContentError, delay);
+        });
+    };
+
+    const applyCanonicalPickerVisibility = () => {
+        const legacyButtons = document.querySelectorAll('.episode-list-btn');
+        const nativeNavigationButtons = document.querySelectorAll('.provider-native-episode-nav');
+        const buttons = [...legacyButtons, ...nativeNavigationButtons];
+        buttons.forEach(button => {
+            if (!button.dataset.canonicalPickerDisplay) {
+                button.dataset.canonicalPickerDisplay = button.style.display || '';
+            }
+            button.style.display = canonicalPickerRequested
+                ? 'none'
+                : button.dataset.canonicalPickerDisplay;
+        });
+        return {
+            legacyButtonCount: legacyButtons.length,
+            nativeNavigationButtonCount: nativeNavigationButtons.length
+        };
+    };
+
+    const scheduleCanonicalPickerVisibility = () => {
+        const visibility = applyCanonicalPickerVisibility();
+        if (!canonicalPickerRequested) return visibility;
+        [100, 300, 750, 1500].forEach(delay => {
+            setTimeout(applyCanonicalPickerVisibility, delay);
+        });
+        return visibility;
+    };
+
+    function isExtensionNativeVideo(video) {
+        if (!video) return false;
+        if (video.classList?.contains('player-surface__media')) return true;
+        if (video.dataset?.playerSourceActive === 'true') return true;
+        if (video.closest?.('.video-container') || video.closest?.('.player-surface')) return true;
+        if (typeof video.src === 'string' && video.src.startsWith('blob:chrome-extension:')) return true;
+        return false;
+    }
+
+    window.addEventListener('message', (event) => {
+        if (event.data?.type === 'RESET_PERMANENT_VIDEO') {
+            if (hlsInstance) {
+                try { hlsInstance.destroy?.(); } catch { /* ignore */ }
+                hlsInstance = null;
+            }
+            permanentVideo = null;
+            activeWrapper = null;
+        } else if (event.data?.type === 'SEASONVAR_PLAYBACK_STATE') {
+            structuredPlaybackState = event.data;
+        } else if (event.data?.type === 'SET_CANONICAL_PICKER_MODE') {
+            canonicalPickerRequested = Boolean(event.data.enabled);
+            const visibility = scheduleCanonicalPickerVisibility();
+            console.info('[ExFsBridgeTrace] cleaner picker mode received', {
+                enabled: canonicalPickerRequested,
+                location: window.location.href.split('?')[0],
+                hostname: window.location.hostname,
+                ...visibility
+            });
+        } else if (event.data?.type === 'APPLY_PLAYBACK_SELECTION') {
+            const request = event.data;
+            console.info('[ExFsBridgeTrace] cleaner selection message received', {
+                requestId: request.requestId,
+                providerId: request.providerId || null,
+                seasonNumber: request.seasonNumber,
+                episodeNumber: request.episodeNumber,
+                location: window.location.href.split('?')[0],
+                hostname: window.location.hostname
+            });
+            const dispatchResult = async () => {
+                const applySelection = window.movieExtension_applySelection
+                    || window.movieExtension_restoreProgress;
+                console.info('[ExFsBridgeTrace] cleaner selection handler lookup', {
+                    requestId: request.requestId,
+                    handler: typeof window.movieExtension_applySelection === 'function'
+                        ? 'movieExtension_applySelection'
+                        : typeof window.movieExtension_restoreProgress === 'function'
+                            ? 'movieExtension_restoreProgress'
+                            : 'none'
+                });
+                if (typeof applySelection !== 'function') return false;
+                try {
+                    return await Promise.resolve(applySelection(
+                        request.seasonNumber,
+                        request.episodeNumber,
+                        request.providerId || null
+                    )) !== false;
+                } catch (error) {
+                    console.warn('[PlayerCleaner] Native selection dispatch failed:', error);
+                    return false;
+                }
+            };
+            const acknowledge = (status, reason) => {
+                const response = {
+                    type: 'PLAYBACK_SELECTION_RESULT',
+                    requestId: request.requestId,
+                    status,
+                    reason,
+                    seasonNumber: request.seasonNumber,
+                    episodeNumber: request.episodeNumber
+                };
+                try {
+                    event.source?.postMessage(response, event.origin || '*');
+                } catch {
+                    window.parent?.postMessage(response, '*');
+                }
+                console.info('[ExFsBridgeTrace] cleaner selection result sent', {
+                    requestId: request.requestId,
+                    status,
+                    reason
+                });
+            };
+            let attemptsLeft = 8;
+            const tryDispatch = async () => {
+                if (await dispatchResult()) {
+                    console.log('[PlayerCleaner] Native selection dispatched', {
+                        requestId: request.requestId,
+                        seasonNumber: request.seasonNumber,
+                        episodeNumber: request.episodeNumber
+                    });
+                    acknowledge('DISPATCHED', 'provider-native-selector');
+                    return;
+                }
+                if (attemptsLeft-- > 0) {
+                    setTimeout(() => { void tryDispatch(); }, 200);
+                    return;
+                }
+                acknowledge('UNAVAILABLE', 'provider-native-selector-not-ready');
+            };
+            void tryDispatch();
+        }
+    });
+
+    function createListenerScope() {
+        const disposers = [];
+        let disposed = false;
+
+        return {
+            listen(target, type, handler, options) {
+                if (disposed || !target?.addEventListener) return () => {};
+                target.addEventListener(type, handler, options);
+                let active = true;
+                const remove = () => {
+                    if (!active) return;
+                    active = false;
+                    target.removeEventListener(type, handler, options);
+                    const index = disposers.indexOf(remove);
+                    if (index >= 0) disposers.splice(index, 1);
+                };
+                disposers.push(remove);
+                return remove;
+            },
+            addDisposer(disposer) {
+                if (typeof disposer !== 'function') return;
+                if (disposed) disposer();
+                else disposers.push(disposer);
+            },
+            dispose() {
+                if (disposed) return;
+                disposed = true;
+                while (disposers.length) {
+                    try { disposers.pop()(); } catch (error) {
+                        console.warn('[PlayerCleaner] Listener teardown failed:', error);
+                    }
+                }
+            },
+            get size() { return disposers.length; }
+        };
+    }
+
+    function teardownActiveWrapper() {
+        activePlaybackRetry?.cancel?.();
+        activePlaybackRetry = null;
+        activeWrapperListenerScope?.dispose?.();
+        activeWrapperListenerScope = null;
+        activeWrapper = null;
+    }
+
+    function activateWrapperListenerScope(scope, wrapper) {
+        teardownActiveWrapper();
+        activeWrapperListenerScope = scope;
+        activeWrapper = wrapper;
+    }
+
+    function getPlayerObservationRoot(doc = document) {
+        const explicitContainer = doc.getElementById?.('videoContainer')
+            || doc.querySelector?.('#videoPlayerModal .video-container')
+            || doc.getElementById?.('videoPlayerModal')
+            // Third-party embeds such as Venom mount <video> asynchronously inside
+            // a stable #player node. Observe it immediately instead of timing out
+            // while waiting for the video element itself to exist.
+            || doc.getElementById?.('player')
+            || doc.querySelector?.('.player-container, .player-clean, .video-wrapper, .native-player-wrapper');
+        if (explicitContainer) return explicitContainer;
+
+        const videoParent = doc.querySelector?.('video')?.parentElement;
+        return videoParent && videoParent !== doc.body && videoParent !== doc.documentElement
+            ? videoParent
+            : null;
+    }
+
+    function mutationsWithinRoot(mutations, root) {
+        if (!root) return false;
+        return Array.from(mutations || []).some(mutation =>
+            mutation?.target === root || root.contains?.(mutation?.target)
+        );
+    }
+
+    function cleanupCleanerOwnedIframes(root) {
+        if (!root?.querySelectorAll) return 0;
+        let removed = 0;
+        root.querySelectorAll('iframe[data-player-cleaner-owned="true"][data-player-cleaner-stale="true"]')
+            .forEach(iframe => {
+                if (iframe.dataset.playerSourceActive === 'true') return;
+                iframe.remove();
+                removed += 1;
+            });
+        return removed;
+    }
+
+    function makeKeyboardActivatable(element, label) {
+        if (!element) return;
+        element.setAttribute('role', 'button');
+        element.tabIndex = 0;
+        if (label) element.setAttribute('aria-label', label);
+        element.classList.add('player-keyboard-action');
+        element.addEventListener('keydown', event => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            element.click();
+        });
+    }
     
     // Anime Skip State
     let animeSkipData = null; // { startTime, endTime, episodeLength }
@@ -157,9 +433,95 @@
         return false;
     }
 
+    function setCleanerSourceState(video, state, options = {}) {
+        const lifecycle = window.PlayerSourceLifecycle;
+        const container = video?.closest?.('.player-clean, .native-player-wrapper, .video-wrapper')
+            || video?.parentElement;
+        if (lifecycle && container) lifecycle.setState(container, state, options);
+    }
+
+    function tryPlayWithLimit(video, options = {}) {
+        const lifecycle = window.PlayerSourceLifecycle;
+        const states = lifecycle?.STATES || {
+            LOADING: 'loading', READY: 'ready', ERROR: 'error',
+            UNAVAILABLE: 'unavailable', CANCELLED: 'cancelled'
+        };
+        const maxAttempts = options.maxAttempts ?? 40;
+        const intervalMs = options.intervalMs ?? 100;
+        const isRequestCurrent = options.isRequestCurrent || (() => true);
+        const isSourceCurrent = options.isSourceCurrent || (() => true);
+        let attempts = 0;
+        let active = true;
+        let timer = null;
+        let resolveResult;
+        const promise = new Promise(resolve => { resolveResult = resolve; });
+
+        const emit = (state, detail = {}) => {
+            options.onState?.(state, detail);
+        };
+        const cleanup = () => {
+            if (timer) clearTimeout(timer);
+            video?.removeEventListener?.('error', onVideoError);
+        };
+        const finish = (state, detail = {}) => {
+            if (!active) return;
+            active = false;
+            cleanup();
+            emit(state, detail);
+            resolveResult({ state, attempts, ...detail });
+        };
+        const onVideoError = () => finish(states.ERROR, {
+            reason: 'media-error',
+            error: video?.error || null
+        });
+        const attemptPlay = () => {
+            if (!active) return;
+            if (!isRequestCurrent() || !isSourceCurrent()) {
+                finish(states.CANCELLED, { reason: 'stale-request' });
+                return;
+            }
+            if (video?.error) {
+                onVideoError();
+                return;
+            }
+
+            attempts += 1;
+            if (video?.readyState >= 2) {
+                try {
+                    const playPromise = video.play();
+                    Promise.resolve(playPromise).catch(error => {
+                        if (error?.name !== 'AbortError') {
+                            console.log('[MovieExtension] Auto-play prevented:', error?.message);
+                        }
+                    });
+                } catch (error) {
+                    console.log('[MovieExtension] Auto-play failed:', error?.message);
+                }
+                finish(states.READY, { reason: 'ready' });
+                return;
+            }
+
+            if (attempts >= maxAttempts) {
+                finish(states.UNAVAILABLE, { reason: 'retry-limit' });
+                return;
+            }
+            timer = setTimeout(attemptPlay, intervalMs);
+        };
+
+        video?.addEventListener?.('error', onVideoError);
+        emit(states.LOADING, { reason: 'start' });
+        attemptPlay();
+
+        return {
+            promise,
+            cancel() {
+                finish(states.CANCELLED, { reason: 'cancelled' });
+            }
+        };
+    }
+
     // Function to change video source while preserving state
     function changeVideoSource(newSrc, autoPlay = true) {
-        console.log(`[playerError] changeVideoSource called: url=${newSrc}, caller=${new Error().stack.split('\n')[2]}, timestamp=${Date.now()}`);
         if (!permanentVideo || !newSrc) return;
         
         lastRealSource = newSrc; // Update tracker
@@ -222,24 +584,34 @@
         
         // Auto-play if requested
         if (autoPlay) {
-            // Wait for video to be ready before playing
-            const tryPlay = () => {
-                if (permanentVideo.readyState >= 2) { // HAVE_CURRENT_DATA
-                    const playPromise = permanentVideo.play();
-                    if (playPromise) {
-                        playPromise.catch((e) => {
-                            // Ignore AbortError which happens when video source changes quickly
-                            if (e.name !== 'AbortError') {
-                                console.log('[MovieExtension] Auto-play prevented:', e.message);
-                            }
-                        });
+            activePlaybackRetry?.cancel?.();
+            const targetVideo = permanentVideo;
+            activePlaybackRetry = tryPlayWithLimit(targetVideo, {
+                maxAttempts: 40,
+                intervalMs: 100,
+                isRequestCurrent: () => activeRequestGuard(),
+                isSourceCurrent: () => permanentVideo === targetVideo && lastRealSource === newSrc,
+                onState: (state, detail) => {
+                    if (!activeRequestGuard() || permanentVideo !== targetVideo || lastRealSource !== newSrc) return;
+                    setCleanerSourceState(targetVideo, state, {
+                        onRetry: state === 'error' || state === 'unavailable'
+                            ? () => changeVideoSource(newSrc, true)
+                            : null
+                    });
+                    if (state === 'error' || state === 'unavailable') {
+                        const stateMessage = {
+                            type: 'PLAYER_SOURCE_STATE',
+                            state,
+                            url: newSrc,
+                            reason: detail.reason
+                        };
+                        window.postMessage(stateMessage, '*');
+                        if (window.parent && window.parent !== window) {
+                            window.parent.postMessage(stateMessage, '*');
+                        }
                     }
-                } else {
-                    // Retry after a short delay
-                    setTimeout(tryPlay, 100);
                 }
-            };
-            tryPlay();
+            });
         }
         
         // Restore subtitles after metadata loads
@@ -263,28 +635,42 @@
     // BUG 3 FIX: Listen for reset signal from extension page when switching sources
     window.addEventListener('message', (e) => {
         if (e.data && e.data.type === 'RESET_PERMANENT_VIDEO') {
-            console.log('[DEBUG PlayerCleaner] Received RESET_PERMANENT_VIDEO signal, clearing permanentVideo');
+            teardownActiveWrapper();
             permanentVideo = null;
         }
     });
 
     // Expose for internal use
     window.MovieExtension_PlayerCleaner = {
-        init: replacePlayer
+        init: replacePlayer,
+        setRequestGuard(guard) {
+            activeRequestGuard = typeof guard === 'function' ? guard : (() => true);
+            if (!activeRequestGuard()) activePlaybackRetry?.cancel?.();
+        },
+        _test: {
+            tryPlayWithLimit,
+            createListenerScope,
+            activateWrapperListenerScope,
+            teardownActiveWrapper,
+            getPlayerObservationRoot,
+            mutationsWithinRoot,
+            cleanupCleanerOwnedIframes
+        }
     };
 
-    function replacePlayer() {
-        console.log('[DEBUG PlayerCleaner] === replacePlayer() CALLED ===');
-        console.log('[DEBUG PlayerCleaner] Current URL:', window.location.href);
-        console.log('[DEBUG PlayerCleaner] protocol:', window.location.protocol);
-        
+    function replacePlayer(lifecycleOptions = {}) {
+        if (typeof lifecycleOptions.isRequestCurrent === 'function') {
+            activeRequestGuard = lifecycleOptions.isRequestCurrent;
+        }
         // Isolation: Strict check to ensure we are running inside OUR Extension
         let isInsideExtension = false;
         
         // 1. Check if we are the extension page itself
         if (window.location.protocol === 'chrome-extension:') {
             isInsideExtension = true;
-            console.log('[DEBUG PlayerCleaner] Detected: running as chrome-extension page');
+            if (!document.querySelector('video') && !document.querySelector('iframe')) {
+                return;
+            }
         }
         
         // 2. Check if embedded in iframe by extension (original logic)
@@ -293,28 +679,19 @@
             if (window.location.ancestorOrigins && window.location.ancestorOrigins.length > 0) {
                 // Check the top-most ancestor
                 const topOrigin = window.location.ancestorOrigins[window.location.ancestorOrigins.length - 1];
-                console.log('[DEBUG PlayerCleaner] ancestorOrigins topOrigin:', topOrigin);
                 if (topOrigin && topOrigin.startsWith('chrome-extension://' + selfId)) {
                     isInsideExtension = true;
-                    console.log('[DEBUG PlayerCleaner] Detected: inside extension iframe');
                 }
             }
         } catch (e) {
-            console.log('[DEBUG PlayerCleaner] ancestorOrigins check error:', e.message);
+            console.warn('[PlayerCleaner] Unable to verify iframe ancestry:', e.message);
         }
 
         if (!isInsideExtension) {
-            console.log('[DEBUG PlayerCleaner] NOT inside extension, aborting');
             return;
         }
 
         // Count all players in the entire document
-        const allVideos = Array.from(document.querySelectorAll('video')).filter(v => v.dataset.ghost !== 'true' && !v.classList.contains('ghost-video'));
-        const allIframes = document.querySelectorAll('iframe');
-        const allNativeWrappers = document.querySelectorAll('.native-player-wrapper');
-        console.log('[DEBUG PlayerCleaner] DOM census: videos:', allVideos.length, 'iframes:', allIframes.length, 'native-player-wrappers:', allNativeWrappers.length);
-        allVideos.forEach((v, i) => console.log(`[DEBUG PlayerCleaner] video[${i}]: src=${v.src?.substring(0,80)}, parent=${v.parentElement?.className}, controls=${v.controls}`));
-
         // EARLY EXIT: If we already have a permanentVideo and it's inside our wrapper, we're done
         // BUG 2 FIX: Also verify the element is actually in the document (not detached)
         if (permanentVideo 
@@ -323,31 +700,25 @@
             // Before exiting, check if the site spawned a NEW video outside our wrapper
             const outsideVideo = document.querySelector('video:not(.native-player-wrapper video):not(.ghost-video)');
             if (!outsideVideo || (!outsideVideo.src && !outsideVideo.currentSrc)) {
-                console.log('[DEBUG PlayerCleaner] permanentVideo is already safely mounted inside wrapper. Exiting.');
                 return;
             }
             
             // Validate: don't proceed to swap if the outside video has a non-media src
             const outsideSrc = outsideVideo.src || outsideVideo.currentSrc || '';
             if (outsideSrc && !isValidMediaSrc(outsideSrc)) {
-                console.log('[DEBUG PlayerCleaner] Outside video has invalid/non-media src, ignoring. src:', outsideSrc);
                 return;
             }
             
             // Don't downgrade from a working blob: src to a non-blob src
             const currentPermanentSrc = permanentVideo.src || permanentVideo.currentSrc || '';
             if (isValidMediaSrc(currentPermanentSrc) && currentPermanentSrc.startsWith('blob:') && !outsideSrc.startsWith('blob:')) {
-                console.log('[DEBUG PlayerCleaner] permanentVideo has better blob src, refusing downgrade swap. newSrc:', outsideSrc);
                 return;
             }
-            
-            console.log('[DEBUG PlayerCleaner] permanentVideo mounted BUT new site video detected outside wrapper — proceeding to swap.');
         }
 
         // Check if player already exists
         const existingWrapper = document.querySelector('.native-player-wrapper');
         if (existingWrapper && permanentVideo) {
-            console.log('[DEBUG PlayerCleaner] Player already exists (native-player-wrapper found). permanentVideo src:', permanentVideo.src?.substring(0,80));
             // Player already initialized, check for new video from site
             const siteVideo = document.querySelector('video:not(.native-player-wrapper video)');
             if (siteVideo && siteVideo.src) {
@@ -355,19 +726,14 @@
                 
                 // Validate: skip swap if new video has non-media src (e.g. embed page URL)
                 if (!isValidMediaSrc(newSrc)) {
-                    console.log('[DEBUG PlayerCleaner] New site video has invalid/non-media src, skipping swap. src:', newSrc);
                     return;
                 }
                 
                 // Don't downgrade from a working blob: src to a non-blob src
                 const currentSrc = permanentVideo.src || permanentVideo.currentSrc || '';
                 if (isValidMediaSrc(currentSrc) && currentSrc.startsWith('blob:') && !newSrc.startsWith('blob:')) {
-                    console.log('[DEBUG PlayerCleaner] permanentVideo has better blob src, refusing downgrade swap. newSrc:', newSrc);
                     return;
                 }
-                
-                console.log('[DEBUG PlayerCleaner] Detected new video from site (outside wrapper), swapping. siteVideo.src:', siteVideo.src?.substring(0,80));
-                console.log('[MovieExtension] Detected new video from site, swapping video element');
                 
                 // FIX: Verify and clear buffer visual state immediately to prevent "ghost" segments
                 const bufferContainer = existingWrapper.querySelector('.native-buffer-container');
@@ -476,20 +842,17 @@
                     }, 1500); // Increased delay slightly to be safe
                 }
                 
-                console.log('[MovieExtension] Video element swapped successfully');
+                console.info('[PlayerCleaner] Native source swapped', {
+                    sourceType: newSrc.startsWith('blob:') ? 'blob' : 'url'
+                });
             }
             
-            // Clean up stale iframes NOT part of our custom player
-            // Scoped to videoPlayerModal to avoid touching trailer iframes or other components
+            // Cleaner only owns nodes it explicitly created and marked. UI-owned iframes may be
+            // the newly selected source while this wrapper still belongs to the previous request.
             const modalContainer = document.getElementById('videoPlayerModal') 
                                 || document.querySelector('.video-container')
                                 || document;
-            const staleIframes = modalContainer.querySelectorAll('iframe');
-            staleIframes.forEach(iframe => {
-                if (iframe.closest('.native-player-wrapper')) return;
-                console.log('[PlayerCleaner] Removed stale iframe:', iframe.src || '(no src)');
-                iframe.remove();
-            });
+            cleanupCleanerOwnedIframes(modalContainer);
             
             // Final DOM state (scoped to modalContainer)
             const finalVideos = modalContainer.querySelectorAll('video').length;
@@ -502,7 +865,6 @@
         
         // Find site's video element to extract source
         const siteVideo = document.querySelector('video');
-        console.log('[DEBUG PlayerCleaner] Looking for site video. Found:', !!siteVideo, siteVideo ? `src=${siteVideo.src?.substring(0,80)}, controls=${siteVideo.controls}` : '');
         
         // Scan for potential translator/season lists BEFORE we hide them
         // Common selectors in these players: .season-list, .episode-list, .translate-list, .box-list
@@ -519,19 +881,16 @@
         }
         
         if (!siteVideo) {
-            console.log('[DEBUG PlayerCleaner] No video found yet, waiting...');
             return; // No video found yet
         }
         
         if (!siteVideo.src && !siteVideo.currentSrc && siteVideo.querySelectorAll('source').length === 0) {
-            console.log('[DEBUG PlayerCleaner] Video has no source yet, waiting...');
             return; // Video has no source
         }
         
         // Filter out video elements with non-media src (e.g. embed page URLs)
         const candidateSrc = siteVideo.src || siteVideo.currentSrc || '';
         if (candidateSrc && !isValidMediaSrc(candidateSrc)) {
-            console.log('[DEBUG PlayerCleaner] Site video has invalid/non-media src, skipping. src:', candidateSrc);
             return;
         }
         
@@ -541,8 +900,6 @@
         if (!initialSrc) {
             return; // No valid source
         }
-        
-        console.log('[MovieExtension] Found initial video source:', initialSrc);
         
         // IMPORTANT: Use site's original video element as our permanent element
         // This is critical for blob: URLs which are tied to the specific element
@@ -559,20 +916,6 @@
         permanentVideo.style.position = 'relative';
         permanentVideo.style.zIndex = 'auto';
         
-        console.log('[MovieExtension] Using site video as permanent element:', permanentVideo);
-        console.log('[MovieExtension] Video src:', permanentVideo.src);
-        console.log('[MovieExtension] Video sources:', permanentVideo.querySelectorAll('source').length);
-        console.log('[MovieExtension] Video readyState:', permanentVideo.readyState);
-        console.log('[DEBUG PlayerCleaner] Video controls attribute:', permanentVideo.controls, 'hasAttribute("controls"):', permanentVideo.hasAttribute('controls'));
-        console.log('[DEBUG PlayerCleaner] Video parent chain:', permanentVideo.parentElement?.tagName, '->', permanentVideo.parentElement?.parentElement?.tagName);
-        
-        // Check for other players/elements in the same container that could overlay
-        const videoParent = permanentVideo.parentElement;
-        if (videoParent) {
-            const siblings = Array.from(videoParent.children).filter(el => el !== permanentVideo);
-            console.log('[DEBUG PlayerCleaner] Video siblings in parent:', siblings.length, siblings.map(s => s.tagName + '.' + s.className?.substring(0,30)));
-        }
-        
         // DON'T remove site's video - we're using it!
         // siteVideo.remove(); // REMOVED
         
@@ -582,10 +925,12 @@
                        
             
             // Create container to hold our new player
+            const listenerScope = createListenerScope();
             const newContainer = document.createElement('div');
             // script.remove(); removed from here
             
-            newContainer.className = 'native-player-wrapper';
+            newContainer.className = 'native-player-wrapper player-surface__content';
+            activateWrapperListenerScope(listenerScope, newContainer);
 
             // Global left-click enforcer for the custom player UI
             const clickEnforcer = (e) => {
@@ -636,62 +981,32 @@
             controlsOverlay.style.pointerEvents = 'none'; // Click-through mostly
             controlsOverlay.style.zIndex = '2147483620';
 
-            // Viewing Position Indicator (Top-Left)
-            const viewingPositionIndicator = document.createElement('div');
-            viewingPositionIndicator.style.position = 'absolute';
-            viewingPositionIndicator.style.top = '30px'; // Align with volume indicator roughly
-            viewingPositionIndicator.style.left = '30px';
-            viewingPositionIndicator.style.fontSize = '18px';
-            viewingPositionIndicator.style.fontWeight = 'bold';
-            viewingPositionIndicator.style.color = '#ffffff';
-            viewingPositionIndicator.style.textShadow = '0 2px 4px rgba(0,0,0,0.8)';
-            viewingPositionIndicator.style.pointerEvents = 'none';
-            viewingPositionIndicator.style.zIndex = '2147483648';
-            viewingPositionIndicator.style.opacity = '1'; 
-            viewingPositionIndicator.style.transition = 'opacity 0.3s ease';
-            viewingPositionIndicator.style.display = 'none'; // Hidden by default
-            viewingPositionIndicator.className = 'viewing-position-indicator';
-            controlsOverlay.appendChild(viewingPositionIndicator);
-
-            const updateViewingIndicatorText = (season, episode) => {
-                if (!episode) {
-                     viewingPositionIndicator.style.display = 'none';
-                     return;
-                }
-                viewingPositionIndicator.style.display = 'block';
-                
-                // Clean up labels if needed (e.g. remove "Сезон" word if we want just numbers, 
-                // but user asked for "Сезон 2, Серия 4" or "Серия 4")
-                // The labels from site usually contain "X сезон" or "Y серия".
-                
-                if (season) {
-                    viewingPositionIndicator.textContent = `${season}, ${episode}`;
-                } else {
-                    viewingPositionIndicator.textContent = `${episode}`;
-                }
-            };
-
             // Center Play/Pause Button
-            const centerPlayBtn = document.createElement('div');
+            const centerPlayBtn = document.createElement('button');
+            centerPlayBtn.type = 'button';
+            centerPlayBtn.setAttribute('aria-label', 'Воспроизвести или поставить на паузу');
+            centerPlayBtn.className = 'player-center-action player-keyboard-action';
             centerPlayBtn.style.position = 'absolute';
             centerPlayBtn.style.top = '50%';
             centerPlayBtn.style.left = '50%';
             centerPlayBtn.style.transform = 'translate(-50%, -50%)';
-            centerPlayBtn.style.background = 'rgba(0,0,0,0.5)';
-            centerPlayBtn.style.border = 'none';
-            centerPlayBtn.style.borderRadius = '50%';
-            centerPlayBtn.style.width = '80px';
-            centerPlayBtn.style.height = '80px';
+            centerPlayBtn.style.background = 'rgba(18, 18, 20, 0.72)';
+            centerPlayBtn.style.border = '1px solid rgba(255, 255, 255, 0.16)';
+            centerPlayBtn.style.borderRadius = '20px';
+            centerPlayBtn.style.width = '66px';
+            centerPlayBtn.style.height = '66px';
             centerPlayBtn.style.cursor = 'pointer';
             centerPlayBtn.style.pointerEvents = 'auto';
             centerPlayBtn.style.display = 'flex';
             centerPlayBtn.style.alignItems = 'center';
             centerPlayBtn.style.justifyContent = 'center';
-            centerPlayBtn.style.transition = 'opacity 0.2s, transform 0.1s';
-            centerPlayBtn.style.backdropFilter = 'blur(4px)';
+            centerPlayBtn.style.transition = 'opacity 160ms ease, transform 140ms cubic-bezier(0.23, 1, 0.32, 1)';
+            centerPlayBtn.style.backdropFilter = 'blur(16px) saturate(130%)';
+            centerPlayBtn.style.boxShadow = '0 18px 48px rgba(0, 0, 0, 0.45), inset 0 1px rgba(255, 255, 255, 0.08)';
+            makeKeyboardActivatable(centerPlayBtn, 'Воспроизвести или поставить на паузу');
 
             // Hover effect for center button
-            centerPlayBtn.addEventListener('mouseenter', () => centerPlayBtn.style.transform = 'translate(-50%, -50%) scale(1.1)');
+            centerPlayBtn.addEventListener('mouseenter', () => centerPlayBtn.style.transform = 'translate(-50%, -50%) scale(1.04)');
             centerPlayBtn.addEventListener('mouseleave', () => centerPlayBtn.style.transform = 'translate(-50%, -50%) scale(1.0)');
 
             centerPlayBtn.addEventListener('click', (e) => {
@@ -833,9 +1148,7 @@
 
             // Move the video into our container
             const originalParent = video.parentElement;
-            console.log('[MovieExtension] Appending video to container...');
             newContainer.appendChild(video);
-            console.log('[MovieExtension] Video appended. Parent:', video.parentElement);
             newContainer.appendChild(controlsOverlay); // Append controls
 
 
@@ -855,7 +1168,7 @@
                     }
                 });
             }
-            
+
             // Force focus
             video.focus();
             
@@ -875,9 +1188,314 @@
                     transition: transform 0.3s ease !important;
                 }
 
-                /* Remove default focus outline from player buttons */
+                /* Consistent keyboard focus for cleaner-owned controls */
                 .native-player-wrapper button:focus-visible {
-                    outline: none !important;
+                    outline: 3px solid #fff !important;
+                    outline-offset: 3px !important;
+                }
+
+                .native-player-wrapper .player-keyboard-action:focus-visible {
+                    outline: 3px solid #fff !important;
+                    outline-offset: 3px !important;
+                }
+
+                /* Obsidian-zinc cleaner controls (iframe-safe visual contract). */
+                .native-player-wrapper .player-center-action {
+                    width: 66px !important;
+                    height: 66px !important;
+                    color: #fafafa;
+                    background: rgba(18, 18, 20, .72) !important;
+                    border: 1px solid rgba(255, 255, 255, .16) !important;
+                    border-radius: 20px !important;
+                    box-shadow: 0 16px 40px rgba(0, 0, 0, .42), inset 0 1px rgba(255, 255, 255, .08);
+                    backdrop-filter: blur(14px) saturate(130%) !important;
+                }
+                .native-player-wrapper .player-center-action svg {
+                    width: 40px !important;
+                    height: 40px !important;
+                    transform: translateX(1px);
+                }
+                .native-player-wrapper .player-control-dock {
+                    min-height: 52px;
+                    padding: 7px 10px !important;
+                    gap: 8px !important;
+                    background: rgba(18, 18, 20, .76) !important;
+                    border: 1px solid rgba(255, 255, 255, .1) !important;
+                    border-radius: 16px !important;
+                    box-shadow: 0 18px 48px rgba(0, 0, 0, .42), inset 0 1px rgba(255, 255, 255, .05) !important;
+                    backdrop-filter: blur(18px) saturate(130%) !important;
+                    transition: opacity 180ms ease, transform 180ms cubic-bezier(.23, 1, .32, 1) !important;
+                }
+                .native-player-wrapper .player-progress-track {
+                    bottom: 62px !important;
+                    left: 12px !important;
+                    right: 12px !important;
+                    height: 3px !important;
+                    background-color: rgba(255, 255, 255, .2) !important;
+                    border-radius: 999px !important;
+                }
+                .native-player-wrapper .player-progress-fill {
+                    background-color: #f4f4f5 !important;
+                    border-radius: 999px !important;
+                    box-shadow: 0 0 14px rgba(255, 255, 255, .2);
+                }
+                .native-player-wrapper .player-progress-fill::after {
+                    content: '';
+                    position: absolute;
+                    top: 50%;
+                    right: -5px;
+                    width: 10px;
+                    height: 10px;
+                    border-radius: 50%;
+                    background: #f4f4f5;
+                    box-shadow: 0 2px 10px rgba(0, 0, 0, .45);
+                    opacity: 0;
+                    transform: translateY(-50%) scale(.8);
+                    transition: opacity 140ms ease, transform 140ms cubic-bezier(.23, 1, .32, 1);
+                }
+                .native-player-wrapper .player-progress-track:hover .player-progress-fill::after {
+                    opacity: 1;
+                    transform: translateY(-50%) scale(1);
+                }
+                .native-player-wrapper .player-controls-group {
+                    gap: 6px !important;
+                }
+                .native-player-wrapper .player-control-dock .player-control-button {
+                    width: 36px !important;
+                    height: 36px !important;
+                    display: grid !important;
+                    place-items: center;
+                    padding: 6px !important;
+                    color: rgba(255, 255, 255, .82) !important;
+                    background: transparent !important;
+                    border: 1px solid transparent !important;
+                    border-radius: 10px !important;
+                    opacity: 1 !important;
+                    transition: color 160ms ease, background-color 160ms ease,
+                        border-color 160ms ease, transform 120ms cubic-bezier(.23, 1, .32, 1) !important;
+                }
+                .native-player-wrapper .player-control-dock .player-control-button--primary svg {
+                    transform: translateX(1px);
+                }
+                .native-player-wrapper .player-control-dock .player-control-button:hover {
+                    color: #fff !important;
+                    background: rgba(255, 255, 255, .1) !important;
+                    border-color: rgba(255, 255, 255, .1) !important;
+                }
+                .native-player-wrapper .player-control-dock .player-control-button:active {
+                    transform: scale(.94);
+                }
+                .native-player-wrapper .player-control-dock .player-control-button svg {
+                    width: 22px !important;
+                    height: 22px !important;
+                }
+                .native-player-wrapper .player-control-dock .player-control-button--primary svg {
+                    width: 26px !important;
+                    height: 26px !important;
+                }
+                .native-player-wrapper .player-timecode {
+                    margin-left: 2px;
+                    color: rgba(255, 255, 255, .86) !important;
+                    font: 500 12px/1.2 system-ui, sans-serif !important;
+                    font-variant-numeric: tabular-nums;
+                    letter-spacing: .01em;
+                }
+                .native-player-wrapper .player-volume-popover,
+                .native-player-wrapper .player-settings-menu {
+                    background: rgba(24, 24, 27, .94) !important;
+                    border: 1px solid rgba(255, 255, 255, .1) !important;
+                    border-radius: 14px !important;
+                    box-shadow: 0 20px 50px rgba(0, 0, 0, .48) !important;
+                    backdrop-filter: blur(18px) saturate(130%);
+                }
+                .native-player-wrapper .player-settings-menu {
+                    box-sizing: border-box;
+                    width: 268px;
+                    min-width: 268px !important;
+                    max-width: calc(100vw - 24px);
+                    max-height: min(360px, calc(100vh - 110px));
+                    padding: 6px !important;
+                    overflow: hidden;
+                    color: #f4f4f5;
+                    color-scheme: dark;
+                    font: 500 14px/1.3 system-ui, sans-serif !important;
+                }
+                .native-player-wrapper .player-settings-menu__item,
+                .native-player-wrapper .player-settings-menu__back,
+                .native-player-wrapper .player-settings-menu__option {
+                    width: 100%;
+                    min-width: 0;
+                    appearance: none;
+                    border: 0;
+                    color: inherit;
+                    font: inherit;
+                    text-align: left;
+                    cursor: pointer;
+                }
+                .native-player-wrapper .player-settings-menu__item {
+                    min-height: 46px;
+                    display: grid;
+                    grid-template-columns: minmax(72px, auto) minmax(0, 1fr) 14px;
+                    align-items: center;
+                    gap: 10px;
+                    padding: 8px 10px;
+                    background: transparent;
+                    border-radius: 10px;
+                    transition: background-color 160ms ease;
+                }
+                .native-player-wrapper .player-settings-menu__item:hover,
+                .native-player-wrapper .player-settings-menu__option:hover,
+                .native-player-wrapper .player-settings-menu__back:hover {
+                    background: rgba(255, 255, 255, .07) !important;
+                }
+                .native-player-wrapper .player-settings-menu__label {
+                    color: #a1a1aa;
+                }
+                .native-player-wrapper .player-settings-menu__value {
+                    min-width: 0;
+                    overflow: hidden;
+                    color: #f4f4f5;
+                    font-weight: 600;
+                    text-align: right;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }
+                .native-player-wrapper .player-settings-menu__chevron {
+                    width: 14px;
+                    height: 14px;
+                    color: #71717a;
+                }
+                .native-player-wrapper .player-settings-menu__back {
+                    min-height: 44px;
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    padding: 8px 10px;
+                    background: transparent;
+                    border-bottom: 1px solid rgba(255, 255, 255, .08);
+                    border-radius: 10px 10px 6px 6px;
+                    font-weight: 650;
+                }
+                .native-player-wrapper .player-settings-menu__back svg {
+                    width: 16px;
+                    height: 16px;
+                    color: #a1a1aa;
+                }
+                .native-player-wrapper .player-settings-menu__list {
+                    max-height: 246px;
+                    margin-top: 4px;
+                    padding-right: 2px;
+                    overflow-x: hidden;
+                    overflow-y: auto;
+                    overscroll-behavior: contain;
+                    scrollbar-gutter: stable;
+                    scrollbar-width: thin;
+                    scrollbar-color: rgba(161, 161, 170, .48) transparent;
+                }
+                .native-player-wrapper .player-settings-menu__list::-webkit-scrollbar {
+                    width: 6px;
+                }
+                .native-player-wrapper .player-settings-menu__list::-webkit-scrollbar-track {
+                    margin-block: 5px;
+                    background: transparent;
+                }
+                .native-player-wrapper .player-settings-menu__list::-webkit-scrollbar-button {
+                    width: 0;
+                    height: 0;
+                    display: none;
+                }
+                .native-player-wrapper .player-settings-menu__list::-webkit-scrollbar-thumb {
+                    background: rgba(161, 161, 170, .42);
+                    border: 1px solid transparent;
+                    border-radius: 999px;
+                    background-clip: padding-box;
+                }
+                .native-player-wrapper .player-settings-menu__list::-webkit-scrollbar-thumb:hover {
+                    background: rgba(212, 212, 216, .62);
+                    background-clip: padding-box;
+                }
+                .native-player-wrapper .player-settings-menu__list::-webkit-scrollbar-corner {
+                    background: transparent;
+                }
+                .native-player-wrapper .player-settings-menu__option {
+                    min-height: 42px;
+                    display: grid;
+                    grid-template-columns: minmax(0, 1fr) 22px;
+                    align-items: center;
+                    gap: 10px;
+                    padding: 8px 10px;
+                    background: transparent;
+                    border-radius: 9px;
+                    transition: background-color 160ms ease;
+                }
+                .native-player-wrapper .player-settings-menu__option-label {
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }
+                .native-player-wrapper .player-settings-menu__check {
+                    width: 20px;
+                    height: 20px;
+                    display: grid;
+                    place-items: center;
+                    color: transparent;
+                    background: transparent;
+                    border: 1px solid transparent;
+                    border-radius: 7px;
+                    font-size: 12px;
+                    font-weight: 800;
+                }
+                .native-player-wrapper .player-settings-menu__option.is-active {
+                    color: #fafafa;
+                    background: rgba(255, 255, 255, .075);
+                }
+                .native-player-wrapper .player-settings-menu__option.is-active .player-settings-menu__check {
+                    color: #18181b;
+                    background: #f4f4f5;
+                    border-color: #f4f4f5;
+                }
+                .native-player-wrapper .player-volume-popover {
+                    bottom: 42px !important;
+                    width: 38px !important;
+                    border-radius: 12px !important;
+                }
+                @media (max-width: 600px) {
+                    .native-player-wrapper .player-center-action {
+                        width: 58px !important;
+                        height: 58px !important;
+                        border-radius: 17px !important;
+                    }
+                    .native-player-wrapper .player-control-dock {
+                        left: 8px !important;
+                        bottom: 8px !important;
+                        width: calc(100% - 16px) !important;
+                        padding: 5px 7px !important;
+                        gap: 3px !important;
+                    }
+                    .native-player-wrapper .player-control-dock .player-control-button {
+                        width: 32px !important;
+                        height: 32px !important;
+                        padding: 5px !important;
+                    }
+                    .native-player-wrapper .player-controls-group {
+                        gap: 2px !important;
+                    }
+                    .native-player-wrapper .player-timecode {
+                        font-size: 11px !important;
+                    }
+                    .native-player-wrapper .player-progress-track {
+                        bottom: 54px !important;
+                        left: 8px !important;
+                        right: 8px !important;
+                    }
+                }
+                @media (prefers-reduced-motion: reduce) {
+                    .native-player-wrapper .player-center-action,
+                    .native-player-wrapper .player-control-dock,
+                    .native-player-wrapper .player-control-button,
+                    .native-player-wrapper .player-progress-fill::after {
+                        transition-duration: 0ms !important;
+                    }
                 }
 
                 /* Ghost Player Tooltip */
@@ -921,30 +1539,38 @@
 
             // Custom Bottom Controls
             const bottomControls = document.createElement('div');
+            bottomControls.className = 'player-control-dock';
             bottomControls.style.position = 'absolute';
-            bottomControls.style.bottom = '0';
-            bottomControls.style.left = '0';
-            bottomControls.style.width = '100%';
+            bottomControls.style.bottom = '14px';
+            bottomControls.style.left = '14px';
+            bottomControls.style.width = 'calc(100% - 28px)';
             bottomControls.style.boxSizing = 'border-box'; // Fix overflow due to padding
-            bottomControls.style.padding = '10px 20px';
-            bottomControls.style.background = 'linear-gradient(transparent, rgba(0,0,0,0.8))';
+            bottomControls.style.padding = '7px 10px';
+            bottomControls.style.background = 'rgba(18, 18, 20, 0.76)';
+            bottomControls.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+            bottomControls.style.borderRadius = '16px';
+            bottomControls.style.boxShadow = '0 18px 48px rgba(0, 0, 0, 0.42), inset 0 1px rgba(255, 255, 255, 0.05)';
+            bottomControls.style.backdropFilter = 'blur(18px) saturate(130%)';
+            bottomControls.style.webkitBackdropFilter = 'blur(18px) saturate(130%)';
             bottomControls.style.display = 'flex';
             bottomControls.style.alignItems = 'center';
-            bottomControls.style.gap = '15px';
+            bottomControls.style.gap = '8px';
             bottomControls.style.opacity = '0';
-            bottomControls.style.transition = 'opacity 0.3s';
+            bottomControls.style.transform = 'translateY(8px)';
+            bottomControls.style.transition = 'opacity 180ms ease, transform 180ms cubic-bezier(0.23, 1, 0.32, 1)';
             bottomControls.style.zIndex = '2147483625'; 
 
             // --- PROGRESS BAR WITH THUMBNAIL PREVIEW START ---
             const progressContainer = document.createElement('div');
+            progressContainer.className = 'player-progress-track';
             progressContainer.style.position = 'absolute';
-            progressContainer.style.bottom = '55px'; // "Slightly above" controls
-            progressContainer.style.left = '20px';
-            progressContainer.style.right = '20px'; // 20px padding from sides
-            progressContainer.style.height = '5px';
-            progressContainer.style.backgroundColor = 'rgba(255,255,255,0.3)';
+            progressContainer.style.bottom = '62px';
+            progressContainer.style.left = '12px';
+            progressContainer.style.right = '12px';
+            progressContainer.style.height = '3px';
+            progressContainer.style.backgroundColor = 'rgba(255, 255, 255, 0.18)';
             progressContainer.style.cursor = 'pointer';
-            progressContainer.style.borderRadius = '2px';
+            progressContainer.style.borderRadius = '999px';
             progressContainer.style.zIndex = '2147483640';
             // Increase hit area
             progressContainer.style.borderTop = '10px solid transparent';
@@ -968,30 +1594,12 @@
             const progressFilled = document.createElement('div');
             progressFilled.style.height = '100%';
             progressFilled.style.width = '0%';
-            progressFilled.style.backgroundColor = '#4da6ff'; // Blue theme
-            progressFilled.style.borderRadius = '2px';
+            progressFilled.style.backgroundColor = '#f4f4f5';
+            progressFilled.style.borderRadius = '999px';
             progressFilled.style.position = 'relative';
             progressFilled.style.zIndex = '2'; // Above buffer
-            progressFilled.className = 'native-progress-filled'; // ADDED CLASS for selection
+            progressFilled.className = 'native-progress-filled player-progress-fill';
             progressContainer.appendChild(progressFilled);
-
-            // Thumbnail Tooltip (Time Only)
-            const thumbTooltip = document.createElement('div');
-            thumbTooltip.style.position = 'absolute';
-            thumbTooltip.style.bottom = '20px'; // Above bar
-            thumbTooltip.style.left = '0';
-            thumbTooltip.style.transform = 'translateX(-50%)';
-            thumbTooltip.style.backgroundColor = 'rgba(0,0,0,0.8)';
-            thumbTooltip.style.color = 'white';
-            thumbTooltip.style.padding = '4px 8px';
-            thumbTooltip.style.borderRadius = '4px';
-            thumbTooltip.style.fontSize = '12px';
-            thumbTooltip.style.fontWeight = '500';
-            thumbTooltip.style.pointerEvents = 'none';
-            thumbTooltip.style.display = 'none';
-            thumbTooltip.style.zIndex = '2147483641';
-            thumbTooltip.textContent = '0:00';
-            progressContainer.appendChild(thumbTooltip);
 
             // Progress Bar Logic
             const updateBuffer = () => {
@@ -1053,40 +1661,51 @@
                     hasSeries: false
                 };
 
-                // Robust strategy: Match partial class names as they seem to be hashed but keep prefixes
-                // Known prefixes: list_, dropdown_, item_, headText_
-                
-                // 1. Find the main list container
+                // Phase 5B: Prioritize structured playback state (0 DOM scraping)
+                if (structuredPlaybackState) {
+                    data.hasSeries = true;
+                    data.seasons = (structuredPlaybackState.seasons || []).map((s, index) => ({
+                        label: s.name || `${s.seasonNumber} сезон`,
+                        seasonNumber: s.seasonNumber,
+                        isActive: s.seasonNumber === structuredPlaybackState.activeSeasonNumber,
+                        url: s.url,
+                        index
+                    }));
+                    data.episodes = (structuredPlaybackState.episodes || []).map((ep, index) => ({
+                        label: ep.name || ep.title || `${ep.episodeNumber} серия`,
+                        episodeNumber: ep.episodeNumber,
+                        isActive: ep.episodeNumber === structuredPlaybackState.activeEpisodeNumber,
+                        url: ep.url,
+                        index
+                    }));
+                    return data;
+                }
+
+                // Fallback for third-party native players without structured bridge
                 const listContainer = document.querySelector('div[class*="list_"]');
                 if (!listContainer) return data;
 
-                // 2. Find all dropdowns
                 const dropdowns = listContainer.querySelectorAll('div[class*="dropdown_"]');
                 
                 dropdowns.forEach(dropdown => {
-                    // Try to find header text to identify if this is Seasons or Episodes
                     let headerText;
                     const headerSpan = dropdown.querySelector('span[class*="headText_"]');
                     if (headerSpan) {
                         headerText = headerSpan.textContent || '';
                     } else {
-                        // Fallback: check first child text
                         headerText = dropdown.textContent || ''; 
                     }
                     
-                    // Find items
                     const items = Array.from(dropdown.querySelectorAll('div[class*="item_"]'));
-                    
                     if (items.length === 0) return;
 
                     const listData = items.map((item, index) => ({
                         label: item.textContent.trim(),
-                        isActive: item.className.includes('active') || item.classList.contains('active_1RhfH'), // Keep old specific check just in case, but rely on 'includes' for safety
+                        isActive: item.className.includes('active') || item.classList.contains('active_1RhfH'),
                         element: item,
                         index: index
                     }));
 
-                    // Heuristic to decide if it's Season or Episode list
                     const firstItemText = listData[0]?.label.toLowerCase() || '';
                     const lowerHeader = headerText.toLowerCase();
                     
@@ -1100,17 +1719,19 @@
                 if (data.seasons.length > 0 || data.episodes.length > 0) {
                     data.hasSeries = true;
                 }
-                
-                // DIAGNOSTIC LOG (scanForSeriesData)
-                // Only log if something interesting happens to avoid spamming every frame
-                if (data.hasSeries) {
-                   // console.log('=== ДИАГНОСТИКА player-cleaner (scanForSeriesData) ===', data);
-                }
 
                 return data;
             };
 
             const getActiveSeriesInfo = () => {
+                if (structuredPlaybackState) {
+                    return {
+                        season: structuredPlaybackState.activeSeasonNumber ? `${structuredPlaybackState.activeSeasonNumber} сезон` : null,
+                        episode: structuredPlaybackState.activeEpisodeNumber ? `${structuredPlaybackState.activeEpisodeNumber} серия` : null,
+                        seasonNumber: structuredPlaybackState.activeSeasonNumber,
+                        episodeNumber: structuredPlaybackState.activeEpisodeNumber
+                    };
+                }
                 const data = scanForSeriesData();
                 let season = null;
                 let episode = null;
@@ -1162,9 +1783,10 @@
             };
 
             // Save periodically
-            setInterval(saveProgress, 5000);
+            const progressInterval = setInterval(saveProgress, 5000);
+            listenerScope.addDisposer(() => clearInterval(progressInterval));
             video.addEventListener('pause', saveProgress);
-            window.addEventListener('beforeunload', saveProgress);
+            listenerScope.listen(window, 'beforeunload', saveProgress);
             
             // Restore
             video.addEventListener('loadedmetadata', restoreProgress);
@@ -1207,28 +1829,8 @@
                 }
             });
 
-            // Hover Logic (Time Only)
-            progressContainer.addEventListener('mousemove', (e) => {
-                const rect = progressContainer.getBoundingClientRect();
-                const hoverX = e.clientX - rect.left;
-                const width = rect.width;
-                const percent = Math.max(0, Math.min(1, hoverX / width));
-                
-                // Show tooltip visual position immediately
-                thumbTooltip.style.display = 'block';
-                thumbTooltip.style.left = `${percent * 100}%`;
-
-                // Calculate time and format with hours
-                // Use permanentVideo if available to ensure we check current video
-                const currentVid = permanentVideo || video;
-                const duration = Number.isFinite(currentVid.duration) ? currentVid.duration : 0;
-                const time = duration * percent;
-                thumbTooltip.textContent = formatTime(time);
-            });
-
-            progressContainer.addEventListener('mouseleave', () => {
-                thumbTooltip.style.display = 'none';
-            });
+            // Hover preview and target time are owned by GhostPlayer below.
+            // Keep one tooltip source for this progress track to avoid duplicate times.
             // --- PROGRESS BAR END ---
 
             bottomControls.appendChild(progressContainer);
@@ -1254,6 +1856,7 @@
             // Visibility Logic
             let isHovering = false;
             let isLoading = false;
+            let loaderDelayId = null;
             let isUserInactive = false;
             let inactivityTimeout;
             
@@ -1267,17 +1870,14 @@
                 
                 // Update bottom controls
                 bottomControls.style.opacity = opacity;
+                bottomControls.style.transform = shouldShow ? 'translateY(0)' : 'translateY(8px)';
+                bottomControls.style.pointerEvents = shouldShow ? 'auto' : 'none';
                 
                 // Toggle class for CSS-based subtitle movement
                 if (shouldShow) {
                     newContainer.classList.add('controls-visible');
                 } else {
                     newContainer.classList.remove('controls-visible');
-                }
-                
-                // Update viewing indicator
-                if (viewingPositionIndicator) {
-                     viewingPositionIndicator.style.opacity = opacity;
                 }
                 
                 // Update center button visibility
@@ -1294,13 +1894,24 @@
 
             const showLoader = () => {
                 isLoading = true;
-                loader.style.display = 'block';
+                // Media can emit a short `waiting` event while still playing.
+                // Delay the indicator to avoid a distracting flash on every seek.
+                if (loaderDelayId === null) {
+                    loaderDelayId = setTimeout(() => {
+                        if (isLoading) loader.style.display = 'block';
+                        loaderDelayId = null;
+                    }, 150);
+                }
                 // Force update visibility to hide play button immediately
                 updateVisibility();
             };
 
             const hideLoader = () => {
                 isLoading = false;
+                if (loaderDelayId !== null) {
+                    clearTimeout(loaderDelayId);
+                    loaderDelayId = null;
+                }
                 loader.style.display = 'none';
                 updateVisibility();
             };
@@ -1353,7 +1964,7 @@
             
             newContainer.addEventListener('mousemove', resetInactivityTimer);
             newContainer.addEventListener('click', resetInactivityTimer);
-            document.addEventListener('keydown', (e) => {
+            listenerScope.listen(document, 'keydown', (e) => {
                 // Ensure player is active
                 if (!document.body.contains(newContainer)) return;
 
@@ -1428,14 +2039,9 @@
             // Call updateVisibility immediately so controls are visible on initial load when paused
             updateVisibility();
 
-            console.log('=== ПРОВЕРКА DOM ===');
-            const horizontalEpisodesCheck = document.querySelector('.horizontal-episodes'); // Note: Class might not exist, checking anyway
-            console.log('Элемент horizontal-episodes найден (если есть):', horizontalEpisodesCheck);
-            // Check for our custom wrapper
-            console.log('Native Player Wrapper:', newContainer);
-
             // Play/Pause Button
             const playPauseBtn = document.createElement('button');
+            playPauseBtn.className = 'player-control-button player-control-button--primary';
             playPauseBtn.style.background = 'none';
             playPauseBtn.style.border = 'none';
             playPauseBtn.style.cursor = 'pointer';
@@ -1500,520 +2106,73 @@
                 }
             };
 
-            const createHorizontalEpisodeSelector = (items, seasons, placeholder, onSelect) => {
-                console.log('=== РЕНДЕРИНГ HORIZONTAL-EPISODES ===');
-                console.log('Items (Episodes):', items ? items.length : 0);
-                console.log('Seasons passed to component:', seasons);
-                console.log('Должен ли отображаться селектор (seasons.length > 1):', seasons && seasons.length > 1);
-                // Removed container and trigger creation
-                // Removed trigger styles and activeLabel/arrowIcon creation
-
-                // Mark current as watched immediately
+            const createEpisodeNavigationState = (items, seasons, placeholder, onSelect) => {
                 let activeItem = items.find(i => i.isActive) || items[0];
                 let activeIndex = items.indexOf(activeItem);
                 if (activeItem) markEpisodeAsWatched(activeItem.label);
 
-                // Modal Container - Positioned at Bottom
-                const modal = document.createElement('div');
-                modal.style.position = 'absolute';
-                modal.style.bottom = '70px'; // Position above progress bar
-                modal.style.top = 'unset';   // Remove top positioning
-                modal.style.left = '20px';
-                modal.style.right = '20px';
-                modal.style.width = 'auto';
-                modal.style.height = '140px';
-                modal.style.background = 'rgba(0,0,0,0.95)';
-                modal.style.backdropFilter = 'blur(10px)';
-                modal.style.borderRadius = '12px';
-                modal.style.display = 'none';
-                modal.style.alignItems = 'center';
-                modal.style.justifyContent = 'space-between';
-                modal.style.padding = '0';
-                modal.style.zIndex = '2147483630';
-                modal.style.opacity = '0';
-                modal.style.transition = 'opacity 0.2s ease';
-                modal.style.boxSizing = 'border-box';
-                modal.style.pointerEvents = 'auto';
-
-                // Add to main player logic
-                controlsOverlay.appendChild(modal);
-
-                // Left Arrow
-                const leftArrow = document.createElement('button');
-                leftArrow.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" stroke="white" stroke-width="2" fill="none"><polyline points="15 18 9 12 15 6"></polyline></svg>';
-                leftArrow.style.background = 'transparent';
-                leftArrow.style.border = 'none';
-                leftArrow.style.cursor = 'pointer';
-                leftArrow.style.padding = '0 20px';
-                leftArrow.style.height = '100%';
-                leftArrow.style.zIndex = '2';
-                // Listener moved to end for accelerated scroll setup
-                modal.appendChild(leftArrow);
-
-                // Create inner wrappers
-                const innerWrapper = document.createElement('div');
-                innerWrapper.style.display = 'flex';
-                innerWrapper.style.flexDirection = 'column';
-                innerWrapper.style.width = '100%';
-                innerWrapper.style.flex = '1'; // FIX: Allow shrinking/growing
-                innerWrapper.style.minWidth = '0'; // FIX: Allow flex child to be smaller than content
-                innerWrapper.style.overflow = 'hidden'; // FIX: Contain children
-                innerWrapper.style.position = 'relative';
-
-                // Season Tabs Container (Only if seasons exist)
-                let seasonContainer = null;
-                let lastKnownSeasonLabel = null; // Track current season for indicator
-
-                // Helper to render seasons (defined here to capture scope)
-                const renderSeasons = (seasonList) => {
-                    if (!seasonContainer) {
-                        seasonContainer = document.createElement('div');
-                        seasonContainer.style.display = 'flex';
-                        seasonContainer.style.flexDirection = 'row';
-                        seasonContainer.style.gap = '10px';
-                        seasonContainer.style.padding = '0 10px 10px 10px'; // Bottom padding
-                        seasonContainer.style.overflowX = 'auto';
-                        seasonContainer.style.borderBottom = '1px solid rgba(255,255,255,0.1)';
-                        seasonContainer.style.marginBottom = '10px';
-                        seasonContainer.classList.add('hide-scrollbar'); // Reuse style
-                        if (innerWrapper.firstChild === seasonContainer || !innerWrapper.contains(seasonContainer)) {
-                             // Assuming it should be first
-                             innerWrapper.insertBefore(seasonContainer, innerWrapper.firstChild);
-                        }
-                    }
-
-                    seasonContainer.innerHTML = ''; // Clear old tabs
-
-                    if (!seasonList || seasonList.length <= 1) {
-                         seasonContainer.style.display = 'none';
-                         console.log('Season container hidden (<= 1 season)');
-                         return;
-                    } else {
-                         seasonContainer.style.display = 'flex';
-                         console.log('Season container shown');
-                    }
-
-                    seasonList.forEach(season => {
-                        const tab = document.createElement('div');
-                        tab.textContent = season.label; // e.g., "1 сезон"
-                        tab.style.padding = '4px 12px';
-                        tab.style.borderRadius = '4px';
-                        tab.style.fontSize = '13px'; // Slightly smaller
-                        tab.style.fontWeight = '500';
-                        tab.style.cursor = 'pointer';
-                        tab.style.whiteSpace = 'nowrap';
-                        tab.style.transition = 'all 0.2s';
-
-                        const isActiveSeason = season.isActive;
-                        if (isActiveSeason) {
-                            tab.style.background = '#4da6ff';
-                            tab.style.color = 'white';
-                            lastKnownSeasonLabel = season.label; // Capture active season
-                        } else {
-                            tab.style.background = 'transparent';
-                            tab.style.color = 'rgba(255,255,255,0.7)';
-                        }
-
-                        tab.addEventListener('mouseenter', () => {
-                             if (!isActiveSeason) tab.style.color = 'white';
-                        });
-                        tab.addEventListener('mouseleave', () => {
-                             if (!isActiveSeason) tab.style.color = 'rgba(255,255,255,0.7)';
-                        });
-
-                        tab.addEventListener('click', (e) => {
-                             e.stopPropagation();
-                             if (!isActiveSeason && season.element) {
-                                 // Trigger original logic
-                                 const evt = new MouseEvent('click', {bubbles: true, cancelable: true, view: window});
-                                 evt.isInternalMovieExtensionClick = true; // FIX: Flag to ignore in document listener
-                                 season.element.dispatchEvent(evt);
-
-                                 // Optimistic UI update
-                                 Array.from(seasonContainer.children).forEach(c => {
-                                     c.style.background = 'transparent';
-                                     c.style.color = 'rgba(255,255,255,0.7)';
-                                 });
-                                 tab.style.background = '#4da6ff';
-                                 tab.style.color = 'white';
-
-                                 // Wait for site to process and update our data
-                                 setTimeout(() => {
-                                     const newData = scanForSeriesData(); // Scans new DOM
-
-                                     // Update Episodes
-                                     if (returnedInterface.updateItems && newData.episodes.length > 0) {
-                                         returnedInterface.updateItems(newData.episodes);
-                                     }
-
-                                     // FIX: Update Seasons (to get fresh element references)
-                                     if (returnedInterface.updateSeasons && newData.seasons.length > 0) {
-                                         returnedInterface.updateSeasons(newData.seasons);
-                                     }
-
-                                    // FIX: Re-scan voiceovers as they likely changed with the season
-                                    console.log('[MovieExtension] Season changed, re-scanning voiceovers...');
-                                    if (typeof findAndRenderVoiceovers === 'function') {
-                                         // Give a bit more time for site to render the new voiceover list
-                                         setTimeout(() => {
-                                             findAndRenderVoiceovers(controlsOverlay, newContainer);
-                                         }, 500);
-                                    }
-                                 }, 800);
-                             }
-                        });
-
-                        seasonContainer.appendChild(tab);
-                    });
-                };
-
-                console.log('=== ПРОВЕРКА ОТОБРАЖЕНИЯ СЕЛЕКТОРА ===');
-                console.log('Seasons check:', seasons);
-                if (seasons && seasons.length > 1) {
-                    console.log('Rendering seasons...');
-                    renderSeasons(seasons);
-                } else {
-                    console.log('Skipping season rendering (not enough seasons)');
-                }
-
-
-
-                // Scroll Container (Episodes)
-                const scrollContainer = document.createElement('div');
-                scrollContainer.style.display = 'flex';
-                scrollContainer.style.gap = '10px';
-                scrollContainer.style.overflowX = 'auto';
-                scrollContainer.style.scrollBehavior = 'smooth';
-                scrollContainer.style.width = '100%'; // FIX: Ensure it takes full width of wrapper
-                scrollContainer.style.height = '100%';
-                scrollContainer.style.alignItems = 'center';
-                scrollContainer.style.padding = '0 10px';
-                scrollContainer.style.scrollbarWidth = 'none'; // Firefox
-                // Hide scrollbar chrome
-                const style = document.createElement('style');
-                style.textContent = `.horizontal-episodes::-webkit-scrollbar { display: none; .hide-scrollbar::-webkit-scrollbar { display: none; } }`;
-                modal.appendChild(style);
-                scrollContainer.classList.add('horizontal-episodes');
-
-                // Add episodes to inner
-                innerWrapper.appendChild(scrollContainer);
-
-                // Toggle Logic
-                const toggleModal = () => {
-                   if (modal.style.display === 'flex') {
-                        modal.style.opacity = '0';
-                        setTimeout(() => modal.style.display = 'none', 200);
-                    } else {
-                        modal.style.display = 'flex';
-                        // Trigger reflow
-                        modal.offsetHeight;
-                        modal.style.opacity = '1';
-                        // Scroll to active INSTANTLY (disable smooth)
-                        scrollContainer.style.scrollBehavior = 'auto';
-                        const activeCard = scrollContainer.children[activeIndex];
-                        if (activeCard) {
-                            activeCard.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'center' });
-                        }
-                        // Re-enable smooth scroll for user interactions
-                        setTimeout(() => {
-                            scrollContainer.style.scrollBehavior = 'smooth';
-                        }, 50);
-                    }
-                };
-
-                // Add document listener for clicking OUTSIDE
-                document.addEventListener('click', (e) => {
-                    // Check if it's our internal proxy event
-                    if (e.isInternalMovieExtensionClick) return;
-
-                    // Note: We need to handle the trigger check externally or assign it later
-                    // Ideally we should just check if click is NOT in modal
-                    // but we also need to avoid checking the button that opened it (which is handled by stopPropagation there)
-                    if (modal.style.display === 'flex' && !modal.contains(e.target)) {
-                        // Check if target is the new episode button (we'll rely on stopPropagation in the button click)
-                        modal.style.display = 'none';
-                    }
-                });
-
-                const renderItems = (itemList) => {
-                    const watchedEpisodes = getWatchedEpisodes();
-                    scrollContainer.innerHTML = '';
-                    // Recalc active
-                    activeItem = itemList.find(i => i.isActive) || itemList[0];
-                    activeIndex = itemList.indexOf(activeItem);
-                    
-                    // Update indicator
-                    if (activeItem) {
-                        updateViewingIndicatorText(lastKnownSeasonLabel, activeItem.label);
-                    }
-
-                    itemList.forEach((item, index) => {
-                        const card = document.createElement('div');
-                        card.style.minWidth = '80px';
-                        card.style.height = '30px'; // 50px as requested
-                        card.style.background = 'rgba(255,255,255,0.05)';
-                        card.style.border = '1px solid rgba(255,255,255,0.1)';
-                        card.style.borderRadius = '6px';
-                        card.style.display = 'flex';
-                        card.style.flexDirection = 'column';
-                        card.style.justifyContent = 'center';
-                        card.style.padding = '0 10px'; // Reduced vertical padding
-                        card.style.cursor = 'pointer';
-                        card.style.transition = 'all 0.2s';
-                        card.style.position = 'relative';
-                        card.style.flexShrink = '0'; // Prevent shrinking
-
-                        const seriesName = document.createElement('div');
-                        seriesName.textContent = item.label;
-                        seriesName.style.fontSize = '14px'; // Slightly smaller to fit better
-                        seriesName.style.fontWeight = '500';
-                        seriesName.style.textAlign = 'center';
-                        seriesName.style.whiteSpace = 'nowrap';
-                        seriesName.style.overflow = 'hidden';
-                        seriesName.style.textOverflow = 'ellipsis';
-                        card.appendChild(seriesName);
-
-                        // Styling based on state
-                        // Styling based on state
-                        if (index === activeIndex) {
-                            // Current Active -> Blue
-                            card.style.color = '#4da6ff';
-                            card.style.borderColor = '#4da6ff';
-                            card.style.background = 'rgba(77, 166, 255, 0.1)';
-
-                            // Blue dot indicator
-                            const indicator = document.createElement('div');
-                            indicator.style.width = '6px';
-                            indicator.style.height = '6px';
-                            indicator.style.background = '#4da6ff';
-                            indicator.style.borderRadius = '50%';
-                            indicator.style.position = 'absolute';
-                            indicator.style.top = '6px'; // adjusted for 50px height
-                            indicator.style.right = '6px';
-                            card.appendChild(indicator);
-                        } else if (watchedEpisodes.includes(item.label)) {
-                            // Watched -> Gray
-                            card.style.color = '#888';
-                            card.style.borderColor = 'rgba(255,255,255,0.05)';
-                        } else {
-                            // Unwatched/Future -> White
-                            card.style.color = 'white';
-                            card.style.borderColor = 'rgba(255,255,255,0.1)';
-                        }
-
-                        card.addEventListener('mouseenter', () => {
-                             if (index !== activeIndex) card.style.background = 'rgba(255,255,255,0.1)';
-                        });
-                        card.addEventListener('mouseleave', () => {
-                            if (index === activeIndex) card.style.background = 'rgba(77, 166, 255, 0.1)';
-                            else if (watchedEpisodes.includes(item.label)) card.style.background = 'rgba(255,255,255,0.05)';
-                            else card.style.background = 'rgba(255,255,255,0.05)';
-                        });
-
-
-                        card.addEventListener('click', (e) => {
-                            e.stopPropagation();
-                            markEpisodeAsWatched(item.label); // Mark as watched
-                            modal.style.display = 'none';
-                            modal.style.opacity = '0';
-
-                            // Set Auto-Play Flag
-                            localStorage.setItem('movieExtension_autoplay_next', 'true');
-                            localStorage.setItem('movieExtension_autoplay_start_time', Date.now().toString());
-
-                            // Update Internal State & UI
-                            items.forEach(i => i.isActive = false);
-                            item.isActive = true;
-                            activeIndex = index;
-                            activeItem = item;
-                            renderItems(itemList);
-
-                            // Track for Sync
-                            pendingActiveEpisodeLabel = item.label;
-                            
-                            sendProgressUpdate(item.label); // Send update on click
-
-                            if (onSelect) onSelect(item);
-                        });
-
-
-                        scrollContainer.appendChild(card);
-                    });
-                };
-                modal.appendChild(innerWrapper); // FIX: Ensure content is added to modal
-                // controlsOverlay.appendChild(modal); // Already appended above
-
-                const rightArrow = document.createElement('button');
-                rightArrow.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" stroke="white" stroke-width="2" fill="none"><polyline points="9 18 15 12 9 6"></polyline></svg>';
-                rightArrow.style.background = 'transparent';
-                rightArrow.style.border = 'none';
-                rightArrow.style.cursor = 'pointer';
-                rightArrow.style.padding = '0 20px';
-                rightArrow.style.height = '100%';
-                rightArrow.style.zIndex = '2';
-                // Listener moved to end for accelerated scroll setup
-                modal.appendChild(rightArrow);
-
-                // Initial Render
-                renderItems(items);
-
-                // Removed trigger.addEventListener('click', ...)
-
-                // Public update method for external calls (like when season changes)
-                // Removed container.updateItems = ...
-
-                // Removed container.updateItems = ... (duplicate)
-
-                // Removed container.updateSeasons = ...
-
-                // Removed container.setVideoActive = ...
-
-                // Removed container.getNavState = ...
-
-                // Removed container.navigate = ...
-
-                // Accelerated Scrolling Logic
-                const setupAcceleratedScroll = (btn, direction) => {
-                    let intervalId = null;
-                    let startTime = 0;
-                    const baseSpeed = 10; // pixels per frame (start speed)
-                    // At 60fps, 10px = 600px/s.
-                    // Max speed 5x = 50px/frame = 3000px/s.
-
-                    const startScroll = (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-
-                        startTime = Date.now();
-                        let isContinuous = false;
-
-                        const loop = () => {
-                            const now = Date.now();
-                            const elapsed = now - startTime;
-
-                            if (elapsed > 200) { // Enter continuous mode after 200ms hold
-                                isContinuous = true;
-                                if (scrollContainer.style.scrollBehavior !== 'auto') {
-                                    scrollContainer.style.scrollBehavior = 'auto'; // Disable smooth for direct manipulation
-                                }
-
-                                // Acceleration: 0 to 10s -> 1x to 5x
-                                const accelTime = Math.min(elapsed - 200, 10000);
-                                const factor = 1 + (accelTime / 10000) * 4;
-                                const step = baseSpeed * factor;
-
-                                scrollContainer.scrollLeft += step * direction;
-
-                                // Boundary check (optional, browser handles it but good to stop loop if stuck?)
-                                // But scrolling past end is harmless.
-                            }
-
-                            intervalId = requestAnimationFrame(loop);
-                        };
-
-                        intervalId = requestAnimationFrame(loop);
-
-                        const stopScroll = () => {
-                            if (intervalId) {
-                                cancelAnimationFrame(intervalId);
-                                intervalId = null;
-                            }
-
-                            document.removeEventListener('mouseup', stopScroll);
-                            document.removeEventListener('mouseleave', stopScroll);
-                            btn.removeEventListener('mouseleave', stopScroll);
-
-                            // Reset scroll behavior
-                            scrollContainer.style.scrollBehavior = 'smooth';
-
-                            // If short click, do standard jump
-                            if (!isContinuous) {
-                                scrollContainer.scrollBy({ left: 300 * direction, behavior: 'smooth' });
-                            }
-                        };
-
-                        document.addEventListener('mouseup', stopScroll);
-                        document.addEventListener('mouseleave', stopScroll); // Stop if mouse leaves window
-                        btn.addEventListener('mouseleave', stopScroll); // Stop if mouse leaves button
-                    };
-
-                    btn.addEventListener('mousedown', startScroll);
-                };
-
-                setupAcceleratedScroll(leftArrow, -1);
-                setupAcceleratedScroll(rightArrow, 1);
-
-                // --- PROGRESS UPDATE HELPER ---
+                // --- PROGRESS UPDATE HELPER (Structured Phase 5B) ---
                 const sendProgressUpdate = (episodeLabel, previousTimestamp) => {
                     try {
-                        const currentSeasonLabel = seasonContainer ? 
-                            (Array.from(seasonContainer.children).find(c => c.style.background === 'rgb(77, 166, 255)' || c.style.background === '#4da6ff')?.textContent || seasons[0]?.label || '') 
-                            : '';
+                        const seasonNum = structuredPlaybackState?.activeSeasonNumber ?? null;
+                        const epNum = structuredPlaybackState?.activeEpisodeNumber ?? (episodeLabel ? parseInt(String(episodeLabel).replace(/\D+/g, ''), 10) : null);
+                        const currentSeasonLabel = seasonNum ? `${seasonNum} сезон` : '';
+                        const epLabel = episodeLabel || (epNum ? `${epNum} серия` : '');
                         
-                        // Use previousTimestamp if provided (saving progress of episode we're LEAVING)
                         const ts = (typeof previousTimestamp === 'number' && previousTimestamp > 0) 
                             ? Math.floor(previousTimestamp) 
                             : 0;
                         
-                        console.log('[MovieExtension] Sending progress update:', currentSeasonLabel, episodeLabel, 'timestamp:', ts);
+                        console.log('[MovieExtension] Sending progress update:', currentSeasonLabel, epLabel, 'timestamp:', ts);
                         
                         window.parent.postMessage({
                             type: 'UPDATE_WATCHING_PROGRESS',
                             season: currentSeasonLabel,
-                            episode: episodeLabel,
+                            seasonNumber: seasonNum,
+                            episode: epLabel,
+                            episodeNumber: epNum,
                             timestamp: ts
                         }, '*');
                         
-                        // Also notify about episode change for anime skip functionality
-                        // Extract episode number from label (e.g., "1 серия" -> 1)
-                        const episodeMatch = episodeLabel.match(/(\d+)/);
-                        const episodeNumber = episodeMatch ? parseInt(episodeMatch[1], 10) : 1;
-                        
                         window.parent.postMessage({
                             type: 'EPISODE_CHANGED',
-                            episode: episodeNumber,
-                            episodeLabel: episodeLabel
+                            episode: epNum || 1,
+                            episodeLabel: epLabel,
+                            season: currentSeasonLabel,
+                            seasonNumber: seasonNum,
+                            origin: 'USER_PROVIDER_SELECTION'
                         }, '*');
                         
-                        // Clear current skip data until new data arrives
                         animeSkipData = null;
                         if (skipButton) {
                             skipButton.style.display = 'none';
                             skipButtonVisible = false;
                         }
-                        
                     } catch (err) {
                         console.error('[MovieExtension] Failed to send progress update:', err);
                     }
                 };
-                // -----------------------------
 
-                // Return Interface Object
                 const returnedInterface = {
                     updateItems: (newItems) => {
-                        items = newItems; // items is closure variable
-                        renderItems(items);
-                        // Update label logic removed as label is gone from trigger
+                        items = newItems;
                         activeItem = items.find(i => i.isActive) || items[0];
+                        activeIndex = items.indexOf(activeItem);
                     },
                     updateSeasons: (newSeasons) => {
                         seasons = newSeasons;
-                        renderSeasons(seasons);
                     },
                     setVideoActive: (label) => {
-                         console.log('[MovieExtension] setVideoActive called for:', label);
-                         const idx = items.findIndex(i => i.label === label);
-                         console.log('[MovieExtension] Found index:', idx);
-                         if (idx !== -1) {
-                             items.forEach(i => i.isActive = false);
-                             items[idx].isActive = true;
-                             activeIndex = idx;
-                             activeItem = items[idx];
-                             renderItems(items);
-                             if (typeof callbacks.triggerUpdate === 'function') {
-                                 callbacks.triggerUpdate();
-                             }
-                         }
+                        const idx = items.findIndex(i => i.label === label);
+                        if (idx !== -1) {
+                            items.forEach(i => i.isActive = false);
+                            items[idx].isActive = true;
+                            activeIndex = idx;
+                            activeItem = items[idx];
+                            if (typeof callbacks.triggerUpdate === 'function') {
+                                callbacks.triggerUpdate();
+                            }
+                        }
                     },
                     getNavState: () => {
                         return {
@@ -2025,22 +2184,21 @@
                         };
                     },
                     navigate: (direction) => {
-                         const newIndex = activeIndex + direction;
-                         if (newIndex >= 0 && newIndex < items.length) {
-                             const targetItem = items[newIndex];
-                             markEpisodeAsWatched(targetItem.label);
-                             items.forEach(i => i.isActive = false);
-                             targetItem.isActive = true;
-                             activeIndex = newIndex;
-                             activeItem = targetItem;
-                             renderItems(items);
-                             sendProgressUpdate(targetItem.label); // Send update on navigation
-                             if (onSelect) onSelect(targetItem);
-                             return true;
-                         }
-                         return false;
+                        const newIndex = activeIndex + direction;
+                        if (newIndex >= 0 && newIndex < items.length) {
+                            const targetItem = items[newIndex];
+                            markEpisodeAsWatched(targetItem.label);
+                            items.forEach(i => i.isActive = false);
+                            targetItem.isActive = true;
+                            activeIndex = newIndex;
+                            activeItem = targetItem;
+                            sendProgressUpdate(targetItem.label);
+                            if (onSelect) onSelect(targetItem);
+                            return true;
+                        }
+                        return false;
                     },
-                    toggle: toggleModal,
+                    toggle: () => {},
                     // Self-reference placeholder
                     triggerUpdate: null
                 };
@@ -2076,8 +2234,7 @@
             if (seriesData.hasSeries) {
                 // Episode Selector
                 if (seriesData.episodes.length > 0) {
-                    // Use new Horizontal Selector
-                    episodeDropdown = createHorizontalEpisodeSelector(seriesData.episodes, seriesData.seasons || [], 'Серия', (selectedItem) => {
+                    episodeDropdown = createEpisodeNavigationState(seriesData.episodes, seriesData.seasons || [], 'Серия', (selectedItem) => {
 
                          if (selectedItem.element) {
                              selectedItem.element.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true, view: window}));
@@ -2107,7 +2264,7 @@
                     // topControls.appendChild(episodeDropdown);
                     
                     // Listen for episode restoration from SeasonvarParser
-                    document.addEventListener('episodeRestored', (e) => {
+                    listenerScope.listen(document, 'episodeRestored', (e) => {
                         const { label } = e.detail || {};
                         console.log('[MovieExtension] episodeRestored event received:', label);
                         if (label && episodeDropdown && typeof episodeDropdown.setVideoActive === 'function') {
@@ -2118,27 +2275,12 @@
                             }
                         }
                     });
-                    
-                    // Initialize skip times on first load by notifying parent
-                    setTimeout(() => {
-                        const activeItem = episodeDropdown.getNavState && episodeDropdown.getNavState().currentItem;
-                        const activeLabel = activeItem ? activeItem.label : (seriesData.episodes.find(e => e.isActive)?.label || seriesData.episodes[0]?.label);
-                        if (activeLabel) {
-                            const episodeMatch = activeLabel.match(/(\d+)/);
-                            const episodeNumber = episodeMatch ? parseInt(episodeMatch[1], 10) : 1;
-                            console.log(`[MovieExtension] Player first load init: sending EPISODE_CHANGED for ${activeLabel}`);
-                            window.parent.postMessage({
-                                type: 'EPISODE_CHANGED',
-                                episode: episodeNumber,
-                                episodeLabel: activeLabel
-                            }, '*');
-                        }
-                    }, 500);
                 }
             }
 
             // Time Display
             const timeDisplay = document.createElement('span');
+            timeDisplay.className = 'player-timecode';
             timeDisplay.style.color = 'white';
             timeDisplay.style.fontFamily = 'Arial, sans-serif';
             timeDisplay.style.fontSize = '14px';
@@ -2253,6 +2395,7 @@
 
             // Left Controls Group
             const leftControls = document.createElement('div');
+            leftControls.className = 'player-controls-group player-controls-group--left';
             leftControls.style.display = 'flex';
             leftControls.style.alignItems = 'center';
             leftControls.style.gap = '10px'; // Slightly reduced gap for tighter controls
@@ -2267,6 +2410,7 @@
                 
                 // Common styles
                 [prevEpisodeBtn, nextEpisodeBtn].forEach(btn => {
+                    btn.classList.add('provider-native-episode-nav');
                     btn.style.background = 'none';
                     btn.style.border = 'none';
                     btn.style.cursor = 'pointer';
@@ -2327,6 +2471,11 @@
     
                 // Logic to update buttons
                 updateNavButtons = () => {
+                    if (canonicalPickerRequested) {
+                        prevEpisodeBtn.style.display = 'none';
+                        nextEpisodeBtn.style.display = 'none';
+                        return;
+                    }
                     // Check if we have episodes
                     if (episodeDropdown && typeof episodeDropdown.getNavState === 'function') {
                         const state = episodeDropdown.getNavState();
@@ -2362,6 +2511,7 @@
                 // Actions
                 prevEpisodeBtn.onclick = (e) => {
                     e.stopPropagation();
+                    if (canonicalPickerRequested) return;
                     if (permanentVideo) permanentVideo.focus(); // Fix focus
                     if (episodeDropdown && typeof episodeDropdown.navigate === 'function') {
                         episodeDropdown.navigate(-1);
@@ -2370,6 +2520,7 @@
                 };
                 nextEpisodeBtn.onclick = (e) => {
                     e.stopPropagation();
+                    if (canonicalPickerRequested) return;
                     if (permanentVideo) permanentVideo.focus(); // Fix focus
                      if (episodeDropdown && typeof episodeDropdown.navigate === 'function') {
                         episodeDropdown.navigate(1);
@@ -2379,6 +2530,7 @@
     
                 leftControls.appendChild(prevEpisodeBtn);
                 leftControls.appendChild(nextEpisodeBtn);
+                applyCanonicalPickerVisibility();
                 
                 // Initial check
                 setTimeout(updateNavButtons, 500); // Wait for episodeDropdown to potentially init
@@ -2396,16 +2548,259 @@
                 episodeDropdown.triggerUpdate = updateNavButtons;
                 callbacks.triggerUpdate = updateNavButtons;
                 
-                // Also hook into the onSelect side-effect?
-                // The onSelect callback is defined at creation.
-                // We'll rely on the fact that `renderItems` inside `createHorizontalEpisodeSelector` 
-                // is called when `navigate` is used.
-                
                 // Let's also attach this function to the container so we can call it from outside if needed
                 leftControls.updateNavButtons = updateNavButtons;
             }
 
+            // --- KINOGO NATIVE SEASON/EPISODE BRIDGE ---
+            const applyKinogoProviderSelection = async (targetSeason, targetEpisode) => {
+                const seasonNumber = Number(targetSeason);
+                const episodeNumber = Number(targetEpisode);
+                if (!Number.isInteger(seasonNumber) || seasonNumber < 1
+                    || !Number.isInteger(episodeNumber) || episodeNumber < 1) {
+                    console.warn('[KinoGoBridgeTrace] invalid selection', {
+                        targetSeason,
+                        targetEpisode,
+                        seasonNumber,
+                        episodeNumber
+                    });
+                    return false;
+                }
+                const itemSelector = (number) =>
+                    `.select__drop-item[data-id="${Number(number)}"]`;
+                const getSelect = type => document.querySelector(`[data-select="${type}"]`);
+                const getItem = (root, number) => root?.querySelector?.(itemSelector(number)) || null;
+                const getActiveId = root => root?.querySelector?.('.select__drop-item.active')?.getAttribute('data-id') || null;
+                const describeItems = root => Array.from(root?.querySelectorAll?.('.select__drop-item') || [])
+                    .map(item => ({
+                        id: item.getAttribute('data-id'),
+                        label: String(item.textContent || '').trim(),
+                        active: item.classList.contains('active')
+                    }));
+
+                const waitFor = async (predicate, attempts = 20, delayMs = 150) => {
+                    for (let attempt = 0; attempt < attempts; attempt += 1) {
+                        const value = predicate();
+                        if (value) return value;
+                        await new Promise(resolve => setTimeout(resolve, delayMs));
+                    }
+                    return null;
+                };
+
+                const seasonSelect = getSelect('seasonType1');
+                const episodeSelect = getSelect('episodeType1');
+                console.info('[KinoGoBridgeTrace] selection scan', {
+                    seasonNumber,
+                    episodeNumber,
+                    hasSeasonSelect: Boolean(seasonSelect),
+                    hasEpisodeSelect: Boolean(episodeSelect),
+                    currentSeason: getActiveId(seasonSelect),
+                    currentEpisode: getActiveId(episodeSelect),
+                    seasonItems: describeItems(seasonSelect),
+                    episodeItems: describeItems(episodeSelect)
+                });
+                if (!seasonSelect || !episodeSelect) return false;
+
+                let seasonItem = getItem(seasonSelect, seasonNumber);
+                if (!seasonItem) {
+                    console.warn('[KinoGoBridgeTrace] season item not found', {
+                        seasonNumber,
+                        available: describeItems(seasonSelect)
+                    });
+                    return false;
+                }
+
+                const seasonChanged = Number(getActiveId(seasonSelect)) !== seasonNumber;
+                if (seasonChanged) {
+                    seasonItem.click();
+                    console.info('[KinoGoBridgeTrace] season item clicked', {
+                        seasonNumber,
+                        label: String(seasonItem.textContent || '').trim()
+                    });
+
+                    const seasonApplied = await waitFor(
+                        () => Number(getActiveId(getSelect('seasonType1'))) === seasonNumber,
+                        20,
+                        100
+                    );
+                    if (!seasonApplied) {
+                        console.warn('[KinoGoBridgeTrace] season selection not confirmed', {
+                            seasonNumber,
+                            activeSeason: getActiveId(getSelect('seasonType1')),
+                            seasonItems: describeItems(getSelect('seasonType1'))
+                        });
+                        return false;
+                    }
+                }
+
+                // KinoGo rebuilds the episode menu after a season click. Poll
+                // for the exact data-id instead of reusing the old episode list.
+                const episodeItem = await waitFor(() => {
+                    const currentEpisodeSelect = getSelect('episodeType1');
+                    return getItem(currentEpisodeSelect, episodeNumber);
+                }, 24, 150);
+                if (episodeItem) {
+                    episodeItem.click();
+                    console.info('[KinoGoBridgeTrace] episode item clicked', {
+                        seasonNumber,
+                        episodeNumber,
+                        label: String(episodeItem.textContent || '').trim(),
+                        seasonChanged
+                    });
+
+                    const episodeApplied = await waitFor(
+                        () => Number(getActiveId(getSelect('episodeType1'))) === episodeNumber,
+                        20,
+                        100
+                    );
+                    console.info('[KinoGoBridgeTrace] selection confirmation', {
+                        seasonNumber,
+                        episodeNumber,
+                        activeSeason: getActiveId(getSelect('seasonType1')),
+                        activeEpisode: getActiveId(getSelect('episodeType1')),
+                        confirmed: Boolean(episodeApplied)
+                    });
+                    return Boolean(episodeApplied)
+                        && Number(getActiveId(getSelect('seasonType1'))) === seasonNumber;
+                }
+
+                console.warn('[KinoGoBridgeTrace] episode item not found after season update', {
+                    seasonNumber,
+                    episodeNumber,
+                    episodeItems: describeItems(document.querySelector('[data-select="episodeType1"]'))
+                });
+                return false;
+            };
+
             // --- RESTORE PROGRESS IMPLEMENTATION ---
+            const applyNativeProviderSelection = async (targetSeason, targetEpisode) => {
+                const listContainer = document.querySelector('div[class*="controls_"] div[class*="list_"]')
+                    || document.querySelector('div[class*="list_"]');
+                const getDropdowns = () => Array.from(
+                    listContainer?.querySelectorAll?.('div[class*="dropdown_"]') || []
+                );
+                const getItems = dropdown => Array.from(
+                    dropdown?.querySelectorAll?.('div[class*="item_"]') || []
+                );
+                const numberFromLabel = value => {
+                    const match = String(value || '').match(/\d+/);
+                    return match ? Number(match[0]) : null;
+                };
+                const clickExactItem = (dropdown, number, suffix) => {
+                    const items = getItems(dropdown);
+                    const item = items.find(candidate =>
+                        numberFromLabel(candidate.textContent) === Number(number)
+                        && String(candidate.textContent || '').toLowerCase().includes(suffix)
+                    );
+                    console.info('[ExFsBridgeTrace] cleaner dropdown lookup', {
+                        targetNumber: Number(number),
+                        suffix,
+                        itemCount: items.length,
+                        itemLabels: items.map(candidate => String(candidate.textContent || '').trim()).slice(0, 20),
+                        matchedLabel: item ? String(item.textContent || '').trim() : null
+                    });
+                    if (!item) return false;
+                    item.click();
+                    console.info('[ExFsBridgeTrace] cleaner provider item clicked', {
+                        targetNumber: Number(number),
+                        suffix,
+                        label: String(item.textContent || '').trim()
+                    });
+                    return true;
+                };
+                const waitFor = async (predicate, attempts = 24, delayMs = 150) => {
+                    for (let attempt = 0; attempt < attempts; attempt += 1) {
+                        const value = predicate();
+                        if (value) return value;
+                        await new Promise(resolve => setTimeout(resolve, delayMs));
+                    }
+                    return false;
+                };
+
+                const dropdowns = getDropdowns();
+                console.info('[ExFsBridgeTrace] cleaner provider DOM scan', {
+                    targetSeason: Number(targetSeason),
+                    targetEpisode: Number(targetEpisode),
+                    hasListContainer: Boolean(listContainer),
+                    controlsCount: document.querySelectorAll('div[class*="controls_"]').length,
+                    listCount: document.querySelectorAll('div[class*="list_"]').length,
+                    dropdownCount: dropdowns.length,
+                    dropdownLabels: dropdowns.map(dropdown => String(dropdown.textContent || '').trim()).slice(0, 5)
+                });
+                if (!listContainer) return false;
+                const seasonDropdown = dropdowns[0];
+                const episodeDropdownElement = dropdowns[1];
+                if (!seasonDropdown || !episodeDropdownElement) return false;
+
+                const seasonChanged = clickExactItem(seasonDropdown, targetSeason, 'сезон');
+                const selectEpisode = () => clickExactItem(
+                    getDropdowns()[1] || episodeDropdownElement,
+                    targetEpisode,
+                    'серия'
+                );
+
+                if (!seasonChanged) return selectEpisode();
+                // React/Vue providers rebuild the episode menu after a season
+                // click; resolve the new menu before selecting the episode.
+                const episodeClicked = await waitFor(selectEpisode);
+                console.info('[KinoGoBridgeTrace] class bridge episode confirmation', {
+                    targetSeason: Number(targetSeason),
+                    targetEpisode: Number(targetEpisode),
+                    confirmed: Boolean(episodeClicked)
+                });
+                return Boolean(episodeClicked);
+            };
+
+            window.movieExtension_applySelection = async (targetSeason, targetEpisode, providerId = null) => {
+                const hasKinogoDataSelect = Boolean(
+                    document.querySelector('[data-select="seasonType1"]')
+                        && document.querySelector('[data-select="episodeType1"]')
+                );
+                console.info('[KinoGoBridgeTrace] applySelection dispatch', {
+                    providerId,
+                    targetSeason: Number(targetSeason),
+                    targetEpisode: Number(targetEpisode),
+                    hasKinogoDataSelect,
+                    hasClassBasedDropdowns: Boolean(
+                        document.querySelector('div[class*="controls_"] div[class*="dropdown_"]')
+                    )
+                });
+
+                if (hasKinogoDataSelect) {
+                    const kinogoApplied = await applyKinogoProviderSelection(
+                        targetSeason,
+                        targetEpisode
+                    );
+                    if (kinogoApplied) return true;
+                    console.warn('[KinoGoBridgeTrace] data-select bridge did not apply; trying class bridge', {
+                        targetSeason: Number(targetSeason),
+                        targetEpisode: Number(targetEpisode)
+                    });
+                }
+
+                // Stravers mirrors use a separate React/Vue DOM contract even
+                // though the parent provider is still KinoGo. Do not let the
+                // provider id force the wrong bridge; try the actual DOM.
+                console.info('[KinoGoBridgeTrace] trying class-based provider bridge', {
+                    targetSeason: Number(targetSeason),
+                    targetEpisode: Number(targetEpisode),
+                    providerId
+                });
+                const dispatched = applyNativeProviderSelection(targetSeason, targetEpisode);
+                if (dispatched) {
+                    console.log('[MovieExtension] Native provider selection clicked:', {
+                        season: targetSeason,
+                        episode: targetEpisode
+                    });
+                    return true;
+                }
+                if (typeof window.movieExtension_restoreProgress === 'function') {
+                    window.movieExtension_restoreProgress(targetSeason, targetEpisode);
+                    return true;
+                }
+                return false;
+            };
+
             window.movieExtension_restoreProgress = (targetSeason, targetEpisode) => {
                  console.log('[MovieExtension] Executing restore logic:', targetSeason, targetEpisode);
                  if (!targetSeason && !targetEpisode) return;
@@ -2413,11 +2808,6 @@
                  // 1. Switch Season if needed
                  if (targetSeason && seriesData.seasons && seriesData.seasons.length > 0) {
                      // Check current season (native check or our UI check)
-                     // Since we don't track "active season" easily in a variable here without lookup.
-                     // But we have the season selector UI elements if we can find them.
-                     // The `createHorizontalEpisodeSelector` call used `seriesData.seasons`.
-                     // The `updateSeasons` callback updates a local `seasons` variable in the closure.
-                     
                      // We need to trigger the CLICK on the season tab.
                      // We can find the tab by text content.
                      const allDivs = document.querySelectorAll('div');
@@ -2457,8 +2847,7 @@
                              // But we don't have direct access to the `item` objects array to trigger their onclick easily 
                              // unless we expose it.
                              
-                             // Alternative: Trigger click on the rendered card in DOM.
-                             // The `createHorizontalEpisodeSelector` renders cards.
+                             // Alternative: Trigger a matching provider-native episode card in DOM.
                              const allDivs = document.querySelectorAll('div');
                              let episodeCard = null;
                              for (let div of allDivs) {
@@ -2488,6 +2877,7 @@
 
             // Right Controls Group
             const rightControls = document.createElement('div');
+            rightControls.className = 'player-controls-group player-controls-group--right';
             rightControls.style.display = 'flex';
             rightControls.style.alignItems = 'center';
             rightControls.style.gap = '15px';
@@ -2495,12 +2885,14 @@
 
             // Volume Control
             const volumeContainer = document.createElement('div');
+            volumeContainer.className = 'player-volume-control';
             volumeContainer.style.position = 'relative';
             volumeContainer.style.display = 'flex';
             volumeContainer.style.alignItems = 'center';
             volumeContainer.style.cursor = 'pointer';
 
             const volumeBtn = document.createElement('button');
+            volumeBtn.className = 'player-control-button';
             volumeBtn.style.background = 'none';
             volumeBtn.style.border = 'none';
             volumeBtn.style.cursor = 'pointer';
@@ -2533,6 +2925,7 @@
 
             // Custom Vertical Slider
             const sliderContainer = document.createElement('div');
+            sliderContainer.className = 'player-volume-popover';
             sliderContainer.style.position = 'absolute';
             sliderContainer.style.bottom = '35px'; // Above icon
             sliderContainer.style.left = '50%';
@@ -2550,6 +2943,7 @@
             sliderContainer.style.zIndex = '2147483643';
 
             const volTrack = document.createElement('div');
+            volTrack.className = 'player-volume-track';
             volTrack.style.width = '4px';
             volTrack.style.height = '80px';
             volTrack.style.backgroundColor = 'rgba(255,255,255,0.2)';
@@ -2563,13 +2957,13 @@
             volFill.style.left = '0';
             volFill.style.width = '100%';
             volFill.style.height = (video.volume * 100) + '%';
-            volFill.style.backgroundColor = '#4da6ff'; // Blue
+            volFill.style.backgroundColor = '#f4f4f5';
             volFill.style.borderRadius = '2px';
             
             const volKnob = document.createElement('div');
             volKnob.style.width = '12px';
             volKnob.style.height = '12px';
-            volKnob.style.backgroundColor = '#4da6ff';
+            volKnob.style.backgroundColor = '#f4f4f5';
             volKnob.style.borderRadius = '50%';
             volKnob.style.position = 'absolute';
             volKnob.style.top = '0'; // Relative to fill top
@@ -2619,7 +3013,6 @@
             // Helper to attach listeners to ANY video element
             const setupVideoListeners = (videoEl) => {
                 if (!videoEl || videoEl.dataset.ghost === 'true' || videoEl.classList.contains('ghost-video')) return;
-                console.log('[MovieExtension] Setting up listeners for video:', videoEl);
                 
                 // Remove old listeners if any (not easily possible with anonymous functions unless we track them, 
                 // but since we destroy old video elements, it's fine)
@@ -2655,14 +3048,12 @@
                 };
 
                 videoEl.addEventListener('play', () => {
-                    console.log('[MovieExtension] Video Event: play');
                     updatePlayBtnIcon();
                     updateVisibility();
                     hideLoader();
                 });
                 
                 videoEl.addEventListener('ended', () => {
-                    console.log('[MovieExtension] Video Event: ended');
                     const key = getSavedKey(); 
                     localStorage.removeItem(key);
                     localStorage.setItem('movieExtension_autoplay_next', 'true');
@@ -2671,7 +3062,6 @@
                 });
                 
                 videoEl.addEventListener('pause', () => {
-                    console.log('[MovieExtension] Video Event: pause');
                     updatePlayBtnIcon();
                     updateVisibility();
                     hideLoader();
@@ -2679,34 +3069,27 @@
                 
                 videoEl.addEventListener('timeupdate', updateTime);
                 videoEl.addEventListener('loadedmetadata', () => {
-                    console.log('[MovieExtension] Video Event: loadedmetadata. Duration:', videoEl.duration);
                     updateTime();
                 });
                 
                 // Loader Events
                 videoEl.addEventListener('waiting', () => {
-                    console.log('[MovieExtension] Video Event: waiting');
                     showLoader();
                 });
                 videoEl.addEventListener('seeking', () => {
-                    console.log('[MovieExtension] Video Event: seeking');
                     showLoader();
                 });
                 videoEl.addEventListener('seeked', () => {
-                    console.log('[MovieExtension] Video Event: seeked');
                     hideLoader();
                     checkSkipButtonVisibility(videoEl.currentTime);
                 });
                 videoEl.addEventListener('playing', () => {
-                    console.log('[MovieExtension] Video Event: playing');
                     hideLoader();
                 });
                 videoEl.addEventListener('canplay', () => {
-                    console.log('[MovieExtension] Video Event: canplay');
                     hideLoader();
                 });
                 videoEl.addEventListener('canplaythrough', () => {
-                    console.log('[MovieExtension] Video Event: canplaythrough');
                     hideLoader();
                 });
                 videoEl.addEventListener('error', (e) => {
@@ -2795,14 +3178,14 @@
                 updateVolumeFromEvent(e);
             });
             
-            document.addEventListener('mousemove', (e) => {
+            listenerScope.listen(document, 'mousemove', (e) => {
                 if (isDraggingVol) {
                     e.preventDefault();
                     updateVolumeFromEvent(e);
                 }
             });
 
-            document.addEventListener('mouseup', () => {
+            listenerScope.listen(document, 'mouseup', () => {
                 isDraggingVol = false;
             });
             
@@ -2820,7 +3203,7 @@
             // --- EPISODE LIST BUTTON ---
             if (episodeDropdown && seriesData.hasSeries) {
                 const episodeListBtn = document.createElement('button');
-                episodeListBtn.className = 'episode-list-btn';
+                episodeListBtn.className = 'episode-list-btn player-control-button';
                 episodeListBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" height="26px" width="26px" version="1.1" id="Capa_1" viewBox="0 0 261.791 261.791" xml:space="preserve"><><path style="fill:#ffffff;" d="M213.02,58.899h-59.203l48-45.983c2.991-2.866,3.093-7.613,0.227-10.604   c-2.866-2.991-7.613-3.093-10.604-0.227l-59.308,56.815h-0.533L88.83,17.557c-2.979-2.879-7.727-2.798-10.605,0.18   c-2.879,2.978-2.798,7.726,0.18,10.605l31.612,30.558H48.771c-12.407,0-22.5,10.093-22.5,22.5v134.764   c0,12.407,10.093,22.5,22.5,22.5H213.02c12.406,0,22.5-10.093,22.5-22.5V81.399C235.52,68.993,225.426,58.899,213.02,58.899z    M220.52,216.163c0,4.135-3.364,7.5-7.5,7.5H48.771c-4.135,0-7.5-3.365-7.5-7.5V81.399c0-4.135,3.365-7.5,7.5-7.5H213.02   c4.136,0,7.5,3.365,7.5,7.5V216.163z"/>	</g></svg>`;
                 episodeListBtn.style.background = 'none';
                 episodeListBtn.style.border = 'none';
@@ -2834,6 +3217,9 @@
                 episodeListBtn.style.justifyContent = 'center';
                 episodeListBtn.style.color = 'white'; // FIX: Ensure icon is white initially
                 episodeListBtn.title = 'Список серий';
+                if (canonicalPickerRequested) {
+                    episodeListBtn.style.display = 'none';
+                }
                 
                 episodeListBtn.addEventListener('mouseenter', () => {
                     episodeListBtn.style.opacity = '1';
@@ -2851,11 +3237,12 @@
                 });
                 
                 rightControls.appendChild(episodeListBtn);
+                applyCanonicalPickerVisibility();
             }
 
             // --- SUBTITLES BUTTON START ---
             const subtitlesBtn = document.createElement('button');
-            subtitlesBtn.className = 'subtitles-toggle-btn';
+            subtitlesBtn.className = 'subtitles-toggle-btn player-control-button';
             subtitlesBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="#ffffffff" width="32px" height="32px" viewBox="0 0 512 512"><title>subtitles</title><path d="M96 416Q82 416 73 407 64 398 64 384L64 128Q64 114 73 105 82 96 96 96L416 96Q430 96 439 105 448 114 448 128L448 384Q448 398 439 407 430 416 416 416L96 416ZM176 296L176 256 112 256 112 296 176 296ZM400 296L400 256 208 256 208 296 400 296ZM304 368L304 328 112 328 112 368 304 368ZM400 368L400 328 336 328 336 368 400 368Z"/></svg>`;
             subtitlesBtn.style.background = 'none';
             subtitlesBtn.style.border = 'none';
@@ -2957,7 +3344,7 @@
             // --- PIP BUTTON START ---
             if (document.pictureInPictureEnabled) {
                 const pipBtn = document.createElement('button');
-                pipBtn.className = 'pip-toggle-btn';
+                pipBtn.className = 'pip-toggle-btn player-control-button';
                 pipBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" x="0px" y="0px" viewBox="0 0 64 64" style="enable-background:new 0 0 64 64;" xml:space="preserve"><path fill="#ffffff" d="M55.156,30.219H33.781c-1.965,0-3.563,1.598-3.563,3.563v15.141c0,1.965,1.598,3.563,3.563,3.563h21.375  c1.965,0,3.563-1.598,3.563-3.563V33.781C58.719,31.817,57.121,30.219,55.156,30.219z M33.781,48.922V33.781h21.375l0.003,15.141  H33.781z"/><path fill="#ffffff" d="M27.851,17.139c-0.984,0-1.781,0.798-1.781,1.781v4.517l-5.776-5.776c-0.696-0.696-1.823-0.696-2.519,0  c-0.696,0.695-0.696,1.823,0,2.519l5.776,5.776h-4.517c-0.984,0-1.781,0.798-1.781,1.781c0,0.984,0.798,1.781,1.781,1.781h8.817  c0.117,0,0.234-0.012,0.349-0.035c0.053-0.01,0.102-0.03,0.153-0.045c0.06-0.018,0.121-0.032,0.18-0.056  c0.061-0.025,0.115-0.059,0.172-0.091c0.045-0.025,0.091-0.044,0.134-0.073c0.195-0.13,0.363-0.298,0.494-0.494  c0.03-0.044,0.05-0.093,0.075-0.139c0.03-0.055,0.064-0.109,0.088-0.167c0.025-0.06,0.039-0.122,0.057-0.183  c0.015-0.05,0.034-0.098,0.044-0.149c0.023-0.115,0.035-0.232,0.035-0.349V18.92C29.633,17.937,28.835,17.139,27.851,17.139z"/><path fill="#ffffff" d="M25.765,48.923H9.734c-0.491,0-0.891-0.399-0.891-0.891V15.969c0-0.491,0.399-0.891,0.891-0.891h44.531  c0.491,0,0.891,0.4,0.891,0.891v9.797c0,0.984,0.798,1.781,1.781,1.781c0.983,0,1.781-0.798,1.781-1.781v-9.797  c0.001-2.456-1.997-4.453-4.452-4.453H9.734c-2.455,0-4.453,1.998-4.453,4.453v32.063c0,2.455,1.998,4.453,4.453,4.453h16.031  c0.984,0,1.781-0.798,1.781-1.781C27.546,49.721,26.748,48.923,25.765,48.923z"/></svg>`;
                 pipBtn.style.background = 'none';
                 pipBtn.style.border = 'none';
@@ -3034,6 +3421,7 @@
 
             // Settings Button (User Provided)
             const settingsBtn = document.createElement('button');
+            settingsBtn.className = 'player-control-button';
             settingsBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24px" height="24px" viewBox="0 0 512 512"><title>ionicons-v5-q</title><path d="M262.29,192.31a64,64,0,1,0,57.4,57.4A64.13,64.13,0,0,0,262.29,192.31ZM416.39,256a154.34,154.34,0,0,1-1.53,20.79l45.21,35.46A10.81,10.81,0,0,1,462.52,326l-42.77,74a10.81,10.81,0,0,1-13.14,4.59l-44.9-18.08a16.11,16.11,0,0,0-15.17,1.75A164.48,164.48,0,0,1,325,400.8a15.94,15.94,0,0,0-8.82,12.14l-6.73,47.89A11.08,11.08,0,0,1,298.77,470H213.23a11.11,11.11,0,0,1-10.69-8.87l-6.72-47.82a16.07,16.07,0,0,0-9-12.22,155.3,155.3,0,0,1-21.46-12.57,16,16,0,0,0-15.11-1.71l-44.89,18.07a10.81,10.81,0,0,1-13.14-4.58l-42.77-74a10.8,10.8,0,0,1,2.45-13.75l38.21-30a16.05,16.05,0,0,0,6-14.08c-.36-4.17-.58-8.33-.58-12.5s.21-8.27.58-12.35a16,16,0,0,0-6.07-13.94l-38.19-30A10.81,10.81,0,0,1,49.48,186l42.77-74a10.81,10.81,0,0,1,13.14-4.59l44.9,18.08a16.11,16.11,0,0,0,15.17-1.75A164.48,164.48,0,0,1,187,111.2a15.94,15.94,0,0,0,8.82-12.14l6.73-47.89A11.08,11.08,0,0,1,213.23,42h85.54a11.11,11.11,0,0,1,10.69,8.87l6.72,47.82a16.07,16.07,0,0,0,9,12.22,155.3,155.3,0,0,1,21.46,12.57,16,16,0,0,0,15.11,1.71l44.89-18.07a10.81,10.81,0,0,1,13.14,4.58l42.77,74a10.8,10.8,0,0,1-2.45,13.75l-38.21,30a16.05,16.05,0,0,0-6.05,14.08C416.17,247.67,416.39,251.83,416.39,256Z" style="fill:none;stroke:#ffffff;stroke-linecap:round;stroke-linejoin:round;stroke-width:32px"/></svg>`;
             settingsBtn.style.background = 'none';
             settingsBtn.style.border = 'none';
@@ -3043,13 +3431,14 @@
             
             // Settings Menu Container
             const settingsMenu = document.createElement('div');
+            settingsMenu.className = 'player-settings-menu';
             settingsMenu.style.position = 'absolute';
-            settingsMenu.style.bottom = '80px';
-            settingsMenu.style.right = '20px';
-            settingsMenu.style.backgroundColor = 'rgba(28, 28, 30, 0.95)';
-            settingsMenu.style.borderRadius = '12px';
-            settingsMenu.style.padding = '10px 0';
-            settingsMenu.style.minWidth = '220px';
+            settingsMenu.style.bottom = '72px';
+            settingsMenu.style.right = '8px';
+            settingsMenu.style.backgroundColor = 'rgba(24, 24, 27, 0.94)';
+            settingsMenu.style.borderRadius = '14px';
+            settingsMenu.style.padding = '6px';
+            settingsMenu.style.minWidth = '268px';
             settingsMenu.style.display = 'none';
             settingsMenu.style.flexDirection = 'column';
             settingsMenu.style.zIndex = '2147483645';
@@ -3058,26 +3447,19 @@
             settingsMenu.style.color = 'white';
             settingsMenu.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
             settingsMenu.style.fontSize = '14px';
+            settingsMenu.setAttribute('role', 'menu');
 
             const createMenuItem = (label, value) => {
-                const item = document.createElement('div');
-                item.style.padding = '10px 15px';
-                item.style.display = 'flex';
-                item.style.justifyContent = 'space-between';
-                item.style.alignItems = 'center';
-                item.style.cursor = 'pointer';
-                item.style.transition = 'background 0.2s';
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'player-settings-menu__item';
+                item.setAttribute('role', 'menuitem');
                 
                 item.innerHTML = `
-                    <span style="opacity: 0.8">${label}</span>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="font-weight: 500">${value}</span>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.6"><path d="M9 18l6-6-6-6"/></svg>
-                    </div>
+                    <span class="player-settings-menu__label">${label}</span>
+                    <span class="player-settings-menu__value">${value}</span>
+                    <svg class="player-settings-menu__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
                 `;
-
-                item.addEventListener('mouseenter', () => item.style.backgroundColor = 'rgba(255,255,255,0.1)');
-                item.addEventListener('mouseleave', () => item.style.backgroundColor = 'transparent');
                 return item;
             };
 
@@ -3086,38 +3468,30 @@
                 settingsMenu.innerHTML = '';
                 
                 // Header with Back Button
-                const header = document.createElement('div');
-                header.style.padding = '10px 15px';
-                header.style.borderBottom = '1px solid rgba(255,255,255,0.1)';
-                header.style.marginBottom = '5px';
-                header.style.display = 'flex';
-                header.style.alignItems = 'center';
-                header.style.gap = '10px';
-                header.style.cursor = 'pointer';
-                header.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg> <span style="font-weight:600">${title}</span>`;
+                const header = document.createElement('button');
+                header.type = 'button';
+                header.className = 'player-settings-menu__back';
+                header.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg><span>${title}</span>`;
                 header.onclick = (e) => { e.stopPropagation(); renderMainView(); };
                 settingsMenu.appendChild(header);
 
                 // Items list
                 const listContainer = document.createElement('div');
-                listContainer.style.maxHeight = '200px';
-                listContainer.style.overflowY = 'auto'; // Scrollable if many items
+                listContainer.className = 'player-settings-menu__list';
+                listContainer.setAttribute('role', 'menu');
 
                 items.forEach(item => {
-                     const div = document.createElement('div');
-                     div.style.padding = '8px 25px';
-                     div.style.cursor = 'pointer';
-                     div.style.display = 'flex';
-                     div.style.justifyContent = 'space-between';
-                     div.textContent = item.label;
+                     const div = document.createElement('button');
+                     div.type = 'button';
+                     div.className = 'player-settings-menu__option';
+                     div.setAttribute('role', 'menuitemradio');
+                     div.setAttribute('aria-checked', String(!!item.isActive));
+                     div.innerHTML = `<span class="player-settings-menu__option-label"></span><span class="player-settings-menu__check" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>`;
+                     div.querySelector('.player-settings-menu__option-label').textContent = item.label;
                      
                      if (item.isActive) {
-                         div.style.color = '#4da6ff';
-                         div.innerHTML += ' ✓';
+                         div.classList.add('is-active');
                      }
-                     
-                     div.addEventListener('mouseenter', () => div.style.backgroundColor = 'rgba(255,255,255,0.1)');
-                     div.addEventListener('mouseleave', () => div.style.backgroundColor = 'transparent');
                      
                      div.onclick = (e) => {
                          e.stopPropagation();
@@ -3251,10 +3625,39 @@
                  return results;
             }
 
+            const cleanQualityLabel = (rawText) => {
+                if (!rawText) return 'Auto';
+                let text = rawText.trim();
+                text = text.replace(/^(?:Качество|Quality|Разрешение|Resolution|Video Quality)\s*:?\s*/gi, '').trim();
+
+                const tokenRegex = /(2160p\d*|1440p\d*|1080p\d*|720p\d*|480p\d*|360p\d*|240p\d*|4k|ultra\s*hd|full\s*hd|auto|авто)/gi;
+                const allMatches = [...text.matchAll(tokenRegex)];
+                if (allMatches.length > 0) {
+                    const lastToken = allMatches[allMatches.length - 1][0];
+                    if (lastToken.toLowerCase() === 'auto') return 'Auto';
+                    if (lastToken.toLowerCase() === 'авто') return 'Авто';
+                    if (lastToken.toLowerCase() === '4k') return '4K';
+                    if (lastToken.toLowerCase() === 'full hd') return '1080p (Full HD)';
+                    if (lastToken.toLowerCase() === 'ultra hd') return '4K (Ultra HD)';
+                    return lastToken.toLowerCase();
+                }
+
+                const numMatch = text.match(/(2160|1440|1080|720|480|360|240)/);
+                if (numMatch) {
+                    return numMatch[0] + 'p';
+                }
+
+                return text || 'Auto';
+            };
+
             const getQualityOptions = () => {
                 const keywords = ['2160p', '1440p', '1080p', '720p', '480p', '360p', 'Auto', '4k', 'Ultra'];
-                return findControlOptions(keywords);
-            }
+                const rawOptions = findControlOptions(keywords);
+                return rawOptions.map(opt => ({
+                    ...opt,
+                    label: cleanQualityLabel(opt.label)
+                }));
+            };
 
             const renderQualityView = () => {
                 const options = getQualityOptions();
@@ -3393,7 +3796,7 @@
             });
 
             // Close menu when clicking outside
-            document.addEventListener('click', (e) => {
+            listenerScope.listen(document, 'click', (e) => {
                 if (!settingsMenu.contains(e.target) && !settingsBtn.contains(e.target)) {
                     settingsMenu.style.display = 'none';
                 }
@@ -3401,6 +3804,7 @@
 
             // Fullscreen Button
             const fullscreenBtn = document.createElement('button');
+            fullscreenBtn.className = 'player-control-button';
             fullscreenBtn.style.background = 'none';
             fullscreenBtn.style.border = 'none';
             fullscreenBtn.style.cursor = 'pointer';
@@ -3442,13 +3846,11 @@
                 }
             });
             
-            document.addEventListener('fullscreenchange', updateFullIcon);
+            listenerScope.listen(document, 'fullscreenchange', updateFullIcon);
 
-            // Keyboard Controls for seeking and volume (register only once)
-            if (!window._movieExtension_keyboardHandlerRegistered) {
-                window._movieExtension_keyboardHandlerRegistered = true;
-                
-                document.addEventListener('keydown', (e) => {
+            // Keyboard controls belong to this wrapper and are removed with it.
+            {
+                listenerScope.listen(document, 'keydown', (e) => {
                     // Only handle if player is visible and not typing in input
                     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
                     
@@ -3574,11 +3976,43 @@
 
             bottomControls.appendChild(leftControls);
             bottomControls.appendChild(rightControls);
+
+            bottomControls.querySelectorAll('button').forEach(button => {
+                button.classList.add('player-control-button');
+                button.style.width = '36px';
+                button.style.height = '36px';
+                button.style.display = 'grid';
+                button.style.placeItems = 'center';
+                button.style.padding = '6px';
+                button.style.color = 'rgba(255, 255, 255, 0.82)';
+                button.style.background = 'transparent';
+                button.style.border = '1px solid transparent';
+                button.style.borderRadius = '10px';
+                button.style.opacity = '1';
+                button.style.transition = 'color 160ms ease, background-color 160ms ease, border-color 160ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1)';
+                button.addEventListener('mouseenter', () => {
+                    if (button.disabled) return;
+                    button.style.color = '#fff';
+                    button.style.background = 'rgba(255, 255, 255, 0.1)';
+                    button.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+                });
+                button.addEventListener('mouseleave', () => {
+                    button.style.color = 'rgba(255, 255, 255, 0.82)';
+                    button.style.background = 'transparent';
+                    button.style.borderColor = 'transparent';
+                });
+            });
+
             newContainer.appendChild(bottomControls);
+
+            console.info('[PlayerCleaner] Native player ready', {
+                origin: window.location.origin,
+                sourceType: initialSrc.startsWith('blob:') ? 'blob' : 'url',
+                uiVersion: 'obsidian-3'
+            });
 
             // INITIALIZE GHOST PLAYER FOR IFRAME
             if (typeof GhostPlayer !== 'undefined') {
-                console.log('[DEBUG PlayerCleaner] Initializing GhostPlayer for iframe...');
                 window._iframeGhostPlayer = new GhostPlayer({
                     progressContainer: progressContainer,
                     getActiveVideo: () => permanentVideo || document.querySelector('video'),
@@ -3618,7 +4052,7 @@
             window.parent.postMessage({ type: 'PLAYER_READY' }, '*');
 
             // Listen for messages from parent
-            window.addEventListener('message', (event) => {
+            listenerScope.listen(window, 'message', (event) => {
                 if (event.data.type === 'SET_SOURCES') {
                     // Sources received, no action needed here currently
                 } else if (event.data.type === 'ANIME_SKIP_DATA') {
@@ -3766,7 +4200,8 @@
     function extractAndRender(childrenCollection) {
         const voiceoverOptions = [];
         Array.from(childrenCollection).forEach(child => {
-            const text = child.textContent.trim();
+            let text = child.textContent.trim();
+            text = text.replace(/^(?:Озвучка|Перевод|Аудиодорожка|Voiceover)\s*:?\s*/gi, '').trim();
             if (text) {
                 voiceoverOptions.push({
                     name: text,
@@ -3796,8 +4231,38 @@
 
     // REMOVED renderInternalVoiceoverSelector
 
-    // Set up observer with enhanced logic
+    function observePlayerContainer() {
+        const nextRoot = getPlayerObservationRoot();
+        if (!nextRoot) return false;
+        if (observerRoot === nextRoot) return true;
+        observer?.disconnect?.();
+        observerRoot = nextRoot;
+        observer.observe(observerRoot, { childList: true, subtree: true });
+        return true;
+    }
+
+    function startPlayerObservation(attempt = 0) {
+        reportProviderContentError();
+        if (observePlayerContainer()) {
+            replacePlayer();
+            return;
+        }
+        if (attempt < MAX_ATTEMPTS) {
+            setTimeout(() => startPlayerObservation(attempt + 1), 100);
+        }
+    }
+
+    // Observe only the concrete player subtree. Mutations elsewhere in the page
+    // cannot trigger a player replacement.
     observer = new MutationObserver((mutations) => {
+        if (!mutationsWithinRoot(mutations, observerRoot)) return;
+        if (activeWrapper && !document.contains(activeWrapper)) {
+            teardownActiveWrapper();
+        }
+        if (permanentVideo && !document.contains(permanentVideo)) {
+            permanentVideo = null;
+            activeWrapper = null;
+        }
         // First check if we need to intercept new video elements
         if (permanentVideo) {
             for (const mutation of mutations) {
@@ -3807,9 +4272,10 @@
                         .filter(node => node.tagName === 'VIDEO' && node.dataset.ghost !== 'true' && !node.classList.contains('ghost-video'));
                     
                     for (const newVideo of addedVideos) {
-                        // Skip if it's our own video
+                        // Skip if it's our own video or extension native player
                         if (newVideo === permanentVideo) continue;
                         if (newVideo.closest('.native-player-wrapper')) continue;
+                        if (isExtensionNativeVideo(newVideo)) continue;
                         
                         // Extract source from new video
                         const newSrc = newVideo.src || newVideo.currentSrc;
@@ -3835,7 +4301,7 @@
                                 const src = newVideo.src || newVideo.currentSrc;
                                 if (src) {
                                     obs.disconnect();
-                                    if (newVideo.closest('.native-player-wrapper')) return;
+                                    if (newVideo.closest('.native-player-wrapper') || isExtensionNativeVideo(newVideo)) return;
                                     console.log('[MovieExtension] Deferred src detected:', src);
                                     changeVideoSource(src, true);
                                     newVideo.remove();
@@ -3845,7 +4311,7 @@
                             // Fallback for blob URLs set via JS property (not attribute)
                             newVideo.addEventListener('loadedmetadata', function handler() {
                                 const src = newVideo.src || newVideo.currentSrc;
-                                if (src && !newVideo.closest('.native-player-wrapper')) {
+                                if (src && !newVideo.closest('.native-player-wrapper') && !isExtensionNativeVideo(newVideo)) {
                                     srcWatcher.disconnect();
                                     console.log('[MovieExtension] Deferred src via loadedmetadata:', src);
                                     changeVideoSource(src, true);
@@ -3863,21 +4329,14 @@
         replacePlayer();
     });
     
-    // waiting for body
-    if (document.body) {
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-        replacePlayer();
-    } else {
+    if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {
-             observer.observe(document.body, {
-                childList: true,
-                subtree: true
-            });
-            replacePlayer();
-        });
+            scheduleProviderContentErrorCheck();
+            startPlayerObservation();
+        }, { once: true });
+    } else {
+        scheduleProviderContentErrorCheck();
+        startPlayerObservation();
     }
 
 
@@ -3927,14 +4386,8 @@ class GhostPlayer {
         this._ghostVideo = null;
         this._timeLabel  = null;
 
-        console.log('[GhostPlayer] constructor — progressContainer:', progressContainer);
-        console.log('[GhostPlayer] constructor — HlsClass available:', !!HlsClass);
-        console.log('[GhostPlayer] constructor — HlsClass.isSupported:', HlsClass ? HlsClass.isSupported() : 'N/A');
-
         this._build();
         this._bind();
-
-        console.log('[GhostPlayer] initialized ✓  tooltip appended to body:', document.body.contains(this._tooltip));
     }
 
     // ─── DOM ──────────────────────────────────────────────────────────────────
@@ -3958,8 +4411,6 @@ class GhostPlayer {
         this._tooltip.appendChild(this._ghostVideo);
         this._tooltip.appendChild(this._timeLabel);
         document.body.appendChild(this._tooltip);
-
-        console.log('[GhostPlayer] _build — DOM created. tooltip classes:', this._tooltip.className);
     }
 
     // ─── Events ───────────────────────────────────────────────────────────────
@@ -3970,27 +4421,21 @@ class GhostPlayer {
 
         this._progressContainer.addEventListener('mousemove',  this._onMove);
         this._progressContainer.addEventListener('mouseleave', this._onLeave);
-
-        console.log('[GhostPlayer] _bind — mousemove / mouseleave attached to:', this._progressContainer?.id || this._progressContainer?.className || this._progressContainer);
     }
 
     _handleMove(e) {
         const video = this._getActiveVideo();
 
         if (!video) {
-            console.warn('[GhostPlayer] _handleMove — getActiveVideo() returned null, skipping');
             return;
         }
         if (!video.duration || isNaN(video.duration)) {
-            console.warn('[GhostPlayer] _handleMove — video.duration invalid:', video.duration, '| readyState:', video.readyState, '| src:', video.src?.substring(0, 60));
             return;
         }
 
         const rect     = this._progressContainer.getBoundingClientRect();
         const ratio    = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
         const seekTime = ratio * video.duration;
-
-        console.log(`[GhostPlayer] _handleMove — ratio=${ratio.toFixed(2)}, seekTime=${seekTime.toFixed(1)}s, duration=${video.duration.toFixed(1)}s`);
 
         this._showTooltip(e.clientX, rect.top, seekTime);
 
@@ -3999,7 +4444,6 @@ class GhostPlayer {
     }
 
     _handleLeave() {
-        console.log('[GhostPlayer] _handleLeave — hiding tooltip');
         clearTimeout(this._debounce);
         this._tooltip.classList.remove('ghost-tooltip--visible');
 
@@ -4015,22 +4459,18 @@ class GhostPlayer {
 
     _seekGhost(time) {
         const url = this._getCurrentUrl();
-        console.log(`[GhostPlayer] _seekGhost — time=${time.toFixed(1)}s, url=${url?.substring(0, 80) ?? 'null'}`);
 
         if (!url) {
-            console.warn('[GhostPlayer] _seekGhost — no URL, aborting');
             return;
         }
 
         if (url !== this._lastUrl) {
-            console.log('[GhostPlayer] _seekGhost — new URL detected, calling _initSource');
             this._initSource(url);
             this._lastUrl = url;
         }
 
         // Ждём метаданных, потом сикаем
         const doSeek = () => {
-            console.log(`[GhostPlayer] doSeek — setting currentTime=${time.toFixed(1)}s, readyState=${this._ghostVideo.readyState}`);
             this._ghostVideo.currentTime = time;
             this._ghostVideo.pause();
         };
@@ -4038,34 +4478,25 @@ class GhostPlayer {
         if (this._ghostVideo.readyState >= 1) {
             doSeek();
         } else {
-            console.log('[GhostPlayer] _seekGhost — waiting for loadedmetadata (readyState=' + this._ghostVideo.readyState + ')');
             this._ghostVideo.addEventListener('loadedmetadata', doSeek, { once: true });
         }
     }
 
     _initSource(url) {
-        console.log('[GhostPlayer] _initSource — url:', url?.substring(0, 80));
-
         // Уничтожаем предыдущий HLS инстанс
         if (this._ghostHls) {
-            console.log('[GhostPlayer] _initSource — destroying previous ghostHls');
             this._ghostHls.destroy();
             this._ghostHls = null;
         }
         this._ghostVideo.removeAttribute('src');
 
         const isHlsUrl = !!(url && (url.includes('.m3u8') || (url.startsWith('blob:') && this._getCurrentHls())));
-        console.log(`[GhostPlayer] _initSource — isHlsUrl=${isHlsUrl}, Hls available=${!!this._Hls}, Hls.isSupported=${this._Hls ? this._Hls.isSupported() : 'N/A'}`);
 
         if (isHlsUrl && this._Hls && this._Hls.isSupported()) {
-            console.log('[GhostPlayer] _initSource — using HLS.js instance for ghost');
             this._ghostHls = new this._Hls({
                 maxBufferLength:    8,
                 maxMaxBufferLength: 16,
                 startFragPrefetch:  true,
-            });
-            this._ghostHls.on(this._Hls.Events.MANIFEST_PARSED, () => {
-                console.log('[GhostPlayer] ghostHls — MANIFEST_PARSED ✓');
             });
             this._ghostHls.on(this._Hls.Events.ERROR, (event, data) => {
                 console.error('[GhostPlayer] ghostHls ERROR —', data.type, data.details);
@@ -4074,7 +4505,6 @@ class GhostPlayer {
             this._ghostHls.attachMedia(this._ghostVideo);
         } else if (isHlsUrl && this._ghostVideo && this._ghostVideo.canPlayType('application/vnd.apple.mpegurl')) {
             // Нативный HLS (Safari)
-            console.log('[GhostPlayer] _initSource — using native HLS (Safari)');
             this._ghostVideo.src = url;
             this._ghostVideo.load();
         } else {
@@ -4084,14 +4514,9 @@ class GhostPlayer {
                 console.warn('[GhostPlayer] _initSource — skipping blob URL because HlsClass is unavailable');
                 return;
             }
-            console.log('[GhostPlayer] _initSource — using direct src (non-HLS or HLS.js not supported)');
             this._ghostVideo.src = url;
             this._ghostVideo.load();
         }
-
-        this._ghostVideo.addEventListener('loadedmetadata', () => {
-            console.log(`[GhostPlayer] ghostVideo — loadedmetadata ✓  duration=${this._ghostVideo.duration?.toFixed(1)}s`);
-        }, { once: true });
 
         this._ghostVideo.addEventListener('error', (e) => {
             console.error('[GhostPlayer] ghostVideo error —', this._ghostVideo.error?.code, this._ghostVideo.error?.message);
@@ -4121,7 +4546,6 @@ class GhostPlayer {
             this._tooltip.classList.add('ghost-tooltip--visible');
         });
 
-        console.log(`[GhostPlayer] _showTooltip — left=${left}px, top=${top}px, time=${this._formatTime(time)}, display=${this._tooltip.style.display}, classes=${this._tooltip.className}`);
     }
 
     _formatTime(seconds) {
@@ -4136,7 +4560,6 @@ class GhostPlayer {
     // ─── Lifecycle ────────────────────────────────────────────────────────────
 
     destroy() {
-        console.log('[GhostPlayer] destroy — cleaning up');
         clearTimeout(this._debounce);
         this._progressContainer.removeEventListener('mousemove',  this._onMove);
         this._progressContainer.removeEventListener('mouseleave', this._onLeave);

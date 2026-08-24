@@ -211,16 +211,28 @@ class WatchingPageManager {
 
         await firebaseManager.waitForAuthReady();
         this.currentUser = firebaseManager.getCurrentUser();
-        
-        if (!this.currentUser) {
-            // Redirect to popup for sign in
-            window.location.href = chrome.runtime.getURL('src/popup/popup.html');
-            return;
-        }
+
+        // Listen for cross-tab auth state changes
+        window.addEventListener('authStateChanged', async (e) => {
+            const user = e.detail?.user;
+            if (!user) {
+                this.currentUser = null;
+                this.watchingList = [];
+                this.filteredWatchingList = [];
+                this.renderMovies();
+                this.showError('Для просмотра списка "Смотрю" необходимо войти в аккаунт.');
+            } else if (!this.currentUser || this.currentUser.uid !== user.uid) {
+                this.currentUser = user;
+                await this.loadWatchingList();
+            }
+        });
     }
 
     async loadWatchingList() {
-        if (!this.currentUser) return;
+        if (!this.currentUser) {
+            this.showError('Для просмотра списка "Смотрю" необходимо войти в аккаунт.');
+            return;
+        }
 
         try {
             this.showLoading();
@@ -237,6 +249,20 @@ class WatchingPageManager {
                 sortBy,
                 sortOrder
             );
+
+            const movieCacheService = firebaseManager.getMovieCacheService();
+            const movieIds = this.watchingList.map(item => item.movieId).filter(Boolean);
+            const cachedMovies = await movieCacheService.getBatchCachedMovies(movieIds);
+            this.watchingList = this.watchingList.map(item => {
+                const cachedMovie = cachedMovies[item.movieId];
+                if (!cachedMovie) return item;
+                return {
+                    ...item,
+                    kpRating: cachedMovie.kpRating ?? item.kpRating,
+                    imdbRating: cachedMovie.imdbRating ?? item.imdbRating,
+                    votes: { ...(item.votes || {}), ...(cachedMovie.votes || {}) }
+                };
+            });
 
             // Load progress data from chrome.storage
             await this.loadWatchingProgress();
@@ -264,31 +290,29 @@ class WatchingPageManager {
         }
 
         // Apply sort
-        if (this.filters.search) {
-            const [sortBy, order] = this.filters.sort.split('-');
-            filtered.sort((a, b) => {
-                if (sortBy === 'addedAt') {
-                    const dateA = a.addedAt?.toDate?.() || new Date(a.addedAt) || new Date(0);
-                    const dateB = b.addedAt?.toDate?.() || new Date(b.addedAt) || new Date(0);
-                    return order === 'desc' ? dateB - dateA : dateA - dateB;
-                } else if (sortBy === 'movieTitle') {
-                    const titleA = (a.movieTitle || '').toLowerCase();
-                    const titleB = (b.movieTitle || '').toLowerCase();
-                    return order === 'asc' 
-                        ? titleA.localeCompare(titleB)
-                        : titleB.localeCompare(titleA);
-                } else if (sortBy === 'releaseYear') {
-                    const yearA = a.releaseYear || 0;
-                    const yearB = b.releaseYear || 0;
-                    return order === 'desc' ? yearB - yearA : yearA - yearB;
-                } else if (sortBy === 'avgRating') {
-                    const ratingA = a.avgRating || 0;
-                    const ratingB = b.avgRating || 0;
-                    return order === 'desc' ? ratingB - ratingA : ratingA - ratingB;
-                }
-                return 0;
-            });
-        }
+        const [sortBy, order] = this.filters.sort.split('-');
+        filtered.sort((a, b) => {
+            if (sortBy === 'addedAt') {
+                const dateA = a.addedAt?.toDate?.() || new Date(a.addedAt) || new Date(0);
+                const dateB = b.addedAt?.toDate?.() || new Date(b.addedAt) || new Date(0);
+                return order === 'desc' ? dateB - dateA : dateA - dateB;
+            } else if (sortBy === 'movieTitle') {
+                const titleA = (a.movieTitle || '').toLowerCase();
+                const titleB = (b.movieTitle || '').toLowerCase();
+                return order === 'asc' 
+                    ? titleA.localeCompare(titleB)
+                    : titleB.localeCompare(titleA);
+            } else if (sortBy === 'releaseYear') {
+                const yearA = a.releaseYear || 0;
+                const yearB = b.releaseYear || 0;
+                return order === 'desc' ? yearB - yearA : yearA - yearB;
+            } else if (sortBy === 'avgRating') {
+                const ratingA = a.avgRating || 0;
+                const ratingB = b.avgRating || 0;
+                return order === 'desc' ? ratingB - ratingA : ratingA - ratingB;
+            }
+            return 0;
+        });
 
         this.filteredWatchingList = filtered;
         this.renderMovies();
@@ -328,7 +352,8 @@ class WatchingPageManager {
                 genres: item.genres || [],
                 description: item.description || '',
                 kpRating: item.kpRating || 0,
-                imdbRating: item.imdbRating || 0
+                imdbRating: item.imdbRating || 0,
+                votes: item.votes || {}
             },
             movieId: item.movieId,
             averageRating: item.avgRating || 0,
@@ -336,30 +361,20 @@ class WatchingPageManager {
             rating: 0
         };
 
-        // Use the MovieCard component
-        // Note: We might want to add "Remove from Watching" logic here or reuse watchlist/favorites buttons differently
-        // For now, I'll rely on the 3-dot menu or custom buttons.
-        // There is 'showRemoveFromWatchlist', but no 'showRemoveFromWatching'.
-        // I might need to add that later to MovieCard.js or reuse an existing logic
-        // or just use data-action in 3-dot menu.
-        
         const card = MovieCard.create(movieData, {
             showFavorite: true,
-            showWatchlist: true, // Allow adding to watchlist (e.g. move back to plan to watch)
+            showWatchlist: true,
             showUserInfo: false,
             showEditRating: false,
             showAddToCollection: true,
             showThreeDotMenu: true,
-            showRemoveFromWatchlist: false, // This is watching list, not watchlist
-            showRemoveFromWatching: true, // Enable remove button
-            watchingProgress: this.getFormattedProgress(item.movieId) // Pass progress string
+            showRemoveFromWatchlist: false,
+            showRemoveFromWatching: true,
+            watchingProgress: this.getFormattedProgress(item.movieId)
         });
 
-        // Add watching-specific data attributes
         card.setAttribute('data-watching-id', item.id || item.movieId);
         card.setAttribute('data-added-at', item.addedAt?.toDate?.().toISOString() || '');
-        
-        // Mark as watching
         card.setAttribute('data-is-watching', 'true');
 
         return card;
@@ -369,20 +384,15 @@ class WatchingPageManager {
         const grid = this.elements.moviesGrid;
         if (!grid) return;
 
-        // Add event listeners using event delegation for MovieCard actions
         grid.addEventListener('mousedown', (e) => {
             const target = e.target.closest('[data-action]');
             if (!target) return;
             
             const action = target.getAttribute('data-action');
             const movieId = target.getAttribute('data-movie-id');
-            // Check if there is a remove action for watching we need to handle manually
-            // Since MovieCard doesn't have native remove-from-watching yet, we might need to handle it 
-            // via a custom button if we added one, or if we use the menu item.
-            // But currently MovieCard checks `data-action` which we can intercept.
             
             if (action === 'remove-from-watching') { 
-                 if (movieId) {
+                if (movieId) {
                     if (confirm('Вы уверены, что хотите удалить этот фильм из списка "Смотрю"?')) {
                         this.removeFromWatching(movieId);
                     }
@@ -434,13 +444,13 @@ class WatchingPageManager {
         
         // Set movie info
         if (this.elements.movieRatingInfo) {
-            const posterUrl = movieData.posterPath || '/icons/icon48.png';
+            const posterUrl = movieData.posterPath || '/src/shared/assets/icons/app/icon48.png';
             const title = movieData.movieTitle || 'Unknown Movie';
             const year = movieData.releaseYear || '';
             
             this.elements.movieRatingInfo.innerHTML = `
                 <div class="movie-rating-poster">
-                    <img src="${posterUrl}" alt="${title}" onerror="this.src='/icons/icon48.png'">
+                    <img src="${posterUrl}" alt="${title}" onerror="this.src='/src/shared/assets/icons/app/icon48.png'">
                 </div>
                 <div class="movie-rating-info">
                     <h3>${this.escapeHtml(title)}</h3>

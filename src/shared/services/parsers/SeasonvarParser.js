@@ -5,7 +5,7 @@
  * 
  * @extends BaseParserService
  */
-class SeasonvarParser extends BaseParserService {
+class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BaseParserService : (typeof require !== 'undefined' ? require('./BaseParserService').BaseParserService : Object)) {
     constructor() {
         super({
             id: 'seasonvar',
@@ -13,6 +13,110 @@ class SeasonvarParser extends BaseParserService {
             baseUrl: 'http://seasonvar.ru'
         });
         this.searchUrl = 'http://seasonvar.ru/search';
+        this.selectionRequestId = 0;
+        this.renderRequestId = 0;
+        this.pageCache = new Map();
+        this.pageInFlight = new Map();
+        this.seriesInfoCache = new Map();
+        this.seriesInfoInFlight = new Map();
+        this.seasonsCache = new Map();
+        this.seasonsInFlight = new Map();
+        this.maxDiscoveryCacheEntries = 50;
+    }
+
+    beginSelectionRequest() {
+        this.selectionRequestId += 1;
+        return this.selectionRequestId;
+    }
+
+    isSelectionRequestCurrent(requestId) {
+        return requestId === this.selectionRequestId;
+    }
+
+    normalizePageUrl(url) {
+        try {
+            const normalized = new URL(url, this.baseUrl);
+            normalized.hash = '';
+            return normalized.toString();
+        } catch {
+            return String(url || '');
+        }
+    }
+
+    rememberDiscoveryValue(cache, key, value) {
+        if (cache.has(key)) cache.delete(key);
+        cache.set(key, { value, timestamp: Date.now() });
+        while (cache.size > this.maxDiscoveryCacheEntries) cache.delete(cache.keys().next().value);
+    }
+
+    getCachedDiscoveryValue(cache, key) {
+        const cached = cache.get(key);
+        if (!cached || Date.now() - cached.timestamp >= this.cacheTTL) return null;
+        cache.delete(key);
+        cache.set(key, cached);
+        return cached.value;
+    }
+
+    async getSeasonvarPage(url, purpose = 'pageDiscovery') {
+        const key = this.normalizePageUrl(url);
+        const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
+        const cached = this.getCachedDiscoveryValue(this.pageCache, key);
+        if (cached) {
+            perf?.recordCall('SEASONVAR_PAGE', { cacheHit: true });
+            return cached;
+        }
+        const pending = this.pageInFlight.get(key);
+        if (pending) {
+            perf?.recordCall('SEASONVAR_PAGE', { inFlightDedupHit: true });
+            return pending;
+        }
+        perf?.recordCall('SEASONVAR_PAGE');
+        const request = (async () => {
+            const response = perf
+                ? await perf.trackRequest('SEASONVAR_DETAIL', { purpose, url: key }, () => fetch(key))
+                : await fetch(key);
+            if (!response.ok) throw new Error('Failed to load series page');
+            const html = await response.text();
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            const page = { url: key, html, doc };
+            this.rememberDiscoveryValue(this.pageCache, key, page);
+            return page;
+        })();
+        this.pageInFlight.set(key, request);
+        try {
+            return await request;
+        } finally {
+            if (this.pageInFlight.get(key) === request) this.pageInFlight.delete(key);
+        }
+    }
+
+    async getCachedDiscovery(cache, inFlight, url, purpose, loader) {
+        const key = this.normalizePageUrl(url);
+        const cached = this.getCachedDiscoveryValue(cache, key);
+        if (cached) return cached;
+        const pending = inFlight.get(key);
+        if (pending) return pending;
+        const request = (async () => {
+            const value = await loader(key, purpose);
+            this.rememberDiscoveryValue(cache, key, value);
+            return value;
+        })();
+        inFlight.set(key, request);
+        try {
+            return await request;
+        } finally {
+            if (inFlight.get(key) === request) inFlight.delete(key);
+        }
+    }
+
+    clearCache() {
+        super.clearCache();
+        this.pageCache.clear();
+        this.pageInFlight.clear();
+        this.seriesInfoCache.clear();
+        this.seriesInfoInFlight.clear();
+        this.seasonsCache.clear();
+        this.seasonsInFlight.clear();
     }
 
     // ─── BaseParserService Contract ───────────────────────────────────
@@ -23,11 +127,14 @@ class SeasonvarParser extends BaseParserService {
      * @param {string|number|null} [year] - Release year (unused by Seasonvar, kept for interface compliance)
      * @returns {Promise<SearchResult|null>} Best matching result
      */
-    async search(title, year) {
+    async search(title, year, options = {}) {
         console.log(`[DEBUG SeasonvarParser] search() called. title: "${title}", year: ${year}`);
         try {
             const url = `${this.searchUrl}?q=${encodeURIComponent(title)}`;
-            const response = await fetch(url);
+            const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
+            const response = perf
+                ? await perf.trackRequest('SEASONVAR_SEARCH', { purpose: 'search', url }, () => fetch(url))
+                : await fetch(url);
             
             if (!response.ok) {
                 throw new Error(`Search failed: ${response.status}`);
@@ -38,8 +145,9 @@ class SeasonvarParser extends BaseParserService {
 
             if (!results || results.length === 0) return null;
 
-            // Return the first (best) match with parserId
-            const best = results[0];
+            const best = this.selectBestSearchResult(results, title, options?.altName, year);
+            if (!best) return null;
+
             best.parserId = this.id;
             console.log(`[DEBUG SeasonvarParser] search result: url=${best.url?.substring(0,80)}, title=${best.title}`);
             return best;
@@ -57,16 +165,20 @@ class SeasonvarParser extends BaseParserService {
      */
     async getVideoSources(searchResult) {
         try {
-            const url = typeof searchResult === 'string' ? searchResult : searchResult.url;
+            const rawUrl = typeof searchResult === 'string' ? searchResult : (searchResult?.url || '');
+            if (!rawUrl || typeof rawUrl !== 'string' || (!rawUrl.startsWith('http://') && !rawUrl.startsWith('https://'))) {
+                throw new Error(`[SeasonvarParser] getVideoSources requires an absolute http/https URL, received: "${rawUrl}"`);
+            }
+            const url = rawUrl;
             console.log('=== ДИАГНОСТИКА СЕЗОНОВ (getVideoSources) ===');
             console.log('URL:', url);
             
-            const seriesInfo = await this.getSeriesInfo(url);
+            const seriesInfo = await this.getSeriesInfo(url, 'getVideoSources');
             
             // Try to get seasons info too, to attach if needed (though existing architecture might unlikely use it yet)
             let seasons = [];
             try {
-                 seasons = await this.getSeasons(url);
+                 seasons = await this.getSeasons(url, 'getVideoSources');
             } catch (e) {
                  console.warn('Failed to fetch seasons in getVideoSources', e);
             }
@@ -79,7 +191,6 @@ class SeasonvarParser extends BaseParserService {
                 return [];
             }
 
-
             // Convert episodes to VideoSource format
             const videoSources = seriesInfo.episodes.map(ep => ({
                 name: ep.title,
@@ -90,7 +201,7 @@ class SeasonvarParser extends BaseParserService {
             return videoSources;
         } catch (error) {
             console.error(`[${this.name}] getVideoSources error:`, error);
-            return [];
+            throw error;
         }
     }
 
@@ -111,6 +222,60 @@ class SeasonvarParser extends BaseParserService {
     }
 
     /**
+     * Pure helper to extract episode number from a source object or title string.
+     * Supports formats like "1 серия", "3 сезон - 3 серия", "Серия 3", "3".
+     * @param {Object|string} source
+     * @returns {number|null}
+     */
+    static extractEpisodeNumber(source) {
+        if (!source) return null;
+        const label = typeof source === 'string'
+            ? source
+            : (source.name || source.title || source.label || '');
+        if (!label) return null;
+
+        // Check if label contains "сезон ... серия" e.g. "1 сезон - 3 серия" or "3 сезон, 2 серия"
+        const seasonEpMatch = label.match(/(?:сезон|season)[^\d]*\d+[^\d]+(?:серия|эпизод|серии|episode)[^\d]*(\d+)/i);
+        if (seasonEpMatch) {
+            const ep = parseInt(seasonEpMatch[1], 10);
+            if (!Number.isNaN(ep) && ep > 0) return ep;
+        }
+
+        // Match "3 серия" or "серия 3" or "эпизод 3" or "ep 3"
+        const epMatch = label.match(/(?:серия|эпизод|серии|episode|ep\.?)[^\d]*(\d+)/i);
+        if (epMatch) {
+            const ep = parseInt(epMatch[1], 10);
+            if (!Number.isNaN(ep) && ep > 0) return ep;
+        }
+
+        const reverseEpMatch = label.match(/(\d+)\s*(?:серия|эпизод|серии|episode|ep)/i);
+        if (reverseEpMatch) {
+            const ep = parseInt(reverseEpMatch[1], 10);
+            if (!Number.isNaN(ep) && ep > 0) return ep;
+        }
+
+        // Standalone number match (e.g. "3")
+        const numMatch = label.trim().match(/^(\d+)$/);
+        if (numMatch) {
+            const ep = parseInt(numMatch[1], 10);
+            if (!Number.isNaN(ep) && ep > 0) return ep;
+        }
+
+        // Generic first number if no other matches
+        const anyNumMatch = label.match(/(\d+)/);
+        if (anyNumMatch) {
+            const ep = parseInt(anyNumMatch[1], 10);
+            if (!Number.isNaN(ep) && ep > 0) return ep;
+        }
+
+        return null;
+    }
+
+    extractEpisodeNumber(source) {
+        return SeasonvarParser.extractEpisodeNumber(source);
+    }
+
+    /**
      * Render Seasonvar's custom player with episode & translation selectors.
      * @param {HTMLElement} container
      * @param {Array} sources - Episode list
@@ -119,37 +284,55 @@ class SeasonvarParser extends BaseParserService {
      * @param {Function} [options.onPlayerReady] - Callback when player is ready
      */
     async renderPlayer(container, sources, options = {}) {
-        console.log(`[DEBUG SeasonvarParser] renderPlayer called. sources: ${sources?.length}, options.seasons: ${options.seasons?.length}, options.translations:`, !!options.translations);
-        console.log(`[DEBUG SeasonvarParser] Container BEFORE render:`, container?.tagName, 'children:', Array.from(container.children).map(c => c.tagName + '.' + c.className?.substring(0,30)));
+        const renderRequestId = ++this.renderRequestId;
+        const selectionRequestId = options.selectionRequestId ?? this.beginSelectionRequest();
+        options = { ...options, selectionRequestId };
+        const isRenderCurrent = () => renderRequestId === this.renderRequestId
+            && this.isSelectionRequestCurrent(selectionRequestId)
+            && (!options.isRequestCurrent || options.isRequestCurrent());
+        const lifecycle = typeof window !== 'undefined' ? window.PlayerSourceLifecycle : null;
+
         if (!sources || sources.length === 0) {
-            container.innerHTML = '<div class="video-placeholder"><span>Серии не найдены</span></div>';
-            return;
+            if (isRenderCurrent()) {
+                lifecycle?.setState(container, 'unavailable', {
+                    message: 'Серии не найдены.',
+                    onRetry: options.onRetry,
+                    onResearch: options.onResearch
+                });
+            }
+            return false;
         }
 
         let episodes = sources;
         let translations = options.translations || null;
         let seasons = options.seasons || null;
-        let firstEp = episodes[0];
-        
-        // --- PROBLEM 1: AUTO-SELECT SEASON BASED ON PROGRESS ---
-        let activeSeasonUrl = options.resolvedSeasonUrl || null;
-        let activeEpisodeUrl = options.resolvedEpisodeUrl || null;
 
-        if (options.movieId && !activeSeasonUrl && !activeEpisodeUrl && typeof options.resolvedTimestamp === 'undefined') {
+        // --- CANONICAL SEASON SELECTION ---
+        let activeSeasonUrl = options.resolvedSeasonUrl || null;
+        if (!activeSeasonUrl && (options.resolvedSeasonNumber != null || options.season != null) && seasons && seasons.length > 0) {
+            const targetSeasonNum = Number(options.resolvedSeasonNumber ?? options.season);
+            const foundSeason = seasons.find(s => Number(s.season_number) === targetSeasonNum);
+            if (foundSeason && foundSeason.url) {
+                activeSeasonUrl = foundSeason.url;
+            }
+        }
+
+        // Fallback: Check saved progress only if no explicit selection exists
+        if (options.movieId && !activeSeasonUrl && !options.resolvedEpisodeUrl && options.season == null && options.episode == null && typeof options.resolvedTimestamp === 'undefined') {
             try {
                 // Check saved progress
                 const key = `watching_progress_${options.movieId}`;
                 const result = await new Promise(resolve => chrome.storage.local.get([key], resolve));
                 const progress = result[key];
+
+                if (!isRenderCurrent()) return false;
                 
                 console.log(`[${this.name}] Auto-select check. Progress:`, progress);
 
                 if (progress && progress.season && seasons && seasons.length > 0) {
-                    // Try to find the season URL from progress
-                    // Progress.season is usually string "X сезон"
-                    const progSeasonNum = parseInt(progress.season);
+                    const progSeasonNum = parseInt(progress.season, 10);
                     if (!isNaN(progSeasonNum)) {
-                         const targetSeason = seasons.find(s => s.season_number === progSeasonNum);
+                         const targetSeason = seasons.find(s => Number(s.season_number) === progSeasonNum);
                          if (targetSeason) {
                              activeSeasonUrl = targetSeason.url;
                              console.log(`[${this.name}] Will auto-switch to season ${progSeasonNum}: ${activeSeasonUrl}`);
@@ -161,17 +344,27 @@ class SeasonvarParser extends BaseParserService {
             }
         }
 
-        // If we determined a different active season than the default one (which corresponds to sources), load it
-        if (activeSeasonUrl) {
-            // But we need to check if the CURRENT sources already match this season?
-            // Usually 'sources' passed to renderPlayer are default (Season 1 or whatever the page loaded).
-            // We can check if 'sources' URL belongs to the season? Not easily.
-            // Assumption: if activeSeasonUrl is set, we prefer it.
-            // BUT: avoiding double-fetch if we are already there?
-            // Let's just fetch if we have a targetUrl.
-            
+        // Part 21 Defensive fallback: if no explicit season requested and no saved progress, default to Season 1
+        if (!activeSeasonUrl && seasons && seasons.length > 0) {
+            const season1 = seasons.find(s => Number(s.season_number) === 1) || seasons[0];
+            if (season1?.url) {
+                activeSeasonUrl = season1.url;
+            }
+        }
+
+        // If we determined a different active season than the default one and need to load its episodes
+        const needSeasonFetch = Boolean(activeSeasonUrl && (
+            !episodes || episodes.length === 0 ||
+            (options.currentSourcesUrl && activeSeasonUrl !== options.currentSourcesUrl) ||
+            (options.sourcesSeasonUrl && activeSeasonUrl !== options.sourcesSeasonUrl) ||
+            (options.sourcesSeasonNumber != null && options.resolvedSeasonNumber != null && Number(options.sourcesSeasonNumber) !== Number(options.resolvedSeasonNumber)) ||
+            (options.sourcesSeasonNumber != null && options.season != null && Number(options.sourcesSeasonNumber) !== Number(options.season))
+        ));
+
+        if (needSeasonFetch) {
             try {
                  const seriesInfo = await this.getSeriesInfo(activeSeasonUrl);
+                 if (!isRenderCurrent()) return false;
                  if (seriesInfo && seriesInfo.episodes) {
                      episodes = seriesInfo.episodes.map(ep => ({
                         name: ep.title,
@@ -180,81 +373,124 @@ class SeasonvarParser extends BaseParserService {
                         subtitle: ep.subtitle
                     }));
                     translations = seriesInfo.translations;
-                    firstEp = episodes[0]; // Reset first ep to new season's first ep
-                    // We will let handleProgressRestoration set the exact episode later
                  }
             } catch (err) {
-                console.error(`[${this.name}] Failed to load auto-selected season`, err);
-                // Fallback to default sources
+                console.error(`[${this.name}] Failed to load target season`, err);
             }
         }
-        
-        // Mark active season in seasons list
-        // If no activeSeasonUrl set (e.g. no progress), we assume the First season in the list is active?
-        // Or we should try to match 'firstEp.url' to a season? Harder.
-        // Let's default to highlighting the first one if not set.
+
+        if (!isRenderCurrent()) return false;
+
+        // --- CANONICAL EPISODE SELECTION ---
+        let targetEpisode = null;
+        if (options.resolvedEpisodeUrl) {
+            targetEpisode = episodes.find(e => e.url === options.resolvedEpisodeUrl);
+        }
+        if (!targetEpisode && (options.resolvedEpisodeNumber != null || options.episode != null)) {
+            const targetEpNum = Number(options.resolvedEpisodeNumber ?? options.episode);
+            targetEpisode = episodes.find(e => this.extractEpisodeNumber(e) === targetEpNum);
+            if (!targetEpisode && targetEpNum > 0 && targetEpNum <= episodes.length) {
+                targetEpisode = episodes[targetEpNum - 1];
+            }
+        }
+
+        const firstEp = targetEpisode || episodes[0] || { name: '', url: '' };
+
+        // Mark active season in seasons list (fallback to first if not determined)
         if (!activeSeasonUrl && seasons && seasons.length > 0) {
-             // Heuristic: usually the first one in the sorted list?
-             // Or the one with smallest number?
-             // actually seasons are sorted.
              activeSeasonUrl = seasons[0].url; 
         }
 
+        let activeSeasonNumber = options.resolvedSeasonNumber ?? options.season;
+        if (activeSeasonNumber == null && seasons && seasons.length > 0) {
+            const matchedSeason = seasons.find(s => s.url === activeSeasonUrl) || seasons[0];
+            activeSeasonNumber = Number(matchedSeason?.season_number) || 1;
+        }
+        if (activeSeasonNumber == null) activeSeasonNumber = 1;
+
+        const activeEpisodeNumber = this.extractEpisodeNumber(firstEp) ?? options.resolvedEpisodeNumber ?? options.episode ?? 1;
+
+        // Structured Seasonvar State Broadcast (Phase 5B)
+        const structuredState = {
+            type: 'SEASONVAR_PLAYBACK_STATE',
+            seasons: (seasons || []).map(s => ({
+                seasonNumber: Number(s.season_number),
+                url: s.url,
+                name: s.name || `${s.season_number} сезон`
+            })),
+            episodes: episodes.map(ep => ({
+                name: ep.name || ep.title,
+                title: ep.title || ep.name,
+                url: ep.url,
+                episodeNumber: this.extractEpisodeNumber(ep),
+                seasonNumber: activeSeasonNumber
+            })),
+            activeSeasonNumber,
+            activeEpisodeNumber,
+            activeSeasonUrl,
+            activeEpisodeUrl: firstEp.url,
+            translations: (translations || []).map(t => ({
+                id: t.id,
+                name: t.name,
+                url: t.url,
+                active: options.activeTranslationUrl ? t.url === options.activeTranslationUrl : !!t.active
+            })),
+            mountToken: this.renderRequestId
+        };
+
+        try {
+            window.postMessage(structuredState, '*');
+        } catch {
+            // ignore
+        }
+        container.__seasonvarPlaybackState = structuredState;
+
+        if (!firstEp?.url || (!firstEp.url.startsWith('http://') && !firstEp.url.startsWith('https://'))) {
+            console.error('[SeasonvarParser] Invalid or missing stream URL for target episode:', firstEp);
+            lifecycle?.setState(container, 'error', {
+                message: 'Источник серии недоступен.',
+                onRetry: () => this.renderPlayer(container, sources, options)
+            });
+            return false;
+        }
 
         const playerHtml = `
-            <div class="player-clean" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; overflow: hidden; background: #000;">
-                <video id="seasonvarVideo" controls style="width: 100%; height: 100%; object-fit: contain; flex-grow: 1; outline: none; border: none; max-height: 100%; display: block;">
+            <div class="player-clean player-surface__content">
+                <video id="seasonvarVideo" class="player-surface__media" controls>
                     <source src="${firstEp.url}" type="video/mp4">
                     Ваш браузер не поддерживает video тег.
                 </video>
-                <div class="seasonvar-controls" style="display: none;">
-                    ${this._renderEpisodeSelect(episodes)}
-                    ${this._renderTranslationSelect(translations)}
-                </div>
-                
-                <!-- Hidden Compatibility Layer & Lists -->
-                <div class="list_simulated" style="display:none;">
-                    ${this._renderHiddenEpisodes(episodes)}
-                    ${this._renderHiddenSeasons(seasons, activeSeasonUrl)}
+                <div class="player-surface__bridge" hidden aria-hidden="true">
+                    ${this._renderTranslationSelect(translations, options.activeTranslationUrl)}
                 </div>
             </div>
         `;
         
         container.innerHTML = playerHtml;
-    console.log(`[DEBUG SeasonvarParser] Container AFTER render:`, 'children:', Array.from(container.children).map(c => c.tagName + '.' + c.className?.substring(0,30)));
         
         // Attach all listeners
         this._attachListeners(container, options);
 
         // Load Saved Progress (Time & Episode)
+        const videoElement = (typeof document !== 'undefined' && typeof document.getElementById === 'function')
+            ? document.getElementById('seasonvarVideo')
+            : (container?.querySelector ? container.querySelector('video') : null);
+
         if (options.movieId) {
-            this.handleProgressRestoration(document.getElementById('seasonvarVideo'), options.movieId, episodes, document.getElementById('svEpisodeSelect'), options);
+            this.handleProgressRestoration(videoElement, options.movieId, episodes, options);
         }
 
         if (options.onPlayerReady) {
-            options.onPlayerReady(document.getElementById('seasonvarVideo'));
+            options.onPlayerReady(videoElement);
         }
+        lifecycle?.setState(container, 'ready');
+        return true;
     }
 
-    _renderEpisodeSelect(episodes) {
-        return `
-            <select id="svEpisodeSelect" class="form-select" style="max-width: 200px;">
-                ${episodes.map((ep, i) => `<option value="${ep.url}">${ep.name || ep.title}</option>`).join('')}
-            </select>
-        `;
-    }
-
-    _renderTranslationSelect(translations) {
+    _renderTranslationSelect(translations, activeTranslationUrl = null) {
         if (!translations || translations.length <= 1) return '';
         return `
-            <select id="svTranslationSelect" class="form-select" style="max-width: 200px;">
-                ${translations.map(t => `
-                    <option value="${t.url}" ${t.active ? 'selected' : ''}>
-                        ${t.name} ${t.popularity ? `(${t.popularity}%)` : ''}
-                    </option>
-                `).join('')}
-            </select>
-            <div id="seasonvar-voiceover-source" style="display:none;">
+            <div id="seasonvar-voiceover-source">
                 ${translations.map(t => `
                     <div class="seasonvar-voiceover-item ${t.active ? 'active' : ''}" 
                             data-url="${t.url}" 
@@ -266,41 +502,21 @@ class SeasonvarParser extends BaseParserService {
         `;
     }
 
-    _renderHiddenEpisodes(episodes) {
-         return `
-            <div class="dropdown_episodes"> 
-                <span class="headText_simulated">серия</span>
-                ${episodes.map((ep, i) => `
-                    <div class="item_simulated ${i===0 ? 'active' : ''}" data-url="${ep.url}">${ep.name || ep.title}</div>
-                `).join('')}
-            </div>
-         `;
-    }
-
-    _renderHiddenSeasons(seasons, activeUrl) {
-        if (!seasons || seasons.length <= 1) return '';
-        return `
-            <div class="dropdown_seasons">
-                <span class="headText_simulated">сезон</span>
-                ${seasons.map(s => {
-                    const isActive = s.url === activeUrl;
-                    return `<div class="item_simulated ${isActive ? 'active' : ''}" data-url="${s.url}">${s.season_number} сезон</div>`;
-                }).join('')}
-            </div>
-        `;
-    }
-
     _attachListeners(container, options) {
-        const video = document.getElementById('seasonvarVideo');
-        const epSelect = document.getElementById('svEpisodeSelect');
-        const trSelect = document.getElementById('svTranslationSelect');
+        const video = typeof document !== 'undefined' ? document.getElementById('seasonvarVideo') : null;
+        const lifecycle = typeof window !== 'undefined' ? window.PlayerSourceLifecycle : null;
+        const setSourceState = (state, stateOptions = {}) => {
+            if (options.isRequestCurrent && !options.isRequestCurrent()) return;
+            lifecycle?.setState(container, state, stateOptions);
+        };
 
         // 1. Voiceover items
         const voiceoverItems = container.querySelectorAll('.seasonvar-voiceover-item');
         voiceoverItems.forEach(item => {
-            item.addEventListener('mousedown', async (e) => {
+            item.addEventListener('click', async (e) => {
                  e.stopPropagation();
                  const url = item.getAttribute('data-url');
+                 const requestId = this.beginSelectionRequest();
                  
                  const currentVideo = document.getElementById('seasonvarVideo') || document.querySelector('video');
                  const savedTime = currentVideo ? currentVideo.currentTime : 0;
@@ -309,6 +525,7 @@ class SeasonvarParser extends BaseParserService {
                  const previousActive = container.querySelector('.seasonvar-voiceover-item.active');
                  voiceoverItems.forEach(vi => vi.classList.remove('active'));
                  item.classList.add('active');
+                 setSourceState('loading', { message: 'Меняем перевод…' });
                  
                  try {
                      if (!this.fetchAndParsePlaylist) {
@@ -316,19 +533,28 @@ class SeasonvarParser extends BaseParserService {
                              item.classList.remove('active');
                              previousActive.classList.add('active');
                          }
-                         return;
+                         throw new Error('Translation playlist loader is unavailable');
                      }
                      
                      const newEpisodes = await this.fetchAndParsePlaylist(url);
+
+                     if (!this.isSelectionRequestCurrent(requestId)) return;
+
+                     // Find current episode number / index
+                     const currentEpNum = container.__seasonvarPlaybackState?.activeEpisodeNumber ?? options.resolvedEpisodeNumber ?? options.episode ?? 1;
                      
-                     // Find current episode index
-                     const currentEpSelect = document.getElementById('svEpisodeSelect');
-                     const currentEpIndex = currentEpSelect ? currentEpSelect.selectedIndex : 0;
+                     // Pick matching episode in new translation (Part 27 & 28)
+                     let newEpIndex = -1;
+                     if (currentEpNum) {
+                         newEpIndex = newEpisodes.findIndex(ep => this.extractEpisodeNumber(ep) === currentEpNum);
+                     }
+                     if (newEpIndex === -1) {
+                         newEpIndex = 0;
+                     }
                      
-                     // Pick same episode
-                     const newEp = newEpisodes[currentEpIndex] || newEpisodes[0];
+                     const newEp = newEpisodes[newEpIndex] || newEpisodes[0];
                      
-                     if (!newEp) return;
+                     if (!newEp) throw new Error('Translation has no playable episodes');
                      
                      // Swap source
                      this._isVoiceoverChange = true;
@@ -339,121 +565,44 @@ class SeasonvarParser extends BaseParserService {
                          currentVideo.src = newEp.url;
                          currentVideo.load();
                      }
-                     
-                     // Update Select
-                     if (currentEpSelect) {
-                         currentEpSelect.innerHTML = newEpisodes.map((ep, i) => 
-                             `<option value="${ep.url}" ${i === currentEpIndex ? 'selected' : ''}>${ep.name || ep.title}</option>`
-                         ).join('');
+
+                     // Update structured state
+                     if (container.__seasonvarPlaybackState) {
+                         container.__seasonvarPlaybackState.episodes = newEpisodes.map(ep => ({
+                             name: ep.name || ep.title,
+                             title: ep.title || ep.name,
+                             url: ep.url,
+                             episodeNumber: this.extractEpisodeNumber(ep),
+                             seasonNumber: container.__seasonvarPlaybackState.activeSeasonNumber
+                         }));
+                         container.__seasonvarPlaybackState.activeEpisodeUrl = newEp.url;
+                         container.__seasonvarPlaybackState.activeEpisodeNumber = this.extractEpisodeNumber(newEp);
+                         try {
+                             window.postMessage(container.__seasonvarPlaybackState, '*');
+                         } catch {
+                             // ignore
+                         }
                      }
                      
-                     // Update Hidden Episodes
-                     const hiddenEpContainer = container.querySelector('.dropdown_episodes');
-                     if (hiddenEpContainer) {
-                         const headText = hiddenEpContainer.querySelector('.headText_simulated');
-                         hiddenEpContainer.innerHTML = '';
-                         if (headText) hiddenEpContainer.appendChild(headText);
-                         newEpisodes.forEach((ep, i) => {
-                             const div = document.createElement('div');
-                             div.className = `item_simulated ${i === currentEpIndex ? 'active' : ''}`;
-                             div.setAttribute('data-url', ep.url);
-                             div.textContent = ep.name || ep.title;
-                             hiddenEpContainer.appendChild(div);
-                         });
-                         // Re-attach listeners to new hidden items
-                         this._attachHiddenEpisodeListeners(container, video, epSelect);
-                     }
+                     setSourceState('ready');
                      
                  } catch (err) {
+                     if (!this.isSelectionRequestCurrent(requestId)) return;
                      console.error('[SeasonvarParser] Failed to switch translation', err);
                      this._isVoiceoverChange = false;
                      if (previousActive) {
                         item.classList.remove('active');
                         previousActive.classList.add('active');
                      }
+                     setSourceState('error', {
+                         message: 'Не удалось сменить перевод.',
+                         onRetry: () => item.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+                     });
                  }
             });
         });
 
-        // 2. Episode Select
-        if (epSelect) {
-            epSelect.addEventListener('change', (e) => {
-                 const newUrl = e.target.value;
-                 this._isEpisodeSwitch = true;
-                 video.pause();
-                 video.src = newUrl;
-                 video.load();
-            });
-        }
-        
-        // 3. Translation Select
-        if (trSelect) {
-             trSelect.addEventListener('change', async (e) => {
-                  container.innerHTML = '<div class="video-placeholder"><div class="loading-spinner"></div><span>Меняем перевод...</span></div>';
-                  try {
-                      const newPlUrl = e.target.value.startsWith('/') ? (this.baseUrl || 'http://seasonvar.ru') + e.target.value : e.target.value; 
-                      const newEpisodes = await this.fetchAndParsePlaylist(newPlUrl);
-                      const newSources = newEpisodes.map(ep => ({ name: ep.title, url: ep.url, type: 'video', subtitle: ep.subtitle }));
-                      
-                      this.renderPlayer(container, newSources, { translations: options.translations, seasons: options.seasons, movieId: options.movieId });
-                      
-                      const newTrSelect = document.getElementById('svTranslationSelect');
-                      if (newTrSelect) newTrSelect.value = e.target.value;
-                  } catch(err) {
-                      console.error(`[${this.name}] Translation switch failed:`, err);
-                  }
-             });
-        }
-
-        // 4. Seamless Season Switch
-        const seasonItems = container.querySelectorAll('.dropdown_seasons .item_simulated');
-        seasonItems.forEach(item => {
-             item.addEventListener('mousedown', async (e) => {
-                 e.stopPropagation();
-                 const url = item.getAttribute('data-url');
-                 if (!url || item.classList.contains('active')) return;
-
-                 console.log(`[${this.name}] Seamless season switch to: ${url}`);
-                 seasonItems.forEach(s => s.classList.remove('active'));
-                 item.classList.add('active');
-
-                 try {
-                     const seriesInfo = await this.getSeriesInfo(url);
-                     if (seriesInfo && seriesInfo.episodes) {
-                         const newEpisodes = seriesInfo.episodes.map(ep => ({
-                             name: ep.title, url: ep.url, type: 'video', subtitle: ep.subtitle
-                         }));
-                         
-                         // Update internals
-                         if (epSelect) {
-                             epSelect.innerHTML = newEpisodes.map((ep, i) => `<option value="${ep.url}">${ep.name || ep.title}</option>`).join('');
-                         }
-                         
-                         const hiddenEpContainer = container.querySelector('.dropdown_episodes');
-                         if (hiddenEpContainer) {
-                             hiddenEpContainer.innerHTML = `<span class="headText_simulated">серия</span>` +
-                                 newEpisodes.map((ep, i) => 
-                                     `<div class="item_simulated ${i===0 ? 'active' : ''}" data-url="${ep.url}">${ep.name || ep.title}</div>`
-                                 ).join('');
-                                 
-                             this._attachHiddenEpisodeListeners(container, video, epSelect);
-                         }
-
-                         // Don't auto-load video — wait for user to pick an episode
-                         // video.pause();
-                         // video.removeAttribute('src');
-                         // video.load();
-                     }
-                 } catch (err) {
-                     console.error('[Seasonvar] Seamless switch failed', err);
-                 }
-             });
-        });
-        
-        // 5. Hidden Episode Listeners
-        this._attachHiddenEpisodeListeners(container, video, epSelect);
-
-        // 6. Auto-seek blocker logic
+        // 2. Auto-seek blocker logic
         this._blockAutoSeek = false;
         this._isEpisodeSwitch = false;
         if (video) {
@@ -468,159 +617,132 @@ class SeasonvarParser extends BaseParserService {
                  }
                  // Episode switch: reset to 0 once, then clear flag
                  if (this._isEpisodeSwitch) {
-                     this._isEpisodeSwitch = false;
-                     video.currentTime = 0;
-                     // explicitly call play here 
-                     video.play().catch(err => console.warn(`[Seasonvar] Autoplay error:`, err));
-                     return;
-                 }
-                 // Progress restoration seek
-                 // (handled by handleProgressRestoration's own loadedmetadata listener)
+                      this._isEpisodeSwitch = false;
+                      video.currentTime = 0;
+                      video.play().catch(err => console.warn(`[Seasonvar] Autoplay error:`, err));
+                      return;
+                  }
              });
         }
-        
-        if (window.MovieExtension_PlayerCleaner && window.MovieExtension_PlayerCleaner.init && !this._playerCleanerInitialized) {
+        if (typeof window !== 'undefined' && window.MovieExtension_PlayerCleaner && window.MovieExtension_PlayerCleaner.init) {
+            const cleanerRequestGuard = () => this.isSelectionRequestCurrent(options.selectionRequestId)
+                && (!options.isRequestCurrent || options.isRequestCurrent());
+            window.MovieExtension_PlayerCleaner.setRequestGuard?.(cleanerRequestGuard);
+        }
+        if (typeof window !== 'undefined' && window.MovieExtension_PlayerCleaner && window.MovieExtension_PlayerCleaner.init && !this._playerCleanerInitialized) {
             this._playerCleanerInitialized = true;
             setTimeout(() => {
-                window.MovieExtension_PlayerCleaner.init();
+                window.MovieExtension_PlayerCleaner.init({
+                    isRequestCurrent: () => this.isSelectionRequestCurrent(options.selectionRequestId)
+                        && (!options.isRequestCurrent || options.isRequestCurrent())
+                });
             }, 100);
         }
-    }
-
-    _attachHiddenEpisodeListeners(container, video, epSelect) {
-        const episodeItems = container.querySelectorAll('.dropdown_episodes .item_simulated');
-        episodeItems.forEach(item => {
-             item.addEventListener('mousedown', (e) => {
-                 e.stopPropagation();
-                 const url = item.getAttribute('data-url');
-                 if (!url || item.classList.contains('active')) return;
-                 
-                 episodeItems.forEach(ep => ep.classList.remove('active'));
-                 item.classList.add('active');
-                 
-                 if (epSelect) epSelect.value = url;
-                 
-                 this._isEpisodeSwitch = true;
-                 video.pause();
-                 video.src = url;
-                 video.load();
-             });
-        });
     }
     
     /**
      * Restore progress from storage
      */
-    async handleProgressRestoration(video, movieId, sources, epSelect, options = {}) {
+    async handleProgressRestoration(video, movieId, sources, arg4, arg5) {
+        let options = {};
+        if (arg4 && typeof arg4 === 'object' && !Array.isArray(arg4)) {
+            options = arg4;
+        } else if (arg5 && typeof arg5 === 'object' && !Array.isArray(arg5)) {
+            options = arg5;
+        }
+        const selectionRequestId = options.selectionRequestId;
+        const isRequestCurrent = () => (selectionRequestId === undefined
+            || this.isSelectionRequestCurrent(selectionRequestId))
+            && (!options.isRequestCurrent || options.isRequestCurrent());
+
         try {
+            const hasCanonicalSelection = options.hasCanonicalSelection
+                || options.resolvedEpisodeNumber != null
+                || options.episode != null
+                || options.resolvedSeasonNumber != null
+                || options.season != null
+                || Boolean(options.selection);
+
             let targetSource = null;
-            let targetTimestamp = 0;
-            
-            if (options.resolvedEpisodeUrl) {
-                targetSource = sources.find(s => s.url === options.resolvedEpisodeUrl);
-                targetTimestamp = options.resolvedTimestamp || 0;
+            let targetTimestamp = Number(options.resolvedTimestamp) || 0;
+
+            if (hasCanonicalSelection) {
+                // Canonical selection is already mounted by renderPlayer.
+                // Do NOT query storage or override mounted episode with legacy provider restore.
+                if (options.resolvedEpisodeUrl) {
+                    targetSource = sources.find(s => s.url === options.resolvedEpisodeUrl) || null;
+                }
             } else {
-                // Replicate key generation logic from ProgressService
+                // Legacy fallback path: only if no canonical selection exists
                 const key = `watching_progress_${movieId}`;
-                // Use chrome.storage directly as we might not have the service instance here
-                // Note: Parser service is usually synchronous or promise-based.
                 const result = await new Promise(resolve => chrome.storage.local.get([key], resolve));
                 const progress = result[key];
-                
-                console.log(`[${this.name}] Loaded saved progress:`, progress);
-    
-                if (progress) {
-                     // Format: { season: "1 сезон", episode: "3 серия", timestamp: 123 }
-                     // We need to match episode label/title to source URL
-                     // Seasonvar sources name formats: "3 серия" or "1 сезон - 3 серия" 
-                     targetTimestamp = progress.timestamp || 0;
-                     
-                     // Strategy: Try to find by exact episode match + season if applicable
-                     // If sources list is flat but has "X сезон - Y серия" titles
-                     if (progress.episode) {
-                         // Normalize titles for comparison
-                         const pSeason = (progress.season || '').toLowerCase().trim();
-                         const pEpisode = (progress.episode || '').toLowerCase().trim();
-                         
-                         targetSource = sources.find(s => {
-                             const sName = (s.name || s.title || '').toLowerCase();
-                             // Case 1: Source has "season" in name
-                             // Case 2: Source only has "episode" (single season)
-                             if (pSeason) {
-                                 return sName.includes(pSeason) && sName.includes(pEpisode);
-                             } else {
-                                 return sName.includes(pEpisode);
-                             }
-                         });
-                         
-                         // Fallback: simple text match
-                         if (!targetSource) {
-                              targetSource = sources.find(s => (s.name || '').includes(progress.episode));
-                         }
-                     }
+
+                if (!isRequestCurrent()) return;
+
+                if (progress && (progress.episode || progress.season)) {
+                    targetTimestamp = Number(progress.timestamp) || 0;
+                    const pSeason = (progress.season || '').toLowerCase().trim();
+                    const pEpisode = (progress.episode || '').toLowerCase().trim();
+
+                    if (pEpisode) {
+                        targetSource = sources.find(s => {
+                            const sName = (s.name || s.title || '').toLowerCase();
+                            if (pSeason) {
+                                return sName.includes(pSeason) && sName.includes(pEpisode);
+                            }
+                            return sName.includes(pEpisode);
+                        }) || sources.find(s => (s.name || '').includes(progress.episode)) || null;
+                    }
                 }
             }
-            
-            if (targetSource || targetTimestamp > 5) {
-                 if (targetSource && targetSource.url !== video.src) {
-                     console.log(`[${this.name}] Restoring to episode: ${targetSource.name}`);
-                     
-                     // Update hidden .item_simulated elements to mark correct episode as active
-                     const allSimulatedItems = document.querySelectorAll('.item_simulated');
-                     allSimulatedItems.forEach(item => {
-                         if (item.getAttribute('data-url') === targetSource.url) {
-                             item.classList.add('active');
-                         } else {
-                             item.classList.remove('active');
-                         }
-                     });
-                     
-                     // Switch source
-                     video.pause();
-                     video.removeAttribute('src');
-                     video.load();
-                     video.currentTime = 0;
- 
-                     setTimeout(() => {
-                         video.src = targetSource.url;
-                         if (epSelect) epSelect.value = targetSource.url;
-                         video.load();
-                         
-                         // Restore timestamp
-                         if (targetTimestamp > 5) {
-                             // VALIDATION: Check for invalid timestamp
-                             if (targetTimestamp > 100000) {
-                                  console.warn(`[${this.name}] Invalid timestamp detected:`, targetTimestamp);
-                             } else {
-                                 this.seekToTime = targetTimestamp;
-                                 console.log(`[${this.name}] Queuing seek to: ${this.seekToTime}`);
-                                 const restoreHandler = () => {
-                                     if (this.seekToTime !== undefined) {
-                                         video.currentTime = this.seekToTime;
-                                         this.seekToTime = undefined;
-                                         video.removeEventListener('loadedmetadata', restoreHandler);
-                                     }
-                                 };
-                                 video.addEventListener('loadedmetadata', restoreHandler);
-                             }
-                         }
-                         // We do NOT call play() here so the video starts paused when restored on initial open
-                         
-                         // Dispatch custom event for player-cleaner to update its UI
-                         const episodeLabel = targetSource.name || targetSource.title || '';
-                         console.log(`[${this.name}] Dispatching episodeRestored event:`, episodeLabel);
-                         document.dispatchEvent(new CustomEvent('episodeRestored', { 
-                             detail: { label: episodeLabel, url: targetSource.url } 
-                         }));
-                     }, 50);
-                 } else if (targetTimestamp > 5) {
-                     // Same episode, just seek
-                     if (targetTimestamp > 100000) {
-                          console.warn(`[${this.name}] Invalid timestamp detected (looks like Date.now()):`, targetTimestamp);
-                     } else {
-                          video.currentTime = targetTimestamp;
-                     }
-                 }
+
+            if (!isRequestCurrent() || !video) return;
+
+            // Only seek if timestamp is valid
+            if (targetTimestamp > 5) {
+                if (targetTimestamp > 100000) {
+                    console.warn(`[${this.name}] Invalid timestamp detected:`, targetTimestamp);
+                } else {
+                    if (video.readyState >= 1) {
+                        video.currentTime = targetTimestamp;
+                    } else {
+                        this.seekToTime = targetTimestamp;
+                        const restoreHandler = () => {
+                            if (this.seekToTime !== undefined) {
+                                video.currentTime = this.seekToTime;
+                                this.seekToTime = undefined;
+                                video.removeEventListener('loadedmetadata', restoreHandler);
+                            }
+                        };
+                        video.addEventListener('loadedmetadata', restoreHandler);
+                    }
+                }
+            }
+
+            // Only perform source swap if legacy fallback found a different target and NO canonical selection exists
+            if (!hasCanonicalSelection && targetSource && targetSource.url && video.src && targetSource.url !== video.src) {
+                console.log(`[${this.name}] Restoring to episode: ${targetSource.name}`);
+                video.pause();
+                video.removeAttribute('src');
+                video.load();
+                video.currentTime = 0;
+
+                setTimeout(() => {
+                    if (!isRequestCurrent()) return;
+                    video.src = targetSource.url;
+                    video.load();
+
+                    if (targetTimestamp > 5 && targetTimestamp <= 100000) {
+                        video.currentTime = targetTimestamp;
+                    }
+
+                    const episodeLabel = targetSource.name || targetSource.title || '';
+                    console.log(`[${this.name}] Dispatching episodeRestored event:`, episodeLabel);
+                    document.dispatchEvent(new CustomEvent('episodeRestored', { 
+                        detail: { label: episodeLabel, url: targetSource.url } 
+                    }));
+                }, 50);
             }
         } catch (e) {
             console.warn(`[${this.name}] Progress restoration failed`, e);
@@ -628,6 +750,55 @@ class SeasonvarParser extends BaseParserService {
     }
 
     // ─── Internal Methods ─────────────────────────────────────────────
+
+    normalizeSearchTitle(value) {
+        return String(value || '')
+            .toLowerCase()
+            .replace(/[ё]/g, 'е')
+            .replace(/[^a-zа-я0-9]+/gi, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    getSearchTitleScore(foundTitle, targetTitle) {
+        const found = this.normalizeSearchTitle(foundTitle);
+        const target = this.normalizeSearchTitle(targetTitle);
+        if (!found || !target) return 0;
+        if (found === target) return 1000;
+
+        const foundWords = found.split(' ');
+        const targetWords = target.split(' ');
+        const hasAllTargetWords = targetWords.every(word => foundWords.includes(word));
+        if (!hasAllTargetWords) return 0;
+
+        // Whole-word matches are valid when the provider adds a season suffix
+        // or a franchise prefix (e.g. "Джек Ричер" for "Ричер").
+        if (foundWords.slice(0, targetWords.length).join(' ') === target) return 900;
+        return 800;
+    }
+
+    selectBestSearchResult(results, title, altName = '', year = null) {
+        if (!Array.isArray(results) || results.length === 0) return null;
+
+        const targetTitles = [title, altName].filter(Boolean);
+        const targetYear = Number(year);
+        const ranked = results.map((result, index) => {
+            const titleScore = Math.max(
+                ...targetTitles.map(target => this.getSearchTitleScore(result.title, target)),
+                ...targetTitles.map(target => this.getSearchTitleScore(result.originalTitle, target))
+            );
+            const resultYear = Number(result.year);
+            const yearScore = Number.isFinite(targetYear) && Number.isFinite(resultYear)
+                ? (resultYear === targetYear ? 20 : -Math.min(20, Math.abs(resultYear - targetYear)))
+                : 0;
+            return { result, titleScore, score: titleScore + yearScore, index };
+        });
+
+        const best = ranked
+            .filter(candidate => candidate.titleScore > 0)
+            .sort((a, b) => b.score - a.score || a.index - b.index)[0];
+        return best?.result || null;
+    }
 
     /**
      * Parse search results HTML
@@ -681,11 +852,20 @@ class SeasonvarParser extends BaseParserService {
      * @param {string} url - Series page URL
      * @returns {Promise<Object>} - Playlist data and available translations
      */
-    async getSeriesInfo(url) {
+    async getSeriesInfo(url, purpose = 'getSeriesInfo') {
+        return this.getCachedDiscovery(
+            this.seriesInfoCache,
+            this.seriesInfoInFlight,
+            url,
+            purpose,
+            (key, requestPurpose) => this.getSeriesInfoUncached(key, requestPurpose)
+        );
+    }
+
+    async getSeriesInfoUncached(url, purpose = 'getSeriesInfo') {
         try {
-            const response = await fetch(url);
-            if (!response.ok) throw new Error('Failed to load series page');
-            const html = await response.text();
+            const page = await this.getSeasonvarPage(url, purpose);
+            const { html, doc } = page;
 
             // NEW PARSING LOGIC: Handle multiple translations structure
             // 1. Extract all pl[id] = "url" mappings from the raw HTML first (most robust)
@@ -699,8 +879,6 @@ class SeasonvarParser extends BaseParserService {
             }
 
             // 2. Parse the Translation List from HTML using DOMParser
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, 'text/html');
             const transList = doc.querySelectorAll('.pgs-trans li[data-translate]');
             
             const translations = [];
@@ -803,7 +981,10 @@ class SeasonvarParser extends BaseParserService {
      */
     async fetchAndParsePlaylist(url) {
         try {
-            const response = await fetch(url);
+            const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
+            const response = perf
+                ? await perf.trackRequest('SEASONVAR_DETAIL', { purpose: 'playlist', url }, () => fetch(url))
+                : await fetch(url);
             if (!response.ok) throw new Error('Failed to load playlist');
             const data = await response.json();
             return this.flattenPlaylist(data);
@@ -873,33 +1054,16 @@ class SeasonvarParser extends BaseParserService {
     async searchBestMatch(name, altName, year) {
         try {
             const url = `${this.searchUrl}?q=${encodeURIComponent(name)}`;
-            const response = await fetch(url);
+            const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
+            const response = perf
+                ? await perf.trackRequest('SEASONVAR_SEARCH', { purpose: 'searchBestMatch', url }, () => fetch(url))
+                : await fetch(url);
             if (!response.ok) throw new Error(`Search failed: ${response.status}`);
             
             const html = await response.text();
             const results = this.parseSearchResults(html);
             
-            if (!results || results.length === 0) return null;
-            if (results.length === 1) return results[0];
-
-            const searchNameLower = name.toLowerCase().trim();
-            const altNameLower = (altName || '').toLowerCase().trim();
-
-            // Priority 1: Exact Title Match (Russian)
-            const exactMatch = results.find(r => r.title && r.title.toLowerCase().trim() === searchNameLower);
-            if (exactMatch) return exactMatch;
-
-            // Priority 2: Exact Original Title Match
-            if (altNameLower) {
-                const exactOriginalMatch = results.find(r => r.originalTitle && r.originalTitle.toLowerCase().trim() === altNameLower);
-                if (exactOriginalMatch) return exactOriginalMatch;
-            }
-
-            // Priority 3: Starts-with match
-            const startsWithMatch = results.find(r => r.title && r.title.toLowerCase().trim().startsWith(searchNameLower));
-            if (startsWithMatch) return startsWithMatch;
-
-            return results[0];
+            return this.selectBestSearchResult(results, name, altName, year);
         } catch (error) {
             console.error(`[${this.name}] searchBestMatch error:`, error);
             return null;
@@ -913,14 +1077,20 @@ class SeasonvarParser extends BaseParserService {
      * @param {string} url - Current page URL (or any season URL of the series)
      * @returns {Promise<Array<{season_number: number, url: string, episodes_count: number}>>}
      */
-    async getSeasons(url) {
+    async getSeasons(url, purpose = 'getSeasons') {
+        return this.getCachedDiscovery(
+            this.seasonsCache,
+            this.seasonsInFlight,
+            url,
+            purpose,
+            (key, requestPurpose) => this.getSeasonsUncached(key, requestPurpose)
+        );
+    }
+
+    async getSeasonsUncached(url, purpose = 'getSeasons') {
         try {
-            const response = await fetch(url);
-            if (!response.ok) throw new Error('Failed to load page');
-            const html = await response.text();
-            
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, 'text/html');
+            const page = await this.getSeasonvarPage(url, purpose);
+            const { doc } = page;
             
             const seasons = [];
             
@@ -976,7 +1146,7 @@ class SeasonvarParser extends BaseParserService {
                          // Optimization: If the URL matches the one we just fetched, we could reuse info, 
                          // but getSeriesInfo does specialized playlist parsing. 
                          // For simplicity and robustness, we call getSeriesInfo.
-                         const sInfo = await this.getSeriesInfo(s.url);
+                         const sInfo = await this.getSeriesInfo(s.url, 'seasonEpisodeCount');
                          if (sInfo && sInfo.episodes) {
                              s.episodes_count = sInfo.episodes.length;
                          }
@@ -1002,5 +1172,8 @@ class SeasonvarParser extends BaseParserService {
 // Export — backward compatible
 if (typeof window !== 'undefined') {
     window.SeasonvarParser = SeasonvarParser;
+}
 
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { SeasonvarParser };
 }

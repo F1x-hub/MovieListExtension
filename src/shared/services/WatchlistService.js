@@ -1,6 +1,6 @@
 /**
- * WatchlistService - Service for managing user watchlist (movies to watch)
- * Handles adding, removing, and retrieving movies from user's watchlist
+ * @deprecated Legacy service for managing the separate 'watchlist' Firestore collection.
+ * Do NOT use for new features. Use FavoriteService instead (unified 'favorites' collection with status='plan_to_watch').
  */
 class WatchlistService {
     constructor(firebaseManager) {

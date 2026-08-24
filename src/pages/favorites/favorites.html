@@ -20,7 +20,7 @@
     <link rel="preload" as="script" href="../../../libs/firebase-firestore-compat.js">
     <link rel="preconnect" href="https://firebaseio.com">
     <link rel="preconnect" href="https://firebasestorage.googleapis.com">
-    <link rel="dns-prefetch" href="https://api.kinopoisk.dev">
+    <link rel="dns-prefetch" href="https://api.poiskkino.dev">
     <link rel="stylesheet" href="../../shared/styles/report-widget.css">
 </head>
 <body>
@@ -97,9 +97,9 @@
             </div>
 
             <!-- Loading State -->
-            <div class="loading-section" id="loadingSection">
-                <div class="loading-spinner"></div>
-                <p>Loading your favorites...</p>
+            <div class="loading-section app-loader app-loader--page" id="loadingSection" role="status" aria-live="polite">
+                <div class="app-loader__indicator" aria-hidden="true"></div>
+                <p class="app-loader__label">Loading your favorites...</p>
             </div>
 
             <!-- Movies Grid -->
@@ -130,7 +130,7 @@
     <!-- Limit Modal -->
     <div id="limitModal" class="modal-overlay" style="display: none;">
         <div class="modal-content limit-modal">
-            <button class="modal-close" id="limitModalClose">×</button>
+            <button class="modal-close" id="limitModalClose" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
             <div class="modal-icon"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #ef4444;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></div>
             <h2>Достигнут лимит избранного</h2>
             <p>
@@ -157,7 +157,7 @@
                     <div class="rating-header-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #eab308;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></div>
                     <h2 class="modal-title" id="ratingModalTitle">Edit Rating</h2>
                 </div>
-                <button class="modal-close" id="ratingModalClose">×</button>
+                <button class="modal-close" id="ratingModalClose" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
             </div>
             <div class="modal-body">
                 <div class="movie-rating-card" id="movieRatingInfo">
@@ -243,6 +243,7 @@
     <script defer src="../../shared/services/RatingsCacheService.js"></script>
     <script defer src="../../shared/services/RatingService.js"></script>
     <script defer src="../../shared/services/MovieCacheService.js"></script>
+    <script defer src="../../shared/services/TmdbFallbackQueueService.js"></script>
     <script defer src="../../shared/services/KinopoiskService.js"></script>
     <script defer src="../../shared/services/UserService.js"></script>
     <script defer src="../../shared/services/WatchlistService.js"></script>
@@ -258,6 +259,7 @@
 
     <!-- Components -->
     <script defer src="../../shared/components/MovieCard.js"></script>
+    <script defer src="../../shared/components/BackToTop.js"></script>
     <script defer src="../../shared/components/Navigation.js"></script>
     <script defer src="../../shared/components/Router.js"></script>
 
@@ -266,4 +268,3 @@
     <script defer src="../../shared/components/ReportWidget.js"></script>
 </body>
 </html>
-

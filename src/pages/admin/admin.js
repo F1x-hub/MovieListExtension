@@ -31,8 +31,11 @@ class AdminPanelManager {
             hasMore: true
         };
         this.userSearchTerm = '';
+        this.userStatusFilter = 'all';
         this.userSearchTimeout = null;
         this.displayedUsers = [];
+        this.pendingUsers = [];
+        this.selectedApprovalIds = new Set();
         
         // Pagination state for movies
         this.pagination = {
@@ -79,9 +82,11 @@ class AdminPanelManager {
             
             if (!isAdmin) {
                 this.showError('Access denied. You must be an administrator to view this page.');
-                setTimeout(() => {
-                    window.location.href = chrome.runtime.getURL('src/pages/search/search.html');
-                }, 2000);
+                const adminContent = document.getElementById('adminContent');
+                if (adminContent) adminContent.style.display = 'none';
+                if (window.adminNav && typeof window.adminNav.showAuthModal === 'function') {
+                    window.adminNav.showAuthModal('login');
+                }
                 return;
             }
 
@@ -95,16 +100,18 @@ class AdminPanelManager {
             this.updateOnlineIndicator();
 
             console.time('[Admin Perf] 4. Load Data Sequentially');
-            // Load users and movies sequentially to avoid WebChannel stream congestion
+            // Load users, movies and approvals sequentially to avoid WebChannel stream congestion
             this.showLoading();
             await this.loadUsers();
             await this.loadMovies();
+            await this.loadApprovals();
             this.hideLoading();
             console.timeEnd('[Admin Perf] 4. Load Data Sequentially');
 
             console.time('[Admin Perf] 5. UI & Event Setup');
-            // Initialize Reports
+            // Initialize Reports & TMDB Fallbacks / Manual Mapping
             this.initReports();
+            this.initTmdbFallbacks();
 
             // Setup event listeners
             this.setupEventListeners();
@@ -255,10 +262,11 @@ class AdminPanelManager {
                     </td>
                     <td><div class="skeleton-text" style="width: 150px;"></div></td>
                     <td><div class="skeleton-text" style="width: 80px;"></div></td>
+                    <td><div class="skeleton-text" style="width: 70px;"></div></td>
                     <td><div class="skeleton-text" style="width: 80px;"></div></td>
                     <td><div class="skeleton-text" style="width: 40px;"></div></td>
                     <td><div class="skeleton-text" style="width: 40px;"></div></td>
-                    <td><div class="skeleton-text" style="width: 60px;"></div></td>
+                    <td><div class="skeleton-text" style="width: 120px;"></div></td>
                 </tr>
             `;
         }
@@ -295,7 +303,7 @@ class AdminPanelManager {
                 console.timeEnd('[Admin Perf] Save users to cache');
             }
 
-            this.applyUserSearch();
+            this.applyUserFilters();
         } catch (error) {
             console.error('Error fetching users from DB:', error);
             if (!isBackground) {
@@ -319,19 +327,32 @@ class AdminPanelManager {
         }
     }
 
-    applyUserSearch() {
+    applyUserFilters() {
+        let result = [...this.users];
+
+        if (this.userStatusFilter && this.userStatusFilter !== 'all') {
+            result = result.filter(user => {
+                const status = user.approvalStatus || 'approved';
+                return status === this.userStatusFilter;
+            });
+        }
+
         if (this.userSearchTerm) {
             const term = this.userSearchTerm.toLowerCase();
-            this.displayedUsers = this.users.filter(user => 
+            result = result.filter(user => 
                 (user.displayName && user.displayName.toLowerCase().includes(term)) ||
                 (user.email && user.email.toLowerCase().includes(term)) ||
                 (user.id && user.id.toLowerCase().includes(term))
             );
-        } else {
-            this.displayedUsers = this.users;
         }
+
+        this.displayedUsers = result;
         this.renderUsers();
         this.renderUserPagination();
+    }
+
+    applyUserSearch() {
+        this.applyUserFilters();
     }
 
     renderUsers() {
@@ -351,7 +372,7 @@ class AdminPanelManager {
         if (this.displayedUsers.length === 0) {
             tableBody.innerHTML = `
                 <tr>
-                    <td colspan="7" style="text-align: center; padding: var(--space-xl); color: var(--text-secondary);">
+                    <td colspan="8" style="text-align: center; padding: var(--space-xl); color: var(--text-secondary);">
                         No users found
                     </td>
                 </tr>
@@ -390,10 +411,62 @@ class AdminPanelManager {
 
     createUserRow(user) {
         const row = document.createElement('tr');
-        const isCurrentUser = user.id === this.currentUser.uid;
+        const isCurrentUser = this.currentUser && user.id === this.currentUser.uid;
         const joinDate = user.createdAt?.toDate ? 
             user.createdAt.toDate().toLocaleDateString() : 
-            'Unknown';
+            (user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'Unknown');
+
+        const status = user.approvalStatus || 'approved';
+        let statusBadge;
+        if (status === 'approved') {
+            statusBadge = '<span class="status-badge status-badge-approved">Approved</span>';
+        } else if (status === 'pending') {
+            statusBadge = '<span class="status-badge status-badge-pending">Pending</span>';
+        } else if (status === 'rejected') {
+            statusBadge = '<span class="status-badge status-badge-rejected">Rejected</span>';
+        } else {
+            statusBadge = `<span class="status-badge status-badge-approved">${this.escapeHtml(status)}</span>`;
+        }
+
+        let actionsHtml;
+        if (isCurrentUser) {
+            actionsHtml = `
+                <div class="row-actions-group">
+                    <button class="btn-delete" 
+                            data-user-id="${user.id}"
+                            disabled title="You cannot delete your own account">
+                        Delete
+                    </button>
+                </div>
+            `;
+        } else {
+            let statusButtons = '';
+            if (status === 'approved') {
+                statusButtons = `
+                    <button class="btn-status-toggle btn-reject-sm" data-action="reject" data-user-id="${user.id}">Заблокировать</button>
+                    <button class="btn-status-toggle" data-action="pending" data-user-id="${user.id}">В Pending</button>
+                `;
+            } else if (status === 'pending') {
+                statusButtons = `
+                    <button class="btn-approve-sm" data-action="approve" data-user-id="${user.id}">Одобрить</button>
+                    <button class="btn-reject-sm" data-action="reject" data-user-id="${user.id}">Отклонить</button>
+                `;
+            } else if (status === 'rejected') {
+                statusButtons = `
+                    <button class="btn-approve-sm" data-action="approve" data-user-id="${user.id}">Разблокировать</button>
+                    <button class="btn-status-toggle" data-action="pending" data-user-id="${user.id}">В Pending</button>
+                `;
+            }
+
+            actionsHtml = `
+                <div class="row-actions-group">
+                    ${statusButtons}
+                    <button class="btn-delete" data-user-id="${user.id}">
+                        Delete
+                    </button>
+                </div>
+            `;
+        }
 
         row.innerHTML = `
             <td>
@@ -401,8 +474,7 @@ class AdminPanelManager {
                     <img src="${user.photoURL || chrome.runtime.getURL('icons/icon48.png')}" 
                          alt="${user.displayName || 'User'}" 
                          class="user-avatar"
-                         loading="lazy"
-                         onerror="this.src='${chrome.runtime.getURL('icons/icon48.png')}'">
+                         loading="lazy">
                     <div>
                         <div class="user-name">
                             ${this.escapeHtml(user.displayName || 'Unknown User')}
@@ -418,6 +490,7 @@ class AdminPanelManager {
             <td>
                 <div class="user-id">${this.escapeHtml(user.id.substring(0, 12))}...</div>
             </td>
+            <td>${statusBadge}</td>
             <td>${joinDate}</td>
             <td>
                 <div class="user-stats">${user.ratingsCount || 0}</div>
@@ -425,14 +498,19 @@ class AdminPanelManager {
             <td>
                 <div class="user-stats">${user.collectionCount || 0}</div>
             </td>
-            <td>
-                <button class="btn-delete" 
-                        data-user-id="${user.id}"
-                        ${isCurrentUser ? 'disabled title="You cannot delete your own account"' : ''}>
-                    Delete
-                </button>
+            <td style="text-align: right;">
+                ${actionsHtml}
             </td>
         `;
+
+        // Add event listeners for status toggle buttons
+        const actionBtns = row.querySelectorAll('[data-action]');
+        actionBtns.forEach(btn => {
+            btn.addEventListener('mousedown', (e) => {
+                e.stopPropagation();
+                this.handleUserApprovalAction(btn.dataset.userId, btn.dataset.action, btn);
+            });
+        });
 
         // Add click handler for delete button
         const deleteBtn = row.querySelector('.btn-delete');
@@ -440,7 +518,199 @@ class AdminPanelManager {
             deleteBtn.addEventListener('mousedown', () => this.showDeleteConfirmation(user));
         }
 
+        const avatar = row.querySelector('.user-avatar');
+        if (avatar) {
+            avatar.addEventListener('error', () => {
+                avatar.src = chrome.runtime.getURL('icons/icon48.png');
+            });
+        }
+
         return row;
+    }
+
+    async handleUserApprovalAction(userId, action, btn) {
+        try {
+            if (btn) btn.disabled = true;
+            let targetStatus = action;
+            if (action === 'block' || action === 'reject') targetStatus = 'rejected';
+            if (action === 'approve') targetStatus = 'approved';
+            if (action === 'pending') targetStatus = 'pending';
+
+            const targetUser = this.users.find(u => u.id === userId);
+            const success = await this.adminService.updateUserApprovalStatus(userId, targetStatus, this.currentUser.uid);
+            if (success) {
+                if (targetUser) {
+                    targetUser.approvalStatus = targetStatus;
+                }
+                this.cacheService.saveUsersToCache(this.users);
+                this.applyUserFilters();
+                await this.loadApprovals();
+                const statusLabels = { approved: 'одобрен', rejected: 'заблокирован / отклонён', pending: 'переведён в ожидание' };
+                this.showSuccessMessage(`Пользователь ${targetUser?.displayName || userId} ${statusLabels[targetStatus] || targetStatus}`);
+            }
+        } catch (err) {
+            console.error('Error updating user approval status:', err);
+            this.showError(`Ошибка обновления статуса: ${err.message}`);
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    async loadApprovals() {
+        try {
+            const pendingUsers = await this.adminService.getPendingApprovals(100);
+            this.pendingUsers = pendingUsers || [];
+            this.selectedApprovalIds.clear();
+
+            // Update counts
+            const count = this.pendingUsers.length;
+            const navBadge = document.getElementById('adminNavApprovalsCount');
+            const headerBadge = document.getElementById('approvalsCount');
+            if (navBadge) navBadge.textContent = count > 0 ? count : '—';
+            if (headerBadge) headerBadge.textContent = `${count} заяв${count === 1 ? 'ка' : (count > 1 && count < 5 ? 'ки' : 'ок')}`;
+
+            this.renderApprovalsTable();
+            this.updateBatchApproveButton();
+        } catch (error) {
+            console.error('Error loading approvals:', error);
+        }
+    }
+
+    renderApprovalsTable() {
+        const tableBody = document.getElementById('approvalsTableBody');
+        if (!tableBody) return;
+        tableBody.innerHTML = '';
+
+        if (this.pendingUsers.length === 0) {
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="7" style="text-align: center; padding: var(--space-xl); color: var(--text-secondary);">
+                        Нет ожидающих заявок на одобрение
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        this.pendingUsers.forEach(user => {
+            const row = document.createElement('tr');
+            const joinDate = user.createdAt?.toDate ? 
+                user.createdAt.toDate().toLocaleDateString() : 
+                (user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'Unknown');
+
+            const isChecked = this.selectedApprovalIds.has(user.id);
+
+            row.innerHTML = `
+                <td style="text-align: center;">
+                    <input type="checkbox" class="approval-checkbox" data-user-id="${user.id}" ${isChecked ? 'checked' : ''}>
+                </td>
+                <td>
+                    <div class="user-info">
+                        <img src="${user.photoURL || chrome.runtime.getURL('icons/icon48.png')}" 
+                             alt="${user.displayName || 'User'}" 
+                             class="user-avatar"
+                             loading="lazy">
+                        <div>
+                            <div class="user-name">
+                                ${this.escapeHtml(user.displayName || 'Unknown User')}
+                            </div>
+                        </div>
+                    </div>
+                </td>
+                <td>
+                    <div class="user-email">${this.escapeHtml(user.email || 'No email')}</div>
+                </td>
+                <td>
+                    <div class="user-id">${this.escapeHtml(user.id.substring(0, 12))}...</div>
+                </td>
+                <td>${joinDate}</td>
+                <td>
+                    <span class="status-badge status-badge-pending">Pending</span>
+                </td>
+                <td style="text-align: right;">
+                    <div class="row-actions-group">
+                        <button class="btn-approve-sm" data-action="approve" data-user-id="${user.id}">Одобрить</button>
+                        <button class="btn-reject-sm" data-action="reject" data-user-id="${user.id}">Отклонить</button>
+                        <button class="btn-delete" data-user-id="${user.id}">Delete</button>
+                    </div>
+                </td>
+            `;
+
+            const avatar = row.querySelector('.user-avatar');
+            if (avatar) {
+                avatar.addEventListener('error', () => {
+                    avatar.src = chrome.runtime.getURL('icons/icon48.png');
+                });
+            }
+
+            // Checkbox change listener
+            const checkbox = row.querySelector('.approval-checkbox');
+            if (checkbox) {
+                checkbox.addEventListener('change', (e) => {
+                    if (e.target.checked) {
+                        this.selectedApprovalIds.add(user.id);
+                    } else {
+                        this.selectedApprovalIds.delete(user.id);
+                    }
+                    this.updateBatchApproveButton();
+                });
+            }
+
+            // Action buttons listeners
+            const actionBtns = row.querySelectorAll('[data-action]');
+            actionBtns.forEach(btn => {
+                btn.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    this.handleUserApprovalAction(btn.dataset.userId, btn.dataset.action, btn);
+                });
+            });
+
+            // Delete button listener
+            const deleteBtn = row.querySelector('.btn-delete');
+            if (deleteBtn) {
+                deleteBtn.addEventListener('mousedown', () => this.showDeleteConfirmation(user));
+            }
+
+            tableBody.appendChild(row);
+        });
+    }
+
+    updateBatchApproveButton() {
+        const batchBtn = document.getElementById('batchApproveBtn');
+        const countSpan = document.getElementById('selectedApprovalsCount');
+        const selectAllCb = document.getElementById('selectAllApprovalsCheckbox');
+        
+        const selectedCount = this.selectedApprovalIds.size;
+        if (countSpan) countSpan.textContent = selectedCount;
+        if (batchBtn) batchBtn.disabled = selectedCount === 0;
+
+        if (selectAllCb) {
+            selectAllCb.checked = this.pendingUsers.length > 0 && selectedCount === this.pendingUsers.length;
+            selectAllCb.indeterminate = selectedCount > 0 && selectedCount < this.pendingUsers.length;
+        }
+    }
+
+    async handleBatchApprove() {
+        if (this.selectedApprovalIds.size === 0) return;
+        const userIds = Array.from(this.selectedApprovalIds);
+        try {
+            const batchBtn = document.getElementById('batchApproveBtn');
+            if (batchBtn) {
+                batchBtn.disabled = true;
+                batchBtn.innerHTML = 'Одобрение...';
+            }
+
+            const success = await this.adminService.batchApproveUsers(userIds, this.currentUser.uid);
+            if (success) {
+                this.showSuccessMessage(`Одобрено ${userIds.length} пользователей`);
+                await this.loadApprovals();
+                await this.fetchUsersFromDb();
+            }
+        } catch (error) {
+            console.error('Error in batch approve:', error);
+            this.showError(`Ошибка пакетного одобрения: ${error.message}`);
+        } finally {
+            this.updateBatchApproveButton();
+        }
     }
 
     async showDeleteConfirmation(user) {
@@ -522,6 +792,38 @@ class AdminPanelManager {
     }
 
     setupEventListeners() {
+        // Listen for auth state changes (e.g. user logged out from popup or another tab)
+        window.addEventListener('authStateChanged', async (e) => {
+            const user = e.detail?.user;
+            if (!user) {
+                this.currentUser = null;
+                const adminContent = document.getElementById('adminContent');
+                if (adminContent) adminContent.style.display = 'none';
+                this.showError('Сессия завершена. Для доступа к панели администратора необходимо войти в систему.');
+                if (window.adminNav && typeof window.adminNav.showAuthModal === 'function') {
+                    window.adminNav.showAuthModal('login');
+                }
+            } else {
+                const isAdmin = await this.checkAdminAccess();
+                if (isAdmin) {
+                    this.currentUser = user;
+                    const adminError = document.getElementById('adminError');
+                    if (adminError) adminError.style.display = 'none';
+                    const adminContent = document.getElementById('adminContent');
+                    if (adminContent) adminContent.style.display = 'block';
+                    this.cacheService?.clearUsersCache();
+                    this.cacheService?.clearCache();
+                    await this.loadUsers();
+                    await this.loadMovies();
+                    await this.loadApprovals();
+                } else {
+                    const adminContent = document.getElementById('adminContent');
+                    if (adminContent) adminContent.style.display = 'none';
+                    this.showError('Доступ запрещен. У текущего аккаунта нет прав администратора.');
+                }
+            }
+        });
+
         // Delete user modal controls
         const closeBtn = document.getElementById('closeDeleteModal');
         const cancelBtn = document.getElementById('cancelDeleteBtn');
@@ -577,6 +879,39 @@ class AdminPanelManager {
                     this.applyUserSearch();
                 }, 300);
             });
+        }
+
+        // User Status Filter Select
+        const userStatusSelect = document.getElementById('userStatusFilterSelect');
+        if (userStatusSelect) {
+            userStatusSelect.addEventListener('change', (e) => {
+                this.userStatusFilter = e.target.value;
+                this.applyUserFilters();
+            });
+        }
+
+        // Approvals Pane Listeners
+        const refreshApprovalsBtn = document.getElementById('refreshApprovalsBtn');
+        if (refreshApprovalsBtn) {
+            refreshApprovalsBtn.addEventListener('mousedown', () => this.loadApprovals());
+        }
+
+        const selectAllApprovalsCb = document.getElementById('selectAllApprovalsCheckbox');
+        if (selectAllApprovalsCb) {
+            selectAllApprovalsCb.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    this.pendingUsers.forEach(u => this.selectedApprovalIds.add(u.id));
+                } else {
+                    this.selectedApprovalIds.clear();
+                }
+                this.renderApprovalsTable();
+                this.updateBatchApproveButton();
+            });
+        }
+
+        const batchApproveBtn = document.getElementById('batchApproveBtn');
+        if (batchApproveBtn) {
+            batchApproveBtn.addEventListener('mousedown', () => this.handleBatchApprove());
         }
         
         // Users Pagination controls
@@ -1067,7 +1402,7 @@ class AdminPanelManager {
             <td>
                 <div class="movie-info">
                     ${movie.posterUrl ? 
-                        `<img src="${movie.posterUrl}" alt="${this.escapeHtml(movieTitle)}" class="movie-poster" onerror="this.style.display='none'">` : 
+                        `<img src="${movie.posterUrl}" alt="${this.escapeHtml(movieTitle)}" class="movie-poster">` : 
                         ''
                     }
                     <div>
@@ -1081,8 +1416,7 @@ class AdminPanelManager {
                 <div class="user-info">
                     <img src="${userInfo.photoURL || chrome.runtime.getURL('icons/icon48.png')}" 
                          alt="${this.escapeHtml(userInfo.displayName)}" 
-                         class="user-avatar"
-                         onerror="this.src='${chrome.runtime.getURL('icons/icon48.png')}'">
+                         class="user-avatar">
                     <div>
                         <div class="user-name">${this.escapeHtml(userInfo.displayName)}</div>
                         <div class="user-email">${this.escapeHtml(userInfo.email)}</div>
@@ -1108,6 +1442,19 @@ class AdminPanelManager {
                 <div class="rating-date">${ratingDate}</div>
             </td>
         `;
+
+        const moviePoster = row.querySelector('.movie-poster');
+        if (moviePoster) {
+            moviePoster.addEventListener('error', () => {
+                moviePoster.style.display = 'none';
+            });
+        }
+        const userAvatar = row.querySelector('.user-avatar');
+        if (userAvatar) {
+            userAvatar.addEventListener('error', () => {
+                userAvatar.src = chrome.runtime.getURL('icons/icon48.png');
+            });
+        }
 
         // Add checkbox change handler
         const checkbox = row.querySelector('.row-checkbox');
@@ -1738,6 +2085,912 @@ class AdminPanelManager {
                     alert('Ошибка: ' + err.message);
                     e.target.disabled = false;
                     e.target.textContent = '🗑 Удалить';
+                }
+            });
+        });
+    }
+
+    initTmdbFallbacks() {
+        this.tmdbFallbackService = (typeof TmdbFallbackQueueService !== 'undefined')
+            ? new TmdbFallbackQueueService(firebaseManager)
+            : null;
+        this.idMappingService = (typeof IdMappingService !== 'undefined')
+            ? new IdMappingService()
+            : null;
+        this.kinopoiskService = (typeof KinopoiskService !== 'undefined')
+            ? new KinopoiskService()
+            : null;
+
+        this.activeQueueFilter = 'all';
+        this.unmappedQueueData = [];
+
+        // Subtabs switching
+        const subtabBtns = document.querySelectorAll('.admin-subtab-btn');
+        subtabBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const targetSubtab = btn.dataset.subtab;
+                subtabBtns.forEach(b => {
+                    b.classList.remove('active');
+                    b.style.fontWeight = '500';
+                    b.style.color = 'var(--text-secondary)';
+                });
+                btn.classList.add('active');
+                btn.style.fontWeight = '600';
+                btn.style.color = 'var(--theme-text-primary)';
+
+                const tabTmdbToKp = document.getElementById('subtab-tmdb-to-kp');
+                const tabKpToImdb = document.getElementById('subtab-kp-to-imdb');
+                if (tabTmdbToKp) tabTmdbToKp.style.display = targetSubtab === 'tmdb-to-kp' ? 'block' : 'none';
+                if (tabKpToImdb) tabKpToImdb.style.display = targetSubtab === 'kp-to-imdb' ? 'block' : 'none';
+            });
+        });
+
+        // Queue filter bar buttons
+        const filterBtns = document.querySelectorAll('#tmdbQueueFilterBar .queue-filter-btn');
+        filterBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                filterBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this.activeQueueFilter = btn.dataset.filter || 'all';
+                this.applyQueueFiltersAndRender();
+            });
+        });
+
+        // Refresh button
+        const refreshBtn = document.getElementById('refreshTmdbFallbacksBtn');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => this.loadTmdbFallbacks());
+        }
+
+        // Clear unmapped queue button
+        const clearQueueBtn = document.getElementById('clearUnmappedQueueBtn');
+        if (clearQueueBtn) {
+            clearQueueBtn.addEventListener('click', async () => {
+                if (!confirm('Очистить локальную очередь несмаппленных тайтлов TMDB?')) return;
+                if (this.idMappingService) {
+                    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+                        await new Promise(res => chrome.storage.local.remove([this.idMappingService.UNMAPPED_QUEUE_KEY], res));
+                    }
+                    await this.loadTmdbFallbacks();
+                    this.showSuccessMessage('Очередь TMDB очищена');
+                }
+            });
+        }
+
+        // Auto-map entire queue button (Level 1 TMDB + Level 2 IMDb + Level 3 Metadata Search)
+        const autoMapQueueBtn = document.getElementById('autoMapQueueBtn');
+        if (autoMapQueueBtn) {
+            autoMapQueueBtn.addEventListener('click', async () => {
+                const unmappedItems = this.unmappedQueueData || [];
+                if (unmappedItems.length === 0) {
+                    this.showSuccessMessage('Очередь пуста — нет тайтлов для сопоставления.');
+                    return;
+                }
+
+                if (!confirm(`Запустить авто-поиск и привязку для ${unmappedItems.length} тайтлов в очереди?`)) return;
+
+                try {
+                    autoMapQueueBtn.disabled = true;
+                    autoMapQueueBtn.innerHTML = `
+                        <svg class="spin-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 1s linear infinite;"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>
+                        Сопоставление...
+                    `;
+
+                    if (!this.idMappingService) this.idMappingService = new IdMappingService();
+                    const kinopoiskService = this.kinopoiskService || (typeof window !== 'undefined' && window.firebaseManager?.getKinopoiskService?.()) || new KinopoiskService();
+
+                    // Force batch resolution with cascade
+                    const resultMap = await this.idMappingService.resolveBatch(unmappedItems, {
+                        forceRefresh: true,
+                        kinopoiskService,
+                        skipQueue: true
+                    });
+
+                    let resolvedCount = 0;
+                    let notFoundCount = 0;
+
+                    for (const [key, res] of resultMap.entries()) {
+                        if (res.status === 'resolved' && res.kinopoiskId) {
+                            resolvedCount++;
+                            await this.idMappingService.removeUnmappedQueueItem(key);
+                        } else if (res.status === 'not-found') {
+                            notFoundCount++;
+                            // Snooze confirmed missing items on KP for 14 days so they don't clutter the queue
+                            await this.idMappingService.snoozeUnmappedQueueItem(key, 14, 'no-kp-page');
+                        }
+                    }
+
+                    this.showSuccessMessage(`Авто-сопоставление завершено! Найдено и привязано: ${resolvedCount}, отложено (нет на КП): ${notFoundCount}`);
+                    await this.loadTmdbFallbacks();
+                } catch (err) {
+                    console.error('Error during auto-mapping queue:', err);
+                    this.showError(`Ошибка авто-сопоставления: ${err.message}`);
+                } finally {
+                    autoMapQueueBtn.disabled = false;
+                    autoMapQueueBtn.innerHTML = `
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                        Автоматически сопоставить очередь
+                    `;
+                }
+            });
+        }
+
+        // Auto-map Kinopoisk -> IMDb fallback queue button via TMDB search
+        const autoMapKpToImdbBtn = document.getElementById('autoMapKpToImdbBtn');
+        if (autoMapKpToImdbBtn) {
+            autoMapKpToImdbBtn.addEventListener('click', async () => {
+                const pendingItems = this.pendingImdbItems || [];
+                if (pendingItems.length === 0) {
+                    this.showSuccessMessage('Очередь пуста — нет фильмов Кинопоиска без IMDb ID.');
+                    return;
+                }
+
+                if (!confirm(`Запустить авто-поиск IMDb ID через TMDB для ${pendingItems.length} фильмов?`)) return;
+
+                try {
+                    autoMapKpToImdbBtn.disabled = true;
+                    autoMapKpToImdbBtn.innerHTML = `
+                        <svg class="spin-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 1s linear infinite;"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>
+                        Поиск IMDb...
+                    `;
+
+                    let tmdbService = null;
+                    if (typeof window !== 'undefined' && window.firebaseManager?.getTMDBService) {
+                        tmdbService = window.firebaseManager.getTMDBService();
+                    } else if (typeof TMDBService !== 'undefined') {
+                        tmdbService = new TMDBService();
+                    }
+
+                    if (!tmdbService) {
+                        throw new Error('TMDBService недоступен');
+                    }
+
+                    let foundCount = 0;
+                    for (const item of pendingItems) {
+                        const title = item.name || item.alternativeName;
+                        if (!title) continue;
+
+                        try {
+                            const tmdbData = await tmdbService.searchByTitleYear(title, item.year);
+                            if (tmdbData?.id) {
+                                const ext = await tmdbService.getExternalIds(tmdbData.id, tmdbData.mediaType || 'movie');
+                                const imdbId = ext?.imdb_id;
+                                if (imdbId && TmdbFallbackQueueService.isValidImdbId(imdbId)) {
+                                    await this.tmdbFallbackService.saveManualMapping(item, imdbId, this.currentUser?.uid || 'admin');
+                                    foundCount++;
+                                }
+                            }
+                        } catch (err) {
+                            console.warn(`[AutoMap IMDb] Failed to find IMDb for [${item.kinopoiskId}] ${title}:`, err.message);
+                        }
+                    }
+
+                    this.showSuccessMessage(`Авто-поиск IMDb завершен! Найдено и сохранено: ${foundCount} из ${pendingItems.length}`);
+                    await this.loadTmdbFallbacks();
+                } catch (err) {
+                    console.error('Error during auto-mapping IMDb queue:', err);
+                    this.showError(`Ошибка авто-поиска IMDb: ${err.message}`);
+                } finally {
+                    autoMapKpToImdbBtn.disabled = false;
+                    autoMapKpToImdbBtn.innerHTML = `
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                        Авто-поиск IMDb через TMDB
+                    `;
+                }
+            });
+        }
+
+        // Export JSON button
+        const exportBtn = document.getElementById('exportManualMappingsBtn');
+        if (exportBtn) {
+            exportBtn.addEventListener('click', async () => {
+                try {
+                    if (!this.idMappingService) this.idMappingService = new IdMappingService();
+                    const jsonStr = await this.idMappingService.exportManualMappingsJson();
+                    const blob = new Blob([jsonStr], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `tmdb-kp-mappings-${new Date().toISOString().slice(0, 10)}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    this.showSuccessMessage('Файл экспорта успешно скачан');
+                } catch (err) {
+                    console.error('Export error:', err);
+                    this.showError(`Ошибка экспорта: ${err.message}`);
+                }
+            });
+        }
+
+        // Import JSON button and file picker
+        const importBtn = document.getElementById('importManualMappingsBtn');
+        const importFile = document.getElementById('importManualMappingsFile');
+        if (importBtn && importFile) {
+            importBtn.addEventListener('click', () => importFile.click());
+            importFile.addEventListener('change', async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                try {
+                    if (!this.idMappingService) this.idMappingService = new IdMappingService();
+                    const text = await file.text();
+                    const res = await this.idMappingService.importManualMappingsJson(text);
+                    if (res.errors && res.errors.length > 0) {
+                        this.showSuccessMessage(`Импортировано: ${res.imported}. Ошибок: ${res.errors.length}`);
+                        console.warn('Import warnings/errors:', res.errors);
+                    } else {
+                        this.showSuccessMessage(`Успешно импортировано привязок: ${res.imported}`);
+                    }
+                    importFile.value = '';
+                    await this.loadTmdbFallbacks();
+                } catch (err) {
+                    console.error('Import error:', err);
+                    this.showError(`Ошибка импорта: ${err.message}`);
+                    importFile.value = '';
+                }
+            });
+        }
+
+        // Quick manual mapping form submit
+        const quickForm = document.getElementById('quickManualMappingForm');
+        if (quickForm) {
+            quickForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const mediaType = document.getElementById('manualMapMediaType')?.value || 'tv';
+                const tmdbInput = document.getElementById('manualMapTmdbId')?.value || '';
+                const kpInput = document.getElementById('manualMapKpId')?.value || '';
+                const titleInput = document.getElementById('manualMapTitle')?.value || '';
+
+                const tmdbId = this.extractNumericId(tmdbInput);
+                const kpId = this.extractNumericId(kpInput);
+
+                if (!tmdbId) {
+                    this.showError('Пожалуйста, укажите корректный числовой TMDB ID или ссылку');
+                    return;
+                }
+                if (!kpId) {
+                    this.showError('Пожалуйста, укажите корректный числовой Kinopoisk ID или ссылку');
+                    return;
+                }
+
+                try {
+                    if (!this.idMappingService) {
+                        this.idMappingService = new IdMappingService();
+                    }
+                    await this.idMappingService.setManualMapping(mediaType, tmdbId, kpId, {
+                        title: titleInput.trim(),
+                        kpType: mediaType === 'tv' ? 'tv-series' : 'movie'
+                    });
+
+                    this.showSuccessMessage(`Привязка успешно сохранена: TMDB [${mediaType}:${tmdbId}] → Кинопоиск [${kpId}]`);
+                    quickForm.reset();
+                    await this.loadTmdbFallbacks();
+                } catch (err) {
+                    console.error('Error saving manual mapping:', err);
+                    this.showError(`Ошибка сохранения привязки: ${err.message}`);
+                }
+            });
+        }
+
+        // Initial load
+        this.loadTmdbFallbacks();
+    }
+
+    extractNumericId(input) {
+        if (!input) return null;
+        const str = String(input).trim();
+        if (/^\d+$/.test(str)) return Number(str);
+        const match = str.match(/(?:film|movie|series|tv|id)\/(\d+)/i) || str.match(/(\d{3,10})/);
+        if (match && match[1]) return Number(match[1]);
+        return null;
+    }
+
+    async loadTmdbFallbacks() {
+        const unmappedList = document.getElementById('tmdbUnmappedList');
+        const manualList = document.getElementById('tmdbManualMappingsList');
+        const imdbList = document.getElementById('tmdbFallbacksList');
+
+        if (unmappedList) unmappedList.innerHTML = '<div class="reports-loading">Загрузка очереди TMDB...</div>';
+        if (manualList) manualList.innerHTML = '<div class="reports-loading">Загрузка списка привязок...</div>';
+        if (imdbList) imdbList.innerHTML = '<div class="reports-loading">Загрузка очереди...</div>';
+
+        try {
+            if (!this.idMappingService) this.idMappingService = new IdMappingService();
+            if (!this.tmdbFallbackService && typeof TmdbFallbackQueueService !== 'undefined') {
+                this.tmdbFallbackService = new TmdbFallbackQueueService(firebaseManager);
+            }
+
+            const [unmappedQueue, manualMappings, pendingImdb] = await Promise.all([
+                this.idMappingService ? this.idMappingService.getUnmappedQueue() : Promise.resolve([]),
+                this.idMappingService ? this.idMappingService.getManualMappings() : Promise.resolve([]),
+                this.tmdbFallbackService ? this.tmdbFallbackService.getPendingItems().catch(err => {
+                    console.warn('[Admin] Could not load IMDb queue:', err);
+                    return [];
+                }) : Promise.resolve([])
+            ]);
+
+            this.unmappedQueueData = unmappedQueue || [];
+
+            // Update filter counters
+            const now = Date.now();
+            const counts = {
+                all: 0,
+                critical: 0,
+                films: 0,
+                series: 0,
+                cartoons: 0,
+                anime: 0,
+                snoozed: 0
+            };
+
+            this.unmappedQueueData.forEach(item => {
+                const isSnoozed = item.snoozedUntil && now < item.snoozedUntil && (item.manualStatus === 'no-kp-page' || item.manualStatus === 'ignored');
+                if (isSnoozed) {
+                    counts.snoozed++;
+                } else {
+                    counts.all++;
+                    if (item.priority === 'CRITICAL') counts.critical++;
+                    const sec = item.section || (item.mediaType === 'tv' ? 'series' : 'films');
+                    if (sec === 'films') counts.films++;
+                    else if (sec === 'series') counts.series++;
+                    else if (sec === 'cartoons') counts.cartoons++;
+                    else if (sec === 'anime') counts.anime++;
+                }
+            });
+
+            const elAll = document.getElementById('filterCountAll');
+            const elCrit = document.getElementById('filterCountCritical');
+            const elFilms = document.getElementById('filterCountFilms');
+            const elSeries = document.getElementById('filterCountSeries');
+            const elCartoons = document.getElementById('filterCountCartoons');
+            const elAnime = document.getElementById('filterCountAnime');
+            const elSnoozed = document.getElementById('filterCountSnoozed');
+
+            if (elAll) elAll.textContent = counts.all;
+            if (elCrit) elCrit.textContent = counts.critical;
+            if (elFilms) elFilms.textContent = counts.films;
+            if (elSeries) elSeries.textContent = counts.series;
+            if (elCartoons) elCartoons.textContent = counts.cartoons;
+            if (elAnime) elAnime.textContent = counts.anime;
+            if (elSnoozed) elSnoozed.textContent = counts.snoozed;
+
+            // Update badge counts
+            const unmappedBadge = document.getElementById('unmappedTmdbCountBadge');
+            const imdbBadge = document.getElementById('kpMissingImdbCountBadge');
+            const totalCountBadge = document.getElementById('tmdbFallbacksCount');
+            const navTmdbCountBadge = document.getElementById('adminNavTmdbCount');
+
+            const totalTasks = counts.all + (pendingImdb?.length || 0);
+            if (unmappedBadge) unmappedBadge.textContent = counts.all;
+            if (imdbBadge) imdbBadge.textContent = pendingImdb?.length || 0;
+            if (totalCountBadge) totalCountBadge.textContent = `${totalTasks} задач`;
+            if (navTmdbCountBadge) navTmdbCountBadge.textContent = totalTasks > 0 ? totalTasks : '—';
+
+            this.applyQueueFiltersAndRender();
+            this.renderManualMappingsList(manualMappings || []);
+            this.renderImdbFallbacksList(pendingImdb || []);
+        } catch (error) {
+            console.error('Error loading TMDB fallbacks:', error);
+            if (unmappedList) unmappedList.innerHTML = `<div class="reports-empty" style="color: var(--status-error);">Ошибка: ${this.escapeHtml(error.message)}</div>`;
+            if (manualList) manualList.innerHTML = `<div class="reports-empty" style="color: var(--status-error);">Ошибка: ${this.escapeHtml(error.message)}</div>`;
+            if (imdbList) imdbList.innerHTML = `<div class="reports-empty" style="color: var(--status-error);">Ошибка: ${this.escapeHtml(error.message)}</div>`;
+        }
+    }
+
+    applyQueueFiltersAndRender() {
+        const now = Date.now();
+        const filter = this.activeQueueFilter || 'all';
+
+        let filtered = this.unmappedQueueData.filter(item => {
+            const isSnoozed = item.snoozedUntil && now < item.snoozedUntil && (item.manualStatus === 'no-kp-page' || item.manualStatus === 'ignored');
+            if (filter === 'snoozed') {
+                return isSnoozed;
+            }
+            if (isSnoozed) return false;
+
+            if (filter === 'critical') return item.priority === 'CRITICAL';
+            const sec = item.section || (item.mediaType === 'tv' ? 'series' : 'films');
+            if (filter === 'films') return sec === 'films';
+            if (filter === 'series') return sec === 'series';
+            if (filter === 'cartoons') return sec === 'cartoons';
+            if (filter === 'anime') return sec === 'anime';
+            return true; // 'all'
+        });
+
+        // Priority sort
+        const priorityWeight = { 'CRITICAL': 4, 'HIGH': 3, 'MEDIUM': 2, 'LOW': 1 };
+        filtered.sort((a, b) => {
+            const weightA = priorityWeight[a.priority] || 1;
+            const weightB = priorityWeight[b.priority] || 1;
+            if (weightA !== weightB) return weightB - weightA;
+
+            const seenA = a.timesSeen || 1;
+            const seenB = b.timesSeen || 1;
+            if (seenA !== seenB) return seenB - seenA;
+
+            const rankA = (Number.isInteger(a.productRank) && a.productRank > 0)
+                ? a.productRank
+                : ((Number.isInteger(a.tmdbRank) && a.tmdbRank > 0) ? a.tmdbRank : 999);
+            const rankB = (Number.isInteger(b.productRank) && b.productRank > 0)
+                ? b.productRank
+                : ((Number.isInteger(b.tmdbRank) && b.tmdbRank > 0) ? b.tmdbRank : 999);
+            if (rankA !== rankB) return rankA - rankB;
+
+            return (b.updatedAt || 0) - (a.updatedAt || 0);
+        });
+
+        this.renderTmdbUnmappedList(filtered);
+    }
+
+    renderTmdbUnmappedList(unmappedItems) {
+        const container = document.getElementById('tmdbUnmappedList');
+        if (!container) return;
+        container.innerHTML = '';
+
+        if (!unmappedItems || unmappedItems.length === 0) {
+            const filterLabel = this.activeQueueFilter === 'snoozed' ? 'отложенных' : 'несмаппленных';
+            container.innerHTML = `
+                <div class="tmdb-empty-state">
+                    <div class="tmdb-empty-icon">✨</div>
+                    <div class="tmdb-empty-title">В этой категории нет тайтлов</div>
+                    <div class="tmdb-empty-desc">Очередь ${filterLabel} элементов пуста. Все элементы либо привязаны, либо находятся в других секциях.</div>
+                </div>
+            `;
+            return;
+        }
+
+        const currentYear = new Date().getFullYear();
+
+        unmappedItems.forEach(item => {
+            const card = document.createElement('div');
+            card.className = 'tmdb-fallback-item';
+            card.dataset.key = item.key;
+
+            const posterImg = item.posterUrl
+                ? `<img src="${item.posterUrl}" class="movie-poster" alt="Poster" loading="lazy">`
+                : `<div class="movie-poster" style="display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--text-tertiary, #64748b);">НЕТ</div>`;
+
+            // Priority badge
+            let priorityBadge;
+            if (item.priority === 'CRITICAL') {
+                priorityBadge = `<span class="tmdb-priority-badge tmdb-priority-critical">🔥 Critical</span>`;
+            } else if (item.priority === 'HIGH') {
+                priorityBadge = `<span class="tmdb-priority-badge tmdb-priority-high">⚡ High</span>`;
+            } else if (item.priority === 'MEDIUM') {
+                priorityBadge = `<span class="tmdb-priority-badge tmdb-priority-medium">Medium</span>`;
+            } else {
+                priorityBadge = `<span class="tmdb-priority-badge tmdb-priority-low">Low</span>`;
+            }
+
+            // Section tag
+            const sectionNames = { 'films': 'Фильмы', 'series': 'Сериалы', 'cartoons': 'Мультфильмы', 'anime': 'Аниме' };
+            const secKey = item.section || (item.mediaType === 'tv' ? 'series' : 'films');
+            const secTag = `<span class="tmdb-tag-pill tmdb-tag-${secKey}">${sectionNames[secKey] || secKey}</span>`;
+
+            // Rank tags (Product Rank + TMDB Source Rank)
+            let rankTag = '';
+            if (Number.isInteger(item.productRank) && item.productRank > 0) {
+                const isTop12 = item.productRank <= 12;
+                rankTag += `<span class="tmdb-tag-pill tmdb-tag-product-rank" style="font-weight: 600; ${isTop12 ? 'background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);' : ''}" title="Позиция в продуктовой витрине ${sectionNames[secKey] || secKey}">Product #${item.productRank}</span> `;
+            }
+            if (Number.isInteger(item.tmdbRank) && item.tmdbRank > 0) {
+                rankTag += `<span class="tmdb-tag-pill tmdb-tag-section" title="Позиция в ответе TMDB API">TMDB #${item.tmdbRank}</span>`;
+            }
+
+            // Display tags: Hot, Frequent, Fresh
+            let displayTags = '';
+            if ((Number(item.popularity) > 50) || (Number(item.voteCount) > 100)) {
+                displayTags += `<span class="tmdb-tag-pill tmdb-tag-hot">🔥 Hot</span> `;
+            }
+            if (item.timesSeen && item.timesSeen >= 2) {
+                displayTags += `<span class="tmdb-tag-pill tmdb-tag-frequent">🔁 ${item.timesSeen} раз</span> `;
+            }
+            if (item.year && item.year >= currentYear) {
+                displayTags += `<span class="tmdb-tag-pill tmdb-tag-fresh">🆕 ${item.year}</span> `;
+            }
+
+            // Impact banner for CRITICAL
+            const impactBanner = (item.priority === 'CRITICAL')
+                ? `<div class="tmdb-impact-banner">⚡ Влияет на Home Top-12 (${sectionNames[secKey] || secKey}${item.productRank ? ` #${item.productRank}` : (item.tmdbRank ? ` #${item.tmdbRank}` : '')})</div>`
+                : '';
+
+            // Action URLs
+            const tmdbUrl = `https://www.themoviedb.org/${item.mediaType === 'tv' ? 'tv' : 'movie'}/${item.tmdbId}`;
+            const kpSearchQuery = encodeURIComponent(item.title || item.originalTitle || '');
+            const kpSearchUrl = `https://www.kinopoisk.ru/index.php?kp_query=${kpSearchQuery}`;
+
+            const previewId = `kpPreview_${item.key.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
+            card.innerHTML = `
+                <div style="display: flex; flex-direction: column; width: 100%; gap: 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;">
+                        <div class="tmdb-fallback-movie" style="flex: 1; min-width: 0;">
+                            ${posterImg}
+                            <div style="min-width: 0; flex: 1;">
+                                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px;">
+                                    ${priorityBadge}
+                                    ${secTag}
+                                    ${rankTag}
+                                    ${displayTags}
+                                </div>
+                                <div style="font-weight: 600; color: var(--theme-text-primary, #f8fafc); font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${this.escapeHtml(item.title || '')}">
+                                    ${this.escapeHtml(item.title || item.originalTitle || `TMDB #${item.tmdbId}`)}
+                                </div>
+                                ${item.originalTitle && item.originalTitle !== item.title ? `
+                                    <div style="font-size: 12px; color: var(--theme-text-secondary, #94a3b8); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                        ${this.escapeHtml(item.originalTitle)}
+                                    </div>
+                                ` : ''}
+                                <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--theme-text-secondary, #94a3b8); margin-top: 6px; flex-wrap: wrap;">
+                                    ${item.year ? `<span style="font-weight: 500;">${item.year}</span> <span>•</span>` : ''}
+                                    <span>TMDB ID: <code style="background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; color: #cbd5e1;">${item.mediaType}:${item.tmdbId}</code></span>
+                                    <span>•</span>
+                                    <a href="${tmdbUrl}" target="_blank" class="tmdb-link-btn" title="Открыть карточку на TMDB">🔗 TMDB ↗</a>
+                                    <a href="${kpSearchUrl}" target="_blank" class="tmdb-link-btn" title="Искать тайтл на Кинопоиске">🔍 Поиск КП ↗</a>
+                                </div>
+                                ${impactBanner ? `<div style="margin-top: 6px;">${impactBanner}</div>` : ''}
+                            </div>
+                        </div>
+
+                        <!-- Manual Binding Action Controls -->
+                        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0;">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <input type="text" class="admin-input tmdb-unmapped-kp-input" placeholder="KP ID или ссылка" style="width: 160px; height: 38px;" data-key="${item.key}">
+                                <button class="btn-verify-kp btn-verify-action" type="button" data-key="${item.key}" data-media-type="${item.mediaType}" data-tmdb-id="${item.tmdbId}" data-year="${item.year || ''}">
+                                    Проверить
+                                </button>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <button class="btn-snooze-kp btn-snooze-action" type="button" title="Отложить тайтл на 7 дней (страница на КП ещё не создана)" data-key="${item.key}" data-title="${this.escapeHtml(item.title || '')}">
+                                    Нет страницы на КП
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Kinopoisk Verification Preview Box -->
+                    <div id="${previewId}" class="tmdb-preview-container" style="display: none;"></div>
+                </div>
+            `;
+
+            container.appendChild(card);
+        });
+
+        // Event listeners for "Проверить" (Kinopoisk ID inspection)
+        container.querySelectorAll('.btn-verify-action').forEach(btn => {
+            const card = btn.closest('.tmdb-fallback-item');
+            const input = card?.querySelector('.tmdb-unmapped-kp-input');
+            if (input) {
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        btn.click();
+                    }
+                });
+            }
+
+            btn.addEventListener('click', async () => {
+                const key = btn.dataset.key;
+                const mediaType = btn.dataset.mediaType;
+                const tmdbId = btn.dataset.tmdbId;
+                const tmdbYear = btn.dataset.year ? parseInt(btn.dataset.year, 10) : null;
+
+                const curCard = container.querySelector(`.tmdb-fallback-item[data-key="${key}"]`);
+                if (!curCard) return;
+
+                const curInput = curCard.querySelector('.tmdb-unmapped-kp-input');
+                const kpId = this.extractNumericId(curInput?.value);
+                const previewBox = curCard.querySelector('.tmdb-preview-container');
+
+                if (!kpId) {
+                    this.showError('Пожалуйста, введите корректный числовой Kinopoisk ID или ссылку');
+                    return;
+                }
+
+                btn.disabled = true;
+                btn.textContent = 'Проверка...';
+                if (previewBox) {
+                    previewBox.style.display = 'block';
+                    previewBox.innerHTML = '<div style="font-size: 12px; color: var(--theme-text-secondary); padding: 8px 12px;">Запрос данных с Кинопоиска...</div>';
+                }
+
+                try {
+                    if (!this.kinopoiskService) this.kinopoiskService = new KinopoiskService();
+                    const kpMovie = await this.kinopoiskService.getMovieById(kpId);
+
+                    const resolvedKpId = Number(kpMovie?.kinopoiskId || kpMovie?.id);
+                    if (!kpMovie || !Number.isInteger(resolvedKpId) || resolvedKpId <= 0) {
+                        throw new Error('Фильм/сериал с таким ID не найден на Кинопоиске');
+                    }
+
+                    const kpType = kpMovie.type || (mediaType === 'tv' ? 'tv-series' : 'movie');
+                    const kpYear = Number(kpMovie.year) || null;
+
+                    // Check type compatibility
+                    const isCompatible = this.idMappingService.isCompatibleType(mediaType, kpType, kpMovie);
+                    const yearDiff = (tmdbYear && kpYear) ? Math.abs(tmdbYear - kpYear) : 0;
+
+                    let compatHtml = isCompatible
+                        ? `<span class="tmdb-compat-ok">🟢 Тип совместим (${mediaType} ↔ ${kpType || 'фильм'})</span>`
+                        : `<span class="tmdb-compat-warn">⚠️ Внимание: Несоответствие типов (TMDB: ${mediaType}, КП: ${kpType || 'сериал'})</span>`;
+
+                    let yearWarnHtml = (yearDiff > 3)
+                        ? `<div class="tmdb-year-warn">⚠️ Разница годов выпуска: TMDB (${tmdbYear}) vs КП (${kpYear})</div>`
+                        : '';
+
+                    const kpPoster = kpMovie.posterUrl || (typeof kpMovie.poster === 'string' ? kpMovie.poster : kpMovie.poster?.url) || '';
+                    const kpPosterHtml = kpPoster
+                        ? `<img src="${kpPoster}" class="tmdb-preview-poster" alt="KP Poster">`
+                        : `<div class="tmdb-preview-poster" style="display:flex;align-items:center;justify-content:center;font-size:9px;color:#64748b;">НЕТ</div>`;
+
+                    const genresStr = Array.isArray(kpMovie.genres)
+                        ? kpMovie.genres.map(g => (typeof g === 'string' ? g : g?.name)).filter(Boolean).slice(0, 3).join(', ')
+                        : '';
+
+                    if (previewBox) {
+                        previewBox.innerHTML = `
+                            <div class="tmdb-preview-card">
+                                <div style="display: flex; gap: 12px; align-items: center; width: 100%;">
+                                    ${kpPosterHtml}
+                                    <div style="flex: 1; min-width: 0;">
+                                        <div style="font-size: 14px; font-weight: 600; color: #f8fafc;">
+                                            ${this.escapeHtml(kpMovie.name || kpMovie.alternativeName || `КП #${resolvedKpId}`)}
+                                            ${kpYear ? `<span style="color: #94a3b8; font-weight: normal;">(${kpYear})</span>` : ''}
+                                        </div>
+                                        ${kpMovie.alternativeName && kpMovie.alternativeName !== kpMovie.name ? `
+                                            <div style="font-size: 11px; color: #94a3b8; margin-top: 1px;">${this.escapeHtml(kpMovie.alternativeName)}</div>
+                                        ` : ''}
+                                        <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 11px; flex-wrap: wrap;">
+                                            ${compatHtml}
+                                            ${genresStr ? `<span style="color: #cbd5e1;">• ${this.escapeHtml(genresStr)}</span>` : ''}
+                                            <a href="https://www.kinopoisk.ru/film/${resolvedKpId}/" target="_blank" style="color: #818cf8; text-decoration: none; font-weight: 500;">Открыть на КП ↗</a>
+                                        </div>
+                                        ${yearWarnHtml}
+                                    </div>
+                                </div>
+                                <div class="tmdb-confirm-center-wrap">
+                                    <button class="btn-confirm-map btn-confirm-action" type="button" 
+                                            data-key="${key}" 
+                                            data-media-type="${mediaType}" 
+                                            data-tmdb-id="${tmdbId}" 
+                                            data-kp-id="${resolvedKpId}" 
+                                            data-kp-type="${kpType}" 
+                                            data-title="${this.escapeHtml(kpMovie.name || kpMovie.alternativeName || '')}" 
+                                            data-year="${kpYear ? String(kpYear) : ''}">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                        Подтвердить привязку
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+
+                        const imgEl = previewBox.querySelector('.tmdb-preview-poster');
+                        if (imgEl && imgEl.tagName === 'IMG') {
+                            imgEl.addEventListener('error', () => {
+                                imgEl.style.display = 'none';
+                            });
+                        }
+
+                        // Attach event listener to centered confirm button
+                        const confirmBtn = previewBox.querySelector('.btn-confirm-action');
+                        if (confirmBtn) {
+                            confirmBtn.addEventListener('click', async () => {
+                                const cMediaType = confirmBtn.dataset.mediaType;
+                                const cTmdbId = confirmBtn.dataset.tmdbId;
+                                const cKpId = confirmBtn.dataset.kpId;
+                                const cTitle = confirmBtn.dataset.title;
+                                const cYear = confirmBtn.dataset.year ? parseInt(confirmBtn.dataset.year, 10) : null;
+                                const cKpType = confirmBtn.dataset.kpType;
+
+                                if (!cKpId) {
+                                    this.showError('Сначала нажмите "Проверить" для верификации тайтла на Кинопоиске');
+                                    return;
+                                }
+
+                                try {
+                                    confirmBtn.disabled = true;
+                                    confirmBtn.textContent = 'Сохранение...';
+                                    await this.idMappingService.setManualMapping(cMediaType, cTmdbId, cKpId, {
+                                        title: cTitle,
+                                        year: cYear,
+                                        kpType: cKpType
+                                    });
+
+                                    this.showSuccessMessage(`Привязка сохранена: "${cTitle || cTmdbId}" → КП: ${cKpId}`);
+                                    await this.loadTmdbFallbacks();
+                                } catch (err) {
+                                    console.error('Error confirming manual mapping:', err);
+                                    this.showError(`Ошибка: ${err.message}`);
+                                    confirmBtn.disabled = false;
+                                    confirmBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><polyline points="20 6 9 17 4 12"></polyline></svg> Подтвердить привязку`;
+                                }
+                            });
+                        }
+                    }
+
+                    btn.textContent = 'Проверено ✓';
+                    btn.disabled = false;
+                } catch (err) {
+                    console.error('Error verifying KP ID:', err);
+                    if (previewBox) {
+                        previewBox.innerHTML = `<div style="font-size: 12px; color: var(--status-error); padding: 8px 12px;">Ошибка проверки: ${this.escapeHtml(err.message)}</div>`;
+                    }
+                    btn.textContent = 'Проверить';
+                    btn.disabled = false;
+                }
+            });
+        });
+
+        // Event listeners for "Нет страницы на КП" (Snooze candidate for 7 days)
+        container.querySelectorAll('.btn-snooze-action').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const key = btn.dataset.key;
+                const title = btn.dataset.title || key;
+
+                try {
+                    btn.disabled = true;
+                    await this.idMappingService.snoozeUnmappedQueueItem(key, 7, 'no-kp-page');
+                    this.showSuccessMessage(`Тайтл "${title}" отложен на 7 дней (страница на КП ещё отсутствует)`);
+                    await this.loadTmdbFallbacks();
+                } catch (err) {
+                    console.error('Error snoozing unmapped item:', err);
+                    this.showError(`Ошибка: ${err.message}`);
+                    btn.disabled = false;
+                }
+            });
+        });
+    }
+
+    renderManualMappingsList(manualMappings) {
+        const container = document.getElementById('tmdbManualMappingsList');
+        if (!container) return;
+        container.innerHTML = '';
+
+        if (!manualMappings || manualMappings.length === 0) {
+            container.innerHTML = `
+                <div class="tmdb-empty-state">
+                    <div class="tmdb-empty-icon">📋</div>
+                    <div class="tmdb-empty-title">Нет пользовательских привязок</div>
+                    <div class="tmdb-empty-desc">Здесь будут отображаться созданные вручную связки TMDB → Кинопоиск.</div>
+                </div>
+            `;
+            return;
+        }
+
+        const table = document.createElement('table');
+        table.className = 'tmdb-mappings-table';
+        table.innerHTML = `
+            <thead>
+                <tr>
+                    <th style="text-align: left;">Тайтл / Название</th>
+                    <th style="text-align: center;">Тип</th>
+                    <th style="text-align: center;">TMDB ID</th>
+                    <th style="text-align: center;">Kinopoisk ID</th>
+                    <th style="text-align: center;">Дата привязки</th>
+                    <th style="text-align: right;">Действие</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        `;
+
+        const tbody = table.querySelector('tbody');
+
+        manualMappings.forEach(item => {
+            const tr = document.createElement('tr');
+            const dateStr = item.resolvedAt ? new Date(item.resolvedAt).toLocaleDateString() : '—';
+            const tagClass = item.mediaType === 'movie' ? 'tmdb-tag-movie' : 'tmdb-tag-tv';
+
+            tr.innerHTML = `
+                <td style="font-weight: 500; color: var(--theme-text-primary, #f8fafc);">
+                    ${this.escapeHtml(item.title || `TMDB #${item.tmdbId}`)}
+                    ${item.year ? `<span style="color: var(--theme-text-secondary, #94a3b8); font-size: 12px; margin-left: 4px;">(${item.year})</span>` : ''}
+                </td>
+                <td style="text-align: center;"><span class="tmdb-tag-pill ${tagClass}">${item.mediaType}</span></td>
+                <td style="text-align: center;"><code style="background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; color: #cbd5e1;">${item.tmdbId}</code></td>
+                <td style="text-align: center;"><a href="https://www.kinopoisk.ru/film/${item.kpId}/" target="_blank" style="color: #818cf8; font-weight: 600; text-decoration: none;">${item.kpId} ↗</a></td>
+                <td style="text-align: center; color: var(--theme-text-secondary, #94a3b8); font-size: 12px;">${dateStr}</td>
+                <td style="text-align: right;">
+                    <button class="btn-delete-mapping btn-delete-manual-mapping" data-media-type="${item.mediaType}" data-tmdb-id="${item.tmdbId}" type="button">
+                        Отвязать
+                    </button>
+                </td>
+            `;
+
+            tbody.appendChild(tr);
+        });
+
+        container.appendChild(table);
+
+        // Delete mapping listener
+        container.querySelectorAll('.btn-delete-manual-mapping').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                if (!confirm('Удалить эту ручную привязку?')) return;
+                const mediaType = btn.dataset.mediaType;
+                const tmdbId = btn.dataset.tmdbId;
+                try {
+                    await this.idMappingService.removeManualMapping(mediaType, tmdbId);
+                    this.showSuccessMessage('Привязка удалена');
+                    await this.loadTmdbFallbacks();
+                } catch (err) {
+                    console.error('Error deleting mapping:', err);
+                    this.showError(`Ошибка: ${err.message}`);
+                }
+            });
+        });
+    }
+
+    renderImdbFallbacksList(pendingItems) {
+        const container = document.getElementById('tmdbFallbacksList');
+        if (!container) return;
+        container.innerHTML = '';
+
+        if (!pendingItems || pendingItems.length === 0) {
+            container.innerHTML = `
+                <div class="tmdb-empty-state">
+                    <div class="tmdb-empty-icon">🎬</div>
+                    <div class="tmdb-empty-title">Все фильмы имеют IMDb ID</div>
+                    <div class="tmdb-empty-desc">В данный момент нет фильмов Кинопоиска, требующих ручного ввода IMDb ID.</div>
+                </div>
+            `;
+            return;
+        }
+
+        pendingItems.forEach(item => {
+            const card = document.createElement('div');
+            card.className = 'tmdb-fallback-item';
+
+            const posterImg = item.posterUrl
+                ? `<img src="${item.posterUrl}" class="movie-poster" alt="Poster">`
+                : `<div class="movie-poster" style="display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--text-tertiary, #64748b);">НЕТ</div>`;
+
+            card.innerHTML = `
+                <div class="tmdb-fallback-movie">
+                    ${posterImg}
+                    <div style="min-width: 0; flex: 1;">
+                        <div style="font-weight: 600; color: var(--theme-text-primary, #f8fafc); font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                            ${this.escapeHtml(item.name || item.alternativeName || 'Фильм Кинопоиска')}
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--theme-text-secondary, #94a3b8); margin-top: 4px;">
+                            ${item.year ? `<span style="font-weight: 500;">${item.year}</span> <span>•</span>` : ''}
+                            <span>Kinopoisk ID: <code style="background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; color: #cbd5e1;">${item.kinopoiskId}</code></span>
+                        </div>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <input type="text" class="admin-input tmdb-imdb-input" placeholder="tt1234567" style="width: 150px; height: 38px;" data-kp-id="${item.kinopoiskId}">
+                    <button class="tmdb-btn-bind btn-save-imdb-mapping" type="button" style="height: 38px; padding: 0 16px;" data-kp-id="${item.kinopoiskId}">
+                        Сохранить
+                    </button>
+                </div>
+            `;
+
+            container.appendChild(card);
+        });
+
+        // Add event listeners for IMDb save buttons
+        container.querySelectorAll('.btn-save-imdb-mapping').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const kpId = btn.dataset.kpId;
+                const input = container.querySelector(`.tmdb-imdb-input[data-kp-id="${kpId}"]`);
+                const imdbId = input?.value?.trim();
+
+                if (!imdbId || !TmdbFallbackQueueService.isValidImdbId(imdbId)) {
+                    this.showError('Пожалуйста, укажите валидный IMDb ID в формате tt1234567');
+                    return;
+                }
+
+                try {
+                    btn.disabled = true;
+                    btn.textContent = 'Сохранение...';
+                    const item = pendingItems.find(p => String(p.kinopoiskId) === String(kpId));
+                    await this.tmdbFallbackService.saveManualMapping(item, imdbId, this.currentUser?.uid || 'admin');
+
+                    this.showSuccessMessage(`IMDb ID ${imdbId} успешно сохранён для фильма [KP: ${kpId}]`);
+                    await this.loadTmdbFallbacks();
+                } catch (err) {
+                    console.error('Error saving IMDb mapping:', err);
+                    this.showError(`Ошибка: ${err.message}`);
+                    btn.disabled = false;
+                    btn.textContent = 'Сохранить';
                 }
             });
         });

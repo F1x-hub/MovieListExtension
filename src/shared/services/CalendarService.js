@@ -1,14 +1,23 @@
-import { TMDB_API_KEY, TMDB_BASE_URL } from '../config/tmdb.config.js';
-
 const DAYS_AHEAD = 730; // Show everything within the next 2 years
 const MONTHS_RU = [
     'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
     'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
 ];
 const SERIES_TYPE_HINTS = ['tv', 'series', 'anime', 'animated'];
+const PLACEHOLDER_TITLES = new Set(['unknown title', 'неизвестное название']);
+
+function getTmdbConfig() {
+    return globalThis.TMDB_CONFIG || {};
+}
+
+function getTmdbBaseUrl() {
+    return getTmdbConfig().BASE_URL || 'https://api.themoviedb.org/3';
+}
 
 function isTmdbConfigured() {
-    return TMDB_API_KEY && !TMDB_API_KEY.includes('YOUR_TMDB_API_KEY');
+    const tmdbConfig = getTmdbConfig();
+    return Array.isArray(tmdbConfig.API_KEYS) && tmdbConfig.API_KEYS.length > 0 &&
+        Boolean(tmdbConfig.API_KEY);
 }
 
 function normalizeTitle(value = '') {
@@ -32,7 +41,8 @@ function getShowTitles(item) {
         item.nameRu,
         item.nameEn,
         item.name
-    ]);
+    ].map((title) => String(title || '').trim())
+        .filter((title) => !PLACEHOLDER_TITLES.has(title.toLowerCase())));
 }
 
 function getPrimaryTitle(item) {
@@ -175,7 +185,13 @@ function chooseBestMovieMatch(item, results) {
 }
 
 async function fetchJson(url) {
-    const response = await fetch(url);
+    const tmdbConfig = getTmdbConfig();
+    const response = await fetch(url, {
+        headers: {
+            Accept: 'application/json',
+            Authorization: `Bearer ${tmdbConfig.API_KEY}`
+        }
+    });
 
     if (!response.ok) {
         const errorText = await response.text();
@@ -219,15 +235,18 @@ async function getTrackedItems() {
 }
 
 async function getTmdbId(item) {
+    const tmdbConfig = getTmdbConfig();
+    const tmdbBaseUrl = getTmdbBaseUrl();
     const isSeries = hasSeriesHints(item);
     const tmdbType = isSeries ? 'tv' : 'movie';
     const allTitles = getShowTitles(item);
 
     // 1. Try Find by IMDb ID (Best way)
-    if (item.imdbId) {
+    const imdbId = item.imdbId || item.externalId?.imdb;
+    if (imdbId) {
         try {
             const data = await fetchJson(
-                `${TMDB_BASE_URL}/find/${encodeURIComponent(item.imdbId)}?api_key=${TMDB_API_KEY}&external_source=imdb_id&language=ru-RU`
+                `${tmdbBaseUrl}/find/${encodeURIComponent(imdbId)}?external_source=imdb_id&language=${tmdbConfig.DEFAULT_LANGUAGE || 'ru-RU'}`
             );
             const results = isSeries ? data.tv_results : data.movie_results;
             const found = results?.[0];
@@ -242,6 +261,11 @@ async function getTmdbId(item) {
     const year = item.releaseYear || item.year;
     const yearParamName = isSeries ? 'first_air_date_year' : 'primary_release_year';
 
+    if (!allTitles.length) {
+        console.warn('[Calendar] Skipping item without a reliable title or IMDb ID:', item.movieId || item.kinopoiskId || item.id);
+        return null;
+    }
+
     // 2. Try searching for EACH title we have
     for (const title of allTitles) {
         if (!title) continue;
@@ -251,7 +275,7 @@ async function getTmdbId(item) {
         if (year) {
             try {
                 const data = await fetchJson(
-                    `${TMDB_BASE_URL}/search/${tmdbType}?api_key=${TMDB_API_KEY}&query=${query}&${yearParamName}=${year}&language=ru-RU`
+                    `${tmdbBaseUrl}/search/${tmdbType}?query=${query}&${yearParamName}=${year}&language=${tmdbConfig.DEFAULT_LANGUAGE || 'ru-RU'}`
                 );
                 const bestMatch = isSeries ? chooseBestTvMatch(item, data.results) : chooseBestMovieMatch(item, data.results);
                 if (bestMatch?.id) return bestMatch.id;
@@ -261,7 +285,7 @@ async function getTmdbId(item) {
         // b. Try without Year
         try {
             const data = await fetchJson(
-                `${TMDB_BASE_URL}/search/${tmdbType}?api_key=${TMDB_API_KEY}&query=${query}&language=ru-RU`
+                `${tmdbBaseUrl}/search/${tmdbType}?query=${query}&language=${tmdbConfig.DEFAULT_LANGUAGE || 'ru-RU'}`
             );
             const bestMatch = isSeries ? chooseBestTvMatch(item, data.results) : chooseBestMovieMatch(item, data.results);
             if (bestMatch?.id) return bestMatch.id;
@@ -273,6 +297,7 @@ async function getTmdbId(item) {
 }
 
 async function getMovieRelease(tmdbId, showName, kinoId) {
+    const tmdbConfig = getTmdbConfig();
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -281,7 +306,7 @@ async function getMovieRelease(tmdbId, showName, kinoId) {
 
     // Fetch with release_dates fallback
     const info = await fetchJson(
-        `${TMDB_BASE_URL}/movie/${tmdbId}?api_key=${TMDB_API_KEY}&append_to_response=release_dates`
+        `${getTmdbBaseUrl()}/movie/${tmdbId}?append_to_response=release_dates&language=${tmdbConfig.DEFAULT_LANGUAGE || 'ru-RU'}`
     );
 
     let bestDate = info.release_date;
@@ -320,6 +345,7 @@ async function getMovieRelease(tmdbId, showName, kinoId) {
 }
 
 async function getUpcomingEpisodes(tmdbId, showName, kinoId) {
+    const tmdbConfig = getTmdbConfig();
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -327,7 +353,7 @@ async function getUpcomingEpisodes(tmdbId, showName, kinoId) {
     maxDate.setDate(maxDate.getDate() + DAYS_AHEAD);
 
     const info = await fetchJson(
-        `${TMDB_BASE_URL}/tv/${tmdbId}?api_key=${TMDB_API_KEY}&language=ru-RU`
+        `${getTmdbBaseUrl()}/tv/${tmdbId}?language=${tmdbConfig.DEFAULT_LANGUAGE || 'ru-RU'}`
     );
 
     const episodes = [];
@@ -348,7 +374,7 @@ async function getUpcomingEpisodes(tmdbId, showName, kinoId) {
 
     for (const seasonNumber of seasonsToCheck) {
         const season = await fetchJson(
-            `${TMDB_BASE_URL}/tv/${tmdbId}/season/${seasonNumber}?api_key=${TMDB_API_KEY}&language=ru-RU`
+            `${getTmdbBaseUrl()}/tv/${tmdbId}/season/${seasonNumber}?language=${tmdbConfig.DEFAULT_LANGUAGE || 'ru-RU'}`
         );
 
         for (const episode of season.episodes || []) {

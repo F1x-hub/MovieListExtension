@@ -15,55 +15,63 @@ service cloud.firestore {
     // Helper function to check if user is admin
     function isAdmin() {
       return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
     }
+
+    // Helper function to check if user is approved (or unmigrated legacy fallback)
+    function isApprovedUser() {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.approvalStatus == 'approved' ||
+               // TODO-remove-after-migration-confirmed: Fallback for unmigrated legacy docs.
+               // Migration to 'approved' is already 100% verified on prod data (12/12 approved),
+               // but kept as safety net against race conditions. Candidate for removal in next cleanup.
+               !('approvalStatus' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data)
+             );
+    }
     
-    // Movies collection - read/write for authenticated users
+    // Movies collection - read for all, write for approved users, delete for admins
     match /movies/{movieId} {
       allow read: if true; // Anyone can read cached movies
-      allow write: if isAuthenticated(); // Only authenticated users can cache movies
+      allow write: if isApprovedUser(); // Only approved users can cache/update movies
       allow delete: if isAdmin(); // Only admins can delete movies
     }
     
     // Ratings collection (Top-level)
     match /ratings/{ratingId} {
       allow read: if true; // Anyone can read ratings
-      allow create: if isAuthenticated(); // Only authenticated users can create ratings
-      allow update, delete: if isAuthenticated() && 
-        (resource.data.userId == request.auth.uid || isAdmin()); // Owner or admin can update/delete
+      allow create: if isApprovedUser(); // Only approved users can create ratings
+      allow update, delete: if (isApprovedUser() && resource.data.userId == request.auth.uid) || isAdmin(); // Owner or admin can update/delete
     }
     
     // Watchlist collection (Top-level)
     match /watchlist/{watchlistId} {
       allow read: if true; // Anyone can read watchlists
-      allow create: if isAuthenticated(); // Only authenticated users can create watchlist entries
-      allow update, delete: if isAuthenticated() && 
-        (resource.data.userId == request.auth.uid || isAdmin()); // Owner or admin can update/delete
+      allow create: if isApprovedUser(); // Only approved users can create watchlist entries
+      allow update, delete: if (isApprovedUser() && resource.data.userId == request.auth.uid) || isAdmin(); // Owner or admin can update/delete
     }
 
-     // Watching collection (Top-level)
+    // Watching collection (Top-level)
     match /watching/{watchingId} {
       allow read: if true; // Anyone can read watching list
-      allow create: if isAuthenticated(); // Only authenticated users can create watching entries
-      allow update, delete: if isAuthenticated() && 
-        (resource.data.userId == request.auth.uid || isAdmin()); // Owner or admin can update/delete
+      allow create: if isApprovedUser(); // Only approved users can create watching entries
+      allow update, delete: if (isApprovedUser() && resource.data.userId == request.auth.uid) || isAdmin(); // Owner or admin can update/delete
     }
 
     // Favorites collection (Top-level)
     match /favorites/{favoriteId} {
       allow read: if true; // Anyone can read favorites
-      allow create: if isAuthenticated(); // Only authenticated users can create favorite entries
-      allow update, delete: if isAuthenticated() && 
-        (resource.data.userId == request.auth.uid || isAdmin()); // Owner or admin can update/delete
+      allow create: if isApprovedUser(); // Only approved users can create favorite entries
+      allow update, delete: if (isApprovedUser() && resource.data.userId == request.auth.uid) || isAdmin(); // Owner or admin can update/delete
     }
     
     // Collections (Top-level)
     // REQUIRED: AdminService queries this top-level collection to count user collections
     match /collections/{collectionId} {
       allow read: if true;
-      allow create: if isAuthenticated();
-      allow update, delete: if isAuthenticated() && 
-        (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isApprovedUser();
+      allow update, delete: if (isApprovedUser() && resource.data.userId == request.auth.uid) || isAdmin();
     }
     
     // Reports collection
@@ -71,21 +79,35 @@ service cloud.firestore {
       allow create: if true; // Anyone can create a report
       allow read, update, delete: if isAdmin(); // Only admins can read, update, delete
     }
+
+    // Missing IMDb IDs can be reported by approved clients. The queue is
+    // visible and resolvable only to admins; confirmed mappings are readable by
+    // clients so TMDB can be queried strictly by IMDb ID.
+    match /tmdbFallbackQueue/{movieId} {
+      allow create: if isApprovedUser();
+      allow read, update, delete: if isAdmin();
+    }
+
+    match /tmdbMovieMappings/{movieId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAdmin();
+    }
     
     // Users collection
     match /users/{userId} {
-      // Allow authenticated users to read any profile
+      // Allow authenticated users to read profiles (needed for approval check on login)
       allow read: if isAuthenticated();
       
-      // Allow users to create their own profile
-      allow create: if isOwner(userId);
+      // Allow users to create their own profile, but forbidden from granting themselves admin or approved status
+      allow create: if isOwner(userId) &&
+        (!('isAdmin' in request.resource.data) || request.resource.data.isAdmin == false) &&
+        (!('approvalStatus' in request.resource.data) || request.resource.data.approvalStatus == 'pending');
       
-      // Allow users to update their own profile (with admin protection)
-      allow update: if isOwner(userId) && 
-        (!request.resource.data.keys().hasAny(['isAdmin']) || 
-         resource.data.isAdmin == request.resource.data.isAdmin);
+      // Allow users to update their own profile (cannot modify isAdmin or approvalStatus)
+      allow update: if isOwner(userId) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'approvalStatus']);
       
-      // Allow admins to update any user profile
+      // Allow admins to update any user profile (can change approvalStatus and isAdmin)
       allow update: if isAdmin();
       
       // Allow admins to delete users (except themselves)
@@ -96,7 +118,7 @@ service cloud.firestore {
       // User Collections Subcollection (if app uses nested structure)
       match /collections/{collectionId} {
         allow read: if true; 
-        allow write: if isOwner(userId) || isAdmin();
+        allow write: if (isApprovedUser() && isOwner(userId)) || isAdmin();
       }
       
       // User Settings Subcollection
@@ -108,16 +130,15 @@ service cloud.firestore {
       // User ratings subcollection (Legacy)
       match /ratings/{ratingId} {
         allow read: if true;
-        allow write: if isOwner(userId) || isAdmin();
+        allow write: if (isApprovedUser() && isOwner(userId)) || isAdmin();
       }
     }
     
     // Movie ratings subcollection (Legacy)
     match /movies/{movieId}/ratings/{ratingId} {
       allow read: if true;
-      allow create: if isAuthenticated();
-      allow update, delete: if isAuthenticated() && 
-        (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isApprovedUser();
+      allow update, delete: if (isApprovedUser() && resource.data.userId == request.auth.uid) || isAdmin();
     }
   }
 }

@@ -29,7 +29,10 @@
     border-radius: 8px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
     transform: scale(0.95);
-    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.2s ease;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-drag: none;
 }
 
 .image-lightbox-overlay.visible .image-lightbox-image {
@@ -39,22 +42,91 @@
 .image-lightbox-close {
     position: absolute;
     top: 20px;
-    right: 30px;
+    right: 24px;
     background: rgba(0, 0, 0, 0.5);
     color: white;
-    border: none;
-    border-radius: 50%;
-    width: 44px;
-    height: 44px;
-    font-size: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: var(--radius-sm, 6px);
+    width: 36px;
+    height: 36px;
     cursor: pointer;
     display: flex;
     justify-content: center;
     align-items: center;
     transition: all 0.2s ease;
+    padding: 0;
+    backdrop-filter: blur(10px);
 }
 
 .image-lightbox-close:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.25);
     transform: scale(1.1);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.image-lightbox-close:focus-visible {
+    outline: 2px solid #ffffff;
+    outline-offset: 2px;
+}
+
+.image-lightbox-counter {
+    position: absolute;
+    bottom: 24px;
+    background: rgba(0, 0, 0, 0.6);
+    color: rgba(255, 255, 255, 0.9);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    pointer-events: none;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.image-lightbox-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(0, 0, 0, 0.5);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: var(--radius-sm, 6px);
+    width: 36px;
+    height: 36px;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: all 0.2s ease;
+    backdrop-filter: blur(10px);
+    user-select: none;
+    z-index: 100001;
+    padding: 0;
+}
+
+.image-lightbox-nav svg,
+.image-lightbox-close svg {
+    display: block;
+    margin: auto;
+}
+
+.image-lightbox-nav.prev {
+    left: 24px;
+}
+
+.image-lightbox-nav.next {
+    right: 24px;
+}
+
+.image-lightbox-nav:hover {
+    background: rgba(255, 255, 255, 0.25);
+    transform: translateY(-50%) scale(1.08);
+    border-color: rgba(255, 255, 255, 0.4);
+}
+
+.image-lightbox-nav:focus-visible {
+    outline: 2px solid #ffffff;
+    outline-offset: 2px;
 }

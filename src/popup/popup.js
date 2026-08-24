@@ -12,6 +12,9 @@ class PopupManager {
         this.searchTimeout = null;
         this.ratingsLoaded = false;
         this.isLoadingRatings = false; // true only during initial load / force refresh
+        this.currentFilter = 'all';    // 'all' or 'my'
+        this.tooltipTimeout = null;
+        this.lockedTooltip = null;
         
         // Pagination state
         this.lastDocId = null;
@@ -21,6 +24,11 @@ class PopupManager {
         this.isBackgroundRefreshing = false; // true during background cache refresh (does NOT block scroll)
         this.ITEMS_PER_PAGE = 10;
         this.observer = null;
+        this.consecutiveAutoLoads = 0;
+        this.MAX_CONSECUTIVE_AUTO_LOADS = 2;
+        this.lastLoadMoreTime = 0;
+        this.MIN_LOAD_MORE_INTERVAL_MS = 300;
+        this.isCircuitBreakerTripped = false;
         
         // Start initialization
         this.start();
@@ -69,13 +77,11 @@ class PopupManager {
     initializeTheme() {
         console.log('🎨 PopupManager: Initializing theme...');
         
-        // Get current theme from localStorage (same as Navigation.js)
         const theme = localStorage.getItem('movieExtensionTheme') || 'dark';
         console.log('🎨 PopupManager: Retrieved theme from localStorage:', theme);
         
         this.applyTheme(theme);
         
-        // Listen for storage events (when theme changes in other windows/tabs)
         window.addEventListener('storage', (e) => {
             if (e.key === 'movieExtensionTheme' && e.newValue) {
                 console.log('🎨 PopupManager: Theme changed via storage event:', e.newValue);
@@ -83,40 +89,78 @@ class PopupManager {
             }
         });
         
-        // Also check periodically for theme changes (since storage events don't work in popups)
+        let lastAppliedTheme = theme;
         setInterval(() => {
             const currentTheme = localStorage.getItem('movieExtensionTheme') || 'dark';
-            const bodyHasLight = document.body.classList.contains('light-theme');
-            const shouldBeLight = currentTheme === 'light';
-            
-            if (bodyHasLight !== shouldBeLight) {
+            if (currentTheme !== lastAppliedTheme) {
+                lastAppliedTheme = currentTheme;
                 console.log('🎨 PopupManager: Theme mismatch detected, applying:', currentTheme);
                 this.applyTheme(currentTheme);
             }
-        }, 500); // Check every 500ms
+        }, 500);
     }
 
     applyTheme(theme) {
         console.log('🎨 PopupManager: Applying theme:', theme);
         
-        if (theme === 'light') {
-            console.log('🎨 PopupManager: Adding light-theme class to body');
+        let isLight = theme === 'light';
+        let customTheme = null;
+
+        if (theme && theme.startsWith('custom_')) {
+            try {
+                const raw = localStorage.getItem('movieExtensionCustomThemes');
+                if (raw) {
+                    const customs = JSON.parse(raw);
+                    customTheme = customs.find(t => t.id === theme);
+                    if (customTheme) {
+                        isLight = customTheme.base === 'light';
+                    }
+                }
+            } catch (e) {
+                console.error('Error reading custom themes in popup:', e);
+            }
+        }
+
+        if (isLight) {
+            document.documentElement.classList.add('light-theme');
             document.body.classList.add('light-theme');
             document.body.classList.remove('dark-theme');
         } else {
-            console.log('🎨 PopupManager: Adding dark-theme class to body');
+            document.documentElement.classList.remove('light-theme');
             document.body.classList.add('dark-theme');
             document.body.classList.remove('light-theme');
         }
 
-        // Sync to chrome.storage.local
+        const customVariablesList = [
+            '--theme-bg-primary',
+            '--theme-bg-secondary',
+            '--theme-bg-tertiary',
+            '--theme-bg-card',
+            '--theme-text-primary',
+            '--theme-text-secondary',
+            '--theme-text-muted',
+            '--theme-border',
+            '--theme-input-bg',
+            '--theme-input-text',
+            '--theme-hover-bg',
+            '--theme-active-bg',
+            '--accent-color'
+        ];
+
+        if (customTheme && customTheme.variables) {
+            Object.keys(customTheme.variables).forEach(varName => {
+                document.documentElement.style.setProperty(varName, customTheme.variables[varName]);
+            });
+        } else {
+            customVariablesList.forEach(v => document.documentElement.style.removeProperty(v));
+        }
+
         if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
             chrome.storage.local.set({ theme: theme });
         }
 
-        // Update extension icon
         if (typeof IconUtils !== 'undefined') {
-            IconUtils.updateExtensionIcon(theme);
+            IconUtils.updateExtensionIcon(isLight ? 'light' : 'dark');
         }
         
         console.log('🎨 PopupManager: Body classes after theme application:', document.body.className);
@@ -129,12 +173,47 @@ class PopupManager {
             authSection: document.getElementById('authSection'),
             mainContent: document.getElementById('mainContent'),
             authStatus: document.getElementById('authStatus'),
-            statusIndicator: document.getElementById('statusIndicator'),
             statusText: document.getElementById('statusText'),
-            loginBtn: document.getElementById('loginBtn'), // May not exist anymore, need to check if we renamed it. We used googleLoginBtn
             googleLoginBtn: document.getElementById('googleLoginBtn'),
-            logoutBtn: document.getElementById('logoutBtn'),
             
+            // Header elements (Row 1)
+            headerActionsGroup: document.getElementById('headerActionsGroup'),
+            refreshBtn: document.getElementById('refreshBtn'),
+            openFullBtn: document.getElementById('openFullBtn'),
+            userAvatarBtn: document.getElementById('userAvatarBtn'),
+            userAvatar: document.getElementById('userAvatar'),
+            userAvatarFallback: document.getElementById('userAvatarFallback'),
+            avatarDropdown: document.getElementById('avatarDropdown'),
+            userName: document.getElementById('userName'),
+            profileMenuBtn: document.getElementById('profileMenuBtn'),
+            settingsBtn: document.getElementById('settingsBtn'),
+            logoutBtn: document.getElementById('logoutBtn'),
+
+            // Controls Bar & Filter Chips (Row 2)
+            controlsBar: document.getElementById('controlsBar'),
+            chipsLayer: document.getElementById('chipsLayer'),
+            filterAllRatings: document.getElementById('filterAllRatings'),
+            filterMyRatings: document.getElementById('filterMyRatings'),
+            searchToggleBtn: document.getElementById('searchToggleBtn'),
+            searchLayer: document.getElementById('searchLayer'),
+            searchCloseBtn: document.getElementById('searchCloseBtn'),
+            
+            // Inline error & field error elements
+            authErrorMessage: document.getElementById('authErrorMessage'),
+            loginEmailError: document.getElementById('loginEmailError'),
+            loginPasswordError: document.getElementById('loginPasswordError'),
+            registerFirstNameError: document.getElementById('registerFirstNameError'),
+            registerLastNameError: document.getElementById('registerLastNameError'),
+            registerEmailError: document.getElementById('registerEmailError'),
+            registerPasswordError: document.getElementById('registerPasswordError'),
+            registerConfirmPasswordError: document.getElementById('registerConfirmPasswordError'),
+
+            // Submit Buttons
+            loginEmailSubmitBtn: document.getElementById('loginEmailSubmitBtn'),
+            loginPasswordSubmitBtn: document.getElementById('loginPasswordSubmitBtn'),
+            registerInfoSubmitBtn: document.getElementById('registerInfoSubmitBtn'),
+            registerFinalSubmitBtn: document.getElementById('registerFinalSubmitBtn'),
+
             // Login Forms (Step 1 & 2)
             loginEmailForm: document.getElementById('loginEmailForm'),
             loginPasswordForm: document.getElementById('loginPasswordForm'),
@@ -153,7 +232,7 @@ class PopupManager {
             registerPasswordForm: document.getElementById('registerPasswordForm'),
             
             // Registration Inputs & Containers
-            registerForm: document.getElementById('registerForm'), // Might be unused if we removed it from HTML, let's keep it if I missed removing references or check logic
+            registerForm: document.getElementById('registerForm'),
             registerEmail: document.getElementById('registerEmail'),
             registerPassword: document.getElementById('registerPassword'),
             registerConfirmPassword: document.getElementById('registerConfirmPassword'),
@@ -168,18 +247,13 @@ class PopupManager {
             registerStep2: document.getElementById('registerStep2'),
             registerFooter: document.getElementById('registerFooter'),
             backToRegisterInfoBtn: document.getElementById('backToRegisterInfoBtn'),
-            googleRegisterBtn: document.getElementById('googleRegisterBtn'), // New button
+            googleRegisterBtn: document.getElementById('googleRegisterBtn'),
             
             // Auth Switchers
             showRegisterLink: document.getElementById('showRegisterLink'),
             showLoginLink: document.getElementById('showLoginLink'),
             loginFormSection: document.getElementById('loginFormSection'),
             registerFormSection: document.getElementById('registerFormSection'),
-            
-            // User elements
-            userAvatar: document.getElementById('userAvatar'),
-            userName: document.getElementById('userName'),
-            settingsBtn: document.getElementById('settingsBtn'),
             
             // Search elements
             searchInput: document.getElementById('searchInput'),
@@ -188,29 +262,86 @@ class PopupManager {
             
             // Feed elements
             feedContent: document.getElementById('feedContent'),
-            refreshBtn: document.getElementById('refreshBtn'),
-            viewAllRatingsBtn: document.getElementById('viewAllRatingsBtn'),
             loading: document.getElementById('loading'),
             errorMessage: document.getElementById('errorMessage'),
-            infiniteScrollTrigger: document.getElementById('infiniteScrollTrigger')
+            infiniteScrollTrigger: document.getElementById('infiniteScrollTrigger'),
+
+            // Approval Status elements
+            approvalStatusSection: document.getElementById('approvalStatusSection'),
+            approvalStatusIconWrapper: document.getElementById('approvalStatusIconWrapper'),
+            approvalStatusIcon: document.getElementById('approvalStatusIcon'),
+            approvalStatusTitle: document.getElementById('approvalStatusTitle'),
+            approvalStatusMessage: document.getElementById('approvalStatusMessage'),
+            approvalBackToLoginBtn: document.getElementById('approvalBackToLoginBtn'),
+            approvalBackBtnText: document.getElementById('approvalBackBtnText')
         };
+    }
+
+    setButtonLoading(btn, isLoading, loadingTextKey = null) {
+        if (!btn) return;
+        if (isLoading) {
+            btn.dataset.originalHtml = btn.innerHTML;
+            btn.disabled = true;
+            const text = (typeof i18n !== 'undefined' && i18n.get && loadingTextKey) ? i18n.get(loadingTextKey) : 'Загрузка...';
+            btn.innerHTML = `<span class="app-loader__indicator app-loader__indicator--btn" style="width: 14px; height: 14px; border-width: 2px; margin-right: 6px; display: inline-block; vertical-align: middle;" aria-hidden="true"></span><span class="btn-text">${text}</span>`;
+        } else {
+            btn.disabled = false;
+            if (btn.dataset.originalHtml) {
+                btn.innerHTML = btn.dataset.originalHtml;
+                delete btn.dataset.originalHtml;
+            }
+        }
+    }
+
+    showAuthError(message, inputElement = null, errorElement = null) {
+        this.clearAuthErrors();
+
+        if (inputElement) {
+            inputElement.classList.add('input-error');
+            inputElement.focus();
+        }
+
+        if (errorElement) {
+            errorElement.textContent = message;
+            errorElement.style.display = 'block';
+        } else if (this.elements.authErrorMessage) {
+            this.elements.authErrorMessage.textContent = message;
+            this.elements.authErrorMessage.style.display = 'flex';
+        } else {
+            this.showError(message);
+        }
+    }
+
+    clearAuthErrors() {
+        if (this.elements.authErrorMessage) {
+            this.elements.authErrorMessage.textContent = '';
+            this.elements.authErrorMessage.style.display = 'none';
+        }
+        document.querySelectorAll('.form-input').forEach(el => el.classList.remove('input-error'));
+        document.querySelectorAll('.field-error-message').forEach(el => {
+            el.textContent = '';
+            el.style.display = 'none';
+        });
+        this.hideError();
     }
 
     setupEventListeners() {
         // Logo click handler
         const popupLogo = document.getElementById('popupLogo');
         if (popupLogo) {
-            popupLogo.addEventListener('mousedown', (e) => {
+            popupLogo.addEventListener('click', (e) => {
                 e.preventDefault();
                 chrome.tabs.create({ url: 'src/pages/home/home.html' });
             });
         }
         
-        // Auth events
+        // Auth events (click handlers for full keyboard access)
         if (this.elements.googleLoginBtn) {
-            this.elements.googleLoginBtn.addEventListener('mousedown', () => this.handleGoogleLogin());
+            this.elements.googleLoginBtn.addEventListener('click', () => this.handleGoogleLogin());
         }
-        this.elements.logoutBtn.addEventListener('mousedown', () => this.handleLogout());
+        if (this.elements.logoutBtn) {
+            this.elements.logoutBtn.addEventListener('click', () => this.handleLogout());
+        }
         
         // Two-step login listeners
         if (this.elements.loginEmailForm) {
@@ -220,7 +351,7 @@ class PopupManager {
             this.elements.loginPasswordForm.addEventListener('submit', (e) => this.handleEmailLogin(e));
         }
         if (this.elements.backToEmailBtn) {
-            this.elements.backToEmailBtn.addEventListener('mousedown', (e) => this.goToStep1(e));
+            this.elements.backToEmailBtn.addEventListener('click', (e) => this.goToStep1(e));
         }
         
         // Two-step registration listeners
@@ -231,37 +362,148 @@ class PopupManager {
             this.elements.registerPasswordForm.addEventListener('submit', (e) => this.handleRegisterFinal(e));
         }
         if (this.elements.backToRegisterInfoBtn) {
-            this.elements.backToRegisterInfoBtn.addEventListener('mousedown', (e) => this.goToRegisterStep1(e));
+            this.elements.backToRegisterInfoBtn.addEventListener('click', (e) => this.goToRegisterStep1(e));
         }
         if (this.elements.googleRegisterBtn) {
-            this.elements.googleRegisterBtn.addEventListener('mousedown', () => this.handleGoogleLogin());
+            this.elements.googleRegisterBtn.addEventListener('click', () => this.handleGoogleLogin());
         }
-        
-        // Replaced old register listener
-        // this.elements.registerForm.addEventListener('submit', (e) => this.handleEmailRegister(e));
+
+        if (this.elements.approvalBackToLoginBtn) {
+            this.elements.approvalBackToLoginBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.switchAuthForm('login');
+            });
+        }
+
+        // Clear input error on typing
+        document.querySelectorAll('.form-input').forEach(input => {
+            input.addEventListener('input', () => {
+                input.classList.remove('input-error');
+                const formGroup = input.closest('.form-group');
+                if (formGroup) {
+                    const err = formGroup.querySelector('.field-error-message');
+                    if (err) {
+                        err.textContent = '';
+                        err.style.display = 'none';
+                    }
+                }
+                if (this.elements.authErrorMessage) {
+                    this.elements.authErrorMessage.style.display = 'none';
+                }
+            });
+        });
         
         // Auth Switching
         this.setupAuthSwitching();
+
+        // Filter chips events
+        if (this.elements.filterAllRatings) {
+            this.elements.filterAllRatings.addEventListener('click', () => {
+                if (this.currentFilter === 'all') return;
+                this.setFilter('all');
+            });
+        }
+        if (this.elements.filterMyRatings) {
+            this.elements.filterMyRatings.addEventListener('click', () => {
+                if (this.currentFilter === 'my') return;
+                this.setFilter('my');
+            });
+        }
+
+        // Search toggle events
+        if (this.elements.searchToggleBtn) {
+            this.elements.searchToggleBtn.addEventListener('click', () => {
+                this.openSearchLayer();
+            });
+        }
+        if (this.elements.searchCloseBtn) {
+            this.elements.searchCloseBtn.addEventListener('click', () => {
+                this.closeSearchLayer();
+            });
+        }
          
         // Search events
-        this.elements.searchInput.addEventListener('input', (e) => this.handleSearch(e));
-        this.elements.searchInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                this.openSearchPage();
-            }
-        });
-        this.elements.searchInput.addEventListener('blur', () => {
-            // Delay hiding to allow click events on results
-            setTimeout(() => this.hideSearchResults(), 150);
-        });
-        this.elements.searchIconBtn.addEventListener('mousedown', () => this.openSearchPage());
+        if (this.elements.searchInput) {
+            this.elements.searchInput.addEventListener('input', (e) => this.handleSearch(e));
+            this.elements.searchInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    this.openSearchPage();
+                }
+            });
+            this.elements.searchInput.addEventListener('blur', () => {
+                // Delay hiding to allow click events on results
+                setTimeout(() => this.hideSearchResults(), 150);
+            });
+        }
+        if (this.elements.searchIconBtn) {
+            this.elements.searchIconBtn.addEventListener('click', () => this.openSearchPage());
+        }
+
+        // Avatar dropdown events
+        if (this.elements.userAvatarBtn) {
+            this.elements.userAvatarBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.toggleAvatarDropdown();
+            });
+        }
         
         // Feed events
-        this.elements.refreshBtn.addEventListener('mousedown', () => this.forceRefreshRatings());
-        this.elements.viewAllRatingsBtn.addEventListener('mousedown', () => this.openRatingsPage());
-        this.elements.settingsBtn.addEventListener('mousedown', () => {
-            chrome.tabs.create({ url: 'src/pages/settings/settings.html' });
+        if (this.elements.refreshBtn) {
+            this.elements.refreshBtn.addEventListener('click', () => this.forceRefreshRatings());
+        }
+        if (this.elements.openFullBtn) {
+            this.elements.openFullBtn.addEventListener('click', () => this.openRatingsPage());
+        }
+        if (this.elements.viewAllRatingsBtn) {
+            this.elements.viewAllRatingsBtn.addEventListener('click', () => this.openRatingsPage());
+        }
+        if (this.elements.settingsBtn) {
+            this.elements.settingsBtn.addEventListener('click', () => {
+                this.closeAvatarDropdown();
+                chrome.tabs.create({ url: 'src/pages/settings/settings.html' });
+            });
+        }
+        if (this.elements.profileMenuBtn) {
+            this.elements.profileMenuBtn.addEventListener('click', () => {
+                this.closeAvatarDropdown();
+                const currentUser = firebaseManager.getCurrentUser();
+                if (currentUser) {
+                    this.openUserProfile(currentUser.uid);
+                }
+            });
+        }
+        
+        // Global dismiss for avatar dropdown and tooltips
+        document.addEventListener('click', (e) => {
+            if (this.elements.avatarDropdown && this.elements.avatarDropdown.classList.contains('active')) {
+                if (!e.target.closest('#avatarContainer')) {
+                    this.closeAvatarDropdown();
+                }
+            }
+            if (this.lockedTooltip && !e.target.closest('.rating-score-badge')) {
+                this.unlockTooltip();
+            }
         });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                this.closeAvatarDropdown();
+                this.unlockTooltip();
+                if (this.elements.controlsBar?.classList.contains('search-active')) {
+                    this.closeSearchLayer();
+                }
+            }
+        });
+
+        // Reset circuit breaker when user manually scrolls feedContent
+        if (this.elements.feedContent) {
+            this.elements.feedContent.addEventListener('scroll', () => {
+                this.consecutiveAutoLoads = 0;
+                if (this.hasMore && !this.isLoadingMore && !this.isCircuitBreakerTripped) {
+                    this.showTrigger();
+                }
+            }, { passive: true });
+        }
         
         // Password toggle
         this.setupPasswordToggles();
@@ -270,52 +512,124 @@ class PopupManager {
         this.setupIntersectionObserver();
     }
 
+    async setFilter(filter) {
+        this.currentFilter = filter;
+        if (this.elements.filterAllRatings) {
+            this.elements.filterAllRatings.classList.toggle('active', filter === 'all');
+        }
+        if (this.elements.filterMyRatings) {
+            this.elements.filterMyRatings.classList.toggle('active', filter === 'my');
+        }
+        await this.loadRatings();
+    }
+
+    openSearchLayer() {
+        if (this.elements.controlsBar) {
+            this.elements.controlsBar.classList.add('search-active');
+        }
+        if (this.elements.searchInput) {
+            setTimeout(() => this.elements.searchInput?.focus(), 50);
+        }
+    }
+
+    closeSearchLayer() {
+        if (this.elements.controlsBar) {
+            this.elements.controlsBar.classList.remove('search-active');
+        }
+        if (this.elements.searchInput) {
+            this.elements.searchInput.value = '';
+        }
+        this.hideSearchResults();
+    }
+
+    toggleAvatarDropdown() {
+        if (!this.elements.avatarDropdown) return;
+        this.elements.avatarDropdown.classList.toggle('active');
+    }
+
+    closeAvatarDropdown() {
+        if (!this.elements.avatarDropdown) return;
+        this.elements.avatarDropdown.classList.remove('active');
+    }
+
+    setupScoreBadgeTooltip(ratingDiv, ratingId) {
+        const badge = ratingDiv.querySelector('.rating-score-badge');
+        const tooltip = ratingDiv.querySelector(`#tooltip-${ratingId}`);
+        if (!badge || !tooltip) return;
+
+        badge.addEventListener('mouseenter', () => {
+            if (this.lockedTooltip && this.lockedTooltip === tooltip) return;
+            if (this.lockedTooltip && this.lockedTooltip !== tooltip) return;
+            
+            this.tooltipTimeout = setTimeout(() => {
+                tooltip.classList.add('active');
+            }, 220);
+        });
+
+        badge.addEventListener('mouseleave', () => {
+            if (this.tooltipTimeout) {
+                clearTimeout(this.tooltipTimeout);
+                this.tooltipTimeout = null;
+            }
+            if (this.lockedTooltip !== tooltip) {
+                tooltip.classList.remove('active');
+            }
+        });
+
+        badge.addEventListener('mousedown', (e) => {
+            e.stopPropagation();
+            if (this.tooltipTimeout) {
+                clearTimeout(this.tooltipTimeout);
+                this.tooltipTimeout = null;
+            }
+            if (this.lockedTooltip === tooltip) {
+                this.unlockTooltip();
+            } else {
+                this.unlockTooltip();
+                this.lockedTooltip = tooltip;
+                tooltip.classList.add('active');
+            }
+        });
+    }
+
+    unlockTooltip() {
+        if (this.lockedTooltip) {
+            this.lockedTooltip.classList.remove('active');
+            this.lockedTooltip = null;
+        }
+    }
+
     setupIntersectionObserver() {
         const options = {
-            root: null,
-            rootMargin: '0px',
+            root: this.elements.feedContent || null,
+            rootMargin: '100px',
             threshold: 0.1
         };
         
         this.observer = new IntersectionObserver((entries) => {
             const entry = entries[0];
-            const el = this.elements.infiniteScrollTrigger;
-            // 🔍 Log 4: every IO callback
-            console.log('👁️ IntersectionObserver fired:', {
-                isIntersecting: entry.isIntersecting,
-                intersectionRatio: entry.intersectionRatio,
-                triggerDisplay: el?.style.display,
-                isLoadingMore: this.isLoadingMore,
-                isBackgroundRefreshing: this.isBackgroundRefreshing,
-                hasMore: this.hasMore,
-                ratingsLoaded: this.ratingsLoaded
-            });
-            // Only isLoadingMore blocks pagination — background refresh runs in parallel
-            if (entry.isIntersecting && this.hasMore && !this.isLoadingMore && this.ratingsLoaded) {
+            if (entry.isIntersecting && this.hasMore && !this.isLoadingMore && this.ratingsLoaded && !this.isCircuitBreakerTripped) {
                 console.log('🔄 Infinite scroll: trigger visible, conditions met → loadMoreRatings()');
                 this.loadMoreRatings();
-            } else if (entry.isIntersecting) {
-                console.log('⛔ Infinite scroll: trigger visible but blocked:', {
-                    hasMore: this.hasMore,
-                    isLoadingMore: this.isLoadingMore,
-                    ratingsLoaded: this.ratingsLoaded
-                });
             }
         }, options);
         
         if (this.elements.infiniteScrollTrigger) {
             this.observer.observe(this.elements.infiniteScrollTrigger);
-            console.log('👁️ IntersectionObserver attached to #infiniteScrollTrigger');
         }
     }
 
     /** Show the infinite scroll trigger and re-attach the observer so it fires reliably */
     showTrigger() {
         const el = this.elements.infiniteScrollTrigger;
-        if (!el) return;
-        // 🔍 Log 6: trigger visibility change
-        console.log('🎯 SHOW trigger', { hasMore: this.hasMore, ratingsCount: this.ratings?.length });
+        if (!el || !this.elements.feedContent) return;
         if (this.observer) this.observer.unobserve(el);
+        
+        // Ensure trigger is located inside feedContent at the very bottom
+        if (this.elements.feedContent.lastElementChild !== el) {
+            this.elements.feedContent.appendChild(el);
+        }
+
         el.style.display = 'flex';
         if (this.observer) this.observer.observe(el);
     }
@@ -324,22 +638,20 @@ class PopupManager {
     hideTrigger() {
         const el = this.elements.infiniteScrollTrigger;
         if (!el) return;
-        // 🔍 Log 6: trigger visibility change
-        console.log('🎯 HIDE trigger', { hasMore: this.hasMore, ratingsCount: this.ratings?.length });
         if (this.observer) this.observer.unobserve(el);
         el.style.display = 'none';
     }
 
     setupAuthSwitching() {
         if (this.elements.showRegisterLink) {
-            this.elements.showRegisterLink.addEventListener('mousedown', (e) => {
+            this.elements.showRegisterLink.addEventListener('click', (e) => {
                 e.preventDefault();
                 this.switchAuthForm('register');
             });
         }
 
         if (this.elements.showLoginLink) {
-            this.elements.showLoginLink.addEventListener('mousedown', (e) => {
+            this.elements.showLoginLink.addEventListener('click', (e) => {
                 e.preventDefault();
                 this.switchAuthForm('login');
             });
@@ -347,7 +659,12 @@ class PopupManager {
     }
 
     switchAuthForm(target) {
+        this.clearAuthErrors();
         if (target === 'register') {
+            if (this.elements.approvalStatusSection) {
+                this.elements.approvalStatusSection.classList.remove('active');
+                this.elements.approvalStatusSection.style.display = 'none';
+            }
             this.elements.loginFormSection.classList.remove('active');
             setTimeout(() => {
                 this.elements.loginFormSection.style.display = 'none';
@@ -359,8 +676,12 @@ class PopupManager {
                 // Reset registration steps to 1 just in case
                 this.goToRegisterStep1();
                 
-            }, 300); // Wait for fade out
-        } else {
+            }, 200);
+        } else if (target === 'login') {
+            if (this.elements.approvalStatusSection) {
+                this.elements.approvalStatusSection.classList.remove('active');
+                this.elements.approvalStatusSection.style.display = 'none';
+            }
             this.elements.registerFormSection.classList.remove('active');
             setTimeout(() => {
                 this.elements.registerFormSection.style.display = 'none';
@@ -372,21 +693,35 @@ class PopupManager {
                 // Reset login steps to 1
                 this.goToStep1();
                 
-            }, 300);
+            }, 200);
+        } else if (target === 'approval') {
+            this.elements.loginFormSection.classList.remove('active');
+            this.elements.registerFormSection.classList.remove('active');
+            this.elements.loginFormSection.style.display = 'none';
+            this.elements.registerFormSection.style.display = 'none';
+            if (this.elements.approvalStatusSection) {
+                this.elements.approvalStatusSection.style.display = 'block';
+                void this.elements.approvalStatusSection.offsetWidth;
+                this.elements.approvalStatusSection.classList.add('active');
+            }
         }
     }
 
     setupPasswordToggles() {
         document.querySelectorAll('.toggle-password').forEach(btn => {
-            btn.addEventListener('mousedown', (e) => {
-                e.preventDefault(); // Prevent focus loss or form submit
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
                 const input = btn.previousElementSibling;
                 if (input && input.tagName === 'INPUT') {
                     if (input.type === 'password') {
                         input.type = 'text';
+                        btn.setAttribute('aria-pressed', 'true');
+                        btn.setAttribute('aria-label', 'Hide password');
                         btn.innerHTML = Icons.EYE_OFF;
                     } else {
                         input.type = 'password';
+                        btn.setAttribute('aria-pressed', 'false');
+                        btn.setAttribute('aria-label', 'Show password');
                         btn.innerHTML = Icons.EYE;
                     }
                 }
@@ -395,16 +730,26 @@ class PopupManager {
     }
 
     setupAuthStateListener() {
-        window.addEventListener('authStateChanged', (event) => {
+        window.addEventListener('authStateChanged', async (event) => {
             const { user, isAuthenticated } = event.detail;
-            // If authenticated, don't show content until ratings are loaded
-            // If not authenticated, show auth section immediately
-            this.updateAuthUI(isAuthenticated, user, !isAuthenticated);
             
-            // Auto-load ratings when user signs in (only if not already loaded or loading)
-            if (isAuthenticated && user && !this.ratingsLoaded && !this.isLoadingRatings) {
-                console.log('PopupManager: Auth state changed, loading ratings');
-                this.loadRatings();
+            if (isAuthenticated && user) {
+                // Approval gate check
+                const isApproved = await this.validateUserApproval(user.uid, false);
+                if (!isApproved) {
+                    return;
+                }
+                
+                this.updateAuthUI(true, user, false);
+                
+                // Auto-load ratings when user signs in (only if not already loaded or loading)
+                if (!this.ratingsLoaded && !this.isLoadingRatings) {
+                    console.log('PopupManager: Auth state changed, loading ratings');
+                    this.loadRatings();
+                }
+            } else {
+                // If not authenticated, show auth section immediately
+                this.updateAuthUI(false, null, true);
             }
         });
         
@@ -426,10 +771,15 @@ class PopupManager {
         const authData = await AuthManager.getAuthData();
         
         // Optimistic check: if we have a user stored, we are likely logged in.
-        // Don't wait for strict token validation for the VISUAL state to prevent flickering.
+        // Verify approval status with Firestore before granting access to mainContent.
         if (authData && authData.user) {
-            console.log('✅ PopupManager: Found stored user, showing UI immediately (Optimistic)');
+            console.log('✅ PopupManager: Found stored user, checking approval status...');
             
+            const isApproved = await this.validateUserApproval(authData.user.uid, false);
+            if (!isApproved) {
+                return;
+            }
+
             // Show authenticated UI immediately
             this.updateAuthUI(true, authData.user, false);
             this.elements.authSection.style.display = 'none';
@@ -447,23 +797,25 @@ class PopupManager {
                 console.log('⏳ PopupManager: Token expired/invalid, waiting for refresh...');
                 // Show loading state in the feed/content area while we wait for token refresh
                 this.showLoading(true);
-                
-                // If we have a refresh token (added in recent updates), we could try to refresh proactively here
-                // if the background alarm didn't catch it. 
-                // But typically firebaseSDK will auto-refresh and fire authStateChanged.
             }
             
             return; // Early exit
         }
         
-        // ===== SLOW PATH: No valid stored auth, need to check Firebase =====
-        console.log('⏳ PopupManager: No valid stored auth, checking Firebase...');
+        // ===== SLOW PATH: No valid stored auth in fast path, wait for Firebase initialization =====
+        console.log('⏳ PopupManager: No valid stored auth in fast path, waiting for Firebase...');
         
-        // Check if Firebase already has a user (edge case: just logged in)
-        const currentUser = firebaseManager.getCurrentUser();
+        const currentUser = (typeof firebaseManager !== 'undefined' && firebaseManager.waitForAuthReady)
+            ? await firebaseManager.waitForAuthReady(400)
+            : (firebaseManager?.getCurrentUser() || null);
         
         if (currentUser) {
-            console.log('✅ PopupManager: Firebase user found, showing authenticated UI');
+            console.log('✅ PopupManager: Firebase user found, checking approval status...');
+            const isApproved = await this.validateUserApproval(currentUser.uid, false);
+            if (!isApproved) {
+                return;
+            }
+
             this.updateAuthUI(true, currentUser, false);
             this.elements.authSection.style.display = 'none';
             this.elements.initialLoading.style.display = 'flex';
@@ -475,7 +827,7 @@ class PopupManager {
                 this.updateAuthUI(false, null, true);
             });
         } else {
-            // No auth anywhere - show login form
+            // No auth anywhere after waiting - show login form
             console.log('❌ PopupManager: No authentication found, showing login form');
             this.updateAuthUI(false, null, true);
         }
@@ -544,30 +896,6 @@ class PopupManager {
         }
     }
 
-    // ... (rest of the class methods)
-    // ... (rest of the class methods)
-
-    waitForAuthInit() {
-        return new Promise((resolve) => {
-            // Check if already authenticated
-            const user = firebaseManager.getCurrentUser();
-            if (user) {
-                resolve();
-                return;
-            }
-            
-            // Wait for authStateChanged event with shorter timeout
-            const handler = () => {
-                window.removeEventListener('authStateChanged', handler);
-                resolve();
-            };
-            window.addEventListener('authStateChanged', handler);
-            
-            // Shorter fallback timeout for better UX
-            setTimeout(resolve, 300);
-        });
-    }
-
     async loadUserDisplayPreferences(userId) {
         try {
             // Check if we have cached profile data first to avoid flickering
@@ -624,15 +952,22 @@ class PopupManager {
 
     updateAuthUI(isAuthenticated, user, showContent = true) {
         if (isAuthenticated) {
-            this.elements.authSection.style.display = 'none';
-            this.elements.statusIndicator.classList.add('authenticated');
-            this.elements.statusText.textContent = i18n.get('popup.header.signed_in_as').replace('{user}', user?.displayName || user?.email || 'User');
+            if (this.elements.authSection) this.elements.authSection.style.display = 'none';
+            if (this.elements.authStatus) this.elements.authStatus.style.display = 'none';
+            if (this.elements.headerActionsGroup) this.elements.headerActionsGroup.style.display = 'flex';
             
             // Update user info
-            this.elements.userName.textContent = user?.displayName || user?.email || 'User';
-            if (user?.photoURL) {
-                this.elements.userAvatar.src = user.photoURL;
-                this.elements.userAvatar.style.display = 'block';
+            const displayName = user?.displayName || user?.email?.split('@')[0] || 'User';
+            if (this.elements.userName) this.elements.userName.textContent = displayName;
+            if (this.elements.userAvatar) {
+                if (user?.photoURL) {
+                    this.elements.userAvatar.src = user.photoURL;
+                    this.elements.userAvatar.style.display = 'block';
+                    if (this.elements.userAvatarFallback) this.elements.userAvatarFallback.style.display = 'none';
+                } else {
+                    this.elements.userAvatar.style.display = 'none';
+                    if (this.elements.userAvatarFallback) this.elements.userAvatarFallback.style.display = 'flex';
+                }
             }
 
             // Fetch and apply profile preferences (display name format)
@@ -642,33 +977,48 @@ class PopupManager {
             
             // Only show main content if explicitly requested
             if (showContent) {
-                this.elements.initialLoading.style.display = 'none';
-                this.elements.mainContent.style.display = 'flex';
+                if (this.elements.initialLoading) this.elements.initialLoading.style.display = 'none';
+                if (this.elements.mainContent) this.elements.mainContent.style.display = 'flex';
             }
         } else {
-            this.elements.initialLoading.style.display = 'none';
-            this.elements.authSection.style.display = 'block';
-            this.elements.mainContent.style.display = 'none';
-            this.elements.statusIndicator.classList.remove('authenticated');
-            this.elements.statusText.textContent = i18n.get('popup.header.not_authenticated');
+            if (this.elements.initialLoading) this.elements.initialLoading.style.display = 'none';
+            if (this.elements.mainContent) this.elements.mainContent.style.display = 'none';
+            if (this.elements.headerActionsGroup) this.elements.headerActionsGroup.style.display = 'none';
+            if (this.elements.authStatus) this.elements.authStatus.style.display = 'flex';
+            if (this.elements.authSection) this.elements.authSection.style.display = 'block';
+            if (this.elements.statusText) this.elements.statusText.textContent = i18n.get('popup.header.not_authenticated');
         }
     }
 
     async handleGoogleLogin() {
+        this.clearAuthErrors();
+        this.setButtonLoading(this.elements.googleLoginBtn, true, 'popup.auth.loading_google');
+        this.setButtonLoading(this.elements.googleRegisterBtn, true, 'popup.auth.loading_google');
+
         try {
-            this.hideError();
             await firebaseManager.signInWithGoogle();
             
             // Create/update user profile
             const user = firebaseManager.getCurrentUser();
             const userService = firebaseManager.getUserService();
+
+            // Check if profile exists prior to this sign in to determine if it is a new registration
+            const existingProfile = await userService.getUserProfile(user.uid);
+            const isNewRegistration = !existingProfile;
+            
             await userService.createOrUpdateUserProfile(user.uid, {
                 displayName: user.displayName,
                 photoURL: user.photoURL,
                 email: user.email,
-                createdAt: user.metadata.creationTime
+                createdAt: user.metadata?.creationTime
             });
             
+            // Approval Gate check
+            const isApproved = await this.validateUserApproval(user.uid, isNewRegistration);
+            if (!isApproved) {
+                return;
+            }
+
             // Hide auth section, show initial loading, prepare for content
             this.elements.authSection.style.display = 'none';
             this.elements.initialLoading.style.display = 'flex';
@@ -676,32 +1026,47 @@ class PopupManager {
             
             this.loadRatings();
         } catch (error) {
-            this.showError(`${i18n.currentLocale === 'ru' ? 'Ошибка входа через Google' : 'Google login failed'}: ${error.message}`);
+            this.showAuthError(`${i18n.currentLocale === 'ru' ? 'Ошибка входа через Google' : 'Google login failed'}: ${error.message}`);
+        } finally {
+            this.setButtonLoading(this.elements.googleLoginBtn, false);
+            this.setButtonLoading(this.elements.googleRegisterBtn, false);
         }
     }
 
     handleRegisterStep1(e) {
         e.preventDefault();
+        this.clearAuthErrors();
+
         const firstName = this.elements.registerFirstName.value.trim();
         const lastName = this.elements.registerLastName.value.trim();
         const email = this.elements.registerEmail.value.trim();
         
-        if (!firstName || !lastName || !email) {
-            this.showError(i18n.get('popup.auth.fill_all'));
+        if (!firstName) {
+            this.showAuthError(i18n.currentLocale === 'ru' ? 'Пожалуйста, введите имя' : 'Please enter your first name', this.elements.registerFirstName, this.elements.registerFirstNameError);
+            return;
+        }
+
+        if (!lastName) {
+            this.showAuthError(i18n.currentLocale === 'ru' ? 'Пожалуйста, введите фамилию' : 'Please enter your last name', this.elements.registerLastName, this.elements.registerLastNameError);
             return;
         }
         
+        if (!email) {
+            this.showAuthError(i18n.currentLocale === 'ru' ? 'Пожалуйста, введите ваш email' : 'Please enter your email', this.elements.registerEmail, this.elements.registerEmailError);
+            return;
+        }
+
         if (!this.isValidEmail(email)) {
-            this.showError(i18n.currentLocale === 'ru' ? 'Пожалуйста, введите корректный адрес электронной почты' : 'Please enter a valid email address');
+            this.showAuthError(i18n.currentLocale === 'ru' ? 'Пожалуйста, введите корректный адрес электронной почты' : 'Please enter a valid email address', this.elements.registerEmail, this.elements.registerEmailError);
             return;
         }
         
-        this.hideError();
+        this.clearAuthErrors();
         
-        // Populate static fields
-        this.elements.staticName.textContent = firstName;
-        this.elements.staticSurname.textContent = lastName;
-        this.elements.staticRegisterEmail.textContent = email;
+        // Populate static preview fields
+        if (this.elements.staticName) this.elements.staticName.value = firstName;
+        if (this.elements.staticSurname) this.elements.staticSurname.value = lastName;
+        if (this.elements.staticRegisterEmail) this.elements.staticRegisterEmail.value = email;
         
         // Switch views
         this.elements.registerStep1.style.display = 'none';
@@ -717,26 +1082,27 @@ class PopupManager {
     
     goToRegisterStep1(e) {
         if (e) e.preventDefault();
+        this.clearAuthErrors();
         
         this.elements.registerStep2.style.display = 'none';
         this.elements.registerStep1.style.display = 'block';
         
         const dividers = document.getElementById('registerFormSection').querySelectorAll('.auth-divider');
-        dividers.forEach(d => d.style.display = 'block');
+        dividers.forEach(d => d.style.display = 'flex');
         if (this.elements.registerFooter) this.elements.registerFooter.style.display = 'block';
     }
 
     goToStep1(e) {
         if (e) e.preventDefault();
+        this.clearAuthErrors();
         
         this.elements.loginStep2.style.display = 'none';
         this.elements.loginStep1.style.display = 'block';
         
         // Show Google button and footer again
         if (this.elements.googleLoginBtn) this.elements.googleLoginBtn.style.display = 'flex';
-        // Re-show divider if it was hidden (it's a sibling usually, handled by parent visibility but if we hid specific elements we need to show them)
         const dividers = document.querySelectorAll('.auth-divider');
-        dividers.forEach(d => d.style.display = 'block');
+        dividers.forEach(d => d.style.display = 'flex');
         
         if (this.elements.loginFooter) this.elements.loginFooter.style.display = 'block';
         
@@ -746,20 +1112,24 @@ class PopupManager {
 
     handleEmailStep(e) {
         e.preventDefault();
+        this.clearAuthErrors();
+
         const email = this.elements.loginEmail.value.trim();
         
         if (!email) {
-            this.showError(i18n.currentLocale === 'ru' ? 'Пожалуйста, введите ваш email' : 'Please enter your email');
+            this.showAuthError(i18n.currentLocale === 'ru' ? 'Пожалуйста, введите ваш email' : 'Please enter your email', this.elements.loginEmail, this.elements.loginEmailError);
             return;
         }
         
         if (!this.isValidEmail(email)) {
-            this.showError(i18n.currentLocale === 'ru' ? 'Пожалуйста, введите корректный адрес электронной почты' : 'Please enter a valid email address');
+            this.showAuthError(i18n.currentLocale === 'ru' ? 'Пожалуйста, введите корректный адрес электронной почты' : 'Please enter a valid email address', this.elements.loginEmail, this.elements.loginEmailError);
             return;
         }
         
-        this.hideError();
-        this.elements.staticEmail.textContent = email;
+        this.clearAuthErrors();
+        if (this.elements.staticEmail) {
+            this.elements.staticEmail.value = email;
+        }
         
         // Switch to Step 2
         this.elements.loginStep1.style.display = 'none';
@@ -781,17 +1151,19 @@ class PopupManager {
 
     async handleEmailLogin(e) {
         e.preventDefault();
+        this.clearAuthErrors();
         
         const email = this.elements.loginEmail.value.trim();
         const password = this.elements.loginPassword.value;
 
-        if (!email || !password) {
-            this.showError(i18n.get('popup.auth.fill_all'));
+        if (!password) {
+            this.showAuthError(i18n.currentLocale === 'ru' ? 'Пожалуйста, введите пароль' : 'Please enter your password', this.elements.loginPassword, this.elements.loginPasswordError);
             return;
         }
 
+        this.setButtonLoading(this.elements.loginPasswordSubmitBtn, true, 'popup.auth.loading_login');
+
         try {
-            this.hideError();
             await firebaseManager.signInWithEmail(email, password);
             
             // Create/update user profile
@@ -801,9 +1173,15 @@ class PopupManager {
                 displayName: user.displayName || user.email.split('@')[0],
                 photoURL: user.photoURL,
                 email: user.email,
-                createdAt: user.metadata.creationTime
+                createdAt: user.metadata?.creationTime
             });
             
+            // Approval Gate check (not a new registration screen)
+            const isApproved = await this.validateUserApproval(user.uid, false);
+            if (!isApproved) {
+                return;
+            }
+
             // Reset forms
             if (this.elements.loginEmailForm) this.elements.loginEmailForm.reset();
             if (this.elements.loginPasswordForm) this.elements.loginPasswordForm.reset();
@@ -815,34 +1193,43 @@ class PopupManager {
             
             this.loadRatings();
         } catch (error) {
-            this.showError(`${i18n.currentLocale === 'ru' ? 'Ошибка входа по email' : 'Email login failed'}: ${error.message}`);
+            this.showAuthError(`${i18n.currentLocale === 'ru' ? 'Ошибка входа' : 'Sign in error'}: ${error.message}`, this.elements.loginPassword, this.elements.loginPasswordError);
+        } finally {
+            this.setButtonLoading(this.elements.loginPasswordSubmitBtn, false);
         }
     }
 
     async handleRegisterFinal(e) {
         e.preventDefault();
+        this.clearAuthErrors();
         
         const email = this.elements.registerEmail.value.trim();
         const password = this.elements.registerPassword.value;
         const confirmPassword = this.elements.registerConfirmPassword.value;
 
-        if (!password || !confirmPassword) {
-            this.showError(i18n.get('popup.auth.fill_all'));
+        if (!password) {
+            this.showAuthError(i18n.currentLocale === 'ru' ? 'Придумайте пароль' : 'Please enter a password', this.elements.registerPassword, this.elements.registerPasswordError);
             return;
         }
 
         if (password.length < 6) {
-            this.showError(i18n.get('popup.auth.password_min_length'));
+            this.showAuthError(i18n.get('popup.auth.password_min_length'), this.elements.registerPassword, this.elements.registerPasswordError);
+            return;
+        }
+
+        if (!confirmPassword) {
+            this.showAuthError(i18n.currentLocale === 'ru' ? 'Повторите пароль' : 'Please repeat your password', this.elements.registerConfirmPassword, this.elements.registerConfirmPasswordError);
             return;
         }
         
         if (password !== confirmPassword) {
-            this.showError(i18n.get('popup.auth.passwords_dont_match'));
+            this.showAuthError(i18n.get('popup.auth.passwords_dont_match'), this.elements.registerConfirmPassword, this.elements.registerConfirmPasswordError);
             return;
         }
 
+        this.setButtonLoading(this.elements.registerFinalSubmitBtn, true, 'popup.auth.loading_register');
+
         try {
-            this.hideError();
             await firebaseManager.createUserWithEmail(email, password);
             
             // Create user profile
@@ -859,16 +1246,21 @@ class PopupManager {
                 lastName: lastName,
                 photoURL: user.photoURL,
                 email: user.email,
-                createdAt: user.metadata.creationTime
+                createdAt: user.metadata?.creationTime
             });
             
-            // Reset forms
+            // Reset forms & UI state
             if (this.elements.registerInfoForm) this.elements.registerInfoForm.reset();
             if (this.elements.registerPasswordForm) this.elements.registerPasswordForm.reset();
             if (this.elements.registerForm) this.elements.registerForm.reset();
+            this.goToRegisterStep1();
             
-            this.goToRegisterStep1(); // Reset UI state
-            
+            // Approval Gate check (isNewRegistration = true)
+            const isApproved = await this.validateUserApproval(user.uid, true);
+            if (!isApproved) {
+                return;
+            }
+
             // Hide auth section, show initial loading, prepare for content
             this.elements.authSection.style.display = 'none';
             this.elements.initialLoading.style.display = 'flex';
@@ -876,8 +1268,89 @@ class PopupManager {
             
             this.loadRatings();
         } catch (error) {
-            this.showError(`${i18n.currentLocale === 'ru' ? 'Ошибка регистрации' : 'Registration failed'}: ${error.message}`);
+            this.showAuthError(`${i18n.currentLocale === 'ru' ? 'Ошибка регистрации' : 'Registration error'}: ${error.message}`);
+        } finally {
+            this.setButtonLoading(this.elements.registerFinalSubmitBtn, false);
         }
+    }
+
+    showApprovalScreen({ status, isNewRegistration = false }) {
+        this.switchAuthForm('approval');
+        
+        const iconWrapper = this.elements.approvalStatusIconWrapper;
+        const iconEl = this.elements.approvalStatusIcon;
+        const titleEl = this.elements.approvalStatusTitle;
+        const msgEl = this.elements.approvalStatusMessage;
+        
+        if (status === 'pending') {
+            if (iconWrapper) iconWrapper.className = 'approval-status-icon-wrapper status-pending';
+            if (iconEl) iconEl.innerHTML = (typeof Icons !== 'undefined' && Icons.CLOCK) ? Icons.CLOCK : '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>';
+            
+            if (isNewRegistration) {
+                if (titleEl) titleEl.textContent = (typeof i18n !== 'undefined' && i18n.get) ? i18n.get('popup.approval.pending_registered_title') : 'Заявка на рассмотрении';
+                if (msgEl) msgEl.textContent = (typeof i18n !== 'undefined' && i18n.get) ? i18n.get('popup.approval.pending_registered_msg') : 'Ваш аккаунт успешно создан и ожидает подтверждения администратором. После одобрения вы получите полный доступ к расширению.';
+            } else {
+                if (titleEl) titleEl.textContent = (typeof i18n !== 'undefined' && i18n.get) ? i18n.get('popup.approval.pending_login_title') : 'Аккаунт ожидает подтверждения';
+                if (msgEl) msgEl.textContent = (typeof i18n !== 'undefined' && i18n.get) ? i18n.get('popup.approval.pending_login_msg') : 'Ваша регистрация находится на рассмотрении у администратора. Доступ будет открыт сразу после проверки.';
+            }
+        } else if (status === 'rejected') {
+            if (iconWrapper) iconWrapper.className = 'approval-status-icon-wrapper status-rejected';
+            if (iconEl) iconEl.innerHTML = (typeof Icons !== 'undefined' && Icons.SHIELD_ALERT) ? Icons.SHIELD_ALERT : '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>';
+            if (titleEl) titleEl.textContent = (typeof i18n !== 'undefined' && i18n.get) ? i18n.get('popup.approval.rejected_title') : 'Доступ ограничен';
+            if (msgEl) msgEl.textContent = (typeof i18n !== 'undefined' && i18n.get) ? i18n.get('popup.approval.rejected_msg') : 'Ваша регистрация была отклонена администратором.';
+        }
+    }
+
+    async validateUserApproval(userId, isNewRegistration = false) {
+        if (!userId) return false;
+        
+        try {
+            const userService = firebaseManager.getUserService();
+            const profile = await userService.getUserProfile(userId);
+            
+            // If approvalStatus is pending or rejected, block access
+            if (profile && profile.approvalStatus === 'pending') {
+                await this.handleApprovalBlocked('pending', isNewRegistration);
+                return false;
+            }
+            
+            if (profile && profile.approvalStatus === 'rejected') {
+                await this.handleApprovalBlocked('rejected', isNewRegistration);
+                return false;
+            }
+            
+            // approved OR missing field (legacy fallback) -> allow access
+            return true;
+        } catch (error) {
+            console.error('[PopupManager] Error validating user approval status:', error);
+            // On unexpected error, do not block unless we know it's pending/rejected
+            return true;
+        }
+    }
+
+    async handleApprovalBlocked(status, isNewRegistration = false) {
+        console.warn(`[PopupManager] Approval Gate: User blocked with status "${status}" (newRegistration: ${isNewRegistration})`);
+        
+        try {
+            // Sign out from Firebase and clear local storage auth data
+            await AuthManager.clearAuthData();
+            if (typeof firebaseManager !== 'undefined' && firebaseManager.signOut) {
+                await firebaseManager.signOut();
+            }
+        } catch (err) {
+            console.error('[PopupManager] Error during approval blocked sign out:', err);
+        }
+        
+        // Hide main content & loading
+        if (this.elements.mainContent) this.elements.mainContent.style.display = 'none';
+        if (this.elements.initialLoading) this.elements.initialLoading.style.display = 'none';
+        
+        // Update header indicator
+        if (this.elements.statusText) this.elements.statusText.textContent = (typeof i18n !== 'undefined' && i18n.get) ? i18n.get('popup.header.not_authenticated') : 'Не авторизован';
+        
+        // Show auth section with approval card
+        if (this.elements.authSection) this.elements.authSection.style.display = 'block';
+        this.showApprovalScreen({ status, isNewRegistration });
     }
 
     async handleLogout() {
@@ -924,31 +1397,64 @@ class PopupManager {
     }
 
     async performSearch(query) {
+        // Show loading placeholder
+        this.elements.searchResults.innerHTML = '<div class="search-result-loading">Поиск…</div>';
+        this.elements.searchResults.style.display = 'block';
+
         try {
-            const movieCacheService = firebaseManager.getMovieCacheService();
-            const movies = await movieCacheService.searchCachedMovies(query, 5);
-            
-            this.displaySearchResults(movies);
+            const kinopoiskService = firebaseManager.getKinopoiskService();
+            const result = await kinopoiskService.searchMovies(query, 1, 5, {
+                skipOffscreen: true,
+                skipFetchScraper: true
+            });
+
+            const movies = (result?.docs || []).map(doc => ({
+                kinopoiskId: doc.id || doc.kinopoiskId,
+                name: doc.name || doc.alternativeName || 'Без названия',
+                year: doc.year || '',
+                genres: (doc.genres || []).map(g => (typeof g === 'object' ? g.name : g)),
+                posterUrl: doc.poster?.previewUrl || doc.poster?.url || doc.posterUrl || '',
+                votes: doc.votes
+            })).filter(m => m.kinopoiskId);
+
+            if (movies.length > 0) {
+                this.displaySearchResults(movies);
+            } else {
+                // Fallback to Firestore cache
+                const movieCacheService = firebaseManager.getMovieCacheService();
+                const cached = await movieCacheService.searchCachedMovies(query, 5);
+                this.displaySearchResults(cached);
+            }
         } catch (error) {
-            console.error('Search error:', error);
-            this.hideSearchResults();
+            console.warn('Popup search via KP API failed, falling back to cache:', error);
+            try {
+                const movieCacheService = firebaseManager.getMovieCacheService();
+                const cached = await movieCacheService.searchCachedMovies(query, 5);
+                this.displaySearchResults(cached);
+            } catch (cacheError) {
+                console.error('Search fallback also failed:', cacheError);
+                this.hideSearchResults();
+            }
         }
     }
 
     displaySearchResults(movies) {
-        if (movies.length === 0) {
-            this.hideSearchResults();
+        if (!movies || movies.length === 0) {
+            this.elements.searchResults.innerHTML = '<div class="search-result-empty">Ничего не найдено</div>';
+            this.elements.searchResults.style.display = 'block';
             return;
         }
 
         const query = this.elements.searchInput.value.toLowerCase().trim();
-        
+        const fallbackIcon = typeof IconUtils !== 'undefined'
+            ? IconUtils.getIconPath(document.body.classList.contains('light-theme') ? 'light' : 'dark', 48)
+            : '/src/shared/assets/icons/app/icon48-white.png';
+
         const resultsHTML = movies.map(movie => {
-            const name = movie.name;
+            const name = movie.name || 'Без названия';
             const nameLower = name.toLowerCase();
             let relevanceClass = '';
-            
-            // Determine relevance level for styling
+
             if (nameLower === query) {
                 relevanceClass = 'exact-match';
             } else if (nameLower.startsWith(query)) {
@@ -956,14 +1462,18 @@ class PopupManager {
             } else if (nameLower.includes(query)) {
                 relevanceClass = 'contains';
             }
-            
+
+            const genres = Array.isArray(movie.genres) ? movie.genres.slice(0, 2).join(', ') : '';
+            const year = movie.year || '';
+            const meta = [year, genres].filter(Boolean).join(' \u2022 ');
+            const posterSrc = movie.posterUrl || fallbackIcon;
+
             return `
                 <div class="search-result-item ${relevanceClass}" data-movie-id="${movie.kinopoiskId}">
-                    <img src="${movie.posterUrl || (typeof IconUtils !== 'undefined' ? IconUtils.getIconPath(document.body.classList.contains('light-theme') ? 'light' : 'dark', 48) : '/icons/icon48-white.png')}" alt="${name}" class="search-result-poster">
+                    <img src="${posterSrc}" alt="${this.escapeHtml(name)}" class="search-result-poster" onerror="this.src='${fallbackIcon}'">
                     <div class="search-result-info">
                         <h4 class="search-result-title">${this.escapeHtml(name)}</h4>
-                        <p class="search-result-meta">${movie.year} • ${movie.genres.slice(0, 2).join(', ')}</p>
-                        ${movie.votes?.kp ? `<span class="search-result-votes">${i18n.get('movie_details.votes_count').replace('{count}', movie.votes.kp)}</span>` : ''}
+                        ${meta ? `<p class="search-result-meta">${this.escapeHtml(meta)}</p>` : ''}
                     </div>
                 </div>
             `;
@@ -972,7 +1482,6 @@ class PopupManager {
         this.elements.searchResults.innerHTML = resultsHTML;
         this.elements.searchResults.style.display = 'block';
 
-        // Add click handlers
         this.elements.searchResults.querySelectorAll('.search-result-item').forEach(item => {
             item.addEventListener('mousedown', () => {
                 const movieId = item.dataset.movieId;
@@ -980,6 +1489,7 @@ class PopupManager {
             });
         });
     }
+
 
     hideSearchResults() {
         this.elements.searchResults.style.display = 'none';
@@ -1037,6 +1547,8 @@ class PopupManager {
             this.lastDoc = null;
             this.hasMore = true;
             this.isLoadingMore = false;
+            this.consecutiveAutoLoads = 0;
+            this.isCircuitBreakerTripped = false;
             // Hide trigger spinner — it must never appear during initial load
             this.hideTrigger();
             
@@ -1045,8 +1557,9 @@ class PopupManager {
             this.elements.initialLoading.style.display = 'flex';
             this.hideError();
             
-            // Update auth UI without showing content
+            // Determine userId based on active filter ('all' vs 'my')
             const currentUser = firebaseManager.getCurrentUser();
+            const filterUserId = (this.currentFilter === 'my' && currentUser) ? currentUser.uid : null;
             this.updateAuthUI(true, currentUser, false);
             
             // Check if chrome.storage is available
@@ -1059,7 +1572,7 @@ class PopupManager {
             console.log('PopupManager: Got RatingsCacheService instance');
             
             const cacheStartTime = performance.now();
-            console.log(`⏱️ [PopupManager] Starting getCachedRatingsWithBackgroundRefresh`);
+            console.log(`⏱️ [PopupManager] Starting getCachedRatingsWithBackgroundRefresh (filter: ${this.currentFilter}, userId: ${filterUserId})`);
             
             // Temporarily wrap refreshCacheInBackground to track isBackgroundRefreshing flag
             const origRefresh = ratingsCacheService.refreshCacheInBackground.bind(ratingsCacheService);
@@ -1076,7 +1589,7 @@ class PopupManager {
                 }
             };
             
-            const result = await ratingsCacheService.getCachedRatingsWithBackgroundRefresh(this.ITEMS_PER_PAGE, null); // Load first page
+            const result = await ratingsCacheService.getCachedRatingsWithBackgroundRefresh(this.ITEMS_PER_PAGE, null, filterUserId);
             const cacheEndTime = performance.now();
             const cacheLoadTime = Math.round(cacheEndTime - cacheStartTime);
             
@@ -1084,7 +1597,8 @@ class PopupManager {
                 ratingsCount: result.ratings.length, 
                 isFromCache: result.isFromCache,
                 hasMore: result.hasMore,
-                loadTime: `${cacheLoadTime}ms`
+                loadTime: `${cacheLoadTime}ms`,
+                userId: filterUserId
             });
             
             this.ratings = result.ratings;
@@ -1154,30 +1668,54 @@ class PopupManager {
             isLoadingMore: this.isLoadingMore,
             isBackgroundRefreshing: this.isBackgroundRefreshing,
             hasMore: this.hasMore,
+            isCircuitBreakerTripped: this.isCircuitBreakerTripped,
+            consecutiveAutoLoads: this.consecutiveAutoLoads,
             lastDocId: this.lastDocId,
             lastDocType: this.lastDoc ? typeof this.lastDoc : 'null',
             lastDocClass: this.lastDoc?.constructor?.name ?? 'null',
             ratingsCount: this.ratings?.length
         });
-        // isLoadingMore is the ONLY flag that blocks pagination
-        // isBackgroundRefreshing does NOT block — background refresh and pagination can coexist
-        if (this.isLoadingMore || !this.hasMore) {
-            console.warn('⛔ loadMoreRatings BLOCKED:', { isLoadingMore: this.isLoadingMore, hasMore: this.hasMore });
+        
+        if (this.isLoadingMore || !this.hasMore || this.isCircuitBreakerTripped) {
+            console.warn('⛔ loadMoreRatings BLOCKED:', {
+                isLoadingMore: this.isLoadingMore,
+                hasMore: this.hasMore,
+                isCircuitBreakerTripped: this.isCircuitBreakerTripped
+            });
             return;
         }
+
+        const now = performance.now();
+        if (now - this.lastLoadMoreTime < this.MIN_LOAD_MORE_INTERVAL_MS) {
+            console.warn('⛔ loadMoreRatings THROTTLED: called too quickly');
+            return;
+        }
+
+        if (this.consecutiveAutoLoads >= this.MAX_CONSECUTIVE_AUTO_LOADS) {
+            console.warn(`⛔ loadMoreRatings CIRCUIT BREAKER TRIPPED: ${this.consecutiveAutoLoads} consecutive auto-loads without user scroll. Pausing auto-pagination.`);
+            this.hideTrigger();
+            return;
+        }
+
+        this.consecutiveAutoLoads++;
+        this.lastLoadMoreTime = now;
         
         try {
             this.isLoadingMore = true;
             const cursor = this.lastDoc || this.lastDocId;
+            const currentUser = firebaseManager.getCurrentUser();
+            const filterUserId = (this.currentFilter === 'my' && currentUser) ? currentUser.uid : null;
+
             console.log('📤 loadMoreRatings: sending cursor to fetchAndCacheRatings:', {
                 cursorType: cursor === null ? 'null' : typeof cursor,
                 cursorIsSnapshot: cursor !== null && typeof cursor === 'object',
                 cursorId: cursor?.id ?? cursor,
-                cursorClass: cursor?.constructor?.name ?? 'N/A'
+                cursorClass: cursor?.constructor?.name ?? 'N/A',
+                userId: filterUserId
             });
             
             const ratingsCacheService = firebaseManager.getRatingsCacheService();
-            const result = await ratingsCacheService.fetchAndCacheRatings(this.ITEMS_PER_PAGE, cursor);
+            const result = await ratingsCacheService.fetchAndCacheRatings(this.ITEMS_PER_PAGE, cursor, filterUserId);
             
             // 🔍 Log 3: what came back
             console.log('📦 loadMoreRatings: fetchAndCacheRatings result:', {
@@ -1185,8 +1723,21 @@ class PopupManager {
                 newLastDocId: result?.lastDocId,
                 newLastDocType: result?.lastDoc ? typeof result.lastDoc : 'null',
                 newLastDocClass: result?.lastDoc?.constructor?.name ?? 'null',
-                hasMore: result?.hasMore
+                hasMore: result?.hasMore,
+                criticalError: result?.criticalError
             });
+
+            if (result?.criticalError) {
+                console.warn('🚨 loadMoreRatings: Critical cache/API errors detected (storage quota or 403). Halting pagination.');
+                this.isCircuitBreakerTripped = true;
+                this.hasMore = false;
+                this.hideTrigger();
+                const errMsg = typeof i18n !== 'undefined' && i18n.currentLocale === 'ru'
+                    ? 'Ошибка загрузки данных (лимит API или квота памяти). Пагинация приостановлена.'
+                    : 'Data load error (API quota or storage full). Pagination paused.';
+                this.showError(errMsg);
+                return;
+            }
             
             if (result.ratings.length > 0) {
                 const startIndex = this.ratings.length;
@@ -1242,6 +1793,8 @@ class PopupManager {
             this.lastDoc = null;
             this.hasMore = true;
             this.isLoadingMore = false;
+            this.consecutiveAutoLoads = 0;
+            this.isCircuitBreakerTripped = false;
             this.hideTrigger();
             
             console.log('🔄 PopupManager: Force refreshing ratings...');
@@ -1253,12 +1806,14 @@ class PopupManager {
             await this.showLoadingWithFade();
             
             // Clear cache and fetch fresh data
+            const currentUser = firebaseManager.getCurrentUser();
+            const filterUserId = (this.currentFilter === 'my' && currentUser) ? currentUser.uid : null;
             const ratingsCacheService = firebaseManager.getRatingsCacheService();
-            await ratingsCacheService.clearCache();
+            await ratingsCacheService.clearCache(filterUserId);
             
             const fetchStartTime = performance.now();
-            // Force fetch first page
-            const result = await ratingsCacheService.fetchAndCacheRatings(this.ITEMS_PER_PAGE, null);
+            // Force fetch first page for active filter
+            const result = await ratingsCacheService.fetchAndCacheRatings(this.ITEMS_PER_PAGE, null, filterUserId);
             const fetchEndTime = performance.now();
             const fetchTime = Math.round(fetchEndTime - fetchStartTime);
             
@@ -1310,6 +1865,8 @@ class PopupManager {
         
         if (!append) {
             const clearStart = performance.now();
+            // Clean up any orphaned body-level dropdown clones from setupPopupRatingMenu
+            document.querySelectorAll('body > .rating-menu-dropdown').forEach(m => m.remove());
             this.elements.feedContent.innerHTML = '';
             const clearTime = Math.round(performance.now() - clearStart);
             console.log(`⏱️ [PopupManager] Clear feedContent: ${clearTime}ms`);
@@ -1322,7 +1879,7 @@ class PopupManager {
             const emptyStateStart = performance.now();
             this.elements.feedContent.innerHTML = `
                 <div class="empty-state">
-                    <div class="empty-state-icon">🎬</div>
+                    <div class="empty-state-icon"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #64748b;"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg></div>
                     <h3 class="empty-state-title" data-i18n="popup.content.empty_title">${i18n.get('popup.content.empty_title')}</h3>
                     <p class="empty-state-text" data-i18n="popup.content.empty_text">${i18n.get('popup.content.empty_text')}</p>
                 </div>
@@ -1376,6 +1933,7 @@ class PopupManager {
                 }
                 
                 const ratingElement = await this.createRatingElementSync(rating, averageRatingsMap, currentUserProfile);
+                ratingElement.style.animationDelay = `${(startIndex + renderedCount) * 35}ms`;
                 this.elements.feedContent.appendChild(ratingElement);
                 renderedCount++;
                 
@@ -1541,7 +2099,7 @@ class PopupManager {
         
         // Add movie ID as data attribute for navigation
         ratingDiv.dataset.movieId = movieId;
-        const posterUrl = movie?.posterUrl || '/icons/icon48.png';
+        const posterUrl = movie?.posterUrl || '/src/shared/assets/icons/app/icon48.png';
         const movieTitle = movie?.name || 'Unknown Movie';
         const movieYear = movie?.year || '';
         const movieGenres = movie?.genres?.slice(0, 2).join(', ') || '';
@@ -1554,7 +2112,7 @@ class PopupManager {
             : (i18n.currentLocale === 'ru' ? 'Нет оценок' : 'No ratings');
 
         // Get current user photo if this is current user's rating and photo is missing/outdated
-        let userPhoto = rating.userPhoto || '/icons/icon48.png';
+        let userPhoto = rating.userPhoto || '/src/shared/assets/icons/app/icon48.png';
         const currentUser = firebaseManager.getCurrentUser();
         let displayUserName = rating.userName || 'Unknown User';
         
@@ -1576,49 +2134,73 @@ class PopupManager {
         ratingDiv.innerHTML = `
             <img src="${posterUrl}" alt="${movieTitle}" class="rating-poster" onerror="Utils.handlePosterError(this)">
             <div class="rating-content">
-                <div class="rating-header">
-                    <div class="rating-user-info clickable-user" data-user-id="${rating.userId}">
-                        <img src="${userPhoto}" alt="${displayUserName}" class="rating-user-avatar" onerror="Utils.handlePosterError(this)">
-                        <span class="rating-user-name" title="${this.escapeHtml(displayUserName)}">${this.escapeHtml(this.truncateText(displayUserName, 20))}</span>
+                <!-- Level 1 (18px): Author & Meta + Score & Actions -->
+                <div class="rating-header-row">
+                    <div class="rating-author-group clickable-user" data-user-id="${rating.userId}">
+                        <img src="${userPhoto}" alt="${displayUserName}" class="rating-author-avatar" onerror="Utils.handlePosterError(this)">
+                        <span class="rating-author-name" title="${this.escapeHtml(displayUserName)}">${this.escapeHtml(displayUserName)}</span>
+                        <span class="rating-separator">•</span>
+                        <span class="rating-timestamp">${timestamp}</span>
                     </div>
-                    ${isCurrentUser ? `
-                        <div class="rating-menu">
-                            <button class="rating-menu-btn" data-rating-id="${rating.id}" aria-label="Меню отзыва">
-                                <span>⋮</span>
-                            </button>
-                            <div class="rating-menu-dropdown" id="popup-menu-${rating.id}" style="display: none;">
-                                <button class="menu-item edit-item" data-rating-id="${rating.id}" data-action="edit">
-                                    <span class="menu-icon">${Icons.EDIT}</span>
-                                    <span>${i18n.get('movie_details.edit')}</span>
+                    <div class="rating-actions-group">
+                        ${isCurrentUser ? `
+                            <div class="rating-menu">
+                                <button class="rating-menu-btn" data-rating-id="${rating.id}" aria-label="Меню отзыва">
+                                    <span>⋮</span>
                                 </button>
-                                <button class="menu-item delete-item" data-rating-id="${rating.id}" data-action="delete">
-                                    <span class="menu-icon">${Icons.TRASH}</span>
-                                    <span>${i18n.get('movie_details.delete')}</span>
-                                </button>
+                                <div class="rating-menu-dropdown" id="popup-menu-${rating.id}" style="display: none;">
+                                    <button class="menu-item edit-item" data-rating-id="${rating.id}" data-action="edit">
+                                        <span class="menu-icon">${Icons.EDIT}</span>
+                                        <span>${i18n.get('movie_details.edit')}</span>
+                                    </button>
+                                    <button class="menu-item delete-item" data-rating-id="${rating.id}" data-action="delete">
+                                        <span class="menu-icon">${Icons.TRASH}</span>
+                                        <span>${i18n.get('movie_details.delete')}</span>
+                                    </button>
+                                </div>
+                            </div>
+                        ` : ''}
+                        <div class="rating-score-badge" data-rating-id="${rating.id}">
+                            <span class="score-star">★</span>
+                            <span class="score-value">${rating.rating}</span>
+                            <div class="average-score-tooltip" id="tooltip-${rating.id}">
+                                <span class="tooltip-icon">👥</span>
+                                <span class="tooltip-text">${i18n.currentLocale === 'ru' ? 'Средняя' : 'Avg'}: ${averageDisplay}</span>
                             </div>
                         </div>
-                    ` : ''}
-                </div>
-                <h3 class="rating-movie-title" title="${this.escapeHtml(movieTitle)}">${this.escapeHtml(this.truncateText(movieTitle, 50))}</h3>
-                <p class="rating-movie-meta">${movieYear} • ${this.truncateText(movieGenres, 30)}</p>
-                <div class="rating-scores">
-                    <div class="rating-user-score">
-                        <span>${i18n.get('movie_card.my_rating')}:</span>
-                        <span class="rating-badge">${rating.rating}</span>
-                    </div>
-                    <div class="rating-average-score">
-                        <span>${i18n.get('movie_card.avg_rating')}:</span>
-                        <span class="rating-badge">${averageDisplay}</span>
                     </div>
                 </div>
-                ${rating.comment ? `<p class="rating-comment" title="${this.escapeHtml(rating.comment)}">${Utils.parseSpoilers(this.escapeHtml(this.truncateText(rating.comment, 100)))}</p>` : ''}
-                <p class="rating-timestamp">${timestamp}</p>
+
+                <!-- Level 2 (18px): Movie Title + Year -->
+                <div class="rating-title-row">
+                    <h3 class="rating-movie-title" title="${this.escapeHtml(movieTitle)}">
+                        ${this.escapeHtml(movieTitle)}${movieYear ? ` <span class="rating-movie-year">(${movieYear})</span>` : ''}
+                    </h3>
+                </div>
+
+                <!-- Level 3 (18px): Comment (priority) or Genres -->
+                <div class="rating-context-row">
+                    ${(() => {
+                        const normalizedComment = Utils.normalizeRatingComment(rating.comment);
+                        if (normalizedComment) {
+                            return `
+                                <p class="rating-comment-snippet" title="${this.escapeHtml(normalizedComment)}">
+                                    <span class="comment-quote-icon">💬</span>
+                                    <span class="comment-text">${Utils.parseSpoilers(this.escapeHtml(normalizedComment))}</span>
+                                </p>
+                            `;
+                        }
+                        return `
+                            <p class="rating-genres-snippet">${this.escapeHtml(movieGenres || (i18n.currentLocale === 'ru' ? 'Без жанра' : 'No genres'))}</p>
+                        `;
+                    })()}
+                </div>
             </div>
         `;
 
-        // Add click handler to navigate to movie detail page (but not if clicking menu or user info)
+        // Add click handler to navigate to movie detail page (but not if clicking menu, user info, or rating badge)
         ratingDiv.addEventListener('mousedown', (e) => {
-            if (e.target.closest('.rating-menu') || e.target.closest('.rating-user-info')) {
+            if (e.target.closest('.rating-menu') || e.target.closest('.rating-author-group') || e.target.closest('.rating-user-info') || e.target.closest('.rating-score-badge')) {
                 return;
             }
             if (movieId) {
@@ -1633,8 +2215,11 @@ class PopupManager {
             this.setupPopupRatingMenu(ratingDiv, rating.id);
         }
 
+        // Setup tooltip listeners (220ms hover intent + click-lock)
+        this.setupScoreBadgeTooltip(ratingDiv, rating.id);
+
         // Add click handler for user info
-        const userInfo = ratingDiv.querySelector('.rating-user-info');
+        const userInfo = ratingDiv.querySelector('.rating-author-group') || ratingDiv.querySelector('.rating-user-info');
         if (userInfo) {
             userInfo.addEventListener('mousedown', (e) => {
                 e.stopPropagation();
@@ -1675,7 +2260,7 @@ class PopupManager {
             } else {
                 // Calculate position
                 const btnRect = menuBtn.getBoundingClientRect();
-                const menuWidth = 160; // min-width from CSS
+                const menuWidth = 120; // min-width from CSS (120px)
                 
                 menu.style.position = 'fixed';
                 menu.style.top = `${btnRect.bottom + 4}px`;
@@ -1793,7 +2378,7 @@ class PopupManager {
             ">
                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;">
                     <h3 style="margin:0; font-size:20px;">${i18n.get('ratings.modal.rate_movie')}</h3>
-                    <button id="closeEditModalPopup" style="background:#334155; color:#e2e8f0; border:none; padding:8px 12px; border-radius:8px; cursor:pointer;">✕</button>
+                    <button id="closeEditModalPopup" style="background:#334155; color:#e2e8f0; border:none; padding:8px 12px; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
                 </div>
                 
                 <form id="editRatingFormPopup">
@@ -1804,9 +2389,9 @@ class PopupManager {
                     
                     <div style="margin-bottom:16px;">
                         <label style="display:block; margin-bottom:8px; color:#94a3b8;">${i18n.get('ratings.modal.share_thoughts')}:</label>
-                        <textarea id="editRatingCommentPopup" rows="4" maxlength="500" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid #334155; background:#0b1220; color:#e2e8f0; resize:vertical;">${this.escapeHtml(ratingData.comment || '')}</textarea>
+                        <textarea id="editRatingCommentPopup" rows="4" maxlength="500" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid #334155; background:#0b1220; color:#e2e8f0; resize:vertical;">${this.escapeHtml(Utils.normalizeRatingComment(ratingData.comment))}</textarea>
                         <div style="text-align:right; margin-top:4px; font-size:12px; color:#94a3b8;">
-                            <span id="editCommentCountPopup">${(ratingData.comment || '').length}</span>/500
+                            <span id="editCommentCountPopup">${Utils.normalizeRatingComment(ratingData.comment).length}</span>/500
                         </div>
                     </div>
                     
@@ -2095,7 +2680,7 @@ class PopupManager {
 
         if (overlappingElements.length > 0) {
             overlappingElements.forEach((item, index) => {
-                const status = item.overlapsLoader ? '⚠️ OVERLAPS' : '✅ BELOW';
+                const status = item.overlapsLoader ? '[OVERLAPS]' : '[BELOW]';
                 console.log(`  ${index + 1}. ${status} - ${item.tag}${item.id ? '#' + item.id : ''}${item.className ? '.' + item.className.split(' ').join('.') : ''}`);
                 console.log('     z-index:', item.zIndex, `(${item.zIndexNum})`, '| position:', item.position, '| display:', item.display);
                 console.log('     rect:', `top:${item.rect.top} left:${item.rect.left} width:${item.rect.width} height:${item.rect.height}`);

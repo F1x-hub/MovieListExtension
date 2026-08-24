@@ -1,16 +1,8 @@
 
 import { i18n } from '../../shared/i18n/I18n.js';
 
-const PREVIEW_POSTERS = [
-    'https://avatars.mds.yandex.net/get-kinopoisk-image/1900700/3bdf439f-3507-4250-ad68-07f9026466f3/300x450', // The Shawshank Redemption
-    'https://avatars.mds.yandex.net/get-kinopoisk-image/1946459/5c9e1b75-f53a-4eb1-b757-b0d4078a3a1b/300x450', // The Green Mile
-    'https://avatars.mds.yandex.net/get-kinopoisk-image/1599028/0b76b22e-4734-4bc8-8aa0-c9c05e1975e5/300x450', // Pulp Fiction
-    'https://avatars.mds.yandex.net/get-kinopoisk-image/1601783/b3c50165-3850-4f5b-9d40-f6afcb39fa8a/300x450', // Inception
-    'https://avatars.mds.yandex.net/get-kinopoisk-image/4303601/bb966b1a-acda-4c00-ac9d-eb7c27bc3748/300x450', // The Matrix
-    'https://avatars.mds.yandex.net/get-kinopoisk-image/1946459/57b5afc1-2856-42d4-a035-77649cc744a5/300x450', // Interstellar
-    'https://avatars.mds.yandex.net/get-kinopoisk-image/1946459/4ab77112-70b8-4cc3-b68e-ad72776c5b96/300x450', // Fight Club
-    'https://avatars.mds.yandex.net/get-kinopoisk-image/1721753/5661d4a0-d120-410e-bdf1-e8df81c8b368/300x450'  // Forrest Gump
-];
+const DEFAULT_SPINNER_POSTER = '/src/shared/assets/icons/app/icon128-white.png';
+const PREVIEW_POSTERS = [];
 
 /**
  * RandomManager - Controller for the Random Movie page
@@ -317,10 +309,10 @@ class RandomManager {
 
         if (shouldExpand) {
             body.classList.remove('collapsed');
-            if(icon) icon.style.transform = 'rotate(90deg)';
+            if (icon) icon.style.transform = 'rotate(180deg)';
         } else {
             body.classList.add('collapsed');
-            if(icon) icon.style.transform = 'rotate(0deg)';
+            if (icon) icon.style.transform = 'rotate(0deg)';
         }
     }
 
@@ -489,10 +481,10 @@ class RandomManager {
             const movie = await this.kinopoiskService.getRandomMovie(filters);
 
             if (movie) {
-                this.displayMovie(movie);
-             } else {
+                await this.displayMovie(movie);
+            } else {
                 this.showState('error');
-             }
+            }
 
         } catch (error) {
             console.error('Error finding random movie:', error);
@@ -532,13 +524,10 @@ class RandomManager {
             const skeletonPoster = document.getElementById('skeletonPosterImg');
             if (skeletonPoster && this.elements.loadingState.style.display !== 'none') {
                 // 1. Stop dynamic spinning
-                if (this._posterSpinInterval) {
-                    clearInterval(this._posterSpinInterval);
-                    this._posterSpinInterval = null;
-                }
+                this._stopPosterSpinning();
                 
                 // 2. Focus on actual movie poster
-                skeletonPoster.src = movie.posterUrl || '/icons/icon48.png';
+                skeletonPoster.src = movie.posterUrl || '/src/shared/assets/icons/app/icon48.png';
                 skeletonPoster.classList.remove('spinning');
                 
                 // 3. Wait for blur-out transition (350ms in CSS)
@@ -551,6 +540,7 @@ class RandomManager {
 
         } else {
             console.error('MovieCard component not found');
+            this.showState('error');
         }
     }
 
@@ -686,28 +676,53 @@ class RandomManager {
         const imgEl = document.getElementById('skeletonPosterImg');
         if (!imgEl) return;
 
-        imgEl.classList.add('spinning');
-
-        // Gather candidates
-        let candidates = [...PREVIEW_POSTERS];
-        if (this.pool && this.pool.length > 0) {
-            const poolPosters = this.pool.map(m => m.poster).filter(Boolean);
-            if (poolPosters.length > 0) {
-                candidates = [...poolPosters, ...candidates];
-            }
+        // Ensure CSP-safe error listener on DOM skeleton image
+        if (!this._skeletonImgErrorBound) {
+            this._skeletonImgErrorBound = true;
+            imgEl.addEventListener('error', () => {
+                imgEl.src = DEFAULT_SPINNER_POSTER;
+            });
         }
 
-        let idx = 0;
-        // Pre-cache posters by loading them into hidden Image objects to ensure instant changes
+        imgEl.classList.add('spinning');
+
+        // Gather candidates from pool or preview list
+        let poolCandidates = [];
+        if (this.pool && this.pool.length > 0) {
+            poolCandidates = this.pool.map(m => m.poster).filter(Boolean);
+        }
+        
+        let candidates = [...poolCandidates, ...PREVIEW_POSTERS];
+        let activeCandidates = candidates.length > 0 ? [...candidates] : [DEFAULT_SPINNER_POSTER];
+
+        // Pre-cache remote posters and prune failed URLs from active rotation
         candidates.forEach(url => {
-            const temp = new Image();
-            temp.src = url;
+            if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+                const temp = new Image();
+                temp.onerror = () => {
+                    activeCandidates = activeCandidates.filter(u => u !== url);
+                    if (activeCandidates.length === 0) {
+                        activeCandidates = [DEFAULT_SPINNER_POSTER];
+                        imgEl.src = DEFAULT_SPINNER_POSTER;
+                    }
+                };
+                temp.src = url;
+            }
         });
 
-        this._posterSpinInterval = setInterval(() => {
-            idx = (idx + 1) % candidates.length;
-            imgEl.src = candidates[idx];
-        }, 70);
+        let idx = 0;
+        imgEl.src = activeCandidates[0] || DEFAULT_SPINNER_POSTER;
+
+        if (activeCandidates.length > 1) {
+            this._posterSpinInterval = setInterval(() => {
+                if (activeCandidates.length === 0) {
+                    imgEl.src = DEFAULT_SPINNER_POSTER;
+                    return;
+                }
+                idx = (idx + 1) % activeCandidates.length;
+                imgEl.src = activeCandidates[idx];
+            }, 70);
+        }
     }
 
     _stopPosterSpinning() {
@@ -880,9 +895,12 @@ class RandomManager {
         resultsEl.classList.remove('hidden');
 
         try {
-            const data = await this.kinopoiskService.searchMovies(query, 1, 7);
+            const data = await this.kinopoiskService.searchMovies(query, 1, 20);
             const movies = data.docs || [];
-            this._renderSearchResults(movies, resultsEl);
+            const sortedMovies = (data.searchSource === 'kinopoisk-offscreen-scrape' || data.searchSource === 'kinopoisk-scrape')
+                ? movies.slice(0, 8)
+                : this.kinopoiskService.sortMoviesByRelevance(movies, query).slice(0, 8);
+            this._renderSearchResults(sortedMovies, resultsEl);
         } catch {
             resultsEl.innerHTML = '<div style="padding:12px;color:#e74c3c;font-size:13px">Ошибка поиска</div>';
         }

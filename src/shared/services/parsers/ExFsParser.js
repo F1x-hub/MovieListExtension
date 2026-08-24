@@ -14,6 +14,10 @@ class ExFsParser extends BaseParserService {
         });
     }
 
+    getPlayerType() {
+        return 'video';
+    }
+
     // ─── BaseParserService Contract ───────────────────────────────────
 
     /**
@@ -23,7 +27,6 @@ class ExFsParser extends BaseParserService {
      * @returns {Promise<SearchResult|null>}
      */
     async search(title, year) {
-        console.log(`[DEBUG ExFsParser] search() called. title: "${title}", year: ${year}`);
         try {
             const targetYear = year ? year.toString() : null;
 
@@ -32,10 +35,13 @@ class ExFsParser extends BaseParserService {
             formData.append('subaction', 'search');
             formData.append('story', title);
 
-            const response = await fetch(`${this.baseUrl}/index.php?do=search`, {
+            const searchUrl = `${this.baseUrl}/index.php?do=search`;
+            const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
+            const request = () => fetch(searchUrl, {
                 method: 'POST',
                 body: formData
             });
+            const response = perf ? await perf.trackRequest('EXFS_SEARCH', { purpose: 'search', url: searchUrl }, request) : await request();
 
             if (!response.ok) {
                 throw new Error(`Search failed: ${response.status}`);
@@ -43,7 +49,6 @@ class ExFsParser extends BaseParserService {
 
             const html = await response.text();
             const result = this.parseSearchResults(html, title, targetYear);
-            console.log(`[DEBUG ExFsParser] search result:`, result ? `url: ${result.url?.substring(0,80)}` : 'null');
 
             if (result) {
                 result.parserId = this.id;
@@ -62,18 +67,17 @@ class ExFsParser extends BaseParserService {
      * @returns {Promise<Array<VideoSource>>}
      */
     async getVideoSources(searchResult) {
-        console.log(`[DEBUG ExFsParser] getVideoSources() called. searchResult:`, typeof searchResult === 'string' ? searchResult.substring(0,80) : searchResult?.url?.substring(0,80));
         try {
             const url = typeof searchResult === 'string' ? searchResult : searchResult.url;
-            const response = await fetch(url);
+            const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
+            const request = () => fetch(url);
+            const response = perf ? await perf.trackRequest('EXFS_SOURCE', { purpose: 'getVideoSources', url }, request) : await request();
             if (!response.ok) {
                 throw new Error(`Failed to load movie page: ${response.status}`);
             }
 
             const html = await response.text();
-            const sources = this.parseMoviePage(html);
-            console.log(`[DEBUG ExFsParser] getVideoSources result: ${sources?.length || 0} sources`);
-            return sources;
+            return this.parseMoviePage(html);
 
         } catch (error) {
             console.error(`[${this.name}] getVideoSources error:`, error);

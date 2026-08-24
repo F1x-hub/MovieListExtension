@@ -1,10 +1,6 @@
 /**
- * RutubeParser - Parser for rutube.ru video pages.
- * Extracts content metadata (title, season, episode, channel, duration, date)
- * from Rutube page titles and player DOM structure.
- * 
- * Unlike other parsers (ExFS, KinoGo), this parser doesn't search a streaming site.
- * Instead, it parses the current Rutube page to extract structured content info.
+ * RutubeParser - Parser for rutube.ru video hosting and streaming.
+ * Extracts content metadata and provides embed iframe players.
  * 
  * @extends BaseParserService
  */
@@ -21,47 +17,72 @@ class RutubeParser extends BaseParserService {
 
     /**
      * Search for a movie/series by title on Rutube.
-     * Uses Rutube's search API to find matching videos.
+     * Uses Rutube's search API with multi-query cascade and intelligent scoring.
      * 
      * @param {string} title - Movie or series title
-     * @param {string|number|null} year - Release year (unused, kept for interface)
+     * @param {string|number|null} year - Release year
      * @returns {Promise<SearchResult|null>}
      */
     async search(title, year) {
-        console.log('[Rutube Search] query:', title);
+        if (!title) return null;
+        console.log('[Rutube Search] query:', title, 'year:', year);
+
+        const queries = this._buildSearchQueries(title, year);
+        const searchYear = year || this._extractYear(title);
+        const candidatesMap = new Map();
+
         try {
-            const searchUrl = `${this.baseUrl}/api/search/video/?query=${encodeURIComponent(title)}&page=1&per_page=10`;
-            console.log('[Rutube Search] запрос URL:', searchUrl);
+            for (const query of queries) {
+                const searchUrl = `${this.baseUrl}/api/search/video/?query=${encodeURIComponent(query)}&page=1&per_page=25`;
+                console.log('[Rutube Search] request URL:', searchUrl);
 
-            const response = await fetch(searchUrl, {
-                headers: {
-                    'Accept': 'application/json'
+                try {
+                    const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
+                    const request = () => fetch(searchUrl, {
+                        headers: {
+                            'Accept': 'application/json'
+                        }
+                    });
+                    const response = perf ? await perf.trackRequest('RUTUBE_SEARCH', { purpose: 'search', url: searchUrl }, request) : await request();
+
+                    if (!response.ok) {
+                        console.warn(`[Rutube Search] status: ${response.status} for query "${query}"`);
+                        continue;
+                    }
+
+                    const data = await response.json();
+                    const results = data.results || data.items || [];
+
+                    for (const item of results) {
+                        if (item && item.id && !candidatesMap.has(item.id)) {
+                            candidatesMap.set(item.id, item);
+                        }
+                    }
+
+                    // Check if we found an outstanding candidate early
+                    const candidateList = Array.from(candidatesMap.values());
+                    const bestSoFar = this._pickBestResult(candidateList, title, searchYear);
+                    if (bestSoFar && bestSoFar.score >= 140) {
+                        break;
+                    }
+                } catch (err) {
+                    console.warn(`[${this.name}] Query "${query}" failed:`, err);
                 }
-            });
-
-            console.log('[Rutube Search] статус ответа:', response.status);
-
-            if (!response.ok) {
-                throw new Error(`Search failed: ${response.status}`);
             }
 
-            const data = await response.json();
-            console.log('[Rutube Search] сырой ответ:', JSON.stringify(data).slice(0, 500));
-            console.log('[Rutube Search] кол-во результатов:', data?.results?.length ?? data?.items?.length ?? '???');
-            console.log('[Rutube Search] первый результат:', JSON.stringify(data?.results?.[0] ?? data?.items?.[0]));
-
-            const results = data.results || [];
-
-            if (results.length === 0) {
+            const candidateList = Array.from(candidatesMap.values());
+            if (candidateList.length === 0) {
                 console.log(`[DEBUG RutubeParser] No results found for "${title}"`);
                 return null;
             }
 
-            // Find best match
-            const searchYear = year || this._extractYear(title);
-            const best = this._pickBestResult(results, title, searchYear);
-            if (!best) return null;
+            const bestResult = this._pickBestResult(candidateList, title, searchYear);
+            if (!bestResult || bestResult.score <= 0) {
+                console.log(`[DEBUG RutubeParser] No confident result found for "${title}" (best score: ${bestResult?.score})`);
+                return null;
+            }
 
+            const best = bestResult.item;
             const parsed = this.parsePageTitle(best.title || '');
 
             const result = {
@@ -75,12 +96,11 @@ class RutubeParser extends BaseParserService {
                 channelName: best.author?.name || parsed.channelName || null,
                 duration: best.duration || null,
                 publicationDate: best.publication_ts || best.created_ts || null,
-                embedUrl: best.embed_url || null,
+                embedUrl: best.embed_url || `${this.baseUrl}/play/embed/${best.id}`,
                 thumbnailUrl: best.thumbnail_url || null
             };
 
-            console.log('[Rutube Search] итоговый результат:', JSON.stringify(result));
-            console.log(`[DEBUG RutubeParser] search result:`, result.url);
+            console.log('[Rutube Search] final result:', JSON.stringify(result));
             return result;
 
         } catch (error) {
@@ -91,7 +111,7 @@ class RutubeParser extends BaseParserService {
 
     /**
      * Get video sources from a Rutube search result.
-     * Returns the Rutube embed player URL as an iframe source.
+     * Extracts direct HLS stream (.m3u8) for native player with iframe fallback.
      * 
      * @param {SearchResult} searchResult - Result from search()
      * @returns {Promise<Array<VideoSource>>}
@@ -108,31 +128,49 @@ class RutubeParser extends BaseParserService {
                 return [];
             }
 
-            // Use Rutube's embed URL
-            let embedUrl = searchResult.embedUrl || `${this.baseUrl}/play/embed/${videoId}`;
+            const embedUrl = searchResult.embedUrl || `${this.baseUrl}/play/embed/${videoId}`;
+            let playOptions = null;
 
-            // Also try to get additional metadata from the OEmbed/API
-            let metadata = {};
             try {
-                metadata = await this._fetchVideoMetadata(videoId);
+                playOptions = await this._fetchPlayOptions(videoId);
             } catch (e) {
-                console.warn(`[${this.name}] Failed to fetch video metadata:`, e);
+                console.warn(`[${this.name}] Failed to fetch play options for ${videoId}:`, e);
             }
 
-            const sources = [{
-                name: this.name,
+            const m3u8Url = playOptions?.video_balancer?.m3u8
+                || playOptions?.video_balancer?.default
+                || playOptions?.balancer?.m3u8
+                || (typeof playOptions?.video_balancer === 'string' ? playOptions.video_balancer : null);
+
+            const metadata = {
+                title: playOptions?.title || searchResult.title,
+                channelName: playOptions?.author?.name || searchResult.channelName,
+                duration: playOptions?.duration || searchResult.duration,
+                publicationDate: playOptions?.publication_ts || searchResult.publicationDate,
+                thumbnailUrl: playOptions?.thumbnail_url || searchResult.thumbnailUrl
+            };
+
+            const sources = [];
+
+            // Primary: Direct HLS Stream for native video player
+            if (m3u8Url) {
+                sources.push({
+                    name: this.name,
+                    url: m3u8Url,
+                    type: 'hls',
+                    metadata
+                });
+            }
+
+            // Fallback: Embed iframe player
+            sources.push({
+                name: m3u8Url ? `${this.name} (Embed)` : this.name,
                 url: embedUrl,
                 type: 'iframe',
-                metadata: {
-                    title: metadata.title || searchResult.title,
-                    channelName: metadata.author?.name || searchResult.channelName,
-                    duration: metadata.duration || searchResult.duration,
-                    publicationDate: metadata.publication_ts || searchResult.publicationDate,
-                    thumbnailUrl: metadata.thumbnail_url || searchResult.thumbnailUrl
-                }
-            }];
+                metadata
+            });
 
-            console.log(`[DEBUG RutubeParser] getVideoSources result: ${sources.length} sources`);
+            console.log(`[DEBUG RutubeParser] getVideoSources result: ${sources.length} sources (HLS: ${!!m3u8Url})`);
             return sources;
 
         } catch (error) {
@@ -142,11 +180,280 @@ class RutubeParser extends BaseParserService {
     }
 
     /**
-     * Return player type — Rutube uses its own embedded iframe player.
-     * @returns {'iframe'}
+     * Return player type — Rutube prefers native video player for HLS streams.
+     * @returns {'video'}
      */
     getPlayerType() {
-        return 'iframe';
+        return 'video';
+    }
+
+    /**
+     * Fetch play options (video balancer stream URLs) from Rutube API.
+     * Tries primary and fallback endpoints.
+     * @param {string} videoId
+     * @returns {Promise<Object|null>}
+     * @private
+     */
+    async _fetchPlayOptions(videoId) {
+        const candidateUrls = [
+            `${this.baseUrl}/api/play/options/${videoId}/?format=json`,
+            `${this.baseUrl}/api/play/options/${videoId}/`,
+            `${this.baseUrl}/api/video/${videoId}/?format=json`
+        ];
+
+        for (const url of candidateUrls) {
+            try {
+                const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
+                const request = () => fetch(url, {
+                    headers: { 'Accept': 'application/json' }
+                });
+                const response = perf ? await perf.trackRequest('RUTUBE_SOURCE', { purpose: 'getVideoSources', url }, request) : await request();
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data?.video_balancer || data?.balancer || data?.video_url) {
+                        return data;
+                    }
+                }
+            } catch (err) {
+                console.warn(`[${this.name}] Endpoint ${url} failed:`, err);
+            }
+        }
+        return null;
+    }
+
+    // ─── Query Building ───────────────────────────────────────────────
+
+    /**
+     * Build prioritized cascade queries for searching.
+     * @param {string} title
+     * @param {string|number|null} year
+     * @returns {Array<string>}
+     * @private
+     */
+    _buildSearchQueries(title, year) {
+        if (!title) return [];
+        const cleanTitle = title.replace(/[:;/\\|]/g, ' ').replace(/\s+/g, ' ').trim();
+        const queries = [];
+        const searchYear = year || this._extractYear(title);
+
+        if (searchYear) {
+            queries.push(`${cleanTitle} ${searchYear}`);
+        }
+        queries.push(`${cleanTitle} фильм`);
+        queries.push(cleanTitle);
+
+        // Deduplicate case-insensitively
+        const unique = [];
+        const seen = new Set();
+        for (const q of queries) {
+            const lower = q.toLowerCase();
+            if (!seen.has(lower)) {
+                seen.add(lower);
+                unique.push(q);
+            }
+        }
+        return unique;
+    }
+
+    // ─── Garbage Detection & Scoring ─────────────────────────────────
+
+    /**
+     * Check if a title indicates UGC noise (reviews, reactions, let's plays, trailers, soundtracks, etc.)
+     * @param {string} title - Candidate video title
+     * @param {string} [query] - Original query title to avoid false positives if target title has such words
+     * @returns {boolean}
+     * @private
+     */
+    _isUgcGarbage(title, query = '') {
+        if (!title) return true;
+        const lower = title.toLowerCase();
+        const queryLower = (query || '').toLowerCase();
+
+        const garbagePatterns = [
+            // Reviews, recaps, reactions, essays, opinions, explanations
+            /(?:^|[^a-zа-яё0-9])(?:обзор[а-яё]*|разбор[а-яё]*|реакци[а-яё]*|рекап[а-яё]*|recap[s]?|пересказ[а-яё]*|мнени[а-яё]*|сюжет[а-яё]*|смысл\s+концовки|рецензи[а-яё]*|отзыв[а-яё]*|эссе|видеоэссе|разборк[а-яё]*|кинокритик[а-яё]*|впечатлени[а-яё]*|объяснени[а-яё]*)(?:$|[^a-zа-яё0-9])/i,
+            // Streaming, podcasts, shows, vlogs, interviews
+            /(?:^|[^a-zа-яё0-9])(?:подкаст[а-яё]*|podcast[s]?|интервью|стрим[а-яё]*|stream[s]?|шоу|выпуск[а-яё]*|влог[а-яё]*|vlog[s]?|в\s+гостях)(?:$|[^a-zа-яё0-9])/i,
+            // Gaming
+            /(?:^|[^a-zа-яё0-9])(?:прохожден[а-яё]*|геймпле[а-яё]*|gameplay|летспле[а-яё]*|letsplay|walkthrough|playthrough)(?:$|[^a-zа-яё0-9])/i,
+            // Music, soundtracks, songs, albums, playlists, AMVs, edits, shorts, tiktok
+            /(?:^|[^a-zа-яё0-9])(?:ost|ост|саундтрек[а-яё]*|саундтрэк[а-яё]*|soundtrack[s]?|музык[а-яё]*|песн[а-яё]*|трек[а-яё]*|альбом[а-яё]*|плейлист[а-яё]*|playlist[s]?|клип[а-яё]*|clip[s]?|amv|амв|edit[s]?|эдит[а-яё]*|shorts|шортс|тикток[а-яё]*|tiktok|кавер[а-яё]*|cover[s]?|ремикс[а-яё]*|remix)(?:$|[^a-zа-яё0-9])/i,
+            // Trailers, teasers, fragments, tops, bloopers, facts
+            /(?:^|[^a-zа-яё0-9])(?:трейлер[а-яё]*|trailer[s]?|промо|promo|тизер[а-яё]*|teaser[s]?|анонс[а-яё]*|нарезк[а-яё]*|фрагмент[а-яё]*|отрывок|отрывк[а-яё]*|сцен[а-яё]*|вырезанны[а-яё]*\s+сцен[а-яё]*|топ\s*\d+|топ-\d+|пасхалк[а-яё]*|факт[а-яё]*|секрет[а-яё]*|лучши[а-яё]*\s+момент[а-яё]*|блуперс[а-яё]*|неудачны[а-яё]*\s+дубл[а-яё]*)(?:$|[^a-zа-яё0-9])/i
+        ];
+
+        return garbagePatterns.some(regex => {
+            const match = lower.match(regex);
+            if (!match) return false;
+            const matchedWord = match[0].replace(/[^a-zа-яё0-9]/gi, '').trim().toLowerCase();
+            // If the search query itself includes this word, don't flag it as garbage
+            if (matchedWord && queryLower.includes(matchedWord)) {
+                return false;
+            }
+            return true;
+        });
+    }
+
+    /**
+     * Pick the best result from candidates based on scoring.
+     * @private
+     */
+    _pickBestResult(results, query, year) {
+        if (!results?.length) return null;
+
+        const cleaned = results.filter(item =>
+            item &&
+            !item.is_deleted &&
+            !item.is_livestream &&
+            !item.is_audio &&
+            !item.is_hidden
+        );
+
+        if (!cleaned.length) return null;
+
+        const scored = cleaned.map(item => {
+            const score = this._scoreResult(item, query, year);
+            return { item, score };
+        });
+
+        scored.sort((a, b) => b.score - a.score);
+        return scored[0];
+    }
+
+    /**
+     * Score a candidate search result.
+     * @param {Object} item - Rutube video item
+     * @param {string} query - Target search title
+     * @param {string|number|null} year - Target release year
+     * @returns {number}
+     * @private
+     */
+    _scoreResult(item, query, year) {
+        if (!item) return -1000;
+        const itemTitle = (item.title || '').trim();
+        if (!itemTitle) return -1000;
+
+        // Hard penalty for UGC garbage
+        if (this._isUgcGarbage(itemTitle)) {
+            return -500;
+        }
+
+        let score = 0;
+        const targetTitle = (query || '').trim().toLowerCase();
+        const candidateTitle = itemTitle.toLowerCase();
+
+        // 1. Title Similarity & Token Overlap
+        const targetTokens = this._tokenize(targetTitle);
+        const candidateTokens = this._tokenize(candidateTitle);
+
+        if (targetTokens.length === 0) return -1000;
+
+        const cleanTarget = this._normalizeTitle(targetTitle);
+        const cleanCandidate = this._normalizeTitle(candidateTitle);
+
+        if (cleanCandidate === cleanTarget) {
+            score += 150;
+        } else if (cleanCandidate.startsWith(cleanTarget)) {
+            score += 100;
+        } else {
+            let matchedCount = 0;
+            for (const token of targetTokens) {
+                if (candidateTokens.includes(token)) {
+                    matchedCount++;
+                }
+            }
+
+            const matchRatio = matchedCount / targetTokens.length;
+            if (matchRatio === 1) {
+                score += 80;
+            } else if (matchRatio >= 0.66) {
+                score += 40;
+            } else if (matchRatio > 0) {
+                score += 15;
+            } else {
+                return -300;
+            }
+
+            // Penalize overly bloated titles with lots of extra words
+            const extraWords = Math.max(0, candidateTokens.length - targetTokens.length);
+            if (extraWords > 5) {
+                score -= Math.min(60, (extraWords - 5) * 5);
+            }
+        }
+
+        // 2. Year Matching
+        const targetYear = year ? parseInt(year, 10) : this._extractYear(query);
+        const candidateYear = this._extractYear(itemTitle);
+
+        if (targetYear) {
+            if (candidateYear === targetYear) {
+                score += 60;
+            } else if (candidateYear && Math.abs(candidateYear - targetYear) > 1) {
+                score -= 50;
+            }
+        }
+
+        // 3. Duration Scoring
+        const duration = item.duration || 0;
+        if (duration >= 3000 && duration <= 14400) {
+            // 50 min to 4 hours — optimal full movie
+            score += 100;
+        } else if (duration >= 1200 && duration < 3000) {
+            // 20 min to 50 min — series episode / animated short
+            score += 60;
+        } else if (duration >= 600 && duration < 1200) {
+            // 10 to 20 min
+            score += 10;
+        } else if (duration > 0 && duration < 600) {
+            // Under 10 min — almost certainly trailer / clip
+            score -= 120;
+        } else if (duration > 14400) {
+            // Over 4 hours — stream or marathon
+            score -= 40;
+        }
+
+        // 4. Category & Quality hints
+        if (item.category?.id === 4 || item.category?.name?.toLowerCase()?.includes('фильм')) {
+            score += 25;
+        }
+        if (item.is_official) {
+            score += 15;
+        }
+
+        return score;
+    }
+
+    /**
+     * Tokenize text into normalized words, excluding common stop words.
+     * @param {string} str
+     * @returns {Array<string>}
+     * @private
+     */
+    _tokenize(str) {
+        if (!str) return [];
+        const stopWords = new Set([
+            'в', 'на', 'и', 'с', 'по', 'о', 'об', 'из', 'к', 'от', 'до', 'для', 'за', 'под', 'не',
+            'the', 'a', 'an', 'of', 'in', 'on', 'at', 'to', 'for', 'with', 'by'
+        ]);
+        return str
+            .toLowerCase()
+            .replace(/[^a-zа-яё0-9]/gi, ' ')
+            .split(/\s+/)
+            .filter(token => token.length > 0 && !stopWords.has(token));
+    }
+
+    /**
+     * Normalize title to alphanumeric lowercase string for direct prefix/equality comparison.
+     * @param {string} str
+     * @returns {string}
+     * @private
+     */
+    _normalizeTitle(str) {
+        if (!str) return '';
+        return str
+            .toLowerCase()
+            .replace(/[^a-zа-яё0-9]/gi, '')
+            .trim();
     }
 
     // ─── Title Parsing ───────────────────────────────────────────────
@@ -188,7 +495,6 @@ class RutubeParser extends BaseParserService {
         if (!channelName) {
             const quoteMatch = title.match(/[«"]([^»"]+)[»"]/);
             if (quoteMatch) {
-                // This could be part of the title or the channel — heuristic: if after "от", it's channel
                 const fromMatch = pageTitle.match(/от\s*[«"]([^»"]+)[»"]/i);
                 if (fromMatch) {
                     channelName = fromMatch[1].trim();
@@ -213,14 +519,11 @@ class RutubeParser extends BaseParserService {
 
         // Clean up the title: remove season/episode info
         let cleanTitle = title;
-        // Remove "N сезон - M серия" or "N сезон M серия"
         cleanTitle = cleanTitle.replace(/\d+\s*сезон\s*[-–]?\s*\d*\s*серия/gi, '').trim();
-        // Remove standalone "N сезон" or "N серия"  
         cleanTitle = cleanTitle.replace(/\d+\s*сезон/gi, '').trim();
         cleanTitle = cleanTitle.replace(/\d+\s*серия/gi, '').trim();
 
         // Remove slash-separated alternative titles (e.g. "/ Jujutsu Kaisen")
-        // Keep the first part (Russian title)
         const slashIndex = cleanTitle.indexOf(' / ');
         if (slashIndex > 0) {
             cleanTitle = cleanTitle.substring(0, slashIndex).trim();
@@ -240,151 +543,7 @@ class RutubeParser extends BaseParserService {
         };
     }
 
-    // ─── Player DOM Parsing ──────────────────────────────────────────
-
-    /**
-     * Parse Rutube player DOM to extract metadata.
-     * Uses aria-labels and data-testid attributes from the player HTML.
-     * 
-     * @param {string} html - Player section HTML
-     * @returns {{ duration: number|null, channelName: string|null, currentTime: number|null }}
-     */
-    parsePlayerDOM(html) {
-        if (!html) return { duration: null, channelName: null, currentTime: null };
-
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
-
-        let duration = null;
-        let channelName = null;
-        let currentTime = null;
-
-        // Extract duration from progress bar aria-valuemax
-        // <div ... role="slider" aria-valuemax="1439" aria-valuenow="3" aria-valuetext="0 мин. (общая длительность 23 мин.)" ...>
-        const progressSlider = doc.querySelector('[role="slider"][aria-label*="Ползунок временной шкалы"]') 
-            || doc.querySelector('[data-testid="ui-progress-progressBar"]');
-        
-        if (progressSlider) {
-            const maxVal = progressSlider.getAttribute('aria-valuemax');
-            if (maxVal) {
-                duration = parseInt(maxVal, 10); // Duration in seconds
-            }
-            const nowVal = progressSlider.getAttribute('aria-valuenow');
-            if (nowVal) {
-                currentTime = parseInt(nowVal, 10);
-            }
-        }
-
-        // Try time display elements: "23:59" format
-        if (!duration) {
-            const timeBlocks = doc.querySelectorAll('.time-block-module__timeFormat___LfKTX');
-            if (timeBlocks.length >= 2) {
-                // Second time block is typically total duration
-                const durationText = timeBlocks[timeBlocks.length - 1].textContent.trim();
-                duration = this._parseTimeString(durationText);
-            }
-        }
-
-        // Extract channel name
-        // From channel subscription overlay: <h3 ...>КОМНАТА ДИДИ</h3>
-        const channelHeading = doc.querySelector('.channel-subscription-module__info___lTQjF h3');
-        if (channelHeading) {
-            channelName = channelHeading.textContent.trim();
-        }
-
-        // Fallback: from avatar aria-label
-        if (!channelName) {
-            const avatarDiv = doc.querySelector('[role="img"][aria-label]');
-            if (avatarDiv) {
-                channelName = avatarDiv.getAttribute('aria-label');
-            }
-        }
-
-        return { duration, channelName, currentTime };
-    }
-
     // ─── Internal Helpers ────────────────────────────────────────────
-
-    /**
-     * Pick the best result from the search results array based on scoring.
-     * @private
-     */
-    _pickBestResult(results, query, year) {
-        if (!results?.length) return null;
-
-        // 1. Исключаем мусор
-        const cleaned = results.filter(item =>
-            !item.is_deleted &&
-            !item.is_livestream &&
-            !item.is_audio &&
-            !item.is_hidden &&
-            this._isNotTrailer(item.title)
-        );
-
-        if (!cleaned.length) {
-            console.log('[Rutube Search] No cleaned results, using first available');
-            return results[0];
-        }
-
-        // 2. Считаем скор для каждого
-        const scored = cleaned.map(item => {
-            const score = this._scoreResult(item, query, year);
-            console.log(`[Rutube Parse] scored item: "${item.title}", score: ${score}, duration: ${item.duration}`);
-            return { item, score };
-        });
-
-        // 3. Берём с максимальным скором
-        scored.sort((a, b) => b.score - a.score);
-        return scored[0].item;
-    }
-
-    /**
-     * Check if a title suggests it's a trailer or other non-full content.
-     * @private
-     */
-    _isNotTrailer(title) {
-        if (!title) return true;
-        const t = title.toLowerCase();
-        const trailerWords = ['трейлер', 'trailer', 'промо', 'promo', 'тизер', 'teaser',
-            'анонс', 'клип', 'нарезка', 'фрагмент', 'otryv'];
-        return !trailerWords.some(w => t.includes(w));
-    }
-
-    /**
-     * Score a search result based on various criteria.
-     * @private
-     */
-    _scoreResult(item, query, year) {
-        let score = 0;
-        const title = (item.title || '').toLowerCase();
-        const queryLower = (query || '').toLowerCase();
-
-        // Длительность — главный критерий
-        const duration = item.duration || 0;
-        if (duration >= 3600) score += 100;       // полный фильм (>60 мин)
-        else if (duration >= 1800) score += 60;   // короткий фильм / серия (>30 мин)
-        else if (duration >= 600) score += 20;    // короткий контент
-        else score -= 50;                         // трейлер/клип
-
-        // Год совпадает
-        if (year && title.includes(String(year))) score += 40;
-
-        // Совпадение по запросу
-        const queryWords = queryLower.split(/\s+/).filter(Boolean);
-        const matchedWords = queryWords.filter(w => title.includes(w));
-        score += matchedWords.length * 10;
-
-        // Категория "Фильмы" (id=4)
-        if (item.category?.id === 4) score += 20;
-
-        // Популярность (hits) — небольшой буст
-        score += Math.min(20, Math.floor((item.hits || 0) / 10000));
-
-        // is_official — небольшой буст
-        if (item.is_official) score += 10;
-
-        return score;
-    }
 
     /**
      * Extract year from a query string.
@@ -403,7 +562,6 @@ class RutubeParser extends BaseParserService {
      */
     _extractVideoId(url) {
         if (!url) return null;
-        // Pattern: /video/{id}/ or /play/embed/{id}
         const match = url.match(/\/(?:video|play\/embed)\/([a-f0-9-]+)/i);
         return match ? match[1] : null;
     }
@@ -419,21 +577,6 @@ class RutubeParser extends BaseParserService {
         });
         if (!response.ok) throw new Error(`API request failed: ${response.status}`);
         return await response.json();
-    }
-
-    /**
-     * Parse a time string like "23:59" or "1:23:45" to seconds.
-     * @private
-     */
-    _parseTimeString(timeStr) {
-        if (!timeStr) return null;
-        const parts = timeStr.split(':').map(Number);
-        if (parts.length === 3) {
-            return parts[0] * 3600 + parts[1] * 60 + parts[2];
-        } else if (parts.length === 2) {
-            return parts[0] * 60 + parts[1];
-        }
-        return null;
     }
 
     /**

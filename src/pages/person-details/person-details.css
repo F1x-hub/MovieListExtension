@@ -1,0 +1,822 @@
+/* Person Details Page Styles */
+.person-details-page-container {
+    max-width: 1280px;
+    margin: 80px auto 60px;
+    padding: 0 24px;
+    min-height: calc(100vh - 180px);
+    box-sizing: border-box;
+    width: 100%;
+}
+
+/* Page State Transitions */
+.person-details-content {
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+    animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Error State */
+.error-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 24px;
+    text-align: center;
+    gap: 16px;
+    background: var(--theme-card-bg, rgba(255, 255, 255, 0.02));
+    border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
+    border-radius: var(--radius-lg, 12px);
+    max-width: 540px;
+    margin: 40px auto;
+}
+
+.error-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--theme-text-primary, #ffffff);
+    margin: 0;
+}
+
+.error-message {
+    font-size: 14px;
+    color: var(--theme-text-muted, #a1a1aa);
+    margin: 0;
+    line-height: 1.5;
+}
+
+.error-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+}
+
+/* ==========================================
+   HERO SECTION
+   ========================================== */
+.person-hero {
+    display: grid;
+    grid-template-columns: 190px minmax(0, 1fr);
+    gap: 24px;
+    align-items: center;
+    padding: 22px 24px;
+    background: var(--theme-card-bg, rgba(255, 255, 255, 0.02));
+    border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
+    border-radius: var(--radius-xl, 16px);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+}
+
+.person-hero__portrait-wrapper {
+    width: 100%;
+    aspect-ratio: 3 / 4;
+    border-radius: var(--radius-lg, 12px);
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.1));
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+    position: relative;
+    flex-shrink: 0;
+}
+
+.person-hero__portrait {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.3s ease;
+}
+
+.person-hero__portrait-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--theme-text-muted, #71717a);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.person-hero__info {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.person-hero__names {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.person-hero__name {
+    font-size: 30px;
+    font-weight: 800;
+    color: var(--theme-text-primary, #ffffff);
+    line-height: 1.2;
+    margin: 0;
+    letter-spacing: -0.02em;
+}
+
+.person-hero__original-name {
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--theme-text-muted, #a1a1aa);
+    line-height: 1.3;
+    margin: 0;
+}
+
+/* Professions Badges */
+.person-hero__professions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.person-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 9px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.12));
+    border-radius: var(--radius-sm, 6px);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--theme-text-secondary, #e4e4e7);
+    line-height: 1;
+}
+
+.light-theme .person-badge {
+    background: rgba(9, 9, 11, 0.04);
+    border-color: rgba(9, 9, 11, 0.12);
+    color: #27272a;
+}
+
+/* Meta Grid */
+.person-hero__meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px 24px;
+    padding-top: 10px;
+    border-top: 1px solid var(--theme-border, rgba(255, 255, 255, 0.06));
+}
+
+.person-meta-item {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.person-meta-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+    color: var(--theme-text-muted, #71717a);
+}
+
+.person-meta-value {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--theme-text-primary, #ffffff);
+    line-height: 1.4;
+}
+
+/* Aliases */
+.person-hero__aliases {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.person-aliases-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--theme-text-secondary, #d4d4d8);
+}
+
+.person-alias-tag {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
+    border-radius: var(--radius-sm, 6px);
+    padding: 2px 8px;
+    font-size: 12px;
+}
+
+.btn-toggle-aliases {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent-color, #6366f1);
+    cursor: pointer;
+    text-decoration: underline;
+    align-self: flex-start;
+}
+
+/* ==========================================
+   SECTIONS GENERAL
+   ========================================== */
+.person-section {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.person-section__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.person-section__title {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--theme-text-primary, #ffffff);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.person-section__count {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--theme-text-muted, #71717a);
+    margin-left: 2px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ==========================================
+   BIOGRAPHY SECTION
+   ========================================== */
+.person-bio__card {
+    background: var(--theme-card-bg, rgba(255, 255, 255, 0.02));
+    border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
+    border-radius: var(--radius-lg, 12px);
+    padding: 20px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.person-bio__text {
+    font-size: 15px;
+    line-height: 1.65;
+    color: var(--theme-text-secondary, #d4d4d8);
+    margin: 0;
+    word-break: break-word;
+}
+
+.person-bio__icon {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    margin: 0 5px 0 1px;
+    vertical-align: -2px;
+    color: currentColor;
+    flex-shrink: 0;
+}
+
+.person-bio__text--clamped {
+    display: -webkit-box;
+    -webkit-line-clamp: 6;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.btn-toggle-bio,
+.btn-toggle-facts {
+    background: none;
+    border: none;
+    padding: 4px 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent-color, #6366f1);
+    cursor: pointer;
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: opacity 0.2s ease;
+}
+
+.btn-toggle-bio:hover,
+.btn-toggle-facts:hover {
+    opacity: 0.85;
+}
+
+/* ==========================================
+   FACTS SECTION
+   ========================================== */
+.person-facts__list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.person-facts__list--remaining {
+    margin-top: 10px;
+}
+
+.person-facts__list.is-collapsed {
+    display: none;
+}
+
+.person-facts__list.is-expanded {
+    display: flex;
+}
+
+.person-fact-item {
+    position: relative;
+    padding: 9px 0;
+    font-size: 14px;
+    line-height: 1.65;
+    color: var(--theme-text-secondary, #d4d4d8);
+    display: flex;
+    gap: 10px;
+    overflow-wrap: anywhere;
+}
+
+.person-fact-item::before {
+    content: '';
+    flex: 0 0 2px;
+    align-self: stretch;
+    min-height: 1.65em;
+    background: var(--theme-border, rgba(255, 255, 255, 0.16));
+}
+
+.person-fact-item + .person-fact-item {
+    border-top: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
+}
+
+.btn-toggle-facts {
+    margin-top: 6px;
+    padding: 6px 10px;
+    border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.14));
+    border-radius: var(--radius-sm, 6px);
+    color: var(--theme-text-secondary, #d4d4d8);
+    background: var(--theme-card-bg, rgba(255, 255, 255, 0.02));
+}
+
+.light-theme .person-fact-item {
+    color: var(--theme-text-secondary, #3f3f46);
+}
+
+.light-theme .btn-toggle-facts {
+    color: var(--theme-text-primary, #18181b);
+}
+
+/* ==========================================
+   KNOWN FOR (CAROUSEL)
+   ========================================== */
+.known-for-carousel-wrapper {
+    position: relative;
+    width: 100%;
+}
+
+.known-for-carousel {
+    display: flex;
+    gap: 16px;
+    overflow-x: auto;
+    scroll-behavior: smooth;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 2px;
+    padding: 4px 2px 16px;
+    margin: 0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--theme-border, rgba(255, 255, 255, 0.15)) transparent;
+}
+
+.known-for-carousel::-webkit-scrollbar {
+    height: 6px;
+}
+
+.known-for-carousel::-webkit-scrollbar-thumb {
+    background: var(--theme-border, rgba(255, 255, 255, 0.2));
+    border-radius: 4px;
+}
+
+.known-for-carousel .movie-card-component,
+.known-for-carousel .person-details-card-fallback {
+    flex: 0 0 160px;
+    width: 160px;
+    min-width: 160px;
+    border-radius: var(--radius-sm, 6px);
+    scroll-snap-align: start;
+}
+
+.known-for-carousel .movie-card-component {
+    flex-shrink: 0;
+}
+
+.known-for-carousel .movie-card-component .mc-poster-container {
+    aspect-ratio: 2 / 3;
+    height: auto;
+    border-radius: var(--radius-sm, 6px) var(--radius-sm, 6px) 0 0;
+}
+
+.known-for-carousel .movie-card-component .mc-content {
+    border-radius: 0;
+}
+
+.person-details-content .movie-card-component.mc-variant-search {
+    border-radius: var(--radius-sm, 6px);
+}
+
+.person-details-content .movie-card-component.mc-variant-search .mc-poster-container {
+    border-radius: var(--radius-sm, 6px) var(--radius-sm, 6px) 0 0;
+}
+
+.person-details-content .movie-card-component.mc-variant-search .mc-content {
+    border-radius: 0;
+}
+
+.known-for-carousel .person-details-card-fallback {
+    flex-shrink: 0;
+}
+
+.carousel-nav-btn {
+    position: absolute;
+    top: 40%;
+    transform: translateY(-50%);
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-sm, 6px);
+    background: var(--theme-bg-tertiary, rgba(18, 18, 20, 0.85));
+    border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.15));
+    color: var(--theme-text-primary, #ffffff);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 20;
+    backdrop-filter: blur(8px);
+    transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
+}
+
+.carousel-nav-btn:hover:not(:disabled) {
+    background: var(--theme-hover-bg, rgba(30, 30, 35, 0.95));
+    border-color: var(--theme-border-hover, rgba(255, 255, 255, 0.2));
+    transform: translateY(-50%) scale(1.05);
+}
+
+.carousel-nav-btn:active:not(:disabled) {
+    transform: translateY(-50%) scale(0.97);
+}
+
+.carousel-nav-btn:disabled {
+    opacity: 0.42;
+    cursor: not-allowed;
+}
+
+.carousel-nav-btn:focus-visible,
+.btn-toggle-bio:focus-visible,
+.btn-toggle-facts:focus-visible,
+.btn-toggle-aliases:focus-visible,
+.btn-show-more-filmography:focus-visible,
+.filmography-filter-pill:focus-visible {
+    outline: 2px solid var(--theme-text-primary, #ffffff);
+    outline-offset: 2px;
+}
+
+.light-theme .carousel-nav-btn {
+    background: rgba(255, 255, 255, 0.84);
+    color: var(--theme-text-primary, #18181b);
+    border-color: var(--theme-border, rgba(24, 24, 27, 0.14));
+}
+
+.light-theme .carousel-nav-btn:hover:not(:disabled) {
+    background: var(--theme-bg-secondary, #f4f4f5);
+    border-color: var(--theme-border-hover, rgba(24, 24, 27, 0.24));
+}
+
+.carousel-nav-btn--prev {
+    left: -12px;
+}
+
+.carousel-nav-btn--next {
+    right: -12px;
+}
+
+/* ==========================================
+   FILMOGRAPHY SECTION
+   ========================================== */
+.filmography-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.filmography-filter-pill {
+    padding: 6px 14px;
+    border-radius: var(--radius-sm, 6px);
+    background: var(--theme-card-bg, rgba(255, 255, 255, 0.04));
+    border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.1));
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--theme-text-secondary, #a1a1aa);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.filmography-filter-pill:hover {
+    background: var(--theme-hover-bg, rgba(255, 255, 255, 0.08));
+    color: var(--theme-text-primary, #ffffff);
+}
+
+.filmography-filter-pill.active {
+    background: #ffffff;
+    border-color: #ffffff;
+    color: #09090b;
+    font-weight: 700;
+    box-shadow: 0 2px 10px rgba(255, 255, 255, 0.25);
+}
+
+.light-theme .filmography-filter-pill.active {
+    background: #09090b;
+    border-color: #09090b;
+    color: #ffffff;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+/* Category Sub-sections */
+.filmography-categories-container {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+}
+
+.filmography-category {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.filmography-category__header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.filmography-category__title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--theme-text-primary, #ffffff);
+    margin: 0;
+}
+
+.filmography-category__count {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--theme-text-muted, #71717a);
+    margin-left: 2px;
+    font-variant-numeric: tabular-nums;
+}
+
+.filmography-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 16px;
+}
+
+.filmography-grid .movie-card-component,
+.filmography-grid .person-details-card-fallback {
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+}
+
+.filmography-grid .movie-card-component {
+    flex-shrink: 1;
+}
+
+/* PersonDetails fallback geometry mirrors the shared search variant without
+   changing the global MovieCard component. */
+.person-details-card-fallback {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
+    border-radius: var(--radius-sm, 6px);
+    background: var(--theme-card-bg, rgba(24, 24, 27, 0.65));
+    color: var(--theme-text-primary, #ffffff);
+}
+
+.person-details-card-fallback .poster-container {
+    width: 100%;
+    aspect-ratio: 2 / 3;
+    height: auto;
+    flex-shrink: 0;
+    overflow: hidden;
+    background: var(--theme-bg-tertiary, #121214);
+    border-radius: var(--radius-sm, 6px) var(--radius-sm, 6px) 0 0;
+}
+
+.person-details-content .movie-card-component.mc-variant-search .mc-menu-btn {
+    border-radius: var(--radius-sm, 6px);
+}
+
+.person-details-card-fallback .movie-poster,
+.person-details-card-fallback .poster-placeholder,
+.person-details-card-fallback .person-details-poster-placeholder {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.person-details-poster-placeholder {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    color: var(--theme-text-muted, #71717a);
+    background: var(--theme-bg-tertiary, #121214);
+}
+
+.person-details-poster-placeholder__icon,
+.person-details-poster-placeholder svg {
+    width: 48px;
+    height: 48px;
+    flex: 0 0 48px;
+}
+
+.person-details-card-fallback .movie-info {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 12px 12px;
+}
+
+.person-details-card-fallback .movie-title {
+    display: -webkit-box;
+    min-height: 2.7em;
+    max-height: 2.7em;
+    overflow: hidden;
+    line-height: 1.35;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    text-overflow: ellipsis;
+}
+
+.person-details-card-fallback .movie-year {
+    min-height: 1.3em;
+    color: var(--theme-text-secondary, #a1a1aa);
+    font-size: 12px;
+    line-height: 1.3;
+}
+
+@media (max-width: 640px) {
+    .known-for-carousel .movie-card-component,
+    .known-for-carousel .person-details-card-fallback {
+        flex-basis: 150px;
+        width: 150px;
+        min-width: 150px;
+    }
+}
+
+.btn-show-more-filmography {
+    margin-top: 8px;
+    align-self: center;
+    padding: 8px 20px;
+    border-radius: var(--radius-md, 8px);
+    background: var(--theme-card-bg, rgba(255, 255, 255, 0.04));
+    border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.12));
+    color: var(--theme-text-primary, #ffffff);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-show-more-filmography:hover {
+    background: var(--theme-hover-bg, rgba(255, 255, 255, 0.08));
+    border-color: var(--theme-border-hover, rgba(255, 255, 255, 0.2));
+}
+
+.filmography-empty-message {
+    padding: 32px;
+    text-align: center;
+    color: var(--theme-text-muted, #71717a);
+    font-size: 14px;
+    background: var(--theme-card-bg, rgba(255, 255, 255, 0.02));
+    border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.06));
+    border-radius: var(--radius-md, 8px);
+}
+
+/* ==========================================
+   RESPONSIVE BREAKPOINTS
+   ========================================== */
+@media (max-width: 900px) {
+    .person-hero {
+        grid-template-columns: 180px 1fr;
+        gap: 20px;
+        padding: 20px;
+    }
+
+    .person-hero__name {
+        font-size: 26px;
+    }
+}
+
+@media (max-width: 640px) {
+    .person-details-page-container {
+        margin-top: 70px;
+        padding: 0 16px;
+    }
+
+    .person-hero {
+        grid-template-columns: 1fr;
+        justify-items: center;
+        text-align: center;
+        gap: 20px;
+        padding: 20px 16px;
+        align-items: center;
+    }
+
+    .person-hero__portrait-wrapper {
+        width: 160px;
+    }
+
+    .person-hero__info {
+        align-items: center;
+        width: 100%;
+    }
+
+    .person-hero__professions {
+        justify-content: center;
+    }
+
+    .person-hero__meta {
+        grid-template-columns: 1fr 1fr;
+        text-align: left;
+        width: 100%;
+    }
+
+    .person-hero__aliases {
+        align-items: center;
+    }
+
+    .btn-toggle-bio,
+    .btn-toggle-facts {
+        align-self: center;
+    }
+
+    .carousel-nav-btn {
+        width: 36px;
+        height: 36px;
+    }
+
+    .carousel-nav-btn--prev {
+        left: 4px;
+    }
+
+    .carousel-nav-btn--next {
+        right: 4px;
+    }
+
+    .filmography-grid {
+        grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+        gap: 12px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .known-for-carousel {
+        scroll-behavior: auto;
+    }
+}
+
+@media (max-width: 480px) {
+    .person-hero__meta {
+        grid-template-columns: 1fr;
+    }
+
+    .person-hero__name {
+        font-size: 22px;
+    }
+}

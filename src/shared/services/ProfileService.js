@@ -18,34 +18,56 @@ class ProfileService {
      * @param {number} limit - Maximum number of ratings to return
      * @returns {Promise<Array>} - Array of rating objects with movie data
      */
-    async getRecentRatings(userId, limit = 10) {
+    async getRecentRatings(userId, limit = 10, offset = 0) {
         try {
             if (!userId) {
                 throw new Error('User ID is required');
             }
 
             const ratingsQuery = this.db.collection('ratings')
-                .where('userId', '==', userId)
-                .limit(100);
+                .where('userId', '==', userId);
 
             const snapshot = await ratingsQuery.get();
-            const ratings = [];
-
             if (snapshot.empty) {
                 return [];
             }
 
-            const movieIds = [...new Set(snapshot.docs.map(doc => {
-                const data = doc.data();
-                return data.movieId;
-            }).filter(Boolean))];
+            const allRatings = [];
+            snapshot.forEach(doc => {
+                allRatings.push({ id: doc.id, ...doc.data() });
+            });
 
+            allRatings.sort((a, b) => {
+                const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : (a.createdAt?.seconds || 0) * 1000;
+                const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (b.createdAt?.seconds || 0) * 1000;
+                return bTime - aTime;
+            });
+
+            // Deduplicate by movieId (keep only the latest rating per movie)
+            const seenMovieIds = new Set();
+            const uniqueRatings = [];
+            for (const rating of allRatings) {
+                if (rating.movieId) {
+                    const key = String(rating.movieId);
+                    if (!seenMovieIds.has(key)) {
+                        seenMovieIds.add(key);
+                        uniqueRatings.push(rating);
+                    }
+                } else {
+                    uniqueRatings.push(rating);
+                }
+            }
+
+            const pagedRatings = uniqueRatings.slice(offset, offset + limit);
+            if (pagedRatings.length === 0) {
+                return [];
+            }
+
+            const movieIds = [...new Set(pagedRatings.map(r => r.movieId).filter(Boolean))];
             const cachedMovies = await this.movieCacheService.getBatchCachedMovies(movieIds);
             const kinopoiskService = this.firebaseManager.getKinopoiskService();
 
-            for (const doc of snapshot.docs) {
-                const ratingData = { id: doc.id, ...doc.data() };
-                
+            for (const ratingData of pagedRatings) {
                 if (ratingData.movieId) {
                     try {
                         let movieData = cachedMovies[ratingData.movieId];
@@ -92,17 +114,9 @@ class ProfileService {
                         };
                     }
                 }
-
-                ratings.push(ratingData);
             }
 
-            ratings.sort((a, b) => {
-                const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : (a.createdAt?.seconds || 0) * 1000;
-                const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (b.createdAt?.seconds || 0) * 1000;
-                return bTime - aTime;
-            });
-
-            return ratings.slice(0, limit);
+            return pagedRatings;
         } catch (error) {
             console.error('Error getting recent ratings:', error);
             return [];
@@ -130,6 +144,7 @@ class ProfileService {
             return {
                 totalRatings: ratingsStats.totalRatings,
                 averageRating: ratingsStats.averageRating,
+                ratingDistribution: ratingsStats.ratingDistribution,
                 // We map 'watching' count to 'favoritesCount' because the frontend expects this property name
                 // The label in the UI will be updated to "Watching" via locales
                 favoritesCount: watchingCount, 
@@ -140,6 +155,7 @@ class ProfileService {
             return {
                 totalRatings: 0,
                 averageRating: 0,
+                ratingDistribution: [],
                 favoritesCount: 0,
                 watchlistCount: 0
             };
@@ -160,12 +176,20 @@ class ProfileService {
             
             let totalRatings = 0;
             let sumRatings = 0;
+            const ratingDistribution = Array.from({ length: 10 }, (_, index) => ({
+                rating: index + 1,
+                count: 0
+            }));
 
             snapshot.forEach(doc => {
                 const data = doc.data();
                 if (data.rating) {
                     totalRatings++;
                     sumRatings += data.rating;
+                    const normalizedRating = Math.round(Number(data.rating));
+                    if (normalizedRating >= 1 && normalizedRating <= 10) {
+                        ratingDistribution[normalizedRating - 1].count++;
+                    }
                 }
             });
 
@@ -175,13 +199,15 @@ class ProfileService {
 
             return {
                 totalRatings,
-                averageRating
+                averageRating,
+                ratingDistribution
             };
         } catch (error) {
             console.error('Error getting ratings statistics:', error);
             return {
                 totalRatings: 0,
-                averageRating: 0
+                averageRating: 0,
+                ratingDistribution: []
             };
         }
     }
@@ -245,20 +271,22 @@ class ProfileService {
         }
 
         const now = new Date();
+        const locale = typeof i18n !== 'undefined' && i18n.currentLocale === 'ru' ? 'ru-RU' : 'en-US';
+        const isRussian = locale === 'ru-RU';
         const diffInMs = now - dateObj;
         const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
 
         if (diffInDays === 0) {
-            return 'Today';
+            return isRussian ? 'Сегодня' : 'Today';
         } else if (diffInDays === 1) {
-            return 'Yesterday';
+            return isRussian ? 'Вчера' : 'Yesterday';
         } else if (diffInDays < 7) {
-            return `${diffInDays} days ago`;
+            return isRussian ? `${diffInDays} дн. назад` : `${diffInDays} days ago`;
         } else if (diffInDays < 30) {
             const weeks = Math.floor(diffInDays / 7);
-            return `${weeks} week${weeks > 1 ? 's' : ''} ago`;
+            return isRussian ? `${weeks} нед. назад` : `${weeks} week${weeks > 1 ? 's' : ''} ago`;
         } else {
-            return dateObj.toLocaleDateString('en-US', {
+            return dateObj.toLocaleDateString(locale, {
                 year: 'numeric',
                 month: 'long',
                 day: 'numeric'
@@ -287,7 +315,8 @@ class ProfileService {
             return 'Unknown';
         }
 
-        return dateObj.toLocaleDateString('en-US', {
+        const locale = typeof i18n !== 'undefined' && i18n.currentLocale === 'ru' ? 'ru-RU' : 'en-US';
+        return dateObj.toLocaleDateString(locale, {
             year: 'numeric',
             month: 'long'
         });
@@ -299,4 +328,3 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
     window.ProfileService = ProfileService;
 }
-

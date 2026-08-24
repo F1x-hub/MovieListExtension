@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Person Details - Movie Rating Extension</title>
+    
+    <!-- Shared Styles -->
+    <link rel="stylesheet" href="../../shared/styles/common.css">
+    <link rel="stylesheet" href="../../shared/styles/theme.css">
+    <link rel="stylesheet" href="../../shared/styles/components.css">
+    <link rel="stylesheet" href="../../shared/styles/navigation.css">
+    <link rel="stylesheet" href="../../shared/styles/movie-card.css">
+    <link rel="stylesheet" href="../../shared/styles/poster-fixes.css">
+    <link rel="stylesheet" href="../../shared/styles/report-widget.css">
+    
+    <!-- Page-specific Styles -->
+    <link rel="stylesheet" href="person-details.css">
+
+    <!-- Preload / Preconnect -->
+    <link rel="preload" as="script" href="../../../libs/firebase-app-compat.js">
+    <link rel="preload" as="script" href="../../../libs/firebase-firestore-compat.js">
+    <link rel="preconnect" href="https://firebaseio.com">
+</head>
+<body>
+    <!-- Navigation will be inserted here by Navigation.js -->
+    
+    <!-- Person Details Container -->
+    <main class="person-details-page-container" id="personDetailsMain">
+        <!-- Loading State -->
+        <div class="loading-state app-loader app-loader--page" id="loadingState" role="status" aria-live="polite">
+            <div class="app-loader__indicator" aria-hidden="true"></div>
+            <h3 class="loading-title app-loader__label" data-i18n="person_details.loading">Загрузка информации о персоне...</h3>
+            <p class="loading-text app-loader__label" data-i18n="person_details.wait">Пожалуйста, подождите</p>
+        </div>
+
+        <!-- Error State -->
+        <div class="error-state" id="errorState" style="display: none;" role="alert">
+            <div class="error-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #ef4444;" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+            </div>
+            <h2 class="error-title" id="errorTitle" data-i18n="person_details.error_title">Информация не найдена</h2>
+            <p class="error-message" id="errorMessage" data-i18n="person_details.error_text">Не удалось загрузить информацию о персоне</p>
+            <div class="error-actions">
+                <button type="button" class="btn btn-secondary" id="errorBackBtn" data-i18n="person_details.back">Назад</button>
+                <a href="../home/home.html" class="btn btn-primary" id="errorHomeBtn" data-i18n="person_details.home">На главную</a>
+            </div>
+        </div>
+        
+        <!-- Person Content Container -->
+        <div class="person-details-content" id="personDetailsContainer" style="display: none;">
+            <!-- Rendered dynamically by person-details.js -->
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script defer src="../../../libs/firebase-app-compat.js"></script>
+    <script defer src="../../../libs/firebase-firestore-compat.js"></script>
+    <script defer src="../../../libs/firebase-auth-compat.js"></script>
+    <script defer src="../../shared/services/QuotaTrackerService.js"></script>
+    <script defer src="../../shared/config/kinopoisk.config.js"></script>
+    <script defer src="../../shared/config/tmdb.config.js"></script>
+    <script defer src="../../shared/services/TMDBService.js"></script>
+    <script defer src="../../shared/services/TmdbFallbackQueueService.js"></script>
+    <script defer src="../../shared/services/IdMappingService.js"></script>
+    <script defer src="../../shared/services/KinopoiskService.js"></script>
+    <script defer src="../../shared/services/KinopoiskPersonHtmlService.js"></script>
+    <script defer src="../../shared/services/MovieCacheService.js"></script>
+    <script defer src="../../shared/services/PersonDetailsService.js"></script>
+    <script defer src="../../shared/services/FavoriteService.js"></script>
+    <script defer src="../../shared/services/WatchlistService.js"></script>
+    <script defer src="../../shared/services/WatchingService.js"></script>
+    <script defer src="../../shared/services/RatingService.js"></script>
+    <script defer src="../../shared/utils/helpers.js"></script>
+    <script defer src="../../shared/errors/AppError.js"></script>
+    <script defer src="../../shared/errors/ErrorRegistry.js"></script>
+    <script defer src="../../shared/errors/modules/ProviderErrorModules.js"></script>
+    <script defer src="../../shared/errors/ErrorNormalizer.js"></script>
+    <script defer src="../../shared/errors/ErrorPresentation.js"></script>
+    <script defer src="../../shared/errors/ErrorDialog.js"></script>
+    <script defer src="../../shared/utils/Utils.js"></script>
+    <script defer src="../../shared/utils/IconUtils.js"></script>
+    <script defer src="../../shared/utils/Icons.js"></script>
+    <script defer src="../../shared/utils/MediaClassifier.js"></script>
+    <script defer src="../../shared/services/UserService.js"></script>
+    <script defer src="../../shared/firestore.js"></script>
+    <script defer src="../../shared/components/BackToTop.js"></script>
+    <script defer src="../../shared/components/Navigation.js"></script>
+    <script defer src="../../shared/components/MovieCard.js"></script>
+    <script defer src="person-details.js" type="module"></script>
+    <script defer src="../../shared/components/ReportWidget.js"></script>
+</body>
+</html>

@@ -1,19 +1,21 @@
 /* Common styles and CSS variables for Movie Rating Extension */
 
+@import url('./back-to-top.css');
+
 :root {
-    /* Color Palette - Dark Theme */
-    --primary-bg: #262627;
-    --secondary-bg: #3a3a3a;
-    --accent-bg: #3a3a3a;
-    --accent-color: #c0c0c0;
-    --accent-hover: #a8a8a8;
-    --accent-light: #d2d2d2;
+    /* Color Palette - Dark Theme (Obsidian-Zinc fallback) */
+    --primary-bg: #09090b;
+    --secondary-bg: #121214;
+    --accent-bg: #1b1b1f;
+    --accent-color: #fafafa;
+    --accent-hover: #e4e4e7;
+    --accent-light: #27272a;
     
     /* Text Colors */
-    --text-primary: #ffffff;
-    --text-secondary: #ffffff;
-    --text-muted: #ffffff;
-    --text-accent: #c0c0c0;
+    --text-primary: #f4f4f5;
+    --text-secondary: #a1a1aa;
+    --text-muted: #52525b;
+    --text-accent: #fafafa;
     
     /* Status Colors */
     --success: #28a745;
@@ -21,18 +23,18 @@
     --danger: #dc3545;
     --info: #17a2b8;
     
-    /* Gradients - Updated for dark theme compatibility */
-    --gradient-primary: linear-gradient(135deg, #4A5C6A 0%, #5B6F7F 100%);
-    --gradient-accent: linear-gradient(135deg, #444444 0%, #666666 100%);
-    --gradient-dark: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-    --gradient-card: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
+    /* Gradients - Obsidian-Zinc Design System */
+    --gradient-primary: linear-gradient(135deg, #ffffff 0%, #e4e4e7 100%);
+    --gradient-accent: linear-gradient(135deg, #27272a 0%, #18181b 100%);
+    --gradient-dark: linear-gradient(135deg, #18181b 0%, #09090b 100%);
+    --gradient-card: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.03) 100%);
     
     /* Shadows */
     --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.1);
     --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.15);
     --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.2);
     --shadow-xl: 0 12px 24px rgba(0, 0, 0, 0.25);
-    --shadow-glow: 0 0 20px rgba(233, 69, 96, 0.3);
+    --shadow-glow: 0 0 20px rgba(255, 255, 255, 0.08);
     
     /* Border Radius */
     --radius-sm: 4px;
@@ -50,7 +52,8 @@
     --space-2xl: 48px;
     
     /* Typography */
-    --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-data: 'Geist Mono', 'JetBrains Mono', monospace;
     --font-size-xs: 12px;
     --font-size-sm: 14px;
     --font-size-base: 16px;
@@ -90,8 +93,8 @@ body {
     font-family: var(--font-family);
     font-size: var(--font-size-base);
     line-height: 1.6;
-    color: var(--text-primary);
-    background: var(--primary-bg);
+    color: var(--theme-text-primary);
+    background: var(--theme-bg-primary);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     padding-top: 60px;
@@ -136,7 +139,7 @@ a:hover {
 .text-muted { color: var(--text-muted); }
 .text-accent { color: var(--text-accent); }
 
-.bg-primary { background-color: var(--primary-bg); }
+.bg-primary { background-color: var(--theme-bg-primary); }
 .bg-secondary { background-color: var(--secondary-bg); }
 .bg-accent { background-color: var(--accent-bg); }
 
@@ -246,6 +249,95 @@ a:hover {
     animation: spin 1s linear infinite;
 }
 
+/*
+ * Shared loading component
+ *
+ * Keep this namespace separate from legacy `.spinner` / `.loading-spinner`
+ * rules while remaining safe for pages that show or hide the wrapper with an
+ * inline `display` style.
+ */
+.app-loader {
+    --app-loader-size: 38px;
+    --app-loader-stroke: 3px;
+    --app-loader-track: var(--theme-border, rgba(255, 255, 255, 0.12));
+    --app-loader-color: var(--theme-text-primary, #f4f4f5);
+
+    align-items: center;
+    color: var(--theme-text-secondary, var(--text-secondary));
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    justify-content: center;
+    min-height: 180px;
+    padding: 24px;
+    text-align: center;
+}
+
+.app-loader--page {
+    min-height: min(60vh, 520px);
+}
+
+.app-loader--section {
+    min-height: 220px;
+}
+
+.app-loader--inline {
+    display: inline-flex;
+    min-height: 0;
+    padding: 0;
+}
+
+.app-loader--compact {
+    --app-loader-size: 20px;
+    --app-loader-stroke: 2px;
+
+    gap: 8px;
+    min-height: 0;
+    padding: 0;
+}
+
+.app-loader--player {
+    --app-loader-size: 42px;
+    --app-loader-stroke: 3px;
+}
+
+.app-loader__indicator {
+    animation: app-loader-spin 800ms linear infinite;
+    border: var(--app-loader-stroke) solid var(--app-loader-track);
+    border-radius: 50%;
+    border-top-color: var(--app-loader-color);
+    box-sizing: border-box;
+    flex: 0 0 auto;
+    height: var(--app-loader-size);
+    width: var(--app-loader-size);
+}
+
+.app-loader__label {
+    font-size: var(--font-size-sm, 0.875rem);
+    line-height: 1.4;
+    margin: 0;
+}
+
+.app-loader__label--sr-only {
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    height: 1px;
+    overflow: hidden;
+    position: absolute;
+    white-space: nowrap;
+    width: 1px;
+}
+
+@keyframes app-loader-spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .app-loader__indicator {
+        animation-duration: 1.8s;
+    }
+}
+
 @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
@@ -269,18 +361,41 @@ a:hover {
 
 /* Scrollbar styling */
 ::-webkit-scrollbar {
-    width: 8px;
+    width: 6px;
+    height: 5px;
 }
 
 ::-webkit-scrollbar-track {
-    background: var(--secondary-bg);
+    background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-    background: var(--text-primary);
-    border-radius: var(--radius-md);
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: var(--text-secondary);
+    background-color: rgba(255, 255, 255, 0.3);
+}
+
+/* Emil Kowalski active state click feedback */
+.press-feedback,
+.btn,
+.dropdown-trigger,
+.clear-filters-btn,
+.toggle-filters-btn,
+.movie-card,
+.action-btn,
+.toggle-btn {
+    transition: transform 140ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 140ms ease, background-color 140ms ease, border-color 140ms ease;
+}
+.press-feedback:active,
+.btn:active,
+.dropdown-trigger:active,
+.clear-filters-btn:active,
+.toggle-filters-btn:active,
+.movie-card:active,
+.action-btn:active,
+.toggle-btn:active {
+    transform: scale(0.975);
 }

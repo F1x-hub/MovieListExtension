@@ -572,6 +572,152 @@ class AdminService {
             throw new Error(`Bulk cache clear failed: ${error.message}`, { cause: error });
         }
     }
+
+    /**
+     * Get all pending user approval requests
+     * @returns {Promise<Array>} - Array of pending user profiles
+     */
+    async getPendingApprovals() {
+        try {
+            const snapshot = await this.db.collection('users')
+                .where('approvalStatus', '==', 'pending')
+                .get();
+
+            const pendingUsers = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            // Sort by createdAt desc (newest registration first)
+            return pendingUsers.sort((a, b) => {
+                const dateA = a.createdAt?.toDate?.() || (a.createdAt instanceof Date ? a.createdAt : new Date(0));
+                const dateB = b.createdAt?.toDate?.() || (b.createdAt instanceof Date ? b.createdAt : new Date(0));
+                return dateB - dateA;
+            });
+        } catch (error) {
+            console.error('Error fetching pending approvals:', error);
+            throw new Error(`Failed to fetch pending approvals: ${error.message}`, { cause: error });
+        }
+    }
+
+    /**
+     * Get count of pending user approval requests
+     * @returns {Promise<number>} - Count of pending users
+     */
+    async getPendingApprovalsCount() {
+        try {
+            try {
+                const snapshot = await this.db.collection('users')
+                    .where('approvalStatus', '==', 'pending')
+                    .count()
+                    .get();
+                return snapshot.data().count;
+            } catch {
+                const snapshot = await this.db.collection('users')
+                    .where('approvalStatus', '==', 'pending')
+                    .get();
+                return snapshot.size;
+            }
+        } catch (error) {
+            console.error('Error fetching pending approvals count:', error);
+            return 0;
+        }
+    }
+
+    /**
+     * Update a user's approval status (Approved, Rejected, Pending)
+     * @param {string} userId - User ID to update
+     * @param {'approved'|'rejected'|'pending'} newStatus - New approval status
+     * @param {string} currentAdminId - ID of admin performing update
+     * @returns {Promise<boolean>}
+     */
+    async updateUserApprovalStatus(userId, newStatus, currentAdminId) {
+        try {
+            if (currentAdminId) {
+                const isAdmin = await this.isUserAdmin(currentAdminId);
+                if (!isAdmin) {
+                    throw new Error('Unauthorized: Admin access required');
+                }
+            }
+
+            const validStatuses = ['approved', 'rejected', 'pending'];
+            if (!validStatuses.includes(newStatus)) {
+                throw new Error(`Invalid approval status: ${newStatus}`);
+            }
+
+            const timestamp = (typeof firebase !== 'undefined' && firebase.firestore) ? 
+                firebase.firestore.FieldValue.serverTimestamp() : new Date();
+
+            await this.db.collection('users').doc(userId).update({
+                approvalStatus: newStatus,
+                approvalUpdatedAt: timestamp,
+                updatedAt: timestamp
+            });
+
+            console.log(`[AdminService] User ${userId} approval status updated to ${newStatus}`);
+            return true;
+        } catch (error) {
+            console.error(`Error updating approval status for user ${userId}:`, error);
+            throw new Error(`Failed to update approval status: ${error.message}`, { cause: error });
+        }
+    }
+
+    /**
+     * Batch update approval status for multiple users
+     * @param {Array<string>} userIds - Array of User IDs
+     * @param {'approved'|'rejected'|'pending'} newStatus - New approval status
+     * @param {string} currentAdminId - ID of admin performing update
+     * @returns {Promise<{updated: number, failed: number}>}
+     */
+    async batchUpdateUserApprovalStatus(userIds, newStatus, currentAdminId) {
+        try {
+            if (!userIds || userIds.length === 0) {
+                return { updated: 0, failed: 0 };
+            }
+
+            if (currentAdminId) {
+                const isAdmin = await this.isUserAdmin(currentAdminId);
+                if (!isAdmin) {
+                    throw new Error('Unauthorized: Admin access required');
+                }
+            }
+
+            const validStatuses = ['approved', 'rejected', 'pending'];
+            if (!validStatuses.includes(newStatus)) {
+                throw new Error(`Invalid approval status: ${newStatus}`);
+            }
+
+            const timestamp = (typeof firebase !== 'undefined' && firebase.firestore) ? 
+                firebase.firestore.FieldValue.serverTimestamp() : new Date();
+
+            // Process in chunks of 400 (Firestore batch limit is 500)
+            const chunkSize = 400;
+            let updated = 0;
+
+            for (let i = 0; i < userIds.length; i += chunkSize) {
+                const chunk = userIds.slice(i, i + chunkSize);
+                const batch = this.db.batch();
+
+                chunk.forEach(uid => {
+                    const docRef = this.db.collection('users').doc(uid);
+                    batch.update(docRef, {
+                        approvalStatus: newStatus,
+                        approvalUpdatedAt: timestamp,
+                        updatedAt: timestamp
+                    });
+                });
+
+                await batch.commit();
+                updated += chunk.length;
+            }
+
+            console.log(`[AdminService] Batch updated ${updated} users to ${newStatus}`);
+            return { updated, failed: 0 };
+        } catch (error) {
+            console.error('Error in batch approval status update:', error);
+            throw new Error(`Batch update failed: ${error.message}`, { cause: error });
+        }
+    }
 }
 
 // Export for use in other scripts

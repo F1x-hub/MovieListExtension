@@ -4,7 +4,7 @@ const TMDB_CONFIG = {
     BASE_URL: 'https://api.themoviedb.org/3',
 
     // TMDB API Read Access Tokens / API Keys
-    API_KEYS: ['YOUR_TMDB_READ_ACCESS_TOKEN'],
+    API_KEYS: [],
     currentKeyIndex: 0,
 
     // Stay below TMDB's approximate 40 requests/second service limit.

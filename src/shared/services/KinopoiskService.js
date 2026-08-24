@@ -2,11 +2,88 @@
  * KinopoiskService - Service for interacting with Kinopoisk API
  * Handles movie search and detailed movie information retrieval
  */
+class QuotaExhaustedError extends Error {
+    constructor(message = 'Kinopoisk daily quota exhausted') {
+        super(message);
+        this.name = 'QuotaExhaustedError';
+        this.code = 'DAILY_LIMIT_REACHED';
+    }
+}
+
+class KinopoiskNetworkError extends Error {
+    constructor(message, cause = null) {
+        super(message || 'Kinopoisk network request failed');
+        this.name = 'KinopoiskNetworkError';
+        this.code = 'KINOPOISK_NETWORK';
+        this.cause = cause;
+    }
+}
+
+class KinopoiskAuthError extends Error {
+    constructor(status = 401) {
+        super(`Kinopoisk API authentication failed (${status})`);
+        this.name = 'KinopoiskAuthError';
+        this.code = 'KINOPOISK_AUTH';
+        this.status = status;
+    }
+}
+
+class KinopoiskAccessError extends Error {
+    constructor(status, message = `Kinopoisk API access denied (${status})`) {
+        super(message);
+        this.name = 'KinopoiskAccessError';
+        this.code = 'KINOPOISK_ACCESS_DENIED';
+        this.status = status;
+    }
+}
+
+class KinopoiskRateLimitError extends Error {
+    constructor(retryAfterMs = null) {
+        super('Kinopoisk API rate limit reached');
+        this.name = 'KinopoiskRateLimitError';
+        this.code = 'KINOPOISK_RATE_LIMITED';
+        this.status = 429;
+        this.retryAfterMs = Number.isFinite(retryAfterMs) ? retryAfterMs : null;
+    }
+}
+
+class KinopoiskServerError extends Error {
+    constructor(status = 500) {
+        super(`Kinopoisk API server error (${status})`);
+        this.name = 'KinopoiskServerError';
+        this.code = 'KINOPOISK_SERVER';
+        this.status = status;
+    }
+}
+
+function isQuotaExhaustedError(error) {
+    return error instanceof QuotaExhaustedError || error?.name === 'QuotaExhaustedError';
+}
+
+async function responseIndicatesDailyLimit(response) {
+    if (!response || ![402, 403].includes(Number(response.status))) return false;
+
+    try {
+        const body = typeof response.clone === 'function'
+            ? await response.clone().json()
+            : typeof response.json === 'function'
+                ? await response.json()
+                : null;
+        const text = JSON.stringify(body || '').toLowerCase();
+        return /daily[_ -]?limit|daily[_ -]?quota|quota[_ -]?exhausted|суточн|лимит/.test(text);
+    } catch {
+        return false;
+    }
+}
+
 class KinopoiskService {
-    constructor() {
+    constructor(tmdbService = null) {
         this.baseUrl = KINOPOISK_CONFIG.BASE_URL;
         this.apiKey = KINOPOISK_CONFIG.API_KEY;
         this.defaultLimit = KINOPOISK_CONFIG.DEFAULT_LIMIT;
+        this.tmdbService = tmdbService || (typeof TMDBService !== 'undefined' ? new TMDBService() : null);
+        this.tmdbFallbackQueueService = typeof TmdbFallbackQueueService !== 'undefined'
+            ? new TmdbFallbackQueueService() : null;
     }
 
     /**
@@ -16,6 +93,14 @@ class KinopoiskService {
      * @returns {Promise<Response>} - Fetch response
      */
     async _fetchWithRotation(url, options = {}) {
+        const quotaState = typeof globalThis !== 'undefined' ? globalThis.kinopoiskQuota : null;
+        if (typeof quotaState?.isQuotaExhausted === 'function' && await quotaState.isQuotaExhausted()) {
+            globalThis.quotaTracker?.track('KinopoiskService.fetchWithRotation', 'skipped');
+            console.warn('[KinopoiskQuota] Request skipped by local circuit breaker',
+                typeof quotaState.getQuotaStatus === 'function' ? quotaState.getQuotaStatus() : undefined);
+            throw new QuotaExhaustedError();
+        }
+
         const maxAttempts = typeof KINOPOISK_CONFIG.API_KEYS !== 'undefined' 
             ? KINOPOISK_CONFIG.API_KEYS.length 
             : 1;
@@ -29,24 +114,49 @@ class KinopoiskService {
             
             const fetchOptions = { ...options };
             fetchOptions.headers = {
+                'Accept': 'application/json',
                 ...options.headers,
-                'X-API-KEY': currentKey,
-                'Content-Type': 'application/json'
+                'X-API-KEY': currentKey
             };
+            if (options.body && !fetchOptions.headers['Content-Type']) {
+                fetchOptions.headers['Content-Type'] = 'application/json';
+            }
             
-            const response = await fetch(url, fetchOptions);
+            let response;
+            try {
+                globalThis.quotaTracker?.track('KinopoiskService.fetchWithRotation', 'network');
+                response = await fetch(url, fetchOptions);
+            } catch (netErr) {
+                if (netErr?.name === 'AbortError') throw netErr;
+                console.warn(`KinopoiskService: Network fetch error on attempt ${attempt + 1}/${maxAttempts}:`, netErr.message);
+                if (attempt < maxAttempts - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    continue;
+                }
+                throw new KinopoiskNetworkError(netErr.message, netErr);
+            }
+
             lastResponse = response;
 
-            if (response.status === 403 || response.status === 402) {
+            if (response.status === 401 || response.status === 403 || response.status === 402) {
                 console.warn(`KinopoiskService: ${response.status} Error with current key. Rotating to next key...`);
+                const isDailyLimit = await responseIndicatesDailyLimit(response);
                 if (typeof KINOPOISK_CONFIG.rotateKey === 'function') {
                     KINOPOISK_CONFIG.rotateKey();
                     this.apiKey = KINOPOISK_CONFIG.API_KEY;
                 }
                 
                 if (attempt < maxAttempts - 1) {
+                    globalThis.quotaTracker?.track('KinopoiskService.fetchWithRotation', 'retry');
                     continue;
-                } // Else, fall through to return the failed response
+                }
+
+                if (response.status === 401) throw new KinopoiskAuthError(response.status);
+                if (isDailyLimit && typeof quotaState?.markQuotaExhausted === 'function') {
+                    await quotaState.markQuotaExhausted();
+                }
+                if (isDailyLimit) throw new QuotaExhaustedError();
+                throw new KinopoiskAccessError(response.status);
             }
             
             // Handle 429 Too Many Requests
@@ -54,19 +164,401 @@ class KinopoiskService {
                 console.warn(`KinopoiskService: 429 Too Many Requests. Waiting before retry...`);
                 // Wait for 1 second, or respect Retry-After header if present
                 const retryAfter = response.headers.get('Retry-After');
-                const delay = retryAfter ? parseInt(retryAfter) * 1000 : 1000;
+                const delay = retryAfter ? parseInt(retryAfter, 10) * 1000 : 1000;
                 await new Promise(resolve => setTimeout(resolve, delay));
                 
                 // Retry if we still have attempts
                 if (attempt < maxAttempts - 1) {
+                    globalThis.quotaTracker?.track('KinopoiskService.fetchWithRotation', 'retry');
                     continue;
                 }
+
+                throw new KinopoiskRateLimitError(delay);
+            }
+
+            // Handle 5xx Server Errors (e.g. 502, 503, 504)
+            if (response.status >= 500) {
+                console.warn(`KinopoiskService: Server error ${response.status} (${response.statusText || 'Server Error'}).`);
+                if (attempt < maxAttempts - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    continue;
+                }
+                throw new KinopoiskServerError(response.status);
             }
             
             return response;
         }
 
         return lastResponse;
+    }
+
+    /**
+    /**
+     * Parse raw HTML from kinopoisk.ru search result page.
+     * Extracts ordered (type, id) list without using DOM/DOMParser (service worker safe).
+     * @param {string} html - Raw HTML
+     * @param {number} limit - Maximum number of items (default: 30)
+     * @returns {{ success: boolean, reason?: string, items: Array<{ type: string, id: number }> }}
+     */
+    parseSearchResultsHtml(html, limit = 30) {
+        if (!html || typeof html !== 'string') {
+            return { success: false, reason: 'EMPTY_HTML', items: [] };
+        }
+
+        // Detect Captcha / SmartCaptcha / SSO challenge / Anti-bot pages
+        const isChallenge = /sso\.(?:kinopoisk|passport\.yandex)\.ru|showcaptcha|smartcaptcha|captcha-wrapper/i.test(html) ||
+                            (/<script[^>]*>[\s\S]*?it\.host[\s\S]*?_emitProbe/i.test(html));
+        if (isChallenge) {
+            return { success: false, reason: 'CAPTCHA_OR_SSO_CHALLENGE', items: [] };
+        }
+
+        // a. Restrict parsing scope to sections with data-testid="search-top-result" and data-testid="search-films"
+        // Excludes data-testid="search-persons" and data-testid="search-movie-lists"
+        const sectionRegex = /<section\b[^>]*data-test(?:-)?id=["'](?:search-top-result|search-films)["'][^>]*>([\s\S]*?)<\/section>/gi;
+        let sectionMatch;
+        let combinedSectionsHtml = '';
+        let sectionCount = 0;
+
+        while ((sectionMatch = sectionRegex.exec(html)) !== null) {
+            combinedSectionsHtml += sectionMatch[1] + '\n';
+            sectionCount++;
+        }
+
+        // If no matching sections were found
+        if (sectionCount === 0) {
+            // If the document is large (> 1000 characters), this indicates unexpected layout or soft blocking
+            if (html.length > 1000) {
+                return { success: false, reason: 'LAYOUT_CHANGED_OR_UNEXPECTED_HTML', items: [] };
+            }
+            return { success: true, items: [] };
+        }
+
+        // b & c. Inside the allowed sections, match data-test-id="next-link" anchors with /(film|series)/(ID)/
+        // Handle both attribute orders (data-test-id before href and href before data-test-id)
+        const anchorRegex = /<a\b(?=[^>]*\bdata-test(?:-)?id=["']next-link["'])[^>]*\bhref=["']?\/(film|series)\/(\d+)\/["']?[^>]*>/gi;
+        const items = [];
+        const seenKeys = new Set();
+        let aMatch;
+
+        while ((aMatch = anchorRegex.exec(combinedSectionsHtml)) !== null) {
+            const type = aMatch[1].toLowerCase(); // 'film' or 'series'
+            const id = parseInt(aMatch[2], 10);
+            if (!id || isNaN(id)) continue;
+
+            const dedupeKey = `${id}`;
+            if (!seenKeys.has(dedupeKey)) {
+                seenKeys.add(dedupeKey);
+                const linkStart = combinedSectionsHtml.lastIndexOf('<a', aMatch.index);
+                const linkEnd = combinedSectionsHtml.indexOf('</a>', aMatch.index);
+                const anchorHtml = linkStart >= 0 && linkEnd > aMatch.index
+                    ? combinedSectionsHtml.slice(linkStart, linkEnd)
+                    : '';
+                const metadata = this._extractSearchResultMetadata(anchorHtml);
+                const itemMarker = 'data-test-id="movie-list-item"';
+                const itemMarkerIndex = combinedSectionsHtml.lastIndexOf(itemMarker, aMatch.index);
+                const itemStart = itemMarkerIndex >= 0
+                    ? combinedSectionsHtml.lastIndexOf('<div', itemMarkerIndex)
+                    : -1;
+                const nextItemMarker = combinedSectionsHtml.indexOf(itemMarker, aMatch.index + 1);
+                const itemHtml = itemStart >= 0
+                    ? combinedSectionsHtml.slice(itemStart, nextItemMarker >= 0 ? nextItemMarker : combinedSectionsHtml.length)
+                    : combinedSectionsHtml.slice(Math.max(0, aMatch.index - 500), aMatch.index + 5000);
+                const ratingMetadata = this._extractSearchResultRatingMetadata(itemHtml);
+                items.push({ type, id, ...metadata, ...ratingMetadata });
+                if (items.length >= limit) {
+                    break;
+                }
+            }
+        }
+
+        return { success: true, items };
+    }
+
+    _extractSearchResultMetadata(anchorHtml) {
+        if (!anchorHtml) return {};
+
+        const titleMatch = anchorHtml.match(/<[^>]*class=["'][^"']*mainTitle[^"']*["'][^>]*>([\s\S]*?)<\/[^>]+>/i);
+        const originalMatch = anchorHtml.match(/<[^>]*class=["'][^"']*secondaryTitle[^"']*["'][^>]*>([\s\S]*?)<\/[^>]+>/i);
+        const text = this._stripSearchHtml(anchorHtml);
+        const yearMatch = text.match(/\b((?:18|19|20)\d{2})\b/);
+        const title = titleMatch ? this._stripSearchHtml(titleMatch[1]) : '';
+        const originalTitle = originalMatch ? this._stripSearchHtml(originalMatch[1]) : '';
+
+        if (!title && !originalTitle) return {};
+
+        return {
+            ...(title ? { title } : {}),
+            ...(originalTitle ? { originalTitle } : {}),
+            ...(yearMatch ? { year: Number(yearMatch[1]) } : {})
+        };
+    }
+
+    _extractSearchResultRatingMetadata(itemHtml) {
+        if (!itemHtml) return {};
+
+        const text = this._stripSearchHtml(itemHtml);
+        const ratingMatch = text.match(/Рейтинг\s+Кинопоиска\s*([0-9]+(?:[.,][0-9]+)?)/i)
+            || itemHtml.match(/class=["'][^"']*kinopoiskValue(?:Positive|Neutral|Negative)[^"']*["'][^>]*>\s*([0-9]+(?:[.,][0-9]+)?)/i);
+        const votesMatch = itemHtml.match(/class=["'][^"']*kinopoiskCount[^"']*["'][^>]*>\s*([\d\s\u00A0]+)/i)
+            || text.match(/([\d\s\u00A0]+)\s*оцен/i);
+        const kpRating = ratingMatch ? Number.parseFloat(ratingMatch[1].replace(',', '.')) : 0;
+        const kpVotes = votesMatch ? Number.parseInt(votesMatch[1].replace(/\D/g, ''), 10) : 0;
+
+        return {
+            ...(Number.isFinite(kpRating) && kpRating > 0 ? { kpRating } : {}),
+            ...(Number.isInteger(kpVotes) && kpVotes > 0 ? { kpVotes } : {})
+        };
+    }
+
+    _stripSearchHtml(value) {
+        return String(value || '')
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/&nbsp;/gi, ' ')
+            .replace(/&amp;/gi, '&')
+            .replace(/&quot;/gi, '"')
+            .replace(/&#39;/gi, "'")
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    /**
+     * Scrape search results from kinopoisk.ru using real browser context (offscreen document + iframe + content script)
+     * @param {string} query - Raw search query
+     * @param {Object} options - { limit, timeoutMs, signal }
+     * @returns {Promise<Array<{ type: string, id: number }>|null>}
+     */
+    async scrapeSearchResultsOffscreen(query, options = {}) {
+        const cleanQuery = this.normalizeQuery(query);
+        if (!cleanQuery) return [];
+
+        if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
+            // Not running in Chrome extension context (e.g. unit tests or node)
+            return null;
+        }
+
+        try {
+            console.log(`KinopoiskService: Requesting offscreen browser scraping for "${cleanQuery}"`);
+            const timeoutMs = options.timeoutMs || 8000;
+
+            const response = await chrome.runtime.sendMessage({
+                type: 'KINOPOISK_OFFSCREEN_SCRAPE',
+                query: cleanQuery,
+                timeoutMs,
+                requireRating: options.requireRating === true,
+                requestKey: options.requestKey || null,
+                priority: options.priority || 'visible-identity',
+                sessionId: options.sessionId || null
+            });
+            if (response?.metrics) {
+                console.info('[KinopoiskRatingsMetrics] search', response.metrics);
+            }
+
+            if (response && response.success && Array.isArray(response.items) && response.items.length > 0) {
+                const ratingCount = response.items.filter(item => Number(item?.kpRating) > 0).length;
+                console.log(`KinopoiskService: Offscreen scraper succeeded with ${response.items.length} items`, {
+                    requireRating: options.requireRating === true,
+                    ratingCount
+                });
+                const items = response.items.slice(0, options.limit || 30);
+                return options.returnDiagnostics === true
+                    ? { items, failureReason: null, metrics: response.metrics || null }
+                    : items;
+            }
+
+            if (response?.reason === 'SCRAPE_BLOCKED_EVEN_WITH_SESSION') {
+                console.warn('[Scraper Diagnostic] SCRAPE_BLOCKED_EVEN_WITH_SESSION: Anti-bot / SSO challenge detected despite browser context');
+            } else if (response?.reason) {
+                console.warn(`[Scraper Diagnostic] Offscreen scraper failed with reason: ${response.reason}`);
+            }
+
+            return options.returnDiagnostics === true
+                ? {
+                    items: response?.success ? [] : null,
+                    failureReason: response?.reason || 'OFFSCREEN_UNKNOWN_FAILURE',
+                    metrics: response?.metrics || null
+                }
+                : null;
+        } catch (error) {
+            console.warn('KinopoiskService: Offscreen scrape communication error:', error);
+            if (options.returnDiagnostics === true) {
+                return { items: null, failureReason: 'OFFSCREEN_MESSAGE_FAILED', error: error.message };
+            }
+            return null;
+        }
+    }
+
+    /**
+     * Read KP and IMDb ratings from a Kinopoisk movie page in the existing
+     * hidden browser-context scraper. This avoids IMDb's service-worker 202
+     * challenge and does not open a visible tab.
+     * @param {number|string} kinopoiskId
+     * @param {Object} options - { timeoutMs }
+     * @returns {Promise<{kpRating:number, imdbRating:number, imdbId:string|null}|null>}
+     */
+    async scrapeMoviePageRatingsOffscreen(kinopoiskId, options = {}) {
+        const numericId = Number(kinopoiskId);
+        if (!Number.isInteger(numericId) || numericId <= 0) return null;
+
+        if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
+            return null;
+        }
+
+        try {
+            const response = await chrome.runtime.sendMessage({
+                type: 'KINOPOISK_MOVIE_RATINGS_OFFSCREEN',
+                kinopoiskId: numericId,
+                mediaType: options.mediaType || null,
+                timeoutMs: options.timeoutMs || 8000,
+                requestKey: options.requestKey || `kp-detail:${numericId}:${options.mediaType || 'movie'}`,
+                priority: options.priority || 'visible-ratings',
+                sessionId: options.sessionId || null
+            });
+            if (response?.metrics) {
+                console.info('[KinopoiskRatingsMetrics] movie-page', response.metrics);
+            }
+
+            if (response?.success && response.ratings) {
+                console.info('[KinopoiskRatingsTrace] movie-page-result', {
+                    kinopoiskId: numericId,
+                    ratings: response.ratings
+                });
+                return options.returnDiagnostics === true
+                    ? { ratings: response.ratings, failureReason: null, metrics: response.metrics || null }
+                    : response.ratings;
+            }
+
+            console.info('[KinopoiskRatingsTrace] movie-page-empty', {
+                kinopoiskId: numericId,
+                reason: response?.reason || 'NO_RATINGS'
+            });
+            return options.returnDiagnostics === true
+                ? { ratings: null, failureReason: response?.reason || 'OFFSCREEN_UNKNOWN_FAILURE', metrics: response?.metrics || null }
+                : null;
+        } catch (error) {
+            console.warn('[KinopoiskRatingsTrace] movie-page-error', {
+                kinopoiskId: numericId,
+                message: error.message
+            });
+            if (options.returnDiagnostics === true) {
+                return { ratings: null, failureReason: 'OFFSCREEN_MESSAGE_FAILED', error: error.message };
+            }
+            return null;
+        }
+    }
+
+    /**
+     * Scrape search results from kinopoisk.ru/new-search/
+     * @param {string} query - Raw search query
+     * @param {Object} options - { limit, timeoutMs, signal }
+     * @returns {Promise<Array<{ type: string, id: number }>|null>} - List of (type, id) or null on failure
+     */
+    async scrapeSearchResults(query, options = {}) {
+        const cleanQuery = this.normalizeQuery(query);
+        if (!cleanQuery) return [];
+
+        const timeoutMs = options.timeoutMs || 4500;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+        if (options.signal) {
+            options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+        }
+
+        try {
+            const scrapeUrl = `https://www.kinopoisk.ru/new-search/?text=${encodeURIComponent(cleanQuery)}`;
+            console.log(`KinopoiskService: Scraping search results from ${scrapeUrl}`);
+
+            const response = await fetch(scrapeUrl, {
+                method: 'GET',
+                signal: controller.signal,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7'
+                }
+            });
+
+            if (!response.ok) {
+                console.warn(`KinopoiskService: Scraper failed with HTTP status ${response.status} ${response.statusText}`);
+                return null;
+            }
+
+            const html = await response.text();
+            const parseResult = this.parseSearchResultsHtml(html, options.limit || 30);
+
+            if (!parseResult.success) {
+                console.warn(`KinopoiskService: Scraper parse failed (reason: ${parseResult.reason})`);
+                return null;
+            }
+
+            console.log(`KinopoiskService: Successfully scraped ${parseResult.items.length} items from Kinopoisk`);
+            return parseResult.items;
+        } catch (error) {
+            console.warn(`KinopoiskService: Scraper error (${error.name || 'Error'}: ${error.message})`);
+            return null;
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    }
+
+    /**
+     * Batch fetch movies by Kinopoisk IDs from the API, preserving the input IDs order.
+     * @param {Array<{ type: string, id: number }>} items - Array of { type, id }
+     * @param {Object} options - Options { signal }
+     * @returns {Promise<Array<Object>>} - Array of normalized movie objects
+     */
+    async getMoviesByIdsBatch(items, options = {}) {
+        if (!items || items.length === 0) return [];
+
+        const ids = items.map(item => item.id).filter(Boolean);
+        if (ids.length === 0) return [];
+
+        try {
+            const url = `${this.baseUrl}${KINOPOISK_CONFIG.ENDPOINTS.MOVIE}`;
+            const params = new URLSearchParams({
+                limit: Math.min(ids.length, 100).toString(),
+                page: '1'
+            });
+            ids.forEach(id => params.append('id', id.toString()));
+
+            const response = await this._fetchWithRotation(`${url}?${params}`, {
+                method: 'GET',
+                signal: options.signal
+            });
+
+            if (!response.ok) {
+                console.warn(`KinopoiskService: Batch fetch by IDs failed with status ${response.status}`);
+                return [];
+            }
+
+            const data = await response.json();
+            const docs = data.docs || [];
+            const movieMap = new Map();
+
+            for (const doc of docs) {
+                const normalized = this.normalizeMovieData(doc);
+                if (normalized && normalized.kinopoiskId) {
+                    movieMap.set(Number(normalized.kinopoiskId), normalized);
+                }
+            }
+
+            // Reconstruct array strictly following scraped items order
+            const orderedMovies = [];
+            for (const item of items) {
+                const movie = movieMap.get(Number(item.id));
+                if (movie) {
+                    if (item.type === 'series') {
+                        movie.isSeries = true;
+                    }
+                    orderedMovies.push(movie);
+                }
+            }
+
+            return orderedMovies;
+        } catch (error) {
+            console.error('KinopoiskService: Error in getMoviesByIdsBatch:', error);
+            return [];
+        }
     }
 
     /**
@@ -78,71 +570,127 @@ class KinopoiskService {
      * @returns {Promise<Object>} - Search results
      */
     async searchMovies(query, page = 1, limit = this.defaultLimit, filters = null) {
-        try {
-            // Clean and normalize the query
-            const cleanQuery = this.normalizeQuery(query);
-            console.log(`KinopoiskService: Searching for "${query}" (normalized: "${cleanQuery}")`);
-            
-            const url = `${this.baseUrl}${KINOPOISK_CONFIG.ENDPOINTS.SEARCH}`;
-            // NOTE: Do NOT add sortField/sortType here — that disables the API's built-in
-            // relevance ranking (fuzzy match). Let the API rank by relevance naturally.
-            const params = new URLSearchParams({
-                query: cleanQuery,
-                page: page.toString(),
-                limit: limit.toString()
-            });
+        // Clean and normalize the query
+        const cleanQuery = this.normalizeQuery(query);
+        console.log(`KinopoiskService: Searching for "${query}" (normalized: "${cleanQuery}")`);
 
-            // Add year range filters if provided
-            if (filters && filters.yearFrom) {
-                params.append('year', `${filters.yearFrom}-${filters.yearTo || new Date().getFullYear()}`);
+        // Attempt 3-Tier Hybrid Search on page 1 when no metadata filters are set
+        const isDefaultSearch = page === 1 && (!filters || (!filters.yearFrom && (!filters.genresInclude || filters.genresInclude.length === 0) && (!filters.countriesInclude || filters.countriesInclude.length === 0)));
+
+        if (isDefaultSearch && !filters?.skipScraper) {
+            let scrapedItems = null;
+            let scrapeSource = 'kinopoisk-offscreen-scrape';
+
+            // Tier 1: Real Browser Context Scraping (Offscreen Document + iframe + Content Script)
+            if (!filters?.skipOffscreen) {
+                try {
+                    scrapedItems = await this.scrapeSearchResultsOffscreen(query, {
+                        limit: Math.max(limit, 30),
+                        signal: filters?.signal
+                    });
+                } catch (offscreenErr) {
+                    console.warn('KinopoiskService: Tier 1 offscreen scraper failed:', offscreenErr);
+                }
             }
 
-            const fullUrl = `${url}?${params}`;
-            console.log(`KinopoiskService: Request URL: ${fullUrl}`);
+            // Tier 2: DOM-independent Regex Fetch Scraping (reserve fallback)
+            if (!scrapedItems || scrapedItems.length === 0) {
+                if (!filters?.skipFetchScraper) {
+                    try {
+                        scrapedItems = await this.scrapeSearchResults(query, {
+                            limit: Math.max(limit, 30),
+                            signal: filters?.signal
+                        });
+                        if (scrapedItems && scrapedItems.length > 0) {
+                            scrapeSource = 'kinopoisk-scrape';
+                        }
+                    } catch (fetchScraperErr) {
+                        console.warn('KinopoiskService: Tier 2 regex fetch scraper failed:', fetchScraperErr);
+                    }
+                }
+            }
 
-            const response = await this._fetchWithRotation(fullUrl, {
-                method: 'GET'
+            // If scraping produced candidates, batch fetch full entities from API in exact order
+            if (scrapedItems && scrapedItems.length > 0) {
+                try {
+                    const candidateMovies = await this.getMoviesByIdsBatch(scrapedItems, { signal: filters?.signal });
+                    if (candidateMovies && candidateMovies.length > 0) {
+                        console.log(`KinopoiskService: Hybrid search succeeded with ${candidateMovies.length} movies via ${scrapeSource}`);
+                        return {
+                            docs: candidateMovies,
+                            total: candidateMovies.length,
+                            totalScraped: candidateMovies.length,
+                            page: 1,
+                            limit: limit,
+                            pages: Math.ceil(candidateMovies.length / limit) || 1,
+                            searchSource: scrapeSource
+                        };
+                    }
+                } catch (batchErr) {
+                    console.warn('KinopoiskService: Batch entity resolution failed:', batchErr);
+                }
+            }
+        }
+
+        // Tier 3: Baseline API Search fallback (/v1.4/movie/search)
+        try {
+            const searchEndpointUrl = `${this.baseUrl}${KINOPOISK_CONFIG.ENDPOINTS.SEARCH}`;
+
+            const candidateLimit = filters?.candidateLimit
+                ? Math.max(limit, Number(filters.candidateLimit) || limit)
+                : limit;
+
+            const searchParams = new URLSearchParams({
+                query: cleanQuery,
+                page: page.toString(),
+                limit: candidateLimit.toString()
             });
 
-            console.log(`KinopoiskService: Response status: ${response.status}`);
+            if (filters && filters.yearFrom) {
+                const yearRange = `${filters.yearFrom}-${filters.yearTo || new Date().getFullYear()}`;
+                searchParams.append('year', yearRange);
+            }
+
+            const fullUrl = `${searchEndpointUrl}?${searchParams}`;
+            console.log(`KinopoiskService: Request URL (API search fallback): ${fullUrl}`);
+
+            const response = await this._fetchWithRotation(fullUrl, {
+                method: 'GET',
+                signal: filters?.signal
+            });
 
             if (!response.ok) {
-                // Check for daily limit reached (403 or 402 or 429)
                 if (response.status === 403 || response.status === 402) {
                     const errorData = await response.json();
                     if (errorData.message && errorData.message.includes('суточный лимит')) {
-                         if (typeof Utils !== 'undefined' && Utils.showToast) {
-                            Utils.showToast('⚠️ Вы израсходовали ваш суточный лимит запросов. Обновите тариф или попробуйте завтра.', 'error', 5000);
+                        if (typeof Utils !== 'undefined' && Utils.showToast) {
+                            Utils.showToast('Вы израсходовали ваш суточный лимит запросов. Обновите тариф или попробуйте завтра.', 'error', 5000);
                         }
                         throw new Error('DAILY_LIMIT_REACHED');
                     }
                 }
-
-                // Try alternative search strategies for failed requests
                 if (response.status === 500 && this.hasCyrillic(query)) {
-                    console.log('KinopoiskService: Trying alternative search for Cyrillic query...');
-                    return await this.searchMoviesAlternative(query, page, limit);
+                    const altResult = await this.searchMoviesAlternative(query, page, limit);
+                    return {
+                        ...altResult,
+                        searchSource: 'api-fallback'
+                    };
                 }
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
 
             const data = await response.json();
-            return this.normalizeSearchResults(data, query);
+            const normalized = this.normalizeSearchResults(data, query);
+            return {
+                ...normalized,
+                searchSource: 'api-fallback'
+            };
         } catch (error) {
             console.error('Error searching movies:', error);
-            
-            // Re-throw limit error to let caller handle it if needed, but we already showed toast
-            if (error.message === 'DAILY_LIMIT_REACHED') {
-                 // Return empty result to prevent crashing UI
-                 return {
-                    docs: [],
-                    total: 0,
-                    page: 1,
-                    limit: limit,
-                    pages: 0
-                };
+            if (isQuotaExhaustedError(error) || error.message === 'DAILY_LIMIT_REACHED') {
+                if (filters?.throwOnLimit) throw error;
+                return { docs: [], total: 0, page: 1, limit: limit, pages: 0, searchSource: 'api-fallback' };
             }
-            
             throw new Error(`Failed to search movies: ${error.message}`, { cause: error });
         }
     }
@@ -212,11 +760,219 @@ class KinopoiskService {
     }
 
     /**
+     * Helper to resolve a list of TMDB candidate items to Kinopoisk normalized movie objects.
+     * Matches by name/altName and release year, and attaches TMDB posters/ratings if missing on KP.
+     * @param {Array<Object>} tmdbItems - Array of TMDB items
+     * @param {number} limit - Target number of resolved items
+     * @param {AbortSignal} [signal=null] - Optional abort signal
+     * @returns {Promise<Array<Object>>} - Array of normalized movie objects with kinopoiskId
+     */
+    /**
+    /**
+     * Get featured movies for discovery hero carousel directly from Kinopoisk catalog.
+     * @param {number} limit - Maximum number of movies (default: 10)
+     * @param {Object} options - Optional parameters { signal, yearRange }
+     * @returns {Promise<Array<Object>>} - Array of normalized movie objects with kinopoiskId
+     */
+    async getFeaturedMovies(limit = 10, options = {}) {
+        try {
+            const currentYear = new Date().getFullYear();
+            const yearRange = options.yearRange || `${currentYear - 2}-${currentYear}`;
+            const url = `${this.baseUrl}${KINOPOISK_CONFIG.ENDPOINTS.MOVIE}`;
+
+            const params = new URLSearchParams({
+                page: '1',
+                limit: Math.max(limit + 5, 10).toString(),
+                'rating.kp': '7.2-10',
+                'votes.kp': '20000-10000000',
+                'poster.url': '!null',
+                'name': '!null',
+                'year': yearRange,
+                'sortField': 'votes.kp',
+                'sortType': '-1'
+            });
+
+            const fullUrl = `${url}?${params}`;
+            console.log(`KinopoiskService: Featured discovery URL: ${fullUrl}`);
+
+            const response = await this._fetchWithRotation(fullUrl, { method: 'GET', signal: options.signal });
+
+            if (response.ok) {
+                const data = await response.json();
+                const docs = Array.isArray(data.docs) ? data.docs : [];
+                return docs
+                    .map(doc => this.normalizeMovieData(doc))
+                    .filter(item => item && item.kinopoiskId)
+                    .slice(0, limit);
+            }
+            return [];
+        } catch (error) {
+            if (error?.name === 'AbortError') throw error;
+            console.error('KinopoiskService: Error getting featured movies:', error);
+            return [];
+        }
+    }
+
+    /**
+     * Get popular movies by category / type with high ratings directly from Kinopoisk catalog.
+     * Handles type: 'movie' | 'tv-series' | 'cartoon' | 'anime' | 'tv-show'.
+     * @param {Object} params - { type, limit, page, genres, yearRange, allTime, signal }
+     * @returns {Promise<Array<Object>>} - Array of normalized movie objects
+     */
+    async getPopularMovies({ type = 'movie', limit = 12, page = 1, genres = null, yearRange = null, allTime = false, signal = null } = {}) {
+        try {
+            // Specialized handling for tv-show with anime fallback
+            if (type === 'tv-show') {
+                return await this._getPopularTvShowsWithFallback({ limit, page, yearRange, allTime, signal });
+            }
+
+            const currentYear = new Date().getFullYear();
+            const effectiveYear = allTime ? null : (yearRange || `${currentYear - 2}-${currentYear}`);
+
+            const url = `${this.baseUrl}${KINOPOISK_CONFIG.ENDPOINTS.MOVIE}`;
+            const params = new URLSearchParams({
+                page: page.toString(),
+                limit: Math.max(limit + 4, 10).toString(),
+                'votes.kp': '1000-10000000',
+                'rating.kp': '6.8-10',
+                'poster.url': '!null',
+                'name': '!null',
+                'sortField': 'votes.kp',
+                'sortType': '-1'
+            });
+
+            if (effectiveYear) params.append('year', effectiveYear);
+            if (type) params.append('type', type);
+            if (genres) {
+                if (Array.isArray(genres)) genres.forEach(g => params.append('genres.name', g));
+                else params.append('genres.name', genres);
+            }
+
+            const fullUrl = `${url}?${params}`;
+            console.log(`KinopoiskService: Popular movies (${type}) URL: ${fullUrl}`);
+
+            const response = await this._fetchWithRotation(fullUrl, { method: 'GET', signal });
+
+            if (response.ok) {
+                const data = await response.json();
+                const docs = Array.isArray(data.docs) ? data.docs : [];
+                return docs
+                    .map(doc => this.normalizeMovieData(doc))
+                    .filter(item => item && item.kinopoiskId)
+                    .slice(0, limit);
+            }
+
+            return [];
+        } catch (error) {
+            console.error(`KinopoiskService: Error getting popular movies for ${type}:`, error);
+            return [];
+        }
+    }
+
+    /**
+     * Helper for TV shows with combined filters and anime fallback if < 6 items.
+     * @param {Object} params - { limit, page, yearRange, allTime, signal }
+     * @returns {Promise<Array<Object>>}
+     */
+    async _getPopularTvShowsWithFallback({ limit = 12, page = 1, yearRange = null, allTime = false, signal = null } = {}) {
+        const currentYear = new Date().getFullYear();
+        const effectiveYear = allTime ? null : (yearRange || `${currentYear - 2}-${currentYear}`);
+
+        try {
+            const url = `${this.baseUrl}${KINOPOISK_CONFIG.ENDPOINTS.MOVIE}`;
+            const params = new URLSearchParams({
+                page: page.toString(),
+                limit: limit.toString(),
+                'votes.kp': '300-10000000',
+                'poster.url': '!null',
+                'name': '!null',
+                'sortField': 'votes.kp',
+                'sortType': '-1'
+            });
+
+            if (effectiveYear) {
+                params.append('year', effectiveYear);
+            }
+
+            // Combined types
+            params.append('type', 'tv-series');
+            params.append('type', 'tv-show');
+
+            // Show-related genres
+            const showGenres = ['ток-шоу', 'реалити-шоу', 'игра', 'документальный'];
+            showGenres.forEach(g => params.append('genres.name', g));
+
+            const fullUrl = `${url}?${params}`;
+            console.log(`KinopoiskService: TV shows request URL: ${fullUrl}`);
+
+            const response = await this._fetchWithRotation(fullUrl, { method: 'GET', signal });
+            if (response.ok) {
+                const data = await response.json();
+                const items = data.docs ? data.docs.map(movie => this.normalizeMovieData(movie)) : [];
+                if (items.length >= 6) {
+                    return items;
+                }
+                console.warn(`KinopoiskService: TV shows yielded only ${items.length} items (< 6), falling back to Anime`);
+            }
+        } catch (showError) {
+            console.warn('KinopoiskService: Error fetching TV shows, falling back to Anime:', showError);
+        }
+
+        // Tier 1 anime fallback: Try TMDB fresh anime
+        if (!allTime && this.tmdbService && typeof this.tmdbService.isConfigured === 'function' && this.tmdbService.isConfigured()) {
+            try {
+                const tmdbAnime = await this.tmdbService.getFreshAnime(page, signal);
+                if (Array.isArray(tmdbAnime) && tmdbAnime.length > 0) {
+                    const resolvedAnime = await this._resolveTmdbList(tmdbAnime, limit, signal);
+                    if (resolvedAnime.length >= 4) {
+                        return resolvedAnime;
+                    }
+                }
+            } catch (tmdbAnimeErr) {
+                console.warn('KinopoiskService: TMDB anime fallback failed:', tmdbAnimeErr.message);
+            }
+        }
+
+        // Tier 2 anime fallback: Top anime from Kinopoisk
+        try {
+            const url = `${this.baseUrl}${KINOPOISK_CONFIG.ENDPOINTS.MOVIE}`;
+            const params = new URLSearchParams({
+                page: page.toString(),
+                limit: limit.toString(),
+                'type': 'anime',
+                'rating.kp': '7.2-10',
+                'votes.kp': '500-10000000',
+                'poster.url': '!null',
+                'name': '!null',
+                'sortField': 'votes.kp',
+                'sortType': '-1'
+            });
+
+            if (effectiveYear) {
+                params.append('year', effectiveYear);
+            }
+
+            const fullUrl = `${url}?${params}`;
+            console.log(`KinopoiskService: Anime fallback request URL: ${fullUrl}`);
+
+            const response = await this._fetchWithRotation(fullUrl, { method: 'GET', signal });
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+            const data = await response.json();
+            return data.docs ? data.docs.map(movie => this.normalizeMovieData(movie)) : [];
+        } catch (animeError) {
+            console.error('KinopoiskService: Error fetching anime fallback:', animeError);
+            return [];
+        }
+    }
+
+    /**
      * Get detailed movie information by ID
      * @param {number} movieId - Kinopoisk movie ID
+     * @param {Object} fallbackContext - Existing cache and optional reliable title/year context
      * @returns {Promise<Object>} - Movie details
      */
-    async getMovieById(movieId) {
+    async getMovieById(movieId, fallbackContext = {}) {
         try {
             const url = `${this.baseUrl}${KINOPOISK_CONFIG.ENDPOINTS.MOVIE}/${movieId}`;
             
@@ -232,30 +988,154 @@ class KinopoiskService {
             console.log('Full movie API response:', data); // Debug log
             
             let movieData = this.normalizeMovieData(data);
+            console.log('[DIAG] Freshly normalized KP data (pre-check):', JSON.stringify({
+                descriptionRaw: movieData?.description,
+                descriptionLength: movieData?.description?.length,
+                genresLength: movieData?.genres?.length,
+                personsLength: movieData?.persons?.length,
+                hasDetailedInfo: Utils.hasDetailedMovieInfo(movieData)
+            }, null, 2));
 
-            // Check if IMDb rating is missing and we have an IMDb ID
-            if ((!movieData.imdbRating || movieData.imdbRating === 0) && movieData.externalId?.imdb) {
-                console.log(`KinopoiskService: Missing IMDb rating for ${movieData.name}, attempting to parse from IMDb...`);
-                
-                if (typeof ImdbParsingService !== 'undefined') {
-                    const imdbService = new ImdbParsingService();
-                    const imdbData = await imdbService.getImdbRating(movieData.externalId.imdb);
-                    
-                    if (imdbData) {
-                        console.log(`KinopoiskService: Updated IMDb rating for ${movieData.name}: ${imdbData.rating} (${imdbData.votes} votes)`);
-                        movieData.imdbRating = imdbData.rating;
-                        movieData.votes.imdb = imdbData.votes;
-                    }
-                } else {
-                    console.warn('KinopoiskService: ImdbParsingService not found');
-                }
+            if (!Utils.hasDetailedMovieInfo(movieData)) {
+                // Prefer any cached KP object as the stable merge base. It can
+                // contain KP-specific metadata omitted by the current response.
+                const mergeBase = fallbackContext.cachedMovie || movieData;
+                movieData = await this.enrichIncompleteMovieWithTmdb(mergeBase);
             }
 
             return movieData;
         } catch (error) {
             console.error('Error getting movie details:', error);
+            const tmdbFallback = await this.getTmdbFallbackAfterKinopoiskFailure(movieId, fallbackContext);
+            if (tmdbFallback) return tmdbFallback;
             throw new Error(`Failed to get movie details: ${error.message}`, { cause: error });
         }
+    }
+
+    /**
+     * Enrich an incomplete Kinopoisk response only when it already carries a
+     * reliable IMDb ID. TMDB failures never discard the Kinopoisk response.
+     * @param {Object} kpMovie - Normalized Kinopoisk movie
+     * @returns {Promise<Object>}
+     */
+    async enrichIncompleteMovieWithTmdb(kpMovie) {
+        const imdbId = await this.getReliableImdbId(kpMovie);
+        const configured = this.tmdbService?.isConfigured();
+        console.log('[DIAG] enrichIncompleteMovieWithTmdb entry:', JSON.stringify({
+            called: true,
+            imdbId: imdbId || null,
+            externalIdRaw: kpMovie?.externalId,
+            tmdbConfigured: configured
+        }, null, 2));
+        if (!imdbId || !configured) {
+            if (!imdbId) await this.tmdbFallbackQueueService?.reportMissingImdb(kpMovie);
+            console.warn('[DIAG] enrichIncompleteMovieWithTmdb: early return', {
+                reason: !imdbId ? 'no imdbId' : 'tmdb not configured'
+            });
+            return kpMovie;
+        }
+
+        try {
+            console.info('[TMDB fallback] merge-with-cache: incomplete Kinopoisk metadata; using findByImdbId.', {
+                kinopoiskId: kpMovie.kinopoiskId,
+                imdbId
+            });
+            const tmdbData = await this.tmdbService.findByImdbId(imdbId);
+            if (!tmdbData) {
+                console.info('[TMDB fallback] merge-with-cache: findByImdbId returned no movie.', { imdbId });
+                return kpMovie;
+            }
+
+            const mergedMovie = TMDBService.mergeWithTmdbData(kpMovie, tmdbData);
+            console.info('[TMDB fallback] merge-with-cache: Kinopoisk movie merged with TMDB fields.', {
+                kinopoiskId: kpMovie.kinopoiskId,
+                fields: mergedMovie.additionalDataFields || []
+            });
+            return mergedMovie;
+        } catch (tmdbError) {
+            console.warn('[TMDB fallback] merge-with-cache: could not enrich incomplete Kinopoisk metadata:', tmdbError);
+            return kpMovie;
+        }
+    }
+
+    async getReliableImdbId(movie) {
+        const kpImdbId = movie?.externalId?.imdb?.trim();
+        if (typeof TmdbFallbackQueueService !== 'undefined' &&
+            TmdbFallbackQueueService.isValidImdbId(kpImdbId)) return kpImdbId;
+        return this.tmdbFallbackQueueService?.getManualImdbId(movie?.kinopoiskId) || null;
+    }
+
+    /**
+     * Recover from a complete Kinopoisk failure without replacing the KP ID.
+     * A cached KP object always remains the merge base; title search is reserved
+     * solely for a genuinely cold cache with explicit title/year context.
+     * @param {number} movieId - Kinopoisk movie ID
+     * @param {Object} fallbackContext - { cachedMovie, title, year }
+     * @returns {Promise<Object|null>}
+     */
+    async getTmdbFallbackAfterKinopoiskFailure(movieId, fallbackContext = {}) {
+        if (!this.tmdbService?.isConfigured()) return null;
+
+        const cachedMovie = fallbackContext.cachedMovie;
+        try {
+            const imdbId = await this.getReliableImdbId(cachedMovie);
+            if (cachedMovie && imdbId) {
+                console.info('[TMDB fallback] merge-with-cache: Kinopoisk failed; enriching cached KP movie via findByImdbId.', {
+                    kinopoiskId: movieId,
+                    imdbId
+                });
+                const tmdbData = await this.tmdbService.findByImdbId(imdbId);
+                if (!tmdbData) {
+                    console.info('[TMDB fallback] merge-with-cache: findByImdbId returned no movie.', { imdbId });
+                    return cachedMovie;
+                }
+
+                const mergedMovie = TMDBService.mergeWithTmdbData(cachedMovie, tmdbData);
+                console.info('[TMDB fallback] merge-with-cache: cached KP movie merged with TMDB fields.', {
+                    kinopoiskId: movieId,
+                    fields: mergedMovie.additionalDataFields || []
+                });
+                return mergedMovie;
+            }
+
+            if (cachedMovie) {
+                await this.tmdbFallbackQueueService?.reportMissingImdb(cachedMovie);
+                console.warn('[TMDB fallback] merge-with-cache: cached KP movie has no reliable IMDb ID; TMDB skipped.', {
+                    kinopoiskId: movieId
+                });
+                return cachedMovie;
+            }
+
+            const title = fallbackContext.title?.trim();
+            const year = fallbackContext.year;
+            if (title && year) {
+                // This is the sole permitted title-search path: a cold cache and a
+                // complete Kinopoisk failure leave no reliable IMDb ID to use.
+                console.info('[TMDB fallback] cold-search-only: cold cache and Kinopoisk failure; using searchByTitleYear.', {
+                    kinopoiskId: movieId,
+                    title,
+                    year
+                });
+                const tmdbData = await this.tmdbService.searchByTitleYear(title, year);
+                return tmdbData ? this.createTmdbOnlyMovie(movieId, tmdbData) : null;
+            }
+
+            console.warn('[TMDB fallback] cold-search-only: no title/year context; title search skipped.', {
+                kinopoiskId: movieId
+            });
+            return null;
+        } catch (tmdbError) {
+            console.warn('[TMDB fallback] TMDB recovery failed:', tmdbError);
+            return null;
+        }
+    }
+
+    createTmdbOnlyMovie(movieId, tmdbData, imdbId = '') {
+        return Object.assign({}, tmdbData, {
+            kinopoiskId: Number(movieId) || movieId,
+            externalId: Object.assign({}, tmdbData.externalId, imdbId ? { imdb: imdbId } : {}),
+            additionalDataSource: 'tmdb'
+        });
     }
 
     /**
@@ -263,16 +1143,20 @@ class KinopoiskService {
      * @param {number} movieId - Kinopoisk movie ID
      * @returns {Promise<Array>} - Movie images
      */
-    async getMovieImages(movieId) {
+    async getMovieImages(movieId, options = {}) {
         try {
             // Try the images endpoint if it exists
             const url = `${this.baseUrl}/image?movieId=${movieId}&type=still`;
             
             const response = await this._fetchWithRotation(url, {
-                method: 'GET'
+                method: 'GET',
+                signal: options.signal
             });
 
             if (!response.ok) {
+                if (options.throwOnLimit && [402, 403, 429].includes(response.status)) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
                 // Images are not critical, just return empty array on failure
                 console.warn(`Failed to get images: ${response.status}`);
                 return [];
@@ -281,6 +1165,11 @@ class KinopoiskService {
             const data = await response.json();
             return data.items || data.docs || [];
         } catch (error) {
+            if (error?.name === 'AbortError' || error?.cause?.name === 'AbortError') throw error;
+            if (options.throwOnLimit && (
+                String(error?.code || '').startsWith('KINOPOISK_') ||
+                /HTTP error! status: (402|403|429)/i.test(String(error?.message))
+            )) throw error;
             console.error('Error getting movie images:', error);
             return [];
         }
@@ -348,77 +1237,81 @@ class KinopoiskService {
     sortMoviesByRelevance(movies, query) {
         const queryLower = query.toLowerCase().trim().replace(/ё/g, 'е');
 
-        // Stem the query if the Snowball stemmer is available (handles Russian inflection:
-        // e.g. "соседства" (genitive) and "Соседство" (nominative) both stem to "сосед")
+        // Stem the query if the Snowball stemmer is available (handles Russian inflection)
         const stemmer = (typeof RussianStemmer !== 'undefined') ? RussianStemmer : null;
         const queryStem = stemmer ? stemmer.stemPhrase(queryLower) : queryLower;
 
-        // Score a single movie against the query — higher = more relevant
+        // Score a single movie against the query combining text relevance and popularity (vote count)
         const score = (movie) => {
-            const name    = (movie.name || '').toLowerCase().replace(/ё/g, 'е');
+            const name = (movie.name || '').toLowerCase().replace(/ё/g, 'е');
             const altName = (movie.alternativeName || '').toLowerCase();
 
-            // ---- Tier 1-6: exact/prefix/contains matching on raw query ----
+            // Calculate vote count from kp or imdb
+            const kpVotes = typeof movie.votes === 'object' ? (movie.votes?.kp || 0) : (movie.votes || 0);
+            const imdbVotes = typeof movie.votes === 'object' ? (movie.votes?.imdb || 0) : 0;
+            const maxVotes = Math.max(Number(kpVotes) || 0, Number(imdbVotes) || 0);
+
+            // Popularity bonus on a logarithmic scale (e.g. 900,000 votes adds ~89 pts; 1,000 votes adds ~45 pts)
+            const popularityBonus = maxVotes > 0 ? Math.log10(maxVotes + 1) * 15 : 0;
+
+            let textScore = 0;
 
             // Tier 1: exact match on primary or alternative name
-            if (name === queryLower || altName === queryLower) return 100;
-
-            // Tier 2: primary name starts with query
-            if (name.startsWith(queryLower)) return 80;
-
-            // Tier 3: alternative name starts with query
-            if (altName.startsWith(queryLower)) return 70;
-
-            // Tier 4: primary name contains query as a whole word
-            const safeQuery = queryLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const wordBoundary = new RegExp(`(^|\\s)${safeQuery}(\\s|$)`);
-            if (wordBoundary.test(name)) return 60;
-            if (wordBoundary.test(altName)) return 55;
-
-            // Tier 5: primary name contains query anywhere
-            if (name.includes(queryLower)) return 40;
-
-            // Tier 6: alternative name contains query anywhere
-            if (altName.includes(queryLower)) return 30;
-
-            // ---- Tier 7-9: stem-based matching (handles inflected Russian forms) ----
-            // e.g. query "соседства" stems to "соседств"
-            //   "Соседство"        → stem "соседств"      → exact → score 95  ✓ wins
-            //   "Шпион по соседству" → stem "шпион со…" → word  → score 35
-            if (stemmer && queryStem && queryStem !== queryLower) {
-                const nameStem    = stemmer.stemPhrase(name);
-                const altNameStem = stemmer.stemPhrase(altName);
-
-                const safeStem = queryStem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-                // Tier 7: the entire stemmed title IS the stemmed query (e.g. "Соседство")
-                if (nameStem === queryStem) return 95;
-
-                // Tier 7b: stemmed query appears as a whole token inside the stemmed title
-                const stemWordRe = new RegExp(`(^| )${safeStem}( |$)`);
-                if (stemWordRe.test(nameStem)) return 35;
-
-                // Tier 8: stemmed query is a substring of the stemmed title (any position)
-                if (nameStem.includes(queryStem)) return 20;
-
-                // Tier 9: same checks for alternativeName
-                if (altNameStem === queryStem) return 90;
-                if (stemWordRe.test(altNameStem)) return 30;
-                if (altNameStem.includes(queryStem)) return 15;
+            if (name === queryLower || altName === queryLower) {
+                textScore = 100;
+            }
+            // Tier 2: primary or alternative name starts with query followed by subtitle delimiter (:, -, space)
+            // e.g. query "мстители" -> "Мстители: Война бесконечности", "Мстители: Финал"
+            else if (new RegExp(`^${queryLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s:\\-–—]`).test(name) ||
+                     new RegExp(`^${queryLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s:\\-–—]`).test(altName)) {
+                textScore = 95;
+            }
+            // Tier 3: primary name starts with query
+            else if (name.startsWith(queryLower)) {
+                textScore = 85;
+            }
+            // Tier 4: alternative name starts with query
+            else if (altName.startsWith(queryLower)) {
+                textScore = 75;
+            }
+            // Tier 5: primary or alternative name contains query as a whole word
+            else {
+                const safeQuery = queryLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const wordBoundary = new RegExp(`(^|\\s)${safeQuery}(\\s|$)`);
+                if (wordBoundary.test(name)) textScore = 65;
+                else if (wordBoundary.test(altName)) textScore = 55;
+                else if (name.includes(queryLower)) textScore = 40;
+                else if (altName.includes(queryLower)) textScore = 30;
             }
 
-            return 0;
+            // Stemmer fallback scoring if no text match yet
+            if (textScore === 0 && stemmer && queryStem && queryStem !== queryLower) {
+                const nameStem = stemmer.stemPhrase(name);
+                const altNameStem = stemmer.stemPhrase(altName);
+                const safeStem = queryStem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+                if (nameStem === queryStem) textScore = 90;
+                else {
+                    const stemWordRe = new RegExp(`(^| )${safeStem}( |$)`);
+                    if (stemWordRe.test(nameStem)) textScore = 35;
+                    else if (nameStem.includes(queryStem)) textScore = 20;
+                    else if (altNameStem === queryStem) textScore = 80;
+                    else if (stemWordRe.test(altNameStem)) textScore = 30;
+                    else if (altNameStem.includes(queryStem)) textScore = 15;
+                }
+            }
+
+            // Title matches (textScore > 0) get textScore + full popularityBonus (range 50..180).
+            // Non-title matches (textScore === 0) get only 5% of popularityBonus (range 0..4.5),
+            // guaranteeing that EVERY title match ranks ahead of any non-title match!
+            if (textScore === 0) {
+                return popularityBonus * 0.05;
+            }
+
+            return textScore + popularityBonus;
         };
 
-        return movies.sort((a, b) => {
-            const scoreDiff = score(b) - score(a);
-            if (scoreDiff !== 0) return scoreDiff;
-
-            // Tiebreaker: most popular first (votes.kp)
-            const aVotes = a.votes?.kp || 0;
-            const bVotes = b.votes?.kp || 0;
-            return bVotes - aVotes;
-        });
+        return movies.sort((a, b) => score(b) - score(a));
     }
 
     /**
@@ -446,13 +1339,35 @@ class KinopoiskService {
             genres: movie.genres?.map(g => g.name) || movie.genre || [],
             countries: movie.countries?.map(c => c.name) || movie.country || [],
             duration: movie.movieLength || movie.duration || 0,
+            isSeries: movie.isSeries === true,
+            seriesLength: movie.seriesLength || 0,
             ageRating: movie.ageRating || 0,
             ratingMpaa: movie.ratingMpaa || '',
             type: movie.type || 'movie',
+            // Additional rich provider metadata (Phase 1B)
+            shortDescription: movie.shortDescription || '',
+            backdropUrl: movie.backdrop?.url || movie.backdropUrl || '',
+            logoUrl: movie.logo?.url || movie.logoUrl || (typeof movie.logo === 'string' ? movie.logo : ''),
+            rating: {
+                kp: movie.rating?.kp || movie.kpRating || 0,
+                imdb: movie.rating?.imdb || movie.imdbRating || 0,
+                tmdb: movie.rating?.tmdb || 0,
+                filmCritics: movie.rating?.filmCritics || movie.ratingFilmCritics || null,
+                russianFilmCritics: movie.rating?.russianFilmCritics || movie.ratingRussianFilmCritics || null,
+                await: movie.rating?.await || null
+            },
             votes: {
                 kp: movie.votes?.kp || 0,
-                imdb: movie.votes?.imdb || 0
+                imdb: movie.votes?.imdb || 0,
+                tmdb: movie.votes?.tmdb || 0,
+                filmCritics: movie.votes?.filmCritics || movie.votesFilmCritics || null,
+                russianFilmCritics: movie.votes?.russianFilmCritics || movie.votesRussianFilmCritics || null,
+                await: movie.votes?.await || null
             },
+            facts: Array.isArray(movie.facts)
+                ? movie.facts.filter(f => (typeof f === 'string' ? f.trim().length > 0 : (f && f.value && String(f.value).trim().length > 0)))
+                : [],
+            watchability: movie.watchability?.items || (Array.isArray(movie.watchability) ? movie.watchability : []),
             
             // Crew and cast (persons)
             persons: movie.persons || [],
@@ -925,18 +1840,59 @@ class KinopoiskService {
             console.error('Error getting random movie:', error);
              if (error.message === 'DAILY_LIMIT_REACHED') {
                  if (typeof Utils !== 'undefined' && Utils.showToast) {
-                    Utils.showToast('⚠️ Вы израсходовали ваш суточный лимит запросов.', 'error');
+                    Utils.showToast('Вы израсходовали ваш суточный лимит запросов.', 'error');
                 }
             }
             throw error;
         }
+    }
+
+    /**
+     * Get person details from Kinopoisk API (/v1.4/person/{id}).
+     * @param {number|string} personId - Kinopoisk person ID
+     * @param {Object} [options={}] - Options { signal }
+     * @returns {Promise<Object>} Raw Kinopoisk person response
+     */
+    async getPersonDetails(personId, options = {}) {
+        const numId = Number(personId);
+        if (!numId || isNaN(numId) || numId <= 0) {
+            throw new Error(`Invalid Kinopoisk person ID: ${personId}`);
+        }
+
+        const signal = options.signal || null;
+        const url = `${this.baseUrl}/person/${encodeURIComponent(numId)}`;
+
+        const response = await this._fetchWithRotation(url, { method: 'GET', signal });
+
+        if (!response.ok) {
+            const err = new Error(`Kinopoisk person request failed: HTTP ${response.status}`);
+            err.status = response.status;
+            throw err;
+        }
+
+        return await response.json();
     }
 }
 
 // Export for use in other modules
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = KinopoiskService;
+    module.exports.QuotaExhaustedError = QuotaExhaustedError;
+    module.exports.KinopoiskNetworkError = KinopoiskNetworkError;
+    module.exports.KinopoiskAuthError = KinopoiskAuthError;
+    module.exports.KinopoiskAccessError = KinopoiskAccessError;
+    module.exports.KinopoiskRateLimitError = KinopoiskRateLimitError;
+    module.exports.KinopoiskServerError = KinopoiskServerError;
 }
 if (typeof window !== 'undefined') {
     window.KinopoiskService = KinopoiskService;
+}
+if (typeof globalThis !== 'undefined') {
+    globalThis.QuotaExhaustedError = QuotaExhaustedError;
+    globalThis.isQuotaExhaustedError = isQuotaExhaustedError;
+    globalThis.KinopoiskNetworkError = KinopoiskNetworkError;
+    globalThis.KinopoiskAuthError = KinopoiskAuthError;
+    globalThis.KinopoiskAccessError = KinopoiskAccessError;
+    globalThis.KinopoiskRateLimitError = KinopoiskRateLimitError;
+    globalThis.KinopoiskServerError = KinopoiskServerError;
 }

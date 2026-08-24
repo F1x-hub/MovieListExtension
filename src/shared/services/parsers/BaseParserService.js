@@ -30,6 +30,14 @@ class BaseParserService {
         this.cacheTTL = cacheTTL;
         /** @private @type {Map<string, {data: any, timestamp: number}>} */
         this._searchCache = new Map();
+        /** @private @type {Map<string, Promise<any>>} */
+        this._searchInFlight = new Map();
+        /** @private @type {Map<string, {data: Array<VideoSource>, timestamp: number}>} */
+        this._sourceCache = new Map();
+        /** @private @type {Map<string, Promise<Array<VideoSource>>>} */
+        this._sourceInFlight = new Map();
+        /** @private @type {number} */
+        this._cacheGeneration = 0;
     }
 
     // ─── Abstract Methods (MUST be implemented) ───────────────────────
@@ -59,25 +67,129 @@ class BaseParserService {
 
     /**
      * Render a player for this parser's sources.
-     * Default implementation creates an iframe player.
+     * Default implementation prefers getPlayerType(), then falls back to any valid source type.
      * Override for custom player UIs (e.g. Seasonvar's episode selector).
      * 
      * @param {HTMLElement} container - DOM container element
      * @param {Array<VideoSource>} sources - Video sources
      * @param {Object} [options] - Additional options
-     * @returns {void}
+     * @returns {boolean} Whether a compatible source was rendered
      */
     renderPlayer(container, sources, options = {}) {
-        console.log(`[DEBUG BaseParserService] renderPlayer called for ${this.id}. sources: ${sources?.length}, container:`, container?.tagName, container?.className);
-        console.log(`[DEBUG BaseParserService] Container children BEFORE render:`, Array.from(container.children).map(c => c.tagName + '.' + c.className?.substring(0,30)));
         if (!sources || sources.length === 0) {
             container.innerHTML = '<div class="video-placeholder"><span>Источники не найдены</span></div>';
-            return;
+            return false;
         }
-        const source = sources[0];
-        console.log(`[DEBUG BaseParserService] Rendering IFRAME player. url: ${source.url?.substring(0,80)}`);
-        container.innerHTML = `<iframe src="${source.url}" allowfullscreen allow="autoplay; fullscreen" style="width: 100%; height: 100%; border: none;"></iframe>`;
-        console.log(`[DEBUG BaseParserService] Container children AFTER render:`, Array.from(container.children).map(c => c.tagName + '.' + c.className?.substring(0,30)));
+
+        const preferredPlayerType = this.getPlayerType();
+        const compatibleSources = sources.filter(candidate => this.supportsSourceType(candidate));
+        const source = compatibleSources.find(candidate =>
+            this.getSourcePlayerType(candidate) === preferredPlayerType
+        ) || compatibleSources[0];
+        if (!source) {
+            console.warn(`[BaseParserService] ${this.id} has no supported iframe/video sources`);
+            container.innerHTML = '<div class="video-placeholder"><span>Совместимые источники не найдены</span></div>';
+            return false;
+        }
+
+        const playerType = this.getSourcePlayerType(source);
+
+        if (container._hlsInstance) {
+            try { container._hlsInstance.destroy?.(); } catch { /* ignore */ }
+            container._hlsInstance = null;
+        }
+
+        if (playerType === 'video') {
+            const isHls = source.type === 'hls' || source.url?.includes('.m3u8');
+            if (isHls) {
+                container.innerHTML = `<video class="player-surface__media" controls playsinline></video>`;
+            } else {
+                container.innerHTML = `<video class="player-surface__media" controls playsinline src="${source.url}"><source src="${source.url}" type="video/mp4"></video>`;
+            }
+            const video = container.querySelector?.('video');
+
+            if (isHls && video && typeof window !== 'undefined') {
+                const mountHls = () => {
+                    if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+                        const hls = new Hls({
+                            enableWorker: true
+                        });
+                        hls.loadSource(source.url);
+                        hls.attachMedia(video);
+                        container._hlsInstance = hls;
+                    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                        video.src = source.url;
+                    }
+                };
+
+                if (typeof Hls !== 'undefined') {
+                    mountHls();
+                } else if (window.LazyLoader) {
+                    window.LazyLoader.loadScript('../../shared/lib/hls.min.js').then(mountHls).catch(err => {
+                        console.warn('[BaseParserService] Failed to load HLS library:', err);
+                        if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                            video.src = source.url;
+                        }
+                    });
+                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                    video.src = source.url;
+                }
+            }
+        } else {
+            container.innerHTML = `<iframe class="player-surface__media" src="${source.url}" allowfullscreen allow="autoplay; fullscreen" title="${this.name} player"></iframe>`;
+        }
+
+        const lifecycle = typeof window !== 'undefined' ? window.PlayerSourceLifecycle : null;
+        const playerElement = container.querySelector?.(playerType === 'video' ? 'video' : 'iframe');
+        if (playerElement) {
+            playerElement.dataset.playerSourceActive = 'true';
+            if (options.requestId !== null && options.requestId !== undefined) {
+                playerElement.dataset.playerRequestId = String(options.requestId);
+            }
+        }
+        if (lifecycle && playerElement && options.lifecycle !== false) {
+            container._playerSourceWatcher?.cancel?.();
+            const onState = (state, detail) => {
+                if (options.isRequestCurrent && !options.isRequestCurrent()) return;
+                lifecycle.setState(container, state, {
+                    message: options.lifecycleMessage,
+                    onRetry: options.onRetry || (() => this.renderPlayer(container, sources, options)),
+                    onResearch: options.onResearch
+                });
+                options.onLifecycleState?.(state, { ...detail, source, parserId: this.id });
+            };
+            const watch = playerType === 'video' ? lifecycle.watchVideo : lifecycle.watchIframe;
+            container._playerSourceWatcher = watch(playerElement, {
+                timeoutMs: options.timeoutMs,
+                isRequestCurrent: options.isRequestCurrent,
+                onState
+            });
+        }
+
+        return true;
+    }
+
+    /**
+     * Check whether a VideoSource can be mounted by the base renderer.
+     * Compatibility belongs to the individual source; getPlayerType() is only a preference.
+     * @param {VideoSource} source
+     * @returns {boolean}
+     */
+    supportsSourceType(source) {
+        return this.getSourcePlayerType(source) !== null;
+    }
+
+    /**
+     * Resolve the DOM player type for one source.
+     * Legacy sources without a type are treated as iframe sources.
+     * @param {VideoSource} source
+     * @returns {'iframe'|'video'|null}
+     */
+    getSourcePlayerType(source) {
+        const sourceType = source?.type || 'iframe';
+        if (sourceType === 'iframe') return 'iframe';
+        if (sourceType === 'video' || sourceType === 'hls') return 'video';
+        return null;
     }
 
     /**
@@ -108,40 +220,124 @@ class BaseParserService {
         return supported.includes(movieType);
     }
 
+    isSearchResultCompatible(_result, _movieType) {
+        return true;
+    }
+
     // ─── Built-in Caching ─────────────────────────────────────────────
 
     /**
      * Cached wrapper around search(). Uses in-memory cache with configurable TTL.
      * @param {string} title
      * @param {string|number|null} year
+     * @param {Object} [options] - Provider-specific search options
      * @returns {Promise<SearchResult|null>}
      */
-    async cachedSearch(title, year) {
-        const cacheKey = `${title}_${year || ''}`;
+    getPerfCategory(operation) {
+        const provider = { kinogo: 'KINOGO', exfs: 'EXFS', seasonvar: 'SEASONVAR', rutube: 'RUTUBE' }[this.id];
+        return provider ? `${provider}_${operation}` : 'OTHER';
+    }
+
+    async cachedSearch(title, year, options = {}) {
+        const mediaType = options?.mediaType || null;
+        const seasonNumber = options?.seasonNumber ?? '';
+        const cacheKey = `${title}_${year || ''}_${mediaType || ''}_${seasonNumber}`;
         const cached = this._searchCache.get(cacheKey);
+        const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
 
         if (cached && Date.now() - cached.timestamp < this.cacheTTL) {
-            console.log(`[DEBUG BaseParserService] cachedSearch HIT for ${this.id}. key: "${cacheKey}", age: ${Math.round((Date.now() - cached.timestamp)/1000)}s`);
+            perf?.recordCall(this.getPerfCategory('SEARCH'), { cacheHit: true });
             return cached.data;
         }
 
-        try {
-            console.log(`[DEBUG BaseParserService] cachedSearch MISS for ${this.id}. key: "${cacheKey}", calling search()...`);
-            const result = await this.search(title, year);
-            this._searchCache.set(cacheKey, { data: result, timestamp: Date.now() });
-            console.log(`[DEBUG BaseParserService] cachedSearch result for ${this.id}:`, result ? 'found' : 'null');
-            return result;
-        } catch (error) {
-            console.error(`[${this.name}] Search error:`, error);
-            return null;
+        const inFlight = this._searchInFlight.get(cacheKey);
+        if (inFlight) {
+            perf?.recordCall(this.getPerfCategory('SEARCH'), { inFlightDedupHit: true });
+            return inFlight;
         }
+        perf?.recordCall(this.getPerfCategory('SEARCH'));
+        const cacheGeneration = this._cacheGeneration;
+
+        const request = (async () => {
+            try {
+                const result = await this.search(title, year, options);
+                if (cacheGeneration === this._cacheGeneration) {
+                    this._searchCache.set(cacheKey, { data: result, timestamp: Date.now() });
+                }
+                return result;
+            } catch (error) {
+                console.error(`[${this.name}] Search error:`, error);
+                return null;
+            } finally {
+                if (this._searchInFlight.get(cacheKey) === request) {
+                    this._searchInFlight.delete(cacheKey);
+                }
+            }
+        })();
+
+        this._searchInFlight.set(cacheKey, request);
+        return request;
+    }
+
+    /**
+     * Cache and coalesce source extraction for one search result.
+     * This prevents background discovery and an immediate user click from fetching
+     * and parsing the same third-party movie page twice.
+     * @param {SearchResult|string} searchResult
+     * @returns {Promise<Array<VideoSource>>}
+     */
+    async cachedVideoSources(searchResult, options = {}) {
+        const sourceKey = typeof searchResult === 'string' ? searchResult : searchResult?.url;
+        if (!sourceKey) return [];
+
+        const forceRefresh = options?.forceRefresh === true;
+
+        const cached = this._sourceCache.get(sourceKey);
+        const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
+        if (!forceRefresh && cached && Date.now() - cached.timestamp < this.cacheTTL) {
+            perf?.recordCall(this.getPerfCategory('SOURCE'), { cacheHit: true });
+            return cached.data;
+        }
+
+        const inFlight = this._sourceInFlight.get(sourceKey);
+        if (!forceRefresh && inFlight) {
+            perf?.recordCall(this.getPerfCategory('SOURCE'), { inFlightDedupHit: true });
+            return inFlight;
+        }
+        if (forceRefresh) {
+            perf?.recordCall(this.getPerfCategory('SOURCE'), { cacheBypass: true });
+        }
+        perf?.recordCall(this.getPerfCategory('SOURCE'));
+        const cacheGeneration = this._cacheGeneration;
+
+        const request = (async () => {
+            try {
+                const sources = await this.getVideoSources(searchResult);
+                const normalized = Array.isArray(sources) ? sources : [];
+                if (cacheGeneration === this._cacheGeneration) {
+                    this._sourceCache.set(sourceKey, { data: normalized, timestamp: Date.now() });
+                }
+                return normalized;
+            } finally {
+                if (this._sourceInFlight.get(sourceKey) === request) {
+                    this._sourceInFlight.delete(sourceKey);
+                }
+            }
+        })();
+
+        this._sourceInFlight.set(sourceKey, request);
+        return request;
     }
 
     /**
      * Clear the search cache.
      */
     clearCache() {
+        this._cacheGeneration += 1;
         this._searchCache.clear();
+        this._searchInFlight.clear();
+        this._sourceCache.clear();
+        this._sourceInFlight.clear();
     }
 }
 
@@ -165,4 +361,8 @@ class BaseParserService {
 // Export
 if (typeof window !== 'undefined') {
     window.BaseParserService = BaseParserService;
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { BaseParserService };
 }

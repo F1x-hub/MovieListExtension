@@ -19,7 +19,6 @@
 
     <div class="main-container fade-in">
 
-
         <!-- Configuration Section (Top) -->
         <div class="config-section">
             <div class="config-card">
@@ -27,8 +26,8 @@
                     <div class="config-title-wrapper">
                         <h2 data-i18n="random.config.title">Configuration</h2>
                     </div>
-                    <button id="toggleConfigBtn" class="btn btn-icon-only toggle-btn" title="Toggle Filters">
-                        <span class="icon-chevron"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="padding-top:5px"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
+                    <button id="toggleConfigBtn" class="btn btn-icon-only toggle-btn" title="Toggle Filters" aria-label="Toggle Filters">
+                        <span class="icon-chevron"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
                     </button>
                 </div>
                 
@@ -148,7 +147,7 @@
             <div class="result-container" id="resultContainer">
                 <div id="initialState" class="result-placeholder centered-placeholder">
                     <div class="placeholder-icon-animated">
-                        <img src="../../../icons/icon128-white.png" alt="Dice Icon" class="theme-icon">
+                        <img src="../../shared/assets/icons/app/icon128-white.png" alt="Dice Icon" class="theme-icon">
                     </div>
                     <h3 data-i18n="random.states.ready_title">Ready to roll?</h3>
                     <p data-i18n="random.states.ready_subtitle">Configure filters to your mood</p>
@@ -163,7 +162,7 @@
                     <div class="skeleton-layout">
                         <div class="skeleton-poster-section">
                             <div class="skeleton-poster-wheel">
-                                <img id="skeletonPosterImg" class="skeleton-poster-img spinning" src="../../../icons/icon128-white.png" alt="">
+                                <img id="skeletonPosterImg" class="skeleton-poster-img spinning" src="../../shared/assets/icons/app/icon128-white.png" alt="">
                             </div>
                             <div class="skeleton-ratings">
                                 <div class="skeleton-rating-badge"></div>
@@ -228,8 +227,10 @@
     <script src="../../../libs/firebase-firestore-compat.js"></script>
     <script src="../../../libs/firebase-auth-compat.js"></script>
     <script src="../../shared/config/kinopoisk.config.js"></script>
+    <script src="../../shared/services/TmdbFallbackQueueService.js"></script>
     <script src="../../shared/services/KinopoiskService.js"></script>
     <script src="../../shared/services/ImdbParsingService.js"></script>
+    <script src="../../shared/services/MovieCacheService.js"></script>
     <script src="../../shared/services/UserService.js"></script>
     <script src="../../shared/services/RatingService.js"></script>
     <script src="../../shared/services/CollectionService.js"></script>
@@ -240,6 +241,7 @@
     <script src="../../shared/utils/IconUtils.js"></script>
     <script src="../../shared/utils/Icons.js"></script>
     <script src="../../shared/utils/Utils.js"></script>
+    <script src="../../shared/components/BackToTop.js"></script>
     <script src="../../shared/components/Navigation.js"></script>
     <script src="../../shared/firestore.js"></script>
     <script src="../../shared/components/MovieCard.js"></script>
