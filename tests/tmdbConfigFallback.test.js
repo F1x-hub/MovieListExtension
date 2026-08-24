@@ -12,7 +12,9 @@ try {
 
     assert.equal(service.baseUrl, 'https://api.themoviedb.org/3');
     assert.equal(service.defaultLanguage, 'ru-RU');
-    assert.equal(service.isConfigured(), false);
+    assert.equal(service.hasDirectCredentials(), false);
+    assert.equal(service.hasProxyAccess(), true);
+    assert.equal(service.isConfigured(), true);
 
     console.log('✅ TMDBService starts safely when the local secret config is absent');
 } finally {

@@ -30,9 +30,17 @@ class TMDBService {
         this.catalogProviderPageInFlight = new Map();
     }
 
-    isConfigured() {
+    hasDirectCredentials() {
         return Array.isArray(tmdbConfig.API_KEYS) && tmdbConfig.API_KEYS.length > 0 &&
             Boolean(tmdbConfig.API_KEY);
+    }
+
+    hasProxyAccess() {
+        return Boolean(tmdbConfig.TMDB_PROXY_URL || DEFAULT_TMDB_PROXY_URL);
+    }
+
+    isConfigured() {
+        return this.hasDirectCredentials() || this.hasProxyAccess();
     }
 
     /**
@@ -80,7 +88,7 @@ class TMDBService {
     }
 
     async _fetchWithRotation(url, options = {}) {
-        if (!this.isConfigured()) {
+        if (!this.hasDirectCredentials()) {
             return this._fetchViaProxy(url, options);
         }
 
