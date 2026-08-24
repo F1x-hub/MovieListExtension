@@ -191,6 +191,7 @@ manifest and package version remain the source of truth for the build version.
 - Route TMDB requests through Firebase Functions when the local secret config is absent.
 - Keep the TMDB token in Firebase Secret Manager instead of exposing it to the extension.
 - Remove runtime references to the ignored local TMDB config file from extension pages.
+- Treat the Firebase TMDB proxy as a configured discovery provider without a local token.
 
 </details>
 
