@@ -30,8 +30,6 @@
   "host_permissions": [
     "https://*.firebaseio.com/*",
     "https://*.googleapis.com/*",
-    "https://api.kinopoisk.dev/*",
-    "https://api.poiskkino.dev/*",
     "https://api.themoviedb.org/*",
     "https://us-central1-movielistdb-13208.cloudfunctions.net/*",
     "https://www.youtube.com/*",

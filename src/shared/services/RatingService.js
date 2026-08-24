@@ -105,6 +105,12 @@ class RatingService {
      */
     async addOrUpdateRating(userId, userName, userPhoto, movieId, rating, comment = '', movieData = null) {
         try {
+            const normalizedMovieId = Number(movieId);
+            if (!Number.isInteger(normalizedMovieId) || normalizedMovieId <= 0) {
+                throw new Error('Movie ID must be a positive integer');
+            }
+            movieId = normalizedMovieId;
+
             // Validate rating
             if (rating < 1 || rating > 10 || !Number.isInteger(rating)) {
                 throw new Error('Rating must be an integer between 1 and 10');
@@ -123,7 +129,8 @@ class RatingService {
             const ratingRef = existingRating?.id 
                 ? this.db.collection(this.collection).doc(existingRating.id)
                 : this.db.collection(this.collection).doc();
-            const localMovieCache = await this.getLocalMovieCacheForPromotion(movieId);
+            const resolvedMovieData = await this.resolveMovieDataForRating(movieId, movieData);
+            const localMovieCache = resolvedMovieData || await this.getLocalMovieCacheForPromotion(movieId);
 
             let result;
             let promotedFromLocalCache = false;
@@ -184,6 +191,10 @@ class RatingService {
                     lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
                 };
 
+                if (resolvedMovieData) {
+                    Object.assign(movieUpdates, resolvedMovieData);
+                }
+
                 if (movieDoc.exists) {
                     transaction.update(movieRef, movieUpdates);
                 } else {
@@ -205,12 +216,12 @@ class RatingService {
             }
 
             // Always cache movie metadata when rating to ensure name, poster, and flags are set in Firestore
-            if (movieData) {
+            if (resolvedMovieData) {
                 try {
                     const movieCacheService = window.firebaseManager?.getMovieCacheService();
                     if (movieCacheService) {
-                        await movieCacheService.cacheMovie(movieData, true);
-                        console.log('Movie cached after rating:', movieData.name || movieData.kinopoiskId);
+                        await movieCacheService.cacheMovie(resolvedMovieData, true);
+                        console.log('Movie cached after rating:', resolvedMovieData.name || resolvedMovieData.kinopoiskId);
                     }
                 } catch (cacheError) {
                     console.warn('Failed to cache movie after rating:', cacheError.message);
@@ -264,6 +275,66 @@ class RatingService {
         }
     }
 
+    normalizeMovieDataForRating(movieId, movieData) {
+        if (!movieData || typeof movieData !== 'object') return null;
+
+        const normalized = { ...movieData };
+        normalized.kinopoiskId = Number(normalized.kinopoiskId || normalized.id || movieId);
+        if (!Number.isInteger(normalized.kinopoiskId) || normalized.kinopoiskId <= 0) return null;
+
+        const hasMetadata = Boolean(
+            normalized.name ||
+            normalized.alternativeName ||
+            normalized.posterUrl ||
+            normalized.year ||
+            normalized.description
+        );
+        if (!hasMetadata) return null;
+
+        delete normalized.id;
+        delete normalized._lru;
+        delete normalized._cacheExpired;
+        delete normalized.cachedAt;
+        delete normalized.lastUpdated;
+        delete normalized.hasRatings;
+        delete normalized.hasCommunityRating;
+        delete normalized.ratingsCount;
+        delete normalized.ratingsSum;
+        delete normalized.avgRating;
+        delete normalized.lastRatingUpdatedAt;
+
+        return normalized;
+    }
+
+    async resolveMovieDataForRating(movieId, movieData = null) {
+        const directMovieData = this.normalizeMovieDataForRating(movieId, movieData);
+        if (directMovieData) return directMovieData;
+
+        const candidates = [];
+        try {
+            if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+                const key = `local_movie_cache_${movieId}`;
+                const stored = await chrome.storage.local.get(key);
+                if (stored[key]) candidates.push(stored[key]);
+            }
+        } catch (error) {
+            console.warn('RatingService: Failed to read Chrome movie cache', error);
+        }
+
+        try {
+            if (typeof localStorage !== 'undefined') {
+                const rawMovie = localStorage.getItem(`kp_movie_${movieId}`);
+                if (rawMovie) candidates.push(JSON.parse(rawMovie));
+            }
+        } catch (error) {
+            console.warn('RatingService: Failed to read legacy movie cache', error);
+        }
+
+        return candidates
+            .map(candidate => this.normalizeMovieDataForRating(movieId, candidate))
+            .find(Boolean) || null;
+    }
+
     async getLocalMovieCacheForPromotion(movieId) {
         try {
             if (typeof chrome === 'undefined' || !chrome.storage?.local) return null;
@@ -272,8 +343,7 @@ class RatingService {
             const cachedMovie = stored[key];
             if (!cachedMovie || typeof cachedMovie !== 'object') return null;
 
-            const { id, _lru, _cacheExpired, cachedAt, ...movieFields } = cachedMovie;
-            return movieFields;
+            return this.normalizeMovieDataForRating(movieId, cachedMovie);
         } catch (error) {
             console.warn('RatingService: Failed to read local movie cache for promotion', error);
             return null;
@@ -337,19 +407,26 @@ class RatingService {
      */
     async getRating(userId, movieId) {
         try {
-            const query = this.db.collection(this.collection)
-                .where('userId', '==', userId)
-                .where('movieId', '==', movieId)
-                .limit(1);
+            const normalizedMovieId = Number(movieId);
+            const movieIdCandidates = [...new Set([
+                normalizedMovieId,
+                String(movieId)
+            ])].filter(candidate => candidate !== 'NaN' && candidate !== undefined);
 
-            const results = await query.get();
-            
-            if (results.empty) {
-                return null;
+            for (const movieIdCandidate of movieIdCandidates) {
+                const query = this.db.collection(this.collection)
+                    .where('userId', '==', userId)
+                    .where('movieId', '==', movieIdCandidate)
+                    .limit(1);
+
+                const results = await query.get();
+                if (!results.empty) {
+                    const doc = results.docs[0];
+                    return { id: doc.id, ...doc.data() };
+                }
             }
 
-            const doc = results.docs[0];
-            return { id: doc.id, ...doc.data() };
+            return null;
         } catch (error) {
             console.error('Error getting user rating:', error);
             return null;
@@ -481,10 +558,14 @@ class RatingService {
 
     async fetchAverageRatingsFromFirestore(movieIds) {
         // Load all ratings for these movies in batch (Firestore 'in' limit is 30)
+        const normalizedMovieIds = [...new Set(movieIds
+            .map(movieId => Number(movieId))
+            .filter(movieId => Number.isInteger(movieId) && movieId > 0))];
+        const queryMovieIds = normalizedMovieIds.flatMap(movieId => [movieId, String(movieId)]);
         const CHUNK_SIZE = 30;
         const movieIdChunks = [];
-        for (let i = 0; i < movieIds.length; i += CHUNK_SIZE) {
-            movieIdChunks.push(movieIds.slice(i, i + CHUNK_SIZE));
+        for (let i = 0; i < queryMovieIds.length; i += CHUNK_SIZE) {
+            movieIdChunks.push(queryMovieIds.slice(i, i + CHUNK_SIZE));
         }
 
         const allResults = [];
@@ -497,16 +578,19 @@ class RatingService {
 
         const movieRatings = {};
         allResults.forEach(data => {
-            const movieId = data.movieId;
+            const movieId = Number(data.movieId);
+            if (!Number.isInteger(movieId) || movieId <= 0) return;
             if (!movieRatings[movieId]) {
                 movieRatings[movieId] = { ratings: [], count: 0 };
             }
-            movieRatings[movieId].ratings.push(data.rating);
+            const ratingValue = Number(data.rating);
+            if (!Number.isFinite(ratingValue)) return;
+            movieRatings[movieId].ratings.push(ratingValue);
             movieRatings[movieId].count++;
         });
 
         const averages = {};
-        for (const movieId of movieIds) {
+        for (const movieId of normalizedMovieIds) {
             if (movieRatings[movieId]) {
                 const ratings = movieRatings[movieId].ratings;
                 const total = ratings.reduce((sum, rating) => sum + rating, 0);
@@ -516,6 +600,12 @@ class RatingService {
                 averages[movieId] = { average: 0, count: 0 };
             }
         }
+
+        // Keep the response compatible with callers that use string keys.
+        movieIds.forEach(movieId => {
+            const normalizedMovieId = Number(movieId);
+            if (averages[normalizedMovieId]) averages[movieId] = averages[normalizedMovieId];
+        });
         return averages;
     }
 
@@ -791,15 +881,24 @@ class RatingService {
      */
     async getMovieRatings(movieId, limit = 20) {
         try {
-            const query = this.db.collection(this.collection)
-                .where('movieId', '==', movieId);
-
-            const results = await query.get();
             const ratings = [];
+            const normalizedMovieId = Number(movieId);
+            const movieIdCandidates = [...new Set([
+                normalizedMovieId,
+                String(movieId)
+            ])].filter(candidate => candidate !== 'NaN' && candidate !== undefined);
 
-            results.forEach(doc => {
-                ratings.push({ id: doc.id, ...doc.data() });
-            });
+            for (const movieIdCandidate of movieIdCandidates) {
+                const query = this.db.collection(this.collection)
+                    .where('movieId', '==', movieIdCandidate);
+                const results = await query.get();
+
+                results.forEach(doc => {
+                    if (!ratings.some(rating => rating.id === doc.id)) {
+                        ratings.push({ id: doc.id, ...doc.data() });
+                    }
+                });
+            }
 
             // Sort by createdAt descending in memory (to avoid index requirement)
             ratings.sort((a, b) => {

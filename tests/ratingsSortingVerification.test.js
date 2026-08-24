@@ -1,6 +1,8 @@
 import assert from 'node:assert';
 import { getTimestamp } from '../src/shared/utils/dateUtils.js';
 import { buildProviderRatingCache, mergeProviderRatingRecord, mergeProviderRatingsIntoMovies } from '../src/shared/utils/providerRatings.js';
+import fs from 'node:fs';
+import path from 'node:path';
 
 console.log('🧪 Running Ratings Page Sorting & Reconciliation Verification Test...\n');
 
@@ -148,5 +150,132 @@ const rawMovieReplacement = mergeProviderRatingsIntoMovies([{
 }], outerProviderState);
 assert.strictEqual(rawMovieReplacement[0].imdbRating, 6.7, 'Raw movie IMDb must survive provider merge');
 console.log('✅ Ratings page merges provider fields into raw movie responses');
+
+const popupSource = fs.readFileSync(path.resolve('src/popup/popup.js'), 'utf8');
+assert(popupSource.includes('Utils.formatGenres(movie?.genres, 2)'), 'Popup normalizes object-shaped genres before rendering');
+assert(!popupSource.includes("movie?.genres?.slice(0, 2).join(', ')"), 'Popup does not stringify genre objects with Array.join');
+console.log('✅ Popup genre rendering avoids [object Object]');
+
+const movieCacheSource = fs.readFileSync(path.resolve('src/shared/services/MovieCacheService.js'), 'utf8');
+assert(movieCacheSource.includes("!lastDoc && firestoreSortField === 'lastRatingUpdatedAt'"), 'Ratings query checks missing timestamps on the first page');
+assert(!movieCacheSource.includes("!hasMore && firestoreSortField === 'lastRatingUpdatedAt'"), 'Ratings query does not defer missing timestamp fallback to the last page');
+assert(movieCacheSource.includes('kp_movie_${id}'), 'Batch movie cache reads legacy localStorage metadata');
+console.log('✅ Ratings query keeps legacy aggregate documents visible during pagination');
+
+const MovieCacheService = (await import('../src/shared/services/MovieCacheService.js')).default;
+const previousKinopoiskConfig = globalThis.KINOPOISK_CONFIG;
+const previousFirebase = globalThis.firebase;
+const previousChrome = globalThis.chrome;
+const previousLocalStorage = globalThis.localStorage;
+globalThis.firebase = {
+    firestore: {
+        FieldPath: { documentId: () => 'documentId' }
+    }
+};
+globalThis.KINOPOISK_CONFIG = { CACHE_DURATION: 24 * 60 * 60 * 1000 };
+globalThis.chrome = {
+    storage: {
+        local: {
+            get: async () => ({})
+        }
+    }
+};
+globalThis.localStorage = {
+    getItem: key => key === 'kp_movie_5287148'
+        ? JSON.stringify({
+            kinopoiskId: 5287148,
+            name: 'На краю Оук-стрит',
+            lastUpdated: new Date().toISOString()
+        })
+        : null
+};
+const movieCacheService = new MovieCacheService({
+    db: {
+        collection: () => ({
+            where: () => ({
+                get: async () => ({ docs: [], forEach: () => {} })
+            })
+        })
+    }
+});
+const legacyLocalStorageMovies = await movieCacheService.getBatchCachedMovies([5287148]);
+assert.strictEqual(
+    legacyLocalStorageMovies['5287148']?.name,
+    'На краю Оук-стрит',
+    'Batch movie cache recovers title from legacy localStorage when Firestore is unavailable'
+);
+if (previousFirebase === undefined) delete globalThis.firebase;
+else globalThis.firebase = previousFirebase;
+if (previousKinopoiskConfig === undefined) delete globalThis.KINOPOISK_CONFIG;
+else globalThis.KINOPOISK_CONFIG = previousKinopoiskConfig;
+if (previousChrome === undefined) delete globalThis.chrome;
+else globalThis.chrome = previousChrome;
+if (previousLocalStorage === undefined) delete globalThis.localStorage;
+else globalThis.localStorage = previousLocalStorage;
+console.log('✅ Popup metadata fallback recovers legacy localStorage movie titles');
+
+const ratingsPageSource = fs.readFileSync(path.resolve('src/pages/ratings/ratings.js'), 'utf8');
+assert(ratingsPageSource.includes('movieAverage > 0 ? movieAverage'), 'Ratings page prefers a valid aggregate average');
+assert(ratingsPageSource.includes('if (this.filters.avgRatingFrom !== 1.0 || this.filters.avgRatingTo !== 10.0)'), 'Ratings page applies average filtering only when the range is changed');
+assert(!ratingsPageSource.includes('movie.averageRating >= this.filters.avgRatingFrom && movie.averageRating <= this.filters.avgRatingTo'), 'Ratings page does not filter default full-range results by stale zero averages');
+console.log('✅ Ratings page keeps rated movies visible when aggregate average data is stale');
+
+const ratingServiceSource = fs.readFileSync(path.resolve('src/shared/services/RatingService.js'), 'utf8');
+assert(ratingServiceSource.includes('const normalizedMovieId = Number(movieId);'), 'Rating writes normalize Kinopoisk IDs');
+assert(ratingServiceSource.includes("String(movieId)"), 'Rating reads support legacy string movie IDs');
+console.log('✅ Rating reads and writes support both legacy string and canonical numeric IDs');
+
+assert(ratingServiceSource.includes('resolveMovieDataForRating'), 'Rating writes recover cached movie metadata when callers omit movieData');
+assert(ratingServiceSource.includes('Object.assign(movieUpdates, resolvedMovieData)'), 'Rating writes persist recovered metadata with the aggregate');
+
+const functionsSource = fs.readFileSync(path.resolve('functions/index.js'), 'utf8');
+assert(functionsSource.includes('.where("movieId", "in", movieIdCandidates)'), 'Cloud aggregate includes legacy string movie IDs');
+console.log('✅ Cloud aggregate repairs both numeric and string movie ID records');
+
+const ratingsCacheSource = fs.readFileSync(path.resolve('src/shared/services/RatingsCacheService.js'), 'utf8');
+assert(ratingsCacheSource.includes('repairCachedRatings'), 'Ratings cache repairs legacy cards without movie metadata');
+assert(ratingsCacheSource.includes('normalizeMovieId'), 'Ratings cache normalizes movie IDs before map lookups');
+
+const RatingsCacheService = (await import('../src/shared/services/RatingsCacheService.js')).default;
+const cachedMovieForRepair = {
+    kinopoiskId: 5287148,
+    name: 'На краю Оук-стрит'
+};
+const ratingForRepair = {
+    movieId: '5287148',
+    userId: 'user_for_repair'
+};
+const ratingsCacheService = new RatingsCacheService({
+    getMovieCacheService: () => ({
+        getBatchCachedMovies: async () => ({ cached: cachedMovieForRepair })
+    }),
+    getKinopoiskService: () => ({
+        getMovieById: async () => null
+    }),
+    getUserService: () => ({
+        getUserProfilesByIds: async () => [],
+        getUserProfile: async () => null
+    }),
+    getCurrentUser: () => null
+});
+
+await ratingsCacheService.enrichRatingsWithMovieData([ratingForRepair]);
+assert.strictEqual(
+    ratingForRepair.movie?.name,
+    'На краю Оук-стрит',
+    'String rating movieId must resolve a numeric cached movie ID'
+);
+console.log('✅ Ratings popup resolves movie metadata when rating and cache IDs use different types');
+
+ratingsCacheService.cacheRatings = async () => {};
+const repairedCachedRatings = await ratingsCacheService.repairCachedRatings({
+    ratings: [{ movieId: '5287148', userId: 'user_for_repair' }]
+}, 1);
+assert.strictEqual(
+    repairedCachedRatings[0].movie?.name,
+    'На краю Оук-стрит',
+    'Valid legacy popup cache must hydrate missing movie metadata before render'
+);
+console.log('✅ Legacy popup cache self-heals missing movie metadata');
 
 console.log('\n🎉 ALL VERIFICATION TESTS PASSED SUCCESSFULLY!');

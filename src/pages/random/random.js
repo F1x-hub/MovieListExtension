@@ -666,7 +666,7 @@ class RandomManager {
         }
         if (state === 'error') {
             this._stopPosterSpinning();
-            this.elements.errorState.style.display = 'block';
+            this.elements.errorState.style.display = 'flex';
         }
     }
 

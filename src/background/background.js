@@ -94,7 +94,7 @@ function updateIconFromStorage() {
 
 async function getIdToken() {
     return new Promise((resolve, reject) => {
-        chrome.storage.local.get(['user', 'authToken', 'authTokenExpiry', 'tokenValidationTimestamp'], async (result) => {
+        chrome.storage.local.get(['user', 'authToken', 'authTokenExpiry', 'tokenValidationTimestamp', 'refreshToken'], async (result) => {
             if (!result.user || !result.user.uid) {
                 reject(new Error('User not authenticated'));
                 return;
@@ -874,8 +874,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             });
         return true;
     } else if (message.type === 'GET_ID_TOKEN') {
-        // This will be handled by popup or content script that has access to Firebase
-        sendResponse({ error: 'Not implemented in service worker' });
+        getIdToken()
+            .then(token => sendResponse({ success: true, token }))
+            .catch(() => sendResponse({ success: false, error: 'AUTH_REQUIRED' }));
         return true;
     } else if (message.type === 'DOWNLOAD_UPDATE') {
         console.log('[Background] Received DOWNLOAD_UPDATE request');
@@ -1315,50 +1316,41 @@ async function fetchAnisonMetadata() {
     return { animeName, trackTitle, posterUrl, animeLink, duration };
 }
 
-async function fetchKinopoiskWithRotation(url, options = {}) {
-    const maxAttempts = typeof KINOPOISK_CONFIG !== 'undefined' && KINOPOISK_CONFIG.API_KEYS 
-        ? KINOPOISK_CONFIG.API_KEYS.length 
-        : 1;
-        
-    let lastResponse = null;
-
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const currentKey = typeof KINOPOISK_CONFIG !== 'undefined' 
-            ? KINOPOISK_CONFIG.API_KEY 
-            : 'Q6Q938P-CG3M56S-GKJRF4P-J3TSZ6S';
-            
-        const fetchOptions = { ...options };
-        fetchOptions.headers = {
-            ...options.headers,
-            'X-API-KEY': currentKey
-        };
-        
-        const response = await fetch(url, fetchOptions);
-        lastResponse = response;
-
-        if (response.status === 403 || response.status === 402) {
-            console.warn(`[Background] ${response.status} Error. Rotating key...`);
-            if (typeof KINOPOISK_CONFIG !== 'undefined' && typeof KINOPOISK_CONFIG.rotateKey === 'function') {
-                KINOPOISK_CONFIG.rotateKey();
-            }
-            if (attempt < maxAttempts - 1) continue;
-        }
-        
-        return response;
+async function fetchKinopoiskViaProxy(url, options = {}) {
+    if (typeof KINOPOISK_CONFIG === 'undefined' || !KINOPOISK_CONFIG.PROXY_URL) {
+        throw new Error('KINOPOISK_PROXY_UNAVAILABLE');
     }
-    return lastResponse;
+
+    const targetUrl = new URL(url);
+    const apiOrigin = new URL(KINOPOISK_CONFIG.BASE_URL).origin;
+    if (targetUrl.origin !== apiOrigin || !targetUrl.pathname.startsWith('/v1.4/')) {
+        throw new Error('KINOPOISK_PROXY_INVALID_TARGET');
+    }
+
+    const token = await getIdToken();
+    const proxyUrl = new URL(KINOPOISK_CONFIG.PROXY_URL);
+    proxyUrl.searchParams.set('path', `${targetUrl.pathname}${targetUrl.search}`);
+
+    return fetch(proxyUrl.toString(), {
+        ...options,
+        headers: {
+            'Accept': 'application/json',
+            ...options.headers,
+            'Authorization': `Bearer ${token}`
+        }
+    });
 }
 
 async function searchKinopoiskMovie(kpId, title, year) {
     if (kpId) {
-        const response = await fetchKinopoiskWithRotation(`https://api.poiskkino.dev/v1.4/movie/${kpId}`);
+        const response = await fetchKinopoiskViaProxy(`${KINOPOISK_CONFIG.BASE_URL}/movie/${kpId}`);
         if (!response.ok) {
             throw new Error(`Kinopoisk API error: ${response.status}`);
         }
         return await response.json();
     } else if (title) {
         // Search with more results to find the best match
-        const response = await fetchKinopoiskWithRotation(`https://api.poiskkino.dev/v1.4/movie/search?page=1&limit=10&query=${encodeURIComponent(title)}`);
+        const response = await fetchKinopoiskViaProxy(`${KINOPOISK_CONFIG.BASE_URL}/movie/search?page=1&limit=10&query=${encodeURIComponent(title)}`);
         if (!response.ok) {
             throw new Error(`Kinopoisk API error: ${response.status}`);
         }

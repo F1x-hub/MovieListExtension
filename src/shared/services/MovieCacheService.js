@@ -127,6 +127,35 @@ class MovieCacheService {
                     }
                 });
             }
+
+            // Preserve compatibility with the older localStorage cache used by
+            // rated movie metadata. This is especially important when the
+            // Kinopoisk API is temporarily unavailable: the popup can still
+            // render a real title and poster instead of "Unknown Movie".
+            if (typeof localStorage !== 'undefined') {
+                uniqueIds.forEach(id => {
+                    if (cachedMovies[id]) return;
+
+                    try {
+                        const rawMovie = localStorage.getItem(`kp_movie_${id}`);
+                        if (!rawMovie) return;
+
+                        const localMovie = JSON.parse(rawMovie);
+                        if (!localMovie || typeof localMovie !== 'object') return;
+
+                        const normalizedMovie = {
+                            ...localMovie,
+                            kinopoiskId: localMovie.kinopoiskId || Number(id),
+                            id: localMovie.id || id
+                        };
+                        cachedMovies[id] = this.isMetadataCacheValid(normalizedMovie)
+                            ? normalizedMovie
+                            : { ...normalizedMovie, _cacheExpired: true };
+                    } catch (error) {
+                        console.warn(`[MovieCacheService] Failed to read legacy localStorage cache for ${id}:`, error);
+                    }
+                });
+            }
             
             const totalFound = Object.keys(cachedMovies).length;
             console.log(`[MovieCache] Total found: ${totalFound}/${uniqueIds.length}. Time: ${(performance.now() - startTime).toFixed(2)}ms`);
@@ -437,10 +466,12 @@ class MovieCacheService {
             const pageDocs = hasMore ? allDocs.slice(0, limit) : allDocs;
             let movies = pageDocs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-            // Firestore excludes documents that do not have an orderBy field. On the
-            // final page, merge those documents from an unsorted query so they remain
-            // visible while the aggregate repair is investigated.
-            if (!hasMore && firestoreSortField === 'lastRatingUpdatedAt') {
+            // Firestore excludes documents that do not have an orderBy field. Check
+            // for those legacy aggregates on the first page as well; waiting until
+            // the final page made them disappear whenever healthy documents filled
+            // the first page. All missing-field documents are merged once, while the
+            // normal ordered query keeps ownership of subsequent-page pagination.
+            if (!lastDoc && firestoreSortField === 'lastRatingUpdatedAt') {
                 const unorderedSnapshot = await unorderedQuery.get();
                 const missingSortFieldDocs = unorderedSnapshot.docs.filter(doc => {
                     const value = doc.data().lastRatingUpdatedAt;

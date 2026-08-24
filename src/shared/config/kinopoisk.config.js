@@ -93,27 +93,23 @@ const KINOPOISK_CONFIG = {
     // Base URL for Kinopoisk API
     BASE_URL: 'https://api.poiskkino.dev/v1.4',
 
-    // Array of API Keys for rotation
-    API_KEYS: [
-        'Q6Q938P-CG3M56S-GKJRF4P-J3TSZ6S',
-        'ZX91BN3-Q1H4T4X-KEPN3J5-288P8B3',
-        'MBE8N48-3084955-KGG56JZ-X0TRYDJ'
-        // Add additional keys here
-    ],
+    // All API traffic must go through the authenticated Firebase proxy.
+    PROXY_URL: 'https://us-central1-movielistdb-13208.cloudfunctions.net/kinopoiskProxy',
+
+    // Compatibility surface for old callers. Secrets are server-side only.
+    API_KEYS: [],
 
     // Index of the currently active key
     currentKeyIndex: 0,
 
-    // Get the currently active API key
+    // No client-side API key is ever available.
     get API_KEY() {
-        return this.API_KEYS[this.currentKeyIndex] || this.API_KEYS[0];
+        return '';
     },
 
-    // Rotate to the next available key
+    // Rotation is performed by kinopoiskProxy in Secret Manager.
     rotateKey() {
-        this.currentKeyIndex = (this.currentKeyIndex + 1) % this.API_KEYS.length;
-        console.log(`Rotated to API Key index: ${this.currentKeyIndex}`);
-        return this.API_KEY;
+        return '';
     },
 
     // Default request parameters

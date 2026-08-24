@@ -2102,7 +2102,9 @@ class PopupManager {
         const posterUrl = movie?.posterUrl || '/src/shared/assets/icons/app/icon48.png';
         const movieTitle = movie?.name || 'Unknown Movie';
         const movieYear = movie?.year || '';
-        const movieGenres = movie?.genres?.slice(0, 2).join(', ') || '';
+        const movieGenres = typeof Utils !== 'undefined' && Utils.formatGenres
+            ? Utils.formatGenres(movie?.genres, 2)
+            : (Array.isArray(movie?.genres) ? movie.genres.slice(0, 2).filter(Boolean).join(', ') : '');
         const timestamp = i18n.formatRelativeTime(rating.createdAt);
 
         // Get pre-loaded average rating

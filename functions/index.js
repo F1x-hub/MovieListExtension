@@ -2,11 +2,27 @@ const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onRequest } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const { initializeApp } = require("firebase-admin/app");
+const { getAuth } = require("firebase-admin/auth");
 const { getFirestore } = require("firebase-admin/firestore");
+const { createKinopoiskProxyHandler } = require("./kinopoiskProxy");
 
 initializeApp();
 const db = getFirestore();
 const TMDB_API_TOKEN = defineSecret("TMDB_API_TOKEN");
+const KINOPOISK_API_KEYS = defineSecret("KINOPOISK_API_KEYS");
+
+exports.kinopoiskProxy = onRequest(
+  {
+    region: "us-central1",
+    timeoutSeconds: 60,
+    memory: "256MiB",
+    secrets: [KINOPOISK_API_KEYS],
+  },
+  createKinopoiskProxyHandler({
+    getSecretValue: () => KINOPOISK_API_KEYS.value(),
+    verifyIdToken: (idToken) => getAuth().verifyIdToken(idToken),
+  })
+);
 
 function setTmdbCors(req, res) {
   const origin = req.headers.origin;
@@ -101,11 +117,13 @@ exports.aggregateMovieRatings = onDocumentWritten("ratings/{ratingId}", async (e
   if (!movieId) return null;
 
   const numMovieId = Number(movieId);
+  if (!Number.isInteger(numMovieId) || numMovieId <= 0) return null;
+  const movieIdCandidates = [...new Set([numMovieId, movieId.toString()])];
 
   // Query all ratings for this movie
   const ratingsSnapshot = await db
     .collection("ratings")
-    .where("movieId", "==", numMovieId)
+    .where("movieId", "in", movieIdCandidates)
     .get();
 
   let ratingsCount = 0;

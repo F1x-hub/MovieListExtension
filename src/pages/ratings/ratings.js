@@ -748,6 +748,10 @@ class RatingsPageManager {
                     let currentUserRating = allRaters.find(r => r.userId === this.currentUser?.uid) || allRaters[0] || {};
                     
                     const avgInfo = ratingsSnapshot[movieId] || { average: movieObj.avgRating || 0, count: movieObj.ratingsCount || 0 };
+                    const movieAverage = Number(movieObj.avgRating);
+                    const fetchedAverage = Number(avgInfo.average);
+                    const movieRatingsCount = Number(movieObj.ratingsCount);
+                    const fetchedRatingsCount = Number(avgInfo.count);
 
                     // Use the same field Firestore sorts by (lastRatingUpdatedAt) to keep
                     // client-side order consistent with server-side pagination order.
@@ -763,8 +767,8 @@ class RatingsPageManager {
                         createdAt: effectiveDate,
                         rating: currentUserRating.rating || 0,
                         comment: Utils.normalizeRatingComment(currentUserRating.comment),
-                        averageRating: movieObj.avgRating !== undefined ? movieObj.avgRating : avgInfo.average,
-                        ratingsCount: movieObj.ratingsCount !== undefined ? movieObj.ratingsCount : avgInfo.count,
+                        averageRating: movieAverage > 0 ? movieAverage : (fetchedAverage > 0 ? fetchedAverage : 0),
+                        ratingsCount: movieRatingsCount > 0 ? movieRatingsCount : fetchedRatingsCount,
                         allRaters: allRaters
                     };
                 });
@@ -869,6 +873,10 @@ class RatingsPageManager {
                     const allRaters = ratersMap.get(movieId) || [];
                     let currentUserRating = allRaters.find(r => r.userId === this.currentUser?.uid) || allRaters[0] || {};
                     const avgInfo = ratingsSnapshot[movieId] || { average: movieObj.avgRating || 0, count: movieObj.ratingsCount || 0 };
+                    const movieAverage = Number(movieObj.avgRating);
+                    const fetchedAverage = Number(avgInfo.average);
+                    const movieRatingsCount = Number(movieObj.ratingsCount);
+                    const fetchedRatingsCount = Number(avgInfo.count);
 
                     // Use the same field Firestore sorts by (lastRatingUpdatedAt) to keep
                     // client-side order consistent with server-side pagination order.
@@ -883,8 +891,8 @@ class RatingsPageManager {
                         createdAt: effectiveDate,
                         rating: currentUserRating.rating || 0,
                         comment: Utils.normalizeRatingComment(currentUserRating.comment),
-                        averageRating: movieObj.avgRating !== undefined ? movieObj.avgRating : avgInfo.average,
-                        ratingsCount: movieObj.ratingsCount !== undefined ? movieObj.ratingsCount : avgInfo.count,
+                        averageRating: movieAverage > 0 ? movieAverage : (fetchedAverage > 0 ? fetchedAverage : 0),
+                        ratingsCount: movieRatingsCount > 0 ? movieRatingsCount : fetchedRatingsCount,
                         allRaters: allRaters
                     };
                 });
@@ -1401,7 +1409,9 @@ class RatingsPageManager {
         // Average rating filter
         if (this.filters.avgRatingFrom !== 1.0 || this.filters.avgRatingTo !== 10.0) {
             filtered = filtered.filter(movie => 
-                movie.averageRating >= this.filters.avgRatingFrom && movie.averageRating <= this.filters.avgRatingTo
+                Number.isFinite(Number(movie.averageRating)) &&
+                Number(movie.averageRating) >= this.filters.avgRatingFrom &&
+                Number(movie.averageRating) <= this.filters.avgRatingTo
             );
         }
         
@@ -2446,7 +2456,7 @@ class RatingsPageManager {
                      onerror="Utils.handlePosterError(this)">
                 <div style="flex: 1;">
                     <h3 style="margin: 0 0 10px 0;">${this.escapeHtml(movie?.name || 'Unknown Movie')}</h3>
-                    <p style="color: #666; margin: 0 0 10px 0;">${movie?.year || ''} • ${(typeof Utils !== 'undefined' && Utils.formatGenres ? Utils.formatGenres(movie?.genres) : (movie?.genres?.join(', ') || ''))}</p>
+                    <p style="color: #666; margin: 0 0 10px 0;">${movie?.year || ''} • ${(typeof Utils !== 'undefined' && Utils.formatGenres ? Utils.formatGenres(movie?.genres) : (Array.isArray(movie?.genres) ? movie.genres.filter(Boolean).join(', ') : ''))}</p>
                     <div style="margin: 15px 0;">
                         <strong>My Rating:</strong> <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> ${rating}/10<br>
                         <strong>Average Rating:</strong> ${avgDisplay}
@@ -2489,7 +2499,7 @@ class RatingsPageManager {
                 <img src="${movie.posterUrl || '/src/shared/assets/icons/app/icon48.png'}" alt="${movie.name}" class="movie-detail-poster">
                 <div class="movie-detail-info">
                     <h3 class="movie-detail-title">${this.escapeHtml(movie.name)}</h3>
-                    <p class="movie-detail-meta">${movie.year} • ${(typeof Utils !== 'undefined' && Utils.formatGenres ? Utils.formatGenres(movie.genres, 3) : (movie.genres?.slice(0, 3).join(', ') || ''))}</p>
+                    <p class="movie-detail-meta">${movie.year} • ${(typeof Utils !== 'undefined' && Utils.formatGenres ? Utils.formatGenres(movie.genres, 3) : (Array.isArray(movie.genres) ? movie.genres.slice(0, 3).filter(Boolean).join(', ') : ''))}</p>
                     <div class="movie-detail-ratings">
                         <span class="rating-badge kp">КП: ${movie.kpRating ? parseFloat(movie.kpRating.toFixed(1)) : 'N/A'}</span>
                         ${movie.imdbRating ? `<span class="rating-badge imdb">IMDb: ${parseFloat(movie.imdbRating.toFixed(1))}</span>` : ''}
