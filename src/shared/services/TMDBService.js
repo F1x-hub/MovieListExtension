@@ -1,12 +1,25 @@
+const DEFAULT_TMDB_PROXY_URL = 'https://us-central1-movielistdb-13208.cloudfunctions.net/tmdbProxy';
+const DEFAULT_TMDB_CONFIG = {
+    BASE_URL: 'https://api.themoviedb.org/3',
+    API_KEYS: [],
+    API_KEY: '',
+    MAX_REQUESTS_PER_SECOND: 35,
+    DEFAULT_LANGUAGE: 'ru-RU',
+    rotateKey() {}
+};
+const tmdbConfig = (typeof globalThis !== 'undefined' && globalThis.TMDB_CONFIG)
+    ? globalThis.TMDB_CONFIG
+    : DEFAULT_TMDB_CONFIG;
+
 /**
  * TMDBService - Retrieves supplementary movie metadata from TMDB.
  * TMDB IDs are never used as the application's primary movie identifier.
  */
 class TMDBService {
     constructor() {
-        this.baseUrl = TMDB_CONFIG.BASE_URL;
-        this.defaultLanguage = TMDB_CONFIG.DEFAULT_LANGUAGE || 'ru-RU';
-        this.maxRequestsPerSecond = TMDB_CONFIG.MAX_REQUESTS_PER_SECOND || 35;
+        this.baseUrl = tmdbConfig.BASE_URL;
+        this.defaultLanguage = tmdbConfig.DEFAULT_LANGUAGE || 'ru-RU';
+        this.maxRequestsPerSecond = tmdbConfig.MAX_REQUESTS_PER_SECOND || 35;
         this.requestTimestamps = [];
         this.inFlightSeasonRequests = new Map();
         this.seasonCachePrefix = 'tmdb_season_cache_v1_';
@@ -18,8 +31,8 @@ class TMDBService {
     }
 
     isConfigured() {
-        return Array.isArray(TMDB_CONFIG.API_KEYS) && TMDB_CONFIG.API_KEYS.length > 0 &&
-            Boolean(TMDB_CONFIG.API_KEY);
+        return Array.isArray(tmdbConfig.API_KEYS) && tmdbConfig.API_KEYS.length > 0 &&
+            Boolean(tmdbConfig.API_KEY);
     }
 
     /**
@@ -48,12 +61,30 @@ class TMDBService {
      * @param {Object} options - Fetch options
      * @returns {Promise<Response>}
      */
-    async _fetchWithRotation(url, options = {}) {
-        if (!this.isConfigured()) {
-            throw new Error('TMDB API is not configured');
+    async _fetchViaProxy(url, options = {}) {
+        const targetUrl = new URL(url);
+        if (targetUrl.origin !== 'https://api.themoviedb.org' || !targetUrl.pathname.startsWith('/3/')) {
+            throw new Error('TMDB proxy rejected an invalid target URL');
         }
 
-        const keyCount = TMDB_CONFIG.API_KEYS.length;
+        const proxyUrl = new URL(tmdbConfig.TMDB_PROXY_URL || DEFAULT_TMDB_PROXY_URL);
+        proxyUrl.searchParams.set('url', targetUrl.toString());
+
+        return fetch(proxyUrl.toString(), {
+            ...options,
+            headers: {
+                Accept: 'application/json',
+                ...options.headers
+            }
+        });
+    }
+
+    async _fetchWithRotation(url, options = {}) {
+        if (!this.isConfigured()) {
+            return this._fetchViaProxy(url, options);
+        }
+
+        const keyCount = tmdbConfig.API_KEYS.length;
         const maxAttempts = Math.max(keyCount, 2);
         let lastError = null;
 
@@ -65,7 +96,7 @@ class TMDBService {
                 headers: {
                     Accept: 'application/json',
                     ...options.headers,
-                    Authorization: `Bearer ${TMDB_CONFIG.API_KEY}`
+                    Authorization: `Bearer ${tmdbConfig.API_KEY}`
                 }
             };
 
@@ -88,7 +119,7 @@ class TMDBService {
 
             if (response.status === 401 || response.status === 403) {
                 console.warn(`TMDBService: authentication error ${response.status}; rotating token.`);
-                TMDB_CONFIG.rotateKey();
+                tmdbConfig.rotateKey();
             } else if (response.status === 429) {
                 const retryAfter = Number.parseInt(response.headers.get('Retry-After'), 10);
                 const delay = Number.isFinite(retryAfter) ? retryAfter * 1000 : 1000;

@@ -184,6 +184,16 @@ Release entries are intentionally collapsed to keep this page readable. The
 manifest and package version remain the source of truth for the build version.
 
 <details>
+<summary><strong>1.2.9</strong> — TMDB proxy hardening</summary>
+
+### Fixes
+
+- Route TMDB requests through Firebase Functions when the local secret config is absent.
+- Keep the TMDB token in Firebase Secret Manager instead of exposing it to the extension.
+
+</details>
+
+<details>
 <summary><strong>1.2.8</strong> — documentation cleanup</summary>
 
 ### Docs

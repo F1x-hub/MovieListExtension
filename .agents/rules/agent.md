@@ -10,7 +10,7 @@ A powerful Chrome Extension (Manifest V3) that enhances the movie discovery and 
 | Language    | JavaScript (ES6+)           | Vanilla JS without compilation transpilers |
 | Framework   | Chrome Extension MV3         | Manifest V3, background service worker, offscreen APIs |
 | UI          | HTML / CSS (Vanilla)        | Responsive layouts, CSS custom properties |
-| Backend     | Firebase Services           | Firebase Auth, Firestore Database, Firebase Storage |
+| Backend     | Firebase Services           | Auth, Firestore, Storage, Cloud Functions, Secret Manager |
 | DB          | Firestore / Local Storage   | Local Storage caching with cloud Firestore syncing |
 | Build       | npm + copyfiles + Terser    | Rimraf clean, copyfiles structure copy, Terser minification |
 | Linter      | ESLint 10.x                 | Linting rules for src and content scripts |
@@ -41,6 +41,8 @@ movie-rating-extension/
 ```
 
 ## Architecture
+
+- TMDB requests from builds without the ignored local config use the bounded `tmdbProxy` HTTPS Cloud Function. Its bearer token is injected from Firebase Secret Manager and never sent to the extension client.
 - **Shared page controls**: `BackToTop` (`src/shared/components/BackToTop.js`) provides the common rectangular back-to-top control for visible extension pages; it listens to the document scroll on full pages and `.popup-container` scroll inside the popup.
 - **Full catalogue**: `src/pages/catalog/` owns paginated Films, Series, Cartoons, and Anime discovery through `CatalogService` and `TMDBService.getCatalogPage()`. Catalogue cards remain TMDB-only until click; `Utils` opens the existing `resolveTmdbId` MovieDetails route, which performs the canonical Kinopoisk identity resolution. Category-specific sort options live in `catalogCategories.js`, while `CatalogSelect` and `CatalogNumberInput` own accessible custom dropdown and bounded year-control behavior. Catalogue styling is locally scoped in `catalog.css`: compact Obsidian-Zinc toolbar, segmented categories, dense responsive 2:3 poster grid, and restrained cyan interaction states; shared MovieCard styles remain unchanged.
 - **Games section**: `GamesModal` owns the initial game-selection menu, tab registration, and lifecycle switching; each game keeps its state and DOM rendering in dedicated modules. No game object or animation loop is created until the user selects a game. `WordGuess` loads immutable bundled daily puzzle data through an in-memory loader with in-flight request deduplication, persists only the compact current-day progress record in `chrome.storage.local`, and clears it when the day or puzzle ID changes. `RubiksCubeGame` owns a pure facelet state model, accessible CSS 3D renderer with pointer-drag view rotation, click-to-select face controls with horizontal/vertical axis selection, animated turns, keyboard/button move controls, scramble generation, solve detection, and best-time persistence.
