@@ -25,8 +25,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Elements
     const displayModeRadios = document.getElementsByName('displayMode');
     const languageDropdown = document.getElementById('languageDropdown');
-    const dropdownHeader = languageDropdown.querySelector('.dropdown-header');
-    const dropdownItems = languageDropdown.querySelectorAll('.dropdown-item');
+    const dropdownHeader = languageDropdown.querySelector('.dropdown-trigger');
+    const dropdownItems = languageDropdown.querySelectorAll('.dropdown-option');
     const saveBtn = document.getElementById('saveBtn');
     const resetBtn = document.getElementById('resetBtn');
     
@@ -367,10 +367,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Initialize
     loadSettings();
     
-    // Theme setup
-    const theme = localStorage.getItem('movieExtensionTheme') || 'dark';
-    if (theme === 'light') {
-        document.body.classList.add('light-theme');
+    // ThemeService is the single owner of persisted theme state and DOM classes.
+    if (window.ThemeService) {
+        window.ThemeService.applyCurrentTheme({
+            persist: false,
+            syncChromeStorage: false
+        });
     }
 
     /**
@@ -393,7 +395,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         actions.className = 'unsaved-dialog-actions';
 
         const cancelBtn = document.createElement('button');
-        cancelBtn.className = 'btn btn-ghost';
+        cancelBtn.className = 'btn btn-secondary';
         cancelBtn.textContent = 'Отменить изменения';
         cancelBtn.addEventListener('mousedown', async () => {
             overlay.classList.remove('active');

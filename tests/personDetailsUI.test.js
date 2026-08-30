@@ -14,8 +14,14 @@ import { PersonDetailsPageController } from '../src/pages/person-details/person-
 
 const personDetailsCss = fs.readFileSync('src/pages/person-details/person-details.css', 'utf8');
 const personDetailsJs = fs.readFileSync('src/pages/person-details/person-details.js', 'utf8');
+const personDetailsHtml = fs.readFileSync('src/pages/person-details/person-details.html', 'utf8');
 const movieCardCss = fs.readFileSync('src/shared/styles/movie-card.css', 'utf8');
 const navigationJs = fs.readFileSync('src/shared/components/Navigation.js', 'utf8');
+
+assert.ok(
+    personDetailsHtml.indexOf('src="../../shared/components/MovieCard.js"') < personDetailsHtml.indexOf('src="person-details.js"'),
+    'PersonDetails must load MovieCard before its renderer because cards have one renderer owner'
+);
 
 // Setup Mock DOM Environment
 global.window = {
@@ -85,6 +91,24 @@ global.chrome = {
             async set() {},
             async remove() {}
         }
+    }
+};
+
+global.window.MovieCard = {
+    create(cardData) {
+        const card = document.createElement('div');
+        const movieId = cardData.movie?.kinopoiskId;
+        const link = document.createElement('a');
+        card.className = 'movie-card-component mc-variant-search';
+        card.dataset = {};
+        link.setAttribute('data-action', 'view-details');
+        link.setAttribute('href', movieId ? `chrome-extension://xyz/src/pages/movie-details/movie-details.html?movieId=${movieId}` : '#');
+        if (movieId) link.setAttribute('data-movie-id', String(movieId));
+        card.dataset.movieId = movieId ? String(movieId) : '';
+        card.appendChild(link);
+        card.querySelector = selector => selector === '.mc-poster' ? null : selector === '[data-action="view-details"]' ? link : null;
+        card.querySelectorAll = selector => selector === '[data-action="view-details"]' ? [link] : [];
+        return card;
     }
 };
 
@@ -316,21 +340,24 @@ console.log('\n--- 6. Testing Filmography Filters & Initial 20-Item Bounds ---')
     assert.ok(controller.renderFilmographyCategories(unmappedPerson).includes('data-category="acting"'), 'Unmapped filmography category remains visible');
     assert.strictEqual(controller.hasNavigationTarget(unmappedPerson.filmography.acting[0]), false, 'Unmapped item is not navigable');
 
-    // 6.4 Card interaction state follows KP identity, not artwork availability
+    // 6.4 Canonical card interaction state follows KP identity, not artwork availability
     const unmappedCard = controller.createPersonMovieCard(unmappedPerson.filmography.acting[0]);
-    assert.strictEqual(unmappedCard.tagName, 'DIV', 'Unmapped item renders as non-clickable card');
-    assert.strictEqual(unmappedCard.href, undefined, 'Unmapped item does not receive a fake route');
+    assert.strictEqual(unmappedCard.tagName, 'DIV', 'Unmapped item renders as a canonical card root');
+    assert.ok(unmappedCard.className.includes('movie-card-component'), 'Unmapped item uses the canonical card root');
+    assert.ok(unmappedCard.querySelector('[data-action="view-details"]').href.includes('new-search'), 'Unmapped item links to provider search');
     const mappedCard = controller.createPersonMovieCard({ kinopoiskId: 123, name: 'Mapped movie' });
-    assert.strictEqual(mappedCard.tagName, 'A', 'Mapped item renders as clickable fallback card');
-    assert.ok(mappedCard.href.includes('movieId=123'), 'Mapped item receives canonical KP route');
+    assert.strictEqual(mappedCard.tagName, 'DIV', 'Mapped item renders as a canonical card root');
+    assert.ok(mappedCard.className.includes('movie-card-component'), 'Mapped item uses the canonical card root');
+    assert.ok(mappedCard.querySelector('[data-action="view-details"]').href.includes('movieId=123'), 'Mapped item receives canonical KP route');
 
-    // 6.5 PersonDetails card geometry contract is scoped to actual and fallback card roots
+    // 6.5 PersonDetails card geometry contract is scoped to the canonical card root
     assert.ok(personDetailsCss.includes('.known-for-carousel .movie-card-component'), 'Known-For targets actual MovieCard root');
     assert.ok(personDetailsCss.includes('flex: 0 0 160px'), 'Known-For uses fixed desktop card tracks');
     assert.ok(personDetailsCss.includes('flex-shrink: 0'), 'Known-For cards cannot shrink');
     assert.ok(personDetailsCss.includes('aspect-ratio: 2 / 3'), 'PersonDetails poster geometry is stable at 2:3');
-    assert.ok(personDetailsCss.includes('.person-details-card-fallback'), 'Fallback cards receive the local geometry contract');
-    assert.ok(personDetailsCss.includes('min-height: 2.7em'), 'Fallback title block reserves two lines');
+    assert.ok(!personDetailsCss.includes('.person-details-card-fallback'), 'Fallback card geometry is retired');
+    assert.ok(!personDetailsJs.includes('person-details-card-fallback'), 'Fallback card renderer is retired');
+    assert.ok(personDetailsCss.includes('.movie-card-component .person-details-poster-placeholder'), 'Canonical cards own missing poster treatment');
     assert.ok(personDetailsCss.includes('.filmography-grid .movie-card-component'), 'Filmography has a separate responsive grid scope');
     assert.ok(!movieCardCss.includes('person-details-card-fallback'), 'Shared MovieCard CSS remains untouched by page-specific selectors');
 

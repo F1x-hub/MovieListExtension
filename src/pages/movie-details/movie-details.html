@@ -28,6 +28,8 @@
     <link rel="dns-prefetch" href="https://fix.kinogo.luxury">
     <link rel="dns-prefetch" href="https://rutube.ru">
     <link rel="stylesheet" href="../../shared/styles/report-widget.css">
+    <link rel="stylesheet" href="../../shared/styles/comments.css">
+    <script src="../../shared/services/ThemeService.js"></script>
 </head>
 <body>
     <!-- Navigation will be inserted here by Navigation.js -->
@@ -55,7 +57,7 @@
     </div>
 
     <!-- Rating Modal -->
-    <div id="ratingModal" class="modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="ratingModalTitle" tabindex="-1">
+    <div id="ratingModal" class="modal-overlay movie-details-modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="ratingModalTitle" tabindex="-1">
         <div class="modal rating-modal-redesign">
             <!-- Header -->
             <div class="rating-modal-header">
@@ -76,14 +78,15 @@
 
                 <!-- Rating Container -->
                 <div class="rating-stars-container">
-                    <div class="stars-wrapper" id="ratingStars">
+                    <p id="ratingStatus" class="rating-status" aria-live="polite">Выберите оценку</p>
+                    <div class="stars-wrapper" id="ratingStars" role="group" aria-label="Оценка от 1 до 10" aria-describedby="ratingStatus">
                         <!-- Stars will be injected by JS -->
                     </div>
                 </div>
 
                 <!-- Review Section -->
                 <div class="rating-review-section">
-                    <button id="writeReviewBtn" class="btn btn-ghost btn-full-width">
+                    <button id="writeReviewBtn" class="btn review-write-btn btn-full-width">
                         <span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></span> <span data-i18n="movie_details.write_review">Write a Review</span>
                     </button>
                     <div id="reviewContainer" class="review-container" style="display: none;">
@@ -104,7 +107,7 @@
     </div>
 
     <!-- Video Player Modal -->
-    <div id="videoPlayerModal" class="modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="videoTitle" tabindex="-1">
+    <div id="videoPlayerModal" class="modal-overlay movie-details-modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="videoTitle" tabindex="-1">
         <div class="modal video-modal">
             <div class="modal-header video-header">
                 <div class="video-heading">
@@ -117,6 +120,25 @@
                     </div>
                 </div>
                 <div class="video-header__actions">
+                    <div class="watch-room-controls" id="watchRoomControls" role="group" aria-label="Совместный просмотр">
+                        <button class="player-nav-btn watch-room-controls__button" id="createWatchRoomBtn" type="button" data-watch-room-action="create" title="Создать тестовую комнату">
+                            <span aria-hidden="true">◉</span><span class="player-nav-btn__label">Создать</span>
+                        </button>
+                        <button class="player-nav-btn watch-room-controls__button" id="joinWatchRoomBtn" type="button" data-watch-room-action="join" title="Войти в тестовую комнату">
+                            <span aria-hidden="true">↗</span><span class="player-nav-btn__label">Войти</span>
+                        </button>
+                        <button class="player-nav-btn watch-room-controls__button" id="copyWatchRoomCodeBtn" type="button" data-watch-room-action="copy-code" title="Скопировать код приглашения" hidden>
+                            <span aria-hidden="true">⧉</span><span class="player-nav-btn__label">Код</span>
+                        </button>
+                        <button class="player-nav-btn watch-room-controls__button" id="watchRoomMembersBtn" type="button" data-watch-room-action="toggle-members" title="Участники комнаты" aria-expanded="false" aria-controls="watchRoomMembersPopover" hidden>
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="3"></circle><circle cx="17" cy="9" r="2.25"></circle><path d="M2.8 19c.7-3.1 2.6-4.7 5.2-4.7s4.5 1.6 5.2 4.7"></path><path d="M14.2 15.1c1.9.2 3.3 1.5 3.8 3.9"></path></svg><span class="player-nav-btn__label" id="watchRoomParticipantCount">0</span>
+                        </button>
+                        <span class="watch-room-controls__status" id="watchRoomStatus" role="status" aria-live="polite"></span>
+                        <div class="watch-room-members-popover" id="watchRoomMembersPopover" role="dialog" aria-label="Участники комнаты" hidden>
+                            <div class="watch-room-members-popover__title">В комнате</div>
+                            <ul class="watch-room-members-popover__list" id="watchRoomMembersList"></ul>
+                        </div>
+                    </div>
                     <div class="player-nav-controls" id="playerNavControls" style="display: none;" role="group" aria-label="Episode navigation">
                         <button class="player-nav-btn player-nav-btn--prev" id="playerPrevEpisodeBtn" type="button" aria-label="Предыдущая серия" title="Предыдущая серия" data-action="player-prev-episode" disabled>
                             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg>
@@ -144,7 +166,7 @@
                 </div>
             </div>
             <!-- Compact Season/Episode Picker (Phase 5B) -->
-            <div class="player-episode-picker" id="playerEpisodePickerPopover" role="dialog" aria-modal="false" aria-label="Выбор сезона и серии" style="display: none;">
+            <div class="popover-surface player-episode-picker" id="playerEpisodePickerPopover" role="dialog" aria-modal="false" aria-label="Выбор сезона и серии" style="display: none;">
                 <div class="player-episode-picker__header">
                     <span class="player-episode-picker__title">Выбор серии</span>
                     <button class="player-episode-picker__close" id="playerEpisodePickerCloseBtn" type="button" aria-label="Закрыть выбор серии" title="Закрыть">
@@ -199,7 +221,7 @@
     </div>
 
     <!-- Trailer Modal (Independent) -->
-    <div id="trailerModal" class="modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="trailerTitle" tabindex="-1">
+    <div id="trailerModal" class="modal-overlay movie-details-modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="trailerTitle" tabindex="-1">
         <div class="modal video-modal trailer-modal-content">
             <div class="modal-header video-header">
                 <h2 class="modal-title" id="trailerTitle" data-i18n="movie_details.trailer">Trailer</h2>
@@ -214,7 +236,7 @@
     </div>
 
     <!-- Announce Modal -->
-    <div id="announceModal" class="modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-label="Schedule announcement" tabindex="-1">
+    <div id="announceModal" class="modal-overlay movie-details-modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-label="Schedule announcement" tabindex="-1">
         <div class="modal announce-modal">
             <div class="modal-header announce-modal-header">
                 <h2 class="modal-title">Запланировать анонс</h2>
@@ -282,9 +304,11 @@
     </div>
 
     <!-- Scripts -->
+    <script defer src="../../shared/config/firebase.runtime.js"></script>
     <script defer src="../../../libs/firebase-app-compat.js"></script>
     <script defer src="../../../libs/firebase-firestore-compat.js"></script>
     <script defer src="../../../libs/firebase-auth-compat.js"></script>
+    <script defer src="../../../libs/firebase-database-compat.js"></script>
     <script defer src="../../shared/config/kinopoisk.config.js"></script>
     <script defer src="../../shared/config/player.config.js"></script>
     <script defer src="../../shared/config/theNumbersMappings.js"></script>
@@ -301,6 +325,8 @@
     <script defer src="../../shared/services/MovieCacheService.js"></script>
     <script defer src="../../shared/services/RatingsRefreshService.js"></script>
     <script defer src="../../shared/services/RatingService.js"></script>
+    <script defer src="../../shared/services/CommentReactionService.js"></script>
+    <script defer src="../../shared/components/CommentReactionBar.js"></script>
     <!-- Parser Infrastructure -->
     <script defer src="../../shared/services/PlayerSourceLifecycle.js"></script>
     <script defer src="../../shared/services/parsers/BaseParserService.js"></script>
@@ -320,6 +346,7 @@
     <script defer src="../../shared/services/player/adapters/RutubeAdapter.js"></script>
     <script defer src="../../shared/services/player/PlaybackRuntime.js"></script>
     <script defer src="../../shared/services/player/PlaybackController.js"></script>
+    <script defer src="../../shared/services/player/RutubeWatchRoomBridge.js"></script>
     <script defer src="../../shared/services/player/AutoNextCoordinator.js"></script>
     <script defer src="../../shared/utils/MediaClassifier.js"></script>
     <script defer src="../../shared/services/RecommendationService.js"></script>
@@ -354,6 +381,7 @@
     <script defer src="../../shared/components/ImageLightbox.js"></script>
     <script defer src="../../shared/components/Router.js"></script>
     <script defer src="../../shared/firestore.js"></script>
+    <script defer src="../../shared/services/WatchRoomStagingController.js"></script>
     <script defer src="../../shared/components/MovieCard.js"></script>
     <script defer src="../../../content-scripts/player-cleaner.js"></script>
     <script defer src="movie-details-perf.js"></script>

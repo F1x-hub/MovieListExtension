@@ -14,6 +14,7 @@ class ReportWidget {
         this.spinner = null;
         this.btnText = null;
         this.reportBody = null;
+        this.lastFocusedElement = null;
 
         this.selectedFile = null;
         this.MAX_CHARS = 5000;
@@ -34,20 +35,20 @@ class ReportWidget {
     render() {
         const html = `
             <!-- Overlay -->
-            <div id="reportWidgetOverlay" class="report-overlay"></div>
+            <div id="reportWidgetOverlay" class="report-overlay" aria-hidden="true"></div>
 
             <!-- Widget Button -->
             <div id="reportWidgetContainer" class="report-widget-container">
-                <button id="reportWidgetBtn" class="report-widget-btn" title="Сообщить об ошибке / Предложить улучшение" aria-label="Report issue">
+                <button id="reportWidgetBtn" class="report-widget-btn" type="button" title="Сообщить об ошибке / Предложить улучшение" aria-label="Сообщить об ошибке" aria-expanded="false" aria-controls="reportWidgetDrawer">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                 </button>
             </div>
 
             <!-- Drawer -->
-            <div id="reportWidgetDrawer" class="report-widget-drawer">
+            <div id="reportWidgetDrawer" class="report-widget-drawer" role="dialog" aria-modal="true" aria-labelledby="reportWidgetTitle" aria-hidden="true" tabindex="-1">
                 <div class="report-drawer-header">
-                    <h3>Сообщить об ошибке / Предложить улучшение</h3>
-                    <button id="reportWidgetCloseBtn" class="report-close-btn" title="Закрыть" aria-label="Close">
+                    <h2 id="reportWidgetTitle">Сообщить об ошибке / Предложить улучшение</h2>
+                    <button id="reportWidgetCloseBtn" class="report-close-btn" type="button" title="Закрыть" aria-label="Закрыть">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                     </button>
                 </div>
@@ -56,8 +57,8 @@ class ReportWidget {
                     <div id="reportWidgetMessage" class="report-message"></div>
 
                     <div>
-                        <textarea id="reportWidgetText" placeholder="Опишите проблему или предложение..." maxlength="5000"></textarea>
-                        <div class="report-char-counter"><span id="reportWidgetCharCount">0</span> / 5000</div>
+                        <textarea id="reportWidgetText" aria-label="Описание проблемы или предложения" aria-describedby="reportWidgetCharCount" placeholder="Опишите проблему или предложение..." maxlength="5000"></textarea>
+                        <div class="report-char-counter" id="reportWidgetCharCount" aria-live="polite"><span>0</span> / 5000</div>
                     </div>
 
                     <div class="report-file-upload">
@@ -71,7 +72,7 @@ class ReportWidget {
                         
                         <div id="reportWidgetPreviewContainer" class="report-preview-container">
                             <img id="reportWidgetPreviewImg" class="report-preview-image" src="" alt="Preview">
-                            <button id="reportWidgetRemovePhotoBtn" class="report-remove-photo-btn" title="Удалить фото" aria-label="Remove">
+                            <button id="reportWidgetRemovePhotoBtn" class="report-remove-photo-btn" type="button" title="Удалить фото" aria-label="Удалить фото">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                             </button>
                         </div>
@@ -79,7 +80,7 @@ class ReportWidget {
                 </div>
 
                 <div class="report-drawer-footer">
-                    <button id="reportWidgetSubmitBtn" class="report-submit-btn" disabled>
+                    <button id="reportWidgetSubmitBtn" class="report-submit-btn" type="button" disabled>
                         <div id="reportWidgetSpinner" class="report-spinner"></div>
                         <span id="reportWidgetBtnText">Отправить</span>
                     </button>
@@ -112,9 +113,10 @@ class ReportWidget {
 
     attachEventListeners() {
         // Toggle Drawer
-        this.triggerBtn.addEventListener('mousedown', () => this.openDrawer());
-        this.closeBtn.addEventListener('mousedown', () => this.closeDrawer());
-        this.overlay.addEventListener('mousedown', () => this.closeDrawer());
+        this.triggerBtn.addEventListener('click', () => this.openDrawer());
+        this.closeBtn.addEventListener('click', () => this.closeDrawer());
+        this.overlay.addEventListener('click', () => this.closeDrawer());
+        this.drawer.addEventListener('keydown', (event) => this.handleDrawerKeydown(event));
 
         // Text input handling
         this.textarea.addEventListener('input', () => {
@@ -167,30 +169,74 @@ class ReportWidget {
         });
 
         // Remove photo handling
-        this.removePhotoBtn.addEventListener('mousedown', () => this.removePhoto());
+        this.removePhotoBtn.addEventListener('click', () => this.removePhoto());
 
         // Form submission
-        this.submitBtn.addEventListener('mousedown', () => this.submitReport());
+        this.submitBtn.addEventListener('click', () => this.submitReport());
     }
 
     openDrawer() {
+        this.lastFocusedElement = document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : this.triggerBtn;
         this.drawer.classList.add('open');
         this.overlay.classList.add('visible');
+        this.drawer.setAttribute('aria-hidden', 'false');
+        this.overlay.setAttribute('aria-hidden', 'false');
+        this.triggerBtn.setAttribute('aria-expanded', 'true');
         this.triggerBtn.style.display = 'none';
         this.clearMessage();
         
-        // Устанавливаем фокус на текстовое поле
         setTimeout(() => {
-            this.textarea.focus();
+            if (this.drawer.classList.contains('open')) {
+                this.textarea.focus();
+            }
         }, 100);
     }
 
     closeDrawer() {
         this.drawer.classList.remove('open');
         this.overlay.classList.remove('visible');
-        setTimeout(() => {
-            this.triggerBtn.style.display = 'flex';
-        }, 300); // match transition duration
+        this.drawer.setAttribute('aria-hidden', 'true');
+        this.overlay.setAttribute('aria-hidden', 'true');
+        this.triggerBtn.setAttribute('aria-expanded', 'false');
+        this.triggerBtn.style.display = 'flex';
+
+        const restoreTarget = this.lastFocusedElement instanceof HTMLElement && document.contains(this.lastFocusedElement)
+            ? this.lastFocusedElement
+            : this.triggerBtn;
+        restoreTarget.focus();
+        this.lastFocusedElement = null;
+    }
+
+    handleDrawerKeydown(event) {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            this.closeDrawer();
+            return;
+        }
+
+        if (event.key !== 'Tab') return;
+
+        const focusable = Array.from(this.drawer.querySelectorAll(
+            'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+        )).filter((element) => element.getClientRects().length > 0);
+
+        if (focusable.length === 0) {
+            event.preventDefault();
+            this.drawer.focus();
+            return;
+        }
+
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+        }
     }
 
     handleFileSelection(e) {

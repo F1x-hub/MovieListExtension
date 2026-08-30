@@ -21,6 +21,7 @@
     <link rel="preconnect" href="https://firebaseio.com">
     <link rel="preconnect" href="https://firebasestorage.googleapis.com">
     <link rel="stylesheet" href="../../shared/styles/report-widget.css">
+    <script src="../../shared/services/ThemeService.js"></script>
 </head>
 <body>
     <!-- Navigation will be inserted here by Navigation.js -->
@@ -120,7 +121,7 @@
     </main>
 
     <!-- Rating Modal (Quick Rate from Watchlist) -->
-    <div id="ratingModal" class="modal-overlay" style="display: none;">
+    <div id="ratingModal" class="modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="ratingModalTitle">
         <div class="modal rating-modal">
             <div class="modal-header rating-header">
                 <div class="rating-header-content">

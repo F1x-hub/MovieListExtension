@@ -27,6 +27,83 @@ console.log('[MovieList Extension] Content script loaded for ex-fs.net');
         });
     }
 
+    function postRatingSaveResponse(requestId, response) {
+        window.postMessage({
+            type: 'MOVIELIST_ADD_RATING_RESPONSE',
+            requestId,
+            success: Boolean(response?.success),
+            error: response?.error || null
+        }, window.location.origin);
+    }
+
+    function getTrustedRatingSaveRequest(target) {
+        const saveButton = target instanceof Element ? target.closest('#saveRatingBtn') : null;
+        const modal = saveButton?.closest('.movie-list-modal[data-movie-list-rating-modal="true"]');
+        if (!saveButton || !modal || !modal.dataset.movieListRequestId) return null;
+
+        const movieId = Number(modal.dataset.movieId);
+        const rating = Number(modal.querySelector('#ratingSlider')?.value);
+        const comment = String(modal.querySelector('#commentTextarea')?.value || '').trim();
+        if (!Number.isInteger(movieId) || movieId <= 0
+            || !Number.isInteger(rating) || rating < 1 || rating > 10
+            || comment.length > 500) {
+            return {
+                requestId: modal.dataset.movieListRequestId,
+                error: 'Invalid rating form data'
+            };
+        }
+
+        return {
+            requestId: modal.dataset.movieListRequestId,
+            movieId,
+            movieTitle: String(modal.dataset.movieTitle || '').trim(),
+            posterPath: String(modal.dataset.posterPath || '').trim(),
+            rating,
+            comment
+        };
+    }
+
+    // A page script can fabricate window.postMessage events, but it cannot
+    // fabricate an isTrusted click. Rating persistence therefore starts here,
+    // in the isolated world, rather than in the page-message bridge.
+    document.addEventListener('click', (event) => {
+        if (!event.isTrusted) return;
+
+        const request = getTrustedRatingSaveRequest(event.target);
+        if (!request) return;
+
+        const saveButton = event.target.closest('#saveRatingBtn');
+        if (saveButton.dataset.movieListRatingPending === 'true') return;
+        saveButton.dataset.movieListRatingPending = 'true';
+
+        queueMicrotask(() => {
+            if (request.error) {
+                delete saveButton.dataset.movieListRatingPending;
+                postRatingSaveResponse(request.requestId, { success: false, error: request.error });
+                return;
+            }
+
+            chrome.runtime.sendMessage({
+                type: 'ADD_RATING',
+                movieId: request.movieId,
+                movieTitle: request.movieTitle,
+                posterPath: request.posterPath,
+                rating: request.rating,
+                comment: request.comment
+            }, (response) => {
+                delete saveButton.dataset.movieListRatingPending;
+                if (chrome.runtime.lastError) {
+                    postRatingSaveResponse(request.requestId, {
+                        success: false,
+                        error: chrome.runtime.lastError.message
+                    });
+                    return;
+                }
+                postRatingSaveResponse(request.requestId, response);
+            });
+        });
+    }, true);
+
     async function createConfigElement() {
         const user = await getUserFromStorage();
         const config = document.createElement('div');
@@ -100,44 +177,6 @@ console.log('[MovieList Extension] Content script loaded for ex-fs.net');
                         success: false,
                         error: response.error || 'Unknown error',
                         movie: null
-                    }, '*');
-                }
-            });
-        } else if (event.data && event.data.type === 'MOVIELIST_ADD_RATING') {
-            console.log('[MovieList Extension] Received add rating request:', event.data);
-            chrome.runtime.sendMessage({
-                type: 'ADD_RATING',
-                userId: event.data.userId,
-                userName: event.data.userName,
-                userPhoto: event.data.userPhoto,
-                movieId: event.data.movieId,
-                movieTitle: event.data.movieTitle,
-                posterPath: event.data.posterPath,
-                rating: event.data.rating,
-                comment: event.data.comment
-            }, (response) => {
-                if (chrome.runtime.lastError) {
-                    console.error('[MovieList Extension] Error:', chrome.runtime.lastError);
-                    window.postMessage({
-                        type: 'MOVIELIST_ADD_RATING_RESPONSE',
-                        success: false,
-                        error: chrome.runtime.lastError.message
-                    }, '*');
-                    return;
-                }
-
-                if (response && response.success) {
-                    console.log('[MovieList Extension] Rating added successfully');
-                    window.postMessage({
-                        type: 'MOVIELIST_ADD_RATING_RESPONSE',
-                        success: true
-                    }, '*');
-                } else {
-                    console.error('[MovieList Extension] Failed to add rating:', response?.error);
-                    window.postMessage({
-                        type: 'MOVIELIST_ADD_RATING_RESPONSE',
-                        success: false,
-                        error: response?.error || 'Unknown error'
                     }, '*');
                 }
             });

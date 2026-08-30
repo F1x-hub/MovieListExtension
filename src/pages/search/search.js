@@ -3,6 +3,20 @@ import { isSpidermanMovie } from '../../shared/config/spidermanMovies.js';
 import { isStarWarsMovie } from '../../shared/config/starwarsMovies.js';
 import { getRatingIconMarkup } from '../../shared/components/RatingIcons.js';
 
+function searchTraceNow() {
+    return typeof performance !== 'undefined' && typeof performance.now === 'function'
+        ? performance.now()
+        : Date.now();
+}
+
+function createSearchTraceId(generation) {
+    return `search-${Date.now()}-${generation}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function searchTraceDurationMs(startedAt) {
+    return Math.round((searchTraceNow() - startedAt) * 10) / 10;
+}
+
 /**
  * SearchManager - Controller for the movie search page
  * Handles movie search, filtering, and rating functionality
@@ -15,6 +29,9 @@ class SearchManager {
         this.currentResults = [];
         this.selectedMovie = null;
         this.currentUser = null;
+        this.commentReactionSummaries = new Map();
+        this.commentUserReactions = new Map();
+        this.commentReactionPending = new Set();
         this.currentRating = 0; // State for new rating system
         this.isReviewVisible = false;
         this.searchHistoryService = new SearchHistoryService();
@@ -39,6 +56,10 @@ class SearchManager {
         this.apiFallbackPage = 1;
         this.observer = null;
         this._isSearching = false;
+        this.searchGeneration = 0;
+        this.activeSearchController = null;
+        this.activeSearchTraceId = null;
+        this.activeSearchTraceStartedAt = null;
 
         // UI State Manager (for search results area)
         const _psm = Utils.createPageStateManager({
@@ -56,6 +77,7 @@ class SearchManager {
         });
 
         this.setupEventListeners();
+        this.setupCommentReactionListeners();
         this.setupImageErrorHandlers();
         this.init();
         
@@ -255,7 +277,7 @@ class SearchManager {
             const ratingId = actionBtn.getAttribute('data-rating-id');
             const currentStatus = actionBtn.getAttribute('data-is-favorite') === 'true';
             
-            if (action === 'toggle-favorite' && ratingId) {
+            if (action === 'toggle-favorite' && movieId) {
                 // For favorites, we need the button element to update its state
                 this.toggleFavorite(ratingId, currentStatus, actionBtn, movieId);
             } else if (action === 'toggle-watching' && movieId) {
@@ -280,7 +302,7 @@ class SearchManager {
                 
                 // If movieId is missing on the button (e.g. inside a menu item), try to find it on the card
                 if (!targetMovieId) {
-                    const card = actionBtn.closest('.movie-card') || actionBtn.closest('.movie-card-component');
+                    const card = actionBtn.closest('.movie-card-component');
                     if (card) {
                         targetMovieId = card.getAttribute('data-movie-id');
                     }
@@ -418,85 +440,169 @@ class SearchManager {
     }
 
     async initializeUI() {
-        // Show loading indicator immediately
+        // Keep the search page usable when an optional Firestore read is slow or offline.
         this.showInitialLoading();
-        
-        // Wait for firebaseManager to be ready
-        if (!window.firebaseManager) {
-            await this.waitForFirebaseManager();
-        }
-        
-        // Wait for auth to be ready
-        await firebaseManager.waitForAuthReady();
-        
-        // Check authentication
-        const isAuth = firebaseManager.isAuthenticated();
-        
-        if (!isAuth) {
-            Utils.showToast(i18n.get('search.error_login'), 'error');
-            return;
-        }
-        
-        this.currentUser = firebaseManager.getCurrentUser();
-    
-    // Load collections using CollectionService
-    if (typeof CollectionService !== 'undefined') {
-        this.collectionService = new CollectionService();
+        let routeOwnsResults = false;
+
         try {
-            this.availableCollections = await this.collectionService.getCollections();
-        } catch (e) {
-            console.error('Error loading collections:', e);
+            if (!window.firebaseManager) {
+                await this.waitForFirebaseManager();
+            }
+
+            await firebaseManager.waitForAuthReady();
+            if (!firebaseManager.isAuthenticated()) {
+                Utils.showToast(i18n.get('search.error_login'), 'error');
+                return;
+            }
+
+            this.currentUser = firebaseManager.getCurrentUser();
+            if (typeof CollectionService !== 'undefined') {
+                this.collectionService = new CollectionService();
+                void this.loadCollectionsWithTimeout().catch((error) => {
+                    console.error('[SearchInit] Failed to refresh collections:', error);
+                });
+            }
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const movieId = urlParams.get('movieId');
+            const query = urlParams.get('q') || urlParams.get('query');
+            const sourceUrl = urlParams.get('sourceUrl');
+            const legacyCatalogType = urlParams.get('type');
+
+            if (!movieId && !query && !sourceUrl && legacyCatalogType) {
+                routeOwnsResults = true;
+                const category = typeof window.normalizeCatalogCategory === 'function'
+                    ? window.normalizeCatalogCategory(legacyCatalogType)
+                    : 'films';
+                const catalogUrl = chrome.runtime.getURL(`src/pages/catalog/catalog.html?category=${encodeURIComponent(category)}`);
+                window.location.replace(catalogUrl);
+                return;
+            }
+
+            if (movieId) {
+                routeOwnsResults = true;
+                let redirectUrl = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`);
+                if (urlParams.get('autoplay') === 'true') {
+                    redirectUrl += '&autoplay=true';
+                }
+                window.location.replace(redirectUrl);
+                return;
+            }
+
+            if (sourceUrl) {
+                routeOwnsResults = true;
+                const loaded = await this.loadMovieFromSource(sourceUrl);
+                if (!loaded) routeOwnsResults = false;
+                return;
+            }
+
+            if (query) {
+                routeOwnsResults = true;
+                this.elements.searchInput.value = query;
+                this.currentQuery = query;
+                this.currentPage = 1;
+                await this.searchMovies();
+                return;
+            }
+
+            this.initializeFilters();
+            this.loadFilterState();
+        } catch (error) {
+            console.error('[SearchInit] Failed to initialize search page:', error);
+            Utils.showToast(i18n.get('search.error_generic'), 'error');
+        } finally {
+            if (!routeOwnsResults && this.searchGeneration === 0) {
+                this.hideInitialLoading();
+            }
         }
     }
-    
-    // Check for parameters in URL
-        const urlParams = new URLSearchParams(window.location.search);
-        const movieId = urlParams.get('movieId');
-        const query = urlParams.get('q') || urlParams.get('query'); // Support both 'q' and 'query'
-        const sourceUrl = urlParams.get('sourceUrl');
-        const legacyCatalogType = urlParams.get('type');
 
-        // Preserve old Home/bookmark links while keeping search.html focused
-        // on text search. Category pages now have their own paginated owner.
-        if (!movieId && !query && !sourceUrl && legacyCatalogType) {
-            const category = typeof window.normalizeCatalogCategory === 'function'
-                ? window.normalizeCatalogCategory(legacyCatalogType)
-                : 'films';
-            const catalogUrl = chrome.runtime.getURL(`src/pages/catalog/catalog.html?category=${encodeURIComponent(category)}`);
-            window.location.replace(catalogUrl);
+    waitForFirebaseManager(timeoutMs = 3000) {
+        if (window.firebaseManager) return Promise.resolve(window.firebaseManager);
+
+        return new Promise((resolve, reject) => {
+            const startedAt = Date.now();
+            const check = () => {
+                if (window.firebaseManager) {
+                    resolve(window.firebaseManager);
+                    return;
+                }
+                if (Date.now() - startedAt >= timeoutMs) {
+                    reject(new Error('Firebase Manager initialization timed out'));
+                    return;
+                }
+                setTimeout(check, 50);
+            };
+            check();
+        });
+    }
+
+    async loadCollectionsWithTimeout(timeoutMs = 3000) {
+        const collectionsPromise = this.collectionService.getCollections()
+            .catch((error) => {
+                console.warn('[SearchInit] Failed to load collections:', error);
+                return [];
+            });
+        let timeoutId = null;
+        const timeoutPromise = new Promise((resolve) => {
+            timeoutId = setTimeout(() => resolve(null), timeoutMs);
+        });
+
+        const collections = await Promise.race([collectionsPromise, timeoutPromise]);
+        if (timeoutId) clearTimeout(timeoutId);
+        if (collections === null) {
+            console.warn('[SearchInit] Collections timed out; continuing without them');
+            collectionsPromise
+                .then((lateCollections) => {
+                    this.applyAvailableCollections(lateCollections);
+                })
+                .catch((error) => {
+                    console.error('[SearchInit] Failed to apply late collections:', error);
+                });
             return;
         }
-        
-        if (movieId) {
-            // Redirect to new movie-details page (backward compatibility)
-            let redirectUrl = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`);
-            
-            // Preserve autoplay parameter if present
-            if (urlParams.get('autoplay') === 'true') {
-                redirectUrl += '&autoplay=true';
+        this.applyAvailableCollections(collections);
+    }
+
+    applyAvailableCollections(collections) {
+        this.availableCollections = Array.isArray(collections) ? collections : [];
+        this.refreshCollectionMenus();
+    }
+
+    refreshCollectionMenus() {
+        if (!this.availableCollections.length || !Array.isArray(this.currentResults?.docs)) return;
+
+        this.currentResults.docs.forEach((movie) => {
+            const card = this.getSearchMovieCard(movie?.kinopoiskId);
+            const menu = card?.querySelector('.mc-menu');
+            if (!menu) return;
+
+            const templateCard = MovieCard.create({
+                movie,
+                id: null,
+                isFavorite: false,
+                rating: 0,
+                comment: ''
+            }, this.getSearchCardOptions(movie));
+            const freshCollections = templateCard.querySelector('.mc-menu-collections');
+            if (!freshCollections) return;
+
+            const freshDivider = freshCollections.previousElementSibling?.classList.contains('mc-menu-divider')
+                ? freshCollections.previousElementSibling
+                : null;
+            const existingCollections = menu.querySelector('.mc-menu-collections');
+            if (existingCollections) {
+                const existingDivider = existingCollections.previousElementSibling?.classList.contains('mc-menu-divider')
+                    ? existingCollections.previousElementSibling
+                    : null;
+                if (existingDivider && freshDivider) existingDivider.replaceWith(freshDivider);
+                existingCollections.replaceWith(freshCollections);
+                return;
             }
-            
-            window.location.replace(redirectUrl);
-            return; // Stop further execution
-        } else if (sourceUrl) {
-            await this.loadMovieFromSource(sourceUrl);
-        } else if (query) {
-            this.elements.searchInput.value = query;
-            this.currentQuery = query;
-            this.currentPage = 1;
-            await this.searchMovies();
-        }
-        
-        // Initialize filters
-        this.initializeFilters();
-        
-        // Load saved filter state
-        this.loadFilterState();
-        
-        // Hide initial loading only if no movie/query/source was processed
-        if (!movieId && !query && !sourceUrl) {
-            this.hideInitialLoading();
-        }
+
+            if (freshDivider) menu.appendChild(freshDivider);
+            menu.appendChild(freshCollections);
+        });
     }
 
     async loadMovieFromSource(url) {
@@ -575,10 +681,12 @@ class SearchManager {
             };
 
             await this.displaySingleMovieResult(movie);
+            return true;
             
         } catch (error) {
              console.error('Error loading movie from source:', error);
              Utils.showToast(`${i18n.get('movie_details.error_loading_movie') || 'Failed to load movie info'}: ${error.message}`, 'error');
+             return false;
         } finally {
             this.page.setLoading(false);
         }
@@ -712,28 +820,63 @@ class SearchManager {
     }
 
     async performSearch() {
-        if (this._isSearching) return;
-
         const query = this.elements.searchInput.value.trim();
         if (!query) {
             Utils.showToast(i18n.get('search.error_query'), 'warning');
             return;
         }
+
+        const submitTraceId = createSearchTraceId(this.searchGeneration + 1);
+        const submitStartedAt = searchTraceNow();
+        this.logSearchTrace(submitTraceId, this.searchGeneration + 1, submitStartedAt, 'search-submit:start', { query });
         
         // Hide search history dropdown
         this.hideSearchHistory();
         
         // Add to search history
+        const historyStartedAt = searchTraceNow();
         await this.searchHistoryService.addToHistory(query);
+        this.logSearchTrace(submitTraceId, this.searchGeneration + 1, submitStartedAt, 'search-history:end', {
+            stageDurationMs: searchTraceDurationMs(historyStartedAt)
+        });
         
         this.currentQuery = query;
         this.currentPage = 1;
-        await this.searchMovies();
+        await this.searchMovies({ traceId: submitTraceId, startedAt: submitStartedAt });
     }
 
-    async searchMovies() {
-        if (this._isSearching) return;
+    isCurrentSearchGeneration(generation) {
+        return generation === this.searchGeneration;
+    }
+
+    logSearchTrace(traceId, generation, startedAt, stage, details = {}) {
+        console.info('[SearchTrace]', {
+            traceId,
+            generation,
+            stage,
+            elapsedMs: searchTraceDurationMs(startedAt),
+            ...details
+        });
+    }
+
+    async searchMovies(traceContext = null) {
+        const searchGeneration = ++this.searchGeneration;
+        this.activeSearchController?.abort();
+
+        const searchController = typeof AbortController === 'function'
+            ? new AbortController()
+            : null;
+        this.activeSearchController = searchController;
+        const query = this.currentQuery;
+        const searchTraceId = traceContext?.traceId || createSearchTraceId(searchGeneration);
+        const searchStartedAt = traceContext?.startedAt || searchTraceNow();
+        this.activeSearchTraceId = searchTraceId;
+        this.activeSearchTraceStartedAt = searchStartedAt;
         this._isSearching = true;
+        this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'search:start', {
+            query,
+            hasAbortController: Boolean(searchController)
+        });
 
         try {
             // Reset infinite scroll state
@@ -746,42 +889,98 @@ class SearchManager {
             this.isCircuitBreakerTripped = false;
             this.apiFallbackPage = 1;
             
-            this.elements.resultsGrid.innerHTML = '';
             this.elements.resultsHeader.style.display = 'none';
             this.hideTrigger();
             this.hideEndOfResults();
-            
-            this.page.setLoading(true);
+            this.showSearchLoading();
+            this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'search:state-reset');
             
             // Wait for firebaseManager to be ready
-            if (!window.firebaseManager) {
+            const firebaseWaitStartedAt = searchTraceNow();
+            const firebaseWasReady = Boolean(window.firebaseManager);
+            if (!firebaseWasReady) {
                 await this.waitForFirebaseManager();
             }
+            this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'firebase:ready', {
+                stageDurationMs: searchTraceDurationMs(firebaseWaitStartedAt),
+                wasAlreadyReady: firebaseWasReady
+            });
             
             const kinopoiskService = firebaseManager.getKinopoiskService();
             
             // Check if API is configured
             if (!kinopoiskService.isConfigured()) {
+                this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'provider-config:missing');
                 Utils.showToast(i18n.get('search.error_api'), 'error');
                 return;
             }
             
             // Get current filters
             const filters = this.getSelectedFilters();
-            
+            this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'filters:ready', {
+                filterKeys: Object.keys(filters || {}).filter(key => key !== 'signal')
+            });
+
             // Search movies (first page / scrape candidates pool)
-            const searchResults = await kinopoiskService.searchMovies(
-                this.currentQuery,
+            const providerStartedAt = searchTraceNow();
+            this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'provider-search:start', {
+                provider: 'kinopoisk',
+                query
+            });
+            let searchResults = await kinopoiskService.searchMovies(
+                query,
                 1,
                 30,
-                filters
+                {
+                    ...filters,
+                    signal: searchController?.signal,
+                    searchTraceId,
+                    searchTraceStartedAt: searchStartedAt,
+                    deferEntityResolution: true
+                }
             );
+            if (searchResults?.entityResolutionDeferred && searchResults.entityResolutionPromise) {
+                const enrichmentStartedAt = searchTraceNow();
+                this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'entity-enrichment:wait-for-render', {
+                    candidateCount: searchResults.docs?.length || 0
+                });
+                const enrichedMovies = await searchResults.entityResolutionPromise;
+                if (!this.isCurrentSearchGeneration(searchGeneration)) return;
+
+                const resolvedDocs = Array.isArray(enrichedMovies) ? enrichedMovies : [];
+                searchResults = {
+                    ...searchResults,
+                    docs: resolvedDocs,
+                    total: resolvedDocs.length,
+                    totalScraped: resolvedDocs.length,
+                    entityResolutionDeferred: false
+                };
+                this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'entity-enrichment:ready-for-render', {
+                    stageDurationMs: searchTraceDurationMs(enrichmentStartedAt),
+                    resolvedCount: resolvedDocs.length,
+                    status: resolvedDocs.length > 0 ? 'fulfilled' : 'empty'
+                });
+            }
+            this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'provider-search:end', {
+                provider: 'kinopoisk',
+                stageDurationMs: searchTraceDurationMs(providerStartedAt),
+                searchSource: searchResults?.searchSource || null,
+                resultCount: searchResults?.docs?.length || 0,
+                total: searchResults?.totalScraped || searchResults?.total || 0,
+                entityResolutionDeferred: searchResults?.entityResolutionDeferred === true
+            });
+
+            if (!this.isCurrentSearchGeneration(searchGeneration)) return;
             
             // Apply client-side filtering (for filters not supported by API)
             let filteredDocs = searchResults?.docs || [];
             if (searchResults && searchResults.docs) {
                 filteredDocs = this.applyClientSideFilters(searchResults.docs, filters);
             }
+            this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'client-filter:end', {
+                inputCount: searchResults?.docs?.length || 0,
+                outputCount: filteredDocs.length
+            });
             
             this.currentResults = {
                 ...searchResults,
@@ -790,6 +989,7 @@ class SearchManager {
             };
             
             if (filteredDocs.length === 0) {
+                this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'results:empty');
                 this.displayEmptyResults();
                 return;
             }
@@ -800,6 +1000,12 @@ class SearchManager {
             this.elements.resultsGrid.classList.remove('single-item');
             
             const isScrapeSource = searchResults?.searchSource?.includes('scrape');
+            const renderStartedAt = searchTraceNow();
+            this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'cards-render:start', {
+                source: isScrapeSource ? 'scrape-pool' : 'api',
+                chunkSize: this.CHUNK_SIZE,
+                orderedResultCount: filteredDocs.length
+            });
             if (isScrapeSource) {
                 this.scrapedPool = [...filteredDocs];
                 const firstChunk = this.scrapedPool.splice(0, this.CHUNK_SIZE);
@@ -809,7 +1015,12 @@ class SearchManager {
                 // Scraper returns up to 25-30 top matches. If total scraped is < 20 (e.g. 11), all matches are already in memory.
                 this.hasMore = this.scrapedPool.length > 0 || (filteredDocs.length >= 20 && !hasFilters);
                 
-                await this.renderMovieCardsChunk(firstChunk, false);
+                await this.renderMovieCardsChunk(firstChunk, false, searchGeneration, searchTraceId);
+                this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'cards-render:end', {
+                    stageDurationMs: searchTraceDurationMs(renderStartedAt),
+                    renderedCount: firstChunk.length,
+                    hasMore: this.hasMore
+                });
             } else {
                 // Direct API search
                 const firstChunk = filteredDocs.slice(0, this.CHUNK_SIZE);
@@ -818,40 +1029,70 @@ class SearchManager {
                 }
                 this.hasMore = filteredDocs.length > this.CHUNK_SIZE || (searchResults.pages && searchResults.pages > 1);
                 
-                await this.renderMovieCardsChunk(firstChunk, false);
+                await this.renderMovieCardsChunk(firstChunk, false, searchGeneration, searchTraceId);
+                this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'cards-render:end', {
+                    stageDurationMs: searchTraceDurationMs(renderStartedAt),
+                    renderedCount: firstChunk.length,
+                    hasMore: this.hasMore
+                });
             }
             
         } catch (error) {
+            this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'search:error', {
+                errorName: error?.name || 'Error',
+                errorMessage: error?.message || String(error),
+                isCurrentGeneration: this.isCurrentSearchGeneration(searchGeneration)
+            });
+            if (!this.isCurrentSearchGeneration(searchGeneration)) return;
+            if (error?.name === 'AbortError') return;
             console.error('Search error:', error);
             
             let errorMessage = i18n.get('search.error_generic');
-            if (error.message.includes('DAILY_LIMIT_REACHED') || error.message.includes('403')) {
+            const errorMessageText = error?.message || '';
+            if (errorMessageText.includes('DAILY_LIMIT_REACHED') || errorMessageText.includes('403')) {
                 this.isCircuitBreakerTripped = true;
                 this.hasMore = false;
                 errorMessage = i18n.get('search.error_forbidden');
-            } else if (error.message.includes('500')) {
-                if (this.hasCyrillic(this.currentQuery)) {
-                    errorMessage = i18n.get('search.error_cyrillic').replace('{query}', this.currentQuery);
+            } else if (errorMessageText.includes('500')) {
+                if (this.hasCyrillic(query)) {
+                    errorMessage = i18n.get('search.error_cyrillic').replace('{query}', query);
                 } else {
                     errorMessage = i18n.get('search.error_server');
                 }
-            } else if (error.message.includes('404')) {
+            } else if (errorMessageText.includes('404')) {
                 errorMessage = i18n.get('search.error_not_found');
-            } else if (error.message.includes('network') || error.message.includes('fetch')) {
+            } else if (errorMessageText.includes('network') || errorMessageText.includes('fetch')) {
                 errorMessage = i18n.get('search.error_network');
             }
             
             Utils.showToast(errorMessage, 'error');
         } finally {
-            this.page.setLoading(false);
-            setTimeout(() => {
+            this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'search:complete', {
+                status: this.isCurrentSearchGeneration(searchGeneration) ? 'active' : 'stale',
+                resultCount: this.currentResults?.docs?.length || 0
+            });
+            if (this.isCurrentSearchGeneration(searchGeneration)) {
+                this.hideSearchLoading();
+                if (!this.elements.resultsGrid.querySelector('.movie-card-component, .empty-state')) {
+                    this.displayEmptyResults();
+                }
+                this.page.setLoading(false);
                 this._isSearching = false;
-            }, 400);
+                if (this.activeSearchController === searchController) {
+                    this.activeSearchController = null;
+                }
+            }
         }
     }
 
     async loadMoreResults() {
         if (this.isLoadingMore || !this.hasMore || this.isCircuitBreakerTripped) return;
+
+        const searchGeneration = this.searchGeneration;
+        const query = this.currentQuery;
+        const searchTraceId = this.activeSearchTraceId;
+        const searchStartedAt = this.activeSearchTraceStartedAt || searchTraceNow();
+        const loadMoreStartedAt = searchTraceNow();
         
         const now = performance.now();
         if (now - this.lastLoadMoreTime < this.MIN_LOAD_MORE_INTERVAL_MS) return;
@@ -865,11 +1106,21 @@ class SearchManager {
         this.lastLoadMoreTime = now;
         this.isLoadingMore = true;
         this.showTrigger();
+        this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'load-more:start', {
+            query,
+            poolCountBefore: this.scrapedPool.length,
+            renderedCount: this.renderedMovieIds.size
+        });
         
         try {
             // Priority 1: Serve from in-memory pool (scraped candidates)
             if (this.scrapedPool.length > 0) {
                 const nextChunk = this.scrapedPool.splice(0, this.CHUNK_SIZE);
+                this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'load-more:pool-chunk', {
+                    stageDurationMs: searchTraceDurationMs(loadMoreStartedAt),
+                    chunkCount: nextChunk.length,
+                    poolCountAfter: this.scrapedPool.length
+                });
                 if (this.scrapedPool.length === 0) {
                     const filters = this.getSelectedFilters();
                     const hasFilters = filters.yearFrom || (filters.genresInclude && filters.genresInclude.length > 0) || (filters.countriesInclude && filters.countriesInclude.length > 0);
@@ -878,7 +1129,9 @@ class SearchManager {
                         this.hasMore = false;
                     }
                 }
-                await this.renderMovieCardsChunk(nextChunk, true);
+                if (this.isCurrentSearchGeneration(searchGeneration)) {
+                    await this.renderMovieCardsChunk(nextChunk, true, searchGeneration, searchTraceId);
+                }
                 return;
             }
             
@@ -893,12 +1146,30 @@ class SearchManager {
             
             this.apiFallbackPage++;
             const filters = this.getSelectedFilters();
+            const fallbackStartedAt = searchTraceNow();
+            this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'load-more:api-start', {
+                page: this.apiFallbackPage,
+                query
+            });
             const fallbackResults = await kinopoiskService.searchMovies(
-                this.currentQuery,
+                query,
                 this.apiFallbackPage,
                 this.CHUNK_SIZE,
-                { ...filters, skipScraper: true }
+                {
+                    ...filters,
+                    skipScraper: true,
+                    signal: this.activeSearchController?.signal,
+                    searchTraceId,
+                    searchTraceStartedAt: searchStartedAt
+                }
             );
+            this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'load-more:api-end', {
+                stageDurationMs: searchTraceDurationMs(fallbackStartedAt),
+                page: this.apiFallbackPage,
+                resultCount: fallbackResults?.docs?.length || 0
+            });
+
+            if (!this.isCurrentSearchGeneration(searchGeneration)) return;
             
             let docs = fallbackResults?.docs || [];
             if (docs.length > 0) {
@@ -908,7 +1179,7 @@ class SearchManager {
                 
                 if (uniqueNewMovies.length > 0) {
                     this.hasMore = fallbackResults.docs.length >= this.CHUNK_SIZE && (fallbackResults.pages ? this.apiFallbackPage < fallbackResults.pages : true);
-                    await this.renderMovieCardsChunk(uniqueNewMovies, true);
+                    await this.renderMovieCardsChunk(uniqueNewMovies, true, searchGeneration, searchTraceId);
                 } else if (fallbackResults.docs.length >= this.CHUNK_SIZE) {
                     this.hasMore = this.apiFallbackPage < (fallbackResults.pages || 10);
                 } else {
@@ -923,19 +1194,37 @@ class SearchManager {
                 this.showEndOfResults();
             }
         } catch (error) {
+            this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'load-more:error', {
+                stageDurationMs: searchTraceDurationMs(loadMoreStartedAt),
+                errorName: error?.name || 'Error',
+                errorMessage: error?.message || String(error),
+                isCurrentGeneration: this.isCurrentSearchGeneration(searchGeneration)
+            });
+            if (!this.isCurrentSearchGeneration(searchGeneration)) return;
+            if (error?.name === 'AbortError') return;
             console.error('Error loading more search results:', error);
-            if (error.message.includes('DAILY_LIMIT_REACHED') || error.message.includes('403')) {
+            const errorMessage = error?.message || '';
+            if (errorMessage.includes('DAILY_LIMIT_REACHED') || errorMessage.includes('403')) {
                 this.isCircuitBreakerTripped = true;
                 this.hasMore = false;
                 Utils.showToast(i18n.get('search.error_forbidden'), 'error');
             }
             this.hideTrigger();
         } finally {
-            this.isLoadingMore = false;
+            this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'load-more:complete', {
+                stageDurationMs: searchTraceDurationMs(loadMoreStartedAt),
+                status: this.isCurrentSearchGeneration(searchGeneration) ? 'active' : 'stale',
+                renderedCount: this.renderedMovieIds.size,
+                hasMore: this.hasMore
+            });
+            if (this.isCurrentSearchGeneration(searchGeneration)) {
+                this.isLoadingMore = false;
+            }
         }
     }
 
     displayEmptyResults() {
+        this.elements.resultsGrid.removeAttribute('aria-busy');
         this.elements.resultsGrid.classList.add('single-item');
         this.elements.resultsGrid.innerHTML = `
             <div class="empty-state">
@@ -949,13 +1238,28 @@ class SearchManager {
         this.hideEndOfResults();
     }
 
-    async renderMovieCardsChunk(movies, append = true) {
+    async renderMovieCardsChunk(
+        movies,
+        append = true,
+        searchGeneration = this.searchGeneration,
+        searchTraceId = this.activeSearchTraceId
+    ) {
+        if (!this.isCurrentSearchGeneration(searchGeneration)) return;
+
+        const renderStartedAt = searchTraceNow();
+        const searchStartedAt = this.activeSearchTraceStartedAt || renderStartedAt;
+        this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'cards-render:method-start', {
+            append,
+            movieCount: movies?.length || 0
+        });
+
         if (!movies || movies.length === 0) {
             if (!append) this.displayEmptyResults();
             return;
         }
         
         if (!append) {
+            this.hideSearchLoading();
             this.elements.resultsGrid.innerHTML = '';
         }
         
@@ -968,33 +1272,6 @@ class SearchManager {
             }
         });
         
-        // Load user ratings for movies if user is logged in
-        let userRatingsMap = {};
-        if (this.currentUser && window.firebaseManager) {
-            try {
-                const ratingService = firebaseManager.getRatingService();
-                const movieIds = movies.map(m => m.kinopoiskId).filter(Boolean);
-                
-                const ratingPromises = movieIds.map(async (movieId) => {
-                    try {
-                        const rating = await ratingService.getRating(this.currentUser.uid, movieId);
-                        return { movieId, rating };
-                    } catch {
-                        return { movieId, rating: null };
-                    }
-                });
-
-                const results = await Promise.all(ratingPromises);
-                results.forEach(({ movieId, rating }) => {
-                    if (rating) {
-                        userRatingsMap[movieId] = rating;
-                    }
-                });
-            } catch (error) {
-                console.error('Error loading user ratings for chunk:', error);
-            }
-        }
-        
         const fragment = document.createDocumentFragment();
         
         movies.forEach(movie => {
@@ -1003,35 +1280,17 @@ class SearchManager {
             if (movie.nameRu) movie.nameRu = Utils.cleanTitle(movie.nameRu);
             if (movie.nameEn) movie.nameEn = Utils.cleanTitle(movie.nameEn);
 
-            const userRating = userRatingsMap[movie.kinopoiskId] || null;
-            const isFavorite = userRating?.isFavorite === true;
-            const ratingId = userRating?.id || null;
-            
             // Prepare data for MovieCard
             const cardData = {
                 movie: movie,
-                id: ratingId,
-                isFavorite: isFavorite,
-                rating: userRating ? userRating.rating : 0,
-                comment: userRating ? userRating.comment : '',
+                id: null,
+                isFavorite: false,
+                rating: 0,
+                comment: '',
             };
             
             // Options for MovieCard
-            const cardOptions = {
-                variant: 'search',
-                showFavorite: true,
-                showWatching: true,
-                showWatchlist: true,
-                showUserInfo: false,
-                showAverageRating: true,
-                showThreeDotMenu: true,
-                showEditRating: false,
-                showAddToCollection: false,
-                availableCollections: this.availableCollections || [],
-                movieCollections: (this.availableCollections || [])
-                    .filter(c => c.movieIds && (c.movieIds.includes(Number(movie.kinopoiskId)) || c.movieIds.includes(String(movie.kinopoiskId))))
-                    .map(c => c.id)
-            };
+            const cardOptions = this.getSearchCardOptions(movie);
             
             const cardElement = MovieCard.create(cardData, cardOptions);
             
@@ -1039,16 +1298,18 @@ class SearchManager {
             cardElement.style.cursor = 'pointer';
             cardElement.setAttribute('data-action', 'view-details');
             cardElement.setAttribute('data-movie-id', movie.kinopoiskId);
+            cardElement.dataset.personalState = this.currentUser ? 'pending' : 'not-required';
             
             fragment.appendChild(cardElement);
         });
         
         this.elements.resultsGrid.appendChild(fragment);
-        
-        // Update button states for newly added cards
-        if (this.currentUser) {
-            this.updateButtonStates().catch(err => console.error('Error updating button states:', err));
-        }
+        this.hideSearchLoading();
+        this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'cards-render:dom-appended', {
+            stageDurationMs: searchTraceDurationMs(renderStartedAt),
+            movieCount: movies.length,
+            personalHydrationScheduled: Boolean(this.currentUser && window.firebaseManager)
+        });
         
         // Update trigger / end of results indicator visibility
         if (this.hasMore) {
@@ -1058,6 +1319,192 @@ class SearchManager {
             this.hideTrigger();
             this.showEndOfResults();
         }
+
+        // Personal state is optional and must never delay the ordered card render.
+        if (this.currentUser && window.firebaseManager) {
+            this.hydratePersonalState(movies, searchGeneration, searchTraceId).catch(error => {
+                console.error('Error hydrating search personal state:', error);
+            });
+        } else {
+            this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'personal-hydration:skipped', {
+                reason: this.currentUser ? 'firebase-not-ready' : 'unauthenticated'
+            });
+        }
+    }
+
+    getSearchMovieCard(movieId) {
+        const normalizedMovieId = String(Number(movieId));
+        return Array.from(this.elements.resultsGrid.querySelectorAll('.movie-card-component'))
+            .find(card => String(Number(card.dataset.movieId)) === normalizedMovieId) || null;
+    }
+
+    getSearchCardOptions(movie) {
+        const collections = this.availableCollections || [];
+        return {
+            variant: 'search',
+            showFavorite: true,
+            showWatching: true,
+            showWatchlist: true,
+            showUserInfo: false,
+            showAverageRating: true,
+            showThreeDotMenu: true,
+            showEditRating: false,
+            showAddToCollection: false,
+            availableCollections: collections,
+            movieCollections: collections
+                .filter(c => c.movieIds && (c.movieIds.includes(Number(movie.kinopoiskId)) || c.movieIds.includes(String(movie.kinopoiskId))))
+                .map(c => c.id)
+        };
+    }
+
+    getProviderRating(movie, provider) {
+        if (!movie) return 0;
+
+        if (provider === 'kp') {
+            return Number(
+                movie.kpRating
+                ?? movie.ratingKp
+                ?? movie.ratingKinopoisk
+                ?? (typeof movie.rating === 'object' ? movie.rating?.kp : movie.rating)
+                ?? 0
+            ) || 0;
+        }
+
+        return Number(
+            movie.imdbRating
+            ?? movie.ratingImdb
+            ?? (typeof movie.rating === 'object' ? movie.rating?.imdb : 0)
+            ?? 0
+        ) || 0;
+    }
+
+    applyPersonalRating(movie, rating) {
+        const card = this.getSearchMovieCard(movie?.kinopoiskId);
+        if (!card) return;
+
+        const userRating = Number(rating?.rating) || 0;
+        MovieCard.updateCompactRatings(card, {
+            kpRating: this.getProviderRating(movie, 'kp'),
+            imdbRating: this.getProviderRating(movie, 'imdb'),
+            userRating,
+            showUnavailable: false
+        });
+
+        if (userRating > 0) {
+            card.dataset.userRating = String(userRating);
+        } else {
+            delete card.dataset.userRating;
+        }
+
+        const favoriteButton = card.querySelector('[data-action="toggle-favorite"]');
+        if (favoriteButton) {
+            favoriteButton.setAttribute('data-rating-id', rating?.id || '');
+        }
+    }
+
+    async hydratePersonalState(movies, searchGeneration, searchTraceId = this.activeSearchTraceId) {
+        if (!this.currentUser || !this.isCurrentSearchGeneration(searchGeneration)) return;
+
+        const searchStartedAt = this.activeSearchTraceStartedAt || searchTraceNow();
+        const hydrationStartedAt = searchTraceNow();
+        this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'personal-hydration:start', {
+            movieCount: movies.length
+        });
+
+        const movieIds = movies
+            .map(movie => Number(movie?.kinopoiskId))
+            .filter(movieId => Number.isInteger(movieId) && movieId > 0);
+        if (movieIds.length === 0) {
+            this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'personal-hydration:skipped', {
+                reason: 'no-valid-movie-ids'
+            });
+            return;
+        }
+
+        const ratingService = firebaseManager.getRatingService();
+        const ratingsStartedAt = searchTraceNow();
+        this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'personal-ratings:start', {
+            movieCount: movieIds.length,
+            uniqueMovieCount: new Set(movieIds).size
+        });
+        const ratingsPromise = typeof ratingService.getUserRatingsForMovies === 'function'
+            ? ratingService.getUserRatingsForMovies(this.currentUser.uid, movieIds)
+            : Promise.reject(new Error('Batch personal-rating API is unavailable'));
+        const tracedRatingsPromise = ratingsPromise.then(result => {
+            this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'personal-ratings:end', {
+                stageDurationMs: searchTraceDurationMs(ratingsStartedAt),
+                ratingCount: result instanceof Map ? result.size : null,
+                status: 'fulfilled'
+            });
+            return result;
+        }, error => {
+            this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'personal-ratings:error', {
+                stageDurationMs: searchTraceDurationMs(ratingsStartedAt),
+                status: 'rejected',
+                errorName: error?.name || 'Error',
+                errorMessage: error?.message || String(error)
+            });
+            throw error;
+        });
+
+        const bookmarksStartedAt = searchTraceNow();
+        this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'personal-bookmarks:start', {
+            movieCount: movieIds.length
+        });
+        const bookmarksPromise = this.updateButtonStates(movies, searchGeneration, searchTraceId).then(result => {
+            this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'personal-bookmarks:end', {
+                stageDurationMs: searchTraceDurationMs(bookmarksStartedAt),
+                status: result === true ? 'fulfilled' : 'degraded'
+            });
+            return result;
+        }, error => {
+            this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'personal-bookmarks:error', {
+                stageDurationMs: searchTraceDurationMs(bookmarksStartedAt),
+                status: 'rejected',
+                errorName: error?.name || 'Error',
+                errorMessage: error?.message || String(error)
+            });
+            throw error;
+        });
+
+        const [ratingsResult, bookmarksResult] = await Promise.allSettled([
+            tracedRatingsPromise,
+            bookmarksPromise
+        ]);
+
+        this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'personal-hydration:complete', {
+            stageDurationMs: searchTraceDurationMs(hydrationStartedAt),
+            ratingsStatus: ratingsResult.status,
+            bookmarksStatus: bookmarksResult.status
+        });
+
+        if (!this.isCurrentSearchGeneration(searchGeneration)) {
+            this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'personal-hydration:stale');
+            return;
+        }
+
+        const ratingsReady = ratingsResult.status === 'fulfilled' && ratingsResult.value instanceof Map;
+        if (ratingsReady) {
+            movies.forEach(movie => {
+                const rating = ratingsResult.value.get(String(Number(movie.kinopoiskId))) || null;
+                this.applyPersonalRating(movie, rating);
+            });
+        } else {
+            console.warn('SearchManager: Personal ratings hydration degraded:', ratingsResult.reason);
+        }
+
+        const bookmarksReady = bookmarksResult.status === 'fulfilled' && bookmarksResult.value === true;
+        movies.forEach(movie => {
+            const card = this.getSearchMovieCard(movie?.kinopoiskId);
+            if (card) {
+                card.dataset.personalState = ratingsReady && bookmarksReady ? 'ready' : 'degraded';
+            }
+        });
+        this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'personal-hydration:dom-patched', {
+            ratingsReady,
+            bookmarksReady,
+            movieCount: movies.length
+        });
     }
 
     // Removed createMovieCard method as it is replaced by MovieCard component
@@ -1367,6 +1814,7 @@ class SearchManager {
             const ratingService = firebaseManager.getRatingService();
             const userService = firebaseManager.getUserService();
             const currentUser = firebaseManager.getCurrentUser();
+            this.currentUser = currentUser;
             
             const movieIdNum = typeof movieId === 'string' ? parseInt(movieId) : movieId;
             const ratings = await ratingService.getMovieRatings(movieIdNum, 50);
@@ -1400,6 +1848,7 @@ class SearchManager {
             
             const ratingsHTML = this.createUserRatingsSection(ratings, userProfileMap, currentUser?.uid);
             contentEl.innerHTML = ratingsHTML;
+            this.hydrateCommentReactions(ratings, currentUser);
             
             // Add event listener for watch button
             const watchBtn = document.querySelector('.watch-movie-btn');
@@ -1425,8 +1874,195 @@ class SearchManager {
         }
     }
 
-    createUserRatingsSection(ratings, userProfileMap, currentUserId) {
-        if (ratings.length === 0) {
+    setupCommentReactionListeners() {
+        if (this._commentReactionListenerBound) return;
+        this._commentReactionListenerBound = true;
+
+        document.addEventListener('click', async (event) => {
+            const pickerToggle = event.target?.closest?.('[data-action="toggle-comment-reaction-picker"]');
+            if (pickerToggle) {
+                event.preventDefault();
+                event.stopPropagation();
+                const reactionBar = pickerToggle.closest('[data-comment-reactions]');
+                const picker = reactionBar?.querySelector('[data-comment-reaction-picker]');
+                if (reactionBar && picker && typeof CommentReactionBar !== 'undefined') {
+                    const open = picker.hidden;
+                    CommentReactionBar.setPickerOpen(reactionBar, open);
+                    if (open) picker.querySelector('[data-reaction-type]:not([disabled])')?.focus();
+                }
+                return;
+            }
+
+            const button = event.target?.closest?.('[data-action="toggle-comment-reaction"]');
+            if (!button) {
+                if (!event.target?.closest?.('[data-comment-reactions]') && typeof CommentReactionBar !== 'undefined') {
+                    CommentReactionBar.closeOpenPickers();
+                }
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+
+            const reactionBar = button.closest('[data-comment-reactions]');
+            const ratingId = reactionBar?.getAttribute('data-rating-id');
+            const movieId = reactionBar?.getAttribute('data-movie-id') || this.currentMovieId;
+            const type = button.getAttribute('data-reaction-type');
+            if (!ratingId || !movieId || !type || this.commentReactionPending.has(ratingId)) return;
+
+            const currentUser = this.currentUser || firebaseManager.getCurrentUser?.();
+            if (!currentUser) {
+                Utils.showToast(i18n.get('navbar.sign_in'), 'warning');
+                return;
+            }
+
+            const reactionService = firebaseManager.getCommentReactionService?.();
+            if (!reactionService) return;
+
+            const storedTypes = this.commentUserReactions.get(ratingId);
+            const previousTypes = Array.isArray(storedTypes) ? [...storedTypes] : (storedTypes ? [storedTypes] : []);
+            const hasReaction = previousTypes.includes(type);
+            const maxReactions = typeof CommentReactionService !== 'undefined'
+                ? CommentReactionService.MAX_REACTIONS_PER_USER
+                : 3;
+            if (!hasReaction && previousTypes.length >= maxReactions) {
+                Utils.showToast(i18n.get('movie_details.max_reactions'), 'warning');
+                return;
+            }
+
+            if (reactionBar && typeof CommentReactionBar !== 'undefined') {
+                CommentReactionBar.setPickerOpen(reactionBar, false);
+            }
+
+            const nextTypes = hasReaction
+                ? previousTypes.filter((reactionType) => reactionType !== type)
+                : [...previousTypes, type];
+            const previousSummary = this.commentReactionSummaries.get(ratingId) || { counts: {} };
+            const optimisticCounts = { ...(previousSummary.counts || {}) };
+
+            if (hasReaction) {
+                optimisticCounts[type] = Math.max(0, Number(optimisticCounts[type] || 0) - 1);
+            } else {
+                optimisticCounts[type] = Number(optimisticCounts[type] || 0) + 1;
+            }
+
+            const previousOrder = Array.isArray(previousSummary.order)
+                ? previousSummary.order
+                : Object.keys(previousSummary.counts || {}).filter((k) => Number(previousSummary.counts[k]) > 0);
+            const optimisticOrder = [...previousOrder];
+            if (!hasReaction && !optimisticOrder.includes(type)) {
+                optimisticOrder.push(type);
+            } else if (hasReaction && optimisticCounts[type] <= 0) {
+                const idx = optimisticOrder.indexOf(type);
+                if (idx !== -1) optimisticOrder.splice(idx, 1);
+            }
+
+            const optimisticSummary = {
+                ...previousSummary,
+                ratingId,
+                movieId,
+                counts: optimisticCounts,
+                order: optimisticOrder,
+                total: Object.values(optimisticCounts).reduce((sum, c) => sum + c, 0)
+            };
+
+            this.commentReactionPending.add(ratingId);
+            this.commentUserReactions.set(ratingId, nextTypes);
+            this.commentReactionSummaries.set(ratingId, optimisticSummary);
+
+            if (reactionBar && typeof CommentReactionBar !== 'undefined') {
+                CommentReactionBar.update(reactionBar, optimisticSummary, nextTypes, { isPending: true });
+            }
+
+            try {
+                await reactionService.toggleReaction({ userId: currentUser.uid, ratingId, movieId, type });
+                this.commentReactionSummaries.set(ratingId, optimisticSummary);
+                this.commentUserReactions.set(ratingId, nextTypes);
+                if (reactionBar && typeof CommentReactionBar !== 'undefined') {
+                    CommentReactionBar.update(reactionBar, optimisticSummary, nextTypes, { isPending: false });
+                }
+            } catch (error) {
+                this.commentUserReactions.set(ratingId, previousTypes);
+                this.commentReactionSummaries.set(ratingId, previousSummary);
+                if (reactionBar && typeof CommentReactionBar !== 'undefined') {
+                    CommentReactionBar.update(reactionBar, previousSummary, previousTypes, { isPending: false });
+                }
+                console.error('[CommentReactions] Failed to toggle reaction:', error);
+                const message = error?.code === 'MAX_COMMENT_REACTIONS'
+                    ? i18n.get('movie_details.max_reactions')
+                    : i18n.get('movie_details.error_loading_reviews');
+                Utils.showToast(message, 'error');
+            } finally {
+                this.commentReactionPending.delete(ratingId);
+                if (reactionBar && typeof CommentReactionBar !== 'undefined') {
+                    const latestSummary = this.commentReactionSummaries.get(ratingId) || optimisticSummary;
+                    const latestTypes = this.commentUserReactions.get(ratingId) || nextTypes;
+                    CommentReactionBar.update(reactionBar, latestSummary, latestTypes, { isPending: false });
+                }
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape') return;
+            const picker = document.querySelector('[data-comment-reaction-picker]:not([hidden])');
+            const reactionBar = picker?.closest('[data-comment-reactions]');
+            const trigger = reactionBar?.querySelector('[data-action="toggle-comment-reaction-picker"]');
+            if (!picker || !reactionBar || typeof CommentReactionBar === 'undefined') return;
+            event.preventDefault();
+            CommentReactionBar.setPickerOpen(reactionBar, false);
+            trigger?.focus();
+        });
+    }
+
+    async hydrateCommentReactions(ratings, currentUser) {
+        const reactionService = firebaseManager.getCommentReactionService?.();
+        if (!reactionService || !ratings?.length) return;
+        const ratingIds = ratings.map((rating) => rating.id).filter(Boolean);
+        try {
+            await reactionService.loadConfig?.();
+            if (!this.commentReactionConfigUnsubscribe) {
+                this.commentReactionConfigUnsubscribe = reactionService.subscribeToConfig?.(() => {
+                    this.refreshCommentReactionBars();
+                });
+            }
+            const [summaryMap, userReactionMap] = await Promise.all([
+                reactionService.getSummaryMap(ratingIds),
+                currentUser
+                    ? reactionService.getUserReactionMap(currentUser.uid, ratingIds)
+                    : Promise.resolve(new Map())
+            ]);
+            ratingIds.forEach((ratingId) => this.commentUserReactions.delete(ratingId));
+            summaryMap.forEach((summary, ratingId) => this.commentReactionSummaries.set(ratingId, summary));
+            userReactionMap.forEach((types, ratingId) => this.commentUserReactions.set(ratingId, types));
+            ratings.forEach((rating) => {
+                const reactionBar = document.querySelector(`[data-comment-reactions="true"][data-rating-id="${rating.id}"]`);
+                if (reactionBar) {
+                    CommentReactionBar.update(
+                        reactionBar,
+                        this.commentReactionSummaries.get(rating.id),
+                        this.commentUserReactions.get(rating.id) || null
+                    );
+                }
+            });
+        } catch (error) {
+            console.warn('[CommentReactions] Failed to hydrate reaction state:', error);
+        }
+    }
+
+    refreshCommentReactionBars() {
+        if (typeof CommentReactionBar === 'undefined') return;
+        document.querySelectorAll('[data-comment-reactions="true"]').forEach((bar) => {
+            const ratingId = bar.getAttribute('data-rating-id');
+            if (!ratingId) return;
+            CommentReactionBar.update(
+                bar,
+                this.commentReactionSummaries.get(ratingId),
+                this.commentUserReactions.get(ratingId) || null
+            );
+        });
+    }
+
+    createUserRatingsSection(ratings, userProfileMap, currentUserId, reactionSummaries = this.commentReactionSummaries, userReactions = this.commentUserReactions) {
+        if (!ratings || ratings.length === 0) {
             return `
                 <div class="user-ratings-empty">
                     <p>${i18n.get('movie_details.be_first')}</p>
@@ -1439,7 +2075,7 @@ class SearchManager {
             const userName = typeof Utils !== 'undefined' && Utils.getDisplayName
                 ? Utils.getDisplayName(userProfile, null)
                 : (userProfile?.displayName || rating.userName || i18n.get('navbar.sign_in').replace('Sign In', 'User').replace('Войти', 'Пользователь'));
-            const userPhoto = userProfile?.photoURL || rating.userPhoto || '/icons/icon48.png';
+            const userPhoto = userProfile?.photoURL || rating.userPhoto || IconUtils.getCurrentThemeIconPath(48);
             const isCurrentUser = currentUserId && rating.userId === currentUserId;
             const userId = rating.userId;
             
@@ -1459,7 +2095,7 @@ class SearchManager {
                                 <button class="user-rating-menu-btn" data-rating-id="${rating.id}" aria-label="${i18n.get('movie_details.user_ratings_title')}">
                                     <span><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg></span>
                                 </button>
-                                <div class="user-rating-menu-dropdown" id="menu-${rating.id}" style="display: none;">
+                                <div class="popover-surface user-rating-menu-dropdown" id="menu-${rating.id}" style="display: none;">
                                     <button class="menu-item edit-item" data-rating-id="${rating.id}" data-action="edit">
                                         <span class="menu-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></span>
                                         <span>${i18n.get('movie_details.edit')}</span>
@@ -1474,9 +2110,18 @@ class SearchManager {
                     </div>
                     ${(() => {
                         const normalizedComment = Utils.normalizeRatingComment(rating.comment);
-                        return normalizedComment ? `
-                            <div class="user-rating-comment">${Utils.parseSpoilers(this.escapeHtml(normalizedComment))}</div>
-                        ` : '';
+                        const commentHtml = normalizedComment
+                            ? `<div class="user-rating-comment">${Utils.parseSpoilers(this.escapeHtml(normalizedComment))}</div>`
+                            : '';
+                        const reactionHtml = typeof CommentReactionBar !== 'undefined'
+                            ? CommentReactionBar.render({
+                                ratingId: rating.id,
+                                movieId: rating.movieId || rating.kinopoiskId || this.currentMovieId,
+                                summary: reactionSummaries?.get(rating.id),
+                                userReaction: userReactions?.get(rating.id) || null
+                            })
+                            : '';
+                        return `${commentHtml}${reactionHtml}`;
                     })()}
                     <div class="user-rating-date">${formattedDate}</div>
                 </div>
@@ -1534,7 +2179,7 @@ class SearchManager {
     }
 
     createDetailedMovieCard(movie, userRating = null, bookmarkStatus = null) {
-        const posterUrl = movie.posterUrl || '/icons/icon48.png';
+        const posterUrl = movie.posterUrl || IconUtils.getCurrentThemeIconPath(48);
         const year = movie.year || '';
         const genres = typeof Utils !== 'undefined' && Utils.formatGenres ? Utils.formatGenres(movie.genres) : (movie.genres?.join(', ') || '');
         const countries = typeof Utils !== 'undefined' && Utils.formatCountries ? Utils.formatCountries(movie.countries) : (movie.countries?.join(', ') || '');
@@ -2041,7 +2686,7 @@ class SearchManager {
     }
 
     createMovieDetailHTML(movie) {
-        const posterUrl = movie.posterUrl || '/icons/icon48.png';
+        const posterUrl = movie.posterUrl || IconUtils.getCurrentThemeIconPath(48);
         const year = movie.year || '';
         const genres = typeof Utils !== 'undefined' && Utils.formatGenres ? Utils.formatGenres(movie.genres) : (movie.genres?.join(', ') || '');
         const kpRating = movie.kpRating || 0;
@@ -2086,7 +2731,7 @@ class SearchManager {
         this.currentUser = currentUser;
         
         // 1. Setup UI Content
-        this.elements.ratingMoviePoster.src = movie.posterUrl || '/icons/icon48.png';
+        this.elements.ratingMoviePoster.src = movie.posterUrl || IconUtils.getCurrentThemeIconPath(48);
         this.elements.ratingMoviePoster.alt = movie.name;
         this.elements.ratingMovieTitle.textContent = movie.name;
         this.elements.ratingMovieMeta.textContent = `${movie.year} • ${(typeof Utils !== 'undefined' && Utils.formatGenres ? Utils.formatGenres(movie.genres, 3) : (movie.genres?.slice(0, 3).join(', ') || ''))}`;
@@ -2617,25 +3262,92 @@ class SearchManager {
         // No-op: Using modal loader in results grid instead
     }
 
-    showInitialLoading() {
-        // Show loading in results area instead of full overlay
+    getSearchLoadingMarkup() {
+        return `
+            <div class="initial-loading-content search-loading-state" role="status" aria-live="polite">
+                <div class="loading-spinner-large" aria-hidden="true"></div>
+                <h3 class="loading-title">Ищем фильмы</h3>
+                <p class="loading-text">Сначала парсим результаты, затем загружаем данные фильмов...</p>
+            </div>
+        `;
+    }
+
+    showSearchLoading() {
         const resultsGrid = this.elements.resultsGrid;
-        if (resultsGrid) {
-            resultsGrid.classList.add('single-item');
-            resultsGrid.innerHTML = `
-                <div class="initial-loading-content">
-                    <div class="loading-spinner-large"></div>
-                    <h3 class="loading-title">Инициализация поиска</h3>
-                    <p class="loading-text">Подождите, пока загружается система поиска фильмов...</p>
-                </div>
-            `;
+        if (!resultsGrid) return;
+
+        this.hideTrigger();
+        this.hideEndOfResults();
+        resultsGrid.classList.add('single-item');
+        resultsGrid.setAttribute('aria-busy', 'true');
+
+        const existingLoader = resultsGrid.querySelector('.search-loading-state');
+        if (!existingLoader) {
+            resultsGrid.innerHTML = this.getSearchLoadingMarkup();
         }
+
+        const loaderDiagnostics = {
+            action: existingLoader ? 'reuse' : 'show',
+            generation: this.searchGeneration,
+            traceId: this.activeSearchTraceId || null,
+            elapsedMs: this.activeSearchTraceStartedAt
+                ? searchTraceDurationMs(this.activeSearchTraceStartedAt)
+                : null
+        };
+        if (this.activeSearchTraceId && this.activeSearchTraceStartedAt) {
+            this.logSearchTrace(
+                this.activeSearchTraceId,
+                this.searchGeneration,
+                this.activeSearchTraceStartedAt,
+                `loader:${loaderDiagnostics.action}`
+            );
+        } else {
+            console.info('[SearchLoader]', loaderDiagnostics);
+        }
+    }
+
+    hideSearchLoading() {
+        const resultsGrid = this.elements.resultsGrid;
+        if (!resultsGrid) return;
+
+        const hadLoader = Boolean(resultsGrid.querySelector('.search-loading-state'));
+        resultsGrid.removeAttribute('aria-busy');
+        resultsGrid.querySelector('.search-loading-state')?.remove();
+        if (resultsGrid.querySelector('.movie-card-component')) {
+            resultsGrid.classList.remove('single-item');
+        }
+
+        if (hadLoader) {
+            const loaderDiagnostics = {
+                action: 'hide',
+                generation: this.searchGeneration,
+                traceId: this.activeSearchTraceId || null,
+                elapsedMs: this.activeSearchTraceStartedAt
+                    ? searchTraceDurationMs(this.activeSearchTraceStartedAt)
+                    : null
+            };
+            if (this.activeSearchTraceId && this.activeSearchTraceStartedAt) {
+                this.logSearchTrace(
+                    this.activeSearchTraceId,
+                    this.searchGeneration,
+                    this.activeSearchTraceStartedAt,
+                    'loader:hide'
+                );
+            } else {
+                console.info('[SearchLoader]', loaderDiagnostics);
+            }
+        }
+    }
+
+    showInitialLoading() {
+        this.showSearchLoading();
     }
 
     hideInitialLoading() {
         // Restore default empty state in results grid
         const resultsGrid = this.elements.resultsGrid;
         if (resultsGrid) {
+            resultsGrid.removeAttribute('aria-busy');
             resultsGrid.classList.add('single-item');
             resultsGrid.innerHTML = `
                 <div class="empty-state">
@@ -2808,97 +3520,98 @@ class SearchManager {
         }
     }
 
-    async updateButtonStates() {
-        if (!this.currentUser) return;
+    applyBookmarkStates(movies, bookmarksMap) {
+        const actionConfigs = [
+            {
+                action: 'toggle-favorite',
+                attribute: 'data-is-favorite',
+                active: bookmark => bookmark?.status === 'favorite',
+                labels: { active: 'Remove from Favorites', inactive: 'Add to Favorites' }
+            },
+            {
+                action: 'toggle-watching',
+                attribute: 'data-is-watching',
+                active: bookmark => bookmark?.status === 'watching',
+                labels: { active: 'Remove from Watching', inactive: 'Add to Watching' }
+            },
+            {
+                action: 'toggle-watched',
+                attribute: 'data-is-watched',
+                active: bookmark => bookmark?.status === 'watched',
+                labels: { active: 'Remove from Watched', inactive: 'Add to Watched' }
+            },
+            {
+                action: 'toggle-watchlist',
+                attribute: 'data-is-in-watchlist',
+                active: bookmark => bookmark?.status === 'plan_to_watch',
+                labels: { active: 'Remove from Plan to Watch', inactive: 'Add to Plan to Watch' }
+            }
+        ];
+
+        movies.forEach(movie => {
+            const movieId = Number(movie?.kinopoiskId);
+            if (!Number.isInteger(movieId) || movieId <= 0) return;
+
+            const card = this.getSearchMovieCard(movieId);
+            if (!card) return;
+
+            const bookmark = bookmarksMap?.[String(movieId)] || bookmarksMap?.[movieId] || null;
+            actionConfigs.forEach(config => {
+                const button = card.querySelector(`[data-action="${config.action}"]`);
+                if (!button) return;
+
+                const isActive = Boolean(config.active(bookmark));
+                button.setAttribute(config.attribute, String(isActive));
+                Utils.toggleActionButton(button, isActive, config.labels);
+            });
+        });
+    }
+
+    async updateButtonStates(
+        movies = null,
+        searchGeneration = this.searchGeneration,
+        searchTraceId = this.activeSearchTraceId
+    ) {
+        if (!this.currentUser || !this.isCurrentSearchGeneration(searchGeneration)) return false;
+
+        const searchStartedAt = this.activeSearchTraceStartedAt || searchTraceNow();
+        const batchStartedAt = searchTraceNow();
+
+        const targetMovies = Array.isArray(movies) && movies.length > 0
+            ? movies
+            : (this.currentResults?.docs || []);
+        const movieIds = targetMovies
+            .map(movie => Number(movie?.kinopoiskId))
+            .filter(movieId => Number.isInteger(movieId) && movieId > 0);
+
+        if (movieIds.length === 0) return true;
 
         try {
+            this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'bookmark-batch:start', {
+                movieCount: movieIds.length,
+                uniqueMovieCount: new Set(movieIds).size
+            });
             const favoriteService = firebaseManager.getFavoriteService();
-            
-            // Update watchlist buttons (in menu)
-            const watchlistButtons = document.querySelectorAll('[data-action="toggle-watchlist"]');
-            for (const button of watchlistButtons) {
-                const movieId = parseInt(button.getAttribute('data-movie-id'));
-                if (movieId) {
-                    try {
-                        const bookmark = await favoriteService.getBookmark(this.currentUser.uid, movieId);
-                        const isInWatchlist = bookmark && bookmark.status === 'plan_to_watch';
-                        
-                        Utils.toggleActionButton(button, isInWatchlist, {
-                            active: 'Remove from Plan to Watch',
-                            inactive: 'Add to Plan to Watch'
-                        }, {
-                            active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>',
-                            inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>'
-                        });
-                    } catch (e) {
-                        console.error('Error updating watchlist button:', e);
-                    }
-                }
-            }
-            
-            // Update favorite buttons (in menu)
-            // Note: Menu items might be hidden, selecting them all is fine
-            const favoriteButtons = document.querySelectorAll('[data-action="toggle-favorite"]');
-            for (const button of favoriteButtons) {
-                const ratingId = button.getAttribute('data-rating-id');
-                const movieId = button.getAttribute('data-movie-id');
-                
-                if (ratingId && movieId && this.currentUser) {
-                    const isFavorite = await favoriteService.isFavorite(this.currentUser.uid, parseInt(movieId));
-                    
-                    Utils.toggleActionButton(button, isFavorite, {
-                        active: 'Remove from Favorites',
-                        inactive: 'Add to Favorites'
-                    }, {
-                        active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>',
-                        inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>'
-                    });
-                }
-            }
+            const bookmarksMap = await favoriteService.getBookmarksBatch(this.currentUser.uid, movieIds);
+            this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'bookmark-batch:end', {
+                stageDurationMs: searchTraceDurationMs(batchStartedAt),
+                bookmarkCount: Object.keys(bookmarksMap || {}).length
+            });
 
-            // Update watching buttons
-            const watchingButtons = document.querySelectorAll('[data-action="toggle-watching"]');
-            for (const button of watchingButtons) {
-                const movieId = parseInt(button.getAttribute('data-movie-id'));
-                if (movieId) {
-                    try {
-                        const bookmark = await favoriteService.getBookmark(this.currentUser.uid, movieId);
-                        const isWatching = bookmark && bookmark.status === 'watching';
-                        Utils.toggleActionButton(button, isWatching, {
-                            active: 'Remove from Watching',
-                            inactive: 'Add to Watching'
-                        }, {
-                            active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>',
-                            inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>'
-                        });
-                    } catch (e) {
-                        console.error('Error updating watching button:', e);
-                    }
-                }
+            if (!this.isCurrentSearchGeneration(searchGeneration)) {
+                this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'bookmark-batch:stale');
+                return false;
             }
-
-            // Update watched buttons
-            const watchedButtons = document.querySelectorAll('[data-action="toggle-watched"]');
-            for (const button of watchedButtons) {
-                const movieId = parseInt(button.getAttribute('data-movie-id'));
-                if (movieId) {
-                    try {
-                        const bookmark = await favoriteService.getBookmark(this.currentUser.uid, movieId);
-                        const isWatched = bookmark && bookmark.status === 'watched';
-                        Utils.toggleActionButton(button, isWatched, {
-                            active: 'Remove from Watched',
-                            inactive: 'Add to Watched'
-                        }, {
-                            active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>',
-                            inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>'
-                        });
-                    } catch (e) {
-                        console.error('Error updating watched button:', e);
-                    }
-                }
-            }
+            this.applyBookmarkStates(targetMovies, bookmarksMap || {});
+            return true;
         } catch (error) {
             console.error('Error updating button states:', error);
+            this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'bookmark-batch:error', {
+                stageDurationMs: searchTraceDurationMs(batchStartedAt),
+                errorName: error?.name || 'Error',
+                errorMessage: error?.message || String(error)
+            });
+            return false;
         }
     }
 
@@ -2937,7 +3650,7 @@ class SearchManager {
                     case 'modal':
                     case 'rating-modal':
                         // Set fallback icon for modal images
-                        img.src = '/icons/icon48.png';
+                        img.src = IconUtils.getCurrentThemeIconPath(48);
                         break;
                     
                     case 'frame':
@@ -3827,15 +4540,6 @@ class SearchManager {
 
 // Add event listeners for movie cards
 document.addEventListener('click', (e) => {
-    if (e.target.closest('.movie-card')) {
-        const movieCard = e.target.closest('.movie-card');
-        const movieId = movieCard.dataset.movieId;
-        const movie = searchManager.currentResults.docs.find(m => m.kinopoiskId == movieId);
-        if (movie) {
-            searchManager.showMovieModal(movie);
-        }
-    }
-    
     if (e.target.classList.contains('movie-detail-btn')) {
         e.stopPropagation();
         const movieId = e.target.dataset.movieId;
@@ -3906,33 +4610,6 @@ document.addEventListener('click', (e) => {
         }
     }
     
-    if (e.target.classList.contains('watchlist-btn-card')) {
-        e.stopPropagation();
-        const movieId = e.target.dataset.movieId;
-        
-        // Try to find movie in search results first
-        let movie = searchManager.currentResults.docs?.find(m => m.kinopoiskId == movieId);
-        
-        // If not found in search results, check if it's the selected movie (detail page)
-        if (!movie && searchManager.selectedMovie && searchManager.selectedMovie.kinopoiskId == movieId) {
-            movie = searchManager.selectedMovie;
-        }
-        
-        if (movie) {
-            searchManager.toggleWatchlist(movie, e.target);
-        }
-    }
-    
-    if (e.target.classList.contains('favorite-btn-card')) {
-        e.stopPropagation();
-        const ratingId = e.target.getAttribute('data-rating-id');
-        const isFavorite = e.target.getAttribute('data-is-favorite') === 'true';
-        const movieId = e.target.getAttribute('data-movie-id');
-        
-        if (ratingId) {
-            searchManager.toggleFavorite(ratingId, isFavorite, e.target, movieId);
-        }
-    }
 });
 
 // Initialize search manager when DOM is loaded

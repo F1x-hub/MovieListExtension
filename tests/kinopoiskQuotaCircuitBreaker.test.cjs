@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 
 const KINOPOISK_CONFIG = require('../src/shared/config/kinopoisk.config.js');
+assert.equal(KINOPOISK_CONFIG.QUOTA_STORAGE_KEY, 'kp_quota_exhausted_until_v2');
 globalThis.KINOPOISK_CONFIG = KINOPOISK_CONFIG;
 globalThis.quotaTracker = { track() {} };
 globalThis.chrome = {

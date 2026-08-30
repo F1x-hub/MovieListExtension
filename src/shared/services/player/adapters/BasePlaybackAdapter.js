@@ -264,6 +264,25 @@ class BasePlaybackAdapter {
     }
 
     /**
+     * Declares whether this provider has completed the stricter watch-room
+     * verification. Providers are deliberately opt-in: ordinary playback
+     * capability, an iframe mount, or a matching duration is not enough to
+     * synchronize a room timeline.
+     *
+     * @returns {{observeTime: boolean, play: boolean, pause: boolean, seek: boolean, duration: boolean, lockGuestTimeline: boolean}}
+     */
+    getRoomSyncCapabilities() {
+        return {
+            observeTime: false,
+            play: false,
+            pause: false,
+            seek: false,
+            duration: false,
+            lockGuestTimeline: false
+        };
+    }
+
+    /**
      * Checks if this adapter can fulfill the requested selection.
      * @param {Object} selection Canonical PlaybackSelection
      * @returns {boolean}

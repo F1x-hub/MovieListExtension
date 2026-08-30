@@ -26,6 +26,13 @@
     let structuredPlaybackState = null; // Structured provider playback state (Phase 5B)
     let canonicalPickerRequested = false;
     let providerContentErrorReported = false;
+    let roomSyncSubscriptionId = null;
+    let roomSyncTelemetryVideo = null;
+    let roomSyncTelemetryDisposers = [];
+    let lastRoomSyncTimeupdateAt = 0;
+    // The room bridge is deliberately timeline-only. Do not add player
+    // preferences (audio, subtitles, quality, volume, speed) to this protocol.
+    const ROOM_SYNC_TIMELINE_ACTIONS = new Set(['play', 'pause', 'seek']);
     
     let episodeDropdown = null;
 
@@ -105,13 +112,110 @@
         return false;
     }
 
+    function getRoomSyncVideo() {
+        return permanentVideo || document.querySelector('video:not(.ghost-video)');
+    }
+
+    function clearRoomSyncTelemetry() {
+        roomSyncTelemetryDisposers.forEach(dispose => dispose());
+        roomSyncTelemetryDisposers = [];
+        roomSyncTelemetryVideo = null;
+    }
+
+    // KinoGo can replace its media element while the iframe itself stays alive.
+    // Keep the room subscription attached to the current media element instead
+    // of silently observing the detached one.
+    function setPermanentVideo(video) {
+        permanentVideo = video || null;
+        if (!roomSyncSubscriptionId) return;
+        if (!permanentVideo) {
+            clearRoomSyncTelemetry();
+            return;
+        }
+        attachRoomSyncTelemetry();
+    }
+
+    function postRoomSyncMessage(target, origin, payload) {
+        if (!target || target !== window.parent) return;
+        try {
+            target.postMessage(payload, origin && origin !== 'null' ? origin : '*');
+        } catch (error) {
+            console.warn('[RoomSyncProbe] Could not notify parent:', error.message);
+        }
+    }
+
+    function roomSyncSnapshot(video = getRoomSyncVideo()) {
+        const duration = Number(video?.duration);
+        const currentTime = Number(video?.currentTime);
+        return {
+            available: Boolean(video),
+            currentTimeMs: Number.isFinite(currentTime) ? Math.max(0, Math.round(currentTime * 1000)) : null,
+            durationMs: Number.isFinite(duration) && duration > 0 ? Math.round(duration * 1000) : null,
+            paused: video ? Boolean(video.paused) : null,
+            readyState: video ? Number(video.readyState || 0) : 0,
+        };
+    }
+
+    function emitRoomSyncTelemetry(kind) {
+        if (!roomSyncSubscriptionId) return;
+        const now = Date.now();
+        if (kind === 'timeupdate' && now - lastRoomSyncTimeupdateAt < 750) return;
+        if (kind === 'timeupdate') lastRoomSyncTimeupdateAt = now;
+        if (kind !== 'timeupdate') {
+            console.info('[RoomSyncTrace] telemetry-emitted', { kind, subscriptionActive: true });
+        }
+        window.parent?.postMessage({
+            type: 'ROOM_SYNC_TELEMETRY',
+            subscriptionId: roomSyncSubscriptionId,
+            kind,
+            observedAtMs: now,
+            ...roomSyncSnapshot(),
+        }, '*');
+    }
+
+    function attachRoomSyncTelemetry() {
+        const video = getRoomSyncVideo();
+        if (!video || roomSyncTelemetryVideo === video) return;
+        clearRoomSyncTelemetry();
+        roomSyncTelemetryVideo = video;
+        ['loadedmetadata', 'play', 'pause', 'seeking', 'seeked', 'ended', 'timeupdate'].forEach(kind => {
+            const listener = () => emitRoomSyncTelemetry(kind);
+            video.addEventListener(kind, listener);
+            roomSyncTelemetryDisposers.push(() => video.removeEventListener(kind, listener));
+        });
+    }
+
+    async function executeRoomSyncCommand(command) {
+        const action = String(command?.action || '');
+        if (!ROOM_SYNC_TIMELINE_ACTIONS.has(action)) {
+            return { ok: false, code: 'INVALID_COMMAND' };
+        }
+        const video = getRoomSyncVideo();
+        if (!video) return { ok: false, code: 'VIDEO_UNAVAILABLE' };
+        if (action === 'play') {
+            await video.play();
+        } else if (action === 'pause') {
+            video.pause();
+        } else if (action === 'seek') {
+            const targetMs = Number(command.positionMs);
+            const durationMs = Number(video.duration) * 1000;
+            if (!Number.isFinite(targetMs) || targetMs < 0
+                || (Number.isFinite(durationMs) && durationMs > 0 && targetMs > durationMs)) {
+                return { ok: false, code: 'INVALID_POSITION' };
+            }
+            video.currentTime = targetMs / 1000;
+        }
+        attachRoomSyncTelemetry();
+        return { ok: true, code: 'APPLIED' };
+    }
+
     window.addEventListener('message', (event) => {
         if (event.data?.type === 'RESET_PERMANENT_VIDEO') {
             if (hlsInstance) {
                 try { hlsInstance.destroy?.(); } catch { /* ignore */ }
                 hlsInstance = null;
             }
-            permanentVideo = null;
+            setPermanentVideo(null);
             activeWrapper = null;
         } else if (event.data?.type === 'SEASONVAR_PLAYBACK_STATE') {
             structuredPlaybackState = event.data;
@@ -195,6 +299,49 @@
                 acknowledge('UNAVAILABLE', 'provider-native-selector-not-ready');
             };
             void tryDispatch();
+        } else if (event.source === window.parent && event.data?.type === 'ROOM_SYNC_PROBE') {
+            const video = getRoomSyncVideo();
+            postRoomSyncMessage(event.source, event.origin, {
+                type: 'ROOM_SYNC_PROBE_RESULT',
+                requestId: event.data.requestId,
+                capabilities: {
+                    observeTime: Boolean(video),
+                    play: Boolean(video && typeof video.play === 'function'),
+                    pause: Boolean(video && typeof video.pause === 'function'),
+                    seek: Boolean(video && Number.isFinite(Number(video.duration)) && Number(video.duration) > 0),
+                    duration: Boolean(video && Number.isFinite(Number(video.duration)) && Number(video.duration) > 0),
+                    lockGuestTimeline: false,
+                },
+                ...roomSyncSnapshot(video),
+            });
+        } else if (event.source === window.parent && event.data?.type === 'ROOM_SYNC_SUBSCRIBE') {
+            roomSyncSubscriptionId = String(event.data.subscriptionId || '');
+            if (!/^[A-Za-z0-9_-]{16,128}$/.test(roomSyncSubscriptionId)) {
+                roomSyncSubscriptionId = null;
+                return;
+            }
+            console.info('[RoomSyncTrace] subscription-received', { subscriptionActive: true });
+            attachRoomSyncTelemetry();
+            emitRoomSyncTelemetry('snapshot');
+        } else if (event.source === window.parent && event.data?.type === 'ROOM_SYNC_COMMAND') {
+            const requestId = String(event.data.requestId || '');
+            if (!/^[A-Za-z0-9_-]{16,128}$/.test(requestId)) return;
+            void executeRoomSyncCommand(event.data).then(result => {
+                postRoomSyncMessage(event.source, event.origin, {
+                    type: 'ROOM_SYNC_COMMAND_RESULT',
+                    requestId,
+                    ...result,
+                    ...roomSyncSnapshot(),
+                });
+            }).catch(error => {
+                postRoomSyncMessage(event.source, event.origin, {
+                    type: 'ROOM_SYNC_COMMAND_RESULT',
+                    requestId,
+                    ok: false,
+                    code: error?.name === 'NotAllowedError' ? 'PLAYBACK_BLOCKED' : 'COMMAND_FAILED',
+                    ...roomSyncSnapshot(),
+                });
+            });
         }
     });
 
@@ -636,7 +783,7 @@
     window.addEventListener('message', (e) => {
         if (e.data && e.data.type === 'RESET_PERMANENT_VIDEO') {
             teardownActiveWrapper();
-            permanentVideo = null;
+            setPermanentVideo(null);
         }
     });
 
@@ -762,7 +909,7 @@
                     }
                     oldVideo.remove(); // Remove from DOM
                 }
-                permanentVideo = null; // Clear reference strictly before reassigning
+                setPermanentVideo(null); // Clear reference strictly before reassigning
                 
                 // Configure new video from site
                 siteVideo.removeAttribute('controls');
@@ -784,7 +931,7 @@
                 existingWrapper.insertBefore(siteVideo, controlsOverlay);
                 
                 // Update permanent video reference
-                permanentVideo = siteVideo;
+                setPermanentVideo(siteVideo);
                 
                 // Re-attach event listeners to new video
                 if (typeof window._movieExtension_setupListeners === 'function') {
@@ -903,7 +1050,7 @@
         
         // IMPORTANT: Use site's original video element as our permanent element
         // This is critical for blob: URLs which are tied to the specific element
-        permanentVideo = siteVideo;
+        setPermanentVideo(siteVideo);
         lastRealSource = siteVideo.src || siteVideo.currentSrc; // Initial source track
         
         // Configure the existing video element
@@ -1300,13 +1447,18 @@
                     font-variant-numeric: tabular-nums;
                     letter-spacing: .01em;
                 }
-                .native-player-wrapper .player-volume-popover,
-                .native-player-wrapper .player-settings-menu {
-                    background: rgba(24, 24, 27, .94) !important;
-                    border: 1px solid rgba(255, 255, 255, .1) !important;
-                    border-radius: 14px !important;
-                    box-shadow: 0 20px 50px rgba(0, 0, 0, .48) !important;
-                    backdrop-filter: blur(18px) saturate(130%);
+                .native-player-wrapper .popover-surface {
+                    --popover-surface-bg: rgba(24, 24, 27, .94);
+                    --popover-surface-border: rgba(255, 255, 255, .1);
+                    --popover-surface-radius: 14px;
+                    --popover-surface-shadow: 0 20px 50px rgba(0, 0, 0, .48);
+                    --popover-surface-backdrop: blur(18px) saturate(130%);
+                    background: var(--popover-surface-bg) !important;
+                    border: 1px solid var(--popover-surface-border) !important;
+                    border-radius: var(--popover-surface-radius) !important;
+                    box-shadow: var(--popover-surface-shadow) !important;
+                    backdrop-filter: var(--popover-surface-backdrop) !important;
+                    -webkit-backdrop-filter: var(--popover-surface-backdrop) !important;
                 }
                 .native-player-wrapper .player-settings-menu {
                     box-sizing: border-box;
@@ -1457,7 +1609,9 @@
                 .native-player-wrapper .player-volume-popover {
                     bottom: 42px !important;
                     width: 38px !important;
-                    border-radius: 12px !important;
+                    --popover-surface-radius: 12px;
+                    --popover-surface-shadow: 0 16px 36px rgba(0, 0, 0, .42);
+                    --popover-surface-backdrop: blur(16px);
                 }
                 @media (max-width: 600px) {
                     .native-player-wrapper .player-center-action {
@@ -2925,15 +3079,11 @@
 
             // Custom Vertical Slider
             const sliderContainer = document.createElement('div');
-            sliderContainer.className = 'player-volume-popover';
+            sliderContainer.className = 'popover-surface player-volume-popover';
             sliderContainer.style.position = 'absolute';
-            sliderContainer.style.bottom = '35px'; // Above icon
             sliderContainer.style.left = '50%';
             sliderContainer.style.transform = 'translateX(-50%)';
-            sliderContainer.style.width = '32px';
             sliderContainer.style.height = '100px';
-            sliderContainer.style.backgroundColor = 'rgba(20, 20, 25, 0.9)'; // Dark box
-            sliderContainer.style.borderRadius = '16px';
             sliderContainer.style.padding = '12px 0';
             sliderContainer.style.display = 'none'; 
             sliderContainer.style.flexDirection = 'column';
@@ -3431,22 +3581,13 @@
             
             // Settings Menu Container
             const settingsMenu = document.createElement('div');
-            settingsMenu.className = 'player-settings-menu';
+            settingsMenu.className = 'popover-surface player-settings-menu';
             settingsMenu.style.position = 'absolute';
             settingsMenu.style.bottom = '72px';
             settingsMenu.style.right = '8px';
-            settingsMenu.style.backgroundColor = 'rgba(24, 24, 27, 0.94)';
-            settingsMenu.style.borderRadius = '14px';
-            settingsMenu.style.padding = '6px';
-            settingsMenu.style.minWidth = '268px';
             settingsMenu.style.display = 'none';
             settingsMenu.style.flexDirection = 'column';
             settingsMenu.style.zIndex = '2147483645';
-            settingsMenu.style.backdropFilter = 'blur(10px)';
-            settingsMenu.style.boxShadow = '0 4px 12px rgba(0,0,0,0.5)';
-            settingsMenu.style.color = 'white';
-            settingsMenu.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
-            settingsMenu.style.fontSize = '14px';
             settingsMenu.setAttribute('role', 'menu');
 
             const createMenuItem = (label, value) => {
@@ -3650,7 +3791,55 @@
                 return text || 'Auto';
             };
 
+            const RUTUBE_QUALITY_LADDER = [2160, 1440, 1080, 720, 480, 360, 240, 144];
+
+            const getNativeHlsQualityOptions = () => {
+                const hls = permanentVideo?._movieExtensionHls;
+                const levels = Array.isArray(hls?.levels) ? hls.levels : [];
+                if (!hls || levels.length < 2) return [];
+
+                const variantsByHeight = new Map();
+                levels.forEach((level, index) => {
+                    const height = Number(level?.height);
+                    if (!Number.isFinite(height) || height <= 0) return;
+                    const current = variantsByHeight.get(height);
+                    if (!current || Number(level?.bitrate || 0) > Number(current.level?.bitrate || 0)) {
+                        variantsByHeight.set(height, { index, level });
+                    }
+                });
+                const variants = [...variantsByHeight.values()]
+                    .sort((left, right) => right.level.height - left.level.height);
+                if (variants.length < 2) return [];
+
+                const isRutube = permanentVideo?.dataset?.playerProvider === 'rutube';
+                const firstRutubeQuality = Math.max(0, RUTUBE_QUALITY_LADDER.length - variants.length);
+                const selectLevel = levelIndex => {
+                    hls.currentLevel = levelIndex;
+                    hls.nextLevel = levelIndex;
+                };
+
+                return [
+                    {
+                        label: 'Автоматически',
+                        isActive: hls.autoLevelEnabled,
+                        action: () => { hls.currentLevel = -1; }
+                    },
+                    ...variants.map(({ index, level }, rank) => ({
+                        // Rutube's direct stream reports non-display internal heights
+                        // (for example 800). Its own player presents a fixed quality
+                        // ladder, so use that user-facing naming here too.
+                        label: isRutube
+                            ? `${RUTUBE_QUALITY_LADDER[firstRutubeQuality + rank]}p`
+                            : `${Math.round(level.height)}p`,
+                        isActive: !hls.autoLevelEnabled && hls.currentLevel === index,
+                        action: () => selectLevel(index)
+                    }))
+                ];
+            };
+
             const getQualityOptions = () => {
+                const nativeHlsOptions = getNativeHlsQualityOptions();
+                if (nativeHlsOptions.length > 0) return nativeHlsOptions;
                 const keywords = ['2160p', '1440p', '1080p', '720p', '480p', '360p', 'Auto', '4k', 'Ultra'];
                 const rawOptions = findControlOptions(keywords);
                 return rawOptions.map(opt => ({
@@ -3671,7 +3860,13 @@
                     label: opt.label,
                     isActive: opt.isActive, 
                     action: () => {
-                        opt.element.click();
+                        // Native HLS variants provide their own action; provider DOM
+                        // options retain the legacy element-click behaviour.
+                        if (typeof opt.action === 'function') {
+                            opt.action();
+                        } else {
+                            opt.element?.click?.();
+                        }
                     },
                     refreshFn: () => {
                         setTimeout(renderQualityView, 200); 
@@ -4260,7 +4455,7 @@
             teardownActiveWrapper();
         }
         if (permanentVideo && !document.contains(permanentVideo)) {
-            permanentVideo = null;
+            setPermanentVideo(null);
             activeWrapper = null;
         }
         // First check if we need to intercept new video elements

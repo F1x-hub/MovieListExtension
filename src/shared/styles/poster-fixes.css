@@ -1,17 +1,5 @@
 /* Poster size fixes for Movie Rating Extension */
 
-/* Ensure consistent poster sizing */
-.movie-poster-container {
-    position: relative;
-    aspect-ratio: 2/3;
-    width: 100%;
-    min-height: 200px;
-    max-height: 400px;
-    background: var(--secondary-bg);
-    border-radius: var(--radius-md) var(--radius-md) 0 0;
-    overflow: hidden;
-}
-
 .movie-poster {
     width: 100%;
     height: 100%;
@@ -70,56 +58,10 @@
 }
 
 /* Ensure proper aspect ratio for all screen sizes */
-@media (max-width: 768px) {
-    .movie-poster-container {
-        min-height: 180px;
-        max-height: 300px;
-    }
-}
-
-@media (max-width: 480px) {
-    .movie-poster-container {
-        min-height: 160px;
-        max-height: 250px;
-    }
-}
-
-@media (max-width: 320px) {
-    .movie-poster-container {
-        min-height: 140px;
-        max-height: 200px;
-    }
-}
-
-/* Fix for grid layout */
-.results-grid .movie-card {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-}
-
-.results-grid .movie-poster-container {
-    flex-shrink: 0;
-}
-
 .results-grid .movie-info {
     flex: 1;
     display: flex;
     flex-direction: column;
-}
-
-.results-grid .movie-actions {
-    flex-shrink: 0;
-    margin-top: auto;
-}
-
-/* Ensure posters don't break layout */
-.movie-card {
-    overflow: hidden;
-}
-
-.movie-card:hover .movie-poster {
-    transform: scale(1.05);
 }
 
 /* Fix for poster loading states */

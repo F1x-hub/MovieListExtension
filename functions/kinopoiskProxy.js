@@ -146,6 +146,7 @@ async function relayUpstreamResponse(upstream, res) {
 function createKinopoiskProxyHandler({
   getSecretValue,
   verifyIdToken,
+  keyPool = null,
   fetchImpl = (...args) => fetch(...args),
   sleepImpl = sleep
 }) {
@@ -185,23 +186,58 @@ function createKinopoiskProxyHandler({
       return;
     }
 
-    let apiKeys;
+    let keyEntries;
+    let configuredKeyCount = 0;
     try {
-      apiKeys = parseKinopoiskApiKeys(await getSecretValue());
+      if (keyPool) {
+        const poolState = await keyPool.getActiveKeys();
+        if (Array.isArray(poolState)) {
+          keyEntries = poolState;
+          configuredKeyCount = poolState.length;
+        } else {
+          keyEntries = Array.isArray(poolState?.keys) ? poolState.keys : [];
+          configuredKeyCount = Number(poolState?.configuredCount) || 0;
+        }
+      }
+
+      // Keep the aggregate secret as a migration bridge until the operator
+      // completes the registry cutover. Once registry rows exist, disabled or
+      // rejected keys must not silently re-enter through this fallback.
+      if (keyPool && configuredKeyCount > 0) {
+        keyEntries = keyEntries.map((entry) => ({
+          ...entry,
+          value: entry.value || entry.secret,
+        })).filter((entry) => entry.value);
+      } else {
+        const apiKeys = parseKinopoiskApiKeys(await getSecretValue());
+        keyEntries = apiKeys.map((value, index) => ({
+          keyId: `legacy-${index + 1}`,
+          provider: "kinopoisk",
+          value,
+        }));
+        configuredKeyCount = keyEntries.length;
+      }
     } catch (error) {
-      console.error("[kinopoiskProxy] Secret read failed:", error?.message || "unknown error");
+      console.error("[kinopoiskProxy] Credential load failed:", error?.message || "unknown error");
       sendProxyError(res, 503, "KP_UPSTREAM_UNAVAILABLE", "Kinopoisk proxy is not configured", true);
       return;
     }
 
-    if (apiKeys.length === 0) {
+    if (keyEntries.length === 0 && configuredKeyCount > 0) {
+      console.warn("[kinopoiskProxy] All active API keys are temporarily unavailable");
+      sendProxyError(res, 503, "KP_QUOTA_EXHAUSTED", "Kinopoisk API credentials are unavailable", true);
+      return;
+    }
+
+    if (keyEntries.length === 0) {
       console.error("[kinopoiskProxy] No API keys configured");
       sendProxyError(res, 503, "KP_UPSTREAM_UNAVAILABLE", "Kinopoisk proxy is not configured", true);
       return;
     }
 
     let rejectedKeyCount = 0;
-    for (const apiKey of apiKeys) {
+    for (const keyEntry of keyEntries) {
+      const apiKey = keyEntry.value;
       for (let retry = 0; retry <= MAX_RETRIES_PER_KEY; retry++) {
         let upstream;
         try {
@@ -218,6 +254,11 @@ function createKinopoiskProxyHandler({
 
         if ([401, 402, 403].includes(upstream.status)) {
           rejectedKeyCount += 1;
+          try {
+            keyPool?.reportOutcome({ keyId: keyEntry.keyId, outcome: "rejected" });
+          } catch (error) {
+            console.warn("[kinopoiskProxy] Failed to update key pool:", error?.message || "unknown error");
+          }
           break;
         }
 
@@ -238,12 +279,17 @@ function createKinopoiskProxyHandler({
           return;
         }
 
+        try {
+          keyPool?.reportOutcome({ keyId: keyEntry.keyId, outcome: "success" });
+        } catch (error) {
+          console.warn("[kinopoiskProxy] Failed to update key pool:", error?.message || "unknown error");
+        }
         await relayUpstreamResponse(upstream, res);
         return;
       }
     }
 
-    if (rejectedKeyCount === apiKeys.length) {
+    if (rejectedKeyCount === keyEntries.length) {
       console.warn("[kinopoiskProxy] All configured API keys were rejected");
       sendProxyError(res, 503, "KP_QUOTA_EXHAUSTED", "Kinopoisk API credentials are unavailable", true);
       return;

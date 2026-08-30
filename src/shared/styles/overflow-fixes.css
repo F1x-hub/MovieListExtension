@@ -18,16 +18,8 @@
     max-width: 100%;
 }
 
-/* Fix button overflow */
-.btn {
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
 /* Fix flex container overflow */
 .rating-item,
-.movie-card,
 .search-result-item {
     min-width: 0;
     overflow: hidden;
@@ -96,18 +88,6 @@
     overflow-wrap: anywhere;
 }
 
-/* Fix modal overflow */
-.modal {
-    max-width: 90vw;
-    max-height: 90vh;
-    overflow: hidden;
-}
-
-.modal-body {
-    overflow-y: auto;
-    max-height: 60vh;
-}
-
 /* Fix search results overflow */
 .search-results {
     max-width: 100%;
@@ -139,11 +119,6 @@
     .rating-poster {
         width: 60px;
         height: 90px;
-    }
-    
-    .btn {
-        padding: var(--space-xs) var(--space-sm);
-        font-size: var(--font-size-xs);
     }
     
     .popup-header {
@@ -183,16 +158,6 @@ body {
 .grid-item {
     min-width: 0;
     overflow: hidden;
-}
-
-/* Fix for long movie titles in cards */
-.movie-card .movie-title {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    line-height: 1.3;
-    max-height: 2.6em;
 }
 
 /* Fix for rating scores layout */

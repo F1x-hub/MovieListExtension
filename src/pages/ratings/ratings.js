@@ -594,19 +594,29 @@ class RatingsPageManager {
             } catch {
                 // Ignore local storage parse error
             }
-            
+
+            const cachedMovie = rating.movie && typeof rating.movie === 'object' ? rating.movie : null;
             const fallbackMovie = {
-                kinopoiskId: rating.movieId,
-                name: 'Loading...',
-                year: '',
-                genres: [],
-                description: '',
-                posterUrl: ''
+                ...(cachedMovie || {}),
+                kinopoiskId: cachedMovie?.kinopoiskId || rating.movieId,
+                name: cachedMovie?.name || 'Loading...',
+                year: cachedMovie?.year || '',
+                genres: cachedMovie?.genres || [],
+                description: cachedMovie?.description || '',
+                posterUrl: cachedMovie?.posterUrl || ''
             };
+
+            const preferredMovie = movieData || cachedMovie || fallbackMovie;
+            const metadataMerger = typeof window !== 'undefined'
+                ? window.MovieCacheService?.mergeMovieMetadata
+                : null;
+            const hydratedMovie = metadataMerger
+                ? metadataMerger(preferredMovie, movieData ? (cachedMovie || fallbackMovie) : fallbackMovie)
+                : { ...fallbackMovie, ...(movieData || {}) };
             
             return {
                 ...rating,
-                movie: movieData || fallbackMovie,
+                movie: hydratedMovie,
                 averageRating: rating.averageRating || 0, // Fallback
                 ratingsCount: rating.ratingsCount || 0
             };
@@ -630,6 +640,26 @@ class RatingsPageManager {
         const sharedRatings = await this.loadSharedProviderRatings();
         const merged = mergeProviderRatingsIntoMovies(withPreviousRatings, sharedRatings);
         return merged;
+    }
+
+    mergeCachedMovieMetadata(items, movieCacheService) {
+        const previousMovies = new Map(
+            (this.movies || [])
+                .map(item => {
+                    const movie = item?.movie;
+                    const movieId = movie?.kinopoiskId || item?.movieId || item?.id;
+                    return movieId && movie ? [String(movieId), movie] : null;
+                })
+                .filter(Boolean)
+        );
+
+        return (items || []).map(movie => {
+            const movieId = movie?.kinopoiskId || movie?.id;
+            const cachedMovie = previousMovies.get(String(movieId));
+            return cachedMovie
+                ? movieCacheService.mergeMovieMetadata(movie, cachedMovie)
+                : movie;
+        });
     }
 
     async saveRatingsToCache(ratings, users) {
@@ -709,7 +739,7 @@ class RatingsPageManager {
                     return;
                 }
 
-                const pagedMovies = pagedResult.movies;
+                const pagedMovies = this.mergeCachedMovieMetadata(pagedResult.movies, movieCacheService);
                 this.lastMovieDoc = pagedResult.lastDoc;
                 this.hasMore = pagedResult.hasMore;
 
@@ -851,7 +881,7 @@ class RatingsPageManager {
                 return;
             }
 
-            const pagedMovies = pagedResult.movies;
+            const pagedMovies = this.mergeCachedMovieMetadata(pagedResult.movies, movieCacheService);
             this.lastMovieDoc = pagedResult.lastDoc;
             this.hasMore = pagedResult.hasMore;
 
@@ -2409,32 +2439,6 @@ class RatingsPageManager {
             if (typeof Utils !== 'undefined') {
                 Utils.showToast('Ошибка. Попробуйте снова', 'error');
             }
-        }
-    }
-
-    async updateWatchlistButtonStates() {
-        if (!this.currentUser) return;
-
-        try {
-            const watchlistService = firebaseManager.getWatchlistService();
-            const watchlistButtons = document.querySelectorAll('.watchlist-btn-card');
-            
-            for (const button of watchlistButtons) {
-                const movieId = parseInt(button.getAttribute('data-movie-id'));
-                if (movieId) {
-                    const isInWatchlist = await watchlistService.isInWatchlist(this.currentUser.uid, movieId);
-                    
-                    if (isInWatchlist) {
-                        button.classList.add('active');
-                        button.title = 'Удалить из Watchlist';
-                    } else {
-                        button.classList.remove('active');
-                        button.title = 'Добавить в Watchlist';
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('Error updating watchlist button states:', error);
         }
     }
 

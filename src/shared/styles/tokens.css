@@ -1,0 +1,56 @@
+/**
+ * Canonical semantic UI tokens.
+ *
+ * Shared UI components consume these roles instead of defining page-specific
+ * palettes. Legacy variables remain fallbacks during the visual migration.
+ */
+:root {
+    /* Surfaces and content */
+    --ui-color-page: var(--theme-bg-primary, var(--primary-bg, #09090b));
+    --ui-color-surface: var(--theme-bg-secondary, var(--secondary-bg, #121214));
+    --ui-color-surface-muted: var(--theme-bg-tertiary, var(--accent-bg, #18181b));
+    --ui-color-surface-card: var(--theme-bg-card, var(--secondary-bg, #121214));
+    --ui-color-content: var(--theme-text-primary, var(--text-primary, #f4f4f5));
+    --ui-color-content-muted: var(--theme-text-secondary, var(--text-secondary, #a1a1aa));
+    --ui-color-content-subtle: var(--theme-text-muted, var(--text-muted, #a1a1aa));
+    --ui-color-border: var(--theme-border, rgba(255, 255, 255, 0.08));
+    --ui-color-border-hover: var(--theme-border-hover, rgba(255, 255, 255, 0.16));
+    /* Canonical theme roles win over legacy page-local aliases. */
+    --ui-color-interactive: var(--theme-accent, var(--accent-color, #fafafa));
+    --ui-color-interactive-hover: var(--theme-accent-hover, var(--accent-hover, #e4e4e7));
+
+    /* Semantic exceptions: reserve chromatic color for meaning, not decoration. */
+    --ui-color-status-success: var(--success, #28a745);
+    --ui-color-status-warning: var(--warning, #ffc107);
+    --ui-color-status-danger: var(--danger, #dc3545);
+    --ui-color-status-info: var(--info, #17a2b8);
+
+    /* Controls */
+    --ui-control-padding-y: var(--space-sm, 8px);
+    --ui-control-padding-x: var(--space-md, 16px);
+    --ui-control-radius: var(--radius-md, 8px);
+    --ui-control-font-size: var(--font-size-sm, 14px);
+    --ui-control-font-weight: 500;
+    --ui-control-gap: var(--space-xs, 4px);
+    --ui-control-transition: var(--transition-base, 0.3s ease);
+
+    /* Button semantic roles — neutral Yin-Yang chrome. */
+    --ui-button-primary-bg: linear-gradient(135deg, #ffffff 0%, #e4e4e7 100%);
+    --ui-button-primary-bg-hover: linear-gradient(135deg, #f4f4f5 0%, #d4d4d8 100%);
+    --ui-button-primary-content: #09090b;
+    --ui-button-primary-content-hover: #000000;
+    --ui-button-primary-border: rgba(255, 255, 255, 0.15);
+    --ui-button-primary-shadow-hover: 0 6px 20px rgba(255, 255, 255, 0.2);
+    --ui-button-danger-bg: #ef4444;
+    --ui-button-danger-bg-hover: #dc2626;
+    --ui-button-danger-shadow-hover: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+.light-theme {
+    --ui-button-primary-bg: linear-gradient(135deg, #09090b 0%, #27272a 100%);
+    --ui-button-primary-bg-hover: linear-gradient(135deg, #18181b 0%, #3f3f46 100%);
+    --ui-button-primary-content: #ffffff;
+    --ui-button-primary-content-hover: #ffffff;
+    --ui-button-primary-border: rgba(0, 0, 0, 0.1);
+    --ui-button-primary-shadow-hover: 0 6px 20px rgba(9, 9, 11, 0.2);
+}

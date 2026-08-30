@@ -60,7 +60,7 @@ function renderMonth(monthKey, dayGroups, isFirstMonth) {
             return `
                 <div class="calendar-episode-row${episode.isMovie ? ' movie-premiere' : ''}">
                     <div class="calendar-episode-info">
-                        <span class="calendar-show-name" data-kinoid="${episode.kinoId || ''}">${escapeHtml(episode.showName)}</span>
+                        <span class="calendar-show-name" data-kinoid="${episode.kinoId || ''}" data-tmdbid="${episode.tmdbId || ''}">${escapeHtml(episode.showName)}</span>
                         <div class="calendar-ep-label">${escapeHtml(episodeLabel)}</div>
                     </div>
                     <div class="calendar-countdown${countdownToday ? ' today-badge' : ''}">${text}</div>
@@ -138,11 +138,12 @@ function bindInteractions(container) {
             event.preventDefault();
 
             const kinoId = element.dataset.kinoid;
-            if (!kinoId) {
-                return;
+            const tmdbId = element.dataset.tmdbid;
+            if (kinoId) {
+                window.location.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${encodeURIComponent(kinoId)}`);
+            } else if (tmdbId) {
+                window.location.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?tmdbId=${encodeURIComponent(tmdbId)}&source=calendar`);
             }
-
-            window.location.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${encodeURIComponent(kinoId)}`);
         });
     });
 }

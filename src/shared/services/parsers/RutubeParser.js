@@ -87,6 +87,7 @@ class RutubeParser extends BaseParserService {
 
             const result = {
                 url: `${this.baseUrl}/video/${best.id}/`,
+                videoId: String(best.id),
                 title: parsed.title || best.title,
                 parserId: this.id,
                 source: this.id,
@@ -128,7 +129,10 @@ class RutubeParser extends BaseParserService {
                 return [];
             }
 
-            const embedUrl = searchResult.embedUrl || `${this.baseUrl}/play/embed/${videoId}`;
+            const baseEmbedUrl = searchResult.embedUrl || `${this.baseUrl}/play/embed/${videoId}`;
+            const embedUrl = baseEmbedUrl.includes('getPlayOptions=')
+                ? baseEmbedUrl
+                : `${baseEmbedUrl}${baseEmbedUrl.includes('?') ? '&' : '?'}getPlayOptions=duration`;
             let playOptions = null;
 
             try {
@@ -147,7 +151,8 @@ class RutubeParser extends BaseParserService {
                 channelName: playOptions?.author?.name || searchResult.channelName,
                 duration: playOptions?.duration || searchResult.duration,
                 publicationDate: playOptions?.publication_ts || searchResult.publicationDate,
-                thumbnailUrl: playOptions?.thumbnail_url || searchResult.thumbnailUrl
+                thumbnailUrl: playOptions?.thumbnail_url || searchResult.thumbnailUrl,
+                rutubeVideoId: videoId,
             };
 
             const sources = [];
@@ -158,6 +163,7 @@ class RutubeParser extends BaseParserService {
                     name: this.name,
                     url: m3u8Url,
                     type: 'hls',
+                    parserId: this.id,
                     metadata
                 });
             }
@@ -167,6 +173,7 @@ class RutubeParser extends BaseParserService {
                 name: m3u8Url ? `${this.name} (Embed)` : this.name,
                 url: embedUrl,
                 type: 'iframe',
+                parserId: this.id,
                 metadata
             });
 
@@ -180,11 +187,30 @@ class RutubeParser extends BaseParserService {
     }
 
     /**
-     * Return player type — Rutube prefers native video player for HLS streams.
+     * Prefer the direct HLS source so the extension keeps its native player
+     * controls. The documented iframe remains a fallback when a direct stream
+     * is unavailable and is the only mount that uses Rutube's postMessage API.
      * @returns {'video'}
      */
     getPlayerType() {
         return 'video';
+    }
+
+    /**
+     * Recreate a safe, exact source descriptor received from a room owner.
+     * No signed balancer URL, cookie, or private-access parameter crosses the
+     * room boundary.
+     */
+    getRoomSearchResult(source) {
+        const videoId = String(source?.videoId || '').trim();
+        if (!/^[a-z0-9_-]{8,80}$/i.test(videoId)) return null;
+        return {
+            url: `${this.baseUrl}/video/${videoId}/`,
+            embedUrl: `${this.baseUrl}/play/embed/${videoId}?getPlayOptions=duration`,
+            videoId,
+            parserId: this.id,
+            source: this.id,
+        };
     }
 
     /**

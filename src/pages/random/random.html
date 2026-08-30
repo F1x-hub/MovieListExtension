@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="random.css">
     <link rel="stylesheet" href="../../shared/styles/report-widget.css">
     <link rel="stylesheet" href="../../shared/styles/image-lightbox.css">
+    <script src="../../shared/services/ThemeService.js"></script>
 </head>
 <body>
     <!-- Navigation will be inserted here by Navigation.js -->
@@ -133,7 +134,7 @@
                 <input type="text" id="poolSearchInput" class="pool-search-input" placeholder="Найти фильм для пула...">
                 <div id="poolSearchResults" class="pool-search-results hidden"></div>
             </div>
-            <button class="btn-secondary" id="showPoolBtn">
+            <button class="btn pool-btn-secondary" id="showPoolBtn">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
                     <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
@@ -216,7 +217,7 @@
             </div>
             <div id="poolList" class="pool-list"></div>
             <div class="pool-modal-footer">
-                <button class="btn-danger" id="clearPoolBtn">Очистить пул</button>
+            <button class="btn btn-danger" id="clearPoolBtn">Очистить пул</button>
                 <button class="btn-roll-from-pool" id="rollFromPoolBtn">Крутить из пула</button>
             </div>
         </div>

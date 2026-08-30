@@ -43,16 +43,16 @@
 }
 
 .movieListWatchlistBtn.added {
-    color: #6366f1 !important;
-    background: rgba(99, 102, 241, 0.25) !important;
+    color: #18181b !important;
+    background: rgba(255, 255, 255, 0.7) !important;
     backdrop-filter: blur(10px) !important;
     -webkit-backdrop-filter: blur(10px) !important;
     animation: pulse 0.5s ease !important;
 }
 
 .movieListWatchlistBtn.added:hover:not(:disabled) {
-    background: rgba(99, 102, 241, 0.35) !important;
-    color: #4f46e5 !important;
+    background: #ffffff !important;
+    color: #09090b !important;
 }
 
 @keyframes pulse {
@@ -137,4 +137,3 @@
 .fullimg {
     position: relative !important;
 }
-

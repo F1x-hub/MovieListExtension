@@ -153,7 +153,33 @@ async function run() {
     assert.equal(cancelledResult.reason, 'REQUEST_CANCELLED');
     assert.equal(loads.some(load => /cancelled/.test(load.searchUrl)), false);
 
-    console.log('✅ Offscreen ratings scheduler prioritizes visible work, deduplicates, and cancels queued work');
+    const blocker = request({
+        type: 'KINOPOISK_OFFSCREEN_SCRAPE',
+        query: 'blocker',
+        requestKey: 'search:blocker',
+        priority: 'visible-identity'
+    });
+    await tick();
+    assert.match(currentLoad.searchUrl, /blocker/);
+
+    const expiredSimilar = request({
+        type: 'KINOPOISK_SIMILAR_OFFSCREEN',
+        kinopoiskId: 42,
+        mediaType: 'movie',
+        timeoutMs: 1000,
+        queueDeadlineMs: 30,
+        requestKey: 'recommendations:movie:42',
+        priority: 'below-viewport'
+    });
+    const expiredResult = await expiredSimilar;
+    assert.equal(expiredResult.reason, 'QUEUE_DEADLINE_EXCEEDED');
+    assert.equal(expiredResult.metrics.timeoutReason, 'QUEUE_DEADLINE_EXCEEDED');
+    assert.equal(loads.some(load => /\/42\/like\//.test(load.searchUrl)), false);
+
+    finishCurrent([{ id: 4, type: 'film' }]);
+    await blocker;
+
+    console.log('✅ Offscreen ratings scheduler prioritizes, deduplicates, cancels, and expires queued work');
 }
 
 run().catch(error => {

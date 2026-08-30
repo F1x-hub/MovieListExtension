@@ -16,6 +16,9 @@ class MovieRatingsEnrichmentService {
         this.imdbParser = options.imdbParser || (
             typeof ImdbParsingService !== 'undefined' ? new ImdbParsingService() : null
         );
+        this.tmdbService = options.tmdbService || (
+            typeof TMDBService !== 'undefined' ? new TMDBService() : null
+        );
 
         // v2 invalidates old empty-rating records created before direct-ID
         // Kinopoisk HTML rating lookup and the explicit unavailable state.
@@ -640,17 +643,63 @@ class MovieRatingsEnrichmentService {
             }
         }
 
-        // Restore the pre-optimization IMDb path: once a trusted IMDb ID is
-        // available, load the title page directly and parse its rating.
-        if (this.enableDetailFallback && !kpMoviePageAttempted
-            && (imdbRating <= 0 || imdbVotes <= 0)
-            && imdbId && this.imdbParser?.getImdbRating) {
+        // Direct IMDb rating fallback: only when IMDb rating is missing (<= 0)
+        if (this.enableDetailFallback
+            && imdbRating <= 0
+            && this.imdbParser) {
             try {
-                const parsed = await this.imdbParser.getImdbRating(imdbId);
-                imdbRating = imdbRating > 0 ? imdbRating : Number(parsed?.rating) || 0;
-                imdbVotes = imdbVotes > 0 ? imdbVotes : Number(parsed?.votes) || 0;
+                let parsed = null;
+                const tmdbId = Number(candidate.item?.tmdbId || candidate.card?.dataset?.tmdbId) || null;
+
+                // 1. If imdbId is not known, try to resolve it from TMDB external_ids
+                if (!imdbId && tmdbId && this.tmdbService && typeof this.tmdbService.getExternalIds === 'function') {
+                    try {
+                        const ext = await this.tmdbService.getExternalIds(
+                            tmdbId,
+                            candidate.item?.mediaType || candidate.card?.dataset?.mediaType || 'movie'
+                        );
+                        if (ext?.imdb_id) {
+                            imdbId = this.normalizeImdbId(ext.imdb_id);
+                        }
+                    } catch (e) {
+                        console.warn('[MovieRatings] TMDB external_ids fallback failed:', e?.message || e);
+                    }
+                }
+
+                // 2. Fetch rating by imdbId if available
+                if (imdbId && typeof this.imdbParser.getImdbRating === 'function') {
+                    parsed = await this.imdbParser.getImdbRating(imdbId);
+                }
+                // 3. Otherwise, search IMDb by title & year (preferring Latin/English title)
+                else if (typeof this.imdbParser.getImdbRatingByTitle === 'function') {
+                    const candidateTitles = [
+                        candidate.item?.englishTitle,
+                        candidate.item?.alternativeName,
+                        candidate.item?.originalTitle,
+                        candidate.item?.original_title,
+                        candidate.item?.originalName,
+                        candidate.card?.dataset?.movieEnglishTitle,
+                        candidate.card?.dataset?.movieOriginalTitle,
+                        candidate.item?.name,
+                        candidate.item?.title,
+                        candidate.card?.dataset?.movieTitle
+                    ].map(t => String(t || '').trim()).filter(Boolean);
+
+                    const latinTitle = candidateTitles.find(t => /[a-zA-Z]/.test(t));
+                    const searchTitle = latinTitle || candidateTitles[0] || '';
+                    const year = Number(candidate.item?.year || candidate.card?.dataset?.movieYear || String(candidate.item?.releaseDate || candidate.item?.release_date || '').slice(0, 4)) || null;
+                    if (searchTitle) {
+                        parsed = await this.imdbParser.getImdbRatingByTitle(searchTitle, year);
+                    }
+                }
+
+                if (parsed) {
+                    imdbRating = imdbRating > 0 ? imdbRating : Number(parsed?.rating) || 0;
+                    imdbVotes = imdbVotes > 0 ? imdbVotes : Number(parsed?.votes) || 0;
+                    imdbId = imdbId || this.normalizeImdbId(parsed?.imdbId);
+                }
             } catch (error) {
-                console.warn('[MovieRatings] IMDb HTML rating fallback failed:', error.message);
+                console.warn('[MovieRatings] IMDb rating fallback failed:', error.message);
             }
         }
 
@@ -774,7 +823,7 @@ class MovieRatingsEnrichmentService {
             kinopoiskId: isTmdbOnly ? null : (Number(card.dataset.movieId) || null),
             name: card.dataset.movieTitle || '',
             alternativeName: card.dataset.movieOriginalTitle || '',
-            englishTitle: card.dataset.movieEnglishTitle || '',
+            englishTitle: card.dataset.movieEnglishTitle || card.dataset.movieOriginalTitle || '',
             year: Number(card.dataset.movieYear) || null,
             mediaType: card.dataset.mediaType || 'movie',
             type: card.dataset.mediaType || 'movie'

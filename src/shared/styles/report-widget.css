@@ -11,7 +11,7 @@
 .report-widget-btn {
     width: 40px;
     height: 60px;
-    background: var(--accent-color, #ff4757);
+    background: var(--ui-color-interactive);
     color: var(--primary-bg, #ffffff);
     border: none;
     border-radius: 0 var(--radius-md, 8px) var(--radius-md, 8px) 0;
@@ -27,8 +27,16 @@
 
 .report-widget-btn:hover {
     width: 48px;
-    background: var(--accent-hover, #ff6b81);
+    background: var(--ui-color-interactive-hover);
     box-shadow: var(--shadow-lg, 4px 0 12px rgba(0, 0, 0, 0.4));
+}
+
+@media (max-width: 640px) {
+    .report-widget-container {
+        top: auto;
+        bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+        transform: none;
+    }
 }
 
 .report-widget-drawer {
@@ -38,17 +46,21 @@
     width: 350px;
     max-width: 90vw;
     height: 100vh;
-    background: var(--primary-bg, #1e293b);
+    background: var(--ui-color-surface);
     box-shadow: var(--shadow-xl, 4px 0 16px rgba(0, 0, 0, 0.5));
     transform: translateX(-100%);
     transition: transform var(--transition-base, 0.3s) cubic-bezier(0.4, 0, 0.2, 1);
     z-index: var(--z-popover, 1050);
     display: flex;
     flex-direction: column;
+    visibility: hidden;
+    pointer-events: none;
 }
 
 .report-widget-drawer.open {
     transform: translateX(0);
+    visibility: visible;
+    pointer-events: auto;
 }
 
 .report-drawer-header {
@@ -59,31 +71,40 @@
     align-items: center;
 }
 
-.report-drawer-header h3 {
+.report-drawer-header h2 {
     margin: 0;
     font-size: var(--font-size-xl, 20px);
     font-weight: 600;
-    color: var(--text-primary, #ffffff);
+    color: var(--ui-color-content);
     font-family: var(--font-family, inherit);
 }
 
 .report-close-btn {
     background: none;
     border: none;
-    color: var(--text-secondary, #94a3b8);
+    color: var(--ui-color-content-muted);
     font-size: var(--font-size-xl, 20px);
     cursor: pointer;
     padding: var(--space-xs, 4px);
     border-radius: var(--radius-sm, 4px);
-    transition: all var(--transition-fast, 0.15s);
+    transition: background-color var(--transition-fast, 0.15s), color var(--transition-fast, 0.15s);
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
 .report-close-btn:hover {
-    background: var(--secondary-bg, #334155);
-    color: var(--text-primary, #ffffff);
+    background: var(--ui-color-surface-muted);
+    color: var(--ui-color-content);
+}
+
+.report-close-btn:focus-visible,
+.report-remove-photo-btn:focus-visible,
+.report-submit-btn:focus-visible,
+.report-widget-btn:focus-visible,
+.report-file-label:focus-within {
+    outline: 2px solid var(--ui-color-interactive);
+    outline-offset: 2px;
 }
 
 .report-drawer-body {
@@ -98,7 +119,7 @@
 
 .report-drawer-body.drag-over {
     background: var(--accent-bg, rgba(255, 255, 255, 0.05));
-    outline: 2px dashed var(--accent-color, #ff4757);
+    outline: 2px dashed var(--ui-color-interactive);
     outline-offset: -2px;
     border-radius: var(--radius-md, 8px);
 }
@@ -120,31 +141,31 @@
 .report-drawer-body textarea {
     width: 100%;
     height: 150px;
-    background: var(--secondary-bg, #0f172a);
+    background: var(--ui-color-surface);
     border: 2px solid var(--theme-border, rgba(255, 255, 255, 0.1));
     border-radius: var(--radius-md, 8px);
     padding: var(--space-sm, 8px) var(--space-md, 16px);
-    color: var(--text-primary, #ffffff);
+    color: var(--ui-color-content);
     resize: vertical;
     font-family: var(--font-family, inherit);
     font-size: var(--font-size-sm, 14px);
-    transition: all var(--transition-base, 0.3s);
+    transition: border-color var(--transition-base, 0.3s), background-color var(--transition-base, 0.3s);
 }
 
 .report-drawer-body textarea::placeholder {
-    color: var(--text-muted, #94a3b8);
+    color: var(--ui-color-content-subtle);
 }
 
 .report-drawer-body textarea:focus {
     outline: none;
-    border-color: var(--accent-color);
+    border-color: var(--ui-color-interactive);
 
 }
 
 .report-char-counter {
     text-align: right;
     font-size: var(--font-size-xs, 12px);
-    color: var(--text-muted, #94a3b8);
+    color: var(--text-secondary, #a1a1aa);
     margin-top: var(--space-xs, 4px);
     font-family: var(--font-family, inherit);
 }
@@ -161,20 +182,20 @@
     justify-content: center;
     padding: var(--space-sm, 8px) var(--space-md, 16px);
     border: 2px dashed var(--theme-border, rgba(255, 255, 255, 0.1));
-    background: var(--secondary-bg, #0f172a);
+    background: var(--ui-color-surface);
     border-radius: var(--radius-md, 8px);
     cursor: pointer;
     font-size: var(--font-size-sm, 14px);
-    color: var(--text-secondary, #94a3b8);
+    color: var(--ui-color-content-muted);
     font-family: var(--font-family, inherit);
-    transition: all var(--transition-base, 0.3s);
+    transition: border-color var(--transition-base, 0.3s), background-color var(--transition-base, 0.3s), color var(--transition-base, 0.3s);
     text-align: center;
 }
 
 .report-file-label:hover {
     background: var(--accent-bg, rgba(255, 255, 255, 0.05));
-    color: var(--text-primary, #ffffff);
-    border-color: var(--accent-color, #ff4757);
+    color: var(--ui-color-content);
+    border-color: var(--ui-color-interactive);
 }
 
 .report-file-input {
@@ -195,7 +216,7 @@
     width: 100%;
     max-height: 200px;
     object-fit: contain;
-    background: var(--secondary-bg, #0f172a);
+    background: var(--ui-color-surface);
     display: block;
 }
 

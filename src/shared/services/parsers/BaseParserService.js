@@ -117,6 +117,11 @@ class BaseParserService {
                         hls.loadSource(source.url);
                         hls.attachMedia(video);
                         container._hlsInstance = hls;
+                        // The shared native-player menu owns all visible controls.
+                        // Keep the HLS instance on its media element so that menu can
+                        // expose its quality choices without creating a second control.
+                        video._movieExtensionHls = hls;
+                        video.dataset.playerProvider = this.id;
                     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
                         video.src = source.url;
                     }

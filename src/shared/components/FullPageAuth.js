@@ -12,6 +12,7 @@ class FullPageAuth {
      * @param {'login'|'register'|'approval'} [options.initialView='login'] - Initial view to render
      * @param {string} [options.title] - Custom title
      * @param {string} [options.subtitle] - Custom subtitle
+     * @param {string} [options.locale] - Optional locale override for the component
      * @param {Function} [options.onAuthSuccess] - Callback when user is successfully authenticated and approved: (user, profile) => void
      * @param {Function} [options.onCancel] - Callback on modal close / cancel: () => void
      * @param {Function} [options.onError] - Callback on auth errors: (error) => void
@@ -23,6 +24,7 @@ class FullPageAuth {
             initialView: 'login',
             title: null,
             subtitle: null,
+            locale: null,
             onAuthSuccess: null,
             onCancel: null,
             onError: null,
@@ -38,6 +40,7 @@ class FullPageAuth {
         this.isLoading = false;
         this.rootElement = null;
         this.containerElement = null;
+        this.lastFocusedElement = null;
 
         if (this.options.container) {
             this.mount(this.options.container);
@@ -52,6 +55,14 @@ class FullPageAuth {
      */
     t(key, fallback = '') {
         try {
+            const locale = this.options.locale;
+            const localizedMessages = locale && typeof i18n !== 'undefined' && i18n?.locales?.[locale]
+                ? i18n.locales[locale]
+                : null;
+            if (localizedMessages) {
+                const value = key.split('.').reduce((current, part) => current?.[part], i18n.locales[locale]);
+                if (value) return value;
+            }
             if (typeof i18n !== 'undefined' && i18n && typeof i18n.get === 'function') {
                 const val = i18n.get(key);
                 if (val && val !== key) return val;
@@ -88,6 +99,10 @@ class FullPageAuth {
         if (this.rootElement && this.rootElement.parentNode) {
             this.rootElement.parentNode.removeChild(this.rootElement);
         }
+        if (this.lastFocusedElement && typeof this.lastFocusedElement.focus === 'function') {
+            this.lastFocusedElement.focus();
+        }
+        this.lastFocusedElement = null;
         this.rootElement = null;
     }
 
@@ -131,6 +146,13 @@ class FullPageAuth {
         const isModal = this.options.mode === 'modal';
         const wrapper = document.createElement('div');
         wrapper.className = `full-page-auth-container${isModal ? ' full-page-auth--modal' : ''}`;
+        if (isModal) {
+            this.lastFocusedElement = document.activeElement || null;
+            wrapper.setAttribute('role', 'dialog');
+            wrapper.setAttribute('aria-modal', 'true');
+            wrapper.setAttribute('aria-labelledby', 'fullPageAuthTitle');
+            wrapper.setAttribute('tabindex', '-1');
+        }
         this.rootElement = wrapper;
 
         const card = document.createElement('div');
@@ -141,7 +163,7 @@ class FullPageAuth {
             const closeBtn = document.createElement('button');
             closeBtn.type = 'button';
             closeBtn.className = 'full-page-auth-close-btn';
-            closeBtn.setAttribute('aria-label', 'Close');
+            closeBtn.setAttribute('aria-label', this.t('popup.auth.close', 'Закрыть'));
             closeBtn.innerHTML = (typeof Icons !== 'undefined' && Icons.CLOSE) ? Icons.CLOSE : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
             closeBtn.addEventListener('click', () => {
                 if (typeof this.options.onCancel === 'function') {
@@ -160,6 +182,9 @@ class FullPageAuth {
         const errorBanner = document.createElement('div');
         errorBanner.className = 'full-page-auth-error-banner';
         errorBanner.id = 'fpaErrorBanner';
+        errorBanner.setAttribute('role', 'alert');
+        errorBanner.setAttribute('aria-live', 'assertive');
+        errorBanner.setAttribute('aria-hidden', 'true');
         errorBanner.style.display = 'none';
         card.appendChild(errorBanner);
 
@@ -191,6 +216,16 @@ class FullPageAuth {
         }
 
         this.containerElement.appendChild(wrapper);
+
+        if (isModal) {
+            setTimeout(() => {
+                if (!this.rootElement || this.rootElement !== wrapper) return;
+                const focusTarget = wrapper.querySelector('input, button, [href], select, textarea');
+                if (focusTarget && typeof focusTarget.focus === 'function') {
+                    focusTarget.focus();
+                }
+            }, 0);
+        }
     }
 
     /**
@@ -211,13 +246,14 @@ class FullPageAuth {
             logoImg.src = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL)
                 ? chrome.runtime.getURL('src/shared/assets/icons/app/icon48.png')
                 : '';
-            logoImg.alt = 'Logo';
+            logoImg.alt = this.t('popup.auth.logo_alt', 'Логотип');
             logoWrapper.appendChild(logoImg);
         }
         header.appendChild(logoWrapper);
 
         const title = document.createElement('h2');
         title.className = 'full-page-auth-title';
+        title.id = 'fullPageAuthTitle';
         title.textContent = this.options.title || this.t('popup.header.title', 'Movie Ratings');
         header.appendChild(title);
 
@@ -274,9 +310,9 @@ class FullPageAuth {
         emailGroup.innerHTML = `
             <label class="full-page-auth-label" for="fpaLoginEmail">${this.t('popup.auth.email_label', 'Электронная почта')}</label>
             <div class="full-page-auth-input-wrapper">
-                <input type="email" id="fpaLoginEmail" class="full-page-auth-input" placeholder="${this.t('popup.auth.email_placeholder', 'Ваш email')}" required autocomplete="email">
+                <input type="email" id="fpaLoginEmail" class="full-page-auth-input" placeholder="${this.t('popup.auth.email_placeholder', 'Ваш email')}" required autocomplete="email" aria-invalid="false" aria-describedby="fpaLoginEmailError">
             </div>
-            <div class="full-page-auth-field-error" id="fpaLoginEmailError" style="display:none;"></div>
+            <div class="full-page-auth-field-error" id="fpaLoginEmailError" role="alert" aria-live="polite" style="display:none;"></div>
         `;
         form.appendChild(emailGroup);
 
@@ -286,20 +322,24 @@ class FullPageAuth {
         passGroup.innerHTML = `
             <label class="full-page-auth-label" for="fpaLoginPassword">${this.t('popup.auth.password_label', 'Пароль')}</label>
             <div class="full-page-auth-input-wrapper">
-                <input type="password" id="fpaLoginPassword" class="full-page-auth-input has-toggle" placeholder="${this.t('popup.auth.password_placeholder', 'Ваш пароль')}" required autocomplete="current-password">
-                <button type="button" class="full-page-auth-password-toggle" aria-label="Toggle password visibility">
+                <input type="password" id="fpaLoginPassword" class="full-page-auth-input has-toggle" placeholder="${this.t('popup.auth.password_placeholder', 'Ваш пароль')}" required autocomplete="current-password" aria-invalid="false" aria-describedby="fpaLoginPassError">
+                <button type="button" class="full-page-auth-password-toggle" aria-label="${this.t('popup.auth.password_show', 'Показать пароль')}">
                     ${(typeof Icons !== 'undefined' && Icons.EYE) ? Icons.EYE : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>'}
                 </button>
             </div>
-            <div class="full-page-auth-field-error" id="fpaLoginPassError" style="display:none;"></div>
+            <div class="full-page-auth-field-error" id="fpaLoginPassError" role="alert" aria-live="polite" style="display:none;"></div>
         `;
         
         // Password toggle listener
         const toggleBtn = passGroup.querySelector('.full-page-auth-password-toggle');
         const passInput = passGroup.querySelector('#fpaLoginPassword');
+        toggleBtn.setAttribute('aria-label', this.t('popup.auth.password_show', 'Показать пароль'));
         toggleBtn.addEventListener('click', () => {
             const isPass = passInput.type === 'password';
             passInput.type = isPass ? 'text' : 'password';
+            toggleBtn.setAttribute('aria-label', isPass
+                ? this.t('popup.auth.password_hide', 'Скрыть пароль')
+                : this.t('popup.auth.password_show', 'Показать пароль'));
             toggleBtn.innerHTML = isPass
                 ? ((typeof Icons !== 'undefined' && Icons.EYE_OFF) ? Icons.EYE_OFF : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>')
                 : ((typeof Icons !== 'undefined' && Icons.EYE) ? Icons.EYE : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>');
@@ -372,16 +412,16 @@ class FullPageAuth {
             <div class="full-page-auth-form-group">
                 <label class="full-page-auth-label" for="fpaRegFirstName">${this.t('popup.auth.first_name_label', 'Имя')}</label>
                 <div class="full-page-auth-input-wrapper">
-                    <input type="text" id="fpaRegFirstName" class="full-page-auth-input" placeholder="${this.t('popup.auth.first_name_placeholder', 'Ваше имя')}" required autocomplete="given-name">
+                    <input type="text" id="fpaRegFirstName" class="full-page-auth-input" placeholder="${this.t('popup.auth.first_name_placeholder', 'Ваше имя')}" required autocomplete="given-name" aria-invalid="false" aria-describedby="fpaRegFirstNameError">
                 </div>
-                <div class="full-page-auth-field-error" id="fpaRegFirstNameError" style="display:none;"></div>
+                <div class="full-page-auth-field-error" id="fpaRegFirstNameError" role="alert" aria-live="polite" style="display:none;"></div>
             </div>
             <div class="full-page-auth-form-group">
                 <label class="full-page-auth-label" for="fpaRegLastName">${this.t('popup.auth.last_name_label', 'Фамилия')}</label>
                 <div class="full-page-auth-input-wrapper">
-                    <input type="text" id="fpaRegLastName" class="full-page-auth-input" placeholder="${this.t('popup.auth.last_name_placeholder', 'Ваша фамилия')}" required autocomplete="family-name">
+                    <input type="text" id="fpaRegLastName" class="full-page-auth-input" placeholder="${this.t('popup.auth.last_name_placeholder', 'Ваша фамилия')}" required autocomplete="family-name" aria-invalid="false" aria-describedby="fpaRegLastNameError">
                 </div>
-                <div class="full-page-auth-field-error" id="fpaRegLastNameError" style="display:none;"></div>
+                <div class="full-page-auth-field-error" id="fpaRegLastNameError" role="alert" aria-live="polite" style="display:none;"></div>
             </div>
         `;
         form.appendChild(nameRow);
@@ -392,9 +432,9 @@ class FullPageAuth {
         emailGroup.innerHTML = `
             <label class="full-page-auth-label" for="fpaRegEmail">${this.t('popup.auth.email_label', 'Электронная почта')}</label>
             <div class="full-page-auth-input-wrapper">
-                <input type="email" id="fpaRegEmail" class="full-page-auth-input" placeholder="${this.t('popup.auth.email_placeholder', 'Ваш email')}" required autocomplete="email">
+                <input type="email" id="fpaRegEmail" class="full-page-auth-input" placeholder="${this.t('popup.auth.email_placeholder', 'Ваш email')}" required autocomplete="email" aria-invalid="false" aria-describedby="fpaRegEmailError">
             </div>
-            <div class="full-page-auth-field-error" id="fpaRegEmailError" style="display:none;"></div>
+            <div class="full-page-auth-field-error" id="fpaRegEmailError" role="alert" aria-live="polite" style="display:none;"></div>
         `;
         form.appendChild(emailGroup);
 
@@ -404,18 +444,22 @@ class FullPageAuth {
         passGroup.innerHTML = `
             <label class="full-page-auth-label" for="fpaRegPassword">${this.t('popup.auth.password_label', 'Пароль')}</label>
             <div class="full-page-auth-input-wrapper">
-                <input type="password" id="fpaRegPassword" class="full-page-auth-input has-toggle" placeholder="${this.t('popup.auth.password_placeholder', 'Придумайте пароль')}" required autocomplete="new-password">
-                <button type="button" class="full-page-auth-password-toggle" aria-label="Toggle password visibility">
+                <input type="password" id="fpaRegPassword" class="full-page-auth-input has-toggle" placeholder="${this.t('popup.auth.password_placeholder', 'Придумайте пароль')}" required autocomplete="new-password" aria-invalid="false" aria-describedby="fpaRegPassError">
+                <button type="button" class="full-page-auth-password-toggle" aria-label="${this.t('popup.auth.password_show', 'Показать пароль')}">
                     ${(typeof Icons !== 'undefined' && Icons.EYE) ? Icons.EYE : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>'}
                 </button>
             </div>
-            <div class="full-page-auth-field-error" id="fpaRegPassError" style="display:none;"></div>
+            <div class="full-page-auth-field-error" id="fpaRegPassError" role="alert" aria-live="polite" style="display:none;"></div>
         `;
         const toggleBtn1 = passGroup.querySelector('.full-page-auth-password-toggle');
         const passInput1 = passGroup.querySelector('#fpaRegPassword');
+        toggleBtn1.setAttribute('aria-label', this.t('popup.auth.password_show', 'Показать пароль'));
         toggleBtn1.addEventListener('click', () => {
             const isPass = passInput1.type === 'password';
             passInput1.type = isPass ? 'text' : 'password';
+            toggleBtn1.setAttribute('aria-label', isPass
+                ? this.t('popup.auth.password_hide', 'Скрыть пароль')
+                : this.t('popup.auth.password_show', 'Показать пароль'));
             toggleBtn1.innerHTML = isPass
                 ? ((typeof Icons !== 'undefined' && Icons.EYE_OFF) ? Icons.EYE_OFF : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>')
                 : ((typeof Icons !== 'undefined' && Icons.EYE) ? Icons.EYE : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>');
@@ -428,18 +472,22 @@ class FullPageAuth {
         confirmPassGroup.innerHTML = `
             <label class="full-page-auth-label" for="fpaRegConfirmPassword">${this.t('popup.auth.confirm_password_label', 'Повторите пароль')}</label>
             <div class="full-page-auth-input-wrapper">
-                <input type="password" id="fpaRegConfirmPassword" class="full-page-auth-input has-toggle" placeholder="${this.t('popup.auth.confirm_password_placeholder', 'Повторите пароль')}" required autocomplete="new-password">
-                <button type="button" class="full-page-auth-password-toggle" aria-label="Toggle confirm password visibility">
+                <input type="password" id="fpaRegConfirmPassword" class="full-page-auth-input has-toggle" placeholder="${this.t('popup.auth.confirm_password_placeholder', 'Повторите пароль')}" required autocomplete="new-password" aria-invalid="false" aria-describedby="fpaRegConfirmPassError">
+                <button type="button" class="full-page-auth-password-toggle" aria-label="${this.t('popup.auth.password_show', 'Показать пароль')}">
                     ${(typeof Icons !== 'undefined' && Icons.EYE) ? Icons.EYE : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>'}
                 </button>
             </div>
-            <div class="full-page-auth-field-error" id="fpaRegConfirmPassError" style="display:none;"></div>
+            <div class="full-page-auth-field-error" id="fpaRegConfirmPassError" role="alert" aria-live="polite" style="display:none;"></div>
         `;
         const toggleBtn2 = confirmPassGroup.querySelector('.full-page-auth-password-toggle');
         const passInput2 = confirmPassGroup.querySelector('#fpaRegConfirmPassword');
+        toggleBtn2.setAttribute('aria-label', this.t('popup.auth.password_show', 'Показать пароль'));
         toggleBtn2.addEventListener('click', () => {
             const isPass = passInput2.type === 'password';
             passInput2.type = isPass ? 'text' : 'password';
+            toggleBtn2.setAttribute('aria-label', isPass
+                ? this.t('popup.auth.password_hide', 'Скрыть пароль')
+                : this.t('popup.auth.password_show', 'Показать пароль'));
             toggleBtn2.innerHTML = isPass
                 ? ((typeof Icons !== 'undefined' && Icons.EYE_OFF) ? Icons.EYE_OFF : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>')
                 : ((typeof Icons !== 'undefined' && Icons.EYE) ? Icons.EYE : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>');
@@ -536,10 +584,35 @@ class FullPageAuth {
         if (banner) {
             banner.textContent = message;
             banner.style.display = 'flex';
+            banner.setAttribute('aria-hidden', 'false');
         }
         if (typeof this.options.onError === 'function') {
             this.options.onError(new Error(message));
         }
+    }
+
+    getSafeAuthErrorMessage(error, fallbackKey = 'login_error') {
+        const rawMessage = String(error?.message || '').toLowerCase();
+        const errorCode = String(error?.code || error?.cause?.code || '').toLowerCase();
+        const code = errorCode || rawMessage.match(/auth\/[a-z-]+/)?.[0] || '';
+
+        const keyByCode = {
+            'auth/invalid-credential': 'invalid_credentials',
+            'auth/wrong-password': 'invalid_credentials',
+            'auth/user-not-found': 'invalid_credentials',
+            'auth/invalid-email': 'invalid_credentials',
+            'auth/network-request-failed': 'network_error',
+            'auth/too-many-requests': 'service_unavailable',
+            'auth/email-already-in-use': 'registration_error',
+            'auth/weak-password': 'registration_error'
+        };
+
+        const key = keyByCode[code]
+            || (rawMessage.includes('network') ? 'network_error' : null)
+            || (rawMessage.includes('not available') ? 'service_unavailable' : null)
+            || fallbackKey;
+
+        return this.t(`popup.auth.${key}`, 'Не удалось выполнить операцию. Попробуйте ещё раз.');
     }
 
     /**
@@ -550,10 +623,14 @@ class FullPageAuth {
         if (banner) {
             banner.textContent = '';
             banner.style.display = 'none';
+            banner.setAttribute('aria-hidden', 'true');
         }
         if (this.rootElement) {
             const inputs = this.rootElement.querySelectorAll('.full-page-auth-input');
-            inputs.forEach(i => i.classList.remove('error'));
+            inputs.forEach(i => {
+                i.classList.remove('error');
+                i.setAttribute('aria-invalid', 'false');
+            });
             const fieldErrors = this.rootElement.querySelectorAll('.full-page-auth-field-error');
             fieldErrors.forEach(fe => {
                 fe.textContent = '';
@@ -569,7 +646,11 @@ class FullPageAuth {
      * @param {string} message
      */
     showFieldError(inputEl, errorEl, message) {
-        if (inputEl) inputEl.classList.add('error');
+        if (inputEl) {
+            inputEl.classList.add('error');
+            inputEl.setAttribute('aria-invalid', 'true');
+            if (errorEl?.id) inputEl.setAttribute('aria-describedby', errorEl.id);
+        }
         if (errorEl) {
             errorEl.textContent = message;
             errorEl.style.display = 'block';
@@ -621,17 +702,17 @@ class FullPageAuth {
         const password = passInput ? passInput.value : '';
 
         if (!email) {
-            this.showFieldError(emailInput, emailError, this.t('popup.auth.fill_all', 'Пожалуйста, введите email'));
+            this.showFieldError(emailInput, emailError, this.t('popup.auth.email_required', 'Введите email'));
             return;
         }
 
         if (!this.isValidEmail(email)) {
-            this.showFieldError(emailInput, emailError, this.t('popup.auth.fill_all', 'Некорректный формат email'));
+            this.showFieldError(emailInput, emailError, this.t('popup.auth.email_invalid', 'Введите корректный email'));
             return;
         }
 
         if (!password) {
-            this.showFieldError(passInput, passError, this.t('popup.auth.fill_all', 'Пожалуйста, введите пароль'));
+            this.showFieldError(passInput, passError, this.t('popup.auth.password_required', 'Введите пароль'));
             return;
         }
 
@@ -667,7 +748,7 @@ class FullPageAuth {
             }
         } catch (err) {
             console.error('[FullPageAuth] Login error:', err);
-            this.showError(`${this.t('popup.auth.loading_login', 'Ошибка входа')}: ${err.message}`);
+            this.showError(this.getSafeAuthErrorMessage(err, 'login_error'));
         } finally {
             this.setButtonLoading(submitBtn, false);
         }
@@ -711,7 +792,7 @@ class FullPageAuth {
             }
         } catch (err) {
             console.error('[FullPageAuth] Google Sign-In error:', err);
-            this.showError(`${this.t('popup.auth.loading_google', 'Ошибка входа Google')}: ${err.message}`);
+            this.showError(this.getSafeAuthErrorMessage(err, 'login_error'));
         } finally {
             if (btn) btn.disabled = false;
         }
@@ -743,27 +824,27 @@ class FullPageAuth {
         const confirmPassword = confirmPassInput ? confirmPassInput.value : '';
 
         if (!firstName) {
-            this.showFieldError(firstNameInput, firstNameError, this.t('popup.auth.fill_all', 'Введите имя'));
+            this.showFieldError(firstNameInput, firstNameError, this.t('popup.auth.first_name_required', 'Введите имя'));
             return;
         }
 
         if (!lastName) {
-            this.showFieldError(lastNameInput, lastNameError, this.t('popup.auth.fill_all', 'Введите фамилию'));
+            this.showFieldError(lastNameInput, lastNameError, this.t('popup.auth.last_name_required', 'Введите фамилию'));
             return;
         }
 
         if (!email) {
-            this.showFieldError(emailInput, emailError, this.t('popup.auth.fill_all', 'Введите email'));
+            this.showFieldError(emailInput, emailError, this.t('popup.auth.email_required', 'Введите email'));
             return;
         }
 
         if (!this.isValidEmail(email)) {
-            this.showFieldError(emailInput, emailError, this.t('popup.auth.fill_all', 'Некорректный email'));
+            this.showFieldError(emailInput, emailError, this.t('popup.auth.email_invalid', 'Введите корректный email'));
             return;
         }
 
         if (!password) {
-            this.showFieldError(passInput, passError, this.t('popup.auth.fill_all', 'Придумайте пароль'));
+            this.showFieldError(passInput, passError, this.t('popup.auth.password_required', 'Придумайте пароль'));
             return;
         }
 
@@ -773,7 +854,7 @@ class FullPageAuth {
         }
 
         if (!confirmPassword) {
-            this.showFieldError(confirmPassInput, confirmPassError, this.t('popup.auth.fill_all', 'Повторите пароль'));
+            this.showFieldError(confirmPassInput, confirmPassError, this.t('popup.auth.confirm_password_required', 'Повторите пароль'));
             return;
         }
 
@@ -817,7 +898,7 @@ class FullPageAuth {
             }
         } catch (err) {
             console.error('[FullPageAuth] Registration error:', err);
-            this.showError(`${this.t('popup.auth.loading_register', 'Ошибка регистрации')}: ${err.message}`);
+            this.showError(this.getSafeAuthErrorMessage(err, 'registration_error'));
         } finally {
             this.setButtonLoading(submitBtn, false);
         }

@@ -952,6 +952,24 @@ async function runTests() {
     assert.strictEqual(MediaClassifier.isCandidateForSection(liveFilmCard, 'films'), true, 'Live film must be accepted into films');
     assert.strictEqual(MediaClassifier.isCandidateForSection(liveFilmCard, 'cartoons'), false, 'Live film must be rejected from cartoons');
 
+    // Promotional / Gameplay Demo / Behind the Scenes Content (must be rejected from all sections)
+    const gtaPromoRu = { name: 'Grand Theft Auto VI: Расширенный показ', genreIds: [28, 80], mediaType: 'movie' };
+    const gtaPromoEn = { title: 'Grand Theft Auto VI: An Extended Look', genreIds: [28, 80], mediaType: 'movie' };
+    const gameplayCard = { name: 'Marvel 1943: Gameplay Reveal', genreIds: [28], mediaType: 'movie' };
+    const makingOfCard = { name: 'The Making of Avatar', genreIds: [99], mediaType: 'movie' };
+    const trailerParkBoysCard = { name: 'Trailer Park Boys: The Movie', genreIds: [35, 80], mediaType: 'movie' };
+
+    assert.strictEqual(MediaClassifier.isPromoContent(gtaPromoRu), true, 'GTA VI Russian extended look must be recognized as promo');
+    assert.strictEqual(MediaClassifier.isPromoContent(gtaPromoEn), true, 'GTA VI English extended look must be recognized as promo');
+    assert.strictEqual(MediaClassifier.isPromoContent(gameplayCard), true, 'Gameplay reveal must be recognized as promo');
+    assert.strictEqual(MediaClassifier.isPromoContent(makingOfCard), true, 'Making of must be recognized as promo');
+    assert.strictEqual(MediaClassifier.isPromoContent(trailerParkBoysCard), false, 'Trailer Park Boys must NOT be recognized as promo');
+
+    assert.strictEqual(MediaClassifier.isCandidateForSection(gtaPromoRu, 'featured'), false, 'GTA VI promo must be rejected from featured');
+    assert.strictEqual(MediaClassifier.isCandidateForSection(gtaPromoRu, 'films'), false, 'GTA VI promo must be rejected from films');
+    assert.strictEqual(MediaClassifier.isCandidateForSection(gtaPromoEn, 'featured'), false, 'GTA VI promo must be rejected from featured');
+    assert.strictEqual(MediaClassifier.isCandidateForSection(gameplayCard, 'featured'), false, 'Gameplay card must be rejected from featured');
+
     // Unknown / Corrupted (Metadata Loss)
     assert.strictEqual(MediaClassifier.isCandidateForSection(unknownCard, 'films'), false, 'Unknown metadata must be rejected from films');
     assert.strictEqual(MediaClassifier.isCandidateForSection(unknownCard, 'series'), false, 'Unknown metadata must be rejected from series');
@@ -1219,7 +1237,49 @@ async function runTests() {
 
     // 20. Testing TMDB -> Kinopoisk Manual Mapping & Unmapped Queue Contracts
     console.log('--- 20. Testing TMDB Manual Mapping & Unmapped Queue ---');
-    const mappingManual = new IdMappingService();
+    const manualMappingDocs = new Map();
+    const manualMappingLocks = new Map();
+    const manualMappingDb = {
+        collection(name) {
+            const store = name === 'tmdbKinopoiskMappings'
+                ? manualMappingDocs
+                : name === 'tmdbKinopoiskReverseIndex'
+                    ? manualMappingLocks
+                    : null;
+            if (!store) throw new Error(`Unexpected collection: ${name}`);
+            return {
+                doc(id) {
+                    return {
+                        id,
+                        collectionName: name,
+                        get: async () => ({ id, exists: store.has(id), data: () => store.get(id) })
+                    };
+                }
+            };
+        },
+        async runTransaction(callback) {
+            return callback({
+                get: reference => reference.get(),
+                set(reference, data) {
+                    const store = reference.collectionName === 'tmdbKinopoiskMappings'
+                        ? manualMappingDocs
+                        : manualMappingLocks;
+                    store.set(reference.id, data);
+                },
+                delete(reference) {
+                    const store = reference.collectionName === 'tmdbKinopoiskMappings'
+                        ? manualMappingDocs
+                        : manualMappingLocks;
+                    store.delete(reference.id);
+                }
+            });
+        }
+    };
+    globalThis.firebase = { firestore: { FieldValue: { serverTimestamp: () => Date.now() } } };
+    const mappingManual = new IdMappingService(null, null, {
+        db: manualMappingDb,
+        getCurrentUser: () => ({ uid: 'test-admin' })
+    });
 
     // 20.1 Record unmapped candidates
     await mappingManual.recordUnmappedCandidates([

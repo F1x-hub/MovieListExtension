@@ -1,5 +1,15 @@
 {
   "projects": {
     "default": "movielistdb-13208"
-  }
+  },
+  "targets": {
+    "movielistdb-13208": {
+      "database": {
+        "watchrooms-staging": [
+          "movielistdb-13208-watchrooms-staging"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

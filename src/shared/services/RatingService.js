@@ -8,6 +8,69 @@ class RatingService {
         this.collection = 'ratings';
     }
 
+    getRatingDocumentId(userId, movieId) {
+        const normalizedUserId = String(userId || '').trim();
+        const normalizedMovieId = Number(movieId);
+
+        if (!normalizedUserId || normalizedUserId.includes('/')) {
+            throw new Error('User ID must be a valid Firestore document key segment');
+        }
+        if (!Number.isInteger(normalizedMovieId) || normalizedMovieId <= 0) {
+            throw new Error('Movie ID must be a positive integer');
+        }
+
+        return `${normalizedUserId}_${normalizedMovieId}`;
+    }
+
+    getRatingTimestampMillis(rating) {
+        const timestamp = rating?.updatedAt || rating?.createdAt;
+        if (timestamp?.toMillis) return timestamp.toMillis();
+        const millis = new Date(timestamp).getTime();
+        return Number.isFinite(millis) ? millis : 0;
+    }
+
+    getCurrentRatings(ratings, fallbackUserId = '') {
+        const currentByUserAndMovie = new Map();
+
+        for (const rating of ratings) {
+            const normalizedMovieId = Number(rating?.movieId);
+            const userId = String(rating?.userId || fallbackUserId || '').trim();
+            const documentId = String(rating?.id || '');
+            const key = userId && Number.isInteger(normalizedMovieId) && normalizedMovieId > 0
+                ? `${userId}:${normalizedMovieId}`
+                : `legacy:${documentId}`;
+            const isCanonical = userId && Number.isInteger(normalizedMovieId) && normalizedMovieId > 0
+                && documentId === `${userId}_${normalizedMovieId}`;
+            const candidate = {
+                ...rating,
+                _isCanonicalRating: isCanonical,
+                _ratingQueryPreference: Number.isInteger(rating?._ratingQueryPreference)
+                    ? rating._ratingQueryPreference
+                    : Number.MAX_SAFE_INTEGER,
+                _ratingTimestampMillis: this.getRatingTimestampMillis(rating)
+            };
+            const current = currentByUserAndMovie.get(key);
+
+            if (!current
+                || (candidate._isCanonicalRating && !current._isCanonicalRating)
+                || (candidate._isCanonicalRating === current._isCanonicalRating
+                    && (candidate._ratingQueryPreference < current._ratingQueryPreference
+                        || (candidate._ratingQueryPreference === current._ratingQueryPreference
+                            && (candidate._ratingTimestampMillis > current._ratingTimestampMillis
+                                || (candidate._ratingTimestampMillis === current._ratingTimestampMillis
+                                    && candidate.id > current.id)))))) {
+                currentByUserAndMovie.set(key, candidate);
+            }
+        }
+
+        return [...currentByUserAndMovie.values()].map(({
+            _isCanonicalRating,
+            _ratingQueryPreference,
+            _ratingTimestampMillis,
+            ...rating
+        }) => rating);
+    }
+
     async invalidateRatingsCache(userId = null) {
         try {
             if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
@@ -121,16 +184,19 @@ class RatingService {
                 throw new Error('Comment must be 500 characters or less');
             }
 
-            // Find existing rating doc via query before transaction
+            const canonicalRatingId = this.getRatingDocumentId(userId, movieId);
+            // Legacy documents stay updateable until the separately approved
+            // data migration runs. New ratings always use the canonical ID.
             const existingRating = await this.getRating(userId, movieId);
             
             const ratingVal = Number(rating);
             const movieRef = this.db.collection('movies').doc(movieId.toString());
-            const ratingRef = existingRating?.id 
-                ? this.db.collection(this.collection).doc(existingRating.id)
-                : this.db.collection(this.collection).doc();
+            const ratingRef = this.db.collection(this.collection).doc(existingRating?.id || canonicalRatingId);
             const resolvedMovieData = await this.resolveMovieDataForRating(movieId, movieData);
             const localMovieCache = resolvedMovieData || await this.getLocalMovieCacheForPromotion(movieId);
+            const movieCacheService = typeof window !== 'undefined'
+                ? window.firebaseManager?.getMovieCacheService?.()
+                : null;
 
             let result;
             let promotedFromLocalCache = false;
@@ -192,7 +258,10 @@ class RatingService {
                 };
 
                 if (resolvedMovieData) {
-                    Object.assign(movieUpdates, resolvedMovieData);
+                    const metadataPatch = movieCacheService?.getMovieMetadataPatch
+                        ? movieCacheService.getMovieMetadataPatch(resolvedMovieData, currentMovieData)
+                        : resolvedMovieData;
+                    Object.assign(movieUpdates, metadataPatch);
                 }
 
                 if (movieDoc.exists) {
@@ -408,29 +477,107 @@ class RatingService {
     async getRating(userId, movieId) {
         try {
             const normalizedMovieId = Number(movieId);
+            const canonicalRatingId = this.getRatingDocumentId(userId, normalizedMovieId);
+            const canonicalSnapshot = await this.db.collection(this.collection).doc(canonicalRatingId).get();
+
+            if (canonicalSnapshot.exists) {
+                return { id: canonicalSnapshot.id, ...canonicalSnapshot.data() };
+            }
+
             const movieIdCandidates = [...new Set([
                 normalizedMovieId,
                 String(movieId)
             ])].filter(candidate => candidate !== 'NaN' && candidate !== undefined);
 
+            const matchingRatings = [];
             for (const movieIdCandidate of movieIdCandidates) {
                 const query = this.db.collection(this.collection)
                     .where('userId', '==', userId)
-                    .where('movieId', '==', movieIdCandidate)
-                    .limit(1);
+                    .where('movieId', '==', movieIdCandidate);
 
                 const results = await query.get();
-                if (!results.empty) {
-                    const doc = results.docs[0];
-                    return { id: doc.id, ...doc.data() };
-                }
+                results.forEach(doc => matchingRatings.push({ id: doc.id, ...doc.data() }));
             }
 
-            return null;
+            return this.getCurrentRatings(matchingRatings)[0] || null;
         } catch (error) {
             console.error('Error getting user rating:', error);
             return null;
         }
+    }
+
+    /**
+     * Get a user's ratings for a set of movies without issuing one query per movie.
+     * Numeric IDs are canonical, but a second string-ID query preserves compatibility
+     * with legacy rating documents. Results are keyed by normalized numeric ID.
+     * @param {string} userId - User ID
+     * @param {Array<number|string>} movieIds - Kinopoisk movie IDs
+     * @returns {Promise<Map<string, Object>>} - Ratings keyed by normalized movie ID
+     */
+    async getUserRatingsForMovies(userId, movieIds) {
+        const ratingsByMovieId = new Map();
+
+        if (!userId || !Array.isArray(movieIds) || movieIds.length === 0) {
+            return ratingsByMovieId;
+        }
+
+        const normalizedMovieIds = [...new Set(
+            movieIds
+                .map(movieId => Number(movieId))
+                .filter(movieId => Number.isInteger(movieId) && movieId > 0)
+        )];
+
+        if (normalizedMovieIds.length === 0) return ratingsByMovieId;
+
+        const queryChunkSize = 30;
+        const requests = [];
+
+        for (let index = 0; index < normalizedMovieIds.length; index += queryChunkSize) {
+            const chunk = normalizedMovieIds.slice(index, index + queryChunkSize);
+            requests.push({
+                preference: 0,
+                values: chunk
+            });
+            requests.push({
+                preference: 1,
+                values: chunk.map(String)
+            });
+        }
+
+        const settledRequests = await Promise.allSettled(requests.map(({ values }) => (
+            this.db.collection(this.collection)
+                .where('userId', '==', userId)
+                .where('movieId', 'in', values)
+                .get()
+        )));
+
+        const queriedRatings = [];
+        settledRequests.forEach((result, index) => {
+            if (result.status !== 'fulfilled') return;
+            result.value.forEach(doc => queriedRatings.push({
+                id: doc.id,
+                ...doc.data(),
+                _ratingQueryPreference: requests[index].preference
+            }));
+        });
+
+        this.getCurrentRatings(queriedRatings, userId).forEach(data => {
+            const normalizedMovieId = Number(data?.movieId);
+            if (!Number.isInteger(normalizedMovieId) || normalizedMovieId <= 0) return;
+            ratingsByMovieId.set(String(normalizedMovieId), data);
+        });
+
+        const rejectedRequests = settledRequests.filter(result => result.status === 'rejected');
+        if (rejectedRequests.length > 0) {
+            console.warn('[RatingService] Some batch personal-rating queries failed:', {
+                userId,
+                rejectedRequests: rejectedRequests.length,
+                requestedMovies: normalizedMovieIds.length,
+                resolvedRatings: ratingsByMovieId.size
+            });
+        }
+
+        return ratingsByMovieId;
     }
 
     /**
@@ -457,14 +604,9 @@ class RatingService {
             }
 
             const calcStart = performance.now();
-            let totalRating = 0;
-            let count = 0;
-
-            results.forEach(doc => {
-                const data = doc.data();
-                totalRating += data.rating;
-                count++;
-            });
+            const currentRatings = this.getCurrentRatings(results.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            const totalRating = currentRatings.reduce((sum, data) => sum + Number(data.rating), 0);
+            const count = currentRatings.length;
 
             const average = count > 0 ? Math.round((totalRating / count) * 10) / 10 : 0;
             const calcTime = Math.round(performance.now() - calcStart);
@@ -573,11 +715,11 @@ class RatingService {
             const query = this.db.collection(this.collection)
                 .where('movieId', 'in', chunk);
             const snapshot = await query.get();
-            snapshot.forEach(doc => allResults.push(doc.data()));
+            snapshot.forEach(doc => allResults.push({ id: doc.id, ...doc.data() }));
         }
 
         const movieRatings = {};
-        allResults.forEach(data => {
+        this.getCurrentRatings(allResults).forEach(data => {
             const movieId = Number(data.movieId);
             if (!Number.isInteger(movieId) || movieId <= 0) return;
             if (!movieRatings[movieId]) {
@@ -901,14 +1043,15 @@ class RatingService {
             }
 
             // Sort by createdAt descending in memory (to avoid index requirement)
-            ratings.sort((a, b) => {
+            const currentRatings = this.getCurrentRatings(ratings);
+            currentRatings.sort((a, b) => {
                 const dateA = a.createdAt?.toDate?.() || new Date(a.createdAt) || new Date(0);
                 const dateB = b.createdAt?.toDate?.() || new Date(b.createdAt) || new Date(0);
                 return dateB - dateA;
             });
 
             // Apply limit after sorting
-            return ratings.slice(0, limit);
+            return currentRatings.slice(0, limit);
         } catch (error) {
             console.error('Error getting movie ratings:', error);
             return [];
@@ -931,8 +1074,7 @@ class RatingService {
             let averageRating = 0;
             let ratingDistribution = {};
 
-            results.forEach(doc => {
-                const data = doc.data();
+            this.getCurrentRatings(results.docs.map(doc => ({ id: doc.id, ...doc.data() }))).forEach(data => {
                 totalRatings++;
                 averageRating += data.rating;
                 

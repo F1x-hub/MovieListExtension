@@ -501,11 +501,9 @@ class CollectionPageManager {
             showUserInfo: false,
             showEditRating: false,
             showAddToCollection: false,
-            showThreeDotMenu: false  // Simple card for collections
+            showRemoveFromCollection: true,
+            showThreeDotMenu: true
         });
-
-        // Add collection-specific data attribute for remove button
-        card.setAttribute('data-collection-movie-id', movieData.movie?.kinopoiskId);
 
         return card;
     }
@@ -514,25 +512,24 @@ class CollectionPageManager {
         const grid = this.elements.moviesGrid;
         if (!grid) return;
 
-        grid.querySelectorAll('.action-btn.btn-primary').forEach(button => {
-            button.addEventListener('mousedown', (e) => {
-                e.stopPropagation();
-                const movieId = button.getAttribute('data-movie-id');
-                if (movieId) {
-                    const url = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`);
-                    window.location.href = url;
-                }
-            });
-        });
+        if (grid.dataset.cardActionsBound === 'true') return;
 
-        grid.querySelectorAll('.remove-from-collection-btn').forEach(button => {
-            button.addEventListener('mousedown', async (e) => {
-                e.stopPropagation();
-                const movieId = parseInt(button.getAttribute('data-movie-id'));
-                if (movieId) {
-                    await this.removeMovieFromCollection(movieId, button);
-                }
-            });
+        grid.dataset.cardActionsBound = 'true';
+        grid.addEventListener('click', async (event) => {
+            const button = event.target.closest?.('[data-action="remove-from-collection"]');
+            if (!button || !grid.contains(button)) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            const movieId = Number(
+                button.getAttribute('data-movie-id')
+                || button.closest('.movie-card-component')?.getAttribute('data-movie-id')
+            );
+
+            if (Number.isInteger(movieId) && movieId > 0) {
+                await this.removeMovieFromCollection(movieId, button);
+            }
         });
     }
 
@@ -541,10 +538,8 @@ class CollectionPageManager {
 
         try {
             if (buttonElement) {
-                buttonElement.classList.add('animating');
-                setTimeout(() => {
-                    buttonElement.classList.remove('animating');
-                }, 300);
+                buttonElement.disabled = true;
+                buttonElement.setAttribute('aria-busy', 'true');
             }
 
             await this.collectionService.removeMovieFromCollection(this.collectionId, movieId);
@@ -562,6 +557,11 @@ class CollectionPageManager {
             console.error('Error removing movie from collection:', error);
             if (typeof Utils !== 'undefined' && Utils.showToast) {
                 Utils.showToast('Ошибка при удалении фильма', 'error');
+            }
+        } finally {
+            if (buttonElement?.isConnected) {
+                buttonElement.disabled = false;
+                buttonElement.removeAttribute('aria-busy');
             }
         }
     }

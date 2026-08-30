@@ -6,6 +6,15 @@
     "rules": "rules/firestore.rules",
     "indexes": "rules/firestore.indexes.json"
   },
+  "database": [
+    {
+      "target": "watchrooms-staging",
+      "rules": "rules/database.rules.json"
+    }
+  ],
+  "storage": {
+    "rules": "rules/storage.rules"
+  },
   "hosting": {
     "public": "public",
     "ignore": [
@@ -34,4 +43,3 @@
     ]
   }
 }
-

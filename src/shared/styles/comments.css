@@ -1,0 +1,275 @@
+/* Shared comment reaction surface. Keep this independent from page-specific card layout. */
+.comment-reaction-bar {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-sm, 8px);
+    margin-top: var(--space-md, 12px);
+    padding-top: var(--space-sm, 8px);
+    border-top: 1px solid var(--theme-border);
+}
+
+.comment-reaction-caption {
+    color: var(--theme-text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.comment-reaction-list {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.comment-reaction-controls {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.comment-reaction-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0 7px;
+    border: 1px solid var(--theme-border);
+    border-radius: 999px;
+    background: var(--theme-bg-secondary);
+    color: var(--theme-text-muted);
+    cursor: pointer;
+    touch-action: manipulation;
+    white-space: nowrap;
+    font: inherit;
+    line-height: 1;
+    transition: transform 140ms ease, background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.comment-reaction-trigger {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 1px dashed var(--theme-border);
+    border-radius: 50%;
+    background: transparent;
+    color: var(--theme-text-muted);
+    cursor: pointer;
+    touch-action: manipulation;
+    font: inherit;
+    line-height: 1;
+    transition: transform 140ms ease, background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.comment-reaction-trigger > span {
+    position: relative;
+    display: block;
+    width: 14px;
+    height: 14px;
+    font-size: 0;
+    line-height: 0;
+}
+
+.comment-reaction-trigger > span::before,
+.comment-reaction-trigger > span::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 14px;
+    height: 1.5px;
+    border-radius: 999px;
+    background: currentColor;
+    content: "";
+    transform: translate(-50%, -50%);
+}
+
+.comment-reaction-trigger > span::after {
+    width: 1.5px;
+    height: 14px;
+}
+
+.comment-reaction-picker {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    z-index: 20;
+    display: grid;
+    grid-template-columns: repeat(6, 32px);
+    justify-content: center;
+    gap: 6px;
+    width: max-content;
+    max-width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    padding: 6px;
+    border: 1px solid var(--theme-border);
+    border-radius: 14px;
+    background: var(--theme-bg-secondary);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+    transform-origin: top left;
+    overflow-y: auto;
+}
+
+.comment-reaction-picker[data-placement="above"] {
+    top: auto;
+    bottom: calc(100% + 8px);
+    transform-origin: bottom left;
+}
+
+.comment-reaction-picker[hidden] {
+    display: none !important;
+}
+
+.comment-reaction-picker-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0 5px;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--theme-text-muted);
+    cursor: pointer;
+    touch-action: manipulation;
+    font: inherit;
+    line-height: 1;
+    transition: transform 140ms ease, background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.comment-reaction-picker-btn.is-active {
+    border-color: transparent;
+    background: var(--theme-hover-bg);
+    color: var(--theme-accent);
+}
+
+.comment-reaction-emoji {
+    font-size: 15.75px;
+    line-height: 1;
+}
+
+.comment-reaction-visual {
+    display: inline-grid;
+    place-items: center;
+    width: 17.85px;
+    height: 17.85px;
+    border-radius: 4px;
+    line-height: 1;
+    overflow: hidden;
+}
+
+.comment-reaction-image {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    width: 17.85px;
+    height: 17.85px;
+    object-fit: contain;
+}
+
+.comment-reaction-image-fallback {
+    font-size: 11px;
+    overflow-wrap: anywhere;
+}
+
+.comment-reaction-count {
+    min-width: 0;
+    font-family: var(--font-data, monospace);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+
+.comment-reaction-btn.is-empty .comment-reaction-count {
+    display: none;
+}
+
+.comment-reaction-btn.is-active {
+    border-color: transparent;
+    background: var(--theme-hover-bg);
+    color: var(--theme-accent);
+}
+
+.comment-reaction-btn.is-active:hover,
+.comment-reaction-picker-btn.is-active:hover {
+    border-color: transparent;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .comment-reaction-btn:hover {
+        border-color: var(--theme-accent);
+        background: var(--theme-hover-bg);
+        color: var(--theme-text-primary);
+        transform: translateY(-1px);
+    }
+
+    .comment-reaction-trigger:hover,
+    .comment-reaction-picker-btn:hover {
+        border-color: var(--theme-accent);
+        background: var(--theme-hover-bg);
+        color: var(--theme-text-primary);
+        transform: translateY(-1px);
+    }
+}
+
+.comment-reaction-btn:active,
+.comment-reaction-trigger:active,
+.comment-reaction-picker-btn:active {
+    transform: scale(0.97);
+}
+
+.comment-reaction-btn:focus-visible {
+    outline: 2px solid var(--theme-accent);
+    outline-offset: 2px;
+}
+
+.comment-reaction-trigger:focus-visible,
+.comment-reaction-picker-btn:focus-visible {
+    outline: 2px solid var(--theme-accent);
+    outline-offset: 2px;
+}
+
+.comment-reaction-btn[aria-busy="true"],
+.comment-reaction-picker-btn[aria-busy="true"],
+.comment-reaction-trigger[aria-busy="true"] {
+    cursor: wait;
+    opacity: 0.6;
+}
+
+.comment-reaction-btn:disabled,
+.comment-reaction-picker-btn:disabled,
+.comment-reaction-trigger:disabled {
+    cursor: wait;
+    opacity: 0.6;
+}
+
+@media (max-width: 520px) {
+    .comment-reaction-bar {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .comment-reaction-controls {
+        width: 100%;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .comment-reaction-btn {
+        transition: none;
+    }
+
+    .comment-reaction-trigger,
+    .comment-reaction-picker-btn {
+        transition: none;
+    }
+}

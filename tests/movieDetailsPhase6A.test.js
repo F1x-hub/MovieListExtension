@@ -122,11 +122,39 @@ function managerFor(movieId) {
         console.log('  ✅ stale seasons fallback is discarded');
     }
 
+    {
+        const manager = managerFor(101);
+        const loading = { style: { display: 'flex' } };
+        const content = { innerHTML: '', querySelector: () => ({ id: 'ratings-list' }) };
+        const section = {
+            dataset: { movieId: '101' },
+            querySelector: (selector) => selector === '.user-ratings-loading' ? loading : content
+        };
+        documentStub.getElementById = (id) => id === 'userRatingsSection' ? section : null;
+        manager._userProfileCache = new Map();
+        manager.commentReactionSummaries = new Map();
+        manager.commentUserReactions = new Map();
+        manager.createUserRatingsSection = (ratings) => `<div>${ratings[0].comment}</div>`;
+        manager.setupUsernameClickListeners = () => {};
+        manager.latestRatingsSnapshotMovieId = '101';
+        manager.latestRatingsSnapshotUser = { uid: 'user-1' };
+        manager.latestRatingsSnapshot = [{ id: 'rating-1', comment: 'Visible after rerender' }];
+
+        assert.strictEqual(manager.rehydrateRatingsForCurrentRender(101), true);
+        assert.strictEqual(content.innerHTML, '<div>Visible after rerender</div>');
+        assert.strictEqual(loading.style.display, 'none');
+        console.log('  ✅ same-movie DOM replacement rehydrates the active ratings section');
+    }
+
     assert(source.includes('recommendationsState = { movieId: null, status: \'idle\', data: null }'), 'recommendation state must distinguish request/data state');
     assert(source.includes('franchiseState = { movieId: null, status: \'idle\', data: null }'), 'franchise state must distinguish request/data state');
     assert(!source.includes('if (this.recommendationsLoadedForMovieId === movieId) return;'), 'old recommendation loaded marker must not block rerender');
     assert(!source.includes('if (this.franchiseLoadedForMovieId === movieId) return;'), 'old franchise loaded marker must not block rerender');
     console.log('  ✅ same-movie related sections reuse ready data instead of hanging skeletons');
+
+    assert(source.includes("rootMargin: '0px 96px'"), 'deferred recommendation posters must preload only one narrow card-width ahead');
+    assert(!source.includes("rootMargin: '0px 320px'"), 'deferred recommendation posters must not activate the whole short carousel on first paint');
+    console.log('  ✅ deferred recommendation posters stay outside the initial decode burst');
 
     const progressHandlerStart = source.indexOf("event.data.type === 'UPDATE_WATCHING_PROGRESS'");
     const progressHandlerEnd = source.indexOf("event.data.type === 'EPISODE_CHANGED'", progressHandlerStart);

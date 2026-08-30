@@ -148,6 +148,15 @@ assert.strictEqual(offscreenSuccess[0].id, 6116803);
 await service.scrapeSearchResultsOffscreen('драма', { requireRating: true });
 assert.strictEqual(lastSentMessage.requireRating, true);
 
+const similarResult = await service.scrapeSimilarMoviesOffscreen(6116803, {
+    timeoutMs: 3500,
+    queueDeadlineMs: 3500
+});
+assert.strictEqual(lastSentMessage.type, 'KINOPOISK_SIMILAR_OFFSCREEN');
+assert.strictEqual(lastSentMessage.timeoutMs, 3500);
+assert.strictEqual(lastSentMessage.queueDeadlineMs, 3500);
+assert.strictEqual(similarResult, null, 'Unknown similar response should signal the recommendation fallback');
+
 const offscreenBlocked = await service.scrapeSearchResultsOffscreen('blocked');
 assert.strictEqual(offscreenBlocked, null, 'Blocked offscreen scrape should return null to trigger fallback');
 console.log('✅ Offscreen message dispatch and error handling passed!\n');

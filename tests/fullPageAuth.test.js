@@ -291,9 +291,15 @@ async function runTests() {
     assert.strictEqual(loginEmailError.style.display, 'block', 'Email error shown when empty');
 
     // Test 4.2: Invalid Email format
-    testContainer.querySelector('#fpaLoginEmail').value = 'invalid-email';
+    const loginEmailInput = testContainer.querySelector('#fpaLoginEmail');
+    loginEmailInput.value = 'invalid-email';
+    testContainer.querySelector('#fpaLoginPassword').value = 'x';
     loginForm.dispatchEvent({ type: 'submit', preventDefault: () => {} });
     assert.strictEqual(loginEmailError.style.display, 'block', 'Email error shown for invalid email');
+    assert.strictEqual(loginEmailError.textContent, 'Введите корректный email', 'Invalid email copy is actionable');
+    assert.strictEqual(loginEmailInput.getAttribute('aria-invalid'), 'true', 'Invalid email is exposed to assistive technology');
+    assert.strictEqual(loginEmailInput.getAttribute('aria-describedby'), 'fpaLoginEmailError', 'Email error is associated with its input');
+    assert.strictEqual(loginEmailError.getAttribute('role'), 'alert', 'Email error is announced');
 
     // Test 4.3: Registration Password Validation
     valAuth.switchView('register');

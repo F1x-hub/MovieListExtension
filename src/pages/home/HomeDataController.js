@@ -17,6 +17,7 @@ class HomeDataController {
     initServices() {
         const fm = this.firebaseManager || window.firebaseManager;
         this.kinopoiskService = fm?.getKinopoiskService?.() || (typeof KinopoiskService !== 'undefined' ? new KinopoiskService() : null);
+        this.tmdbService = typeof TMDBService !== 'undefined' ? new TMDBService() : null;
         this.homeCacheService = fm?.getHomeCacheService?.() || (typeof HomeCacheService !== 'undefined' ? new HomeCacheService(fm) : null);
         this.homeMovieNavigationService = typeof HomeMovieNavigationService !== 'undefined'
             ? new HomeMovieNavigationService({ kinopoiskService: this.kinopoiskService })

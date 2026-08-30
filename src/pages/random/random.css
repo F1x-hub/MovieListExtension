@@ -360,25 +360,25 @@
 
 /* Tag States include/exclude */
 .tag-btn.state-include {
-    background-color: rgba(16, 185, 129, 0.08) !important;
-    border-color: rgba(16, 185, 129, 0.25) !important;
-    color: #34d399 !important;
+    background-color: var(--theme-active-bg) !important;
+    border-color: var(--ui-color-border-hover) !important;
+    color: var(--ui-color-content) !important;
 }
 
 .light-theme .tag-btn.state-include {
-    background-color: rgba(16, 185, 129, 0.06) !important;
-    color: #059669 !important;
+    background-color: var(--theme-active-bg) !important;
+    color: var(--ui-color-content) !important;
 }
 
 .tag-btn.state-exclude {
-    background-color: rgba(244, 63, 94, 0.08) !important;
-    border-color: rgba(244, 63, 94, 0.25) !important;
-    color: #fb7185 !important;
+    background-color: var(--theme-active-bg) !important;
+    border-color: var(--ui-color-border-hover) !important;
+    color: var(--ui-color-content) !important;
 }
 
 .light-theme .tag-btn.state-exclude {
-    background-color: rgba(244, 63, 94, 0.06) !important;
-    color: #e11d48 !important;
+    background-color: var(--theme-active-bg) !important;
+    color: var(--ui-color-content) !important;
 }
 
 .tag-status-icon {
@@ -1267,7 +1267,7 @@
 }
 
 /* Pool Button */
-.btn-secondary {
+.pool-btn-secondary {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -1284,11 +1284,11 @@
     flex-shrink: 0;
 }
 
-.light-theme .btn-secondary {
+.light-theme .pool-btn-secondary {
     background: rgba(9, 9, 11, 0.02);
 }
 
-.btn-secondary:hover {
+.pool-btn-secondary:hover {
     background: rgba(255, 255, 255, 0.07);
     border-color: var(--theme-border-hover);
     color: var(--theme-text-primary);
@@ -1469,9 +1469,9 @@
     flex-wrap: wrap;
 }
 .pool-list-item-bonus .bonus-tag {
-    background: rgba(16, 185, 129, 0.08);
-    border: 1px solid rgba(16, 185, 129, 0.2);
-    color: #10b981;
+    background: var(--theme-hover-bg);
+    border: 1px solid var(--ui-color-border);
+    color: var(--ui-color-content-muted);
     padding: 1px 6px;
     border-radius: 4px;
     font-weight: 600;
@@ -1501,16 +1501,6 @@
     padding: 14px 20px 20px;
     border-top: 1px solid var(--theme-border);
 }
-
-.btn-danger {
-    flex: 0 0 auto;
-    padding: 10px 16px; border-radius: var(--radius-md); font-size: 13px; font-weight: 600;
-    background: transparent;
-    border: 1px solid var(--theme-border);
-    color: var(--theme-text-secondary); cursor: pointer;
-    transition: var(--transition);
-}
-.btn-danger:hover { border-color: #f43f5e; color: #f43f5e; background: rgba(244, 63, 94, 0.05); }
 
 .btn-roll-from-pool {
     flex: 1;
