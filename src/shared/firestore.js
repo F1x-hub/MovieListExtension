@@ -16,22 +16,16 @@ class FirebaseManager {
 
     init() {
         try {
-            const runtimeDatabaseUrl = typeof globalThis !== 'undefined'
-                ? globalThis.MOVIELIST_RUNTIME_CONFIG?.databaseURL
-                : null;
             const firebaseConfig = {
                 apiKey: "AIzaSyC6PI4cBRzn6KLVJ6ikensKus6LaulabO4",
                 authDomain: "movielistdb-13208.firebaseapp.com",
                 projectId: "movielistdb-13208",
+                databaseURL: "https://movielistdb-13208-watchrooms-staging.firebaseio.com",
                 storageBucket: "movielistdb-13208.firebasestorage.app",
                 messagingSenderId: "532518163829",
                 appId: "1:532518163829:web:36a6a62a14adc188f1af3c",
                 measurementId: "G-ERR3F3Z7S4"
               };
-
-            if (typeof runtimeDatabaseUrl === 'string' && /^https:\/\/[a-z0-9-]+\.firebaseio\.com$/i.test(runtimeDatabaseUrl)) {
-                firebaseConfig.databaseURL = runtimeDatabaseUrl;
-            }
 
             if (!firebase.apps.length) {
                 firebase.initializeApp(firebaseConfig);

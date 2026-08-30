@@ -11,7 +11,7 @@ A powerful Chrome Extension (Manifest V3) that enhances the movie discovery and 
 | Framework   | Chrome Extension MV3         | Manifest V3, background service worker, offscreen APIs |
 | UI          | HTML / CSS (Vanilla)        | Responsive layouts, CSS custom properties |
 | Backend     | Firebase Services           | Auth, Firestore, Storage, Cloud Functions, Secret Manager |
-| DB          | Firestore / Realtime Database / Local Storage | RTDB room ACL rules are present; staging instance URL is still required |
+| DB          | Firestore / Realtime Database / Local Storage | Watch rooms use the isolated versioned staging RTDB instance |
 | Observability | Google Cloud Monitoring  | Admin-only Firestore usage metrics |
 | Build       | npm + copyfiles + Terser    | Rimraf clean, copyfiles structure copy, Terser minification |
 | Linter      | ESLint 10.x                 | Linting rules for src and content scripts |
@@ -161,6 +161,7 @@ MovieDetails comment links use `Utils.extractYouTubeVideoInfo()` to mark verifie
 
 ## Key Conventions
 
+- **Watch-room RTDB config**: `FirebaseManager` owns the public URL for the isolated staging RTDB in its Firebase client config. Do not restore an ignored runtime config file or point room flows at the default database; RTDB Rules, not URL secrecy, enforce access.
 - **Watch-room auth and timer readiness**: `WatchRoomStagingController` waits up to ten seconds for Firebase Auth restoration before its initial create or join API request; do not reject a first click merely because the page rendered before Auth. Its default timer dependencies must call `globalThis.setTimeout` and `globalThis.clearTimeout` as Window methods, never store either method as an unbound callback.
 - **Catalogue routing**: Home category links use `catalog.html?category=films|series|cartoons|anime`; legacy `search.html?type=...` links redirect to the canonical catalogue route. Do not resolve KP IDs for an entire list page; resolve them only through the existing click-time MovieDetails flow.
 - **Card ratings**: `MovieCard` keeps KP, IMDb, and TMDB ratings in separate fields; compact badges must label the provider and never display TMDB as KP.
