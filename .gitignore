@@ -52,7 +52,6 @@ temp/
 # Firebase config (if contains sensitive data)
 firebase-config.js
 src/shared/config/tmdb.config.js
-src/shared/config/firebase.runtime.js
 
 # Build outputs
 dist/
