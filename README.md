@@ -301,6 +301,7 @@ manifest and package version remain the source of truth for the build version.
 - Stop recurring missing-icon requests by routing admin and search fallbacks through IconUtils.
 - Prefer canonical numeric personal ratings when incomplete legacy records have the same movie ID.
 - Configure the isolated watch-room RTDB in the versioned Firebase client config so Git installs can create rooms.
+- Allow a signed-in user to bootstrap their missing canonical comment-reaction document inside a transaction.
 
 ### Docs
 
