@@ -51,6 +51,15 @@ service cloud.firestore {
       return /databases/$(database)/documents/settings/commentReactions;
     }
 
+    function commentReactionPath(reactionId) {
+      return /databases/$(database)/documents/commentReactions/$(reactionId);
+    }
+
+    function hasOwnCommentReactionId(reactionId) {
+      return isAuthenticated()
+        && reactionId.matches('^.+_' + request.auth.uid + '$');
+    }
+
     function commentReactionAllowedTypes() {
       return exists(commentReactionConfigPath())
         && get(commentReactionConfigPath()).data.reactionTypes is list
@@ -185,6 +194,11 @@ service cloud.firestore {
     // One deterministic document per user and comment may contain up to three
     // reaction types. Counts are server-derived and never client-writable.
     match /commentReactions/{reactionId} {
+      // Transactions must read a missing deterministic document before they can
+      // create the user's first reaction. A missing document exposes no data;
+      // existing documents still use the owner check below.
+      allow get: if hasOwnCommentReactionId(reactionId)
+        && !exists(commentReactionPath(reactionId));
       allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow create: if isApprovedUser()
         && request.resource.data.userId == request.auth.uid
