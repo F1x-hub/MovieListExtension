@@ -75,95 +75,13 @@ class PopupManager {
     }
 
     initializeTheme() {
-        console.log('🎨 PopupManager: Initializing theme...');
-        
-        const theme = localStorage.getItem('movieExtensionTheme') || 'dark';
-        console.log('🎨 PopupManager: Retrieved theme from localStorage:', theme);
-        
-        this.applyTheme(theme);
-        
-        window.addEventListener('storage', (e) => {
-            if (e.key === 'movieExtensionTheme' && e.newValue) {
-                console.log('🎨 PopupManager: Theme changed via storage event:', e.newValue);
-                this.applyTheme(e.newValue);
-            }
-        });
-        
-        let lastAppliedTheme = theme;
-        setInterval(() => {
-            const currentTheme = localStorage.getItem('movieExtensionTheme') || 'dark';
-            if (currentTheme !== lastAppliedTheme) {
-                lastAppliedTheme = currentTheme;
-                console.log('🎨 PopupManager: Theme mismatch detected, applying:', currentTheme);
-                this.applyTheme(currentTheme);
-            }
-        }, 500);
+        if (window.ThemeService) {
+            window.ThemeService.applyCurrentTheme();
+        }
     }
 
     applyTheme(theme) {
-        console.log('🎨 PopupManager: Applying theme:', theme);
-        
-        let isLight = theme === 'light';
-        let customTheme = null;
-
-        if (theme && theme.startsWith('custom_')) {
-            try {
-                const raw = localStorage.getItem('movieExtensionCustomThemes');
-                if (raw) {
-                    const customs = JSON.parse(raw);
-                    customTheme = customs.find(t => t.id === theme);
-                    if (customTheme) {
-                        isLight = customTheme.base === 'light';
-                    }
-                }
-            } catch (e) {
-                console.error('Error reading custom themes in popup:', e);
-            }
-        }
-
-        if (isLight) {
-            document.documentElement.classList.add('light-theme');
-            document.body.classList.add('light-theme');
-            document.body.classList.remove('dark-theme');
-        } else {
-            document.documentElement.classList.remove('light-theme');
-            document.body.classList.add('dark-theme');
-            document.body.classList.remove('light-theme');
-        }
-
-        const customVariablesList = [
-            '--theme-bg-primary',
-            '--theme-bg-secondary',
-            '--theme-bg-tertiary',
-            '--theme-bg-card',
-            '--theme-text-primary',
-            '--theme-text-secondary',
-            '--theme-text-muted',
-            '--theme-border',
-            '--theme-input-bg',
-            '--theme-input-text',
-            '--theme-hover-bg',
-            '--theme-active-bg',
-            '--accent-color'
-        ];
-
-        if (customTheme && customTheme.variables) {
-            Object.keys(customTheme.variables).forEach(varName => {
-                document.documentElement.style.setProperty(varName, customTheme.variables[varName]);
-            });
-        } else {
-            customVariablesList.forEach(v => document.documentElement.style.removeProperty(v));
-        }
-
-        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-            chrome.storage.local.set({ theme: theme });
-        }
-
-        if (typeof IconUtils !== 'undefined') {
-            IconUtils.updateExtensionIcon(isLight ? 'light' : 'dark');
-        }
-        
-        console.log('🎨 PopupManager: Body classes after theme application:', document.body.className);
+        return window.ThemeService ? window.ThemeService.applyTheme(theme) : null;
     }
 
     initializeElements() {
@@ -2150,7 +2068,7 @@ class PopupManager {
                                 <button class="rating-menu-btn" data-rating-id="${rating.id}" aria-label="Меню отзыва">
                                     <span>⋮</span>
                                 </button>
-                                <div class="rating-menu-dropdown" id="popup-menu-${rating.id}" style="display: none;">
+                                <div class="popover-surface rating-menu-dropdown" id="popup-menu-${rating.id}" style="display: none;">
                                     <button class="menu-item edit-item" data-rating-id="${rating.id}" data-action="edit">
                                         <span class="menu-icon">${Icons.EDIT}</span>
                                         <span>${i18n.get('movie_details.edit')}</span>
@@ -2165,7 +2083,7 @@ class PopupManager {
                         <div class="rating-score-badge" data-rating-id="${rating.id}">
                             <span class="score-star">★</span>
                             <span class="score-value">${rating.rating}</span>
-                            <div class="average-score-tooltip" id="tooltip-${rating.id}">
+                            <div class="tooltip-surface average-score-tooltip" id="tooltip-${rating.id}">
                                 <span class="tooltip-icon">👥</span>
                                 <span class="tooltip-text">${i18n.currentLocale === 'ru' ? 'Средняя' : 'Avg'}: ${averageDisplay}</span>
                             </div>

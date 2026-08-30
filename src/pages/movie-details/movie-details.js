@@ -41,6 +41,12 @@ class MovieDetailsManager {
         this.pageGeneration = 0;
         this.activePageContext = null;
         this.currentUser = null;
+        this.commentReactionSummaries = new Map();
+        this.commentUserReactions = new Map();
+        this.commentReactionPending = new Set();
+        this.latestRatingsSnapshot = null;
+        this.latestRatingsSnapshotMovieId = null;
+        this.latestRatingsSnapshotUser = null;
         this.authVerified = false;
         this.authDecision = 'unresolved';
         this.speculativeMovie = null;
@@ -89,6 +95,28 @@ class MovieDetailsManager {
         this.preloadTimeout = null;
         this.sourceSwitchRequestId = 0;
         this.sourceLifecycleWatcher = null;
+        this.watchRoomStatusTimer = null;
+        this.rutubeWatchRoomBridge = typeof RutubeWatchRoomBridge !== 'undefined'
+            ? new RutubeWatchRoomBridge({
+                getIframe: () => this.elements.videoContainer?.querySelector?.('iframe[data-player-source-active="true"]')
+                    || this.elements.videoContainer?.querySelector?.('iframe'),
+            })
+            : null;
+        this.watchRoomController = typeof WatchRoomStagingController !== 'undefined'
+            ? new WatchRoomStagingController({
+                getIframe: () => this.elements.videoContainer?.querySelector?.('iframe[data-player-source-active="true"]')
+                    || this.elements.videoContainer?.querySelector?.('iframe'),
+                getVideo: () => this.elements.videoContainer?.querySelector?.('video:not(.ghost-video)'),
+                getMovie: () => this.selectedMovie,
+                getProviderId: () => this.getWatchRoomProviderId(),
+                getProviderSource: () => this.getWatchRoomProviderSource(),
+                getPlayerBridge: () => this.getWatchRoomPlayerBridge(),
+                onProviderChange: (providerId, providerSource) => this.changeWatchRoomProvider(providerId, providerSource),
+                onStatus: (message) => this.setWatchRoomStatus(message),
+                onRoomUpdate: (room) => this.renderWatchRoomMembers(room),
+            })
+            : null;
+        this.watchRoomJoinCode = null;
         this.kinogoContentRecovery = {
             key: null,
             attempts: 0,
@@ -175,6 +203,7 @@ class MovieDetailsManager {
         this.recommendationsLoadedForMovieId = null;
         this.recommendationsState = { movieId: null, status: 'idle', data: null };
         this.recommendationsObserver = null;
+        this.recommendationPosterObserver = null;
         this.franchiseService = null;
         this.franchiseLoadedForMovieId = null;
         this.franchiseState = { movieId: null, status: 'idle', data: null };
@@ -200,6 +229,8 @@ class MovieDetailsManager {
         this.perf?.start({ movieId: urlParams.get('movieId') });
 
         this.setupEventListeners();
+        this.setupCommentReactionListeners();
+        this.initSelectionPopup();
         this.init();
     }
 
@@ -244,6 +275,7 @@ class MovieDetailsManager {
             ratingMovieTitle: document.getElementById('ratingMovieTitle'),
             ratingMovieMeta: document.getElementById('ratingMovieMeta'),
             ratingStars: document.getElementById('ratingStars'),
+            ratingStatus: document.getElementById('ratingStatus'),
             writeReviewBtn: document.getElementById('writeReviewBtn'),
             reviewContainer: document.getElementById('reviewContainer'),
             ratingComment: document.getElementById('ratingComment'),
@@ -269,6 +301,15 @@ class MovieDetailsManager {
             videoContainer: document.getElementById('videoContainer'),
             closeVideoBtn: document.getElementById('closeVideoBtn'),
             sourceButtonsContainer: document.getElementById('sourceButtonsContainer'),
+            createWatchRoomBtn: document.getElementById('createWatchRoomBtn'),
+            joinWatchRoomBtn: document.getElementById('joinWatchRoomBtn'),
+            copyWatchRoomCodeBtn: document.getElementById('copyWatchRoomCodeBtn'),
+            watchRoomMembersBtn: document.getElementById('watchRoomMembersBtn'),
+            watchRoomParticipantCount: document.getElementById('watchRoomParticipantCount'),
+            watchRoomMembersPopover: document.getElementById('watchRoomMembersPopover'),
+            watchRoomMembersList: document.getElementById('watchRoomMembersList'),
+            watchRoomControls: document.getElementById('watchRoomControls'),
+            watchRoomStatus: document.getElementById('watchRoomStatus'),
 
             // Auto-Next Prompt Overlay (Phase 3G)
             playerAutoNextPrompt: document.getElementById('playerAutoNextPrompt'),
@@ -325,7 +366,7 @@ class MovieDetailsManager {
         
         // Rating Stars
         if (this.elements.ratingStars) {
-            this.elements.ratingStars.addEventListener('mouseover', (e) => {
+            this.elements.ratingStars.addEventListener('pointerover', (e) => {
                 const btn = e.target.closest('.star-rating-btn');
                 if (btn) {
                     const rating = parseInt(btn.dataset.rating);
@@ -333,14 +374,44 @@ class MovieDetailsManager {
                 }
             });
 
-            this.elements.ratingStars.addEventListener('mouseout', () => {
+            this.elements.ratingStars.addEventListener('pointerleave', () => {
                 this.updateStarVisuals(this.currentRating, false);
             });
 
-            this.elements.ratingStars.addEventListener('mousedown', (e) => {
+            this.elements.ratingStars.addEventListener('focusin', (e) => {
+                const btn = e.target.closest('.star-rating-btn');
+                if (btn) this.updateStarVisuals(parseInt(btn.dataset.rating), true);
+            });
+
+            this.elements.ratingStars.addEventListener('focusout', (e) => {
+                if (e.target.closest('.star-rating-btn')) {
+                    this.updateStarVisuals(this.currentRating, false);
+                }
+            });
+
+            this.elements.ratingStars.addEventListener('keydown', (e) => {
+                const btn = e.target.closest('.star-rating-btn');
+                if (!btn) return;
+
+                const buttons = [...this.elements.ratingStars.querySelectorAll('.star-rating-btn')];
+                const index = buttons.indexOf(btn);
+                const targetIndex = {
+                    ArrowLeft: Math.max(0, index - 1),
+                    ArrowDown: Math.max(0, index - 1),
+                    ArrowRight: Math.min(buttons.length - 1, index + 1),
+                    ArrowUp: Math.min(buttons.length - 1, index + 1),
+                    Home: 0,
+                    End: buttons.length - 1
+                }[e.key];
+
+                if (targetIndex === undefined) return;
+                e.preventDefault();
+                buttons[targetIndex].focus();
+            });
+
+            this.elements.ratingStars.addEventListener('click', (e) => {
                 const btn = e.target.closest('.star-rating-btn');
                 if (btn) {
-                    e.preventDefault();
                     const rating = parseInt(btn.dataset.rating);
                     this.currentRating = rating;
                     this.updateStarVisuals(rating, false);
@@ -371,6 +442,11 @@ class MovieDetailsManager {
         // Video Player Modal
         if (this.elements.closeVideoBtn) {
             this.elements.closeVideoBtn.addEventListener('click', () => this.closeVideoModal());
+        }
+        if (this.elements.watchRoomControls) {
+            // Capture the action before a stale page-level listener can handle
+            // the same click as a different room action after an extension reload.
+            this.elements.watchRoomControls.addEventListener('click', (event) => this.handleWatchRoomAction(event), true);
         }
         if (this.elements.videoPlayerModal) {
             this.elements.videoPlayerModal.addEventListener('mousedown', (e) => {
@@ -1781,6 +1857,18 @@ class MovieDetailsManager {
 
     async displayMovieDetails(movie) {
         this.perf?.mark('md:render-start');
+        if (this.recommendationsObserver) {
+            this.recommendationsObserver.disconnect();
+            this.recommendationsObserver = null;
+        }
+        if (this.franchiseObserver) {
+            this.franchiseObserver.disconnect();
+            this.franchiseObserver = null;
+        }
+        if (this.recommendationPosterObserver) {
+            this.recommendationPosterObserver.disconnect();
+            this.recommendationPosterObserver = null;
+        }
         this.beginPageGeneration(movie?.kinopoiskId || movie?.id);
         const previousMovieId = this.selectedMovie?.kinopoiskId;
         if (previousMovieId && String(previousMovieId) !== String(movie.kinopoiskId)) {
@@ -1845,7 +1933,15 @@ class MovieDetailsManager {
     startPostRenderEnrichment(movie, pageContext = this.capturePageContext(movie)) {
         if (!this.authVerified || !this.isPageContextCurrent(pageContext)) return;
         const movieId = String(movie?.kinopoiskId || '');
-        if (movieId && this.postRenderEnrichmentMovieId === movieId) return;
+        if (movieId && this.postRenderEnrichmentMovieId === movieId) {
+            // Same-movie renders replace the DOM while page generation deliberately
+            // remains stable. Rebind visual owners to the replacement DOM without
+            // duplicating their network subscriptions or provider work.
+            this.rehydrateRatingsForCurrentRender(movieId);
+            this.observeOrLoadRecommendations(movie);
+            this.observeOrLoadFranchise(movie);
+            return;
+        }
         this.postRenderEnrichmentMovieId = movieId;
         this.loadAndDisplayUserRatings(movie.kinopoiskId);
 
@@ -1911,7 +2007,7 @@ class MovieDetailsManager {
 
         const width = 720;
         const height = 320;
-        const padding = { top: 24, right: 18, bottom: 44, left: 68 };
+        const padding = { top: 24, right: 18, bottom: 44, left: 120 };
         const plotWidth = width - padding.left - padding.right;
         const plotHeight = height - padding.top - padding.bottom;
         const numericValues = points.flatMap(point => [
@@ -1965,7 +2061,7 @@ class MovieDetailsManager {
             const y = yAt(value);
             return `
                 <line class="the-numbers-chart__gridline" x1="${padding.left}" y1="${y.toFixed(2)}" x2="${(width - padding.right).toFixed(2)}" y2="${y.toFixed(2)}"></line>
-                <text class="the-numbers-chart__axis-label" x="${padding.left - 10}" y="${(y + 4).toFixed(2)}" text-anchor="end">${this.escapeHtml(this.formatTheNumbersAmount(value))}</text>`;
+                <text class="the-numbers-chart__axis-label" x="${padding.left - 12}" y="${(y + 4.5).toFixed(2)}" text-anchor="end">${this.escapeHtml(this.formatTheNumbersAmount(value))}</text>`;
         }).join('');
 
         const tickIndexes = [...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])];
@@ -2006,7 +2102,7 @@ class MovieDetailsManager {
                 <summary class="the-numbers-chart__summary">
                     <span class="the-numbers-chart__title">Динамика сборов</span>
                     <span class="the-numbers-chart__summary-meta">Domestic · накопительный итог</span>
-                    <span class="the-numbers-chart__chevron" aria-hidden="true">⌄</span>
+                    <span class="the-numbers-chart__chevron" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
                 </summary>
                 <div class="the-numbers-chart__content">
                     <div class="the-numbers-chart__legend" aria-label="Легенда графика">
@@ -2024,7 +2120,7 @@ class MovieDetailsManager {
                             ${pointTooltips}
                             ${activePointMarkup}
                             ${xTicks}
-                            <text class="the-numbers-chart__axis-title" x="14" y="${padding.top + plotHeight / 2}" text-anchor="middle" transform="rotate(-90 14 ${padding.top + plotHeight / 2})">USD</text>
+                            <text class="the-numbers-chart__axis-title" x="16" y="${padding.top + plotHeight / 2}" text-anchor="middle" transform="rotate(-90 16 ${padding.top + plotHeight / 2})">USD</text>
                         </svg>
                         <div class="the-numbers-chart__tooltip" role="tooltip" hidden></div>
                     </div>
@@ -3043,6 +3139,20 @@ class MovieDetailsManager {
         const sectionEl = document.getElementById('movieRecommendationsSection');
         if (!sectionEl) return;
 
+        const scheduleLoad = () => {
+            const load = () => {
+                if (sectionEl.isConnected) this.loadRecommendationsAsync(movie);
+            };
+
+            // Let the first content frame and critical enrichment work settle
+            // before starting the browser-context Kinopoisk scrape.
+            if (typeof requestIdleCallback === 'function') {
+                requestIdleCallback(load, { timeout: 1200 });
+            } else {
+                setTimeout(load, 120);
+            }
+        };
+
         if (typeof IntersectionObserver !== 'undefined') {
             if (this.recommendationsObserver) {
                 this.recommendationsObserver.disconnect();
@@ -3052,12 +3162,12 @@ class MovieDetailsManager {
                 if (entry && entry.isIntersecting) {
                     this.recommendationsObserver.disconnect();
                     this.recommendationsObserver = null;
-                    this.loadRecommendationsAsync(movie);
+                    scheduleLoad();
                 }
             }, { rootMargin: '300px' });
             this.recommendationsObserver.observe(sectionEl);
         } else {
-            setTimeout(() => this.loadRecommendationsAsync(movie), 50);
+            scheduleLoad();
         }
     }
 
@@ -3077,6 +3187,25 @@ class MovieDetailsManager {
         if (state.movieId === movieId && state.status === 'loading') return;
 
         let filteredRecs = state.movieId === movieId && state.status === 'ready' ? state.data : null;
+        const recommendationUiTraceStartedAt = typeof performance !== 'undefined' && typeof performance.now === 'function'
+            ? performance.now()
+            : Date.now();
+        let recommendationLongTaskCount = 0;
+        let recommendationLongTaskTotalMs = 0;
+        let recommendationLongTaskObserver = null;
+        try {
+            if (typeof PerformanceObserver !== 'undefined') {
+                recommendationLongTaskObserver = new PerformanceObserver((list) => {
+                    list.getEntries().forEach(entry => {
+                        recommendationLongTaskCount += 1;
+                        recommendationLongTaskTotalMs += Number(entry.duration) || 0;
+                    });
+                });
+                recommendationLongTaskObserver.observe({ type: 'longtask', buffered: false });
+            }
+        } catch {
+            recommendationLongTaskObserver = null;
+        }
 
         try {
             const fbMgr = (typeof firebaseManager !== 'undefined' && firebaseManager) ? firebaseManager : (typeof window !== 'undefined' && window.firebaseManager ? window.firebaseManager : null);
@@ -3131,7 +3260,11 @@ class MovieDetailsManager {
             }
 
             if (carouselEl) {
-                carouselEl.innerHTML = '';
+                if (this.recommendationPosterObserver) {
+                    this.recommendationPosterObserver.disconnect();
+                    this.recommendationPosterObserver = null;
+                }
+                carouselEl.replaceChildren();
                 const favService = (typeof FavoriteService !== 'undefined' && fbMgr?.getFavoriteService)
                     ? fbMgr.getFavoriteService()
                     : null;
@@ -3151,8 +3284,16 @@ class MovieDetailsManager {
                     }
                 }
 
-                filteredRecs.forEach(rec => {
+                const renderStartedAt = typeof performance !== 'undefined' && typeof performance.now === 'function'
+                    ? performance.now()
+                    : Date.now();
+                const cardFragment = document.createDocumentFragment();
+                const deferredPosterImages = [];
+                const initialPosterCount = Math.min(4, filteredRecs.length);
+
+                filteredRecs.forEach((rec, index) => {
                     const kpId = Number(rec.kinopoiskId);
+                    const deferPoster = index >= initialPosterCount;
                     const bookmark = bookmarksMap ? bookmarksMap[kpId] : null;
                     const isFav = bookmark?.status === 'favorite';
                     const isWatch = bookmark?.status === 'watching';
@@ -3167,7 +3308,12 @@ class MovieDetailsManager {
                             alternativeName: rec.alternativeName,
                             posterUrl: rec.posterUrl,
                             year: rec.year,
-                            genres: rec.genreIds
+                            genres: rec.genres || rec.genreIds,
+                            mediaType: rec.mediaType,
+                            kpRating: rec.kpRating || rec.ratingKp,
+                            imdbRating: rec.imdbRating,
+                            kpVotes: rec.kpVotes,
+                            imdbVotes: rec.imdbVotes
                         },
                         isFavorite: isFav,
                         isWatching: isWatch,
@@ -3181,14 +3327,127 @@ class MovieDetailsManager {
                         showWatched: true,
                         showWatchlist: true,
                         showAddToCollection: true,
-                        availableCollections: this.availableCollections
+                        availableCollections: this.availableCollections,
+                        lazyPoster: true,
+                        deferPoster
                     });
 
-                    carouselEl.appendChild(card);
+                    cardFragment.appendChild(card);
+
+                    const posterImage = card.querySelector('.mc-poster');
+                    if (posterImage) {
+                        if (posterImage.dataset.deferredPosterUrl) {
+                            deferredPosterImages.push(posterImage);
+                        }
+                        let posterMetricsLogged = false;
+                        const logPosterMetrics = () => {
+                            if (posterMetricsLogged) return;
+                            // Deferred cards initially contain the tiny app icon;
+                            // only measure the real poster after it is activated.
+                            if (posterImage.dataset.deferredPosterUrl) return;
+                            posterMetricsLogged = true;
+                            const renderedWidth = posterImage.clientWidth || 0;
+                            const renderedHeight = posterImage.clientHeight || 0;
+                            const naturalWidth = posterImage.naturalWidth || 0;
+                            const naturalHeight = posterImage.naturalHeight || 0;
+                            const resourceEntry = typeof performance !== 'undefined'
+                                && typeof performance.getEntriesByName === 'function'
+                                ? performance.getEntriesByName(posterImage.currentSrc || posterImage.src).at(-1)
+                                : null;
+                            console.info('[RecommendationImageTrace]', {
+                                kinopoiskId: kpId,
+                                recommendationSource: rec.recommendationSource || 'unknown',
+                                posterUrl: rec.posterUrl || null,
+                                naturalWidth,
+                                naturalHeight,
+                                renderedWidth,
+                                renderedHeight,
+                                widthScale: renderedWidth > 0 ? Number((naturalWidth / renderedWidth).toFixed(2)) : null,
+                                heightScale: renderedHeight > 0 ? Number((naturalHeight / renderedHeight).toFixed(2)) : null,
+                                resourceDurationMs: resourceEntry?.duration ? Number(resourceEntry.duration.toFixed(2)) : null,
+                                transferSize: resourceEntry?.transferSize || null,
+                                encodedBodySize: resourceEntry?.encodedBodySize || null,
+                                decodedBodySize: resourceEntry?.decodedBodySize || null
+                            });
+                        };
+
+                        posterImage.addEventListener('load', logPosterMetrics, { once: true });
+                        posterImage.addEventListener('error', () => {
+                            console.warn('[RecommendationImageTrace] poster-load-failed', {
+                                kinopoiskId: kpId,
+                                posterUrl: rec.posterUrl || null
+                            });
+                        }, { once: true });
+                        if (posterImage.complete) setTimeout(logPosterMetrics, 0);
+                    }
                 });
 
+                const appendStartedAt = typeof performance !== 'undefined' && typeof performance.now === 'function'
+                    ? performance.now()
+                    : Date.now();
+                carouselEl.appendChild(cardFragment);
+                const appendMs = (typeof performance !== 'undefined' && typeof performance.now === 'function'
+                    ? performance.now()
+                    : Date.now()) - appendStartedAt;
+
+                // This read intentionally happens once, after the batch append,
+                // so layout is not forced for every individual recommendation.
+                const layoutStartedAt = typeof performance !== 'undefined' && typeof performance.now === 'function'
+                    ? performance.now()
+                    : Date.now();
+                const hasOverflow = carouselEl.scrollWidth > carouselEl.clientWidth + 10;
+                const layoutMs = (typeof performance !== 'undefined' && typeof performance.now === 'function'
+                    ? performance.now()
+                    : Date.now()) - layoutStartedAt;
+
+                console.info('[RecommendationRenderTrace]', {
+                    stage: 'cards-mounted',
+                    movieId,
+                    cardCount: filteredRecs.length,
+                    initialPosterCount,
+                    deferredPosterCount: deferredPosterImages.length,
+                    availableCollectionsCount: Array.isArray(this.availableCollections) ? this.availableCollections.length : 0,
+                    buildMs: Number((appendStartedAt - renderStartedAt).toFixed(2)),
+                    appendMs: Number(appendMs.toFixed(2)),
+                    layoutMs: Number(layoutMs.toFixed(2)),
+                    totalMs: Number(((typeof performance !== 'undefined' && typeof performance.now === 'function'
+                        ? performance.now()
+                        : Date.now()) - renderStartedAt).toFixed(2)),
+                    domNodeCount: carouselEl.querySelectorAll('*').length,
+                    hasOverflow
+                });
+
+                const activateDeferredPoster = (posterImage) => {
+                    const sourceUrl = posterImage?.dataset?.deferredPosterUrl;
+                    if (!sourceUrl || posterImage.dataset.posterLoading === 'true') return;
+
+                    posterImage.dataset.posterLoading = 'true';
+                    delete posterImage.dataset.deferredPosterUrl;
+                    posterImage.src = sourceUrl;
+                };
+
+                if (deferredPosterImages.length > 0) {
+                    if (typeof IntersectionObserver !== 'undefined') {
+                        this.recommendationPosterObserver = new IntersectionObserver((entries) => {
+                            entries.forEach(entry => {
+                                if (!entry.isIntersecting) return;
+                                activateDeferredPoster(entry.target);
+                                this.recommendationPosterObserver?.unobserve(entry.target);
+                            });
+                        // Keep the preload window smaller than a card. A broad margin
+                        // made every deferred large Kinopoisk poster decode during
+                        // initial paint on short carousels.
+                        }, { root: carouselEl, rootMargin: '0px 96px', threshold: 0.01 });
+                        deferredPosterImages.forEach(posterImage => this.recommendationPosterObserver.observe(posterImage));
+                    } else {
+                        deferredPosterImages.forEach((posterImage, index) => {
+                            setTimeout(() => activateDeferredPoster(posterImage), index * 80);
+                        });
+                    }
+                }
+
                 // Show navigation buttons if carousel has horizontal overflow
-                if (navEl && carouselEl.scrollWidth > carouselEl.clientWidth + 10) {
+                if (navEl && hasOverflow) {
                     navEl.style.display = 'flex';
                 }
 
@@ -3199,6 +3458,18 @@ class MovieDetailsManager {
             state.status = 'failed';
             console.warn('[MovieDetails] Failed to load recommendations asynchronously:', err);
             document.getElementById('movieRecommendationsSection')?.remove();
+        } finally {
+            recommendationLongTaskObserver?.disconnect();
+            const traceNow = typeof performance !== 'undefined' && typeof performance.now === 'function'
+                ? performance.now()
+                : Date.now();
+            console.info('[RecommendationRenderTrace]', {
+                stage: 'complete',
+                movieId,
+                totalMs: Number((traceNow - recommendationUiTraceStartedAt).toFixed(2)),
+                longTaskCount: recommendationLongTaskCount,
+                longTaskTotalMs: Number(recommendationLongTaskTotalMs.toFixed(2))
+            });
         }
     }
 
@@ -4549,9 +4820,260 @@ class MovieDetailsManager {
         return this.setupRatingsListener(movieId);
     }
 
+    getRatingsRenderElements(movieId) {
+        const ratingsSection = document.getElementById('userRatingsSection');
+        if (!ratingsSection || String(ratingsSection.dataset.movieId || '') !== String(movieId)) return null;
+
+        return {
+            ratingsSection,
+            loadingEl: ratingsSection.querySelector('.user-ratings-loading'),
+            contentEl: ratingsSection.querySelector('.user-ratings-content')
+        };
+    }
+
+    renderRatingsSnapshot(movieId, ratings, currentUser) {
+        const renderElements = this.getRatingsRenderElements(movieId);
+        if (!renderElements || !Array.isArray(ratings)) return false;
+
+        const { contentEl, loadingEl } = renderElements;
+        if (!contentEl) return false;
+
+        if (ratings.length === 0) {
+            contentEl.innerHTML = `<div class="user-ratings-empty"><p>${i18n.get('movie_details.empty_reviews')}</p></div>`;
+            this._ratingsListEl = null;
+        } else {
+            contentEl.innerHTML = this.createUserRatingsSection(
+                ratings,
+                this._userProfileCache || new Map(),
+                currentUser?.uid,
+                this.commentReactionSummaries,
+                this.commentUserReactions
+            );
+            this._ratingsListEl = contentEl.querySelector('.user-ratings-list');
+            this.setupUsernameClickListeners();
+        }
+
+        if (loadingEl) loadingEl.style.display = 'none';
+        return true;
+    }
+
+    rehydrateRatingsForCurrentRender(movieId) {
+        if (String(this.latestRatingsSnapshotMovieId || '') !== String(movieId)) return false;
+        return this.renderRatingsSnapshot(movieId, this.latestRatingsSnapshot || [], this.latestRatingsSnapshotUser);
+    }
+
+    setupCommentReactionListeners() {
+        if (this._commentReactionListenerBound) return;
+        this._commentReactionListenerBound = true;
+
+        document.addEventListener('click', async (event) => {
+            const pickerToggle = event.target?.closest?.('[data-action="toggle-comment-reaction-picker"]');
+            if (pickerToggle) {
+                event.preventDefault();
+                event.stopPropagation();
+                const reactionBar = pickerToggle.closest('[data-comment-reactions]');
+                const picker = reactionBar?.querySelector('[data-comment-reaction-picker]');
+                if (reactionBar && picker && typeof CommentReactionBar !== 'undefined') {
+                    const open = picker.hidden;
+                    CommentReactionBar.setPickerOpen(reactionBar, open);
+                    if (open) picker.querySelector('[data-reaction-type]:not([disabled])')?.focus();
+                }
+                return;
+            }
+
+            const button = event.target?.closest?.('[data-action="toggle-comment-reaction"]');
+            if (!button) {
+                if (!event.target?.closest?.('[data-comment-reactions]') && typeof CommentReactionBar !== 'undefined') {
+                    CommentReactionBar.closeOpenPickers();
+                }
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            await this.toggleCommentReaction(button);
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape') return;
+            const picker = document.querySelector('[data-comment-reaction-picker]:not([hidden])');
+            const reactionBar = picker?.closest('[data-comment-reactions]');
+            const trigger = reactionBar?.querySelector('[data-action="toggle-comment-reaction-picker"]');
+            if (!picker || !reactionBar || typeof CommentReactionBar === 'undefined') return;
+            event.preventDefault();
+            CommentReactionBar.setPickerOpen(reactionBar, false);
+            trigger?.focus();
+        });
+    }
+
+    async hydrateCommentReactions(ratings, currentUser) {
+        const reactionService = firebaseManager.getCommentReactionService?.();
+        if (!reactionService || !Array.isArray(ratings) || ratings.length === 0) return;
+
+        const ratingIds = ratings.map((rating) => rating.id).filter(Boolean);
+        if (ratingIds.length === 0) return;
+
+        try {
+            await reactionService.loadConfig?.();
+            if (!this.commentReactionConfigUnsubscribe) {
+                this.commentReactionConfigUnsubscribe = reactionService.subscribeToConfig?.(() => {
+                    this.refreshCommentReactionBars();
+                });
+            }
+            const [summaryMap, userReactionMap] = await Promise.all([
+                reactionService.getSummaryMap(ratingIds),
+                currentUser
+                    ? reactionService.getUserReactionMap(currentUser.uid, ratingIds)
+                    : Promise.resolve(new Map())
+            ]);
+
+            ratingIds.forEach((ratingId) => this.commentUserReactions.delete(ratingId));
+            summaryMap.forEach((summary, ratingId) => this.commentReactionSummaries.set(ratingId, summary));
+            userReactionMap.forEach((types, ratingId) => this.commentUserReactions.set(ratingId, types));
+
+            ratings.forEach((rating) => {
+                const bar = document.querySelector(`[data-comment-reactions="true"][data-rating-id="${rating.id}"]`);
+                if (bar && typeof CommentReactionBar !== 'undefined') {
+                    CommentReactionBar.update(
+                        bar,
+                        this.commentReactionSummaries.get(rating.id),
+                        this.commentUserReactions.get(rating.id) || null
+                    );
+                }
+            });
+        } catch (error) {
+            console.warn('[CommentReactions] Failed to hydrate reaction state:', error);
+        }
+    }
+
+    refreshCommentReactionBars() {
+        if (typeof CommentReactionBar === 'undefined') return;
+        document.querySelectorAll('[data-comment-reactions="true"]').forEach((bar) => {
+            const ratingId = bar.getAttribute('data-rating-id');
+            if (!ratingId) return;
+            CommentReactionBar.update(
+                bar,
+                this.commentReactionSummaries.get(ratingId),
+                this.commentUserReactions.get(ratingId) || null
+            );
+        });
+    }
+
+    async toggleCommentReaction(button) {
+        const reactionBar = button.closest('[data-comment-reactions]');
+        const ratingId = button.getAttribute('data-rating-id') || reactionBar?.getAttribute('data-rating-id');
+        const movieId = button.getAttribute('data-movie-id')
+            || reactionBar?.getAttribute('data-movie-id')
+            || this.selectedMovie?.kinopoiskId
+            || this._currentMovieId;
+        const type = button.getAttribute('data-reaction-type');
+        if (!ratingId || !movieId || !type || this.commentReactionPending.has(ratingId)) return;
+
+        if (reactionBar && typeof CommentReactionBar !== 'undefined') {
+            CommentReactionBar.setPickerOpen(reactionBar, false);
+        }
+
+        const currentUser = this.currentUser || firebaseManager.getCurrentUser?.();
+        if (!currentUser) {
+            Utils.showToast(i18n.get('navbar.sign_in'), 'warning');
+            return;
+        }
+
+        const reactionService = firebaseManager.getCommentReactionService?.();
+        if (!reactionService) return;
+
+        const storedTypes = this.commentUserReactions.get(ratingId);
+        const previousTypes = Array.isArray(storedTypes) ? [...storedTypes] : (storedTypes ? [storedTypes] : []);
+        const hasReaction = previousTypes.includes(type);
+        const maxReactions = typeof CommentReactionService !== 'undefined'
+            ? CommentReactionService.MAX_REACTIONS_PER_USER
+            : 3;
+        if (!hasReaction && previousTypes.length >= maxReactions) {
+            Utils.showToast(i18n.get('movie_details.max_reactions'), 'warning');
+            return;
+        }
+
+        const nextTypes = hasReaction
+            ? previousTypes.filter((reactionType) => reactionType !== type)
+            : [...previousTypes, type];
+        const currentSummary = this.commentReactionSummaries.get(ratingId) || { counts: {} };
+        const optimisticCounts = { ...(currentSummary.counts || {}) };
+
+        if (hasReaction) {
+            optimisticCounts[type] = Math.max(0, Number(optimisticCounts[type] || 0) - 1);
+        } else {
+            optimisticCounts[type] = Number(optimisticCounts[type] || 0) + 1;
+        }
+
+        const previousOrder = Array.isArray(currentSummary.order)
+            ? currentSummary.order
+            : Object.keys(currentSummary.counts || {}).filter((k) => Number(currentSummary.counts[k]) > 0);
+        const optimisticOrder = [...previousOrder];
+        if (!hasReaction && !optimisticOrder.includes(type)) {
+            optimisticOrder.push(type);
+        } else if (hasReaction && optimisticCounts[type] <= 0) {
+            const idx = optimisticOrder.indexOf(type);
+            if (idx !== -1) optimisticOrder.splice(idx, 1);
+        }
+
+        const optimisticSummary = {
+            ...currentSummary,
+            ratingId,
+            movieId,
+            counts: optimisticCounts,
+            order: optimisticOrder,
+            total: Object.values(optimisticCounts).reduce((sum, c) => sum + c, 0)
+        };
+        this.commentReactionPending.add(ratingId);
+        this.commentUserReactions.set(ratingId, nextTypes);
+        this.commentReactionSummaries.set(ratingId, optimisticSummary);
+
+        if (reactionBar && typeof CommentReactionBar !== 'undefined') {
+            CommentReactionBar.update(reactionBar, optimisticSummary, nextTypes, { isPending: true });
+        }
+
+        try {
+            await reactionService.toggleReaction({
+                userId: currentUser.uid,
+                ratingId,
+                movieId,
+                type
+            });
+            this.commentReactionSummaries.set(ratingId, optimisticSummary);
+            this.commentUserReactions.set(ratingId, nextTypes);
+            if (reactionBar && typeof CommentReactionBar !== 'undefined') {
+                CommentReactionBar.update(reactionBar, optimisticSummary, nextTypes, { isPending: false });
+            }
+        } catch (error) {
+            this.commentUserReactions.set(ratingId, previousTypes);
+            this.commentReactionSummaries.set(ratingId, currentSummary);
+            if (reactionBar && typeof CommentReactionBar !== 'undefined') {
+                CommentReactionBar.update(reactionBar, currentSummary, previousTypes, { isPending: false });
+            }
+            console.error('[CommentReactions] Failed to toggle reaction:', error);
+            const message = error?.code === 'MAX_COMMENT_REACTIONS'
+                ? i18n.get('movie_details.max_reactions')
+                : i18n.get('movie_details.error_loading_reviews');
+            Utils.showToast(message, 'error');
+        } finally {
+            this.commentReactionPending.delete(ratingId);
+            if (reactionBar && typeof CommentReactionBar !== 'undefined') {
+                const latestSummary = this.commentReactionSummaries.get(ratingId) || optimisticSummary;
+                const latestTypes = this.commentUserReactions.get(ratingId) || nextTypes;
+                CommentReactionBar.update(reactionBar, latestSummary, latestTypes, { isPending: false });
+            }
+        }
+    }
+
     async setupRatingsListener(movieId) {
         // Отписываемся от предыдущего слушателя (смена фильма)
         this.destroyRatingsListener();
+
+        if (String(this.latestRatingsSnapshotMovieId || '') !== String(movieId)) {
+            this.latestRatingsSnapshot = null;
+            this.latestRatingsSnapshotMovieId = null;
+            this.latestRatingsSnapshotUser = null;
+        }
 
         const ratingsSection = document.getElementById('userRatingsSection');
         if (!ratingsSection) return;
@@ -4581,8 +5103,9 @@ class MovieDetailsManager {
             }
 
             if (!user) {
-                console.warn('[RatingsListener] No authenticated user, skipping listener');
-                if (loadingEl) loadingEl.style.display = 'none';
+                console.info('[RatingsListener] No authenticated user, loading public comments');
+                this.currentUser = null;
+                await this._startSnapshot(movieId, null, ratingsSection, loadingEl, contentEl);
                 return;
             }
 
@@ -4601,6 +5124,7 @@ class MovieDetailsManager {
         }
 
         this._currentMovieId = movieId;
+        this.currentUser = currentUser;
         const userService = firebaseManager.getUserService();
 
         // Флаг первого снимка — нужен, чтобы отобразить спиннер только однажды
@@ -4623,10 +5147,32 @@ class MovieDetailsManager {
             { includeMetadataChanges: true },
             async (snapshot) => {
                 // Оффлайн-уведомление
+                const liveRatingsSection = this.getRatingsRenderElements(movieId)?.ratingsSection || ratingsSection;
                 if (snapshot.metadata.fromCache && !navigator.onLine) {
-                    this._showOfflineBanner(ratingsSection);
+                    this._showOfflineBanner(liveRatingsSection);
                 } else {
-                    this._hideOfflineBanner(ratingsSection);
+                    this._hideOfflineBanner(liveRatingsSection);
+                }
+
+                const isInitialSnapshot = isFirstSnapshot;
+                const allRatings = isInitialSnapshot
+                    ? snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
+                    : null;
+
+                // Comments are useful before profile lookups settle. Keep this
+                // snapshot as the render source so a same-movie DOM replacement
+                // can rehydrate immediately instead of waiting for Firestore.
+                if (isInitialSnapshot) {
+                    isFirstSnapshot = false;
+                    this.latestRatingsSnapshot = allRatings;
+                    this.latestRatingsSnapshotMovieId = String(movieId);
+                    this.latestRatingsSnapshotUser = currentUser || null;
+                    this.renderRatingsSnapshot(movieId, allRatings, currentUser);
+                    if (!snapshot.empty) this.hydrateCommentReactions(allRatings, currentUser);
+                } else {
+                    this.latestRatingsSnapshot = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                    this.latestRatingsSnapshotMovieId = String(movieId);
+                    this.latestRatingsSnapshotUser = currentUser || null;
                 }
 
                 // Ждём профили новых пользователей (только для добавленных)
@@ -4655,31 +5201,20 @@ class MovieDetailsManager {
                     } catch { /* ignore */ }
                 }
 
-                if (isFirstSnapshot) {
-                    isFirstSnapshot = false;
-
-                    if (snapshot.empty) {
-                        if (contentEl) contentEl.innerHTML = `<div class="user-ratings-empty"><p>${i18n.get('movie_details.empty_reviews')}</p></div>`;
-                        if (loadingEl) loadingEl.style.display = 'none';
-                        return;
-                    }
-
-                    // Начальный рендер: строим контейнер целиком
-                    const allRatings = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                    const html = this.createUserRatingsSection(allRatings, this._userProfileCache, currentUser?.uid);
-                    if (contentEl) contentEl.innerHTML = html;
-
-                    this._ratingsListEl = contentEl?.querySelector('.user-ratings-list');
-                    this.setupUsernameClickListeners();
-                    if (loadingEl) loadingEl.style.display = 'none';
+                if (isInitialSnapshot) {
+                    // Refresh names and avatars after profile data arrives. The
+                    // renderer resolves the live section rather than the old
+                    // closure, so a same-movie rerender remains safe.
+                    this.renderRatingsSnapshot(movieId, allRatings, currentUser);
                     return;
                 }
 
                 // Инкрементальные обновления
+                const liveContentEl = this.getRatingsRenderElements(movieId)?.contentEl || contentEl;
                 for (const change of snapshot.docChanges()) {
                     const rating = { id: change.doc.id, ...change.doc.data() };
                     switch (change.type) {
-                        case 'added':    await this._onRatingAdded(rating, currentUser?.uid, contentEl); break;
+                        case 'added':    await this._onRatingAdded(rating, currentUser?.uid, liveContentEl); break;
                         case 'modified': this._onRatingModified(rating, currentUser?.uid); break;
                         case 'removed':  this._onRatingRemoved(rating.id); break;
                     }
@@ -4690,10 +5225,13 @@ class MovieDetailsManager {
                 if (typeof Utils !== 'undefined') {
                     Utils.showToast(i18n.get('movie_details.error_loading_reviews') || 'Ошибка загрузки отзывов', 'error');
                 }
-                if (contentEl && !contentEl.querySelector('.user-ratings-list')) {
-                    contentEl.innerHTML = `<div class="user-ratings-error"><p>${i18n.get('movie_details.error_loading_reviews')}</p></div>`;
+                const liveRenderElements = this.getRatingsRenderElements(movieId);
+                const liveContentEl = liveRenderElements?.contentEl || contentEl;
+                if (liveContentEl && !liveContentEl.querySelector('.user-ratings-list')) {
+                    liveContentEl.innerHTML = `<div class="user-ratings-error"><p>${i18n.get('movie_details.error_loading_reviews')}</p></div>`;
                 }
-                if (loadingEl) loadingEl.style.display = 'none';
+                const liveLoadingEl = liveRenderElements?.loadingEl || loadingEl;
+                if (liveLoadingEl) liveLoadingEl.style.display = 'none';
             }
         );
 
@@ -4789,6 +5327,14 @@ class MovieDetailsManager {
         const commentHtml = normalizedComment
             ? `<div class="user-rating-comment">${Utils.parseSpoilers(Utils.linkify(this.escapeHtml(normalizedComment)))}</div>`
             : '';
+        const reactionHtml = typeof CommentReactionBar !== 'undefined'
+            ? CommentReactionBar.render({
+                ratingId: rating.id,
+                movieId: rating.movieId || rating.kinopoiskId || this.selectedMovie?.kinopoiskId || this._currentMovieId,
+                summary: this.commentReactionSummaries.get(rating.id),
+                userReaction: this.commentUserReactions.get(rating.id) || null
+            })
+            : '';
 
         const card = document.createElement('div');
         card.className = `user-rating-card${isCurrentUser ? ' current-user' : ''}`;
@@ -4806,6 +5352,7 @@ class MovieDetailsManager {
                 ${menuHtml}
             </div>
             ${commentHtml}
+            ${reactionHtml}
         `;
         return card;
     }
@@ -4847,6 +5394,7 @@ class MovieDetailsManager {
         void card.offsetWidth;
         card.classList.remove('rating-card-entering');
         card.classList.add('rating-card-visible');
+        this.hydrateCommentReactions([rating], this.currentUser);
 
         card.querySelectorAll('.clickable-username').forEach(el => {
             el.addEventListener('mousedown', (e) => {
@@ -4861,17 +5409,21 @@ class MovieDetailsManager {
         });
     }
 
-    /** Обрабатывает событие «modified» — обновляет только изменившиеся данные в DOM */
-    _onRatingModified(rating, currentUserId) {
-        const existingCard = document.querySelector(`[data-rating-id="${rating.id}"]`);
+    /**
+     * Обрабатывает событие «modified» от onSnapshot.
+     * Обновляет существующую карточку на лету без перерендера всего списка.
+     */
+    async _onRatingModified(rating, currentUserId) {
+        const existingCard = this._ratingsListEl?.querySelector(`[data-rating-id="${rating.id}"]`);
         if (!existingCard) return;
 
-        // Обновляем счёт
+        // Обновляем оценку
         const scoreEl = existingCard.querySelector('.user-rating-score');
         if (scoreEl) scoreEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="color: #eab308; vertical-align: middle; margin-right: 4px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>${rating.rating}/10`;
 
         // Обновляем комментарий
         let commentEl = existingCard.querySelector('.user-rating-comment');
+        let reactionBarEl = existingCard.querySelector('.comment-reaction-bar');
         const normalizedComment = Utils.normalizeRatingComment(rating.comment);
         if (normalizedComment) {
             const newHtml = Utils.parseSpoilers(Utils.linkify(this.escapeHtml(normalizedComment)));
@@ -4881,11 +5433,26 @@ class MovieDetailsManager {
                 commentEl = document.createElement('div');
                 commentEl.className = 'user-rating-comment';
                 commentEl.innerHTML = newHtml;
-                existingCard.appendChild(commentEl);
+                if (reactionBarEl) {
+                    existingCard.insertBefore(commentEl, reactionBarEl);
+                } else {
+                    existingCard.appendChild(commentEl);
+                }
             }
         } else if (commentEl) {
             commentEl.remove();
         }
+
+        if (!reactionBarEl && typeof CommentReactionBar !== 'undefined') {
+            existingCard.insertAdjacentHTML('beforeend', CommentReactionBar.render({
+                ratingId: rating.id,
+                movieId: rating.movieId || rating.kinopoiskId || this.selectedMovie?.kinopoiskId || this._currentMovieId,
+                summary: this.commentReactionSummaries.get(rating.id),
+                userReaction: this.commentUserReactions.get(rating.id) || null
+            }));
+        }
+
+        this.hydrateCommentReactions([rating], this.currentUser);
 
         // Пульс-анимация при изменении
         existingCard.classList.add('rating-card-updated');
@@ -4898,43 +5465,28 @@ class MovieDetailsManager {
         if (!existingCard) return;
 
         existingCard.classList.add('rating-card-leaving');
-        
-        const removeCard = () => {
-            if (!existingCard.isConnected) return; // уже удалён
+        setTimeout(() => {
             existingCard.remove();
-
-                if (this._ratingsListEl && this._ratingsListEl.children.length === 0) {
-                    const contentEl = document.querySelector('#userRatingsSection .user-ratings-content');
-                    if (contentEl) {
-                    contentEl.innerHTML = `<div class="user-ratings-empty"><p>${i18n.get('movie_details.empty_reviews')}</p></div>`;
+            // Если карточек не осталось — показываем empty state
+            const list = this._ratingsListEl || document.querySelector('.user-ratings-list');
+            if (list && list.children.length === 0) {
+                const container = list.closest('.user-ratings-container') || list.parentElement;
+                if (container) {
+                    container.innerHTML = `<div class="user-ratings-empty"><p>${i18n.get('movie_details.be_first')}</p></div>`;
                 }
             }
-        };
-
-        const fallbackTimer = setTimeout(removeCard, 400);
-
-        existingCard.addEventListener('animationend', () => {
-            clearTimeout(fallbackTimer);
-            existingCard.remove();
-            // Если список опустел — показать empty-state
-            if (this._ratingsListEl && this._ratingsListEl.children.length === 0) {
-                const contentEl = document.querySelector('#userRatingsSection .user-ratings-content');
-                if (contentEl) {
-                    contentEl.innerHTML = `<div class="user-ratings-empty"><p>${i18n.get('movie_details.empty_reviews')}</p></div>`;
-                }
-            }
-        }, { once: true });
+        }, 300);
     }
 
-    createUserRatingsSection(ratings, userProfileMap, currentUserId) {
+    createUserRatingsSection(ratings, userProfileMap, currentUserId, reactionSummaries = this.commentReactionSummaries, userReactions = this.commentUserReactions) {
         if (ratings.length === 0) return `<div class="user-ratings-empty"><p>${i18n.get('movie_details.be_first')}</p></div>`;
-        
+
         const ratingsHTML = ratings.map(rating => {
             const userProfile = userProfileMap.get(rating.userId);
             const userName = userProfile?.displayName || rating.userName || i18n.get('navbar.sign_in').replace('Sign In', 'User').replace('Войти', 'Пользователь'); 
             const userPhoto = userProfile?.photoURL || '/src/shared/assets/icons/app/icon48.png';
             const isCurrentUser = currentUserId && rating.userId === currentUserId;
-            
+
             let dateStr = '';
             if (rating.createdAt) {
                 const dateObj = rating.createdAt.toDate ? rating.createdAt.toDate() : new Date(rating.createdAt);
@@ -4945,7 +5497,20 @@ class MovieDetailsManager {
                     dateStr = `<span class="user-rating-date">${d}.${m}.${y}</span>`;
                 }
             }
-            
+
+            const normalizedComment = Utils.normalizeRatingComment(rating.comment);
+            const commentHtml = normalizedComment
+                ? `<div class="user-rating-comment">${Utils.parseSpoilers(Utils.linkify(this.escapeHtml(normalizedComment)))}</div>`
+                : '';
+            const reactionHtml = typeof CommentReactionBar !== 'undefined'
+                ? CommentReactionBar.render({
+                    ratingId: rating.id,
+                    movieId: rating.movieId || rating.kinopoiskId || this.selectedMovie?.kinopoiskId || this._currentMovieId,
+                    summary: reactionSummaries?.get(rating.id),
+                    userReaction: userReactions?.get(rating.id) || null
+                })
+                : '';
+
             return `
                 <div class="user-rating-card ${isCurrentUser ? 'current-user' : ''}" data-rating-id="${rating.id}">
                     <div class="user-rating-header">
@@ -4959,14 +5524,12 @@ class MovieDetailsManager {
                         </div>
                         ${isCurrentUser ? this._renderRatingMenu(rating.id) : ''}
                     </div>
-                    ${(() => {
-                        const normalizedComment = Utils.normalizeRatingComment(rating.comment);
-                        return normalizedComment ? `<div class="user-rating-comment">${Utils.parseSpoilers(Utils.linkify(this.escapeHtml(normalizedComment)))}</div>` : '';
-                    })()}
+                    ${commentHtml}
+                    ${reactionHtml}
                 </div>
             `;
         }).join('');
-        
+
         return `<div class="user-ratings-container"><h4 class="user-ratings-title">${i18n.get('movie_details.user_ratings_title')}</h4><div class="user-ratings-list">${ratingsHTML}</div></div>`;
     }
 
@@ -5030,7 +5593,9 @@ class MovieDetailsManager {
             btn.classList.toggle('spiderman-rating-btn', isSpiderman);
             btn.classList.toggle('starwars-rating-btn', isStarWars);
             btn.dataset.rating = i;
+            btn.type = 'button';
             btn.setAttribute('aria-label', `Оценить на ${i} из 10`);
+            btn.setAttribute('aria-pressed', 'false');
             btn.innerHTML = ratingIcon;
             this.elements.ratingStars.appendChild(btn);
         }
@@ -5109,7 +5674,21 @@ class MovieDetailsManager {
             } else {
                 btn.classList.remove('active', 'hover');
             }
+            const selectedRating = isHover ? this.currentRating : rating;
+            btn.setAttribute('aria-pressed', String(selectedRating > 0 && starRating === selectedRating));
         });
+        this.updateRatingStatus(rating, isHover);
+    }
+
+    updateRatingStatus(rating, isHover) {
+        if (!this.elements.ratingStatus) return;
+
+        const statusKey = rating > 0
+            ? (isHover ? 'movie_details.rating_preview' : 'movie_details.rating_selected')
+            : 'movie_details.rating_prompt';
+        const template = i18n.get(statusKey);
+        this.elements.ratingStatus.textContent = template.replace('{rating}', String(rating));
+        this.elements.ratingStatus.dataset.state = rating > 0 ? (isHover ? 'preview' : 'selected') : 'empty';
     }
 
     // Video Player Methods
@@ -5135,8 +5714,7 @@ class MovieDetailsManager {
                 localStorage.removeItem(`movie_sources_${movieId}`);
                 return null;
             }
-            const sources = (cached.sources || []).filter(s => !(s.parserId === 'rutube' && s.url?.includes('/play/embed/')));
-            return this.normalizeVideoSources(sources);
+            return this.normalizeVideoSources(cached.sources || []);
         } catch { return null; }
     }
 
@@ -6535,15 +7113,225 @@ class MovieDetailsManager {
         }
     }
 
+    setWatchRoomStatus(message, { timeoutMs = 0 } = {}) {
+        clearTimeout(this.watchRoomStatusTimer);
+        this.watchRoomStatusTimer = null;
+        if (this.elements?.watchRoomStatus) this.elements.watchRoomStatus.textContent = message || '';
+        this.elements?.watchRoomControls?.classList.toggle('is-connected', Boolean(message));
+        if (message && timeoutMs > 0) {
+            this.watchRoomStatusTimer = setTimeout(() => {
+                if (this.elements?.watchRoomStatus?.textContent === message) this.setWatchRoomStatus('');
+            }, timeoutMs);
+        }
+    }
+
+    handleWatchRoomAction(event) {
+        const action = event.target?.closest?.('[data-watch-room-action]')?.dataset?.watchRoomAction;
+        if (!action) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        console.info('[WatchRoomUITrace] action-dispatched', { action });
+        if (action === 'create') {
+            void this.createWatchRoom();
+        } else if (action === 'join') {
+            void this.joinWatchRoom();
+        } else if (action === 'copy-code') {
+            void this.copyWatchRoomCode();
+        } else if (action === 'toggle-members') {
+            this.toggleWatchRoomMembers();
+        }
+    }
+
+    refreshWatchRoomControls() {
+        const connected = Boolean(this.watchRoomController?.room);
+        const isOwner = this.watchRoomController?.role === 'owner';
+        if (!connected) this.watchRoomJoinCode = null;
+        if (this.elements.createWatchRoomBtn) {
+            this.elements.createWatchRoomBtn.hidden = connected;
+            if (!connected) this.elements.createWatchRoomBtn.disabled = false;
+        }
+        if (this.elements.joinWatchRoomBtn) {
+            this.elements.joinWatchRoomBtn.hidden = connected;
+            if (!connected) this.elements.joinWatchRoomBtn.disabled = false;
+        }
+        if (this.elements.copyWatchRoomCodeBtn) {
+            this.elements.copyWatchRoomCodeBtn.hidden = !connected || !isOwner || !this.watchRoomJoinCode;
+        }
+        if (this.elements.watchRoomMembersBtn) this.elements.watchRoomMembersBtn.hidden = !connected;
+        if (!connected && this.elements.watchRoomMembersPopover) {
+            this.elements.watchRoomMembersPopover.hidden = true;
+            this.elements.watchRoomMembersBtn?.setAttribute('aria-expanded', 'false');
+        }
+    }
+
+    renderWatchRoomMembers({ members = [] } = {}) {
+        const safeMembers = Array.isArray(members) ? members : [];
+        const canManageRoles = this.watchRoomController?.role === 'owner';
+        const roleLabels = {
+            owner: 'создатель',
+            controller: 'управляющий',
+            viewer: 'зритель',
+        };
+        if (this.elements.watchRoomParticipantCount) {
+            this.elements.watchRoomParticipantCount.textContent = String(safeMembers.length);
+        }
+        if (this.elements.watchRoomMembersList) {
+            this.elements.watchRoomMembersList.replaceChildren(...safeMembers.map((member) => {
+                const item = document.createElement('li');
+                item.className = `watch-room-member${member.online ? ' watch-room-member--online' : ''}`;
+                const presence = document.createElement('span');
+                presence.className = 'watch-room-member__presence';
+                presence.setAttribute('aria-hidden', 'true');
+                const name = document.createElement('span');
+                name.className = 'watch-room-member__name';
+                name.textContent = `${member.displayName}${member.isCurrentUser ? ' (вы)' : ''}`;
+                const role = document.createElement('span');
+                role.className = 'watch-room-member__role';
+                role.textContent = roleLabels[member.role] || roleLabels.viewer;
+                item.append(presence, name, role);
+                if (canManageRoles && !member.isCurrentUser && member.role !== 'owner') {
+                    const roleAction = document.createElement('button');
+                    const nextRole = member.role === 'controller' ? 'viewer' : 'controller';
+                    roleAction.type = 'button';
+                    roleAction.className = 'watch-room-member__role-action';
+                    roleAction.textContent = nextRole === 'controller' ? 'Разрешить управление' : 'Сделать зрителем';
+                    roleAction.addEventListener('click', async () => {
+                        roleAction.disabled = true;
+                        this.setWatchRoomStatus('Меняю роль…');
+                        try {
+                            await this.setWatchRoomMemberRole(member.uid, nextRole);
+                            this.setWatchRoomStatus('');
+                        } catch (error) {
+                            this.setWatchRoomStatus(error.message || 'Не удалось изменить роль');
+                        } finally {
+                            roleAction.disabled = false;
+                        }
+                    });
+                    item.append(roleAction);
+                }
+                return item;
+            }));
+        }
+        this.refreshWatchRoomControls();
+    }
+
+    async setWatchRoomMemberRole(targetUid, role) {
+        if (!this.watchRoomController) throw new Error('Комната недоступна');
+        await this.watchRoomController.setMemberRole(targetUid, role);
+    }
+
+    toggleWatchRoomMembers() {
+        const popover = this.elements?.watchRoomMembersPopover;
+        const button = this.elements?.watchRoomMembersBtn;
+        if (!popover || !button || button.hidden) return;
+        popover.hidden = !popover.hidden;
+        button.setAttribute('aria-expanded', String(!popover.hidden));
+    }
+
+    async copyWatchRoomCode() {
+        if (!this.watchRoomJoinCode) return;
+        try {
+            await navigator.clipboard.writeText(this.watchRoomJoinCode);
+            this.setWatchRoomStatus('Код приглашения скопирован', { timeoutMs: 2500 });
+        } catch {
+            window.prompt('Передайте этот код второму пользователю:', this.watchRoomJoinCode);
+        }
+    }
+
+    getWatchRoomProviderId() {
+        const selected = this.activeSourceValue
+            || this.elements?.sourceButtonsContainer?.querySelector('.source-btn.active')?.getAttribute('data-value');
+        return selected?.startsWith('parser:') ? selected.slice('parser:'.length) : 'kinogo';
+    }
+
+    getWatchRoomPlayerBridge() {
+        return this.getWatchRoomProviderId() === 'rutube' ? this.rutubeWatchRoomBridge : null;
+    }
+
+    getWatchRoomProviderSource() {
+        if (this.getWatchRoomProviderId() !== 'rutube') return null;
+        const sources = this.playerRegistry?.rutube?.sources || this.currentEpisodes || this.currentSources || [];
+        const source = sources.find((candidate) => {
+            const videoId = candidate?.metadata?.rutubeVideoId;
+            return typeof videoId === 'string' && /^[a-z0-9_-]{8,80}$/i.test(videoId);
+        });
+        const videoId = source?.metadata?.rutubeVideoId;
+        return videoId ? { version: 1, providerId: 'rutube', videoId } : null;
+    }
+
+    async changeWatchRoomProvider(providerId, providerSource = null) {
+        const normalized = String(providerId || '').trim().toLowerCase();
+        if (!/^[a-z0-9_-]{1,40}$/.test(normalized)) return false;
+        if (normalized === 'rutube' && !/^[a-z0-9_-]{8,80}$/i.test(String(providerSource?.videoId || ''))) {
+            this.setWatchRoomStatus('Создатель не передал корректный ролик Rutube');
+            return false;
+        }
+        const sourceValue = `parser:${normalized}`;
+        const sourceButton = this.elements?.sourceButtonsContainer?.querySelector(`[data-value="${sourceValue}"]`);
+        if (!sourceButton || !this.parserRegistry?.get(normalized)) {
+            this.setWatchRoomStatus('Источник создателя недоступен в вашем регионе');
+            return false;
+        }
+        return this.changeVideoSource(sourceValue, { fromWatchRoom: true, providerSource });
+    }
+
+    async createWatchRoom() {
+        if (!this.watchRoomController) {
+            this.setWatchRoomStatus('Комнаты недоступны в этой сборке');
+            return;
+        }
+        try {
+            this.elements.createWatchRoomBtn.disabled = true;
+            const joinCode = await this.watchRoomController.create();
+            this.watchRoomJoinCode = joinCode;
+            this.refreshWatchRoomControls();
+            await this.copyWatchRoomCode();
+        } catch (error) {
+            this.setWatchRoomStatus(error.message || 'Не удалось создать комнату');
+        } finally {
+            this.elements.createWatchRoomBtn.disabled = false;
+        }
+    }
+
+    async joinWatchRoom() {
+        if (!this.watchRoomController) {
+            this.setWatchRoomStatus('Комнаты недоступны в этой сборке');
+            return;
+        }
+        const joinCode = window.prompt('Вставьте код приглашения из первого браузера:');
+        if (!joinCode) return;
+        try {
+            this.elements.joinWatchRoomBtn.disabled = true;
+            await this.watchRoomController.join(joinCode.trim());
+            this.watchRoomJoinCode = null;
+            this.refreshWatchRoomControls();
+        } catch (error) {
+            this.setWatchRoomStatus(error.message || 'Не удалось войти в комнату');
+        } finally {
+            this.elements.joinWatchRoomBtn.disabled = false;
+        }
+    }
+
     setupPlayerMessageListener() {
         if (this.messageListenerSetup) return;
         window.addEventListener('message', async (event) => {
+            const providerMessage = this.watchRoomController?.handleProviderPlayerMessage(event);
+            if (providerMessage?.handled) {
+                if (providerMessage.ready) this.watchRoomController?.refreshPlayerBridge();
+                return;
+            }
             if (!this.isTrustedPlayerMessage(event)) return;
+
+            if (['ROOM_SYNC_PROBE_RESULT', 'ROOM_SYNC_COMMAND_RESULT', 'ROOM_SYNC_TELEMETRY'].includes(event.data.type)) {
+                this.watchRoomController?.handlePlayerMessage(event.data);
+                return;
+            }
 
             if (event.data.type === 'PLAYER_READY') {
                  this.sourceLifecycleWatcher?.cancel?.();
                  this.sourceLifecycleWatcher = null;
                  this.setPlayerSourceState('ready');
+                 this.watchRoomController?.refreshPlayerBridge();
                  const iframe = this.elements.videoContainer.querySelector('iframe');
                  if (iframe && iframe.contentWindow) {
                      
@@ -6680,7 +7468,10 @@ class MovieDetailsManager {
             'EPISODE_CHANGED',
             'PIP_ENTER',
             'PIP_EXIT',
-            'SEASONVAR_PLAYBACK_STATE'
+            'SEASONVAR_PLAYBACK_STATE',
+            'ROOM_SYNC_PROBE_RESULT',
+            'ROOM_SYNC_COMMAND_RESULT',
+            'ROOM_SYNC_TELEMETRY'
         ]);
         if (!playerMessageTypes.has(event?.data?.type)) return false;
 
@@ -7777,7 +8568,7 @@ class MovieDetailsManager {
         return false;
     }
 
-    async changeVideoSource(url) {
+    async changeVideoSource(url, { fromWatchRoom = false, providerSource = null } = {}) {
         if (!url) return false;
         this.closeEpisodePicker();
 
@@ -7836,11 +8627,19 @@ class MovieDetailsManager {
         if (url.startsWith('parser:')) {
             const parserId = url.replace('parser:', '');
             const entry = this.playerRegistry[parserId];
-            if (entry && entry.movieId === String(this.selectedMovie?.kinopoiskId) && entry.initialized) {
-                return await this.mountPlayer(parserId, movieId, requestId);
+            let sourceChanged;
+            if (!providerSource && entry && entry.movieId === String(this.selectedMovie?.kinopoiskId) && entry.initialized) {
+                sourceChanged = await this.mountPlayer(parserId, movieId, requestId);
             } else {
-                return await this.loadParserSource(parserId, requestId);
+                sourceChanged = await this.loadParserSource(parserId, requestId, {
+                    forceRefresh: Boolean(providerSource),
+                    providerSource,
+                });
             }
+            if (sourceChanged && !fromWatchRoom) {
+                this.watchRoomController?.publishHostProvider(parserId, this.getWatchRoomProviderSource());
+            }
+            return sourceChanged;
         }
 
         this.currentVideoUrl = url;
@@ -7858,7 +8657,7 @@ class MovieDetailsManager {
      * Generalized replacement for the old loadSeasonvarSource().
      * @param {string} parserId - ID of the parser to use
      */
-    async loadParserSource(parserId, sourceRequestId = null, { forceRefresh = false } = {}) {
+    async loadParserSource(parserId, sourceRequestId = null, { forceRefresh = false, providerSource = null } = {}) {
         if (!this.selectedMovie) return false;
 
         this.unavailableProviderIds?.delete?.(parserId);
@@ -7905,7 +8704,6 @@ class MovieDetailsManager {
             const reusableSources = usesBaseRenderer && !forceRefresh && !requiresSeasonSpecificSearch
                 ? (this.currentSources || []).filter(source => {
                     if (source.parserId !== parserId || !source.url) return false;
-                    if (parserId === 'rutube' && source.url.includes('/play/embed/')) return false;
                     return true;
                 })
                 : [];
@@ -7922,7 +8720,9 @@ class MovieDetailsManager {
                 requestedSeason: selection?.seasonNumber ?? null
             });
 
-            if (!reusedDiscoveredSources) {
+            if (providerSource && parserId === 'rutube') {
+                searchResult = parser.getRoomSearchResult?.(providerSource) || null;
+            } else if (!reusedDiscoveredSources) {
                 // Use enhanced search if available (e.g. SeasonvarParser.searchBestMatch)
                 if (parser.searchBestMatch) {
                     searchResult = await parser.searchBestMatch(name, targetMovie.alternativeName, targetMovie.year);
@@ -8010,7 +8810,7 @@ class MovieDetailsManager {
                         })}`);
                     }
                     sources = await parser.cachedVideoSources(
-                        { url: effectiveSeasonUrl },
+                        searchResult?.videoId ? searchResult : { url: effectiveSeasonUrl },
                         { forceRefresh: forceFreshSeasonSource }
                     );
                 }
@@ -10397,8 +11197,9 @@ class MovieDetailsManager {
                     popup = document.createElement('div');
                     popup.className = 'selection-popup';
                     popup.innerHTML = `
-                        <button class="selection-popup-btn" title="Make Spoiler">
+                        <button class="selection-popup-btn" type="button" title="Скрыть как спойлер" aria-label="Скрыть выделенный текст как спойлер">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                            <span>Спойлер</span>
                         </button>
                     `;
                     document.body.appendChild(popup);
@@ -10413,9 +11214,14 @@ class MovieDetailsManager {
 
                 // Calculate position above selection
                 const coords = this.getTextareaSelectionCoords(textarea);
-                popup.style.left = `${coords.left + coords.width / 2}px`;
-                popup.style.top = `${coords.top - 45}px`;
                 popup.style.display = 'flex';
+                const halfPopupWidth = popup.offsetWidth / 2;
+                const left = Math.max(
+                    halfPopupWidth + 12,
+                    Math.min(window.innerWidth - halfPopupWidth - 12, coords.left + coords.width / 2)
+                );
+                popup.style.left = `${left}px`;
+                popup.style.top = `${coords.top - 45}px`;
                 popup.style.transform = 'translateX(-50%)';
             } else {
                 hidePopup();
@@ -10455,8 +11261,14 @@ class MovieDetailsManager {
             ghost.style[prop] = style[prop];
         });
 
-        ghost.style.position = 'absolute';
+        const textareaRect = textarea.getBoundingClientRect();
+        ghost.style.position = 'fixed';
+        ghost.style.left = `${textareaRect.left}px`;
+        ghost.style.top = `${textareaRect.top - textarea.scrollTop}px`;
+        ghost.style.width = `${textareaRect.width}px`;
+        ghost.style.height = 'auto';
         ghost.style.visibility = 'hidden';
+        ghost.style.pointerEvents = 'none';
         ghost.style.whiteSpace = 'pre-wrap';
         ghost.style.wordBreak = 'break-word';
 
@@ -10469,12 +11281,11 @@ class MovieDetailsManager {
         ghost.appendChild(span);
 
         document.body.appendChild(ghost);
-        const rect = textarea.getBoundingClientRect();
         const spanRect = span.getBoundingClientRect();
         
         const coords = {
-            top: rect.top + spanRect.top - ghost.getBoundingClientRect().top,
-            left: rect.left + spanRect.left - ghost.getBoundingClientRect().left,
+            top: spanRect.top,
+            left: spanRect.left,
             width: spanRect.width,
             height: spanRect.height
         };

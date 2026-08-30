@@ -69,6 +69,12 @@ class MovieCard {
         const overlay = card?.querySelector?.('.mc-badges-overlay');
         if (!overlay) return false;
 
+        const showUnavailable = ratings.showUnavailable ?? (
+            ratings.status === 'no-ratings'
+            || ratings.status === 'not-found'
+            || (Number(ratings.kpRating) <= 0 && Number(ratings.imdbRating) <= 0)
+        );
+
         overlay.innerHTML = this.renderCompactRatingBadges({
             kpRating: ratings.kpRating,
             imdbRating: ratings.imdbRating,
@@ -77,9 +83,7 @@ class MovieCard {
             imdbPending: ratings.imdbState === 'pending' || ratings.imdbPending === true,
             kpUnavailable: ratings.kpState === 'unavailable' || ratings.kpUnavailable === true,
             imdbUnavailable: ratings.imdbState === 'unavailable' || ratings.imdbUnavailable === true,
-            showUnavailable: ratings.status === 'no-ratings'
-                || ratings.status === 'not-found'
-                || (Number(ratings.kpRating) <= 0 && Number(ratings.imdbRating) <= 0)
+            showUnavailable
         });
         overlay.dataset.ratingsLoaded = 'true';
         return true;
@@ -101,6 +105,7 @@ class MovieCard {
             showUserInfo = false,
             showEditRating = false,
             showAddToCollection = false,
+            showRemoveFromCollection = false,
             showRemoveFromWatchlist = false,
             showRemoveFromWatching = false, // New option
             showRemoveFromWatched = false, // New option
@@ -114,7 +119,9 @@ class MovieCard {
             watchingProgress = null,
             availableCollections = [], // New: List of all custom collections
             movieCollections = [],     // New: List of collection IDs this movie is in
-            showRatingSkeleton = false
+            showRatingSkeleton = false,
+            lazyPoster = false,
+            deferPoster = false
         } = options;
 
         const isSearchVariant = variant === 'search';
@@ -128,7 +135,14 @@ class MovieCard {
             ? movie.alternativeName 
             : (movie.name || data.movieTitle || window.i18n?.get('movie_card.unknown_movie') || 'Unknown Movie');
 
-        const posterUrl = movie.posterUrl || '/src/shared/assets/icons/app/icon48.png';
+        const fallbackPosterUrl = '/src/shared/assets/icons/app/icon48.png';
+        const sourcePosterUrl = movie.posterUrl || '';
+        const isPosterDeferred = deferPoster && Boolean(sourcePosterUrl);
+        const posterUrl = isPosterDeferred ? fallbackPosterUrl : (sourcePosterUrl || fallbackPosterUrl);
+        const posterLoadingAttributes = lazyPoster ? ' loading="lazy" decoding="async"' : '';
+        const posterDeferredAttributes = isPosterDeferred
+            ? ` data-deferred-poster-url="${this.escapeHtml(sourcePosterUrl)}"`
+            : '';
         const year = movie.year || data.releaseYear || '';
         
         // Localize genres if possible
@@ -216,7 +230,7 @@ class MovieCard {
                 <a href="${detailsUrl}" class="mc-poster-container ${isLoading ? 'mc-skeleton' : ''}" data-action="view-details"${canonicalMovieId ? ` data-movie-id="${canonicalMovieId}"` : ''} ${movie.tmdbId ? `data-tmdb-id="${movie.tmdbId}"` : ''} data-movie-title="${this.escapeHtml(title)}">
                     <img src="${posterUrl}" 
                          alt="${this.escapeHtml(title)}" 
-                         class="mc-poster" 
+                         class="mc-poster"${posterLoadingAttributes}${posterDeferredAttributes}
                          onerror="Utils.handlePosterError(this)">
                     <div class="mc-poster-overlay"></div>
                     
@@ -224,10 +238,10 @@ class MovieCard {
                 </a>
                 
                 ${showThreeDotMenu ? `
-                    <button class="mc-menu-btn" data-menu="true" data-action="stop-propagation" aria-label="${window.i18n?.get('movie_card.options') || 'Параметры'}" title="Options">
+                    <button class="mc-menu-btn" data-menu="true" data-action="stop-propagation" aria-label="${window.i18n?.get('movie_card.options') || 'Параметры'}" aria-haspopup="menu" aria-expanded="false" title="Options">
                         <span class="mc-menu-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg></span>
                     </button>
-                    <div class="mc-menu-dropdown" data-action="stop-propagation">
+                    <div class="mc-menu-dropdown" role="menu" data-action="stop-propagation">
                         ${showFavorite ? `
                             <button class="mc-menu-item" data-action="toggle-favorite" 
                                     data-rating-id="${data.id}"
@@ -279,6 +293,13 @@ class MovieCard {
                                     data-movie-id="${canonicalMovieId || ''}">
                                 <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></span>
                                 <span class="mc-menu-item-text">${window.i18n?.get('movie_card.add_collection')}</span>
+                            </button>
+                        ` : ''}
+                        ${showRemoveFromCollection ? `
+                            <button class="mc-menu-item" data-action="remove-from-collection"
+                                    data-movie-id="${canonicalMovieId || ''}">
+                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></span>
+                                <span class="mc-menu-item-text">${window.i18n?.get('movie_card.remove') || 'Remove'}</span>
                             </button>
                         ` : ''}
                         ${showRemoveFromWatching ? `
@@ -362,16 +383,16 @@ class MovieCard {
             <a href="${detailsUrl}" class="mc-poster-container ${isLoading ? 'mc-skeleton' : ''}" data-action="view-details"${canonicalMovieId ? ` data-movie-id="${canonicalMovieId}"` : ''} ${movie.tmdbId ? `data-tmdb-id="${movie.tmdbId}"` : ''} data-movie-title="${this.escapeHtml(title)}">
                 <img src="${posterUrl}" 
                      alt="${this.escapeHtml(title)}" 
-                     class="mc-poster" 
+                     class="mc-poster"${posterLoadingAttributes}${posterDeferredAttributes}
                      onerror="Utils.handlePosterError(this)">
                 ${animeStyle ? '<div class="mc-poster-overlay"></div>' : ''}
             </a>
             
             ${showThreeDotMenu ? `
-                    <button class="mc-menu-btn" data-menu="true" data-action="stop-propagation" aria-label="${window.i18n?.get('movie_card.options') || 'Параметры'}" title="Options">
+                    <button class="mc-menu-btn" data-menu="true" data-action="stop-propagation" aria-label="${window.i18n?.get('movie_card.options') || 'Параметры'}" aria-haspopup="menu" aria-expanded="false" title="Options">
                         <span class="mc-menu-icon">⋮</span>
                     </button>
-                    <div class="mc-menu-dropdown" data-action="stop-propagation">
+                    <div class="mc-menu-dropdown" role="menu" data-action="stop-propagation">
                         ${showFavorite ? `
                             <button class="mc-menu-item" data-action="toggle-favorite" 
                                     data-rating-id="${data.id}"
@@ -423,6 +444,13 @@ class MovieCard {
                                     data-movie-id="${canonicalMovieId || ''}">
                                 <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></span>
                                 <span class="mc-menu-item-text">${window.i18n?.get('movie_card.add_collection')}</span>
+                            </button>
+                        ` : ''}
+                        ${showRemoveFromCollection ? `
+                            <button class="mc-menu-item" data-action="remove-from-collection"
+                                    data-movie-id="${canonicalMovieId || ''}">
+                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2 2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></span>
+                                <span class="mc-menu-item-text">${window.i18n?.get('movie_card.remove') || 'Remove'}</span>
                             </button>
                         ` : ''}
                         ${showRemoveFromWatching ? `
@@ -653,42 +681,109 @@ class MovieCard {
     /**
      * Attach event listeners to the card
      */
+    static setMenuState(menuDropdown, isOpen) {
+        if (!menuDropdown) return;
+
+        menuDropdown.classList.toggle('active', isOpen);
+        const card = menuDropdown.closest?.('.movie-card-component');
+        const menuBtn = card?.querySelector?.('.mc-menu-btn');
+        menuBtn?.setAttribute('aria-expanded', String(isOpen));
+    }
+
+    static closeOpenMenus(exceptDropdown = null) {
+        if (typeof document === 'undefined' || !document.querySelectorAll) return;
+
+        document.querySelectorAll('.mc-menu-dropdown.active').forEach(menu => {
+            if (menu !== exceptDropdown) {
+                this.setMenuState(menu, false);
+            }
+        });
+    }
+
     static attachEventListeners(card) {
-        // Three-dot menu toggle
         const menuBtn = card.querySelector('.mc-menu-btn');
         const menuDropdown = card.querySelector('.mc-menu-dropdown');
-        
-        if (menuBtn && menuDropdown) {
-            menuBtn.addEventListener('mousedown', (e) => {
-                e.stopPropagation();
-                // Close other open menus
-                document.querySelectorAll('.mc-menu-dropdown.active').forEach(menu => {
-                    if (menu !== menuDropdown) {
-                        menu.classList.remove('active');
-                    }
-                });
-                menuDropdown.classList.toggle('active');
+
+        if (!menuBtn || !menuDropdown) return;
+
+        if (!this._documentMenuListenerBound && typeof document !== 'undefined') {
+            this._documentMenuListenerBound = true;
+
+            document.addEventListener('mousedown', (event) => {
+                const target = event.target;
+                if (target?.closest?.('.mc-menu-btn, .mc-menu-dropdown')) return;
+                this.closeOpenMenus();
             });
 
-            menuBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-            });
+            document.addEventListener('keydown', (event) => {
+                if (event.key !== 'Escape') return;
 
-            // We do NOT stop propagation on menuDropdown because items inside 
-            // rely on delegation at the grid level (e.g. toggle-favorite)
-            // Instead, we use data-action="stop-propagation" in the template
-            // and handle it in the delegation listener.
+                const activeMenu = document.querySelector('.mc-menu-dropdown.active');
+                if (!activeMenu) return;
 
-            // Close menu when clicking outside
-            document.addEventListener('mousedown', (e) => {
-                if (!card.contains(e.target)) {
-                    menuDropdown.classList.remove('active');
-                }
+                const activeCard = activeMenu.closest?.('.movie-card-component');
+                const activeButton = activeCard?.querySelector?.('.mc-menu-btn');
+                this.setMenuState(activeMenu, false);
+                activeButton?.focus();
             });
         }
 
-        // Menu items will be handled by parent page through event delegation
-        // The parent should listen for clicks on elements with data-action attributes
+        const toggleMenu = (isOpen = !menuDropdown.classList.contains('active')) => {
+            this.closeOpenMenus(menuDropdown);
+            this.setMenuState(menuDropdown, isOpen);
+
+            if (isOpen) {
+                menuDropdown.querySelector('.mc-menu-item')?.focus();
+            }
+        };
+
+        menuBtn.addEventListener('mousedown', (event) => {
+            event.stopPropagation();
+        });
+
+        menuBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            toggleMenu();
+        });
+
+        menuBtn.addEventListener('keydown', (event) => {
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                toggleMenu(true);
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
+                toggleMenu(false);
+            }
+        });
+
+        menuDropdown.addEventListener('keydown', (event) => {
+            const items = [...menuDropdown.querySelectorAll('.mc-menu-item')];
+
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                toggleMenu(false);
+                menuBtn.focus();
+                return;
+            }
+
+            if (!items.length || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+
+            event.preventDefault();
+            const currentIndex = items.indexOf(document.activeElement);
+            const nextIndex = event.key === 'Home'
+                ? 0
+                : event.key === 'End'
+                    ? items.length - 1
+                    : (currentIndex + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+            items[nextIndex].focus();
+        });
+
+        menuDropdown.addEventListener('click', (event) => {
+            if (event.target.closest?.('.mc-menu-item')) {
+                this.setMenuState(menuDropdown, false);
+            }
+        });
     }
 
     /**

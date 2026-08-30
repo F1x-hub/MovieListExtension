@@ -1,10 +1,169 @@
 /**
  * AdminService - Handles administrative operations like user management
  */
+const FIRESTORE_USAGE_URL = 'https://us-central1-movielistdb-13208.cloudfunctions.net/firestoreUsage';
+const PROVIDER_KEYS_URL = 'https://us-central1-movielistdb-13208.cloudfunctions.net/providerKeysAdmin';
+
 class AdminService {
     constructor(firebaseManager) {
         this.db = firebaseManager.db;
         this.firebaseManager = firebaseManager;
+    }
+
+    /**
+     * Read Firestore free-tier usage from the admin-only Cloud Function.
+     * @returns {Promise<Object>} Usage metrics and quota limits
+     */
+    async getFirestoreUsage() {
+        const currentUser = this.firebaseManager.getCurrentUser?.()
+            || (typeof firebase !== 'undefined' ? firebase.auth?.().currentUser : null);
+        if (!currentUser || typeof currentUser.getIdToken !== 'function') {
+            throw new Error('Authentication is required to read Firestore usage');
+        }
+
+        const idToken = await currentUser.getIdToken();
+        const response = await fetch(FIRESTORE_USAGE_URL, {
+            method: 'GET',
+            headers: {
+                Accept: 'application/json',
+                Authorization: `Bearer ${idToken}`
+            }
+        });
+
+        let payload;
+        try {
+            payload = await response.json();
+        } catch {
+            // Keep payload undefined when the function returns a non-JSON error.
+        }
+
+        if (!response.ok) {
+            throw new Error(payload?.error || `Firestore usage request failed (${response.status})`);
+        }
+
+        if (!payload?.storage || !payload?.reads || !payload?.writes) {
+            throw new Error('Firestore usage response is incomplete');
+        }
+
+        return payload;
+    }
+
+    async requestProviderKeys({ action = 'list', method = 'GET', body = null } = {}) {
+        const currentUser = this.firebaseManager.getCurrentUser?.()
+            || (typeof firebase !== 'undefined' ? firebase.auth?.().currentUser : null);
+        if (!currentUser || typeof currentUser.getIdToken !== 'function') {
+            throw new Error('Authentication is required to manage provider keys');
+        }
+
+        const idToken = await currentUser.getIdToken();
+        const url = new URL(PROVIDER_KEYS_URL);
+        const request = {
+            method,
+            headers: {
+                Accept: 'application/json',
+                Authorization: `Bearer ${idToken}`
+            }
+        };
+        if (method === 'GET') {
+            url.searchParams.set('action', action);
+        } else {
+            request.headers['Content-Type'] = 'application/json';
+            request.body = JSON.stringify({ action, ...(body || {}) });
+        }
+
+        const response = await fetch(url.toString(), request);
+        let payload;
+        try {
+            payload = await response.json();
+        } catch {
+            payload = null;
+        }
+
+        if (!response.ok) {
+            const error = new Error(payload?.error?.message || `Provider key request failed (${response.status})`);
+            error.code = payload?.error?.code || 'PROVIDER_KEY_OPERATION_FAILED';
+            error.status = response.status;
+            throw error;
+        }
+        if (!payload || !Object.prototype.hasOwnProperty.call(payload, 'data')) {
+            throw new Error('Provider key response is incomplete');
+        }
+        return payload.data;
+    }
+
+    validateProviderKeyDto(key) {
+        if (!key || typeof key !== 'object' || 'secret' in key || 'value' in key) {
+            throw new Error('Provider key response is unsafe');
+        }
+        const allowedFields = [
+            'id', 'provider', 'label', 'purpose', 'status', 'fingerprint', 'maskedValue',
+            'createdAt', 'createdBy', 'updatedAt', 'lastCheckedAt', 'lastSuccessAt',
+            'lastFailureAt', 'lastErrorCode', 'quota'
+        ];
+        return Object.fromEntries(allowedFields
+            .filter((field) => Object.prototype.hasOwnProperty.call(key, field))
+            .map((field) => [field, key[field]]));
+    }
+
+    async listProviderKeys() {
+        const data = await this.requestProviderKeys({ action: 'list' });
+        if (!Array.isArray(data)) throw new Error('Provider key list is incomplete');
+        return data.map((key) => this.validateProviderKeyDto(key));
+    }
+
+    async addProviderKey({ provider = 'kinopoisk', label, purpose, secret }) {
+        const data = await this.requestProviderKeys({
+            action: 'add',
+            method: 'POST',
+            body: { provider, label, purpose, secret }
+        });
+        return this.validateProviderKeyDto(data);
+    }
+
+    async testProviderKey(keyId) {
+        const data = await this.requestProviderKeys({
+            action: 'test',
+            method: 'POST',
+            body: { keyId }
+        });
+        return this.validateProviderKeyDto(data);
+    }
+
+    async setProviderKeyStatus(keyId, status) {
+        if (!['active', 'disabled'].includes(status)) {
+            throw new Error('Provider key status is invalid');
+        }
+        const data = await this.requestProviderKeys({
+            action: status === 'active' ? 'enable' : 'disable',
+            method: 'POST',
+            body: { keyId }
+        });
+        return this.validateProviderKeyDto(data);
+    }
+
+    async revokeProviderKey(keyId) {
+        const data = await this.requestProviderKeys({
+            action: 'revoke',
+            method: 'POST',
+            body: { keyId }
+        });
+        return this.validateProviderKeyDto(data);
+    }
+
+    async getProviderKeyQuota(keyId) {
+        const data = await this.requestProviderKeys({
+            action: 'quota',
+            method: 'POST',
+            body: { keyId }
+        });
+        if (!data || typeof data !== 'object' ||
+            !['provider_exact', 'local_estimate', 'unavailable'].includes(data.mode)) {
+            throw new Error('Provider key quota response is incomplete');
+        }
+        const allowedFields = ['mode', 'unit', 'used', 'limit', 'remaining', 'status', 'measuredAt', 'stale'];
+        return Object.fromEntries(allowedFields
+            .filter((field) => Object.prototype.hasOwnProperty.call(data, field))
+            .map((field) => [field, data[field]]));
     }
 
     /**
@@ -26,6 +185,51 @@ class AdminService {
             console.error('Error checking admin status:', error);
             return false;
         }
+    }
+
+    getCommentReactionService() {
+        if (this.firebaseManager?.getCommentReactionService) {
+            return this.firebaseManager.getCommentReactionService();
+        }
+        if (typeof CommentReactionService === 'undefined') {
+            throw new Error('CommentReactionService class not found');
+        }
+        return new CommentReactionService(this.firebaseManager);
+    }
+
+    async getCommentReactionConfig(force = false) {
+        return this.getCommentReactionService().loadConfig(force);
+    }
+
+    async saveCommentReactionConfig(reactions, currentAdminId) {
+        const isAdmin = await this.isUserAdmin(currentAdminId);
+        if (!isAdmin) {
+            throw new Error('Unauthorized: Admin access required');
+        }
+
+        return this.getCommentReactionService().saveConfig(reactions, currentAdminId);
+    }
+
+    async uploadCommentReactionAsset(file, reactionId, currentAdminId) {
+        const isAdmin = await this.isUserAdmin(currentAdminId);
+        if (!isAdmin) {
+            throw new Error('Unauthorized: Admin access required');
+        }
+        if (typeof this.firebaseManager?.uploadCommentReactionAsset !== 'function') {
+            throw new Error('Comment reaction asset upload is unavailable');
+        }
+        return this.firebaseManager.uploadCommentReactionAsset(file, reactionId);
+    }
+
+    async deleteCommentReactionAsset(storagePath, currentAdminId) {
+        const isAdmin = await this.isUserAdmin(currentAdminId);
+        if (!isAdmin) {
+            throw new Error('Unauthorized: Admin access required');
+        }
+        if (typeof this.firebaseManager?.deleteCommentReactionAsset !== 'function') {
+            throw new Error('Comment reaction asset deletion is unavailable');
+        }
+        return this.firebaseManager.deleteCommentReactionAsset(storagePath);
     }
 
     /**

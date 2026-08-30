@@ -30,6 +30,130 @@ service cloud.firestore {
                !('approvalStatus' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data)
              );
     }
+
+    function isValidRatingData(data) {
+      return data.userId is string
+        && data.movieId is int && data.movieId > 0
+        && data.rating is int && data.rating >= 1 && data.rating <= 10
+        && data.comment is string && data.comment.size() <= 500
+        && (!('userName' in data) || data.userName is string && data.userName.size() <= 120)
+        && (!('userPhoto' in data) || data.userPhoto is string && data.userPhoto.size() <= 2048)
+        && (!('movieTitle' in data) || data.movieTitle is string && data.movieTitle.size() <= 300)
+        && (!('posterPath' in data) || data.posterPath is string && data.posterPath.size() <= 2048)
+        && (!('isFavorite' in data) || data.isFavorite is bool);
+    }
+
+    function hasCanonicalRatingId(ratingId, data) {
+      return ratingId == request.auth.uid + '_' + string(data.movieId);
+    }
+
+    function commentReactionConfigPath() {
+      return /databases/$(database)/documents/settings/commentReactions;
+    }
+
+    function commentReactionAllowedTypes() {
+      return exists(commentReactionConfigPath())
+        && get(commentReactionConfigPath()).data.reactionTypes is list
+        ? get(commentReactionConfigPath()).data.reactionTypes
+        : ['like', 'love', 'laugh', 'wow', 'sad', 'fire', 'clap', 'rocket', 'party', 'thinking', 'eyes', 'hundred'];
+    }
+
+    function isValidCommentReactionType(reactionType) {
+      return reactionType in commentReactionAllowedTypes();
+    }
+
+    function isValidCommentReactionMovieId(movieId) {
+      return (movieId is number && movieId > 0)
+        || (movieId is string && movieId.size() > 0);
+    }
+
+    function ratingHasMovie(ratingId, movieId) {
+      let ratingPath = /databases/$(database)/documents/ratings/$(ratingId);
+      return exists(ratingPath)
+        && get(ratingPath).data.movieId != null
+        && string(get(ratingPath).data.movieId) == string(movieId);
+    }
+
+    function isValidCommentReactionSelection(data) {
+      return (('types' in data
+        && data.types is list
+        && data.types.size() > 0
+        && data.types.size() <= 3
+        && data.types.hasOnly(commentReactionAllowedTypes())
+        && (!('type' in data) || isValidCommentReactionType(data.type)))
+        || (!('types' in data)
+          && 'type' in data
+          && isValidCommentReactionType(data.type)));
+    }
+
+    function isValidSharedIdMapping(mappingId, data) {
+      return data.keys().hasOnly([
+          'tmdbId', 'mediaType', 'kpId', 'kpType', 'title', 'year', 'status',
+          'identityStatus', 'verificationMethod', 'verificationSource',
+          'resolutionSource', 'isManual', 'reverseKey', 'confirmedBy', 'updatedBy',
+          'createdAt', 'updatedAt', 'resolvedAt'
+        ])
+        && data.tmdbId is int && data.tmdbId > 0
+        && data.kpId is int && data.kpId > 0
+        && data.mediaType in ['movie', 'tv']
+        && mappingId == data.mediaType + ':' + string(data.tmdbId)
+        && data.reverseKey == 'kp:' + data.mediaType + ':' + string(data.kpId)
+        && (data.kpType == null || data.kpType is string)
+        && data.title is string
+        && (data.year == null || data.year is int)
+        && data.status == 'resolved'
+        && data.identityStatus == 'VERIFIED'
+        && data.verificationMethod == 'admin_verified'
+        && data.verificationSource == 'manual'
+        && data.resolutionSource == 'manual'
+        && data.isManual == true
+        && data.confirmedBy is string
+        && data.updatedBy is string
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && data.resolvedAt is number;
+    }
+
+    // The reverse record is a transactional uniqueness lock, not a second
+    // mapping authority. It makes one Kinopoisk ID claimable by one TMDB ID.
+    function sharedMappingPath(mappingId) {
+      return /databases/$(database)/documents/tmdbKinopoiskMappings/$(mappingId);
+    }
+
+    function sharedReversePath(reverseKey) {
+      return /databases/$(database)/documents/tmdbKinopoiskReverseIndex/$(reverseKey);
+    }
+
+    function isValidSharedReverseLock(reverseKey, data) {
+      return data.keys().hasOnly([
+          'reverseKey', 'mappingId', 'tmdbId', 'mediaType', 'kpId', 'updatedAt'
+        ])
+        && data.reverseKey == reverseKey
+        && data.tmdbId is int && data.tmdbId > 0
+        && data.kpId is int && data.kpId > 0
+        && data.mediaType in ['movie', 'tv']
+        && data.mappingId == data.mediaType + ':' + string(data.tmdbId)
+        && reverseKey == 'kp:' + data.mediaType + ':' + string(data.kpId)
+        && data.updatedAt is timestamp;
+    }
+
+    function hasSharedReverseLock(mappingId, mappingData) {
+      let reversePath = sharedReversePath(mappingData.reverseKey);
+      return existsAfter(reversePath)
+        && getAfter(reversePath).data.mappingId == mappingId
+        && getAfter(reversePath).data.tmdbId == mappingData.tmdbId
+        && getAfter(reversePath).data.mediaType == mappingData.mediaType
+        && getAfter(reversePath).data.kpId == mappingData.kpId;
+    }
+
+    function hasSharedForwardMapping(reverseKey, lockData) {
+      let mappingPath = sharedMappingPath(lockData.mappingId);
+      return existsAfter(mappingPath)
+        && getAfter(mappingPath).data.reverseKey == reverseKey
+        && getAfter(mappingPath).data.tmdbId == lockData.tmdbId
+        && getAfter(mappingPath).data.mediaType == lockData.mediaType
+        && getAfter(mappingPath).data.kpId == lockData.kpId;
+    }
     
     // Movies collection - read for all, write for approved users, delete for admins
     match /movies/{movieId} {
@@ -41,8 +165,64 @@ service cloud.firestore {
     // Ratings collection (Top-level)
     match /ratings/{ratingId} {
       allow read: if true; // Anyone can read ratings
-      allow create: if isApprovedUser(); // Only approved users can create ratings
-      allow update, delete: if (isApprovedUser() && resource.data.userId == request.auth.uid) || isAdmin(); // Owner or admin can update/delete
+      // New documents use one deterministic key per authenticated user/movie.
+      // Firestore Rules cannot query for duplicate field pairs, so document ID
+      // is the authoritative uniqueness constraint.
+      allow create: if isApprovedUser()
+        && request.resource.data.userId == request.auth.uid
+        && isValidRatingData(request.resource.data)
+        && hasCanonicalRatingId(ratingId, request.resource.data);
+      // Pre-existing random-ID ratings remain editable by their owner until a
+      // separately approved data migration removes or canonicalizes them.
+      allow update: if (isApprovedUser() || isAdmin())
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.movieId == resource.data.movieId
+        && isValidRatingData(request.resource.data);
+      allow delete: if (isApprovedUser() && resource.data.userId == request.auth.uid) || isAdmin();
+    }
+
+    // One deterministic document per user and comment may contain up to three
+    // reaction types. Counts are server-derived and never client-writable.
+    match /commentReactions/{reactionId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if isApprovedUser()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.ratingId is string
+        && isValidCommentReactionMovieId(request.resource.data.movieId)
+        && isValidCommentReactionSelection(request.resource.data)
+        && reactionId == request.resource.data.ratingId + '_' + request.auth.uid
+        && ratingHasMovie(request.resource.data.ratingId, request.resource.data.movieId);
+      allow update: if isApprovedUser()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.ratingId == resource.data.ratingId
+        && string(request.resource.data.movieId) == string(resource.data.movieId)
+        && isValidCommentReactionMovieId(request.resource.data.movieId)
+        && isValidCommentReactionSelection(request.resource.data)
+        && reactionId == request.resource.data.ratingId + '_' + request.auth.uid
+        && ratingHasMovie(request.resource.data.ratingId, request.resource.data.movieId);
+      allow delete: if isAdmin() || (isApprovedUser() && resource.data.userId == request.auth.uid);
+    }
+
+    match /commentReactionSummaries/{ratingId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // The catalog is public read-only configuration. Only admins can publish
+    // the allowlisted IDs consumed by reaction writes and client pickers.
+    match /settings/{settingId} {
+      allow read: if settingId == 'commentReactions';
+      allow create, update: if settingId == 'commentReactions'
+        && isAdmin()
+        && request.resource.data.reactions is list
+        && request.resource.data.reactions.size() > 0
+        && request.resource.data.reactions.size() <= 24
+        && request.resource.data.reactionTypes is list
+        && request.resource.data.reactionTypes.size() == request.resource.data.reactions.size()
+        && request.resource.data.maxReactionsPerUser == 3;
+      allow delete: if false;
     }
     
     // Watchlist collection (Top-level)
@@ -92,6 +272,98 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow create, update, delete: if isAdmin();
     }
+
+    // Admin-verified TMDB→Kinopoisk identities are a shared, read-only source
+    // for authenticated clients. The client cache is derived from these records.
+    match /tmdbKinopoiskMappings/{mappingId} {
+      allow read: if isAuthenticated();
+      allow create: if isAdmin()
+        && isValidSharedIdMapping(mappingId, request.resource.data)
+        && hasSharedReverseLock(mappingId, request.resource.data)
+        && request.resource.data.confirmedBy == request.auth.uid
+        && request.resource.data.updatedBy == request.auth.uid;
+      allow update: if isAdmin()
+        && isValidSharedIdMapping(mappingId, request.resource.data)
+        && hasSharedReverseLock(mappingId, request.resource.data)
+        && request.resource.data.confirmedBy == resource.data.confirmedBy
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedBy == request.auth.uid;
+      allow delete: if isAdmin()
+        && !existsAfter(sharedReversePath(resource.data.reverseKey));
+    }
+
+    match /tmdbKinopoiskReverseIndex/{reverseKey} {
+      allow read: if isAuthenticated();
+      allow create: if isAdmin()
+        && isValidSharedReverseLock(reverseKey, request.resource.data)
+        && hasSharedForwardMapping(reverseKey, request.resource.data);
+      allow update: if isAdmin()
+        && isValidSharedReverseLock(reverseKey, request.resource.data)
+        && request.resource.data.mappingId == resource.data.mappingId
+        && hasSharedForwardMapping(reverseKey, request.resource.data);
+      allow delete: if isAdmin()
+        && (!existsAfter(sharedMappingPath(resource.data.mappingId))
+          || getAfter(sharedMappingPath(resource.data.mappingId)).data.reverseKey != reverseKey);
+    }
+
+    // Provider key metadata is readable only by admins. All writes go through
+    // the server-side Secret Manager workflow; clients cannot write metadata,
+    // secret references, or raw credentials directly.
+    match /systemApiKeys/{keyId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    // Audit records are server-owned and immutable from client SDKs.
+    match /systemApiKeyAuditLogs/{eventId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    // Watch-room data is durable server state. Clients use authenticated HTTPS
+    // actions and RTDB's narrow derived ACL; no room document, invitation, or
+    // delivery outbox is directly readable or writable from a client SDK.
+    match /watchRooms/{roomId} {
+      allow read, write: if false;
+
+      match /members/{memberId} {
+        allow read, write: if false;
+      }
+    }
+
+    match /watchRoomInvites/{inviteId} {
+      allow read, write: if false;
+    }
+
+    match /watchRoomAclOutbox/{eventId} {
+      allow read, write: if false;
+    }
+
+    match /watchRoomStateOutbox/{eventId} {
+      allow read, write: if false;
+    }
+
+    match /watchRoomApprovalOutbox/{eventId} {
+      allow read, write: if false;
+    }
+
+    // The two-client proof uses a separate durable namespace, but retains the
+    // same server-only boundary as the production room model.
+    match /watchRoomsStaging/{roomId} {
+      allow read, write: if false;
+
+      match /members/{memberId} {
+        allow read, write: if false;
+      }
+    }
+
+    match /watchRoomsStagingInvites/{inviteId} {
+      allow read, write: if false;
+    }
+
+    match /watchRoomsStagingAclOutbox/{eventId} {
+      allow read, write: if false;
+    }
     
     // Users collection
     match /users/{userId} {
@@ -130,15 +402,14 @@ service cloud.firestore {
       // User ratings subcollection (Legacy)
       match /ratings/{ratingId} {
         allow read: if true;
-        allow write: if (isApprovedUser() && isOwner(userId)) || isAdmin();
+        allow write: if false;
       }
     }
     
     // Movie ratings subcollection (Legacy)
     match /movies/{movieId}/ratings/{ratingId} {
       allow read: if true;
-      allow create: if isApprovedUser();
-      allow update, delete: if (isApprovedUser() && resource.data.userId == request.auth.uid) || isAdmin();
+      allow write: if false;
     }
   }
 }

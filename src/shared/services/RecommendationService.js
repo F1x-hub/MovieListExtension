@@ -4,16 +4,17 @@
  * Pipeline:
  *  1. In-flight Promise deduplication per `${mediaType}:${tmdbId}`.
  *  2. Multi-tier Local Cache (`movie_recommendations_v1_{tmdbId}_{mediaType}`) with bounded LRU eviction (max 100).
- *  3. TMDB `/recommendations` primary query (page 1).
- *  4. Strict semantic, adult, and self-identity filtering.
- *  5. Batch KP ID mapping via IdMappingService with explicit admin queue bypass (`skipQueue: true`).
- *  6. Kinopoisk identity verification (`kinopoiskId > 0`).
- *  7. On-demand TMDB `/similar` deficit fallback ONLY when valid primary recommendations < 6.
- *  8. Output bounded, normalized RecommendationDTO array (target 10 items).
+ *  3. Kinopoisk `/like/` browser parser as the quota-free primary source.
+ *  4. TMDB `/recommendations` primary query (fallback when the parser is unavailable).
+ *  5. Strict semantic, adult, and self-identity filtering.
+ *  6. Batch KP ID mapping via IdMappingService with explicit admin queue bypass (`skipQueue: true`).
+ *  7. Kinopoisk identity verification (`kinopoiskId > 0`).
+ *  8. On-demand TMDB `/similar` deficit fallback ONLY when valid primary recommendations < 6.
+ *  9. Output bounded, normalized RecommendationDTO array (target 10 items).
  * 
  * INVARIANTS:
- *  - ZERO scraper usage (SimilarMoviesParsingService is never called).
- *  - ZERO N+1 KP details/movie lookups (cards render from TMDB metadata + verified KP ID).
+ *  - Parser-first path uses one browser-context HTML request and zero KP API calls.
+ *  - ZERO N+1 KP details/movie lookups (cards render from parsed metadata + KP ID).
  *  - ZERO recommendation misses added to Home manual mapping queue (`skipQueue: true`).
  *  - ZERO fake or unmapped Kinopoisk IDs.
  */
@@ -27,9 +28,13 @@ class RecommendationService {
     constructor(options = {}) {
         this.tmdbService = options.tmdbService || (typeof TMDBService !== 'undefined' ? new TMDBService() : null);
         this.idMappingService = options.idMappingService || (typeof IdMappingService !== 'undefined' ? new IdMappingService() : null);
+        this.kinopoiskService = options.kinopoiskService || null;
 
         this.CACHE_PREFIX = 'movie_recommendations_v1_';
         this.INDEX_KEY = 'movie_recommendations_index_v1';
+        // Bump when the cached DTO contract changes. Version 2 invalidates
+        // previously cached low-resolution Kinopoisk poster URLs immediately.
+        this.CACHE_SCHEMA_VERSION = 2;
         this.MAX_CACHED_ENTRIES = 100;
         this.DEFAULT_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 days for catalog
         this.FRESH_TTL_MS = 3 * 24 * 60 * 60 * 1000;    // 3 days for fresh/current-year titles
@@ -38,6 +43,7 @@ class RecommendationService {
 
         // In-flight deduplication map: `${mediaType}:${tmdbId}` -> Promise
         this.inFlightRequests = new Map();
+        this.traceSequence = 0;
 
         // In-memory fallback if chrome.storage is unavailable (e.g. Node tests)
         this._memoryCache = new Map();
@@ -82,7 +88,7 @@ class RecommendationService {
             }
 
             if (!entry || typeof entry !== 'object') return null;
-            if (entry.schemaVersion !== 1 || entry.tmdbId !== numTmdbId) return null;
+            if (entry.schemaVersion !== this.CACHE_SCHEMA_VERSION || entry.tmdbId !== numTmdbId) return null;
             if (!Array.isArray(entry.items) || typeof entry.cachedAt !== 'number') return null;
 
             const now = Date.now();
@@ -117,7 +123,7 @@ class RecommendationService {
         const now = Date.now();
 
         const entry = {
-            schemaVersion: 1,
+            schemaVersion: this.CACHE_SCHEMA_VERSION,
             tmdbId: numTmdbId,
             mediaType: normType,
             cachedAt: now,
@@ -273,18 +279,48 @@ class RecommendationService {
         const minThreshold = Number(options.minFallbackThreshold) || this.FALLBACK_DEFICIT_THRESHOLD;
         const signal = options.signal || null;
         const language = options.language || 'ru-RU';
+        const parserTimeoutMs = Math.max(1000, Number(options.parserTimeoutMs) || 3500);
+        const mappingCandidateLimit = Math.max(targetCount, minThreshold);
+        const mappingFallbackLimit = Math.max(0, Math.min(4, minThreshold));
+        const traceId = `rec-${sourceTmdbId}-${Date.now().toString(36)}-${++this.traceSequence}`;
+        const traceStartedAt = typeof performance !== 'undefined' && typeof performance.now === 'function'
+            ? performance.now()
+            : Date.now();
+        const traceNow = () => typeof performance !== 'undefined' && typeof performance.now === 'function'
+            ? performance.now()
+            : Date.now();
+        const trace = (stage, details = {}) => {
+            console.info('[RecommendationTrace]', {
+                traceId,
+                movieId: sourceTmdbId,
+                stage,
+                elapsedMs: Math.max(0, Math.round(traceNow() - traceStartedAt)),
+                ...details
+            });
+        };
+
+        trace('start', {
+            mediaType: normMediaType,
+            targetCount,
+            minThreshold,
+            mappingCandidateLimit,
+            mappingFallbackLimit
+        });
 
         // 1. Check local cache if not forcing refresh
         if (!forceRefresh) {
             const cached = await this.getCachedRecommendations(sourceTmdbId, normMediaType);
             if (cached && Array.isArray(cached) && cached.length > 0) {
+                trace('cache:hit', { resultCount: Math.min(cached.length, targetCount) });
                 return cached.slice(0, targetCount);
             }
+            trace('cache:miss');
         }
 
         // 2. In-flight Promise deduplication per `${mediaType}:${tmdbId}`
         const dedupKey = `${normMediaType}:${sourceTmdbId}`;
         if (this.inFlightRequests.has(dedupKey)) {
+            trace('in-flight:reuse');
             return this.inFlightRequests.get(dedupKey);
         }
 
@@ -293,17 +329,82 @@ class RecommendationService {
                 const tmdb = this.tmdbService || (typeof TMDBService !== 'undefined' ? new TMDBService() : null);
                 const idMapper = this.idMappingService || (typeof IdMappingService !== 'undefined' ? new IdMappingService() : null);
 
-                if (!tmdb || !idMapper) {
-                    console.warn('[RecommendationService] Required services (TMDBService/IdMappingService) unavailable.');
-                    return [];
-                }
-
                 const seenTmdbIds = new Set([sourceTmdbId]);
                 const seenKpIds = new Set();
                 if (sourceKpId) seenKpIds.add(sourceKpId);
 
+                // --- STAGE 0: Quota-free Kinopoisk /like/ Parser ---
+                const kinopoisk = this.kinopoiskService
+                    || (typeof firebaseManager !== 'undefined' && firebaseManager?.getKinopoiskService?.())
+                    || (typeof window !== 'undefined' && window.firebaseManager?.getKinopoiskService?.())
+                    || null;
+                if (kinopoisk && sourceKpId && typeof kinopoisk.scrapeSimilarMoviesOffscreen === 'function') {
+                    trace('parser:request:start', {
+                        kinopoiskId: sourceKpId,
+                        source: 'kinopoisk-like'
+                    });
+                    const parsed = await kinopoisk.scrapeSimilarMoviesOffscreen(sourceKpId, {
+                        mediaType: normMediaType,
+                        timeoutMs: parserTimeoutMs,
+                        queueDeadlineMs: parserTimeoutMs,
+                        requestKey: `recommendations:${normMediaType}:${sourceKpId}`,
+                        traceId,
+                        signal
+                    });
+                    const parsedCandidates = Array.isArray(parsed)
+                        ? parsed
+                            .filter(candidate => candidate && Number(candidate.kinopoiskId) > 0)
+                            .filter(candidate => Number(candidate.kinopoiskId) !== Number(sourceKpId))
+                            .filter(candidate => !this.isExplicitContent(candidate))
+                            .filter(candidate => {
+                                const candidateMediaType = candidate.mediaType === 'tv' || candidate.type === 'series'
+                                    ? 'tv'
+                                    : 'movie';
+                                if (sourceSection === 'film' || (sourceSection === 'unknown' && normMediaType === 'movie')) {
+                                    return candidateMediaType === 'movie';
+                                }
+                                if (sourceSection === 'series' || (sourceSection === 'unknown' && normMediaType === 'tv')) {
+                                    return candidateMediaType === 'tv';
+                                }
+                                return this.isCompatibleWithSource({ ...candidate, mediaType: candidateMediaType }, sourceSection);
+                            })
+                            .filter((candidate, index, list) => list.findIndex(item => Number(item.kinopoiskId) === Number(candidate.kinopoiskId)) === index)
+                        : [];
+                    trace('parser:request:end', {
+                        rawItemCount: Array.isArray(parsed) ? parsed.length : 0,
+                        compatibleCount: parsedCandidates.length
+                    });
+
+                    const parserMinimum = Math.min(targetCount, 4);
+                    if (parsedCandidates.length >= parserMinimum) {
+                        const parserResults = parsedCandidates
+                            .slice(0, targetCount)
+                            .map((candidate, index) => this._createParsedRecommendationDTO(candidate, index));
+                        await this.setCachedRecommendations(sourceTmdbId, normMediaType, parserResults, isFreshTitle);
+                        trace('parser:complete', {
+                            resultCount: parserResults.length,
+                            apiQuotaRequests: 0
+                        });
+                        return parserResults;
+                    }
+
+                    trace('parser:insufficient', {
+                        parserMinimum,
+                        compatibleCount: parsedCandidates.length,
+                        fallback: 'tmdb'
+                    });
+                }
+
+                if (!tmdb || !idMapper) {
+                    console.warn('[RecommendationService] Required services (TMDB/IdMapping) unavailable after parser attempt.');
+                    trace('unavailable');
+                    return [];
+                }
+
                 // --- STAGE 1: Primary Recommendations Query ---
+                trace('primary:request:start');
                 const rawRecommendations = await tmdb.getRecommendations(sourceTmdbId, normMediaType, { language, signal });
+                trace('primary:request:end', { candidateCount: rawRecommendations.length });
                 const primaryFiltered = [];
 
                 for (const item of rawRecommendations) {
@@ -321,14 +422,22 @@ class RecommendationService {
                 }
 
                 // Batch resolve primary candidates with strict queue isolation
-                const primaryMapping = await idMapper.resolveBatch(primaryFiltered, {
+                const primaryMappingCandidates = primaryFiltered.slice(0, mappingCandidateLimit);
+                trace('primary:mapping:start', { candidateCount: primaryMappingCandidates.length });
+                const primaryMapping = await idMapper.resolveBatch(primaryMappingCandidates, {
                     skipQueue: true,
                     context: 'recommendations',
-                    signal
+                    signal,
+                    fastPath: true,
+                    maxFallbackCandidates: mappingFallbackLimit
+                });
+                trace('primary:mapping:end', {
+                    resolvedCount: [...primaryMapping.values()].filter(item => item?.status === 'resolved').length,
+                    resultCount: primaryMapping.size
                 });
 
                 const validPrimary = [];
-                for (const item of primaryFiltered) {
+                for (const item of primaryMappingCandidates) {
                     const key = idMapper.buildKey(item.mediaType, item.tmdbId);
                     const mapping = primaryMapping.get(key);
                     const kpId = mapping?.kinopoiskId ? Number(mapping.kinopoiskId) : null;
@@ -343,7 +452,9 @@ class RecommendationService {
 
                 // --- STAGE 2: Similar Deficit Fallback (ONLY if primary < minThreshold) ---
                 if (finalResults.length < minThreshold) {
+                    trace('similar:request:start', { primaryResultCount: finalResults.length });
                     const rawSimilar = await tmdb.getSimilar(sourceTmdbId, normMediaType, { language, signal });
+                    trace('similar:request:end', { candidateCount: rawSimilar.length });
                     const similarFiltered = [];
 
                     for (const item of rawSimilar) {
@@ -361,14 +472,22 @@ class RecommendationService {
                     }
 
                     if (similarFiltered.length > 0) {
-                        const similarMapping = await idMapper.resolveBatch(similarFiltered, {
+                        const similarMappingCandidates = similarFiltered.slice(0, mappingCandidateLimit);
+                        trace('similar:mapping:start', { candidateCount: similarMappingCandidates.length });
+                        const similarMapping = await idMapper.resolveBatch(similarMappingCandidates, {
                             skipQueue: true,
                             context: 'recommendations',
-                            signal
+                            signal,
+                            fastPath: true,
+                            maxFallbackCandidates: mappingFallbackLimit
+                        });
+                        trace('similar:mapping:end', {
+                            resolvedCount: [...similarMapping.values()].filter(item => item?.status === 'resolved').length,
+                            resultCount: similarMapping.size
                         });
 
                         const validSimilar = [];
-                        for (const item of similarFiltered) {
+                        for (const item of similarMappingCandidates) {
                             const key = idMapper.buildKey(item.mediaType, item.tmdbId);
                             const mapping = similarMapping.get(key);
                             const kpId = mapping?.kinopoiskId ? Number(mapping.kinopoiskId) : null;
@@ -392,7 +511,14 @@ class RecommendationService {
                     await this.setCachedRecommendations(sourceTmdbId, normMediaType, bounded, isFreshTitle);
                 }
 
+                trace('complete', { resultCount: bounded.length });
                 return bounded;
+            } catch (error) {
+                trace('error', {
+                    errorName: error?.name || 'Error',
+                    errorMessage: error?.message || String(error)
+                });
+                throw error;
             } finally {
                 this.inFlightRequests.delete(dedupKey);
             }
@@ -427,6 +553,42 @@ class RecommendationService {
             genreIds: Array.isArray(candidate.genreIds) ? candidate.genreIds : (Array.isArray(candidate.genre_ids) ? candidate.genre_ids : []),
             mediaType: candidate.mediaType || 'movie',
             recommendationSource: sourceTag
+        };
+    }
+
+    /**
+     * Convert a Kinopoisk /like/ parser item into the card DTO without forcing
+     * a TMDB or Kinopoisk API lookup for every recommendation.
+     * @param {Object} candidate
+     * @param {number} sourcePosition
+     * @returns {Object}
+     * @private
+     */
+    _createParsedRecommendationDTO(candidate, sourcePosition) {
+        const kpId = Number(candidate.kinopoiskId);
+        const mediaType = candidate.mediaType === 'tv' || candidate.type === 'series' ? 'tv' : 'movie';
+        const genres = Array.isArray(candidate.genres) ? candidate.genres.filter(Boolean) : [];
+
+        return {
+            tmdbId: null,
+            kinopoiskId: kpId,
+            name: candidate.name || '',
+            alternativeName: candidate.alternativeName || candidate.originalTitle || '',
+            year: Number(candidate.year) || null,
+            posterUrl: candidate.posterUrl || '',
+            backdropUrl: '',
+            ratingTmdb: 0,
+            ratingKp: Number(candidate.kpRating) || 0,
+            kpRating: Number(candidate.kpRating) || 0,
+            imdbRating: Number(candidate.imdbRating) || 0,
+            kpVotes: Number(candidate.kpVotes) || 0,
+            imdbVotes: Number(candidate.imdbVotes) || 0,
+            voteCount: Number(candidate.kpVotes) || 0,
+            genreIds: [],
+            genres,
+            mediaType,
+            sourcePosition: Number.isInteger(candidate.sourcePosition) ? candidate.sourcePosition : sourcePosition,
+            recommendationSource: 'KINOPOISK_LIKE_PARSER'
         };
     }
 }

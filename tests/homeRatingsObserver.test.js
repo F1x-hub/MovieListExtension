@@ -8,6 +8,12 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 const rendererPath = path.join(rootDir, 'src/pages/home/HomeRenderer.js');
 const source = fs.readFileSync(rendererPath, 'utf8');
+const homeHtml = fs.readFileSync(path.join(rootDir, 'src/pages/home/home.html'), 'utf8');
+
+assert.ok(
+    homeHtml.indexOf('../../shared/components/MovieCard.js') < homeHtml.indexOf('HomeRenderer.js'),
+    'Home must load MovieCard before HomeRenderer because cards have one renderer owner'
+);
 
 const categoryStart = source.indexOf('renderCategoryGrid(items = [], container, options = {})');
 const categoryEnd = source.indexOf('\n    /**', categoryStart + 1);

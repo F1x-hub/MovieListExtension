@@ -2,10 +2,6 @@
  * Movie Details Page Styles - Obsidian-Zinc Overhaul
  */
 
-/* Import common styles */
-@import url('../../shared/styles/common.css');
-@import url('../../shared/styles/components.css');
-
 :root {
     --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
     --transition: all 180ms var(--ease-out);
@@ -428,7 +424,8 @@
 }
 
 .tab-btn.disabled {
-    opacity: 0.3;
+    color: var(--theme-text-muted);
+    opacity: 1;
     cursor: not-allowed;
     pointer-events: none;
 }
@@ -621,7 +618,7 @@
 .meta-tmdb-score {
     font-size: 15px;
     font-weight: 700;
-    color: #01b4e4;
+    color: var(--ui-color-content-muted);
 }
 
 .meta-tmdb-separator {
@@ -693,7 +690,7 @@
 }
 
 .meta-finance-source a {
-    color: var(--theme-accent, #60a5fa);
+    color: var(--ui-color-interactive);
     text-decoration: none;
 }
 
@@ -702,7 +699,7 @@
 }
 
 .meta-finance-source--stale {
-    color: var(--theme-warning, #f59e0b);
+    color: var(--ui-color-status-warning);
 }
 
 /* The Numbers cumulative chart */
@@ -753,10 +750,23 @@
 }
 
 .the-numbers-chart__chevron {
-    color: var(--theme-accent, #60a5fa);
-    font-size: 18px;
-    line-height: 1;
-    transition: transform 180ms ease-out;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    color: var(--theme-text-muted);
+    transition: transform 180ms ease-out, color 180ms ease-out;
+}
+
+.the-numbers-chart__chevron svg {
+    display: block;
+    width: 16px;
+    height: 16px;
+}
+
+.the-numbers-chart__summary:hover .the-numbers-chart__chevron {
+    color: var(--theme-text-primary);
 }
 
 .the-numbers-chart[open] .the-numbers-chart__chevron {
@@ -805,17 +815,17 @@
 }
 
 .the-numbers-chart__legend-line--cume {
-    background: var(--theme-accent, #60a5fa);
+    background: var(--ui-color-interactive);
 }
 
 .the-numbers-chart__legend-line--median {
-    background: repeating-linear-gradient(90deg, #86efac 0 4px, transparent 4px 7px);
+    background: repeating-linear-gradient(90deg, var(--ui-color-content-muted) 0 4px, transparent 4px 7px);
 }
 
 .the-numbers-chart__legend-band {
     height: 8px;
-    background: rgba(248, 113, 113, 0.22);
-    border: 1px solid rgba(248, 113, 113, 0.38);
+    background: color-mix(in srgb, var(--ui-color-content-muted) 18%, transparent);
+    border: 1px solid color-mix(in srgb, var(--ui-color-content-muted) 38%, transparent);
 }
 
 .the-numbers-chart__viewport {
@@ -836,11 +846,19 @@
     stroke-width: 1;
 }
 
-.the-numbers-chart__axis-label,
+.the-numbers-chart__axis-label {
+    fill: var(--theme-text-primary, rgba(255, 255, 255, 0.9));
+    font-family: var(--font-data, 'JetBrains Mono', 'Consolas', monospace);
+    font-size: 13px;
+    font-weight: 500;
+}
+
 .the-numbers-chart__axis-title {
-    fill: var(--theme-text-muted);
-    font-family: var(--font-data);
-    font-size: 10px;
+    fill: var(--theme-text-muted, rgba(255, 255, 255, 0.55));
+    font-family: var(--font-data, 'JetBrains Mono', 'Consolas', monospace);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
 }
 
 .the-numbers-chart__band {
@@ -850,27 +868,27 @@
 
 .the-numbers-chart__median {
     fill: none;
-    stroke: #86efac;
+    stroke: var(--ui-color-content-muted);
     stroke-dasharray: 5 4;
     stroke-width: 1.5;
 }
 
 .the-numbers-chart__cume {
     fill: none;
-    stroke: var(--theme-accent, #60a5fa);
+    stroke: var(--ui-color-interactive);
     stroke-linecap: round;
     stroke-linejoin: round;
     stroke-width: 2.5;
 }
 
 .the-numbers-chart__current-point {
-    fill: var(--theme-accent, #60a5fa);
+    fill: var(--ui-color-interactive);
     stroke: var(--theme-bg-primary, #101114);
     stroke-width: 2;
 }
 
 .the-numbers-chart__data-point {
-    fill: var(--theme-accent, #60a5fa);
+    fill: var(--ui-color-interactive);
     stroke: var(--theme-bg-primary, #101114);
     stroke-width: 1.5;
     pointer-events: none;
@@ -881,7 +899,7 @@
 }
 
 .the-numbers-chart__median-point {
-    fill: #86efac;
+    fill: var(--ui-color-content-muted);
     stroke: var(--theme-bg-primary, #101114);
     stroke-width: 1.25;
     opacity: 0.72;
@@ -893,7 +911,7 @@
 }
 
 .the-numbers-chart__crosshair {
-    stroke: var(--theme-accent, #60a5fa);
+    stroke: var(--ui-color-interactive);
     stroke-dasharray: 3 4;
     stroke-opacity: 0.34;
     stroke-width: 1;
@@ -906,12 +924,12 @@
 
 .the-numbers-chart__active-point--cume {
     fill: var(--theme-text-primary, #f8fafc);
-    stroke: var(--theme-accent, #60a5fa);
+    stroke: var(--ui-color-interactive);
 }
 
 .the-numbers-chart__active-point--median {
     fill: var(--theme-text-primary, #f8fafc);
-    stroke: #86efac;
+    stroke: var(--ui-color-content-muted);
 }
 
 .the-numbers-chart__point-hit-area {
@@ -923,7 +941,7 @@
 .the-numbers-chart__point-hit-area:hover + .the-numbers-chart__data-point,
 .the-numbers-chart__point-hit-area:focus + .the-numbers-chart__data-point {
     fill: var(--theme-text-primary, #f8fafc);
-    stroke: var(--theme-accent, #60a5fa);
+    stroke: var(--ui-color-interactive);
     stroke-width: 2;
 }
 
@@ -976,17 +994,17 @@
 }
 
 .the-numbers-chart__tooltip-swatch--cume {
-    background: var(--theme-accent, #60a5fa);
+    background: var(--ui-color-interactive);
 }
 
 .the-numbers-chart__tooltip-swatch--median {
-    background: #86efac;
+    background: var(--ui-color-content-muted);
 }
 
 .the-numbers-chart__tooltip-swatch--bottom,
 .the-numbers-chart__tooltip-swatch--top {
-    background: rgba(248, 113, 113, 0.18);
-    border-color: rgba(248, 113, 113, 0.44);
+    background: color-mix(in srgb, var(--ui-color-content-muted) 16%, transparent);
+    border-color: color-mix(in srgb, var(--ui-color-content-muted) 44%, transparent);
 }
 
 .the-numbers-chart__tooltip-label {
@@ -1009,7 +1027,7 @@
 }
 
 .the-numbers-chart__footer a {
-    color: var(--theme-accent, #60a5fa);
+    color: var(--ui-color-interactive);
     text-decoration: none;
 }
 
@@ -1230,99 +1248,23 @@
     }
 }
 
-/* Action Buttons */
-.movie-actions-container {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    width: 250px;
-    margin-top: 0;
-}
-
-.movie-actions-container .btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-sm);
-    width: 100%;
-    height: 42px;
-    font-size: 13.5px;
-    font-weight: 600;
-    border-radius: var(--radius-md);
-    letter-spacing: -0.01em;
-    transition: var(--transition);
-    border: 1px solid transparent;
-    cursor: pointer;
-}
-
-.movie-actions-container .btn:active {
-    transform: scale(0.97) !important;
-}
-
-.movie-actions-container .watch-movie-btn {
-    background: linear-gradient(135deg, #ffffff 0%, #e4e4e7 100%) !important;
-    color: #09090b !important;
-    border: 1px solid rgba(255, 255, 255, 0.15) !important;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
-    font-weight: 600;
-}
-
-.light-theme .movie-actions-container .watch-movie-btn {
-    background: linear-gradient(135deg, #09090b 0%, #27272a 100%) !important;
-    color: #ffffff !important;
-    box-shadow: 0 4px 12px rgba(9, 9, 11, 0.1) !important;
-}
-
-.movie-actions-container .watch-movie-btn:hover {
-    background: linear-gradient(135deg, #f4f4f5 0%, #d4d4d8 100%) !important;
-    color: #000000 !important;
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(255, 255, 255, 0.25) !important;
-    filter: none !important;
-}
-
-.light-theme .movie-actions-container .watch-movie-btn:hover {
-    background: linear-gradient(135deg, #18181b 0%, #3f3f46 100%) !important;
-    color: #ffffff !important;
-    box-shadow: 0 6px 20px rgba(9, 9, 11, 0.2) !important;
-}
-
-.movie-actions-container .rate-movie-btn {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid var(--theme-border);
-    color: var(--theme-text-primary);
-}
-
-.light-theme .movie-actions-container .rate-movie-btn {
-    background: rgba(9, 9, 11, 0.01);
-}
-
-.movie-actions-container .rate-movie-btn:hover {
-    background: rgba(255, 255, 255, 0.07);
-    border-color: var(--theme-border-hover);
-}
-
-.light-theme .movie-actions-container .rate-movie-btn:hover {
-    background: rgba(9, 9, 11, 0.03);
+/* Movie action buttons stay one step above body text, not above the page hierarchy. */
+.movie-actions-container .btn-lg {
+    font-size: var(--font-size-base);
 }
 
 /* Telegram Announce Button */
 .movie-actions-container .announce-movie-btn {
-    background: rgba(42, 171, 238, 0.08) !important;
-    border: 1px solid rgba(42, 171, 238, 0.2) !important;
-    color: #2aabee !important;
+    background: var(--theme-hover-bg) !important;
+    border: 1px solid var(--theme-border) !important;
+    color: var(--ui-color-content) !important;
     box-shadow: none !important;
 }
 
 .movie-actions-container .announce-movie-btn:hover {
-    background: rgba(42, 171, 238, 0.15) !important;
-    border-color: rgba(42, 171, 238, 0.35) !important;
+    background: var(--theme-active-bg) !important;
+    border-color: var(--ui-color-interactive) !important;
     transform: none;
-}
-
-.movie-actions-container .btn-icon {
-    display: inline-flex;
-    align-items: center;
 }
 
 /* Description Section */
@@ -1535,7 +1477,7 @@
 
 .user-rating-score {
     font-size: 13px;
-    color: #ffc107;
+    color: var(--ui-color-interactive);
     font-weight: 600;
     display: inline-flex;
     align-items: center;
@@ -1797,13 +1739,13 @@
 }
 
 .crew-link:hover {
-    color: var(--accent-color, #6366f1);
-    border-bottom-color: rgba(99, 102, 241, 0.4);
+    color: var(--ui-color-interactive);
+    border-bottom-color: color-mix(in srgb, var(--ui-color-interactive) 40%, transparent);
     text-decoration: none;
 }
 
 .crew-link:focus-visible {
-    outline: 2px solid var(--accent-color, #6366f1);
+    outline: 2px solid var(--ui-color-interactive);
     outline-offset: 2px;
     border-radius: 2px;
 }
@@ -2277,7 +2219,7 @@
 }
 
 /* Rating Modal Styles (Obsidian-Zinc Overlay) */
-.modal-overlay {
+.movie-details-modal-overlay {
     position: fixed; inset: 0;
     background: rgba(9, 9, 11, 0.65);
     backdrop-filter: blur(15px);
@@ -2386,10 +2328,33 @@
 .rating-stars-container {
     padding: 20px;
     display: flex;
+    flex-direction: column;
     justify-content: center;
+    align-items: center;
+    gap: 8px;
     background: transparent;
     position: relative;
     z-index: 10;
+}
+
+.rating-status {
+    min-height: 18px;
+    margin: 0;
+    color: var(--ui-color-content-subtle);
+    font-family: var(--font-data);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 18px;
+    letter-spacing: 0.01em;
+    text-align: center;
+}
+
+.rating-status[data-state="selected"] {
+    color: var(--ui-color-content);
+}
+
+.rating-status[data-state="preview"] {
+    color: var(--ui-color-interactive-hover);
 }
 
 .stars-wrapper {
@@ -2402,52 +2367,19 @@
     border: none;
     cursor: pointer;
     padding: 4px;
-    transition: transform var(--transition);
-    color: var(--theme-text-muted);
+    color: var(--ui-color-content-subtle);
     outline: none;
     position: relative;
-}
-
-.star-rating-btn::after {
-    content: attr(data-rating);
-    position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%) translateY(5px);
-    background: rgba(18, 18, 20, 0.95);
-    color: #ffffff;
-    padding: 4px 8px;
-    border-radius: var(--radius-sm);
-    font-size: 11px;
-    font-weight: 500;
-    pointer-events: none;
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
-    z-index: 10;
-    white-space: nowrap;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-    border: 1px solid var(--theme-border);
-    font-family: var(--font-data);
-}
-
-.light-theme .star-rating-btn::after {
-    background: rgba(255, 255, 255, 0.95);
-    color: #09090b;
-}
-
-.star-rating-btn:hover::after {
-    opacity: 1;
-    visibility: visible;
-    transform: translateX(-50%) translateY(-5px);
+    transition: color 160ms ease-out, filter 160ms ease-out, transform 160ms ease-out;
 }
 
 .star-rating-btn svg {
     width: 24px;
     height: 24px;
-    fill: currentColor;
+    fill: transparent;
     stroke: currentColor;
-    stroke-width: 1px;
+    stroke-width: 1.75px;
+    transition: fill 160ms ease-out, stroke-width 160ms ease-out;
 }
 
 .star-rating-btn.spiderman-rating-btn .spiderman-rating-icon {
@@ -2492,13 +2424,41 @@
     }
 }
 
-.star-rating-btn:hover {
-    transform: scale(1.15);
-}
-
 .star-rating-btn.active,
 .star-rating-btn.hover {
-    color: #ffc107;
+    color: var(--ui-color-interactive);
+}
+
+.star-rating-btn.active svg {
+    fill: currentColor;
+    stroke-width: 1.25px;
+}
+
+.star-rating-btn.hover svg {
+    fill: color-mix(in srgb, currentColor 55%, transparent);
+}
+
+.star-rating-btn:focus-visible {
+    outline: 2px solid var(--ui-color-interactive);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+}
+
+.star-rating-btn:active {
+    transform: scale(0.96);
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .star-rating-btn:hover {
+        transform: scale(1.12);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .star-rating-btn,
+    .star-rating-btn svg {
+        transition: color 120ms linear, fill 120ms linear, stroke-width 120ms linear;
+    }
 }
 
 /* Review Section */
@@ -2506,7 +2466,7 @@
     padding: 0 20px 20px;
 }
 
-.rating-review-section .btn-ghost {
+.rating-review-section .review-write-btn {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2523,13 +2483,13 @@
     font-family: var(--font-family);
 }
 
-.rating-review-section .btn-ghost:hover {
+.rating-review-section .review-write-btn:hover {
     background: rgba(255, 255, 255, 0.04);
     border-color: var(--theme-border-hover);
     color: var(--theme-text-primary);
 }
 
-.light-theme .rating-review-section .btn-ghost:hover {
+.light-theme .rating-review-section .review-write-btn:hover {
     background: rgba(9, 9, 11, 0.02);
 }
 
@@ -2809,8 +2769,8 @@
 .announce-preview {
     display: flex;
     gap: 12px;
-    background: rgba(42, 171, 238, 0.06);
-    border: 1px solid rgba(42, 171, 238, 0.15);
+    background: var(--theme-hover-bg);
+    border: 1px solid var(--theme-border);
     border-radius: var(--radius-md);
     padding: 12px;
 }
@@ -2846,7 +2806,7 @@
 .announce-preview-year {
     font-family: var(--font-data);
     font-size: 12px;
-    color: #2aabee;
+    color: var(--theme-text-muted);
     margin: 0;
     font-weight: 500;
 }
@@ -2871,7 +2831,7 @@
     font-family: var(--font-family);
     font-size: 10px;
     font-weight: 700;
-    color: #2aabee;
+    color: var(--theme-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.8px;
     margin-bottom: -4px;
@@ -2915,7 +2875,7 @@
 
 .announce-input:focus {
     outline: none;
-    border-color: rgba(42, 171, 238, 0.5);
+    border-color: var(--ui-color-interactive);
 }
 
 .announce-input::-webkit-calendar-picker-indicator {
@@ -2982,25 +2942,29 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    background: #2aabee;
-    color: #ffffff;
-    border: none;
+    background: var(--theme-text-primary);
+    color: var(--theme-bg-primary);
+    border: 1px solid var(--theme-text-primary);
     border-radius: var(--radius-sm);
     padding: 8px 16px;
     font-size: 13.5px;
     font-weight: 600;
     cursor: pointer;
-    transition: var(--transition);
-    box-shadow: 0 4px 10px rgba(42, 171, 238, 0.2);
+    transition: background-color 160ms var(--ease-out, ease), border-color 160ms var(--ease-out, ease), color 160ms var(--ease-out, ease), transform 160ms var(--ease-out, ease);
+    box-shadow: none;
 }
 
 .btn-announce-send:hover {
-    filter: brightness(1.05);
-    box-shadow: 0 6px 14px rgba(42, 171, 238, 0.3);
+    background: var(--theme-text-secondary);
+    border-color: var(--theme-text-secondary);
+    filter: none;
 }
 
 .btn-announce-send:disabled {
-    opacity: 0.55;
+    background: var(--theme-hover-bg);
+    border-color: var(--theme-border);
+    color: var(--theme-text-muted);
+    opacity: 1;
     cursor: not-allowed;
 }
 
@@ -3061,21 +3025,21 @@
 }
 
 .status-badge--upcoming {
-    background: rgba(59, 130, 246, 0.12);
-    color: #60a5fa;
-    border: 1px solid rgba(59, 130, 246, 0.25);
+    background: var(--theme-hover-bg);
+    color: var(--ui-color-content);
+    border: 1px solid var(--ui-color-border-hover);
 }
 
 .status-badge--ongoing {
-    background: rgba(168, 85, 247, 0.12);
-    color: #c084fc;
-    border: 1px solid rgba(168, 85, 247, 0.25);
+    background: var(--theme-hover-bg);
+    color: var(--ui-color-content);
+    border: 1px solid var(--ui-color-border-hover);
 }
 
 .status-badge--ended {
-    background: rgba(244, 63, 94, 0.12);
-    color: #fb7185;
-    border: 1px solid rgba(244, 63, 94, 0.25);
+    background: var(--theme-hover-bg);
+    color: var(--ui-color-content);
+    border: 1px solid var(--ui-color-border-hover);
 }
 
 .status-badge--default {
@@ -3738,14 +3702,14 @@
     align-items: center;
     gap: 14px;
     padding: 14px 18px;
-    background: linear-gradient(135deg, rgba(59, 130, 246, 0.12) 0%, rgba(37, 99, 235, 0.04) 100%);
-    border: 1px solid rgba(59, 130, 246, 0.25);
+    background: var(--theme-hover-bg);
+    border: 1px solid var(--ui-color-border-hover);
     border-radius: var(--radius-lg, 12px);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
 .next-episode-banner--last {
-    background: linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(5, 150, 105, 0.04) 100%);
+    background: var(--theme-hover-bg);
     border-color: rgba(16, 185, 129, 0.25);
 }
 
@@ -3756,14 +3720,14 @@
     width: 40px;
     height: 40px;
     border-radius: 50%;
-    background: rgba(59, 130, 246, 0.2);
-    color: #60a5fa;
+    background: var(--theme-hover-bg);
+    color: var(--ui-color-content);
     flex-shrink: 0;
 }
 
 .next-episode-banner--last .next-episode-icon {
-    background: rgba(16, 185, 129, 0.2);
-    color: #34d399;
+    background: var(--theme-hover-bg);
+    color: var(--ui-color-content);
 }
 
 .next-episode-details {
@@ -3786,12 +3750,12 @@
     letter-spacing: 0.5px;
     padding: 2px 8px;
     border-radius: 4px;
-    background: #3b82f6;
-    color: #fff;
+    background: var(--ui-color-interactive);
+    color: var(--ui-color-page);
 }
 
 .next-episode-badge--last {
-    background: #10b981;
+    background: var(--ui-color-content-muted);
 }
 
 .next-episode-date {
@@ -3808,12 +3772,12 @@
 
 .next-episode-code {
     font-weight: 700;
-    color: #93c5fd;
+    color: var(--ui-color-content-muted);
     font-variant-numeric: tabular-nums;
 }
 
 .next-episode-banner--last .next-episode-code {
-    color: #6ee7b7;
+    color: var(--ui-color-content-muted);
 }
 
 .next-episode-title {
@@ -3927,7 +3891,7 @@
 }
 
 .season-pill-btn:focus-visible {
-    outline: 2px solid #ffffff;
+    outline: 2px solid var(--ui-color-interactive);
     outline-offset: 2px;
 }
 
@@ -3936,10 +3900,10 @@
 }
 
 .season-pill-btn--specials.active {
-    background: #9333ea;
-    border-color: #a855f7;
-    color: #ffffff;
-    box-shadow: 0 2px 10px rgba(168, 85, 247, 0.35);
+    background: var(--ui-color-interactive);
+    border-color: var(--ui-color-interactive);
+    color: var(--ui-color-page);
+    box-shadow: none;
 }
 
 .season-pill-btn--completed {
@@ -4002,8 +3966,8 @@
 }
 
 .season-card--special {
-    background: rgba(168, 85, 247, 0.04);
-    border-color: rgba(168, 85, 247, 0.25);
+    background: var(--theme-hover-bg);
+    border-color: var(--ui-color-border-hover);
 }
 
 .season-main-row {
@@ -4070,9 +4034,9 @@
     font-weight: 600;
     padding: 2px 6px;
     border-radius: 4px;
-    background: rgba(168, 85, 247, 0.2);
-    color: #c084fc;
-    border: 1px solid rgba(168, 85, 247, 0.4);
+    background: var(--theme-hover-bg);
+    color: var(--ui-color-content);
+    border: 1px solid var(--ui-color-border-hover);
 }
 
 .season-episodes-badge {
@@ -4132,9 +4096,9 @@
 }
 
 .season-expand-btn.active {
-    background: rgba(99, 102, 241, 0.2);
-    border-color: rgba(99, 102, 241, 0.5);
-    color: #a5b4fc;
+    background: var(--theme-hover-bg);
+    border-color: var(--ui-color-interactive);
+    color: var(--ui-color-interactive);
 }
 
 .season-expand-icon {
@@ -4251,8 +4215,8 @@
 }
 
 .episode-card--next {
-    border-color: rgba(59, 130, 246, 0.4);
-    background: rgba(59, 130, 246, 0.04);
+    border-color: var(--ui-color-border-hover);
+    background: var(--theme-hover-bg);
 }
 
 .episode-card--upcoming {
@@ -4276,7 +4240,7 @@
 .episode-code {
     font-size: 12px;
     font-weight: 700;
-    color: #93c5fd;
+    color: var(--ui-color-content-muted);
     font-variant-numeric: tabular-nums;
     flex-shrink: 0;
 }
@@ -4305,8 +4269,8 @@
     text-transform: uppercase;
     padding: 1px 6px;
     border-radius: 4px;
-    background: #3b82f6;
-    color: #fff;
+    background: var(--ui-color-interactive);
+    color: var(--ui-color-page);
 }
 
 .badge-upcoming {
@@ -4314,9 +4278,9 @@
     font-weight: 600;
     padding: 1px 6px;
     border-radius: 4px;
-    background: rgba(234, 179, 8, 0.2);
-    color: #fde047;
-    border: 1px solid rgba(234, 179, 8, 0.4);
+    background: var(--theme-hover-bg);
+    color: var(--ui-color-content);
+    border: 1px solid var(--ui-color-border-hover);
 }
 
 .episode-rating-badge {
@@ -4373,8 +4337,8 @@
     justify-content: space-between;
     gap: 16px;
     padding: 14px 18px;
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(59, 130, 246, 0.05) 100%);
-    border: 1px solid rgba(99, 102, 241, 0.25);
+    background: var(--theme-hover-bg);
+    border: 1px solid var(--ui-color-border-hover);
     border-radius: var(--radius-lg, 12px);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
     box-sizing: border-box;
@@ -4382,8 +4346,8 @@
 }
 
 .seasons-continue-banner--next {
-    background: linear-gradient(135deg, rgba(59, 130, 246, 0.12) 0%, rgba(37, 99, 235, 0.04) 100%);
-    border-color: rgba(59, 130, 246, 0.25);
+    background: var(--theme-hover-bg);
+    border-color: var(--ui-color-border-hover);
 }
 
 .seasons-continue-banner__content {
@@ -4411,12 +4375,12 @@
     letter-spacing: 0.5px;
     padding: 3px 8px;
     border-radius: 4px;
-    background: #6366f1;
-    color: #fff;
+    background: var(--ui-color-interactive);
+    color: var(--ui-color-page);
 }
 
 .seasons-continue-banner__badge--next {
-    background: #3b82f6;
+    background: var(--ui-color-content-muted);
 }
 
 .seasons-continue-banner__target {
@@ -4433,13 +4397,13 @@
 
 .seasons-continue-banner__code {
     font-weight: 700;
-    color: #a5b4fc;
+    color: var(--ui-color-interactive);
     font-size: 14px;
     font-variant-numeric: tabular-nums;
 }
 
 .seasons-continue-banner--next .seasons-continue-banner__code {
-    color: #93c5fd;
+    color: var(--ui-color-content-muted);
 }
 
 .seasons-continue-banner__title {
@@ -4470,7 +4434,7 @@
 .seasons-continue-banner__progress-bar,
 .episode-card__progress-bar {
     height: 100%;
-    background: #6366f1;
+    background: var(--ui-color-interactive);
     border-radius: 2px;
     transition: width 0.3s ease;
 }
@@ -4498,13 +4462,13 @@
 
 /* Episode Card Highlights (Phase 4A) */
 .episode-card--resume {
-    border-color: rgba(99, 102, 241, 0.4);
-    background: rgba(99, 102, 241, 0.04);
+    border-color: var(--ui-color-border-hover);
+    background: var(--theme-hover-bg);
 }
 
 .episode-card--next-target {
-    border-color: rgba(59, 130, 246, 0.4);
-    background: rgba(59, 130, 246, 0.04);
+    border-color: var(--ui-color-border-hover);
+    background: var(--theme-hover-bg);
 }
 
 .badge-resume-episode {
@@ -4513,8 +4477,8 @@
     text-transform: uppercase;
     padding: 1px 6px;
     border-radius: 4px;
-    background: #6366f1;
-    color: #fff;
+    background: var(--ui-color-interactive);
+    color: var(--ui-color-page);
 }
 
 .badge-personal-next {
@@ -4523,18 +4487,18 @@
     text-transform: uppercase;
     padding: 1px 6px;
     border-radius: 4px;
-    background: #3b82f6;
-    color: #fff;
+    background: var(--ui-color-content-muted);
+    color: var(--ui-color-page);
 }
 
 .episode-card__play-btn--resume {
-    background: #6366f1 !important;
-    border-color: #6366f1 !important;
+    background: var(--ui-color-interactive) !important;
+    border-color: var(--ui-color-interactive) !important;
 }
 
 /* Watched Badge & Episode History (Phase 4C & 4D) */
 .episode-card--watched {
-    border-color: rgba(16, 185, 129, 0.25);
+    border-color: var(--ui-color-border-hover);
 }
 
 .episode-card--playing {
@@ -4552,16 +4516,16 @@
     text-transform: uppercase;
     padding: 1px 6px;
     border-radius: 4px;
-    background: rgba(99, 102, 241, 0.2);
-    color: #818cf8;
-    border: 1px solid rgba(99, 102, 241, 0.4);
+    background: var(--theme-hover-bg);
+    color: var(--ui-color-interactive);
+    border: 1px solid var(--ui-color-border-hover);
 }
 
 .badge-playing-pulse {
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: #818cf8;
+    background: var(--ui-color-interactive);
     animation: playingPulse 1.5s infinite ease-in-out;
 }
 
@@ -4572,8 +4536,8 @@
 }
 
 .episode-card__play-btn--playing {
-    background: #4f46e5 !important;
-    border-color: #4f46e5 !important;
+    background: var(--ui-color-interactive) !important;
+    border-color: var(--ui-color-interactive) !important;
 }
 
 .badge-watched-episode {
@@ -4585,9 +4549,9 @@
     text-transform: uppercase;
     padding: 1px 6px;
     border-radius: 4px;
-    background: rgba(16, 185, 129, 0.15);
-    color: #10b981;
-    border: 1px solid rgba(16, 185, 129, 0.3);
+    background: var(--theme-hover-bg);
+    color: var(--ui-color-content);
+    border: 1px solid var(--ui-color-border-hover);
 }
 
 .watched-check-icon {
@@ -4726,8 +4690,8 @@
     gap: 4px;
     padding: 8px 14px;
     margin-bottom: 12px;
-    background: rgba(59, 130, 246, 0.08);
-    border: 1px solid rgba(59, 130, 246, 0.25);
+    background: var(--theme-hover-bg);
+    border: 1px solid var(--ui-color-border-hover);
     border-radius: var(--radius-md, 8px);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
@@ -4751,7 +4715,7 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    color: #93c5fd;
+    color: var(--ui-color-content-muted);
 }
 
 .hero-next-episode-date {
@@ -4770,7 +4734,7 @@
 .hero-next-episode-code {
     font-size: 13px;
     font-weight: 700;
-    color: #60a5fa;
+    color: var(--ui-color-interactive);
     font-variant-numeric: tabular-nums;
 }
 
@@ -4794,19 +4758,19 @@
     font-family: var(--font-family);
     font-size: 11px;
     font-weight: 600;
-    color: #93c5fd;
-    background: rgba(59, 130, 246, 0.15);
-    border: 1px solid rgba(59, 130, 246, 0.35);
+    color: var(--ui-color-content);
+    background: var(--theme-hover-bg);
+    border: 1px solid var(--ui-color-border-hover);
     border-radius: var(--radius-sm, 6px);
     cursor: pointer;
-    transition: all 150ms var(--ease-out, ease);
+    transition: background-color 150ms var(--ease-out, ease), border-color 150ms var(--ease-out, ease), color 150ms var(--ease-out, ease), transform 150ms var(--ease-out, ease);
     line-height: 1.3;
 }
 
 .hero-next-episode__play-btn:hover {
-    background: rgba(59, 130, 246, 0.25);
-    border-color: rgba(59, 130, 246, 0.5);
-    color: #ffffff;
+    background: var(--theme-active-bg);
+    border-color: var(--ui-color-interactive);
+    color: var(--ui-color-content);
     transform: translateY(-1px);
 }
 
@@ -4815,7 +4779,7 @@
 }
 
 .hero-next-episode__play-btn:focus-visible {
-    outline: 2px solid #60a5fa;
+    outline: 2px solid var(--ui-color-interactive);
     outline-offset: 2px;
 }
 
@@ -5030,6 +4994,16 @@
     min-width: 155px;
     scroll-snap-align: start;
     margin: 0;
+    /* Recommendations can mount ten cards at once; avoid ten blur layers and
+       entry animations competing with poster decoding during the first frame. */
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    animation: none;
+}
+
+.movie-recommendations-carousel .mc-variant-search .mc-badge {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
 }
 
 /* Skeleton Card */
@@ -5091,4 +5065,40 @@
         grid-template-columns: 110px 1fr;
         gap: 10px;
     }
+}
+.selection-popup {
+    position: fixed;
+    z-index: 3100;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+}
+
+.selection-popup-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 36px;
+    padding: 0 11px;
+    border: 1px solid rgba(255, 255, 255, 0.17);
+    border-radius: 9px;
+    background: #25262b;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.34);
+    color: #f4f4f5;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.selection-popup-btn:hover,
+.selection-popup-btn:focus-visible {
+    border-color: rgba(255, 255, 255, 0.38);
+    background: #33353c;
+    outline: none;
+}
+
+.selection-popup-btn svg {
+    flex: 0 0 auto;
 }

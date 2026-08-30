@@ -856,6 +856,11 @@
         
         const modal = document.createElement('div');
         modal.className = 'movie-list-modal';
+        modal.dataset.movieListRatingModal = 'true';
+        modal.dataset.movieListRequestId = `rating-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        modal.dataset.movieId = String(movieData.movieId || '');
+        modal.dataset.movieTitle = String(movieData.movieTitle || '');
+        modal.dataset.posterPath = String(movieData.posterPath || '');
         
         let selectedRating = currentRating;
         let comment = currentComment;
@@ -984,31 +989,14 @@
             saveBtn.innerHTML = '<span style="display:inline-flex; align-items:center; margin-right:6px;"><svg class="spin" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg></span><span>Saving...</span>';
             
             try {
-                const user = await getUser();
-                if (!user) {
-                    alert('Пожалуйста, войдите в систему');
-                    saveBtn.disabled = false;
-                    saveBtn.innerHTML = '<span style="display:inline-flex; align-items:center; margin-right:6px;"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg></span><span>Save Rating</span>';
-                    return;
-                }
-                
-                // Send rating via background script (proper authentication)
-                window.postMessage({
-                    type: 'MOVIELIST_ADD_RATING',
-                    userId: user.uid,
-                    userName: user.displayName || 'User',
-                    userPhoto: user.photoURL || '',
-                    movieId: movieData.movieId,
-                    movieTitle: movieData.movieTitle,
-                    posterPath: movieData.posterPath,
-                    rating: selectedRating,
-                    comment: comment.trim()
-                }, '*');
+                // The isolated content script starts the authenticated save
+                // after this trusted click and posts the matching response.
                 
                 // Wait for response
-                await new Promise((resolve) => {
+                await new Promise((resolve, reject) => {
                     const handler = (event) => {
-                        if (event.data && event.data.type === 'MOVIELIST_ADD_RATING_RESPONSE') {
+                        if (event.data && event.data.type === 'MOVIELIST_ADD_RATING_RESPONSE'
+                            && event.data.requestId === modal.dataset.movieListRequestId) {
                             window.removeEventListener('message', handler);
                             if (event.data.success) {
                                 console.log('[MovieList Extension] Rating saved successfully');
@@ -1034,7 +1022,7 @@
                                 setTimeout(() => successMsg.remove(), 3000);
                                 resolve();
                             } else {
-                                throw new Error(event.data.error || 'Failed to save rating');
+                                reject(new Error(event.data.error || 'Failed to save rating'));
                             }
                         }
                     };
@@ -1042,7 +1030,7 @@
                     
                     setTimeout(() => {
                         window.removeEventListener('message', handler);
-                        resolve();
+                        reject(new Error('Rating save timed out'));
                     }, 10000);
                 });
                 

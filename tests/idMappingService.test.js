@@ -801,7 +801,49 @@ async function runTests() {
     // 25. Test Manual Mapping Save, Unmapped Queue Eviction & Negative Cache Override
     console.log('--- 25. Testing Manual Mapping Save & Cache Overrides ---');
     globalThis.chrome.storage.local.store = {};
-    const manualService = new IdMappingService();
+    const manualCloudMappings = new Map();
+    const manualCloudReverseLocks = new Map();
+    const manualCloudDb = {
+        collection(name) {
+            const store = name === 'tmdbKinopoiskMappings'
+                ? manualCloudMappings
+                : name === 'tmdbKinopoiskReverseIndex'
+                    ? manualCloudReverseLocks
+                    : null;
+            if (!store) throw new Error(`Unexpected collection: ${name}`);
+            return {
+                doc(id) {
+                    return {
+                        id,
+                        collectionName: name,
+                        get: async () => ({ id, exists: store.has(id), data: () => store.get(id) })
+                    };
+                }
+            };
+        },
+        async runTransaction(callback) {
+            return callback({
+                get: reference => reference.get(),
+                set(reference, data) {
+                    const target = reference.collectionName === 'tmdbKinopoiskMappings'
+                        ? manualCloudMappings
+                        : manualCloudReverseLocks;
+                    target.set(reference.id, data);
+                },
+                delete(reference) {
+                    const target = reference.collectionName === 'tmdbKinopoiskMappings'
+                        ? manualCloudMappings
+                        : manualCloudReverseLocks;
+                    target.delete(reference.id);
+                }
+            });
+        }
+    };
+    globalThis.firebase = { firestore: { FieldValue: { serverTimestamp: () => Date.now() } } };
+    const manualService = new IdMappingService(null, null, {
+        db: manualCloudDb,
+        getCurrentUser: () => ({ uid: 'test-admin' })
+    });
 
     // 1. Put candidate in unmapped queue and negative cache
     await manualService.recordUnmappedCandidates([

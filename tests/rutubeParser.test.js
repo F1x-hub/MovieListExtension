@@ -181,6 +181,7 @@ assert.strictEqual(searchResult.url, 'https://rutube.ru/video/a1b2c3d4e5f6/');
 assert.strictEqual(searchResult.embedUrl, 'https://rutube.ru/play/embed/a1b2c3d4e5f6');
 assert.strictEqual(searchResult.parserId, 'rutube');
 assert.strictEqual(searchResult.source, 'rutube');
+assert.strictEqual(searchResult.videoId, 'a1b2c3d4e5f6');
 assert.strictEqual(searchResult.duration, 8160);
 
 // 7. VideoSources test - HLS stream extraction
@@ -192,7 +193,8 @@ assert.strictEqual(sources[0].name, 'Rutube');
 assert.strictEqual(sources[0].url, 'https://river-4-415.rtbcdn.ru/live/master.m3u8');
 assert.strictEqual(sources[1].type, 'iframe');
 assert.strictEqual(sources[1].name, 'Rutube (Embed)');
-assert.strictEqual(sources[1].url, 'https://rutube.ru/play/embed/a1b2c3d4e5f6');
+assert.strictEqual(sources[1].url, 'https://rutube.ru/play/embed/a1b2c3d4e5f6?getPlayOptions=duration');
+assert.strictEqual(sources[1].metadata.rutubeVideoId, 'a1b2c3d4e5f6');
 
 // 8. VideoSources test - Fallback when API returns no m3u8
 console.log('  7. Testing getVideoSources() iframe fallback...');
@@ -209,6 +211,15 @@ const fallbackSources = await parser.getVideoSources(searchResult);
 assert.strictEqual(fallbackSources.length, 1);
 assert.strictEqual(fallbackSources[0].type, 'iframe');
 assert.strictEqual(fallbackSources[0].name, 'Rutube');
-assert.strictEqual(fallbackSources[0].url, 'https://rutube.ru/play/embed/a1b2c3d4e5f6');
+assert.strictEqual(fallbackSources[0].url, 'https://rutube.ru/play/embed/a1b2c3d4e5f6?getPlayOptions=duration');
+
+const roomSource = parser.getRoomSearchResult({
+    version: 1,
+    providerId: 'rutube',
+    videoId: 'a1b2c3d4e5f6',
+});
+assert.strictEqual(roomSource.url, 'https://rutube.ru/video/a1b2c3d4e5f6/');
+assert.strictEqual(roomSource.embedUrl, 'https://rutube.ru/play/embed/a1b2c3d4e5f6?getPlayOptions=duration');
+assert.strictEqual(parser.getRoomSearchResult({ videoId: 'bad url/' }), null);
 
 console.log('✅ ALL RutubeParser unit tests passed successfully!');

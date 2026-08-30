@@ -9,7 +9,7 @@
     border-radius: var(--radius-xl);
     /* overflow: hidden; Removed to allow menu to overflow */
     box-shadow: var(--shadow-lg);
-    transition: all 0.3s ease;
+    transition: transform 160ms ease-out, background-color 160ms ease, box-shadow 160ms ease;
     cursor: pointer;
     backdrop-filter: blur(10px);
     border: 1px solid var(--theme-border);
@@ -46,7 +46,7 @@
     flex-shrink: 0;
     border-radius: var(--radius-xl) var(--radius-xl) 0 0;
     /* Placeholder dark background while image loads */
-    background-color: #1a1a2e;
+    background-color: var(--ui-color-surface-muted);
 }
 
 .mc-poster {
@@ -127,7 +127,7 @@
     opacity: 0;
     visibility: hidden;
     transform: translateY(-10px);
-    transition: all 0.25s ease;
+    transition: opacity 180ms ease-out, transform 180ms ease-out;
     backdrop-filter: blur(15px);
 }
 
@@ -148,12 +148,21 @@
     color: var(--theme-text-primary);
     font-size: 14px;
     cursor: pointer;
-    transition: background 0.2s ease;
+    transition: background-color 160ms ease, transform 120ms ease-out, opacity 120ms ease-out;
     text-align: left;
 }
 
 .mc-menu-item:hover {
     background: var(--theme-hover-bg);
+}
+
+.mc-menu-item:active {
+    transform: scale(0.98);
+}
+
+.mc-menu-item:disabled {
+    cursor: wait;
+    opacity: 0.7;
 }
 
 .mc-menu-item:first-child {
@@ -315,7 +324,7 @@
 }
 
 .mc-rating-kp {
-    background: linear-gradient(180deg, #FF5500 50%, #BBFF00 100%);
+    background: #FF5500;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -328,7 +337,7 @@
 }
 
 .mc-rating-avg {
-    color: var(--success);
+    color: var(--ui-color-content);
 }
 
 .mc-rating-none {
@@ -594,7 +603,7 @@
 }
 .light-theme .mc-rater-name { color: #222; }
 .light-theme .mc-rater-date { color: #666; }
-.light-theme .mc-raters-count { color: #0056b3; border-color: rgba(0,0,0,0.1); }
+.light-theme .mc-raters-count { color: var(--ui-color-interactive); border-color: var(--ui-color-border); }
 
 
 .mc-user-rating {
@@ -908,7 +917,7 @@ span.mc-user-name.mc-skeleton {
 
 /* Kinopoisk Rating Gradient */
 .mc-rating-block-value.kp {
-    background: linear-gradient(180deg, #FF5500 0%, #BBFF00 100%);
+    background: #FF5500;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -1100,9 +1109,9 @@ span.mc-user-name.mc-skeleton {
 }
 
 .mc-badge-user {
-    background: rgba(147, 51, 234, 0.9);
-    color: #ffffff;
-    border: 1px solid rgba(192, 132, 252, 0.5);
+    background: var(--ui-color-surface-muted);
+    color: var(--ui-color-content);
+    border: 1px solid var(--ui-color-border);
 }
 
 .mc-badge-loading {

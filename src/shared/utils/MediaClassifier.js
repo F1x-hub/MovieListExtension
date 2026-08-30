@@ -12,6 +12,67 @@
 
 const TMDB_ANIMATION_GENRE_ID = 16;
 
+const PROMO_TITLE_PATTERNS = Object.freeze([
+    /\b(an\s+)?extended\s+look\b/i,
+    /расширенный\s+показ/i,
+    /\bgameplay\b/i,
+    /геймплей/i,
+    /показ\s+геймплея/i,
+    /\bbehind\s+the\s+scenes\b/i,
+    /\b(the\s+)?making\s+of\b/i,
+    /создание\s+фильма\b/i,
+    /фильм\s+о\s+фильме\b/i,
+    /как\s+снимали\b/i,
+    /\bsneak\s+peek\b/i,
+    /\bfirst\s+look\s*:/i,
+    /\b(a\s+)?first\s+look\s+at\b/i,
+    /\bofficial\s+trailer\b/i,
+    /\bteaser\s+trailer\b/i,
+    /\blaunch\s+trailer\b/i,
+    /\breveal\s+trailer\b/i,
+    /\bgameplay\s+trailer\b/i,
+    /\bcinematic\s+trailer\b/i,
+    /\bannouncement\s+trailer\b/i,
+    /\b(teaser|trailer)\s*#?\d+\b/i,
+    /официальный\s+трейлер/i,
+    /тизер-?трейлер/i,
+    /трейлер\s+к\s+запуску/i,
+    /трейлер\s+анонса/i,
+    /трейлер\s+игры/i,
+    /\bdeveloper\s+diar(y|ies)\b/i,
+    /дневники?\s+разработчиков/i
+]);
+
+/**
+ * Check if a media item is promotional, trailer, gameplay demo, or behind-the-scenes material.
+ * @param {Object} item
+ * @returns {boolean}
+ */
+function isPromoContent(item) {
+    if (!item || typeof item !== 'object') return false;
+
+    const titles = [
+        item.name,
+        item.title,
+        item.alternativeName,
+        item.original_title,
+        item.originalTitle,
+        item.original_name,
+        item.originalName,
+        item.englishTitle
+    ].filter(t => typeof t === 'string' && t.trim().length > 0);
+
+    for (const title of titles) {
+        for (const pattern of PROMO_TITLE_PATTERNS) {
+            if (pattern.test(title)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 /**
  * Check if a media item is animation (western or anime).
  * Handles TMDB numeric genre IDs, Kinopoisk string/object genres, and explicit type tags.
@@ -123,6 +184,11 @@ function isAnime(item) {
 function classifyHomeMedia(item) {
     if (!item || typeof item !== 'object') return 'unknown';
 
+    // 0. Exclude promotional / trailer / gameplay content
+    if (isPromoContent(item)) {
+        return 'unknown';
+    }
+
     // 1. Verify semantic metadata sufficiency
     const gIds = item.genreIds || item.genre_ids;
     const hasGenreIds = Array.isArray(gIds) && gIds.length > 0;
@@ -153,7 +219,8 @@ function classifyHomeMedia(item) {
  */
 function isCandidateForSection(item, section) {
     if (!item) return false;
-    if (section === 'featured') return true; // Featured showcase is mixed trending
+    if (isPromoContent(item)) return false;
+    if (section === 'featured') return true; // Featured showcase is mixed trending (non-promo)
 
     const category = classifyHomeMedia(item);
 
@@ -183,9 +250,11 @@ function isCartoon(item) {
 
 const MediaClassifier = {
     TMDB_ANIMATION_GENRE_ID,
+    PROMO_TITLE_PATTERNS,
     isAnimation,
     isAnime,
     isCartoon,
+    isPromoContent,
     classifyHomeMedia,
     isCandidateForSection
 };

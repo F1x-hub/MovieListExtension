@@ -15,14 +15,14 @@
     --profile-avatar-size: 130px;
     --profile-avatar-border: 5px;
     
-    --stat-ratings-color: #f59e0b;
-    --stat-ratings-bg: rgba(245, 158, 11, 0.1);
-    --stat-average-color: #10b981;
-    --stat-average-bg: rgba(16, 185, 129, 0.1);
-    --stat-favorites-color: #f43f5e;
-    --stat-favorites-bg: rgba(244, 63, 94, 0.1);
-    --stat-watchlist-color: #8b5cf6;
-    --stat-watchlist-bg: rgba(139, 92, 246, 0.1);
+    --stat-ratings-color: var(--ui-color-content);
+    --stat-ratings-bg: var(--theme-hover-bg);
+    --stat-average-color: var(--ui-color-content);
+    --stat-average-bg: var(--theme-hover-bg);
+    --stat-favorites-color: var(--ui-color-content);
+    --stat-favorites-bg: var(--theme-hover-bg);
+    --stat-watchlist-color: var(--ui-color-content);
+    --stat-watchlist-bg: var(--theme-hover-bg);
 }
 
 /* ==========================================================================
@@ -56,7 +56,7 @@
     width: 100%;
     height: var(--profile-cover-height);
     border-radius: var(--radius-xl);
-    background: linear-gradient(135deg, #18181b 0%, #27272a 45%, #0f172a 80%, #09090b 100%);
+    background: linear-gradient(135deg, #18181b 0%, #27272a 45%, #18181b 80%, #09090b 100%);
     background-size: cover;
     background-position: center;
     overflow: hidden;
@@ -201,7 +201,7 @@
     transform: scale(0.96);
 }
 
-.menu-icon {
+.btn-profile-menu .menu-icon {
     font-size: 1.25rem;
     line-height: 1;
     font-weight: 700;
@@ -349,7 +349,7 @@
     }
 }
 
-.dropdown-item {
+.profile-dropdown .dropdown-item {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -367,16 +367,16 @@
     transition: background 140ms ease, color 140ms ease, transform 140ms var(--ease-spring);
 }
 
-.dropdown-item:hover {
+.profile-dropdown .dropdown-item:hover {
     background: var(--theme-hover-bg);
     color: var(--theme-stat-color);
 }
 
-.dropdown-item:active {
+.profile-dropdown .dropdown-item:active {
     transform: scale(0.98);
 }
 
-.dropdown-icon {
+.profile-dropdown .dropdown-icon {
     display: flex;
     align-items: center;
     color: var(--theme-text-muted);
@@ -728,10 +728,10 @@
     align-items: center;
     min-height: 30px;
     padding: 0 10px;
-    border: 1px solid rgba(139, 92, 246, 0.28);
+    border: 1px solid var(--ui-color-border-hover);
     border-radius: 999px;
-    color: #c4b5fd;
-    background: rgba(139, 92, 246, 0.1);
+    color: var(--ui-color-content);
+    background: var(--theme-hover-bg);
     font-size: 0.75rem;
     font-weight: 600;
 }
@@ -768,7 +768,7 @@
     display: block;
     height: 100%;
     border-radius: inherit;
-    background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+    background: linear-gradient(90deg, var(--ui-color-content-muted), var(--ui-color-content));
 }
 
 .rating-distribution__count {
@@ -1010,8 +1010,8 @@
 .recent-rating-card .rating svg {
     width: 14px;
     height: 14px;
-    color: #f59e0b;
-    fill: #f59e0b;
+    color: var(--ui-color-interactive);
+    fill: var(--ui-color-interactive);
     flex-shrink: 0;
 }
 
@@ -1106,7 +1106,7 @@
 /* ==========================================================================
    Modals (Edit Profile & Cropper) — Ultra Polish
    ========================================================================== */
-.modal-overlay {
+.profile-modal-overlay {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.75);
@@ -1116,15 +1116,15 @@
     justify-content: center;
     z-index: 10000;
     padding: 20px;
-    animation: modalFadeIn 200ms var(--ease-out) forwards;
+    animation: profileModalFadeIn 200ms var(--ease-out) forwards;
 }
 
-@keyframes modalFadeIn {
+@keyframes profileModalFadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
 }
 
-.modal-content {
+.profile-modal {
     background: var(--theme-bg-secondary);
     border: 1px solid var(--theme-border-hover);
     border-radius: var(--radius-xl);
@@ -1135,10 +1135,10 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    animation: modalScaleUp 220ms var(--ease-out) forwards;
+    animation: profileModalScaleUp 220ms var(--ease-out) forwards;
 }
 
-@keyframes modalScaleUp {
+@keyframes profileModalScaleUp {
     from {
         opacity: 0;
         transform: scale(0.96) translateY(12px);
@@ -1149,7 +1149,7 @@
     }
 }
 
-.modal-header {
+.profile-modal .modal-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1159,13 +1159,13 @@
     background: var(--theme-bg-secondary);
 }
 
-.modal-title-group {
+.profile-modal .modal-title-group {
     display: flex;
     align-items: center;
     gap: 12px;
 }
 
-.modal-icon {
+.profile-modal .modal-icon {
     width: 36px;
     height: 36px;
     border-radius: var(--radius-md);
@@ -1176,7 +1176,7 @@
     color: var(--theme-text-primary);
 }
 
-.modal-title {
+.profile-modal .modal-title {
     font-family: var(--font-family);
     font-size: 1.25rem;
     font-weight: 700;
@@ -1185,7 +1185,7 @@
     margin: 0;
 }
 
-.modal-close {
+.profile-modal .modal-close {
     width: 32px;
     height: 32px;
     display: flex;
@@ -1199,26 +1199,26 @@
     transition: background 140ms ease, color 140ms ease, transform 140ms var(--ease-spring);
 }
 
-.modal-close:hover {
+.profile-modal .modal-close:hover {
     background: var(--theme-hover-bg);
     color: var(--theme-text-primary);
 }
 
-.modal-close:active {
+.profile-modal .modal-close:active {
     transform: scale(0.92);
 }
 
-.modal-body {
+.profile-modal .modal-body {
     padding: 20px 24px;
     overflow-y: auto;
     flex: 1;
 }
 
-.modal-body::-webkit-scrollbar {
+.profile-modal .modal-body::-webkit-scrollbar {
     width: 6px;
 }
 
-.modal-body::-webkit-scrollbar-thumb {
+.profile-modal .modal-body::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.12);
     border-radius: 9999px;
 }
@@ -1556,7 +1556,7 @@
 }
 
 /* Modal Footer */
-.modal-footer {
+.profile-modal .modal-footer {
     display: flex;
     align-items: center;
     justify-content: flex-end;
@@ -1565,63 +1565,6 @@
     border-top: 1px solid var(--theme-border);
     flex-shrink: 0;
     background: var(--theme-bg-secondary);
-}
-
-.btn-primary {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 9px 22px;
-    background: linear-gradient(135deg, #ffffff 0%, #e4e4e7 100%);
-    color: #09090b;
-    border: none;
-    border-radius: var(--radius-md);
-    font-family: var(--font-family);
-    font-size: 0.9rem;
-    font-weight: 600;
-    cursor: pointer;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-    transition: transform 140ms var(--ease-spring), opacity 180ms ease, box-shadow 180ms ease;
-}
-
-.btn-primary:hover:not(:disabled) {
-    box-shadow: 0 4px 16px rgba(255, 255, 255, 0.15);
-    transform: translateY(-1px);
-}
-
-.btn-primary:active:not(:disabled) {
-    transform: scale(0.97);
-}
-
-.btn-primary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.btn-secondary {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 9px 20px;
-    background: transparent;
-    border: 1px solid var(--theme-border);
-    border-radius: var(--radius-md);
-    color: var(--theme-text-secondary);
-    font-family: var(--font-family);
-    font-size: 0.9rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: transform 140ms var(--ease-spring), color 180ms ease, border-color 180ms ease, background 180ms ease;
-}
-
-.btn-secondary:hover {
-    color: var(--theme-text-primary);
-    border-color: var(--theme-border-hover);
-    background: var(--theme-hover-bg);
-}
-
-.btn-secondary:active {
-    transform: scale(0.97);
 }
 
 /* ==========================================================================
@@ -1767,16 +1710,6 @@
 .light-theme .profile-photo-placeholder {
     background: linear-gradient(135deg, #e4e4e7 0%, #d4d4d8 100%);
     color: #18181b;
-}
-
-.light-theme .btn-primary {
-    background: linear-gradient(135deg, #09090b 0%, #27272a 100%);
-    color: #ffffff;
-}
-
-.light-theme .btn-primary:hover:not(:disabled) {
-    background: linear-gradient(135deg, #18181b 0%, #3f3f46 100%);
-    box-shadow: 0 4px 16px rgba(9, 9, 11, 0.2);
 }
 
 .light-theme .banner-preview {

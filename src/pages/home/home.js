@@ -42,6 +42,7 @@ class HomePage {
             ? new MovieRatingsEnrichmentService({
                 kinopoiskService: this.dataController.kinopoiskService,
                 navigationService: this.dataController.homeMovieNavigationService,
+                tmdbService: this.dataController.tmdbService,
                 // The fallback is a bounded public HTML parse, not a KP API
                 // call, and runs only when the search card has no rating.
                 enableDetailFallback: true

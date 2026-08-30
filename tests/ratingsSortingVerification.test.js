@@ -163,6 +163,45 @@ assert(movieCacheSource.includes('kp_movie_${id}'), 'Batch movie cache reads leg
 console.log('✅ Ratings query keeps legacy aggregate documents visible during pagination');
 
 const MovieCacheService = (await import('../src/shared/services/MovieCacheService.js')).default;
+const metadataService = Object.create(MovieCacheService.prototype);
+const metadataFromServer = {
+    kinopoiskId: 5287148,
+    name: 'На краю Оук-стрит',
+    posterUrl: 'https://server.example/poster.jpg',
+    description: ''
+};
+const metadataFromCache = {
+    kinopoiskId: 5287148,
+    posterUrl: 'https://cache.example/poster.jpg',
+    description: 'Полное описание фильма из локального кэша длиной более двадцати символов.'
+};
+const mergedMetadata = metadataService.mergeMovieMetadata(metadataFromServer, metadataFromCache);
+assert.strictEqual(
+    mergedMetadata.description,
+    metadataFromCache.description,
+    'Incomplete server description must not erase complete cached description'
+);
+assert.strictEqual(
+    mergedMetadata.posterUrl,
+    metadataFromServer.posterUrl,
+    'A valid server poster remains authoritative when both values are usable'
+);
+assert.strictEqual(
+    metadataService.getMovieMetadataPatch({ avgRating: 9 }, metadataFromCache).avgRating,
+    undefined,
+    'Metadata patch must not carry protected aggregate fields'
+);
+const staticMergedMetadata = MovieCacheService.mergeMovieMetadata(
+    { name: 'На краю Оук-стрит', description: '' },
+    metadataFromCache
+);
+assert.strictEqual(
+    staticMergedMetadata.description,
+    metadataFromCache.description,
+    'Static metadata merge must support ratings cache hydration before Firebase setup'
+);
+console.log('✅ Movie metadata merge preserves complete cache fields without overriding valid server fields');
+
 const previousKinopoiskConfig = globalThis.KINOPOISK_CONFIG;
 const previousFirebase = globalThis.firebase;
 const previousChrome = globalThis.chrome;
@@ -226,7 +265,9 @@ assert(ratingServiceSource.includes("String(movieId)"), 'Rating reads support le
 console.log('✅ Rating reads and writes support both legacy string and canonical numeric IDs');
 
 assert(ratingServiceSource.includes('resolveMovieDataForRating'), 'Rating writes recover cached movie metadata when callers omit movieData');
-assert(ratingServiceSource.includes('Object.assign(movieUpdates, resolvedMovieData)'), 'Rating writes persist recovered metadata with the aggregate');
+assert(ratingServiceSource.includes('getMovieMetadataPatch'), 'Rating writes persist only safe metadata with the aggregate');
+assert(ratingsPageSource.includes('const cachedMovie = rating.movie'), 'Ratings cache hydration keeps cached movie metadata');
+assert(ratingsPageSource.includes('window.MovieCacheService?.mergeMovieMetadata'), 'Ratings cache hydration reuses shared metadata merge');
 
 const functionsSource = fs.readFileSync(path.resolve('functions/index.js'), 'utf8');
 assert(functionsSource.includes('.where("movieId", "in", movieIdCandidates)'), 'Cloud aggregate includes legacy string movie IDs');

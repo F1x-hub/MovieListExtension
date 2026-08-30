@@ -6,18 +6,39 @@ const MONTHS_RU = [
 const SERIES_TYPE_HINTS = ['tv', 'series', 'anime', 'animated'];
 const PLACEHOLDER_TITLES = new Set(['unknown title', 'неизвестное название']);
 
-function getTmdbConfig() {
-    return globalThis.TMDB_CONFIG || {};
+function resolveTMDBService(customService = null) {
+    if (customService) return customService;
+    if (typeof window !== 'undefined' && window.firebaseManager?.getTMDBService) {
+        try {
+            const svc = window.firebaseManager.getTMDBService();
+            if (svc) return svc;
+        } catch { /* Ignore */ }
+    }
+    if (typeof TMDBService !== 'undefined') {
+        return new TMDBService();
+    }
+    if (typeof window !== 'undefined' && window.TMDBService) {
+        return new window.TMDBService();
+    }
+    if (typeof globalThis !== 'undefined' && globalThis.TMDBService) {
+        return new globalThis.TMDBService();
+    }
+    return null;
 }
 
-function getTmdbBaseUrl() {
-    return getTmdbConfig().BASE_URL || 'https://api.themoviedb.org/3';
-}
-
-function isTmdbConfigured() {
-    const tmdbConfig = getTmdbConfig();
-    return Array.isArray(tmdbConfig.API_KEYS) && tmdbConfig.API_KEYS.length > 0 &&
-        Boolean(tmdbConfig.API_KEY);
+function isTmdbConfigured(tmdbService = resolveTMDBService()) {
+    if (tmdbService && typeof tmdbService.isConfigured === 'function') {
+        return tmdbService.isConfigured();
+    }
+    if (tmdbService && (tmdbService.hasDirectCredentials?.() || tmdbService.hasProxyAccess?.())) {
+        return true;
+    }
+    const legacyConfig = typeof globalThis !== 'undefined' ? globalThis.TMDB_CONFIG : null;
+    if (legacyConfig) {
+        return (Array.isArray(legacyConfig.API_KEYS) && legacyConfig.API_KEYS.length > 0 && Boolean(legacyConfig.API_KEY)) ||
+            Boolean(legacyConfig.TMDB_PROXY_URL);
+    }
+    return false;
 }
 
 function normalizeTitle(value = '') {
@@ -40,7 +61,8 @@ function getShowTitles(item) {
         item.movieTitle,
         item.nameRu,
         item.nameEn,
-        item.name
+        item.name,
+        item.title
     ].map((title) => String(title || '').trim())
         .filter((title) => !PLACEHOLDER_TITLES.has(title.toLowerCase())));
 }
@@ -184,59 +206,142 @@ function chooseBestMovieMatch(item, results) {
     return best.result;
 }
 
-async function fetchJson(url) {
-    const tmdbConfig = getTmdbConfig();
-    const response = await fetch(url, {
-        headers: {
-            Accept: 'application/json',
-            Authorization: `Bearer ${tmdbConfig.API_KEY}`
+async function fetchTmdbJson(url, tmdbService = resolveTMDBService()) {
+    if (tmdbService && typeof tmdbService._fetchWithRotation === 'function') {
+        const response = await tmdbService._fetchWithRotation(url, {
+            headers: {
+                Accept: 'application/json'
+            }
+        });
+        if (!response.ok) {
+            const errorText = await response.text().catch(() => '');
+            throw new Error(`TMDB request failed: ${response.status} ${errorText}`);
         }
-    });
-
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`TMDB request failed: ${response.status} ${errorText}`);
+        return response.json();
     }
 
-    return response.json();
+    if (tmdbService && typeof tmdbService.fetchJson === 'function') {
+        return tmdbService.fetchJson(url);
+    }
+
+    // Direct credentials fallback
+    const directKey = tmdbService?.apiKey || (typeof globalThis !== 'undefined' && globalThis.TMDB_CONFIG?.API_KEY);
+    if (directKey) {
+        const response = await fetch(url, {
+            headers: {
+                Accept: 'application/json',
+                Authorization: `Bearer ${directKey}`
+            }
+        });
+        if (!response.ok) {
+            const errorText = await response.text().catch(() => '');
+            throw new Error(`TMDB request failed: ${response.status} ${errorText}`);
+        }
+        return response.json();
+    }
+
+    throw new Error('TMDBService is not available to execute TMDB request');
 }
 
 async function getTrackedItems() {
-    const statuses = ['watching', 'plan_to_watch'];
     const allItems = [];
+    const seen = new Set();
 
-    for (const status of statuses) {
-        const response = await new Promise((resolve, reject) => {
-            chrome.runtime.sendMessage(
-                { action: 'getWatchlistByStatus', status: status },
-                (response) => {
-                    if (chrome.runtime.lastError) {
-                        reject(new Error(chrome.runtime.lastError.message));
-                        return;
-                    }
-                    resolve(response);
-                }
-            );
-        });
+    const addItem = (item) => {
+        if (!item) return;
+        const id = item.movieId || item.kinopoiskId || item.id;
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        allItems.push(item);
+    };
 
-        if (response?.success && Array.isArray(response.items)) {
-            allItems.push(...response.items);
+    // 1. Try reading from FavoriteService / local bookmarks cache
+    try {
+        let userId = null;
+        if (typeof window !== 'undefined' && window.firebaseManager) {
+            await window.firebaseManager.waitForAuthReady?.();
+            userId = window.firebaseManager.getCurrentUser?.()?.uid;
         }
+        if (!userId && typeof chrome !== 'undefined' && chrome.storage?.local) {
+            const userRes = await chrome.storage.local.get(['user']);
+            userId = userRes.user?.uid;
+        }
+
+        if (userId) {
+            // Check local cache first for instant resolution
+            if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+                const cacheKey = `bookmarks_cache_${userId}`;
+                const cached = await chrome.storage.local.get([cacheKey]);
+                const bookmarkList = cached[cacheKey]?.bookmarks || cached[cacheKey];
+                if (Array.isArray(bookmarkList) && bookmarkList.length > 0) {
+                    for (const item of bookmarkList) {
+                        if (item && (item.status === 'watching' || item.status === 'plan_to_watch')) {
+                            addItem(item);
+                        }
+                    }
+                    if (allItems.length > 0) return allItems;
+                }
+            }
+
+            // Direct Firestore query if available
+            const favService = typeof window !== 'undefined' && window.firebaseManager?.getFavoriteService
+                ? window.firebaseManager.getFavoriteService()
+                : (typeof FavoriteService !== 'undefined' && window.firebaseManager ? new FavoriteService(window.firebaseManager) : null);
+
+            if (favService && typeof favService.getFavorites === 'function') {
+                const [watching, planToWatch] = await Promise.all([
+                    favService.getFavorites(userId, 'watching').catch(() => []),
+                    favService.getFavorites(userId, 'plan_to_watch').catch(() => [])
+                ]);
+                for (const item of [...watching, ...planToWatch]) {
+                    addItem(item);
+                }
+                if (allItems.length > 0) return allItems;
+            }
+        }
+    } catch (error) {
+        console.warn('[Calendar] FavoriteService item resolution encountered warning:', error);
     }
 
-    // Deduplicate by movieId/kinopoiskId
-    const seen = new Set();
-    return allItems.filter(item => {
-        const id = item.movieId || item.kinopoiskId || item.id;
-        if (!id || seen.has(id)) return false;
-        seen.add(id);
-        return true;
-    });
+    if (allItems.length > 0) {
+        return allItems;
+    }
+
+    // 2. Fallback to background messaging if available
+    try {
+        const statuses = ['watching', 'plan_to_watch'];
+        for (const status of statuses) {
+            const response = await new Promise((resolve) => {
+                if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
+                    resolve(null);
+                    return;
+                }
+                chrome.runtime.sendMessage(
+                    { action: 'getWatchlistByStatus', status: status },
+                    (res) => {
+                        if (chrome.runtime.lastError) {
+                            resolve(null);
+                            return;
+                        }
+                        resolve(res);
+                    }
+                );
+            });
+
+            if (response?.success && Array.isArray(response.items)) {
+                response.items.forEach(addItem);
+            }
+        }
+    } catch (e) {
+        console.warn('[Calendar] Background message fallback failed:', e);
+    }
+
+    return allItems;
 }
 
-async function getTmdbId(item) {
-    const tmdbConfig = getTmdbConfig();
-    const tmdbBaseUrl = getTmdbBaseUrl();
+async function getTmdbId(item, tmdbService = resolveTMDBService()) {
+    const tmdbBaseUrl = tmdbService?.baseUrl || 'https://api.themoviedb.org/3';
+    const tmdbLanguage = tmdbService?.defaultLanguage || 'ru-RU';
     const isSeries = hasSeriesHints(item);
     const tmdbType = isSeries ? 'tv' : 'movie';
     const allTitles = getShowTitles(item);
@@ -245,8 +350,9 @@ async function getTmdbId(item) {
     const imdbId = item.imdbId || item.externalId?.imdb;
     if (imdbId) {
         try {
-            const data = await fetchJson(
-                `${tmdbBaseUrl}/find/${encodeURIComponent(imdbId)}?external_source=imdb_id&language=${tmdbConfig.DEFAULT_LANGUAGE || 'ru-RU'}`
+            const data = await fetchTmdbJson(
+                `${tmdbBaseUrl}/find/${encodeURIComponent(imdbId)}?external_source=imdb_id&language=${tmdbLanguage}`,
+                tmdbService
             );
             const results = isSeries ? data.tv_results : data.movie_results;
             const found = results?.[0];
@@ -274,8 +380,9 @@ async function getTmdbId(item) {
         // a. Try with Year
         if (year) {
             try {
-                const data = await fetchJson(
-                    `${tmdbBaseUrl}/search/${tmdbType}?query=${query}&${yearParamName}=${year}&language=${tmdbConfig.DEFAULT_LANGUAGE || 'ru-RU'}`
+                const data = await fetchTmdbJson(
+                    `${tmdbBaseUrl}/search/${tmdbType}?query=${query}&${yearParamName}=${year}&language=${tmdbLanguage}`,
+                    tmdbService
                 );
                 const bestMatch = isSeries ? chooseBestTvMatch(item, data.results) : chooseBestMovieMatch(item, data.results);
                 if (bestMatch?.id) return bestMatch.id;
@@ -284,8 +391,9 @@ async function getTmdbId(item) {
 
         // b. Try without Year
         try {
-            const data = await fetchJson(
-                `${tmdbBaseUrl}/search/${tmdbType}?query=${query}&language=${tmdbConfig.DEFAULT_LANGUAGE || 'ru-RU'}`
+            const data = await fetchTmdbJson(
+                `${tmdbBaseUrl}/search/${tmdbType}?query=${query}&language=${tmdbLanguage}`,
+                tmdbService
             );
             const bestMatch = isSeries ? chooseBestTvMatch(item, data.results) : chooseBestMovieMatch(item, data.results);
             if (bestMatch?.id) return bestMatch.id;
@@ -296,8 +404,9 @@ async function getTmdbId(item) {
     return null;
 }
 
-async function getMovieRelease(tmdbId, showName, kinoId) {
-    const tmdbConfig = getTmdbConfig();
+async function getMovieRelease(tmdbId, showName, kinoId, tmdbService = resolveTMDBService()) {
+    const tmdbBaseUrl = tmdbService?.baseUrl || 'https://api.themoviedb.org/3';
+    const tmdbLanguage = tmdbService?.defaultLanguage || 'ru-RU';
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -305,8 +414,9 @@ async function getMovieRelease(tmdbId, showName, kinoId) {
     maxDate.setDate(maxDate.getDate() + DAYS_AHEAD);
 
     // Fetch with release_dates fallback
-    const info = await fetchJson(
-        `${getTmdbBaseUrl()}/movie/${tmdbId}?append_to_response=release_dates&language=${tmdbConfig.DEFAULT_LANGUAGE || 'ru-RU'}`
+    const info = await fetchTmdbJson(
+        `${tmdbBaseUrl}/movie/${tmdbId}?append_to_response=release_dates&language=${tmdbLanguage}`,
+        tmdbService
     );
 
     let bestDate = info.release_date;
@@ -314,7 +424,6 @@ async function getMovieRelease(tmdbId, showName, kinoId) {
     // If main release_date is missing, try to find one in regional release_dates
     if (!bestDate && info.release_dates?.results) {
         const allRegional = info.release_dates.results.flatMap(r => r.release_dates || []);
-        // Pick the earliest available date
         const sorted = allRegional
             .map(rd => rd.release_date)
             .filter(Boolean)
@@ -344,16 +453,18 @@ async function getMovieRelease(tmdbId, showName, kinoId) {
     }];
 }
 
-async function getUpcomingEpisodes(tmdbId, showName, kinoId) {
-    const tmdbConfig = getTmdbConfig();
+async function getUpcomingEpisodes(tmdbId, showName, kinoId, tmdbService = resolveTMDBService()) {
+    const tmdbBaseUrl = tmdbService?.baseUrl || 'https://api.themoviedb.org/3';
+    const tmdbLanguage = tmdbService?.defaultLanguage || 'ru-RU';
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     const maxDate = new Date(today);
     maxDate.setDate(maxDate.getDate() + DAYS_AHEAD);
 
-    const info = await fetchJson(
-        `${getTmdbBaseUrl()}/tv/${tmdbId}?language=${tmdbConfig.DEFAULT_LANGUAGE || 'ru-RU'}`
+    const info = await fetchTmdbJson(
+        `${tmdbBaseUrl}/tv/${tmdbId}?language=${tmdbLanguage}`,
+        tmdbService
     );
 
     const episodes = [];
@@ -373,8 +484,9 @@ async function getUpcomingEpisodes(tmdbId, showName, kinoId) {
     }
 
     for (const seasonNumber of seasonsToCheck) {
-        const season = await fetchJson(
-            `${getTmdbBaseUrl()}/tv/${tmdbId}/season/${seasonNumber}?language=${tmdbConfig.DEFAULT_LANGUAGE || 'ru-RU'}`
+        const season = await fetchTmdbJson(
+            `${tmdbBaseUrl}/tv/${tmdbId}/season/${seasonNumber}?language=${tmdbLanguage}`,
+            tmdbService
         );
 
         for (const episode of season.episodes || []) {
@@ -410,12 +522,13 @@ async function getUpcomingEpisodes(tmdbId, showName, kinoId) {
     return episodes;
 }
 
-export async function fetchCalendarEpisodes() {
-    if (!isTmdbConfigured()) {
+export async function fetchCalendarEpisodes(options = {}) {
+    const tmdbService = resolveTMDBService(options.tmdbService);
+    if (!isTmdbConfigured(tmdbService)) {
         throw new Error('TMDB API key is not configured');
     }
 
-    const items = await getTrackedItems();
+    const items = options.items || await getTrackedItems();
     if (!items.length) {
         return { grouped: {}, total: 0 };
     }
@@ -425,7 +538,7 @@ export async function fetchCalendarEpisodes() {
     await Promise.allSettled(
         items.map(async (item) => {
             try {
-                const tmdbId = await getTmdbId(item);
+                const tmdbId = item.tmdbId || await getTmdbId(item, tmdbService);
                 if (!tmdbId) {
                     return;
                 }
@@ -435,13 +548,15 @@ export async function fetchCalendarEpisodes() {
                     events = await getUpcomingEpisodes(
                         tmdbId,
                         getPrimaryTitle(item),
-                        item.movieId || item.kinopoiskId || item.id
+                        item.movieId || item.kinopoiskId || item.id,
+                        tmdbService
                     );
                 } else {
                     events = await getMovieRelease(
                         tmdbId,
                         getPrimaryTitle(item),
-                        item.movieId || item.kinopoiskId || item.id
+                        item.movieId || item.kinopoiskId || item.id,
+                        tmdbService
                     );
                 }
 
@@ -477,3 +592,11 @@ export async function fetchCalendarEpisodes() {
         total: allEvents.length
     };
 }
+
+export {
+    isTmdbConfigured,
+    getTrackedItems,
+    getTmdbId,
+    getMovieRelease,
+    getUpcomingEpisodes
+};

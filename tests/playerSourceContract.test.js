@@ -11,6 +11,22 @@ const baseParserSource = fs.readFileSync(
 const parserContext = vm.createContext({ console, window: {} });
 vm.runInContext(baseParserSource, parserContext);
 const BaseParserService = parserContext.window.BaseParserService;
+assert.doesNotMatch(baseParserSource, /mountHlsQualitySelector/,
+    'the base parser must not create a duplicate HLS quality control');
+assert.match(baseParserSource, /video\._movieExtensionHls = hls/,
+    'the base parser exposes its HLS instance to the existing native player menu');
+const playerCleanerSource = fs.readFileSync(
+    new URL('../content-scripts/player-cleaner.js', import.meta.url),
+    'utf8'
+);
+assert.match(playerCleanerSource, /getNativeHlsQualityOptions/,
+    'the existing player settings menu exposes native HLS quality choices');
+assert.match(playerCleanerSource, /RUTUBE_QUALITY_LADDER/,
+    'Rutube HLS levels use the player-facing quality naming ladder');
+assert.match(playerCleanerSource, /hls\.currentLevel = -1/,
+    'the Automatic choice restores hls.js adaptive bitrate selection');
+assert.match(playerCleanerSource, /typeof opt\.action === 'function'/,
+    'native HLS quality entries execute their own action instead of requiring a provider DOM node');
 const exFsParserSource = fs.readFileSync(
     new URL('../src/shared/services/parsers/ExFsParser.js', import.meta.url),
     'utf8'

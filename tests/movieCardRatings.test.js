@@ -58,6 +58,33 @@ assert.match(providerCard.innerHTML, />КП<\/span><span>7\.6<\/span>/);
 assert.match(providerCard.innerHTML, />IMDb<\/span><span>8\.2<\/span>/);
 assert.doesNotMatch(providerCard.innerHTML, /mc-badge-tmdb/);
 
+assert.match(providerCard.className, /movie-card-component/, 'MovieCard must expose the canonical root class');
+
+const originalEscapeHtml = MovieCard.escapeHtml;
+MovieCard.escapeHtml = value => String(value ?? '');
+try {
+    const deferredPosterCard = MovieCard.create({ movie: {
+        kinopoiskId: 201,
+        name: 'Deferred poster',
+        posterUrl: 'https://avatars.mds.yandex.net/get-kinopoisk-image/abc/600x900'
+    } }, {
+        variant: 'search',
+        showThreeDotMenu: false,
+        lazyPoster: true,
+        deferPoster: true
+    });
+    assert(deferredPosterCard.innerHTML.includes('data-deferred-poster-url="https://avatars.mds.yandex.net/get-kinopoisk-image/abc/600x900"'));
+    assert(deferredPosterCard.innerHTML.includes('src="/src/shared/assets/icons/app/icon48.png"'));
+    assert.match(deferredPosterCard.innerHTML, /loading="lazy" decoding="async"/);
+} finally {
+    MovieCard.escapeHtml = originalEscapeHtml;
+}
+
+const collectionCard = MovieCard.create({ movie: { kinopoiskId: 300, name: 'Collection title' } }, {
+    showRemoveFromCollection: true
+});
+assert.match(collectionCard.innerHTML, /data-action="remove-from-collection"/, 'Collection removal must use MovieCard actions');
+
 const unavailableOverlay = { innerHTML: '', dataset: {} };
 MovieCard.updateCompactRatings({
     dataset: {},

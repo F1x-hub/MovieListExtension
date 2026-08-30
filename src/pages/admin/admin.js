@@ -7,6 +7,7 @@ class AdminPanelManager {
         this.adminService = null;
         this.cacheService = null;
         this.currentUser = null;
+        this.isAdmin = false;
         this.users = [];
         this.userToDelete = null;
         
@@ -36,6 +37,19 @@ class AdminPanelManager {
         this.displayedUsers = [];
         this.pendingUsers = [];
         this.selectedApprovalIds = new Set();
+        this.firestoreUsage = null;
+        this.firestoreUsageRequest = null;
+        this.providerKeys = [];
+        this.providerKeysRequest = null;
+        this.providerKeyActionRequest = null;
+        this.providerKeyModalTrigger = null;
+        this.providerKeyConfirmTrigger = null;
+        this.providerKeyPendingRevoke = null;
+        this.commentReactionConfig = null;
+        this.commentReactionConfigRequest = null;
+        this.commentReactionSavePending = false;
+        this.commentReactionAssetPreviewUrl = null;
+        this.commentReactionAssetFile = null;
         
         // Pagination state for movies
         this.pagination = {
@@ -79,11 +93,10 @@ class AdminPanelManager {
             console.time('[Admin Perf] 2. Check Admin Access');
             const isAdmin = await this.checkAdminAccess();
             console.timeEnd('[Admin Perf] 2. Check Admin Access');
+            this.setAdminAccessState(isAdmin);
             
             if (!isAdmin) {
-                this.showError('Access denied. You must be an administrator to view this page.');
-                const adminContent = document.getElementById('adminContent');
-                if (adminContent) adminContent.style.display = 'none';
+                this.showError('Доступ запрещён. Для просмотра этой страницы требуются права администратора.');
                 if (window.adminNav && typeof window.adminNav.showAuthModal === 'function') {
                     window.adminNav.showAuthModal('login');
                 }
@@ -99,29 +112,29 @@ class AdminPanelManager {
             // Update offline indicator
             this.updateOnlineIndicator();
 
-            console.time('[Admin Perf] 4. Load Data Sequentially');
+            console.time('[Admin Perf] 4. UI & Event Setup');
+            // Initialize Reports & TMDB Fallbacks / Manual Mapping before data loads
+            this.initReports();
+            this.initTmdbFallbacks();
+
+            // Bind controls before network work so the shell never becomes inert
+            this.setupEventListeners();
+            console.timeEnd('[Admin Perf] 4. UI & Event Setup');
+
+            console.time('[Admin Perf] 5. Load Data Sequentially');
             // Load users, movies and approvals sequentially to avoid WebChannel stream congestion
             this.showLoading();
             await this.loadUsers();
             await this.loadMovies();
             await this.loadApprovals();
             this.hideLoading();
-            console.timeEnd('[Admin Perf] 4. Load Data Sequentially');
-
-            console.time('[Admin Perf] 5. UI & Event Setup');
-            // Initialize Reports & TMDB Fallbacks / Manual Mapping
-            this.initReports();
-            this.initTmdbFallbacks();
-
-            // Setup event listeners
-            this.setupEventListeners();
-            console.timeEnd('[Admin Perf] 5. UI & Event Setup');
+            console.timeEnd('[Admin Perf] 5. Load Data Sequentially');
             console.timeEnd('[Admin Perf] Total Init');
             
             console.log(`[Admin Performance] Init fully complete. Data size - Users: ${this.users.length}, Movies: ${this.movies.length}`);
         } catch (error) {
             console.error('Error initializing admin panel:', error);
-            this.showError(`Failed to initialize: ${error.message}`);
+            this.showError('Не удалось открыть админ-панель. Повторите попытку.');
             console.timeEnd('[Admin Perf] Total Init');
         }
     }
@@ -218,6 +231,7 @@ class AdminPanelManager {
 
     async loadUsers() {
         console.time('[Admin Perf] loadUsers total');
+        this.clearAdminError();
         try {
             console.time('[Admin Perf] loadUsers - Get Cache');
             const cachedUsers = this.cacheService.getCachedUsers();
@@ -242,7 +256,8 @@ class AdminPanelManager {
             }
         } catch (error) {
             console.error('Error loading users:', error);
-            this.showError(`Failed to load users: ${error.message}`);
+            this.renderUsersError();
+            this.showError('Не удалось загрузить пользователей. Повторите попытку.');
         }
         console.timeEnd('[Admin Perf] loadUsers total');
     }
@@ -276,6 +291,7 @@ class AdminPanelManager {
         let fetchLabel = `[Admin Perf] fetchUsersFromDb (background=${isBackground})`;
         console.time(fetchLabel);
         if (!isBackground) {
+            this.clearAdminError();
             this.renderUsersSkeleton();
         }
         
@@ -307,7 +323,8 @@ class AdminPanelManager {
         } catch (error) {
             console.error('Error fetching users from DB:', error);
             if (!isBackground) {
-                this.showError(`Failed to load users page: ${error.message}`);
+                this.renderUsersError();
+                this.showError('Не удалось загрузить пользователей. Повторите попытку.');
             }
         }
         console.timeEnd(fetchLabel);
@@ -363,7 +380,13 @@ class AdminPanelManager {
 
         // Update count
         if (usersCount) {
-            usersCount.textContent = `${this.displayedUsers.length} user${this.displayedUsers.length !== 1 ? 's' : ''}${this.userPagination.currentPage > 1 ? ` (pg ${this.userPagination.currentPage})` : ''}`;
+            const countLabel = this.formatRussianCount(
+                this.displayedUsers.length,
+                'пользователь',
+                'пользователя',
+                'пользователей'
+            );
+            usersCount.textContent = `${countLabel}${this.userPagination.currentPage > 1 ? ` (стр. ${this.userPagination.currentPage})` : ''}`;
         }
 
         // Clear existing rows
@@ -373,7 +396,7 @@ class AdminPanelManager {
             tableBody.innerHTML = `
                 <tr>
                     <td colspan="8" style="text-align: center; padding: var(--space-xl); color: var(--text-secondary);">
-                        No users found
+                        Пользователи не найдены
                     </td>
                 </tr>
             `;
@@ -395,13 +418,17 @@ class AdminPanelManager {
         const firstBtn = document.getElementById('user-first-page');
         
         if (pageInfo) {
-            const start = (this.userPagination.currentPage - 1) * this.userPagination.itemsPerPage + 1;
-            const end = start + this.displayedUsers.length - 1;
-            pageInfo.innerHTML = `Showing <span id="user-range-start">${start}</span>-<span id="user-range-end">${end}</span> users`;
+            const start = this.displayedUsers.length > 0
+                ? (this.userPagination.currentPage - 1) * this.userPagination.itemsPerPage + 1
+                : 0;
+            const end = this.displayedUsers.length > 0
+                ? start + this.displayedUsers.length - 1
+                : 0;
+            pageInfo.innerHTML = `Показано <span id="user-range-start">${start}</span>-<span id="user-range-end">${end}</span> пользователей`;
         }
         
         if (pageNumbers) {
-            pageNumbers.textContent = `Page ${this.userPagination.currentPage}`;
+            pageNumbers.textContent = `Страница ${this.userPagination.currentPage}`;
         }
         
         if (prevBtn) prevBtn.disabled = this.userPagination.currentPage === 1;
@@ -414,16 +441,16 @@ class AdminPanelManager {
         const isCurrentUser = this.currentUser && user.id === this.currentUser.uid;
         const joinDate = user.createdAt?.toDate ? 
             user.createdAt.toDate().toLocaleDateString() : 
-            (user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'Unknown');
+            (user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'Неизвестно');
 
         const status = user.approvalStatus || 'approved';
         let statusBadge;
         if (status === 'approved') {
-            statusBadge = '<span class="status-badge status-badge-approved">Approved</span>';
+            statusBadge = '<span class="status-badge status-badge-approved">Одобрен</span>';
         } else if (status === 'pending') {
-            statusBadge = '<span class="status-badge status-badge-pending">Pending</span>';
+            statusBadge = '<span class="status-badge status-badge-pending">Ожидает</span>';
         } else if (status === 'rejected') {
-            statusBadge = '<span class="status-badge status-badge-rejected">Rejected</span>';
+            statusBadge = '<span class="status-badge status-badge-rejected">Отклонён</span>';
         } else {
             statusBadge = `<span class="status-badge status-badge-approved">${this.escapeHtml(status)}</span>`;
         }
@@ -434,8 +461,8 @@ class AdminPanelManager {
                 <div class="row-actions-group">
                     <button class="btn-delete" 
                             data-user-id="${user.id}"
-                            disabled title="You cannot delete your own account">
-                        Delete
+                            disabled title="Нельзя удалить собственный аккаунт">
+                        Удалить
                     </button>
                 </div>
             `;
@@ -444,7 +471,7 @@ class AdminPanelManager {
             if (status === 'approved') {
                 statusButtons = `
                     <button class="btn-status-toggle btn-reject-sm" data-action="reject" data-user-id="${user.id}">Заблокировать</button>
-                    <button class="btn-status-toggle" data-action="pending" data-user-id="${user.id}">В Pending</button>
+                    <button class="btn-status-toggle" data-action="pending" data-user-id="${user.id}">В ожидание</button>
                 `;
             } else if (status === 'pending') {
                 statusButtons = `
@@ -454,7 +481,7 @@ class AdminPanelManager {
             } else if (status === 'rejected') {
                 statusButtons = `
                     <button class="btn-approve-sm" data-action="approve" data-user-id="${user.id}">Разблокировать</button>
-                    <button class="btn-status-toggle" data-action="pending" data-user-id="${user.id}">В Pending</button>
+                    <button class="btn-status-toggle" data-action="pending" data-user-id="${user.id}">В ожидание</button>
                 `;
             }
 
@@ -462,7 +489,7 @@ class AdminPanelManager {
                 <div class="row-actions-group">
                     ${statusButtons}
                     <button class="btn-delete" data-user-id="${user.id}">
-                        Delete
+                        Удалить
                     </button>
                 </div>
             `;
@@ -471,21 +498,21 @@ class AdminPanelManager {
         row.innerHTML = `
             <td>
                 <div class="user-info">
-                    <img src="${user.photoURL || chrome.runtime.getURL('icons/icon48.png')}" 
-                         alt="${user.displayName || 'User'}" 
+                    <img src="${user.photoURL || IconUtils.getCurrentThemeIconPath(48)}"
+                         alt="${user.displayName || 'Пользователь'}"
                          class="user-avatar"
                          loading="lazy">
                     <div>
                         <div class="user-name">
-                            ${this.escapeHtml(user.displayName || 'Unknown User')}
-                            ${user.isAdmin ? '<span class="admin-badge"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg> Admin</span>' : ''}
-                            ${isCurrentUser ? '<span class="you-badge">You</span>' : ''}
+                            ${this.escapeHtml(user.displayName || 'Пользователь без имени')}
+                            ${user.isAdmin ? '<span class="admin-badge"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg> Админ</span>' : ''}
+                            ${isCurrentUser ? '<span class="you-badge">Вы</span>' : ''}
                         </div>
                     </div>
                 </div>
             </td>
             <td>
-                <div class="user-email">${this.escapeHtml(user.email || 'No email')}</div>
+                <div class="user-email">${this.escapeHtml(user.email || 'Нет email')}</div>
             </td>
             <td>
                 <div class="user-id">${this.escapeHtml(user.id.substring(0, 12))}...</div>
@@ -506,7 +533,7 @@ class AdminPanelManager {
         // Add event listeners for status toggle buttons
         const actionBtns = row.querySelectorAll('[data-action]');
         actionBtns.forEach(btn => {
-            btn.addEventListener('mousedown', (e) => {
+            btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.handleUserApprovalAction(btn.dataset.userId, btn.dataset.action, btn);
             });
@@ -515,13 +542,13 @@ class AdminPanelManager {
         // Add click handler for delete button
         const deleteBtn = row.querySelector('.btn-delete');
         if (deleteBtn && !isCurrentUser) {
-            deleteBtn.addEventListener('mousedown', () => this.showDeleteConfirmation(user));
+            deleteBtn.addEventListener('click', () => this.showDeleteConfirmation(user));
         }
 
         const avatar = row.querySelector('.user-avatar');
         if (avatar) {
             avatar.addEventListener('error', () => {
-                avatar.src = chrome.runtime.getURL('icons/icon48.png');
+                avatar.src = IconUtils.getCurrentThemeIconPath(48);
             });
         }
 
@@ -556,6 +583,7 @@ class AdminPanelManager {
     }
 
     async loadApprovals() {
+        this.clearAdminError();
         try {
             const pendingUsers = await this.adminService.getPendingApprovals(100);
             this.pendingUsers = pendingUsers || [];
@@ -565,14 +593,945 @@ class AdminPanelManager {
             const count = this.pendingUsers.length;
             const navBadge = document.getElementById('adminNavApprovalsCount');
             const headerBadge = document.getElementById('approvalsCount');
-            if (navBadge) navBadge.textContent = count > 0 ? count : '—';
-            if (headerBadge) headerBadge.textContent = `${count} заяв${count === 1 ? 'ка' : (count > 1 && count < 5 ? 'ки' : 'ок')}`;
+            if (navBadge) {
+                navBadge.textContent = count > 0 ? count : '—';
+                navBadge.classList.remove('admin-nav-count-warning');
+            }
+            if (headerBadge) {
+                headerBadge.textContent = this.formatRussianCount(count, 'заявка', 'заявки', 'заявок');
+            }
 
             this.renderApprovalsTable();
             this.updateBatchApproveButton();
         } catch (error) {
             console.error('Error loading approvals:', error);
+            this.pendingUsers = [];
+            this.selectedApprovalIds.clear();
+            const navBadge = document.getElementById('adminNavApprovalsCount');
+            const headerBadge = document.getElementById('approvalsCount');
+            if (navBadge) {
+                navBadge.textContent = '!';
+                navBadge.classList.add('admin-nav-count-warning');
+            }
+            if (headerBadge) headerBadge.textContent = '—';
+            this.renderApprovalsError();
+            this.showError('Не удалось загрузить заявки. Повторите попытку.');
         }
+    }
+
+    async loadFirestoreUsage(force = false) {
+        if (!this.adminService) return null;
+        if (this.firestoreUsageRequest) return this.firestoreUsageRequest;
+        if (this.firestoreUsage && !force) {
+            this.renderFirestoreUsage(this.firestoreUsage);
+            return this.firestoreUsage;
+        }
+
+        this.renderFirestoreUsageLoading(true);
+        this.firestoreUsageRequest = this.adminService.getFirestoreUsage()
+            .then((usage) => {
+                this.firestoreUsage = usage;
+                this.renderFirestoreUsage(usage);
+                return usage;
+            })
+            .catch((error) => {
+                console.error('Error loading Firestore usage:', error);
+                this.renderFirestoreUsageError();
+                throw error;
+            })
+            .finally(() => {
+                this.firestoreUsageRequest = null;
+                this.renderFirestoreUsageLoading(false);
+            });
+
+        return this.firestoreUsageRequest;
+    }
+
+    renderFirestoreUsageLoading(isLoading) {
+        const cards = document.getElementById('firestoreUsageCards');
+        const refreshButton = document.getElementById('refreshFirestoreUsageBtn');
+        if (cards) cards.setAttribute('aria-busy', String(isLoading));
+        if (refreshButton) {
+            refreshButton.disabled = isLoading;
+            refreshButton.classList.toggle('loading', isLoading);
+        }
+    }
+
+    renderFirestoreUsageError() {
+        const errorBox = document.getElementById('firestoreUsageError');
+        const navStatus = document.getElementById('adminNavUsageStatus');
+        if (errorBox) {
+            errorBox.hidden = false;
+            errorBox.textContent = 'Не удалось получить статистику Firestore. Повторите попытку.';
+        }
+        if (navStatus) {
+            navStatus.textContent = '!';
+            navStatus.classList.add('admin-nav-count-warning');
+        }
+    }
+
+    renderFirestoreUsage(usage) {
+        const errorBox = document.getElementById('firestoreUsageError');
+        const updated = document.getElementById('firestoreUsageUpdated');
+        const navStatus = document.getElementById('adminNavUsageStatus');
+        if (errorBox) {
+            errorBox.hidden = true;
+            errorBox.textContent = '';
+        }
+
+        if (updated) {
+            const measuredAt = usage?.measuredAt ? new Date(usage.measuredAt) : null;
+            updated.textContent = measuredAt && !Number.isNaN(measuredAt.getTime())
+                ? `Снято в ${measuredAt.toLocaleTimeString('ru-RU')}`
+                : 'Время неизвестно';
+        }
+        if (navStatus) {
+            navStatus.textContent = 'Готово';
+            navStatus.classList.remove('admin-nav-count-warning');
+        }
+
+        this.renderFirestoreUsageMetric('storage', usage?.storage, {
+            valueId: 'firestoreUsageStorageValue',
+            limitId: 'firestoreUsageStorageLimit',
+            barId: 'firestoreUsageStorageBar',
+            statusId: 'firestoreUsageStorageStatus',
+            noteId: 'firestoreUsageStorageNote',
+            formatValue: (value) => this.formatFirestoreBytes(value),
+            formatLimit: (value) => `из ${this.formatFirestoreBytes(value)}`,
+            unavailableNote: 'Метрика хранилища недоступна в Cloud Monitoring.'
+        });
+        this.renderFirestoreUsageMetric('reads', usage?.reads, {
+            valueId: 'firestoreUsageReadsValue',
+            limitId: 'firestoreUsageReadsLimit',
+            barId: 'firestoreUsageReadsBar',
+            statusId: 'firestoreUsageReadsStatus',
+            noteId: 'firestoreUsageReadsNote',
+            formatValue: (value) => this.formatFirestoreCount(value),
+            formatLimit: (value) => `из ${this.formatFirestoreCount(value)}`,
+            unavailableNote: 'Метрика чтений недоступна в Cloud Monitoring.'
+        });
+        this.renderFirestoreUsageMetric('writes', usage?.writes, {
+            valueId: 'firestoreUsageWritesValue',
+            limitId: 'firestoreUsageWritesLimit',
+            barId: 'firestoreUsageWritesBar',
+            statusId: 'firestoreUsageWritesStatus',
+            noteId: 'firestoreUsageWritesNote',
+            formatValue: (value) => this.formatFirestoreCount(value),
+            formatLimit: (value) => `из ${this.formatFirestoreCount(value)}`,
+            unavailableNote: 'Метрика записей недоступна в Cloud Monitoring.'
+        });
+    }
+
+    async loadProviderKeys(force = false) {
+        if (!this.adminService) return [];
+        if (this.providerKeysRequest) return this.providerKeysRequest;
+        if (this.providerKeys.length > 0 && !force) {
+            this.renderProviderKeys(this.providerKeys);
+            return this.providerKeys;
+        }
+
+        this.renderProviderKeysLoading(true);
+        this.providerKeysRequest = this.adminService.listProviderKeys()
+            .then((keys) => {
+                this.providerKeys = Array.isArray(keys) ? keys : [];
+                this.renderProviderKeys(this.providerKeys);
+                return this.providerKeys;
+            })
+            .catch((error) => {
+                console.error('Error loading provider keys:', error?.code || 'unknown error');
+                this.renderProviderKeysError(error);
+                throw error;
+            })
+            .finally(() => {
+                this.providerKeysRequest = null;
+                this.renderProviderKeysLoading(false);
+            });
+
+        return this.providerKeysRequest;
+    }
+
+    renderProviderKeysLoading(isLoading) {
+        const loading = document.getElementById('providerKeysLoading');
+        const refreshButton = document.getElementById('refreshProviderKeysBtn');
+        const list = document.getElementById('providerKeysList');
+        if (loading) loading.hidden = !isLoading;
+        if (list) list.setAttribute('aria-busy', String(isLoading));
+        if (refreshButton) {
+            refreshButton.disabled = isLoading;
+            refreshButton.classList.toggle('loading', isLoading);
+        }
+    }
+
+    getProviderKeyErrorMessage(error) {
+        const messages = {
+            AUTH_REQUIRED: 'Сессия администратора завершена. Войдите снова.',
+            DUPLICATE_KEY: 'Такой ключ уже добавлен в реестр.',
+            INVALID_CREDENTIAL: 'Значение ключа отклонено. Проверьте его и попробуйте снова.',
+            INVALID_PROVIDER: 'Этот провайдер пока не поддерживается.',
+            PROVIDER_UNSUPPORTED: 'Для этого провайдера ещё нет проверки квоты.',
+            PROVIDER_UNAVAILABLE: 'Провайдер временно недоступен. Повторите попытку позже.',
+            SECRET_REVOKE_FAILED: 'Ключ отключён, но его не удалось полностью отозвать. Проверьте состояние позже.',
+            KEY_NOT_FOUND: 'Ключ не найден. Обновите список.',
+        };
+        return messages[error?.code] || 'Операция с API-ключом не выполнена. Повторите попытку.';
+    }
+
+    renderProviderKeysError(error) {
+        const errorBox = document.getElementById('providerKeysError');
+        if (!errorBox) return;
+        errorBox.hidden = false;
+        errorBox.textContent = this.getProviderKeyErrorMessage(error);
+        const count = document.getElementById('adminNavProviderKeysCount');
+        if (count) {
+            count.textContent = '!';
+            count.classList.add('admin-nav-count-warning');
+        }
+    }
+
+    clearProviderKeysError() {
+        const errorBox = document.getElementById('providerKeysError');
+        if (errorBox) {
+            errorBox.hidden = true;
+            errorBox.textContent = '';
+        }
+    }
+
+    formatProviderKeyDate(value) {
+        const date = value?.toDate?.() || (value ? new Date(value) : null);
+        return date && !Number.isNaN(date.getTime())
+            ? date.toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })
+            : 'Ещё не проверялся';
+    }
+
+    formatProviderKeyQuota(quota) {
+        if (!quota || quota.mode === 'unavailable') {
+            return quota?.unit === 'requests_per_second'
+                ? 'Остаток не публикуется'
+                : 'Квота недоступна';
+        }
+        if (Number.isFinite(quota.remaining) && Number.isFinite(quota.limit)) {
+            return `${this.formatFirestoreCount(quota.remaining)} из ${this.formatFirestoreCount(quota.limit)}`;
+        }
+        if (quota.mode === 'local_estimate') return 'Локальная оценка';
+        return 'Проверено провайдером';
+    }
+
+    renderProviderKeysQuotaSummary(keys) {
+        const summary = document.getElementById('providerKeysQuotaSummary');
+        const label = document.getElementById('providerKeysQuotaLabel');
+        const value = document.getElementById('providerKeysQuotaValue');
+        const note = document.getElementById('providerKeysQuotaNote');
+        if (!summary || !label || !value || !note) return;
+
+        const activeKeys = (Array.isArray(keys) ? keys : []).filter((key) => key?.status === 'active');
+        const kinopoiskKeys = activeKeys.filter((key) => key?.provider === 'kinopoisk');
+        const tmdbKeys = activeKeys.filter((key) => key?.provider === 'tmdb');
+        const measuredKeys = kinopoiskKeys.filter((key) => (
+            key?.quota?.mode === 'provider_exact'
+            && Number.isFinite(key.quota.remaining)
+            && Number.isFinite(key.quota.limit)
+        ));
+
+        if (!activeKeys.length) {
+            summary.dataset.state = 'empty';
+            label.textContent = 'Дневная квота';
+            value.textContent = '— / —';
+            note.textContent = 'Нет активных ключей';
+            summary.setAttribute('aria-label', 'Квоты провайдеров: нет активных ключей');
+            return;
+        }
+
+        if (!kinopoiskKeys.length && tmdbKeys.length) {
+            summary.dataset.state = 'unavailable';
+            label.textContent = 'TMDB · рейт-лимит';
+            value.textContent = '— / —';
+            note.textContent = 'TMDB не публикует дневной остаток; учитываются ответы 429';
+            summary.setAttribute('aria-label', 'TMDB не публикует дневной остаток запросов');
+            return;
+        }
+
+        if (!measuredKeys.length) {
+            summary.dataset.state = 'unavailable';
+            label.textContent = 'Кинопоиск · на сегодня';
+            value.textContent = '— / —';
+            note.textContent = 'Проверьте квоту активных ключей Кинопоиска';
+            summary.setAttribute('aria-label', 'Дневная квота Кинопоиска пока недоступна');
+            return;
+        }
+
+        const remaining = measuredKeys.reduce((total, key) => total + key.quota.remaining, 0);
+        const limit = measuredKeys.reduce((total, key) => total + key.quota.limit, 0);
+        label.textContent = 'Кинопоиск · на сегодня';
+        value.textContent = `${this.formatFirestoreCount(remaining)} / ${this.formatFirestoreCount(limit)}`;
+
+        if (measuredKeys.length === kinopoiskKeys.length) {
+            summary.dataset.state = 'exact';
+            note.textContent = tmdbKeys.length
+                ? `TMDB: ${tmdbKeys.length} активн. · дневной остаток не публикуется`
+                : `${kinopoiskKeys.length} активных ключа · по последней проверке`;
+            summary.setAttribute('aria-label', `Дневная квота Кинопоиска: осталось ${remaining} из ${limit}`);
+            return;
+        }
+
+        summary.dataset.state = 'partial';
+        note.textContent = `Точные данные: ${measuredKeys.length} из ${kinopoiskKeys.length} ключей Кинопоиска`;
+        summary.setAttribute('aria-label', `Частичная дневная квота Кинопоиска: осталось ${remaining} из ${limit}`);
+    }
+
+    renderProviderKeys(keys) {
+        const list = document.getElementById('providerKeysList');
+        const count = document.getElementById('adminNavProviderKeysCount');
+        if (!list) return;
+        this.clearProviderKeysError();
+        this.renderProviderKeysQuotaSummary(keys);
+        if (count) {
+            count.textContent = String(keys.length);
+            count.classList.remove('admin-nav-count-warning');
+        }
+
+        if (!keys.length) {
+            list.innerHTML = '<div class="provider-keys-empty">Ключи ещё не добавлены. Добавьте первый ключ для подключения провайдера.</div>';
+            return;
+        }
+
+        const table = document.createElement('table');
+        table.className = 'provider-keys-table';
+        table.innerHTML = `
+            <thead>
+                <tr>
+                    <th>Провайдер</th>
+                    <th>Название и назначение</th>
+                    <th>Ключ</th>
+                    <th>Статус</th>
+                    <th>Квота</th>
+                    <th>Последняя проверка</th>
+                    <th><span class="sr-only">Действия</span></th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        `;
+        const body = table.querySelector('tbody');
+        keys.forEach((key) => {
+            const row = document.createElement('tr');
+            const status = key.status === 'active' ? 'active' : 'disabled';
+            const statusLabel = status === 'active' ? 'Активен' : 'Отключён';
+            const actionLabel = status === 'active' ? 'Отключить' : 'Включить';
+            const action = status === 'active' ? 'disable' : 'enable';
+            row.innerHTML = `
+                <td data-label="Провайдер"><span class="provider-key-provider">${this.escapeHtml(key.provider || '—')}</span></td>
+                <td data-label="Название и назначение">
+                    <strong class="provider-key-label">${this.escapeHtml(key.label || 'Без названия')}</strong>
+                    <span class="provider-key-purpose">${this.escapeHtml(key.purpose || 'Назначение не указано')}</span>
+                </td>
+                <td data-label="Ключ"><code class="provider-key-mask">${this.escapeHtml(key.maskedValue || '••••')}</code></td>
+                <td data-label="Статус"><span class="provider-key-status provider-key-status--${status}">${statusLabel}</span></td>
+                <td data-label="Квота"><span class="provider-key-quota">${this.escapeHtml(this.formatProviderKeyQuota(key.quota))}</span><small>${key.quota?.mode === 'provider_exact' ? 'Точные данные' : key.quota?.unit === 'requests_per_second' ? 'TMDB: суточная квота не публикуется' : key.quota?.mode === 'local_estimate' ? 'Оценка' : 'Нет данных'}</small></td>
+                <td data-label="Последняя проверка"><span class="provider-key-date">${this.escapeHtml(this.formatProviderKeyDate(key.lastCheckedAt))}</span></td>
+                <td data-label="Действия">
+                    <div class="provider-key-actions">
+                        <button class="provider-key-action" type="button" data-provider-key-action="test" data-provider-key-id="${this.escapeHtml(key.id || '')}">Проверить</button>
+                        <button class="provider-key-action" type="button" data-provider-key-action="quota" data-provider-key-id="${this.escapeHtml(key.id || '')}">Квота</button>
+                        <button class="provider-key-action" type="button" data-provider-key-action="${action}" data-provider-key-id="${this.escapeHtml(key.id || '')}">${actionLabel}</button>
+                        <button class="provider-key-action provider-key-action--danger" type="button" data-provider-key-action="revoke" data-provider-key-id="${this.escapeHtml(key.id || '')}">Отозвать</button>
+                    </div>
+                </td>
+            `;
+            body.appendChild(row);
+        });
+        list.replaceChildren(table);
+    }
+
+    async loadCommentReactionConfig(force = false) {
+        if (!this.adminService) return null;
+        if (this.commentReactionConfigRequest) return this.commentReactionConfigRequest;
+
+        this.renderCommentReactionConfigLoading(true);
+        this.commentReactionConfigRequest = this.adminService.getCommentReactionConfig(force)
+            .then((config) => {
+                this.commentReactionConfig = config;
+                this.renderCommentReactionConfig(config);
+                return config;
+            })
+            .catch((error) => {
+                console.error('Error loading comment reaction config:', error);
+                this.renderCommentReactionConfigError('Не удалось загрузить каталог реакций. Повторите попытку.');
+                throw error;
+            })
+            .finally(() => {
+                this.commentReactionConfigRequest = null;
+                this.renderCommentReactionConfigLoading(false);
+            });
+
+        return this.commentReactionConfigRequest;
+    }
+
+    renderCommentReactionConfigLoading(isLoading) {
+        const list = document.getElementById('commentReactionList');
+        const refreshButton = document.getElementById('refreshCommentReactionsBtn');
+        const submitButton = document.getElementById('addCommentReactionBtn');
+        if (list) list.setAttribute('aria-busy', String(isLoading));
+        if (refreshButton) refreshButton.disabled = isLoading || this.commentReactionSavePending;
+        if (submitButton) submitButton.disabled = isLoading || this.commentReactionSavePending;
+    }
+
+    renderCommentReactionConfigError(message) {
+        const errorBox = document.getElementById('commentReactionError');
+        if (!errorBox) return;
+        errorBox.hidden = !message;
+        errorBox.textContent = message || '';
+        const count = document.getElementById('adminNavReactionCount');
+        if (count && message) {
+            count.textContent = '!';
+            count.classList.add('admin-nav-count-warning');
+        }
+    }
+
+    renderCommentReactionConfig(config) {
+        const list = document.getElementById('commentReactionList');
+        const count = document.getElementById('commentReactionCount');
+        const navCount = document.getElementById('adminNavReactionCount');
+        const status = document.getElementById('commentReactionConfigStatus');
+        if (!list) return;
+
+        const reactions = Array.isArray(config?.reactions) ? config.reactions : [];
+        this.renderCommentReactionConfigError('');
+        const maxCatalogSize = typeof CommentReactionService !== 'undefined'
+            ? CommentReactionService.MAX_REACTION_CATALOG_SIZE
+            : 24;
+        if (count) count.textContent = `${reactions.length} из ${maxCatalogSize}`;
+        if (navCount) {
+            navCount.textContent = String(reactions.length);
+            navCount.classList.remove('admin-nav-count-warning');
+        }
+        if (status) status.textContent = reactions.length ? 'Синхронизировано' : 'Каталог пуст';
+
+        if (!reactions.length) {
+            list.innerHTML = '<div class="comment-reaction-admin-state">Добавьте первую реакцию.</div>';
+            return;
+        }
+
+        list.innerHTML = reactions.map((reaction) => `
+            <div class="comment-reaction-admin-item">
+                ${this.renderCommentReactionAdminPreview(reaction)}
+                <span class="comment-reaction-admin-name">${this.escapeHtml(reaction.label)}</span>
+                <code class="comment-reaction-admin-id">${this.escapeHtml(reaction.id)}</code>
+                <button type="button" class="comment-reaction-delete" data-reaction-id="${this.escapeHtml(reaction.id)}"
+                    aria-label="Удалить реакцию ${this.escapeHtml(reaction.label)}">Удалить</button>
+            </div>
+        `).join('');
+
+        list.querySelectorAll('[data-reaction-id]').forEach((button) => {
+            button.addEventListener('click', () => this.handleCommentReactionDelete(button.dataset.reactionId));
+        });
+    }
+
+    renderCommentReactionAdminPreview(reaction) {
+        const imageUrl = globalThis.CommentReactionService?.normalizeReactionImageUrl?.(reaction?.imageUrl);
+        if (reaction?.renderType === 'image' && imageUrl) {
+            return `<span class="comment-reaction-admin-preview" aria-hidden="true"><img src="${this.escapeHtml(imageUrl)}" alt="" loading="lazy"></span>`;
+        }
+        return `<span class="comment-reaction-admin-preview" aria-hidden="true">${this.escapeHtml(reaction?.emoji || '')}</span>`;
+    }
+
+    getCommentReactionFormValues() {
+        const emojiInput = document.getElementById('commentReactionEmojiInput');
+        const labelInput = document.getElementById('commentReactionLabelInput');
+        const assetInput = document.getElementById('commentReactionAssetInput');
+        return {
+            emoji: emojiInput?.value?.trim() || '',
+            label: labelInput?.value?.trim() || '',
+            file: assetInput?.files?.[0] || this.commentReactionAssetFile || null,
+            emojiInput,
+            labelInput,
+            assetInput
+        };
+    }
+
+    validateCommentReactionEmoji(emoji) {
+        if (!emoji) return 'Укажите эмодзи.';
+        if (emoji.length > 32) return 'Эмодзи слишком длинный.';
+        const graphemes = typeof Intl?.Segmenter === 'function'
+            ? [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(emoji)]
+            : [...emoji];
+        return graphemes.length === 1 ? '' : 'Укажите один эмодзи без нескольких символов.';
+    }
+
+    validateCommentReactionFallback(value, hasAsset) {
+        if (hasAsset) {
+            return /^:[a-z0-9](?:[a-z0-9_-]{0,29}):$/i.test(value)
+                ? ''
+                : 'Для картинки укажите shortcode в формате :название:.';
+        }
+        if (/^:[a-z0-9](?:[a-z0-9_-]{0,29}):$/i.test(value)) {
+            return 'Загрузите картинку для кастомного shortcode.';
+        }
+        return this.validateCommentReactionEmoji(value);
+    }
+
+    validateCommentReactionAsset(file) {
+        if (!file) return '';
+        const allowedTypes = globalThis.CommentReactionService?.REACTION_ASSET_CONTENT_TYPES
+            || ['image/png', 'image/webp', 'image/gif'];
+        const maxSize = globalThis.CommentReactionService?.MAX_REACTION_ASSET_SIZE || (256 * 1024);
+        if (!allowedTypes.includes(String(file.type || '').toLowerCase())) {
+            return 'Поддерживаются только PNG, WebP и GIF.';
+        }
+        if (!Number.isFinite(file.size) || file.size <= 0 || file.size > maxSize) {
+            return 'Размер изображения не должен превышать 256 КБ.';
+        }
+        return '';
+    }
+
+    clearCommentReactionAssetPreview() {
+        if (this.commentReactionAssetPreviewUrl && typeof URL !== 'undefined') {
+            URL.revokeObjectURL(this.commentReactionAssetPreviewUrl);
+        }
+        this.commentReactionAssetPreviewUrl = null;
+        this.commentReactionAssetFile = null;
+        const preview = document.getElementById('commentReactionAssetPreview');
+        const image = document.getElementById('commentReactionAssetPreviewImage');
+        const name = document.getElementById('commentReactionAssetPreviewName');
+        if (preview) preview.hidden = true;
+        if (image) image.removeAttribute('src');
+        if (name) name.textContent = '';
+    }
+
+    previewCommentReactionAsset(file) {
+        this.clearCommentReactionAssetPreview();
+        const error = this.validateCommentReactionAsset(file);
+        if (error || !file || typeof URL === 'undefined') {
+            if (error) this.renderCommentReactionConfigError(error);
+            return error;
+        }
+
+        const preview = document.getElementById('commentReactionAssetPreview');
+        const image = document.getElementById('commentReactionAssetPreviewImage');
+        const name = document.getElementById('commentReactionAssetPreviewName');
+        this.commentReactionAssetPreviewUrl = URL.createObjectURL(file);
+        if (image) image.src = this.commentReactionAssetPreviewUrl;
+        if (name) name.textContent = file.name || 'Кастомный эмодзи';
+        if (preview) preview.hidden = false;
+        return '';
+    }
+
+    setCommentReactionAssetFile(file) {
+        const input = document.getElementById('commentReactionAssetInput');
+        const dropzone = document.getElementById('commentReactionAssetDropzone');
+        const error = this.previewCommentReactionAsset(file);
+
+        if (error || !file) {
+            this.commentReactionAssetFile = null;
+            if (input) {
+                input.value = '';
+                input.setAttribute('aria-invalid', error ? 'true' : 'false');
+            }
+            dropzone?.setAttribute('data-invalid', error ? 'true' : 'false');
+            return error;
+        }
+
+        this.commentReactionAssetFile = file;
+        if (input && typeof DataTransfer === 'function') {
+            try {
+                const transfer = new DataTransfer();
+                transfer.items.add(file);
+                input.files = transfer.files;
+            } catch (error) {
+                console.warn('Unable to mirror reaction asset into file input:', error);
+            }
+        }
+        input?.setAttribute('aria-invalid', 'false');
+        dropzone?.setAttribute('data-invalid', 'false');
+        return '';
+    }
+
+    handleCommentReactionAssetPaste(event) {
+        if (event.defaultPrevented) return;
+        const items = Array.from(event.clipboardData?.items || []);
+        const file = items
+            .filter((item) => item.kind === 'file')
+            .map((item) => item.getAsFile?.())
+            .find(Boolean);
+        if (!file) return;
+        event.preventDefault();
+        this.setCommentReactionAssetFile(file);
+    }
+
+    handleCommentReactionAssetDrop(event) {
+        event.preventDefault();
+        const dropzone = document.getElementById('commentReactionAssetDropzone');
+        dropzone?.classList.remove('is-dragover');
+        const files = Array.from(event.dataTransfer?.files || []);
+        const allowedTypes = globalThis.CommentReactionService?.REACTION_ASSET_CONTENT_TYPES
+            || ['image/png', 'image/webp', 'image/gif'];
+        const file = files.find((item) => allowedTypes.includes(String(item.type || '').toLowerCase()))
+            || files[0]
+            || null;
+        this.setCommentReactionAssetFile(file);
+    }
+
+    async persistCommentReactionConfig(reactions, successMessage) {
+        if (this.commentReactionSavePending) return;
+        this.commentReactionSavePending = true;
+        this.renderCommentReactionConfigLoading(true);
+        try {
+            const config = await this.adminService.saveCommentReactionConfig(
+                reactions,
+                this.currentUser?.uid
+            );
+            this.commentReactionConfig = config;
+            this.renderCommentReactionConfig(config);
+            this.showSuccessMessage(successMessage);
+            return true;
+        } catch (error) {
+            console.error('Error saving comment reaction config:', error);
+            this.renderCommentReactionConfigError(error?.message || 'Не удалось сохранить каталог реакций.');
+            return false;
+        } finally {
+            this.commentReactionSavePending = false;
+            this.renderCommentReactionConfigLoading(false);
+        }
+    }
+
+    async handleCommentReactionSubmit(event) {
+        event.preventDefault();
+        if (this.commentReactionSavePending) return;
+
+        const { emoji, label, file, emojiInput, labelInput } = this.getCommentReactionFormValues();
+        const emojiError = this.validateCommentReactionFallback(emoji, !!file);
+        const assetError = this.validateCommentReactionAsset(file);
+        if (emojiError || assetError || !label) {
+            this.renderCommentReactionConfigError(emojiError || assetError || 'Укажите название реакции.');
+            emojiInput?.setAttribute('aria-invalid', emojiError ? 'true' : 'false');
+            labelInput?.setAttribute('aria-invalid', label ? 'false' : 'true');
+            (emojiError || assetError ? emojiInput : labelInput)?.focus();
+            return;
+        }
+
+        let config = this.commentReactionConfig;
+        if (!config) {
+            try {
+                config = await this.loadCommentReactionConfig();
+            } catch {
+                return;
+            }
+        }
+        const reactions = Array.isArray(config?.reactions) ? config.reactions : [];
+        const maxCatalogSize = typeof CommentReactionService !== 'undefined'
+            ? CommentReactionService.MAX_REACTION_CATALOG_SIZE
+            : 24;
+        if (reactions.length >= maxCatalogSize) {
+            this.renderCommentReactionConfigError(`Нельзя добавить больше ${maxCatalogSize} реакций.`);
+            return;
+        }
+        if (reactions.some((reaction) => reaction.emoji === emoji || reaction.shortcode === emoji)) {
+            this.renderCommentReactionConfigError('Такая реакция уже есть в каталоге.');
+            emojiInput?.focus();
+            return;
+        }
+
+        const reactionId = typeof CommentReactionService !== 'undefined'
+            && typeof CommentReactionService.createCustomReactionId === 'function'
+            ? CommentReactionService.createCustomReactionId()
+            : `custom_${Date.now().toString(36)}`;
+        let uploadedAsset = null;
+        if (file) {
+            try {
+                uploadedAsset = await this.adminService.uploadCommentReactionAsset(
+                    file,
+                    reactionId,
+                    this.currentUser?.uid
+                );
+            } catch (error) {
+                console.error('Error uploading comment reaction asset:', error);
+                this.renderCommentReactionConfigError(error?.message || 'Не удалось загрузить изображение.');
+                return;
+            }
+        }
+
+        const reaction = uploadedAsset
+            ? {
+                id: reactionId,
+                emoji,
+                shortcode: emoji,
+                label,
+                renderType: 'image',
+                imageUrl: uploadedAsset.imageUrl,
+                storagePath: uploadedAsset.storagePath
+            }
+            : { id: reactionId, emoji, label };
+        const saved = await this.persistCommentReactionConfig(
+            [...reactions, reaction],
+            'Реакция добавлена и опубликована для всех пользователей.'
+        );
+
+        if (!saved && uploadedAsset?.storagePath) {
+            try {
+                await this.adminService.deleteCommentReactionAsset(
+                    uploadedAsset.storagePath,
+                    this.currentUser?.uid
+                );
+            } catch (cleanupError) {
+                console.warn('Failed to clean up unused reaction asset:', cleanupError);
+            }
+        }
+
+        if (saved) {
+            emojiInput.value = '';
+            labelInput.value = '';
+            const assetInput = document.getElementById('commentReactionAssetInput');
+            if (assetInput) assetInput.value = '';
+            this.clearCommentReactionAssetPreview();
+            emojiInput.setAttribute('aria-invalid', 'false');
+            labelInput.setAttribute('aria-invalid', 'false');
+            emojiInput.focus();
+        }
+    }
+
+    async handleCommentReactionDelete(reactionId) {
+        if (!reactionId || this.commentReactionSavePending) return;
+        const config = this.commentReactionConfig;
+        const reactions = Array.isArray(config?.reactions) ? config.reactions : [];
+        const reaction = reactions.find((item) => item.id === reactionId);
+        if (!reaction) return;
+        if (reactions.length <= 1) {
+            this.renderCommentReactionConfigError('Нельзя удалить последнюю реакцию из каталога.');
+            return;
+        }
+        if (!confirm(`Удалить реакцию ${reaction.emoji} «${reaction.label}»? Она исчезнет у новых клиентов, а старые записи пользователей сохранятся.`)) return;
+
+        const saved = await this.persistCommentReactionConfig(
+            reactions.filter((item) => item.id !== reactionId),
+            'Реакция удалена из общего каталога.'
+        );
+        if (saved && reaction.storagePath) {
+            try {
+                await this.adminService.deleteCommentReactionAsset(
+                    reaction.storagePath,
+                    this.currentUser?.uid
+                );
+            } catch (error) {
+                console.warn('Reaction removed from catalog, but asset cleanup failed:', error);
+                this.renderCommentReactionConfigError('Реакция удалена, но её файл не удалось очистить.');
+            }
+        }
+    }
+
+    async handleProviderKeyAction(action, keyId) {
+        if (!keyId || this.providerKeyActionRequest) return;
+        if (action === 'revoke') {
+            this.openProviderKeyConfirm(keyId);
+            return;
+        }
+
+        this.providerKeyActionRequest = true;
+        try {
+            if (action === 'test') await this.adminService.testProviderKey(keyId);
+            else if (action === 'quota') await this.adminService.getProviderKeyQuota(keyId);
+            else if (action === 'enable' || action === 'disable') {
+                await this.adminService.setProviderKeyStatus(keyId, action === 'enable' ? 'active' : 'disabled');
+            } else return;
+            await this.loadProviderKeys(true);
+            this.showSuccessMessage(action === 'quota' ? 'Квота обновлена' : 'Состояние ключа обновлено');
+        } catch (error) {
+            console.error('Provider key action failed:', error?.code || 'unknown error');
+            this.renderProviderKeysError(error);
+        } finally {
+            this.providerKeyActionRequest = false;
+        }
+    }
+
+    openAddProviderKeyModal() {
+        const modal = document.getElementById('addProviderKeyModal');
+        if (!modal) return;
+        this.providerKeyModalTrigger = document.activeElement;
+        this.setProviderKeyFormError('');
+        ['providerKeyLabel', 'providerKeyPurpose', 'providerKeySecret'].forEach((id) => {
+            document.getElementById(id)?.setAttribute('aria-invalid', 'false');
+        });
+        modal.style.display = 'flex';
+        document.getElementById('providerKeyLabel')?.focus();
+    }
+
+    closeAddProviderKeyModal() {
+        const modal = document.getElementById('addProviderKeyModal');
+        const form = document.getElementById('providerKeyForm');
+        const secret = document.getElementById('providerKeySecret');
+        if (modal) modal.style.display = 'none';
+        if (form) form.reset();
+        if (secret) secret.type = 'password';
+        ['providerKeyLabel', 'providerKeyPurpose', 'providerKeySecret'].forEach((id) => {
+            document.getElementById(id)?.setAttribute('aria-invalid', 'false');
+        });
+        this.setProviderKeyFormError('');
+        this.providerKeyModalTrigger?.focus?.();
+        this.providerKeyModalTrigger = null;
+    }
+
+    setProviderKeyFormError(message) {
+        const errorBox = document.getElementById('providerKeyFormError');
+        if (!errorBox) return;
+        errorBox.hidden = !message;
+        errorBox.textContent = message || '';
+    }
+
+    async handleProviderKeySubmit(event) {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const provider = form.elements.provider?.value || 'kinopoisk';
+        const label = form.elements.label?.value.trim() || '';
+        const purpose = form.elements.purpose?.value.trim() || '';
+        const secretInput = form.elements.secret;
+        const secret = secretInput?.value || '';
+        const submitButton = document.getElementById('submitProviderKeyBtn');
+        if (!label || !purpose || !secret.trim()) {
+            this.setProviderKeyFormError('Заполните название, назначение и значение ключа.');
+            const invalidFields = [
+                ['providerKeyLabel', label],
+                ['providerKeyPurpose', purpose],
+                ['providerKeySecret', secret.trim()]
+            ];
+            invalidFields.forEach(([id, value]) => document.getElementById(id)?.setAttribute('aria-invalid', value ? 'false' : 'true'));
+            document.getElementById(!label ? 'providerKeyLabel' : !purpose ? 'providerKeyPurpose' : 'providerKeySecret')?.focus();
+            return;
+        }
+
+        if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.textContent = 'Проверка…';
+        }
+        this.setProviderKeyFormError('');
+        try {
+            await this.adminService.addProviderKey({ provider, label, purpose, secret });
+            this.closeAddProviderKeyModal();
+            await this.loadProviderKeys(true);
+            this.showSuccessMessage('API-ключ добавлен и проверен');
+        } catch (error) {
+            console.error('Provider key add failed:', error?.code || 'unknown error');
+            this.setProviderKeyFormError(this.getProviderKeyErrorMessage(error));
+            if (error?.code === 'INVALID_CREDENTIAL') secretInput?.setAttribute('aria-invalid', 'true');
+        } finally {
+            if (secretInput) secretInput.value = '';
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.textContent = 'Проверить и сохранить';
+            }
+        }
+    }
+
+    toggleProviderKeySecret() {
+        const input = document.getElementById('providerKeySecret');
+        const button = document.getElementById('toggleProviderKeySecretBtn');
+        if (!input || !button) return;
+        const isVisible = input.type === 'text';
+        input.type = isVisible ? 'password' : 'text';
+        button.textContent = isVisible ? 'Показать' : 'Скрыть';
+        button.setAttribute('aria-label', isVisible ? 'Показать ключ' : 'Скрыть ключ');
+    }
+
+    openProviderKeyConfirm(keyId) {
+        const key = this.providerKeys.find((item) => item.id === keyId);
+        const modal = document.getElementById('providerKeyConfirmModal');
+        const text = document.getElementById('providerKeyConfirmText');
+        if (!key || !modal) return;
+        this.providerKeyPendingRevoke = keyId;
+        this.providerKeyConfirmTrigger = document.activeElement;
+        if (text) text.textContent = `Ключ «${key.label || 'Без названия'}» (${key.provider || 'провайдер'}, ${key.maskedValue || 'маска недоступна'}) будет отключён и удалён из Secret Manager.`;
+        modal.style.display = 'flex';
+        document.getElementById('cancelProviderKeyConfirmBtn')?.focus();
+    }
+
+    closeProviderKeyConfirm() {
+        const modal = document.getElementById('providerKeyConfirmModal');
+        if (modal) modal.style.display = 'none';
+        this.providerKeyPendingRevoke = null;
+        this.providerKeyConfirmTrigger?.focus?.();
+        this.providerKeyConfirmTrigger = null;
+    }
+
+    async confirmProviderKeyRevoke() {
+        const keyId = this.providerKeyPendingRevoke;
+        const button = document.getElementById('confirmProviderKeyBtn');
+        if (!keyId || this.providerKeyActionRequest) return;
+        this.providerKeyActionRequest = true;
+        if (button) button.disabled = true;
+        try {
+            await this.adminService.revokeProviderKey(keyId);
+            this.closeProviderKeyConfirm();
+            await this.loadProviderKeys(true);
+            this.showSuccessMessage('API-ключ отозван');
+        } catch (error) {
+            console.error('Provider key revoke failed:', error?.code || 'unknown error');
+            this.renderProviderKeysError(error);
+        } finally {
+            this.providerKeyActionRequest = false;
+            if (button) button.disabled = false;
+        }
+    }
+
+    renderFirestoreUsageMetric(name, metric, options) {
+        const valueElement = document.getElementById(options.valueId);
+        const limitElement = document.getElementById(options.limitId);
+        const barElement = document.getElementById(options.barId);
+        const statusElement = document.getElementById(options.statusId);
+        const noteElement = document.getElementById(options.noteId);
+        const progressElement = barElement?.parentElement;
+        const isAvailable = metric?.available === true && Number.isFinite(metric.percent);
+        const percent = isAvailable ? Math.max(0, Math.min(100, metric.percent)) : 0;
+        const status = isAvailable ? metric.status : 'unavailable';
+        const statusLabels = {
+            normal: 'В норме',
+            warning: 'Внимание',
+            critical: 'Критично',
+            unavailable: 'Недоступно'
+        };
+
+        if (valueElement) {
+            valueElement.textContent = isAvailable ? options.formatValue(metric[name === 'storage' ? 'usedBytes' : 'usedToday']) : '—';
+        }
+        if (limitElement) {
+            limitElement.textContent = metric?.limit ? options.formatLimit(metric.limit) : 'Лимит неизвестен';
+        }
+        if (barElement) barElement.style.width = `${percent}%`;
+        if (progressElement) progressElement.setAttribute('aria-valuenow', String(Math.round(percent)));
+        if (statusElement) {
+            statusElement.className = `firestore-usage-status usage-status--${status}`;
+            statusElement.textContent = statusLabels[status] || statusLabels.unavailable;
+        }
+        if (noteElement) {
+            if (!isAvailable) {
+                noteElement.textContent = options.unavailableNote;
+            } else if (metric.stale) {
+                noteElement.textContent = 'Данные могут быть устаревшими — Cloud Monitoring ещё обновляется.';
+            } else {
+                noteElement.textContent = `${metric.percent.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}% лимита использовано`;
+            }
+        }
+    }
+
+    formatFirestoreBytes(bytes) {
+        if (!Number.isFinite(bytes)) return '—';
+        const gib = 1024 ** 3;
+        const mib = 1024 ** 2;
+        if (bytes >= gib) return `${(bytes / gib).toLocaleString('ru-RU', { maximumFractionDigits: 2 })} GiB`;
+        if (bytes >= mib) return `${(bytes / mib).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} MiB`;
+        return `${Math.round(bytes / 1024).toLocaleString('ru-RU')} KiB`;
+    }
+
+    formatFirestoreCount(count) {
+        return Number.isFinite(count) ? count.toLocaleString('ru-RU') : '—';
+    }
+
+    formatRussianCount(count, one, few, many) {
+        const value = Math.abs(Number(count)) % 100;
+        const lastDigit = value % 10;
+        const word = value > 10 && value < 20
+            ? many
+            : lastDigit === 1
+                ? one
+                : lastDigit >= 2 && lastDigit <= 4
+                    ? few
+                    : many;
+        return `${count} ${word}`;
     }
 
     renderApprovalsTable() {
@@ -595,7 +1554,7 @@ class AdminPanelManager {
             const row = document.createElement('tr');
             const joinDate = user.createdAt?.toDate ? 
                 user.createdAt.toDate().toLocaleDateString() : 
-                (user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'Unknown');
+                (user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'Неизвестно');
 
             const isChecked = this.selectedApprovalIds.has(user.id);
 
@@ -605,32 +1564,32 @@ class AdminPanelManager {
                 </td>
                 <td>
                     <div class="user-info">
-                        <img src="${user.photoURL || chrome.runtime.getURL('icons/icon48.png')}" 
-                             alt="${user.displayName || 'User'}" 
+                        <img src="${user.photoURL || IconUtils.getCurrentThemeIconPath(48)}"
+                             alt="${user.displayName || 'Пользователь'}"
                              class="user-avatar"
                              loading="lazy">
                         <div>
                             <div class="user-name">
-                                ${this.escapeHtml(user.displayName || 'Unknown User')}
+                                ${this.escapeHtml(user.displayName || 'Пользователь без имени')}
                             </div>
                         </div>
                     </div>
                 </td>
                 <td>
-                    <div class="user-email">${this.escapeHtml(user.email || 'No email')}</div>
+                    <div class="user-email">${this.escapeHtml(user.email || 'Нет email')}</div>
                 </td>
                 <td>
                     <div class="user-id">${this.escapeHtml(user.id.substring(0, 12))}...</div>
                 </td>
                 <td>${joinDate}</td>
                 <td>
-                    <span class="status-badge status-badge-pending">Pending</span>
+                    <span class="status-badge status-badge-pending">Ожидает</span>
                 </td>
                 <td style="text-align: right;">
                     <div class="row-actions-group">
                         <button class="btn-approve-sm" data-action="approve" data-user-id="${user.id}">Одобрить</button>
                         <button class="btn-reject-sm" data-action="reject" data-user-id="${user.id}">Отклонить</button>
-                        <button class="btn-delete" data-user-id="${user.id}">Delete</button>
+                        <button class="btn-delete" data-user-id="${user.id}">Удалить</button>
                     </div>
                 </td>
             `;
@@ -638,7 +1597,7 @@ class AdminPanelManager {
             const avatar = row.querySelector('.user-avatar');
             if (avatar) {
                 avatar.addEventListener('error', () => {
-                    avatar.src = chrome.runtime.getURL('icons/icon48.png');
+                    avatar.src = IconUtils.getCurrentThemeIconPath(48);
                 });
             }
 
@@ -658,7 +1617,7 @@ class AdminPanelManager {
             // Action buttons listeners
             const actionBtns = row.querySelectorAll('[data-action]');
             actionBtns.forEach(btn => {
-                btn.addEventListener('mousedown', (e) => {
+                btn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     this.handleUserApprovalAction(btn.dataset.userId, btn.dataset.action, btn);
                 });
@@ -667,7 +1626,7 @@ class AdminPanelManager {
             // Delete button listener
             const deleteBtn = row.querySelector('.btn-delete');
             if (deleteBtn) {
-                deleteBtn.addEventListener('mousedown', () => this.showDeleteConfirmation(user));
+                deleteBtn.addEventListener('click', () => this.showDeleteConfirmation(user));
             }
 
             tableBody.appendChild(row);
@@ -701,7 +1660,7 @@ class AdminPanelManager {
 
             const success = await this.adminService.batchApproveUsers(userIds, this.currentUser.uid);
             if (success) {
-                this.showSuccessMessage(`Одобрено ${userIds.length} пользователей`);
+                this.showSuccessMessage(`Одобрено заявок: ${userIds.length}`);
                 await this.loadApprovals();
                 await this.fetchUsersFromDb();
             }
@@ -711,6 +1670,56 @@ class AdminPanelManager {
         } finally {
             this.updateBatchApproveButton();
         }
+    }
+
+    renderTableState(tableBodyId, colspan, message, retryLabel, onRetry) {
+        const tableBody = document.getElementById(tableBodyId);
+        if (!tableBody) return;
+
+        tableBody.innerHTML = '';
+        const row = document.createElement('tr');
+        row.className = 'admin-table-state-row admin-table-state-row--error';
+
+        const cell = document.createElement('td');
+        cell.colSpan = colspan;
+        cell.className = 'admin-table-state-cell';
+
+        const messageElement = document.createElement('div');
+        messageElement.className = 'admin-table-state-message';
+        messageElement.textContent = message;
+        cell.appendChild(messageElement);
+
+        if (typeof onRetry === 'function') {
+            const retryButton = document.createElement('button');
+            retryButton.type = 'button';
+            retryButton.className = 'admin-table-state-retry';
+            retryButton.textContent = retryLabel || 'Повторить';
+            retryButton.addEventListener('click', onRetry);
+            cell.appendChild(retryButton);
+        }
+
+        row.appendChild(cell);
+        tableBody.appendChild(row);
+    }
+
+    renderUsersError() {
+        this.renderTableState(
+            'usersTableBody',
+            8,
+            'Не удалось загрузить пользователей.',
+            'Повторить',
+            () => this.fetchUsersFromDb()
+        );
+    }
+
+    renderApprovalsError() {
+        this.renderTableState(
+            'approvalsTableBody',
+            7,
+            'Не удалось загрузить заявки.',
+            'Повторить',
+            () => this.loadApprovals()
+        );
     }
 
     async showDeleteConfirmation(user) {
@@ -726,16 +1735,16 @@ class AdminPanelManager {
             
             if (userPreview) {
                 userPreview.innerHTML = `
-                    <p><strong>Name:</strong> ${this.escapeHtml(preview.user.displayName)}</p>
-                    <p><strong>Email:</strong> ${this.escapeHtml(preview.user.email)}</p>
+                    <p><strong>Имя:</strong> ${this.escapeHtml(preview.user.displayName || 'Пользователь без имени')}</p>
+                    <p><strong>Email:</strong> ${this.escapeHtml(preview.user.email || 'Нет email')}</p>
                 `;
             }
             
             if (statsList) {
                 statsList.innerHTML = `
-                    <li>${preview.ratingsCount} rating${preview.ratingsCount !== 1 ? 's' : ''}</li>
-                    <li>${preview.collectionCount} collection item${preview.collectionCount !== 1 ? 's' : ''}</li>
-                    <li>User profile and all associated data</li>
+                    <li>${this.formatRussianCount(preview.ratingsCount, 'оценка', 'оценки', 'оценок')}</li>
+                    <li>${this.formatRussianCount(preview.collectionCount, 'элемент коллекции', 'элемента коллекции', 'элементов коллекции')}</li>
+                    <li>Профиль пользователя и связанные данные</li>
                 `;
             }
             
@@ -746,7 +1755,7 @@ class AdminPanelManager {
             }
         } catch (error) {
             console.error('Error getting deletion preview:', error);
-            this.showError(`Failed to load user data: ${error.message}`);
+            this.showError('Не удалось получить данные пользователя. Повторите попытку.');
         }
     }
 
@@ -757,7 +1766,7 @@ class AdminPanelManager {
             const confirmBtn = document.getElementById('confirmDeleteBtn');
             if (confirmBtn) {
                 confirmBtn.disabled = true;
-                confirmBtn.textContent = 'Deleting...';
+                confirmBtn.textContent = 'Удаление...';
             }
 
             await this.adminService.deleteUser(this.userToDelete.id, this.currentUser.uid);
@@ -769,7 +1778,7 @@ class AdminPanelManager {
             await this.loadUsers();
             
             // Show success message
-            this.showSuccessMessage(`User "${this.userToDelete.displayName || 'Unknown'}" deleted successfully`);
+            this.showSuccessMessage(`Пользователь «${this.userToDelete.displayName || 'без имени'}» удалён`);
             
             this.userToDelete = null;
         } catch (error) {
@@ -777,9 +1786,9 @@ class AdminPanelManager {
             const confirmBtn = document.getElementById('confirmDeleteBtn');
             if (confirmBtn) {
                 confirmBtn.disabled = false;
-                confirmBtn.textContent = 'Delete User';
+                confirmBtn.textContent = 'Удалить пользователя';
             }
-            this.showError(`Failed to delete user: ${error.message}`);
+            this.showError('Не удалось удалить пользователя. Повторите попытку.');
         }
     }
 
@@ -797,28 +1806,23 @@ class AdminPanelManager {
             const user = e.detail?.user;
             if (!user) {
                 this.currentUser = null;
-                const adminContent = document.getElementById('adminContent');
-                if (adminContent) adminContent.style.display = 'none';
+                this.setAdminAccessState(false);
                 this.showError('Сессия завершена. Для доступа к панели администратора необходимо войти в систему.');
                 if (window.adminNav && typeof window.adminNav.showAuthModal === 'function') {
                     window.adminNav.showAuthModal('login');
                 }
             } else {
                 const isAdmin = await this.checkAdminAccess();
+                this.setAdminAccessState(isAdmin);
                 if (isAdmin) {
                     this.currentUser = user;
-                    const adminError = document.getElementById('adminError');
-                    if (adminError) adminError.style.display = 'none';
-                    const adminContent = document.getElementById('adminContent');
-                    if (adminContent) adminContent.style.display = 'block';
+                    this.clearAdminError();
                     this.cacheService?.clearUsersCache();
                     this.cacheService?.clearCache();
                     await this.loadUsers();
                     await this.loadMovies();
                     await this.loadApprovals();
                 } else {
-                    const adminContent = document.getElementById('adminContent');
-                    if (adminContent) adminContent.style.display = 'none';
                     this.showError('Доступ запрещен. У текущего аккаунта нет прав администратора.');
                 }
             }
@@ -831,20 +1835,20 @@ class AdminPanelManager {
         const modal = document.getElementById('deleteModal');
 
         if (closeBtn) {
-            closeBtn.addEventListener('mousedown', () => this.hideDeleteModal());
+            closeBtn.addEventListener('click', () => this.hideDeleteModal());
         }
 
         if (cancelBtn) {
-            cancelBtn.addEventListener('mousedown', () => this.hideDeleteModal());
+            cancelBtn.addEventListener('click', () => this.hideDeleteModal());
         }
 
         if (confirmBtn) {
-            confirmBtn.addEventListener('mousedown', () => this.confirmDelete());
+            confirmBtn.addEventListener('click', () => this.confirmDelete());
         }
 
         // Close modal on outside click
         if (modal) {
-            modal.addEventListener('mousedown', (e) => {
+            modal.addEventListener('click', (e) => {
                 if (e.target === modal) {
                     this.hideDeleteModal();
                 }
@@ -856,7 +1860,7 @@ class AdminPanelManager {
         const settingsPanes = document.querySelectorAll('.settings-pane');
 
         sidebarLinks.forEach(link => {
-            link.addEventListener('mousedown', () => {
+            link.addEventListener('click', () => {
                 sidebarLinks.forEach(l => l.classList.remove('active'));
                 settingsPanes.forEach(p => p.classList.remove('active'));
 
@@ -865,6 +1869,16 @@ class AdminPanelManager {
                 const targetPane = document.getElementById(targetId);
                 if (targetPane) {
                     targetPane.classList.add('active');
+                }
+
+                if (link.dataset.target === 'usage') {
+                    this.loadFirestoreUsage().catch(() => {});
+                }
+                if (link.dataset.target === 'provider-keys') {
+                    this.loadProviderKeys().catch(() => {});
+                }
+                if (link.dataset.target === 'reaction-settings') {
+                    this.loadCommentReactionConfig().catch(() => {});
                 }
             });
         });
@@ -893,7 +1907,112 @@ class AdminPanelManager {
         // Approvals Pane Listeners
         const refreshApprovalsBtn = document.getElementById('refreshApprovalsBtn');
         if (refreshApprovalsBtn) {
-            refreshApprovalsBtn.addEventListener('mousedown', () => this.loadApprovals());
+            refreshApprovalsBtn.addEventListener('click', () => this.loadApprovals());
+        }
+
+        const refreshFirestoreUsageBtn = document.getElementById('refreshFirestoreUsageBtn');
+        if (refreshFirestoreUsageBtn) {
+            refreshFirestoreUsageBtn.addEventListener('click', () => {
+                this.loadFirestoreUsage(true).catch(() => {});
+            });
+        }
+
+        const refreshProviderKeysBtn = document.getElementById('refreshProviderKeysBtn');
+        if (refreshProviderKeysBtn) {
+            refreshProviderKeysBtn.addEventListener('click', () => {
+                this.loadProviderKeys(true).catch(() => {});
+            });
+        }
+
+        const refreshCommentReactionsBtn = document.getElementById('refreshCommentReactionsBtn');
+        if (refreshCommentReactionsBtn) {
+            refreshCommentReactionsBtn.addEventListener('click', () => {
+                this.loadCommentReactionConfig(true).catch(() => {});
+            });
+        }
+
+        const commentReactionForm = document.getElementById('commentReactionForm');
+        if (commentReactionForm) {
+            commentReactionForm.addEventListener('submit', (event) => this.handleCommentReactionSubmit(event));
+            commentReactionForm.addEventListener('paste', (event) => this.handleCommentReactionAssetPaste(event));
+        }
+
+        const commentReactionAssetInput = document.getElementById('commentReactionAssetInput');
+        const commentReactionAssetDropzone = document.getElementById('commentReactionAssetDropzone');
+        if (commentReactionAssetInput && commentReactionAssetDropzone) {
+            commentReactionAssetInput.addEventListener('change', () => {
+                this.setCommentReactionAssetFile(commentReactionAssetInput.files?.[0] || null);
+            });
+            commentReactionAssetDropzone.addEventListener('click', (event) => {
+                if (event.target !== commentReactionAssetInput) commentReactionAssetInput.click();
+            });
+            commentReactionAssetDropzone.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                commentReactionAssetInput.click();
+            });
+            let dragDepth = 0;
+            commentReactionAssetDropzone.addEventListener('dragenter', (event) => {
+                event.preventDefault();
+                dragDepth += 1;
+                commentReactionAssetDropzone.classList.add('is-dragover');
+            });
+            commentReactionAssetDropzone.addEventListener('dragover', (event) => {
+                event.preventDefault();
+                if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+            });
+            commentReactionAssetDropzone.addEventListener('dragleave', (event) => {
+                event.preventDefault();
+                dragDepth = Math.max(0, dragDepth - 1);
+                if (dragDepth === 0) commentReactionAssetDropzone.classList.remove('is-dragover');
+            });
+            commentReactionAssetDropzone.addEventListener('drop', (event) => {
+                dragDepth = 0;
+                this.handleCommentReactionAssetDrop(event);
+            });
+        }
+
+        const addProviderKeyBtn = document.getElementById('addProviderKeyBtn');
+        if (addProviderKeyBtn) addProviderKeyBtn.addEventListener('click', () => this.openAddProviderKeyModal());
+
+        const closeAddProviderKeyBtn = document.getElementById('closeAddProviderKeyBtn');
+        const cancelAddProviderKeyBtn = document.getElementById('cancelAddProviderKeyBtn');
+        if (closeAddProviderKeyBtn) closeAddProviderKeyBtn.addEventListener('click', () => this.closeAddProviderKeyModal());
+        if (cancelAddProviderKeyBtn) cancelAddProviderKeyBtn.addEventListener('click', () => this.closeAddProviderKeyModal());
+
+        const providerKeyForm = document.getElementById('providerKeyForm');
+        if (providerKeyForm) providerKeyForm.addEventListener('submit', (event) => this.handleProviderKeySubmit(event));
+
+        const toggleProviderKeySecretBtn = document.getElementById('toggleProviderKeySecretBtn');
+        if (toggleProviderKeySecretBtn) toggleProviderKeySecretBtn.addEventListener('click', () => this.toggleProviderKeySecret());
+
+        const addProviderKeyModal = document.getElementById('addProviderKeyModal');
+        if (addProviderKeyModal) {
+            addProviderKeyModal.addEventListener('click', (event) => {
+                if (event.target === addProviderKeyModal) this.closeAddProviderKeyModal();
+            });
+        }
+
+        const providerKeysList = document.getElementById('providerKeysList');
+        if (providerKeysList) {
+            providerKeysList.addEventListener('click', (event) => {
+                const button = event.target.closest('[data-provider-key-action]');
+                if (!button) return;
+                this.handleProviderKeyAction(button.dataset.providerKeyAction, button.dataset.providerKeyId);
+            });
+        }
+
+        const closeProviderKeyConfirmBtn = document.getElementById('closeProviderKeyConfirmBtn');
+        const cancelProviderKeyConfirmBtn = document.getElementById('cancelProviderKeyConfirmBtn');
+        const confirmProviderKeyBtn = document.getElementById('confirmProviderKeyBtn');
+        const providerKeyConfirmModal = document.getElementById('providerKeyConfirmModal');
+        if (closeProviderKeyConfirmBtn) closeProviderKeyConfirmBtn.addEventListener('click', () => this.closeProviderKeyConfirm());
+        if (cancelProviderKeyConfirmBtn) cancelProviderKeyConfirmBtn.addEventListener('click', () => this.closeProviderKeyConfirm());
+        if (confirmProviderKeyBtn) confirmProviderKeyBtn.addEventListener('click', () => this.confirmProviderKeyRevoke());
+        if (providerKeyConfirmModal) {
+            providerKeyConfirmModal.addEventListener('click', (event) => {
+                if (event.target === providerKeyConfirmModal) this.closeProviderKeyConfirm();
+            });
         }
 
         const selectAllApprovalsCb = document.getElementById('selectAllApprovalsCheckbox');
@@ -911,7 +2030,7 @@ class AdminPanelManager {
 
         const batchApproveBtn = document.getElementById('batchApproveBtn');
         if (batchApproveBtn) {
-            batchApproveBtn.addEventListener('mousedown', () => this.handleBatchApprove());
+            batchApproveBtn.addEventListener('click', () => this.handleBatchApprove());
         }
         
         // Users Pagination controls
@@ -920,9 +2039,9 @@ class AdminPanelManager {
         const userNextPageBtn = document.getElementById('user-next-page');
         const userPageSizeSelect = document.getElementById('user-page-size-select');
         
-        if (userFirstPageBtn) userFirstPageBtn.addEventListener('mousedown', () => this.changeUserPage('first'));
-        if (userPrevPageBtn) userPrevPageBtn.addEventListener('mousedown', () => this.changeUserPage('prev'));
-        if (userNextPageBtn) userNextPageBtn.addEventListener('mousedown', () => this.changeUserPage('next'));
+        if (userFirstPageBtn) userFirstPageBtn.addEventListener('click', () => this.changeUserPage('first'));
+        if (userPrevPageBtn) userPrevPageBtn.addEventListener('click', () => this.changeUserPage('prev'));
+        if (userNextPageBtn) userNextPageBtn.addEventListener('click', () => this.changeUserPage('next'));
         
         if (userPageSizeSelect) {
             userPageSizeSelect.addEventListener('change', (e) => {
@@ -940,19 +2059,19 @@ class AdminPanelManager {
         const ratingModal = document.getElementById('deleteRatingModal');
 
         if (closeRatingBtn) {
-            closeRatingBtn.addEventListener('mousedown', () => this.hideDeleteRatingModal());
+            closeRatingBtn.addEventListener('click', () => this.hideDeleteRatingModal());
         }
 
         if (cancelRatingBtn) {
-            cancelRatingBtn.addEventListener('mousedown', () => this.hideDeleteRatingModal());
+            cancelRatingBtn.addEventListener('click', () => this.hideDeleteRatingModal());
         }
 
         if (confirmRatingBtn) {
-            confirmRatingBtn.addEventListener('mousedown', () => this.confirmDeleteRating());
+            confirmRatingBtn.addEventListener('click', () => this.confirmDeleteRating());
         }
 
         if (ratingModal) {
-            ratingModal.addEventListener('mousedown', (e) => {
+            ratingModal.addEventListener('click', (e) => {
                 if (e.target === ratingModal) {
                     this.hideDeleteRatingModal();
                 }
@@ -987,7 +2106,7 @@ class AdminPanelManager {
         }
 
         if (clearFiltersBtn) {
-            clearFiltersBtn.addEventListener('mousedown', () => {
+            clearFiltersBtn.addEventListener('click', () => {
                 this.ratingsFilters = {
                     movieTitle: '',
                     userId: '',
@@ -1003,7 +2122,7 @@ class AdminPanelManager {
         // Refresh data button
         const refreshBtn = document.getElementById('refreshDataBtn');
         if (refreshBtn) {
-            refreshBtn.addEventListener('mousedown', () => this.forceRefresh());
+            refreshBtn.addEventListener('click', () => this.forceRefresh());
         }
 
         // Pagination controls
@@ -1013,10 +2132,10 @@ class AdminPanelManager {
         const lastPageBtn = document.getElementById('last-page');
         const pageSizeSelect = document.getElementById('page-size-select');
 
-        if (firstPageBtn) firstPageBtn.addEventListener('mousedown', () => this.changePage('first'));
-        if (prevPageBtn) prevPageBtn.addEventListener('mousedown', () => this.changePage('prev'));
-        if (nextPageBtn) nextPageBtn.addEventListener('mousedown', () => this.changePage('next'));
-        if (lastPageBtn) lastPageBtn.addEventListener('mousedown', () => this.changePage('last')); // Note: Firestore doesn't support true "last" easily without reading all
+        if (firstPageBtn) firstPageBtn.addEventListener('click', () => this.changePage('first'));
+        if (prevPageBtn) prevPageBtn.addEventListener('click', () => this.changePage('prev'));
+        if (nextPageBtn) nextPageBtn.addEventListener('click', () => this.changePage('next'));
+        if (lastPageBtn) lastPageBtn.addEventListener('click', () => this.changePage('last')); // Note: Firestore doesn't support true "last" easily without reading all
         
         if (pageSizeSelect) {
             pageSizeSelect.addEventListener('change', (e) => {
@@ -1040,17 +2159,17 @@ class AdminPanelManager {
         // Bulk action buttons
         const bulkClearCacheBtn = document.getElementById('bulkClearCacheBtn');
         if (bulkClearCacheBtn) {
-            bulkClearCacheBtn.addEventListener('mousedown', () => this.bulkClearCache());
+            bulkClearCacheBtn.addEventListener('click', () => this.bulkClearCache());
         }
 
         const bulkUpdateInfoBtn = document.getElementById('bulkUpdateInfoBtn');
         if (bulkUpdateInfoBtn) {
-            bulkUpdateInfoBtn.addEventListener('mousedown', () => this.bulkUpdateInfo());
+            bulkUpdateInfoBtn.addEventListener('click', () => this.bulkUpdateInfo());
         }
 
         const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
         if (bulkDeleteBtn) {
-            bulkDeleteBtn.addEventListener('mousedown', () => this.showBulkDeleteConfirmation());
+            bulkDeleteBtn.addEventListener('click', () => this.showBulkDeleteConfirmation());
         }
 
         // Bulk delete modal controls
@@ -1060,16 +2179,16 @@ class AdminPanelManager {
         const bulkDeleteModal = document.getElementById('bulkDeleteModal');
 
         if (closeBulkDeleteBtn) {
-            closeBulkDeleteBtn.addEventListener('mousedown', () => this.hideBulkDeleteModal());
+            closeBulkDeleteBtn.addEventListener('click', () => this.hideBulkDeleteModal());
         }
         if (cancelBulkDeleteBtn) {
-            cancelBulkDeleteBtn.addEventListener('mousedown', () => this.hideBulkDeleteModal());
+            cancelBulkDeleteBtn.addEventListener('click', () => this.hideBulkDeleteModal());
         }
         if (confirmBulkDeleteBtn) {
-            confirmBulkDeleteBtn.addEventListener('mousedown', () => this.confirmBulkDelete());
+            confirmBulkDeleteBtn.addEventListener('click', () => this.confirmBulkDelete());
         }
         if (bulkDeleteModal) {
-            bulkDeleteModal.addEventListener('mousedown', (e) => {
+            bulkDeleteModal.addEventListener('click', (e) => {
                 if (e.target === bulkDeleteModal) {
                     this.hideBulkDeleteModal();
                 }
@@ -1079,6 +2198,8 @@ class AdminPanelManager {
         // Close on escape key
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
+                this.closeAddProviderKeyModal();
+                this.closeProviderKeyConfirm();
                 this.hideDeleteModal();
                 this.hideDeleteRatingModal();
                 this.hideBulkDeleteModal();
@@ -1094,12 +2215,22 @@ class AdminPanelManager {
         if (content) content.style.display = 'none';
     }
 
+    setAdminAccessState(isAdmin) {
+        this.isAdmin = Boolean(isAdmin);
+
+        const adminContent = document.getElementById('adminContent');
+        const sectionNav = document.getElementById('adminSectionNav');
+        const display = this.isAdmin ? 'block' : 'none';
+
+        if (adminContent) adminContent.style.display = display;
+        if (sectionNav) sectionNav.style.display = display;
+    }
+
     hideLoading() {
         const loading = document.getElementById('adminLoading');
-        const content = document.getElementById('adminContent');
         
         if (loading) loading.style.display = 'none';
-        if (content) content.style.display = 'block';
+        this.setAdminAccessState(this.isAdmin);
     }
 
     showError(message) {
@@ -1109,9 +2240,21 @@ class AdminPanelManager {
         if (errorDiv && errorText) {
             errorText.textContent = message;
             errorDiv.style.display = 'block';
+            errorDiv.setAttribute('aria-hidden', 'false');
         }
         
         this.hideLoading();
+    }
+
+    clearAdminError() {
+        const errorDiv = document.getElementById('adminError');
+        const errorText = document.getElementById('errorText');
+
+        if (errorDiv) {
+            errorDiv.style.display = 'none';
+            errorDiv.setAttribute('aria-hidden', 'true');
+        }
+        if (errorText) errorText.textContent = '';
     }
 
     showSuccessMessage(message) {
@@ -1142,8 +2285,9 @@ class AdminPanelManager {
 
     async loadMovies() {
         console.time('[Admin Perf] loadMovies total');
+        this.clearAdminError();
         try {
-            this.showLoading();
+            this.showSkeletonRows(this.pagination.itemsPerPage);
             
             // Get last visible doc for current page (for Next button)
             // For Page 1, it's null. For Page 2, it's lastDocs[0].
@@ -1216,10 +2360,20 @@ class AdminPanelManager {
             
         } catch (error) {
             console.error('Error loading movies:', error);
-            this.hideLoading();
-            this.showError(`Не удалось загрузить фильмы: ${error.message}`);
+            this.renderMoviesError();
+            this.showError('Не удалось загрузить фильмы. Повторите попытку.');
         }
         console.timeEnd('[Admin Perf] loadMovies total');
+    }
+
+    renderMoviesError() {
+        this.renderTableState(
+            'ratingsTableBody',
+            6,
+            'Не удалось загрузить фильмы.',
+            'Повторить',
+            () => this.loadMovies()
+        );
     }
 
     async changePage(action) {
@@ -1247,8 +2401,12 @@ class AdminPanelManager {
         const firstBtn = document.getElementById('first-page');
         
         if (pageInfo) {
-            const start = (this.pagination.currentPage - 1) * this.pagination.itemsPerPage + 1;
-            const end = start + this.displayedMovies.length - 1;
+            const start = this.displayedMovies.length > 0
+                ? (this.pagination.currentPage - 1) * this.pagination.itemsPerPage + 1
+                : 0;
+            const end = this.displayedMovies.length > 0
+                ? start + this.displayedMovies.length - 1
+                : 0;
             pageInfo.innerHTML = `Показано <span id="range-start">${start}</span>-<span id="range-end">${end}</span> фильмов`;
         }
         
@@ -1272,7 +2430,7 @@ class AdminPanelManager {
         this.usersMap.forEach((user, userId) => {
             const option = document.createElement('option');
             option.value = userId;
-            option.textContent = user.displayName || user.email || 'Unknown User';
+            option.textContent = user.displayName || user.email || 'Пользователь без имени';
             userFilter.appendChild(option);
         });
     }
@@ -1373,7 +2531,7 @@ class AdminPanelManager {
         if (hasRating && latestRating) {
             const user = latestRating.user || this.usersMap.get(latestRating.userId) || {};
             userInfo = {
-                displayName: user.displayName || user.email || 'Unknown',
+                displayName: user.displayName || user.email || 'Пользователь без имени',
                 email: user.email || '',
                 photoURL: user.photoURL
             };
@@ -1384,7 +2542,7 @@ class AdminPanelManager {
                 (latestRating.createdAt ? new Date(latestRating.createdAt).toLocaleDateString() : '—');
         }
 
-        const movieTitle = movie.name || 'Unknown Movie';
+        const movieTitle = movie.name || 'Фильм без названия';
         const movieYear = movie.year ? ` (${movie.year})` : '';
         const truncatedComment = ratingComment.length > 50 ? ratingComment.substring(0, 50) + '...' : ratingComment;
 
@@ -1414,7 +2572,7 @@ class AdminPanelManager {
             <td>
                 ${hasRating ? `
                 <div class="user-info">
-                    <img src="${userInfo.photoURL || chrome.runtime.getURL('icons/icon48.png')}" 
+                    <img src="${userInfo.photoURL || IconUtils.getCurrentThemeIconPath(48)}"
                          alt="${this.escapeHtml(userInfo.displayName)}" 
                          class="user-avatar">
                     <div>
@@ -1452,7 +2610,7 @@ class AdminPanelManager {
         const userAvatar = row.querySelector('.user-avatar');
         if (userAvatar) {
             userAvatar.addEventListener('error', () => {
-                userAvatar.src = chrome.runtime.getURL('icons/icon48.png');
+                userAvatar.src = IconUtils.getCurrentThemeIconPath(48);
             });
         }
 
@@ -1822,16 +2980,16 @@ class AdminPanelManager {
 
             const movie = rating.movie || {};
             const user = rating.user || {};
-            const movieTitle = movie.name || 'Unknown Movie';
-            const userName = user.displayName || user.email || 'Unknown User';
+            const movieTitle = movie.name || 'Фильм без названия';
+            const userName = user.displayName || user.email || 'Пользователь без имени';
 
             const ratingPreview = document.getElementById('ratingPreview');
             if (ratingPreview) {
                 ratingPreview.innerHTML = `
-                    <p><strong>Movie:</strong> ${this.escapeHtml(movieTitle)}</p>
-                    <p><strong>User:</strong> ${this.escapeHtml(userName)}</p>
-                    <p><strong>Rating:</strong> <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> ${rating.rating}</p>
-                    ${rating.comment ? `<p><strong>Comment:</strong> ${this.escapeHtml(rating.comment.substring(0, 100))}${rating.comment.length > 100 ? '...' : ''}</p>` : ''}
+                    <p><strong>Фильм:</strong> ${this.escapeHtml(movieTitle)}</p>
+                    <p><strong>Пользователь:</strong> ${this.escapeHtml(userName)}</p>
+                    <p><strong>Оценка:</strong> <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> ${rating.rating}</p>
+                    ${rating.comment ? `<p><strong>Комментарий:</strong> ${this.escapeHtml(rating.comment.substring(0, 100))}${rating.comment.length > 100 ? '...' : ''}</p>` : ''}
                 `;
             }
 
@@ -1841,7 +2999,7 @@ class AdminPanelManager {
             }
         } catch (error) {
             console.error('Error showing delete rating confirmation:', error);
-            this.showError(`Failed to load rating data: ${error.message}`);
+            this.showError('Не удалось получить данные оценки. Повторите попытку.');
         }
     }
 
@@ -1852,7 +3010,7 @@ class AdminPanelManager {
             const confirmBtn = document.getElementById('confirmDeleteRatingBtn');
             if (confirmBtn) {
                 confirmBtn.disabled = true;
-                confirmBtn.textContent = 'Deleting...';
+                confirmBtn.textContent = 'Удаление...';
             }
 
             await this.adminService.deleteRatingAsAdmin(this.ratingToDelete.id, this.currentUser.uid);
@@ -1864,7 +3022,7 @@ class AdminPanelManager {
             await this.loadMovies();
             
             // Show success message
-            this.showSuccessMessage('Rating deleted successfully');
+            this.showSuccessMessage('Оценка удалена');
             
             this.ratingToDelete = null;
         } catch (error) {
@@ -1872,9 +3030,9 @@ class AdminPanelManager {
             const confirmBtn = document.getElementById('confirmDeleteRatingBtn');
             if (confirmBtn) {
                 confirmBtn.disabled = false;
-                confirmBtn.textContent = 'Delete Rating';
+                confirmBtn.textContent = 'Удалить оценку';
             }
-            this.showError(`Failed to delete rating: ${error.message}`);
+            this.showError('Не удалось удалить оценку. Повторите попытку.');
         }
     }
 
@@ -1890,14 +3048,14 @@ class AdminPanelManager {
         if (!rating || !rating.movieId) return;
         
         const movieId = rating.movieId;
-        const movieTitle = rating.movie?.name || 'this movie';
+        const movieTitle = rating.movie?.name || 'фильм без названия';
 
         try {
             // Show loading state
             const buttons = document.querySelectorAll(`.btn-update-info[data-movie-id="${movieId}"]`);
             buttons.forEach(btn => {
                 btn.disabled = true;
-                btn.textContent = 'Updating...';
+                btn.textContent = 'Обновление...';
             });
 
             // 1. Fetch fresh data from Kinopoisk
@@ -1918,7 +3076,7 @@ class AdminPanelManager {
             // 4. Reload movies/ratings to reflect changes
             await this.loadMovies();
 
-            this.showSuccessMessage(`Updated info for "${movieTitle}"`);
+            this.showSuccessMessage(`Информация обновлена: «${movieTitle}»`);
 
         } catch (error) {
             console.error('Error updating movie info:', error);
@@ -1927,19 +3085,19 @@ class AdminPanelManager {
             const buttons = document.querySelectorAll(`.btn-update-info[data-movie-id="${movieId}"]`);
             buttons.forEach(btn => {
                 btn.disabled = false;
-                btn.textContent = 'Update Info';
+                btn.textContent = 'Обновить инфо';
             });
 
-            this.showError(`Failed to update movie info: ${error.message}`);
+            this.showError('Не удалось обновить информацию о фильме. Повторите попытку.');
         }
     }
 
     async clearMovieCache(movieId, movieData) {
         if (!movieId) return;
 
-        const movieTitle = movieData?.name || 'this movie';
+        const movieTitle = movieData?.name || 'фильм без названия';
 
-        if (!confirm(`Are you sure you want to clear the cache for "${movieTitle}"?\n\nThis will remove all cached data for this movie from both Firestore and localStorage.`)) {
+        if (!confirm(`Очистить кэш для фильма «${movieTitle}»?\n\nВсе сохранённые данные этого фильма будут удалены из Firestore и localStorage.`)) {
             return;
         }
 
@@ -1948,18 +3106,18 @@ class AdminPanelManager {
             const buttons = document.querySelectorAll(`.btn-clear-cache[data-movie-id="${movieId}"]`);
             buttons.forEach(btn => {
                 btn.disabled = true;
-                btn.textContent = 'Clearing...';
+                btn.textContent = 'Очистка...';
             });
 
             await this.adminService.clearMovieCacheAsAdmin(movieId, this.currentUser.uid);
 
             // Show success message
-            this.showSuccessMessage(`Cache cleared successfully for "${movieTitle}"`);
+            this.showSuccessMessage(`Кэш очищен: «${movieTitle}»`);
 
             // Reset button state
             buttons.forEach(btn => {
                 btn.disabled = false;
-                btn.textContent = 'Clear Cache';
+                btn.textContent = 'Очистить кэш';
             });
         } catch (error) {
             console.error('Error clearing movie cache:', error);
@@ -1968,10 +3126,10 @@ class AdminPanelManager {
             const buttons = document.querySelectorAll(`.btn-clear-cache[data-movie-id="${movieId}"]`);
             buttons.forEach(btn => {
                 btn.disabled = false;
-                btn.textContent = 'Clear Cache';
+                btn.textContent = 'Очистить кэш';
             });
 
-            this.showError(`Failed to clear cache: ${error.message}`);
+            this.showError('Не удалось очистить кэш. Повторите попытку.');
         }
     }
 
@@ -2095,7 +3253,7 @@ class AdminPanelManager {
             ? new TmdbFallbackQueueService(firebaseManager)
             : null;
         this.idMappingService = (typeof IdMappingService !== 'undefined')
-            ? new IdMappingService()
+            ? new IdMappingService(null, null, firebaseManager)
             : null;
         this.kinopoiskService = (typeof KinopoiskService !== 'undefined')
             ? new KinopoiskService()
@@ -2103,27 +3261,34 @@ class AdminPanelManager {
 
         this.activeQueueFilter = 'all';
         this.unmappedQueueData = [];
+        this.activeIdentitySubtab = 'tmdb-to-kp';
+        this.hasAutoSelectedIdentitySubtab = false;
 
         // Subtabs switching
         const subtabBtns = document.querySelectorAll('.admin-subtab-btn');
         subtabBtns.forEach(btn => {
             btn.addEventListener('click', () => {
-                const targetSubtab = btn.dataset.subtab;
-                subtabBtns.forEach(b => {
-                    b.classList.remove('active');
-                    b.style.fontWeight = '500';
-                    b.style.color = 'var(--text-secondary)';
-                });
-                btn.classList.add('active');
-                btn.style.fontWeight = '600';
-                btn.style.color = 'var(--theme-text-primary)';
-
-                const tabTmdbToKp = document.getElementById('subtab-tmdb-to-kp');
-                const tabKpToImdb = document.getElementById('subtab-kp-to-imdb');
-                if (tabTmdbToKp) tabTmdbToKp.style.display = targetSubtab === 'tmdb-to-kp' ? 'block' : 'none';
-                if (tabKpToImdb) tabKpToImdb.style.display = targetSubtab === 'kp-to-imdb' ? 'block' : 'none';
+                this.hasAutoSelectedIdentitySubtab = true;
+                this.switchIdentitySubtab(btn.dataset.subtab);
             });
         });
+
+        document.querySelectorAll('[data-identity-subtab]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.hasAutoSelectedIdentitySubtab = true;
+                this.switchIdentitySubtab(btn.dataset.identitySubtab);
+                document.querySelector('.admin-subtabs')?.scrollIntoView({ block: 'nearest' });
+            });
+        });
+
+        const startWorkflowBtn = document.getElementById('startIdentityWorkflowBtn');
+        if (startWorkflowBtn) {
+            startWorkflowBtn.addEventListener('click', () => {
+                this.hasAutoSelectedIdentitySubtab = true;
+                this.switchIdentitySubtab(startWorkflowBtn.dataset.subtab);
+                document.querySelector('.admin-subtabs')?.scrollIntoView({ block: 'nearest' });
+            });
+        }
 
         // Queue filter bar buttons
         const filterBtns = document.querySelectorAll('#tmdbQueueFilterBar .queue-filter-btn');
@@ -2302,6 +3467,43 @@ class AdminPanelManager {
             });
         }
 
+        const publishManualMappingsBtn = document.getElementById('publishManualMappingsBtn');
+        if (publishManualMappingsBtn) {
+            publishManualMappingsBtn.addEventListener('click', async () => {
+                if (!this.idMappingService) this.idMappingService = new IdMappingService(null, null, firebaseManager);
+                let preview;
+                try {
+                    preview = await this.idMappingService.getLocalManualMappingPublicationPreview();
+                } catch (error) {
+                    console.error('Error preparing local mapping publication:', error);
+                    this.showError(`Не удалось подготовить публикацию: ${error.message}`);
+                    return;
+                }
+                if (preview.total === 0) {
+                    this.showSuccessMessage('Локальных связей для публикации нет.');
+                    return;
+                }
+                const invalidHint = preview.invalid > 0 ? ` Некорректных записей: ${preview.invalid}.` : '';
+                if (!confirm(`Опубликовать ${preview.total} локальных ручных связей в общую базу? Конфликтующие записи не будут перезаписаны.${invalidHint}`)) return;
+
+                publishManualMappingsBtn.disabled = true;
+                publishManualMappingsBtn.textContent = 'Публикация...';
+                try {
+                    const result = await this.idMappingService.publishLocalManualMappings();
+                    const conflictText = result.conflicts.length > 0 ? ` Конфликтов: ${result.conflicts.length}.` : '';
+                    const invalidText = result.invalid.length > 0 ? ` Некорректных: ${result.invalid.length}.` : '';
+                    this.showSuccessMessage(`Проверено: ${result.total}; опубликовано: ${result.published}; уже общие: ${result.alreadyShared}.${conflictText}${invalidText}`);
+                    await this.loadTmdbFallbacks();
+                } catch (error) {
+                    console.error('Error publishing local manual mappings:', error);
+                    this.showError(`Не удалось опубликовать связи: ${error.message}`);
+                } finally {
+                    publishManualMappingsBtn.disabled = false;
+                    publishManualMappingsBtn.textContent = 'Опубликовать локальные связи';
+                }
+            });
+        }
+
         // Import JSON button and file picker
         const importBtn = document.getElementById('importManualMappingsBtn');
         const importFile = document.getElementById('importManualMappingsFile');
@@ -2330,7 +3532,8 @@ class AdminPanelManager {
             });
         }
 
-        // Quick manual mapping form submit
+        // Quick manual mapping form submit. A manual relationship must first
+        // show a real Kinopoisk candidate; direct save would be unreviewable.
         const quickForm = document.getElementById('quickManualMappingForm');
         if (quickForm) {
             quickForm.addEventListener('submit', async (e) => {
@@ -2352,27 +3555,198 @@ class AdminPanelManager {
                     return;
                 }
 
-                try {
-                    if (!this.idMappingService) {
-                        this.idMappingService = new IdMappingService();
-                    }
-                    await this.idMappingService.setManualMapping(mediaType, tmdbId, kpId, {
-                        title: titleInput.trim(),
-                        kpType: mediaType === 'tv' ? 'tv-series' : 'movie'
-                    });
-
-                    this.showSuccessMessage(`Привязка успешно сохранена: TMDB [${mediaType}:${tmdbId}] → Кинопоиск [${kpId}]`);
-                    quickForm.reset();
-                    await this.loadTmdbFallbacks();
-                } catch (err) {
-                    console.error('Error saving manual mapping:', err);
-                    this.showError(`Ошибка сохранения привязки: ${err.message}`);
-                }
+                await this.verifyQuickManualMapping({
+                    form: quickForm,
+                    mediaType,
+                    tmdbId,
+                    kpId,
+                    submittedTitle: titleInput.trim()
+                });
             });
         }
 
         // Initial load
         this.loadTmdbFallbacks();
+    }
+
+    switchIdentitySubtab(targetSubtab) {
+        const validSubtabs = new Set(['tmdb-to-kp', 'kp-to-imdb']);
+        if (!validSubtabs.has(targetSubtab)) return;
+
+        this.activeIdentitySubtab = targetSubtab;
+        document.querySelectorAll('.admin-subtab-btn').forEach(btn => {
+            const isActive = btn.dataset.subtab === targetSubtab;
+            btn.classList.toggle('active', isActive);
+            btn.setAttribute('aria-selected', String(isActive));
+        });
+
+        const tabTmdbToKp = document.getElementById('subtab-tmdb-to-kp');
+        const tabKpToImdb = document.getElementById('subtab-kp-to-imdb');
+        if (tabTmdbToKp) tabTmdbToKp.hidden = targetSubtab !== 'tmdb-to-kp';
+        if (tabKpToImdb) tabKpToImdb.hidden = targetSubtab !== 'kp-to-imdb';
+
+        document.querySelectorAll('[data-identity-subtab]').forEach(btn => {
+            const isActive = btn.dataset.identitySubtab === targetSubtab;
+            btn.classList.toggle('is-active', isActive);
+            btn.setAttribute('aria-current', isActive ? 'true' : 'false');
+        });
+    }
+
+    renderIdentityWorkspaceSummary(counts, pendingImdb) {
+        const tmdbCount = Number(counts?.all) || 0;
+        const criticalTmdbCount = Number(counts?.critical) || 0;
+        const imdbCount = Array.isArray(pendingImdb) ? pendingImdb.length : 0;
+        const total = tmdbCount + imdbCount;
+
+        const tmdbCountEl = document.getElementById('identityTmdbSummaryCount');
+        const imdbCountEl = document.getElementById('identityImdbSummaryCount');
+        const tmdbStateEl = document.getElementById('identityTmdbSummaryState');
+        const imdbStateEl = document.getElementById('identityImdbSummaryState');
+        const summaryEl = document.getElementById('identityWorkspaceSummary');
+        const startBtn = document.getElementById('startIdentityWorkflowBtn');
+
+        if (tmdbCountEl) tmdbCountEl.textContent = tmdbCount;
+        if (imdbCountEl) imdbCountEl.textContent = imdbCount;
+        if (tmdbStateEl) {
+            tmdbStateEl.textContent = tmdbCount > 0
+                ? (criticalTmdbCount > 0 ? `${criticalTmdbCount} влияют на Главную` : 'Требуют проверки для Главной')
+                : 'Нет активных задач';
+        }
+        if (imdbStateEl) {
+            imdbStateEl.textContent = imdbCount > 0
+                ? 'Не хватает IMDb ID для оценок'
+                : 'Нет активных задач';
+        }
+
+        let recommendedSubtab = null;
+        let summary = 'Активных задач нет.';
+        let actionLabel = 'Открыть задачи';
+
+        if (tmdbCount === 0 && imdbCount > 0) {
+            recommendedSubtab = 'kp-to-imdb';
+            summary = `${imdbCount} ${this.pluralizeTask(imdbCount)} ждут IMDb ID для оценок.`;
+            actionLabel = `Открыть ${imdbCount} ${this.pluralizeTask(imdbCount)}`;
+        } else if (tmdbCount > 0 && imdbCount === 0) {
+            recommendedSubtab = 'tmdb-to-kp';
+            summary = criticalTmdbCount > 0
+                ? `${criticalTmdbCount} ${this.pluralizeTask(criticalTmdbCount)} влияют на выдачу Главной.`
+                : `${tmdbCount} ${this.pluralizeTask(tmdbCount)} ждут связи с Кинопоиском.`;
+            actionLabel = `Открыть ${tmdbCount} ${this.pluralizeTask(tmdbCount)}`;
+        } else if (tmdbCount > 0 && imdbCount > 0) {
+            recommendedSubtab = criticalTmdbCount > 0 ? 'tmdb-to-kp' : 'kp-to-imdb';
+            summary = `${total} ${this.pluralizeTask(total)} в двух очередях. Начните с ${recommendedSubtab === 'tmdb-to-kp' ? 'Главной' : 'оценок'}.`;
+            const suggestedCount = recommendedSubtab === 'tmdb-to-kp' ? tmdbCount : imdbCount;
+            actionLabel = `Открыть ${suggestedCount} ${this.pluralizeTask(suggestedCount)}`;
+        }
+
+        if (summaryEl) summaryEl.textContent = summary;
+        if (startBtn) {
+            startBtn.hidden = total === 0;
+            startBtn.dataset.subtab = recommendedSubtab || '';
+            startBtn.textContent = actionLabel;
+        }
+
+        if (!this.hasAutoSelectedIdentitySubtab) {
+            if (recommendedSubtab) this.switchIdentitySubtab(recommendedSubtab);
+            this.hasAutoSelectedIdentitySubtab = true;
+        }
+    }
+
+    pluralizeTask(count) {
+        const value = Math.abs(Number(count)) % 100;
+        const remainder = value % 10;
+        if (value > 10 && value < 20) return 'задач';
+        if (remainder > 1 && remainder < 5) return 'задачи';
+        if (remainder === 1) return 'задача';
+        return 'задач';
+    }
+
+    async verifyQuickManualMapping({ form, mediaType, tmdbId, kpId, submittedTitle }) {
+        const preview = document.getElementById('quickManualMappingPreview');
+        const submitBtn = form?.querySelector('button[type="submit"]');
+        if (!preview || !submitBtn) return;
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Проверяем...';
+        preview.innerHTML = '<div class="identity-verification-message">Загружаем карточку Кинопоиска для проверки.</div>';
+
+        try {
+            if (!this.idMappingService) this.idMappingService = new IdMappingService();
+            if (!this.kinopoiskService) this.kinopoiskService = new KinopoiskService();
+
+            const kpMovie = await this.kinopoiskService.getMovieById(kpId);
+            const resolvedKpId = Number(kpMovie?.kinopoiskId || kpMovie?.id);
+            if (!kpMovie || !Number.isInteger(resolvedKpId) || resolvedKpId <= 0) {
+                throw new Error('Фильм или сериал с таким ID не найден на Кинопоиске');
+            }
+
+            const kpType = kpMovie.type || '';
+            const isCompatible = this.idMappingService.isCompatibleType(mediaType, kpType, kpMovie);
+            const kpYear = Number(kpMovie.year) || null;
+            const candidateTitle = kpMovie.name || kpMovie.alternativeName || `Кинопоиск #${resolvedKpId}`;
+            const posterUrl = kpMovie.posterUrl || (typeof kpMovie.poster === 'string' ? kpMovie.poster : kpMovie.poster?.url) || '';
+            const sourceTitle = submittedTitle || `TMDB #${tmdbId}`;
+            const compatibilityText = isCompatible
+                ? `Типы совместимы: ${mediaType} и ${kpType || 'не указан'}.`
+                : `Типы не совпадают: TMDB ${mediaType}, Кинопоиск ${kpType || 'не указан'}.`;
+            const yearText = kpYear ? `Год в Кинопоиске: ${kpYear}.` : 'Год в Кинопоиске не указан.';
+
+            preview.innerHTML = `
+                <article class="identity-verification-card" aria-label="Проверка кандидата Кинопоиска">
+                    <div class="identity-verification-heading">
+                        <div>
+                            <p class="identity-workspace-eyebrow">Проверка кандидата</p>
+                            <h4>${this.escapeHtml(candidateTitle)}</h4>
+                        </div>
+                        <a class="tmdb-link-btn" href="https://www.kinopoisk.ru/film/${resolvedKpId}/" target="_blank" rel="noopener noreferrer">Открыть Кинопоиск</a>
+                    </div>
+                    <div class="identity-verification-content">
+                        ${posterUrl ? `<img class="identity-verification-poster" src="${this.escapeHtml(posterUrl)}" alt="Постер: ${this.escapeHtml(candidateTitle)}">` : ''}
+                        <dl class="identity-verification-details">
+                            <div><dt>Связь</dt><dd>${this.escapeHtml(sourceTitle)} · TMDB ${mediaType}:${tmdbId}</dd></div>
+                            <div><dt>Кандидат</dt><dd>Кинопоиск ${resolvedKpId}${kpYear ? ` · ${kpYear}` : ''}</dd></div>
+                            <div><dt>Проверка типа</dt><dd class="${isCompatible ? 'identity-verification-pass' : 'identity-verification-fail'}">${this.escapeHtml(compatibilityText)}</dd></div>
+                            <div><dt>Данные</dt><dd>${this.escapeHtml(yearText)}</dd></div>
+                        </dl>
+                    </div>
+                    <div class="identity-verification-actions">
+                        ${isCompatible
+                            ? '<button class="tmdb-btn-bind identity-confirm-manual-mapping" type="button">Подтвердить связь</button>'
+                            : '<p class="identity-verification-block">Подтверждение заблокировано: выберите совместимый тип медиа или другой ID Кинопоиска.</p>'}
+                    </div>
+                </article>
+            `;
+
+            const confirmBtn = preview.querySelector('.identity-confirm-manual-mapping');
+            if (confirmBtn) {
+                confirmBtn.addEventListener('click', async () => {
+                    confirmBtn.disabled = true;
+                    confirmBtn.textContent = 'Сохраняем...';
+                    try {
+                        await this.idMappingService.setManualMapping(mediaType, tmdbId, resolvedKpId, {
+                            title: candidateTitle,
+                            year: kpYear,
+                            kpType
+                        });
+                        this.showSuccessMessage(`Связь сохранена: TMDB ${mediaType}:${tmdbId} → Кинопоиск ${resolvedKpId}`);
+                        form.reset();
+                        preview.innerHTML = '';
+                        await this.loadTmdbFallbacks();
+                    } catch (error) {
+                        console.error('Error saving verified manual mapping:', error);
+                        this.showError(`Ошибка сохранения связи: ${error.message}`);
+                        confirmBtn.disabled = false;
+                        confirmBtn.textContent = 'Подтвердить связь';
+                    }
+                });
+            }
+        } catch (error) {
+            console.error('Error verifying quick manual mapping:', error);
+            preview.innerHTML = `<div class="identity-verification-message identity-verification-message-error">Не удалось проверить кандидата: ${this.escapeHtml(error.message)}</div>`;
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Проверить кандидата';
+        }
     }
 
     extractNumericId(input) {
@@ -2409,6 +3783,7 @@ class AdminPanelManager {
             ]);
 
             this.unmappedQueueData = unmappedQueue || [];
+            this.pendingImdbItems = pendingImdb || [];
 
             // Update filter counters
             const now = Date.now();
@@ -2465,9 +3840,10 @@ class AdminPanelManager {
             if (totalCountBadge) totalCountBadge.textContent = `${totalTasks} задач`;
             if (navTmdbCountBadge) navTmdbCountBadge.textContent = totalTasks > 0 ? totalTasks : '—';
 
+            this.renderIdentityWorkspaceSummary(counts, this.pendingImdbItems);
             this.applyQueueFiltersAndRender();
             this.renderManualMappingsList(manualMappings || []);
-            this.renderImdbFallbacksList(pendingImdb || []);
+            this.renderImdbFallbacksList(this.pendingImdbItems);
         } catch (error) {
             console.error('Error loading TMDB fallbacks:', error);
             if (unmappedList) unmappedList.innerHTML = `<div class="reports-empty" style="color: var(--status-error);">Ошибка: ${this.escapeHtml(error.message)}</div>`;

@@ -17,6 +17,21 @@ const IconUtils = {
     },
 
     /**
+     * Get the current page's theme-aware application icon.
+     * @param {number} size - 16, 48, or 128
+     * @returns {string} - Extension-root-relative icon path
+     */
+    getCurrentThemeIconPath: (size) => {
+        const root = typeof document !== 'undefined' ? document.documentElement : null;
+        const body = typeof document !== 'undefined' ? document.body : null;
+        const isLightTheme = Boolean(
+            root?.classList?.contains('light-theme') ||
+            body?.classList?.contains('light-theme')
+        );
+        return IconUtils.getIconPath(isLightTheme ? 'light' : 'dark', size);
+    },
+
+    /**
      * Update the browser extension icon based on the theme
      * @param {string} theme - 'light' or 'dark'
      */

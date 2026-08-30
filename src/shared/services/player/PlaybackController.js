@@ -178,7 +178,17 @@ class PlaybackController {
             supportsDuration: typeof adapter.supportsDuration === 'function' ? adapter.supportsDuration() : false,
             supportsEnded: typeof adapter.supportsEnded === 'function' ? adapter.supportsEnded() : false,
             supportsTimestampResume: typeof adapter.supportsTimestampResume === 'function' ? adapter.supportsTimestampResume() : false,
-            progressConfidence: typeof adapter.getProgressConfidence === 'function' ? adapter.getProgressConfidence() : 'OPAQUE'
+            progressConfidence: typeof adapter.getProgressConfidence === 'function' ? adapter.getProgressConfidence() : 'OPAQUE',
+            roomSync: typeof adapter.getRoomSyncCapabilities === 'function'
+                ? { ...adapter.getRoomSyncCapabilities() }
+                : {
+                    observeTime: false,
+                    play: false,
+                    pause: false,
+                    seek: false,
+                    duration: false,
+                    lockGuestTimeline: false
+                }
         };
     }
 

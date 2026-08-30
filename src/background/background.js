@@ -134,187 +134,27 @@ async function getIdToken() {
     });
 }
 
-async function getStoredUser() {
-    return new Promise((resolve) => {
-        chrome.storage.local.get(['user', 'isAuthenticated'], (result) => {
-            if (result.user?.uid) {
-                resolve(result.user);
-                return;
-            }
-
-            resolve(null);
-        });
-    });
-}
-
-function toFirestoreValue(value) {
-    if (value === null || typeof value === 'undefined') {
-        return { nullValue: null };
-    }
-
-    if (typeof value === 'number') {
-        if (Number.isInteger(value)) {
-            return { integerValue: value.toString() };
-        }
-
-        return { doubleValue: value };
-    }
-
-    if (typeof value === 'boolean') {
-        return { booleanValue: value };
-    }
-
-    return { stringValue: String(value) };
-}
-
-function fromFirestoreValue(field) {
-    if (!field || typeof field !== 'object') {
-        return null;
-    }
-
-    if ('stringValue' in field) return field.stringValue;
-    if ('integerValue' in field) return Number(field.integerValue);
-    if ('doubleValue' in field) return Number(field.doubleValue);
-    if ('booleanValue' in field) return Boolean(field.booleanValue);
-    if ('timestampValue' in field) return field.timestampValue;
-    if ('nullValue' in field) return null;
-
-    if ('arrayValue' in field) {
-        return (field.arrayValue.values || []).map(fromFirestoreValue);
-    }
-
-    if ('mapValue' in field) {
-        const mapped = {};
-        Object.entries(field.mapValue.fields || {}).forEach(([key, value]) => {
-            mapped[key] = fromFirestoreValue(value);
-        });
-        return mapped;
-    }
-
-    return null;
-}
-
-function fromFirestoreDocument(document) {
-    const parsed = {
-        id: document.name ? document.name.split('/').pop() : null
-    };
-
-    Object.entries(document.fields || {}).forEach(([key, value]) => {
-        parsed[key] = fromFirestoreValue(value);
-    });
-
-    return parsed;
-}
-
-function buildEqualityFilter(fieldPath, value) {
-    return {
-        fieldFilter: {
-            field: { fieldPath },
-            op: 'EQUAL',
-            value: toFirestoreValue(value)
-        }
-    };
-}
-
-async function runStructuredQuery(token, structuredQuery) {
-    const projectId = 'movielistdb-13208';
-    const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`;
-
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ structuredQuery })
-    });
-
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Firestore error: ${response.status} ${errorText}`);
-    }
-
-    const results = await response.json();
-    return results
-        .filter((item) => item.document)
-        .map((item) => fromFirestoreDocument(item.document));
-}
-
-async function getItemsByStatusViaAPI(status) {
-    const user = await getStoredUser();
-    if (!user?.uid) {
+async function getAuthenticatedUser() {
+    const result = await chrome.storage.local.get(['user']);
+    const userId = String(result.user?.uid || '').trim();
+    if (!userId || userId.includes('/')) {
         throw new Error('User not authenticated');
     }
-
-    const token = await getIdToken();
-    const mergedItems = new Map();
-
-    const favoritesQuery = {
-        from: [{ collectionId: 'favorites' }],
-        where: {
-            compositeFilter: {
-                op: 'AND',
-                filters: [
-                    buildEqualityFilter('userId', user.uid),
-                    buildEqualityFilter('status', status)
-                ]
-            }
-        }
+    return {
+        userId,
+        userName: String(result.user?.displayName || 'User').trim().slice(0, 120),
+        userPhoto: String(result.user?.photoURL || '').trim().slice(0, 2048)
     };
+}
 
+async function readFirestoreError(response) {
+    const text = await response.text();
     try {
-        const favoritesItems = await runStructuredQuery(token, favoritesQuery);
-        favoritesItems.forEach((item) => {
-            const key = String(item.movieId || item.id);
-            mergedItems.set(key, item);
-        });
-    } catch (error) {
-        console.warn('[Background] Favorites status query failed:', error);
+        const payload = JSON.parse(text);
+        return { code: payload?.error?.status || '', text };
+    } catch {
+        return { code: '', text };
     }
-
-    if (status === 'watching') {
-        const watchingQuery = {
-            from: [{ collectionId: 'watching' }],
-            where: buildEqualityFilter('userId', user.uid)
-        };
-
-        try {
-            const watchingItems = await runStructuredQuery(token, watchingQuery);
-            watchingItems.forEach((item) => {
-                const key = String(item.movieId || item.id);
-                if (!mergedItems.has(key)) {
-                    mergedItems.set(key, {
-                        ...item,
-                        status: 'watching'
-                    });
-                }
-            });
-        } catch (error) {
-            console.warn('[Background] Legacy watching query failed:', error);
-        }
-    } else if (status === 'plan_to_watch') {
-        const watchlistQuery = {
-            from: [{ collectionId: 'watchlist' }],
-            where: buildEqualityFilter('userId', user.uid)
-        };
-
-        try {
-            const watchlistItems = await runStructuredQuery(token, watchlistQuery);
-            watchlistItems.forEach((item) => {
-                const key = String(item.movieId || item.id);
-                if (!mergedItems.has(key)) {
-                    mergedItems.set(key, {
-                        ...item,
-                        status: 'plan_to_watch'
-                    });
-                }
-            });
-        } catch (error) {
-            console.warn('[Background] Legacy watchlist query failed:', error);
-        }
-    }
-
-    return Array.from(mergedItems.values());
 }
 
 async function checkAuthToken() {
@@ -462,30 +302,79 @@ async function checkWatchlistStatusViaAPI(userId, movieId) {
     }
 }
 
-async function addRatingViaAPI(userId, userName, userPhoto, movieId, movieTitle, posterPath, rating, comment) {
+async function addRatingViaAPI(movieId, movieTitle, posterPath, rating, comment) {
     try {
         const token = await getIdToken();
+        const authenticatedUser = await getAuthenticatedUser();
+        const { userId: authenticatedUserId, userName, userPhoto } = authenticatedUser;
+
+        const normalizedMovieId = Number(movieId);
+        const normalizedRating = Number(rating);
+        const normalizedComment = String(comment || '').trim();
+        if (!Number.isInteger(normalizedMovieId) || normalizedMovieId <= 0) {
+            throw new Error('Movie ID must be a positive integer');
+        }
+        if (!Number.isInteger(normalizedRating) || normalizedRating < 1 || normalizedRating > 10) {
+            throw new Error('Rating must be an integer between 1 and 10');
+        }
+        if (normalizedComment.length > 500) {
+            throw new Error('Comment must be 500 characters or less');
+        }
+
         const projectId = 'movielistdb-13208';
-        const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/ratings`;
+        const docId = `${authenticatedUserId}_${normalizedMovieId}`;
+        const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/ratings/${encodeURIComponent(docId)}`;
+        const now = new Date().toISOString();
         
         const ratingData = {
             fields: {
-                userId: { stringValue: userId },
+                userId: { stringValue: authenticatedUserId },
                 userName: { stringValue: userName || '' },
                 userPhoto: { stringValue: userPhoto || '' },
-                movieId: { integerValue: movieId.toString() },
+                movieId: { integerValue: normalizedMovieId.toString() },
                 movieTitle: { stringValue: movieTitle || '' },
                 posterPath: { stringValue: posterPath || '' },
-                rating: { integerValue: rating.toString() },
-                comment: { stringValue: comment || '' },
+                rating: { integerValue: normalizedRating.toString() },
+                comment: { stringValue: normalizedComment },
                 isFavorite: { booleanValue: false },
-                createdAt: { timestampValue: new Date().toISOString() },
-                updatedAt: { timestampValue: new Date().toISOString() }
+                createdAt: { timestampValue: now },
+                updatedAt: { timestampValue: now }
             }
         };
 
-        const response = await fetch(url, {
-            method: 'POST',
+        const createResponse = await fetch(`${url}?currentDocument.exists=false`, {
+            method: 'PATCH',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(ratingData)
+        });
+
+        if (createResponse.ok) {
+            return true;
+        }
+
+        // A concurrent or repeated save reaches the same document. Preserve
+        // createdAt and favorite state while updating the user's rating fields.
+        const createError = await readFirestoreError(createResponse);
+        const isExistingDocument = createResponse.status === 409
+            || createResponse.status === 412
+            || createError.code === 'ALREADY_EXISTS'
+            || createError.code === 'FAILED_PRECONDITION';
+        if (!isExistingDocument) {
+            throw new Error(`Firestore error: ${createResponse.status} ${createError.text}`);
+        }
+
+        const updateFields = [
+            'userId', 'userName', 'userPhoto', 'movieId', 'movieTitle',
+            'posterPath', 'rating', 'comment', 'updatedAt'
+        ];
+        const updateParams = updateFields
+            .map(field => `updateMask.fieldPaths=${encodeURIComponent(field)}`)
+            .join('&');
+        const response = await fetch(`${url}?${updateParams}&currentDocument.exists=true`, {
+            method: 'PATCH',
             headers: {
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json'
@@ -494,8 +383,8 @@ async function addRatingViaAPI(userId, userName, userPhoto, movieId, movieTitle,
         });
 
         if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Firestore error: ${response.status} ${errorText}`);
+            const error = await readFirestoreError(response);
+            throw new Error(`Firestore error: ${response.status} ${error.text}`);
         }
 
         return true;
@@ -503,6 +392,12 @@ async function addRatingViaAPI(userId, userName, userPhoto, movieId, movieTitle,
         console.error('[Background] Error adding rating via API:', error);
         throw error;
     }
+}
+
+function isTrustedRatingSender(sender) {
+    return Boolean(sender?.tab?.id !== undefined
+        && typeof sender.url === 'string'
+        && sender.url.startsWith('https://ex-fs.net/'));
 }
 
 async function checkFavoriteStatusViaAPI(userId, movieId) {
@@ -767,14 +662,27 @@ async function removeFromWatchlistViaAPI(userId, movieId) {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'getWatchlistByStatus') {
-        getItemsByStatusViaAPI(message.status || 'watching')
-            .then((items) => {
-                sendResponse({ success: true, items });
-            })
-            .catch((error) => {
-                console.error('[Background] Error loading items by status:', error);
-                sendResponse({ success: false, error: error.message, items: [] });
-            });
+        (async () => {
+            try {
+                const userRes = await chrome.storage.local.get(['user']);
+                const userId = userRes.user?.uid;
+                if (!userId) {
+                    return { success: true, items: [] };
+                }
+                const cacheKey = `bookmarks_cache_${userId}`;
+                const cached = await chrome.storage.local.get([cacheKey]);
+                const bookmarkList = cached[cacheKey]?.bookmarks || cached[cacheKey];
+                if (Array.isArray(bookmarkList)) {
+                    const status = message.status || 'watching';
+                    const items = bookmarkList.filter(item => item && (status === 'all' || item.status === status));
+                    return { success: true, items };
+                }
+                return { success: true, items: [] };
+            } catch (error) {
+                console.warn('[Background] Error loading items by status:', error);
+                return { success: false, error: error.message, items: [] };
+            }
+        })().then(sendResponse);
         return true;
     } else if (message.type === 'ADD_TO_WATCHLIST') {
         console.log('[Background] Received ADD_TO_WATCHLIST request for user:', message.userId);
@@ -826,8 +734,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             });
         return true;
     } else if (message.type === 'ADD_RATING') {
-        console.log('[Background] Received ADD_RATING request for user:', message.userId, 'movie:', message.movieId, 'rating:', message.rating);
-        addRatingViaAPI(message.userId, message.userName, message.userPhoto, message.movieId, message.movieTitle, message.posterPath, message.rating, message.comment)
+        if (!isTrustedRatingSender(sender)) {
+            sendResponse({ success: false, error: 'Rating requests must originate from ex-fs.net' });
+            return false;
+        }
+        console.log('[Background] Received trusted ADD_RATING request for movie:', message.movieId, 'rating:', message.rating);
+        addRatingViaAPI(message.movieId, message.movieTitle, message.posterPath, message.rating, message.comment)
             .then(() => {
                 console.log('[Background] Successfully added rating via API');
                 sendResponse({ success: true });
@@ -948,12 +860,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         handleKinopoiskOffscreenScrape(message.query, message.timeoutMs || 8000, {
             requireRating: message.requireRating === true,
             requestKey: message.requestKey,
+            traceId: message.traceId,
             priority: message.priority,
             sessionId: message.sessionId
         })
             .then(result => sendResponse(result))
             .catch(err => {
                 console.warn('[Background] Offscreen scrape error:', err);
+                sendResponse({ success: false, reason: err.message, items: [] });
+        });
+        return true;
+    } else if (message.type === 'KINOPOISK_SIMILAR_OFFSCREEN') {
+        // Parse the full Kinopoisk /like/ page in browser context without using API quota.
+        handleKinopoiskSimilarOffscreen(message.kinopoiskId, message.timeoutMs || 8000, {
+            mediaType: message.mediaType,
+            queueDeadlineMs: message.queueDeadlineMs,
+            requestKey: message.requestKey,
+            traceId: message.traceId,
+            priority: message.priority,
+            sessionId: message.sessionId
+        })
+            .then(result => sendResponse(result))
+            .catch(err => {
+                console.warn('[Background] Similar movies offscreen scrape error:', err);
                 sendResponse({ success: false, reason: err.message, items: [] });
             });
         return true;
@@ -979,10 +908,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return false;
     } else if (message.target === 'kinopoisk-search-coordinator') {
         // Message from content script running inside the scraper iframe
+        console.info('[KinopoiskOffscreenTrace]', {
+            traceId: _currentSearchRequest?.traceId || null,
+            stage: 'content-script:result-received',
+            requestId: message.requestId || null,
+            type: message.type,
+            itemCount: message.items?.length || 0
+        });
         if (_currentSearchRequest?.provider === 'kinopoisk'
-            || _currentSearchRequest?.provider === 'kinopoisk-detail') {
+            || _currentSearchRequest?.provider === 'kinopoisk-detail'
+            || _currentSearchRequest?.provider === 'kinopoisk-similar') {
             if (!message.requestId || !_currentSearchRequest.requestId || message.requestId === _currentSearchRequest.requestId) {
                 if (message.type === 'SCRAPE_RESULT_SUCCESS') {
+                    _currentSearchRequest.finish({ success: true, items: message.items || [] });
+                } else if (message.type === 'SCRAPE_SIMILAR_SUCCESS') {
                     _currentSearchRequest.finish({ success: true, items: message.items || [] });
                 } else if (message.type === 'SCRAPE_MOVIE_RATINGS_SUCCESS') {
                     _currentSearchRequest.finish({ success: true, ratings: message.ratings || null });
@@ -991,6 +930,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 } else {
                     _currentSearchRequest.finish({ success: false, reason: message.reason || 'SCRAPE_TIMEOUT', items: [] });
                 }
+            } else {
+                console.warn('[KinopoiskOffscreenTrace]', {
+                    traceId: _currentSearchRequest.traceId || null,
+                    stage: 'content-script:result-ignored',
+                    activeRequestId: _currentSearchRequest.requestId,
+                    receivedRequestId: message.requestId
+                });
             }
         }
         return false;
@@ -1050,7 +996,27 @@ async function handleKinopoiskOffscreenScrape(query, timeoutMs = 8000, options =
         timeoutMs,
         requireRating: options.requireRating === true,
         requestKey: options.requestKey,
+        traceId: options.traceId || null,
         priority: options.priority || 'visible-identity',
+        sessionId: options.sessionId || null
+    });
+}
+
+async function handleKinopoiskSimilarOffscreen(kinopoiskId, timeoutMs = 8000, options = {}) {
+    const numericId = Number(kinopoiskId);
+    if (!Number.isInteger(numericId) || numericId <= 0) {
+        return { success: false, reason: 'INVALID_KINOPOISK_ID', items: [] };
+    }
+
+    return enqueueSearchRequest({
+        provider: 'kinopoisk-similar',
+        query: String(numericId),
+        mediaType: options.mediaType || null,
+        timeoutMs,
+        queueDeadlineMs: options.queueDeadlineMs,
+        requestKey: options.requestKey || `kp-similar:${numericId}:${options.mediaType || 'movie'}`,
+        traceId: options.traceId || null,
+        priority: options.priority || 'below-viewport',
         sessionId: options.sessionId || null
     });
 }
@@ -1110,6 +1076,8 @@ function enqueueSearchRequest(item) {
         requestKey,
         sequence: ++_searchSequence,
         enqueuedAt: Date.now(),
+        queueDeadlineMs: Number(item.queueDeadlineMs) || null,
+        queueDeadlineTimer: null,
         inFlightHits: 0,
         consumerCount: 1,
         resolve: null,
@@ -1120,6 +1088,9 @@ function enqueueSearchRequest(item) {
     entry.promise = new Promise(resolve => { entry.resolve = resolve; });
     _searchInFlight.set(requestKey, entry);
     _searchQueue.push(entry);
+    if (entry.queueDeadlineMs && entry.queueDeadlineMs > 0) {
+        entry.queueDeadlineTimer = setTimeout(() => expireSearchRequest(entry), entry.queueDeadlineMs);
+    }
     processSearchQueue();
     return entry.promise;
 }
@@ -1139,6 +1110,38 @@ function pickNextSearchIndex() {
     return bestIndex;
 }
 
+function expireSearchRequest(entry) {
+    if (!entry || _searchInFlight.get(entry.requestKey) !== entry) return;
+
+    if (entry === _currentSearchRequest && typeof entry.finish === 'function') {
+        entry.finish({ success: false, reason: 'QUEUE_DEADLINE_EXCEEDED', items: [] });
+        return;
+    }
+
+    const index = _searchQueue.indexOf(entry);
+    if (index >= 0) _searchQueue.splice(index, 1);
+    if (entry.queueDeadlineTimer) clearTimeout(entry.queueDeadlineTimer);
+    _searchInFlight.delete(entry.requestKey);
+    entry.resolve({
+        success: false,
+        reason: 'QUEUE_DEADLINE_EXCEEDED',
+        items: [],
+        requestId: entry.requestId,
+        metrics: {
+            requestId: entry.requestId,
+            requestKey: entry.requestKey,
+            provider: entry.provider,
+            queueWaitMs: Date.now() - entry.enqueuedAt,
+            serviceMs: 0,
+            totalMs: Date.now() - entry.enqueuedAt,
+            cacheHit: false,
+            inFlightHit: entry.inFlightHits > 0,
+            timeoutReason: 'QUEUE_DEADLINE_EXCEEDED'
+        }
+    });
+    setTimeout(processSearchQueue, 0);
+}
+
 function cancelSearchRequest({ requestKey = null, requestId = null } = {}) {
     const entry = requestKey ? _searchInFlight.get(requestKey) : _currentSearchRequest;
     if (!entry || (requestId && entry.requestId && requestId !== entry.requestId)) return false;
@@ -1155,6 +1158,7 @@ function cancelSearchRequest({ requestKey = null, requestId = null } = {}) {
 
     const index = _searchQueue.indexOf(entry);
     if (index >= 0) _searchQueue.splice(index, 1);
+    if (entry.queueDeadlineTimer) clearTimeout(entry.queueDeadlineTimer);
     _searchInFlight.delete(entry.requestKey);
     entry.resolve({
         success: false,
@@ -1183,24 +1187,38 @@ async function processSearchQueue() {
 
     const item = _searchQueue.splice(pickNextSearchIndex(), 1)[0];
     _currentSearchRequest = item;
-    const { provider, query, timeoutMs, resolve, requireRating, mediaType } = item;
+    const { provider, query, timeoutMs, resolve, requireRating, mediaType, traceId } = item;
     const requestId = Date.now() + '_' + Math.random().toString(36).slice(2, 8);
     const queueWaitMs = Date.now() - item.enqueuedAt;
     const serviceStartedAt = Date.now();
     let timeoutId = null;
     let isDone = false;
 
+    console.info('[KinopoiskOffscreenTrace]', {
+        traceId,
+        stage: 'queue:dequeued',
+        requestId,
+        provider,
+        query,
+        queueWaitMs,
+        timeoutMs
+    });
+
     const ratingFlag = requireRating ? '&agy_rating_1' : '';
     const searchUrl = provider === 'kinopoisk-detail'
-            ? `https://www.kinopoisk.ru/${mediaType === 'tv-series' || mediaType === 'series' ? 'series' : 'film'}/${encodeURIComponent(query)}/#agy_req_${requestId}`
+            ? `https://www.kinopoisk.ru/${mediaType === 'tv' || mediaType === 'tv-series' || mediaType === 'series' ? 'series' : 'film'}/${encodeURIComponent(query)}/#agy_req_${requestId}`
+        : provider === 'kinopoisk-similar'
+            ? `https://www.kinopoisk.ru/${mediaType === 'tv' || mediaType === 'tv-series' || mediaType === 'series' ? 'series' : 'film'}/${encodeURIComponent(query)}/like/#agy_req_${requestId}`
         : `https://www.kinopoisk.ru/new-search/?text=${encodeURIComponent(query)}#agy_req_${requestId}${ratingFlag}`;
 
     const finish = (result) => {
         if (isDone) return;
         isDone = true;
         if (timeoutId) clearTimeout(timeoutId);
+        if (item.queueDeadlineTimer) clearTimeout(item.queueDeadlineTimer);
         const metrics = {
             requestId,
+            traceId,
             requestKey: item.requestKey,
             provider,
             queueWaitMs,
@@ -1208,10 +1226,22 @@ async function processSearchQueue() {
             totalMs: Date.now() - item.enqueuedAt,
             cacheHit: false,
             inFlightHit: item.inFlightHits > 0,
-            timeoutReason: result?.reason && /TIMEOUT|CANCELLED/i.test(result.reason)
+            timeoutReason: result?.reason && /TIMEOUT|CANCELLED|DEADLINE/i.test(result.reason)
                 ? result.reason
                 : null
         };
+        console.info('[KinopoiskOffscreenTrace]', {
+            traceId,
+            stage: 'request:finish',
+            requestId,
+            provider,
+            query,
+            reason: result?.reason || (result?.success ? 'SUCCESS' : null),
+            itemCount: result?.items?.length || 0,
+            queueWaitMs,
+            serviceMs: metrics.serviceMs,
+            totalMs: metrics.totalMs
+        });
         const finalResult = { ...result, requestId, metrics };
         _currentSearchRequest = null;
         _searchInFlight.delete(item.requestKey);
@@ -1238,7 +1268,19 @@ async function processSearchQueue() {
     _currentSearchRequest = item;
 
     try {
+        const offscreenInitStartedAt = Date.now();
+        console.info('[KinopoiskOffscreenTrace]', {
+            traceId,
+            stage: 'offscreen:init:start',
+            requestId
+        });
         await ensureOffscreen();
+        console.info('[KinopoiskOffscreenTrace]', {
+            traceId,
+            stage: 'offscreen:init:end',
+            requestId,
+            stageDurationMs: Date.now() - offscreenInitStartedAt
+        });
     } catch (err) {
         console.warn('[Background] Offscreen creation error:', err);
         finish({ success: false, reason: 'OFFSCREEN_INIT_FAILED', items: [] });
@@ -1248,9 +1290,23 @@ async function processSearchQueue() {
     if (isDone || _currentSearchRequest !== item) return;
 
     timeoutId = setTimeout(() => {
+        console.warn('[KinopoiskOffscreenTrace]', {
+            traceId,
+            stage: 'request:timeout',
+            requestId,
+            timeoutMs,
+            serviceMs: Date.now() - serviceStartedAt
+        });
         finish({ success: false, reason: 'BACKGROUND_TIMEOUT', items: [] });
     }, timeoutMs);
 
+    console.info('[KinopoiskOffscreenTrace]', {
+        traceId,
+        stage: 'iframe:load-dispatch',
+        requestId,
+        serviceMs: Date.now() - serviceStartedAt,
+        searchUrl
+    });
     chrome.runtime.sendMessage({
         target: 'offscreen-scraper',
         type: 'LOAD_SEARCH_FRAME',

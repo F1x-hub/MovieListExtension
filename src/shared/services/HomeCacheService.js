@@ -320,6 +320,7 @@ class HomeCacheService {
             const featured = [];
             for (const item of featuredCandidates) {
                 if (featured.length >= SECTION_TARGETS.featured) break;
+                if (!this.isCandidateForSection(item, 'featured')) continue;
                 const card = toCard(item, item.mediaType || 'movie', 'featured');
                 if (!card || usedTmdbIds.has(card.tmdbId)) continue;
                 usedTmdbIds.add(card.tmdbId);

@@ -228,6 +228,44 @@ async function runTests() {
     assert.strictEqual(queueAfterHome[0].priority, 'CRITICAL', 'Rank 1 Home item must still receive CRITICAL priority');
     console.log('  ✅ Backward compatibility verified: default resolveBatch still enqueues with correct priority');
 
+    // Case C: Recommendation fast path bounds expensive metadata fallbacks
+    let fastMetadataCalls = 0;
+    let activeFastMetadataCalls = 0;
+    let maxActiveFastMetadataCalls = 0;
+    const fastPathMockKp = {
+        baseUrl: 'https://api.poiskkino.dev',
+        _fetchWithRotation: async () => ({
+            ok: true,
+            json: async () => ({ docs: [], total: 0, pages: 1 })
+        }),
+        searchMovies: async () => {
+            fastMetadataCalls++;
+            activeFastMetadataCalls++;
+            maxActiveFastMetadataCalls = Math.max(maxActiveFastMetadataCalls, activeFastMetadataCalls);
+            await new Promise(resolve => setTimeout(resolve, 10));
+            activeFastMetadataCalls--;
+            return { docs: [] };
+        }
+    };
+    await idMapper.resolveBatch(
+        Array.from({ length: 8 }, (_, index) => ({
+            tmdbId: 301 + index,
+            mediaType: 'movie',
+            year: 2000,
+            title: `Fast ${index}`
+        })),
+        {
+            skipQueue: true,
+            context: 'recommendations',
+            fastPath: true,
+            maxFallbackCandidates: 2,
+            kinopoiskService: fastPathMockKp
+        }
+    );
+    assert.strictEqual(fastMetadataCalls, 2, 'Recommendation fast path must bound metadata fallback work');
+    assert.strictEqual(maxActiveFastMetadataCalls, 2, 'Recommendation metadata fallbacks must run concurrently within the budget');
+    console.log('  ✅ Recommendation fast path bounded expensive mapping fallbacks');
+
     // ----------------------------------------------------
     // TEST 3: Primary Source & Deficit Fallback Logic
     // ----------------------------------------------------
@@ -345,6 +383,55 @@ async function runTests() {
     assert.strictEqual(resB[3].recommendationSource, 'TMDB_SIMILAR');
     assert.strictEqual(resB[5].recommendationSource, 'TMDB_SIMILAR');
     console.log('  ✅ Deficit fallback verified: 3 primary + 3 similar appended');
+
+    // Test 3C: Kinopoisk parser-first path avoids TMDB and KP API mapping calls
+    let parserCallCount = 0;
+    let parserRequestOptions = null;
+    let parserFallbackTmdbCalls = 0;
+    const parserOnlyService = new RecommendationService({
+        kinopoiskService: {
+            scrapeSimilarMoviesOffscreen: async (_kinopoiskId, options) => {
+                parserCallCount++;
+                parserRequestOptions = options;
+                return Array.from({ length: 6 }, (_, index) => ({
+                    kinopoiskId: 7001 + index,
+                    mediaType: 'movie',
+                    type: 'film',
+                    name: `Parsed Movie ${index + 1}`,
+                    year: 2018 + index,
+                    posterUrl: `https://images.example/${index + 1}.jpg`,
+                    kpRating: 7.1 + index / 10,
+                    sourcePosition: index
+                }));
+            }
+        },
+        tmdbService: {
+            getRecommendations: async () => {
+                parserFallbackTmdbCalls++;
+                return [];
+            },
+            getSimilar: async () => {
+                parserFallbackTmdbCalls++;
+                return [];
+            }
+        },
+        idMappingService: mockIdMapper
+    });
+
+    const parserResults = await parserOnlyService.getRecommendationsForMovie(
+        { tmdbId: 690593, kinopoiskId: 258687, mediaType: 'movie', year: 2012 },
+        { forceRefresh: true }
+    );
+    assert.strictEqual(parserCallCount, 1);
+    assert.strictEqual(parserRequestOptions.timeoutMs, 3500, 'Cold recommendation parser must use the bounded UI deadline');
+    assert.strictEqual(parserRequestOptions.queueDeadlineMs, 3500, 'Queue time must consume the same recommendation deadline');
+    assert.strictEqual(parserFallbackTmdbCalls, 0, 'Successful parser must bypass TMDB recommendations');
+    assert.strictEqual(parserResults.length, 6);
+    assert.deepStrictEqual(parserResults.map(item => item.kinopoiskId), [7001, 7002, 7003, 7004, 7005, 7006]);
+    assert.strictEqual(parserResults[0].recommendationSource, 'KINOPOISK_LIKE_PARSER');
+    assert.strictEqual(parserResults[0].tmdbId, null);
+    assert.strictEqual(parserResults[0].kpRating, 7.1);
+    console.log('  ✅ Kinopoisk /like/ parser-first path bypasses TMDB and preserves source order');
 
     // ----------------------------------------------------
     // TEST 4: Self-Exclusion & Deduplication
@@ -495,10 +582,27 @@ async function runTests() {
         idMappingService: mockIdMapperSafety
     });
 
+    // A stale schema must be ignored so old low-resolution recommendation DTOs
+    // cannot survive after a poster contract change.
+    const staleCacheKey = recServiceCache.getCacheKey(601, 'movie');
+    globalThis.chrome.storage.local.store[staleCacheKey] = {
+        schemaVersion: 1,
+        tmdbId: 601,
+        mediaType: 'movie',
+        cachedAt: Date.now(),
+        isFresh: false,
+        items: [{ tmdbId: 610, posterUrl: 'https://st.kp.yandex.net/images/sm_film/610.jpg' }]
+    };
+
     // Cold call
     const coldRes = await recServiceCache.getRecommendationsForMovie({ tmdbId: 601, mediaType: 'movie' });
     assert.strictEqual(coldRes.length, 1);
     assert.strictEqual(cacheProviderCalls, 1);
+    assert.strictEqual(
+        globalThis.chrome.storage.local.store[staleCacheKey].schemaVersion,
+        recServiceCache.CACHE_SCHEMA_VERSION,
+        'Stale recommendation cache schema must be replaced'
+    );
 
     // Warm call (should read from cache)
     const warmRes = await recServiceCache.getRecommendationsForMovie({ tmdbId: 601, mediaType: 'movie' });

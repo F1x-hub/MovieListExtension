@@ -273,7 +273,9 @@ class CatalogPage {
         this.ratingEnricher = typeof MovieRatingsEnrichmentService !== 'undefined'
             ? new MovieRatingsEnrichmentService({
                 kinopoiskService: this.kinopoiskService,
-                navigationService: this.navigationService
+                navigationService: this.navigationService,
+                tmdbService: this.tmdbService,
+                enableDetailFallback: true
             })
             : null;
         this.renderer = new HomeRenderer({ ratingEnricher: this.ratingEnricher });

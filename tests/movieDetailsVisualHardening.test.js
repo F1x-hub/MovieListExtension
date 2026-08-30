@@ -454,6 +454,19 @@ console.log('--- 17: Testing Metadata Grid Layout Contract ---');
 }
 
 // =========================================================================
+// TEST 19A: Movie Action Button Typography Contract
+// =========================================================================
+console.log('--- 19A: Testing Movie action button typography contract ---');
+{
+    const css = fs.readFileSync('src/pages/movie-details/movie-details.css', 'utf8');
+    assert(css.includes('.movie-actions-container .btn-lg {'),
+        'Movie action buttons use a scoped typography variant');
+    assert(css.includes('font-size: var(--font-size-base);'),
+        'Movie action buttons align with the page base text size');
+
+    console.log('  PASS: Movie action buttons use the page base text scale');
+}
+
 // TEST 19: Phase UI-1 / UI-2 Presentation Contracts
 // =========================================================================
 console.log('--- 19: Testing Phase UI-1 / UI-2 Presentation Contracts ---');

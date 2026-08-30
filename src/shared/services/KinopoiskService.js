@@ -60,6 +60,38 @@ function isQuotaExhaustedError(error) {
     return error instanceof QuotaExhaustedError || error?.name === 'QuotaExhaustedError';
 }
 
+function kinopoiskTraceNow() {
+    return typeof performance !== 'undefined' && typeof performance.now === 'function'
+        ? performance.now()
+        : Date.now();
+}
+
+function createKinopoiskSearchTrace(traceId, query, startedAtOverride = null) {
+    const startedAt = Number.isFinite(startedAtOverride)
+        ? startedAtOverride
+        : kinopoiskTraceNow();
+    return {
+        traceId: traceId || `kp-search-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        query,
+        startedAt,
+        mark(stage, details = {}) {
+            const elapsedMs = Math.round((kinopoiskTraceNow() - startedAt) * 10) / 10;
+            console.info('[KinopoiskSearchTrace]', {
+                traceId: this.traceId,
+                query: this.query,
+                stage,
+                elapsedMs,
+                ...details
+            });
+            return elapsedMs;
+        }
+    };
+}
+
+function stageDurationMs(startedAt) {
+    return Math.round((kinopoiskTraceNow() - startedAt) * 10) / 10;
+}
+
 async function responseIndicatesDailyLimit(response) {
     if (!response || ![402, 403, 503].includes(Number(response.status))) return false;
 
@@ -333,9 +365,21 @@ class KinopoiskService {
             return null;
         }
 
+        const trace = createKinopoiskSearchTrace(
+            options.traceId,
+            cleanQuery,
+            options.traceStartedAt
+        );
+        const stageStartedAt = kinopoiskTraceNow();
+
         try {
             console.log(`KinopoiskService: Requesting offscreen browser scraping for "${cleanQuery}"`);
             const timeoutMs = options.timeoutMs || 8000;
+            trace.mark('offscreen:start', {
+                timeoutMs,
+                requireRating: options.requireRating === true,
+                requestKey: options.requestKey || null
+            });
 
             const response = await chrome.runtime.sendMessage({
                 type: 'KINOPOISK_OFFSCREEN_SCRAPE',
@@ -343,8 +387,16 @@ class KinopoiskService {
                 timeoutMs,
                 requireRating: options.requireRating === true,
                 requestKey: options.requestKey || null,
+                traceId: options.traceId || null,
                 priority: options.priority || 'visible-identity',
                 sessionId: options.sessionId || null
+            });
+            trace.mark('offscreen:response', {
+                stageDurationMs: stageDurationMs(stageStartedAt),
+                success: response?.success === true,
+                reason: response?.reason || null,
+                itemCount: Array.isArray(response?.items) ? response.items.length : 0,
+                providerRequestId: response?.metrics?.requestId || null
             });
             if (response?.metrics) {
                 console.info('[KinopoiskRatingsMetrics] search', response.metrics);
@@ -357,6 +409,11 @@ class KinopoiskService {
                     ratingCount
                 });
                 const items = response.items.slice(0, options.limit || 30);
+                trace.mark('offscreen:success', {
+                    stageDurationMs: stageDurationMs(stageStartedAt),
+                    itemCount: items.length,
+                    ratingCount
+                });
                 return options.returnDiagnostics === true
                     ? { items, failureReason: null, metrics: response.metrics || null }
                     : items;
@@ -368,6 +425,11 @@ class KinopoiskService {
                 console.warn(`[Scraper Diagnostic] Offscreen scraper failed with reason: ${response.reason}`);
             }
 
+            trace.mark('offscreen:failed', {
+                stageDurationMs: stageDurationMs(stageStartedAt),
+                reason: response?.reason || 'OFFSCREEN_UNKNOWN_FAILURE'
+            });
+
             return options.returnDiagnostics === true
                 ? {
                     items: response?.success ? [] : null,
@@ -377,6 +439,11 @@ class KinopoiskService {
                 : null;
         } catch (error) {
             console.warn('KinopoiskService: Offscreen scrape communication error:', error);
+            trace.mark('offscreen:error', {
+                stageDurationMs: stageDurationMs(stageStartedAt),
+                errorName: error?.name || 'Error',
+                errorMessage: error?.message || String(error)
+            });
             if (options.returnDiagnostics === true) {
                 return { items: null, failureReason: 'OFFSCREEN_MESSAGE_FAILED', error: error.message };
             }
@@ -461,9 +528,13 @@ class KinopoiskService {
             options.signal.addEventListener('abort', () => controller.abort(), { once: true });
         }
 
+        const trace = createKinopoiskSearchTrace(options.traceId, cleanQuery, options.traceStartedAt);
+        const stageStartedAt = kinopoiskTraceNow();
+
         try {
             const scrapeUrl = `https://www.kinopoisk.ru/new-search/?text=${encodeURIComponent(cleanQuery)}`;
             console.log(`KinopoiskService: Scraping search results from ${scrapeUrl}`);
+            trace.mark('fetch-scraper:start', { timeoutMs, scrapeUrl });
 
             const response = await fetch(scrapeUrl, {
                 method: 'GET',
@@ -474,14 +545,33 @@ class KinopoiskService {
                     'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7'
                 }
             });
+            trace.mark('fetch-scraper:response', {
+                stageDurationMs: stageDurationMs(stageStartedAt),
+                status: response.status,
+                ok: response.ok
+            });
 
             if (!response.ok) {
                 console.warn(`KinopoiskService: Scraper failed with HTTP status ${response.status} ${response.statusText}`);
+                trace.mark('fetch-scraper:failed', {
+                    stageDurationMs: stageDurationMs(stageStartedAt),
+                    reason: `HTTP_${response.status}`
+                });
                 return null;
             }
 
             const html = await response.text();
+            trace.mark('fetch-scraper:body-read', {
+                stageDurationMs: stageDurationMs(stageStartedAt),
+                htmlBytes: html.length
+            });
             const parseResult = this.parseSearchResultsHtml(html, options.limit || 30);
+            trace.mark('fetch-scraper:parsed', {
+                stageDurationMs: stageDurationMs(stageStartedAt),
+                success: parseResult.success === true,
+                reason: parseResult.reason || null,
+                itemCount: parseResult.items?.length || 0
+            });
 
             if (!parseResult.success) {
                 console.warn(`KinopoiskService: Scraper parse failed (reason: ${parseResult.reason})`);
@@ -489,13 +579,58 @@ class KinopoiskService {
             }
 
             console.log(`KinopoiskService: Successfully scraped ${parseResult.items.length} items from Kinopoisk`);
+            trace.mark('fetch-scraper:success', {
+                stageDurationMs: stageDurationMs(stageStartedAt),
+                itemCount: parseResult.items.length
+            });
             return parseResult.items;
         } catch (error) {
             console.warn(`KinopoiskService: Scraper error (${error.name || 'Error'}: ${error.message})`);
+            trace.mark('fetch-scraper:error', {
+                stageDurationMs: stageDurationMs(stageStartedAt),
+                errorName: error?.name || 'Error',
+                errorMessage: error?.message || String(error)
+            });
             return null;
         } finally {
             clearTimeout(timeoutId);
         }
+    }
+
+    /**
+     * Build renderable search candidates from the parser output without waiting
+     * for the slower API entity-resolution request.
+     * @param {Array<{ type: string, id: number, title?: string, originalTitle?: string, year?: number, kpRating?: number, kpVotes?: number }>} items
+     * @returns {Array<Object>}
+     */
+    createScrapedSearchCandidates(items = []) {
+        return items
+            .map(item => {
+                const id = Number(item?.id);
+                if (!Number.isInteger(id) || id <= 0) return null;
+
+                const isSeries = item.type === 'series';
+                const name = item.title || item.originalTitle || `Кино #${id}`;
+                return {
+                    kinopoiskId: id,
+                    name,
+                    alternativeName: item.originalTitle || '',
+                    posterUrl: '',
+                    year: Number(item.year) || 0,
+                    kpRating: Number(item.kpRating) || 0,
+                    imdbRating: 0,
+                    kpVotes: Number(item.kpVotes) || 0,
+                    description: '',
+                    genres: [],
+                    countries: [],
+                    duration: 0,
+                    isSeries,
+                    type: isSeries ? 'tv-series' : 'movie',
+                    searchCandidate: true,
+                    searchEntityResolutionPending: true
+                };
+            })
+            .filter(Boolean);
     }
 
     /**
@@ -510,6 +645,10 @@ class KinopoiskService {
         const ids = items.map(item => item.id).filter(Boolean);
         if (ids.length === 0) return [];
 
+        const trace = createKinopoiskSearchTrace(options.traceId, 'batch-by-ids', options.traceStartedAt);
+        const stageStartedAt = kinopoiskTraceNow();
+        trace.mark('batch-by-ids:start', { requestedIdCount: ids.length });
+
         try {
             const url = `${this.baseUrl}${KINOPOISK_CONFIG.ENDPOINTS.MOVIE}`;
             const params = new URLSearchParams({
@@ -522,14 +661,27 @@ class KinopoiskService {
                 method: 'GET',
                 signal: options.signal
             });
+            trace.mark('batch-by-ids:response', {
+                stageDurationMs: stageDurationMs(stageStartedAt),
+                status: response.status,
+                ok: response.ok
+            });
 
             if (!response.ok) {
                 console.warn(`KinopoiskService: Batch fetch by IDs failed with status ${response.status}`);
+                trace.mark('batch-by-ids:failed', {
+                    stageDurationMs: stageDurationMs(stageStartedAt),
+                    reason: `HTTP_${response.status}`
+                });
                 return [];
             }
 
             const data = await response.json();
             const docs = data.docs || [];
+            trace.mark('batch-by-ids:body-read', {
+                stageDurationMs: stageDurationMs(stageStartedAt),
+                apiDocCount: docs.length
+            });
             const movieMap = new Map();
 
             for (const doc of docs) {
@@ -551,10 +703,105 @@ class KinopoiskService {
                 }
             }
 
+            trace.mark('batch-by-ids:success', {
+                stageDurationMs: stageDurationMs(stageStartedAt),
+                apiDocCount: docs.length,
+                orderedMovieCount: orderedMovies.length,
+                missingMovieCount: Math.max(0, ids.length - orderedMovies.length)
+            });
             return orderedMovies;
         } catch (error) {
             console.error('KinopoiskService: Error in getMoviesByIdsBatch:', error);
+            trace.mark('batch-by-ids:error', {
+                stageDurationMs: stageDurationMs(stageStartedAt),
+                errorName: error?.name || 'Error',
+                errorMessage: error?.message || String(error)
+            });
             return [];
+        }
+    }
+
+    /**
+     * Parse Kinopoisk's full recommendations page (/like/) in browser context.
+     * This is deliberately separate from the API search path: one HTML page
+     * contains ordered cards and does not consume Kinopoisk API quota.
+     * @param {number|string} kinopoiskId - Source Kinopoisk ID
+     * @param {Object} options - { mediaType, timeoutMs, signal, traceId, requestKey }
+     * @returns {Promise<Array<Object>|null>}
+     */
+    async scrapeSimilarMoviesOffscreen(kinopoiskId, options = {}) {
+        const numericId = Number(kinopoiskId);
+        if (!Number.isInteger(numericId) || numericId <= 0) return [];
+
+        if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
+            return null;
+        }
+
+        const trace = createKinopoiskSearchTrace(
+            options.traceId,
+            `similar:${numericId}`,
+            options.traceStartedAt
+        );
+        const stageStartedAt = kinopoiskTraceNow();
+        const timeoutMs = options.timeoutMs || 8000;
+        const queueDeadlineMs = Number(options.queueDeadlineMs) || timeoutMs;
+
+        trace.mark('similar:offscreen:start', {
+            kinopoiskId: numericId,
+            mediaType: options.mediaType || null,
+            timeoutMs,
+            queueDeadlineMs,
+            requestKey: options.requestKey || null
+        });
+
+        try {
+            const response = await chrome.runtime.sendMessage({
+                type: 'KINOPOISK_SIMILAR_OFFSCREEN',
+                kinopoiskId: numericId,
+                mediaType: options.mediaType || null,
+                timeoutMs,
+                queueDeadlineMs,
+                requestKey: options.requestKey || null,
+                traceId: options.traceId || null,
+                priority: options.priority || 'below-viewport',
+                sessionId: options.sessionId || null
+            });
+
+            const items = Array.isArray(response?.items) ? response.items : [];
+            trace.mark('similar:offscreen:response', {
+                stageDurationMs: stageDurationMs(stageStartedAt),
+                success: response?.success === true,
+                reason: response?.reason || null,
+                itemCount: items.length,
+                providerRequestId: response?.metrics?.requestId || null,
+                scraperDiagnostics: response?.diagnostics || null
+            });
+            if (response?.metrics) {
+                console.info('[KinopoiskSimilarMetrics] scrape', response.metrics);
+            }
+
+            if (response?.success === true) {
+                console.log(`KinopoiskService: Similar page scraper succeeded with ${items.length} items`, {
+                    kinopoiskId: numericId,
+                    mediaType: options.mediaType || null,
+                    apiQuotaRequests: 0
+                });
+                return items;
+            }
+
+            console.warn('[Scraper Diagnostic] Similar page scrape failed', {
+                kinopoiskId: numericId,
+                reason: response?.reason || 'OFFSCREEN_UNKNOWN_FAILURE'
+            });
+            return null;
+        } catch (error) {
+            trace.mark('similar:offscreen:error', {
+                stageDurationMs: stageDurationMs(stageStartedAt),
+                errorName: error?.name || 'Error',
+                errorMessage: error?.message || String(error)
+            });
+            console.warn('KinopoiskService: Similar page scraper request failed:', error);
+            return null;
         }
     }
 
@@ -569,10 +816,29 @@ class KinopoiskService {
     async searchMovies(query, page = 1, limit = this.defaultLimit, filters = null) {
         // Clean and normalize the query
         const cleanQuery = this.normalizeQuery(query);
+        const trace = createKinopoiskSearchTrace(
+            filters?.searchTraceId,
+            cleanQuery,
+            filters?.searchTraceStartedAt
+        );
+        const searchStartedAt = trace.startedAt;
+        const finishSearchTrace = (outcome, details = {}) => trace.mark('search:complete', {
+            outcome,
+            totalMs: stageDurationMs(searchStartedAt),
+            ...details
+        });
         console.log(`KinopoiskService: Searching for "${query}" (normalized: "${cleanQuery}")`);
 
         // Attempt 3-Tier Hybrid Search on page 1 when no metadata filters are set
         const isDefaultSearch = page === 1 && (!filters || (!filters.yearFrom && (!filters.genresInclude || filters.genresInclude.length === 0) && (!filters.countriesInclude || filters.countriesInclude.length === 0)));
+        trace.mark('search:start', {
+            page,
+            limit,
+            isDefaultSearch,
+            skipScraper: filters?.skipScraper === true,
+            skipOffscreen: filters?.skipOffscreen === true,
+            skipFetchScraper: filters?.skipFetchScraper === true
+        });
 
         if (isDefaultSearch && !filters?.skipScraper) {
             let scrapedItems = null;
@@ -580,12 +846,26 @@ class KinopoiskService {
 
             // Tier 1: Real Browser Context Scraping (Offscreen Document + iframe + Content Script)
             if (!filters?.skipOffscreen) {
+                const stageStartedAt = kinopoiskTraceNow();
+                trace.mark('tier-1-offscreen:start');
                 try {
                     scrapedItems = await this.scrapeSearchResultsOffscreen(query, {
                         limit: Math.max(limit, 30),
-                        signal: filters?.signal
+                        signal: filters?.signal,
+                        traceId: trace.traceId,
+                        traceStartedAt: trace.startedAt
+                    });
+                    trace.mark('tier-1-offscreen:end', {
+                        stageDurationMs: stageDurationMs(stageStartedAt),
+                        itemCount: Array.isArray(scrapedItems) ? scrapedItems.length : 0,
+                        success: Array.isArray(scrapedItems) && scrapedItems.length > 0
                     });
                 } catch (offscreenErr) {
+                    trace.mark('tier-1-offscreen:error', {
+                        stageDurationMs: stageDurationMs(stageStartedAt),
+                        errorName: offscreenErr?.name || 'Error',
+                        errorMessage: offscreenErr?.message || String(offscreenErr)
+                    });
                     console.warn('KinopoiskService: Tier 1 offscreen scraper failed:', offscreenErr);
                 }
             }
@@ -593,43 +873,116 @@ class KinopoiskService {
             // Tier 2: DOM-independent Regex Fetch Scraping (reserve fallback)
             if (!scrapedItems || scrapedItems.length === 0) {
                 if (!filters?.skipFetchScraper) {
+                    const stageStartedAt = kinopoiskTraceNow();
+                    trace.mark('tier-2-fetch-scraper:start');
                     try {
                         scrapedItems = await this.scrapeSearchResults(query, {
                             limit: Math.max(limit, 30),
-                            signal: filters?.signal
+                            signal: filters?.signal,
+                            traceId: trace.traceId,
+                            traceStartedAt: trace.startedAt
+                        });
+                        trace.mark('tier-2-fetch-scraper:end', {
+                            stageDurationMs: stageDurationMs(stageStartedAt),
+                            itemCount: Array.isArray(scrapedItems) ? scrapedItems.length : 0,
+                            success: Array.isArray(scrapedItems) && scrapedItems.length > 0
                         });
                         if (scrapedItems && scrapedItems.length > 0) {
                             scrapeSource = 'kinopoisk-scrape';
                         }
                     } catch (fetchScraperErr) {
+                        trace.mark('tier-2-fetch-scraper:error', {
+                            stageDurationMs: stageDurationMs(stageStartedAt),
+                            errorName: fetchScraperErr?.name || 'Error',
+                            errorMessage: fetchScraperErr?.message || String(fetchScraperErr)
+                        });
                         console.warn('KinopoiskService: Tier 2 regex fetch scraper failed:', fetchScraperErr);
                     }
                 }
             }
 
-            // If scraping produced candidates, batch fetch full entities from API in exact order
+            // If scraping produced candidates, resolve full entities in exact order.
             if (scrapedItems && scrapedItems.length > 0) {
+                const stageStartedAt = kinopoiskTraceNow();
+                trace.mark('batch-entity-resolution:start', {
+                    scrapedItemCount: scrapedItems.length,
+                    scrapeSource
+                });
+                const batchPromise = this.getMoviesByIdsBatch(scrapedItems, {
+                    signal: filters?.signal,
+                    traceId: trace.traceId,
+                    traceStartedAt: trace.startedAt
+                });
+                const tracedBatchPromise = batchPromise.then(candidateMovies => {
+                    trace.mark('batch-entity-resolution:end', {
+                        stageDurationMs: stageDurationMs(stageStartedAt),
+                        candidateMovieCount: candidateMovies?.length || 0
+                    });
+                    return candidateMovies || [];
+                }).catch(batchErr => {
+                    trace.mark('batch-entity-resolution:error', {
+                        stageDurationMs: stageDurationMs(stageStartedAt),
+                        errorName: batchErr?.name || 'Error',
+                        errorMessage: batchErr?.message || String(batchErr)
+                    });
+                    console.warn('KinopoiskService: Batch entity resolution failed:', batchErr);
+                    return [];
+                });
+
+                if (filters?.deferEntityResolution === true) {
+                    const scrapedCandidates = this.createScrapedSearchCandidates(scrapedItems);
+                    trace.mark('search:complete', {
+                        outcome: 'scrape-fast-path',
+                        totalMs: stageDurationMs(searchStartedAt),
+                        scrapeSource,
+                        scrapedItemCount: scrapedCandidates.length,
+                        entityResolution: 'deferred'
+                    });
+                    return {
+                        docs: scrapedCandidates,
+                        total: scrapedCandidates.length,
+                        totalScraped: scrapedCandidates.length,
+                        page: 1,
+                        limit,
+                        pages: Math.ceil(scrapedCandidates.length / limit) || 1,
+                        searchSource: scrapeSource,
+                        entityResolutionDeferred: true,
+                        entityResolutionPromise: tracedBatchPromise
+                    };
+                }
+
                 try {
-                    const candidateMovies = await this.getMoviesByIdsBatch(scrapedItems, { signal: filters?.signal });
-                    if (candidateMovies && candidateMovies.length > 0) {
+                    const candidateMovies = await tracedBatchPromise;
+                    if (candidateMovies.length > 0) {
                         console.log(`KinopoiskService: Hybrid search succeeded with ${candidateMovies.length} movies via ${scrapeSource}`);
+                        finishSearchTrace('hybrid-success', {
+                            scrapeSource,
+                            candidateMovieCount: candidateMovies.length
+                        });
                         return {
                             docs: candidateMovies,
                             total: candidateMovies.length,
                             totalScraped: candidateMovies.length,
                             page: 1,
-                            limit: limit,
+                            limit,
                             pages: Math.ceil(candidateMovies.length / limit) || 1,
                             searchSource: scrapeSource
                         };
                     }
                 } catch (batchErr) {
+                    trace.mark('batch-entity-resolution:error', {
+                        stageDurationMs: stageDurationMs(stageStartedAt),
+                        errorName: batchErr?.name || 'Error',
+                        errorMessage: batchErr?.message || String(batchErr)
+                    });
                     console.warn('KinopoiskService: Batch entity resolution failed:', batchErr);
                 }
             }
         }
 
         // Tier 3: Baseline API Search fallback (/v1.4/movie/search)
+        const apiStageStartedAt = kinopoiskTraceNow();
+        trace.mark('tier-3-api:start', { page, limit });
         try {
             const searchEndpointUrl = `${this.baseUrl}${KINOPOISK_CONFIG.ENDPOINTS.SEARCH}`;
 
@@ -655,6 +1008,11 @@ class KinopoiskService {
                 method: 'GET',
                 signal: filters?.signal
             });
+            trace.mark('tier-3-api:response', {
+                stageDurationMs: stageDurationMs(apiStageStartedAt),
+                status: response.status,
+                ok: response.ok
+            });
 
             if (!response.ok) {
                 if (response.status === 403 || response.status === 402) {
@@ -667,7 +1025,15 @@ class KinopoiskService {
                     }
                 }
                 if (response.status === 500 && this.hasCyrillic(query)) {
+                    const alternativeStartedAt = kinopoiskTraceNow();
                     const altResult = await this.searchMoviesAlternative(query, page, limit);
+                    trace.mark('tier-3-api:alternative-complete', {
+                        stageDurationMs: stageDurationMs(alternativeStartedAt),
+                        docCount: altResult?.docs?.length || 0
+                    });
+                    finishSearchTrace('api-alternative-success', {
+                        docCount: altResult?.docs?.length || 0
+                    });
                     return {
                         ...altResult,
                         searchSource: 'api-fallback'
@@ -677,17 +1043,35 @@ class KinopoiskService {
             }
 
             const data = await response.json();
+            trace.mark('tier-3-api:body-read', {
+                stageDurationMs: stageDurationMs(apiStageStartedAt),
+                apiDocCount: data?.docs?.length || 0
+            });
             const normalized = this.normalizeSearchResults(data, query);
+            trace.mark('tier-3-api:normalized', {
+                stageDurationMs: stageDurationMs(apiStageStartedAt),
+                docCount: normalized?.docs?.length || 0
+            });
+            finishSearchTrace('api-success', {
+                docCount: normalized?.docs?.length || 0
+            });
             return {
                 ...normalized,
                 searchSource: 'api-fallback'
             };
         } catch (error) {
             console.error('Error searching movies:', error);
+            trace.mark('tier-3-api:error', {
+                stageDurationMs: stageDurationMs(apiStageStartedAt),
+                errorName: error?.name || 'Error',
+                errorMessage: error?.message || String(error)
+            });
             if (isQuotaExhaustedError(error) || error.message === 'DAILY_LIMIT_REACHED') {
+                finishSearchTrace('quota-fallback', { docCount: 0 });
                 if (filters?.throwOnLimit) throw error;
                 return { docs: [], total: 0, page: 1, limit: limit, pages: 0, searchSource: 'api-fallback' };
             }
+            finishSearchTrace(error?.name === 'AbortError' ? 'aborted' : 'failed');
             throw new Error(`Failed to search movies: ${error.message}`, { cause: error });
         }
     }

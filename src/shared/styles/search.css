@@ -1,8 +1,5 @@
 /* Search page styles for Movie Rating Extension - Obsidian-Zinc Redesign */
 
-@import url('./common.css');
-@import url('./components.css');
-
 /* Search Container */
 .search-container {
     min-height: 100vh;
@@ -482,154 +479,6 @@
     padding-top: var(--space-2xl);
 }
 
-/* Movie Card */
-.movie-card {
-    background: var(--gradient-card);
-    border: 1px solid var(--theme-border);
-    border-radius: var(--radius-lg);
-    overflow: hidden;
-    transition: all var(--transition-base);
-    cursor: pointer;
-}
-
-.movie-card:hover {
-    transform: translateY(-4px);
-    box-shadow: var(--shadow-lg);
-    border-color: var(--accent-color);
-}
-
-/* Ensure poster container matches card border radius */
-.movie-card .movie-poster-container {
-    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-}
-
-.movie-poster-container {
-    position: relative;
-    aspect-ratio: 2/3;
-    overflow: hidden;
-    width: 100%;
-    min-height: 200px;
-    background: var(--gradient-card);
-    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-}
-
-.movie-poster-container .movie-poster {
-    width: 100%;
-    height: 100%;
-    display: block;
-    border-radius: 0;
-}
-
-/* Watchlist Button on Movie Card */
-.watchlist-btn-card {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    background: rgba(255, 255, 255, 0.9);
-    border: none;
-    border-radius: 50%;
-    width: 40px;
-    height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    z-index: 10;
-    font-size: 20px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-    color: #666;
-}
-
-.watchlist-btn-card:hover {
-    transform: scale(1.1);
-    background: white;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-}
-
-.watchlist-btn-card.active {
-    color: #6366f1;
-    background: rgba(99, 102, 241, 0.2);
-    backdrop-filter: blur(10px);
-}
-
-.watchlist-btn-card.active:hover {
-    background: rgba(99, 102, 241, 0.3);
-    color: #4f46e5;
-}
-
-.favorite-btn-card {
-    position: absolute;
-    top: 10px;
-    left: 10px;
-    background: rgba(255, 255, 255, 0.95);
-    border: none;
-    border-radius: 50%;
-    width: 40px;
-    height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    z-index: 10;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    font-size: 20px;
-    color: #666;
-    line-height: 1;
-}
-
-.favorite-btn-card:hover {
-    transform: scale(1.15);
-    background: white;
-    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
-}
-
-.favorite-btn-card.active {
-    background: rgba(254, 226, 226, 0.95);
-    color: #ef4444;
-}
-
-.favorite-btn-card.animating {
-    animation: heartbeat 0.6s ease-in-out;
-}
-
-@keyframes heartbeat {
-    0%, 100% {
-        transform: scale(1);
-    }
-    25% {
-        transform: scale(1.3);
-    }
-    50% {
-        transform: scale(1.1);
-    }
-    75% {
-        transform: scale(1.25);
-    }
-}
-
-.favorite-btn-card::after {
-    content: '';
-    display: block;
-    width: 20px;
-    height: 20px;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z'%3E%3C/path%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: center;
-}
-
-.favorite-btn-card.active::after {
-    content: '';
-    display: block;
-    width: 20px;
-    height: 20px;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ef4444' stroke='%23ef4444' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z'%3E%3C/path%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: center;
-    filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.5));
-}
-
 .watchlist-btn-detail {
     position: absolute;
     top: 20px;
@@ -687,10 +536,6 @@
     border-radius: var(--radius-md) var(--radius-md) 0 0;
 }
 
-.movie-card:hover .movie-poster {
-    transform: scale(1.05);
-}
-
 .movie-overlay {
     position: absolute;
     top: 0;
@@ -703,10 +548,6 @@
     padding: var(--space-md);
     opacity: 0;
     transition: opacity var(--transition-base);
-}
-
-.movie-card:hover .movie-overlay {
-    opacity: 1;
 }
 
 .movie-rating-badge {
@@ -733,15 +574,6 @@
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-}
-
-.movie-meta {
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-    margin: 0 0 var(--space-sm) 0;
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
 }
 
 .movie-ratings {
@@ -786,19 +618,6 @@
     margin: 0;
 }
 
-.movie-actions {
-    padding: var(--space-md);
-    border-top: 1px solid var(--theme-border);
-    display: flex;
-    gap: var(--space-sm);
-    flex-wrap: wrap;
-}
-
-.movie-actions .btn {
-    flex: 1;
-    min-width: 120px;
-}
-
 /* Pagination */
 .pagination {
     display: flex;
@@ -814,14 +633,13 @@
     padding: 0 var(--space-md);
 }
 
-/* Modal Styles */
-.modal {
+.search-detail-modal {
     max-width: 600px;
     width: 90vw;
     max-height: 80vh;
 }
 
-.modal-body {
+.search-detail-modal .modal-body {
     max-height: 50vh;
     overflow-y: auto;
 }
@@ -963,23 +781,12 @@
         align-items: stretch;
     }
     
-    .movie-poster-container {
-        min-height: 180px;
-    }
 }
 
 @media (max-width: 480px) {
     .results-grid {
         grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
         gap: 12px;
-    }
-    
-    .movie-card {
-        margin: 0 var(--space-sm);
-    }
-    
-    .movie-poster-container {
-        min-height: 160px;
     }
     
     .pagination {
@@ -1269,8 +1076,8 @@
 
 .star-rating-btn.active,
 .star-rating-btn.hover {
-    color: #ffd700; /* Gold color */
-    filter: drop-shadow(0 0 4px rgba(255, 215, 0, 0.4));
+    color: var(--ui-color-interactive);
+    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--ui-color-interactive) 30%, transparent));
 }
 
 .star-rating-btn:hover {
@@ -1379,16 +1186,6 @@
     background: rgba(0, 0, 0, 0.05);
 }
 
-.btn-secondary {
-    background: transparent;
-    border: 1px solid var(--theme-border);
-    color: var(--text-primary);
-}
-
-.btn-secondary:hover {
-    background: rgba(255, 255, 255, 0.05);
-}
-
 /* Themes */
 .light-theme .rating-modal-redesign {
     background: #ffffff;
@@ -1438,8 +1235,8 @@
 /* Ensure hover/active states work in light theme */
 .light-theme .star-rating-btn.active,
 .light-theme .star-rating-btn.hover {
-    color: #eab308; /* Gold */
-    filter: drop-shadow(0 0 4px rgba(234, 179, 8, 0.4));
+    color: var(--ui-color-interactive);
+    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--ui-color-interactive) 30%, transparent));
 }
 
 .light-theme .rating-modal-footer {
@@ -1633,57 +1430,6 @@
     margin-top: var(--space-xs);
 }
 
-.movie-actions-container {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    margin-top: 22px;
-    max-width: 450px;
-    width: 100%;
-}
-
-.movie-actions-container .btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-sm);
-    font-size: 15px;
-    font-weight: 600;
-    padding: 0;
-    height: 52px;
-    width: 100%;
-    border-radius: 10px;
-    transition: all 0.2s ease;
-    border: none;
-    cursor: pointer;
-}
-
-/* Watch Button - Blue styling */
-.movie-actions-container .watch-movie-btn {
-    background: linear-gradient(135deg, #4A5C6A 0%, #5B6F7F 100%);
-    color: white;
-    box-shadow: 0 4px 12px rgba(74, 92, 106, 0.3);
-}
-
-.movie-actions-container .watch-movie-btn:hover {
-    background: linear-gradient(135deg, #5B6F7F 0%, #6B8090 100%);
-    transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(91, 111, 127, 0.4);
-}
-
-/* Rate Button - Dark gray gradient for dark theme */
-.movie-actions-container .rate-movie-btn {
-    background: linear-gradient(135deg, #444444 0%, #666666 100%);
-    color: white;
-    box-shadow: 0 4px 12px rgba(68, 68, 68, 0.3);
-}
-
-.movie-actions-container .rate-movie-btn:hover {
-    background: linear-gradient(135deg, #555555 0%, #777777 100%);
-    transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(85, 85, 85, 0.4);
-}
-
 /* Updated Poster Container to flex column */
 .movie-detail-poster-container {
     position: relative;
@@ -1704,16 +1450,6 @@
 .movie-detail-poster-container .rating-item-large {
     width: 100%;
     min-width: auto;
-}
-
-/* Actions under poster */
-.movie-detail-poster-container .movie-actions-container {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-sm);
-    width: 250px;
-    margin-top: 0;
-    max-width: none;
 }
 
 /* Tab System Styles */
@@ -2096,41 +1832,37 @@
 }
 
 .user-rating-menu-dropdown {
+    --popover-surface-bg: var(--secondary-bg);
+    --popover-surface-border: rgba(255, 255, 255, 0.1);
+    --popover-surface-radius: var(--radius-md);
+    --popover-surface-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    --popover-surface-backdrop: none;
     position: fixed;
-    background: var(--secondary-bg);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: var(--radius-md);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     z-index: 10000;
     min-width: 160px;
     overflow: hidden;
 }
 
-.menu-item {
+.user-rating-menu-dropdown .menu-item {
     display: flex;
     align-items: center;
     gap: var(--space-sm);
     width: 100%;
     padding: var(--space-sm) var(--space-md);
-    background: transparent;
-    border: none;
     color: var(--text-primary);
     font-size: var(--font-size-sm);
-    cursor: pointer;
-    transition: all var(--transition-base);
-    text-align: left;
 }
 
-.menu-item:hover {
+.user-rating-menu-dropdown .menu-item:hover {
     background: rgba(255, 255, 255, 0.05);
 }
 
-.menu-item.delete-item:hover {
+.user-rating-menu-dropdown .menu-item.delete-item:hover {
     background: rgba(233, 69, 96, 0.1);
     color: #e94560;
 }
 
-.menu-icon {
+.user-rating-menu-dropdown .menu-icon {
     font-size: 16px;
     width: 20px;
     text-align: center;
@@ -2189,8 +1921,7 @@
         align-items: center;
     }
     
-    .movie-detail-poster-container .movie-detail-ratings-container,
-    .movie-detail-poster-container .movie-actions-container {
+    .movie-detail-poster-container .movie-detail-ratings-container {
         width: 100%;
     }
     
@@ -2206,16 +1937,6 @@
     .movie-detail-ratings-container {
         justify-content: center;
         flex-wrap: wrap;
-    }
-    
-    .movie-actions-container {
-        max-width: 100%;
-    }
-    
-    .movie-actions-container .btn {
-        width: 100%;
-        font-size: 14px;
-        height: 48px;
     }
     
     .tab-buttons {
@@ -2255,11 +1976,6 @@
     .rating-item-large {
         min-width: 100px;
         padding: var(--space-sm) var(--space-md);
-    }
-    
-    .movie-actions-container .btn {
-        width: 100%;
-        justify-content: center;
     }
     
     .movie-frames-grid {
@@ -2602,29 +2318,6 @@
 
 .light-theme .movie-frame-image {
     background: var(--theme-bg-secondary);
-}
-
-/* Watch and Rate buttons for light theme */
-.light-theme .watch-movie-btn {
-    background: linear-gradient(135deg, #4A5C6A 0%, #5B6F7F 100%) !important;
-    color: white !important;
-    box-shadow: 0 4px 12px rgba(51, 51, 53, 0.3) !important;
-}
-
-.light-theme .watch-movie-btn:hover {
-    background: linear-gradient(135deg, #5B6F7F 0%, #6B8090 100%) !important;
-    box-shadow: 0 6px 16px rgba(51, 51, 53, 0.4) !important;
-}
-
-.light-theme .rate-movie-btn {
-    background: var(--theme-stat-color) !important;
-    color: white !important;
-    box-shadow: 0 4px 12px rgba(51, 51, 53, 0.3) !important;
-}
-
-.light-theme .rate-movie-btn:hover {
-    background: #49494b !important;
-    box-shadow: 0 6px 16px rgba(51, 51, 53, 0.4) !important;
 }
 
 /* User ratings section for light theme */
@@ -2995,9 +2688,9 @@ html:not(.light-theme) #searchBtn:hover {
 }
 
 .award-badge.winner {
-    background: #FFD700; /* Gold */
-    color: #000;
-    box-shadow: 0 2px 8px rgba(255, 215, 0, 0.3);
+    background: var(--ui-color-interactive);
+    color: var(--ui-color-page);
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--ui-color-interactive) 24%, transparent);
 }
 
 .award-badge.nominee {
@@ -3147,13 +2840,5 @@ html:not(.light-theme) .btn-show-all-awards:hover {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: var(--theme-accent, #3b82f6);
+    color: var(--ui-color-interactive);
 }
-
-.modal-close {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-}
-

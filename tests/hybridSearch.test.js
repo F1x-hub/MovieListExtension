@@ -169,6 +169,38 @@ const searchSuccess = await service.searchMovies('драма', 1, 10);
 assert.strictEqual(searchSuccess.searchSource, 'kinopoisk-scrape', 'Source must be kinopoisk-scrape');
 assert.strictEqual(searchSuccess.docs[0].name, 'Вот это драма!');
 
+// Scenario A2: Search page receives ordered parser candidates before slow entity resolution
+let fastPathBatchSettled = false;
+service._fetchWithRotation = async () => {
+    await new Promise(resolve => setTimeout(resolve, 15));
+    fastPathBatchSettled = true;
+    return {
+        ok: true,
+        json: async () => ({
+            docs: [
+                { id: 43891, name: 'Драма', year: 1960 },
+                { id: 6530127, name: 'Вот это драма!', year: 2026 },
+                { id: 843937, name: 'Драматическое убийство', year: 2014 },
+                { id: 549301, name: 'Драма', year: 2010 }
+            ]
+        })
+    };
+};
+const fastPathResult = await service.searchMovies('драма', 1, 10, {
+    skipOffscreen: true,
+    deferEntityResolution: true
+});
+assert.strictEqual(fastPathResult.entityResolutionDeferred, true, 'Entity resolution must be deferred');
+assert.strictEqual(fastPathBatchSettled, false, 'Search must return before the batch request settles');
+assert.deepStrictEqual(
+    fastPathResult.docs.map(movie => movie.kinopoiskId),
+    scrapedItems.map(item => item.id),
+    'Fast candidates must preserve parser order'
+);
+const fastPathEnriched = await fastPathResult.entityResolutionPromise;
+assert.strictEqual(fastPathEnriched[0].name, 'Вот это драма!', 'Deferred enrichment must preserve parser order');
+assert.strictEqual(fastPathBatchSettled, true, 'Deferred batch must eventually settle');
+
 // Scenario B: Scraper fails (returns null) -> Fallback to /movie/search
 service.scrapeSearchResults = async () => null;
 service._fetchWithRotation = async () => ({

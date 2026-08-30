@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="../shared/styles/navigation.css">
     <link rel="stylesheet" href="../shared/styles/popup.css">
     <link rel="stylesheet" href="../shared/styles/overflow-fixes.css">
+    <script src="../shared/services/ThemeService.js"></script>
 </head>
 <body>
     <script src="theme-init.js"></script>
@@ -50,7 +51,7 @@
                         <span id="userAvatarFallback" class="avatar-fallback"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></span>
                     </button>
                     <!-- Avatar Dropdown Menu (190px) -->
-                    <div id="avatarDropdown" class="avatar-dropdown">
+                    <div id="avatarDropdown" class="popover-surface avatar-dropdown">
                         <div class="avatar-dropdown-header">
                             <span id="userName" class="dropdown-username">User</span>
                         </div>

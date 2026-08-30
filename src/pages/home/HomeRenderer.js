@@ -337,31 +337,9 @@ class HomeRenderer {
      * @returns {HTMLElement}
      */
     createMovieCard(item, options = {}) {
-        if (typeof MovieCard === 'undefined' || !MovieCard.create) {
-            // Fallback lightweight DOM node if MovieCard is not loaded
-            const card = document.createElement('a');
-            const movieId = (typeof Utils !== 'undefined' && Utils.extractKinopoiskId) ? Utils.extractKinopoiskId(item) : (item.kinopoiskId || item.movieId || null);
-            card.className = 'movie-card';
-            card.dataset.action = 'view-details';
-            if (item.isTmdbOnly) card.dataset.isTmdbOnly = 'true';
-            if (item.tmdbId) card.dataset.tmdbId = String(item.tmdbId);
-            card.dataset.movieTitle = item.name || item.title || '';
-            if (item.alternativeName || item.originalTitle || item.originalName || item.original_title || item.original_name) {
-                card.dataset.movieOriginalTitle = item.alternativeName || item.originalTitle || item.originalName || item.original_title || item.original_name;
-            }
-            const englishTitle = item.englishTitle || item.nameEn || item.englishName || item.movieTitleEn || item.originalTitle || item.original_title || item.original_name || item.alternativeName;
-            if (englishTitle) card.dataset.movieEnglishTitle = englishTitle;
-            card.dataset.movieYear = item.year || item.releaseYear || '';
-            card.dataset.mediaType = item.mediaType || item.type || 'movie';
-            if (movieId) card.dataset.movieId = String(movieId);
-            card.href = movieId ? chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`) : '#';
-            card.innerHTML = `
-                <img class="card-poster" src="${item.posterUrl || item.poster || ''}" alt="${this.escapeHtml(item.name || '')}">
-                <div class="card-info">
-                    <h3 class="card-title">${this.escapeHtml(item.name || '')}</h3>
-                </div>
-            `;
-            return card;
+        const movieCardComponent = typeof window !== 'undefined' ? window.MovieCard : null;
+        if (!movieCardComponent || typeof movieCardComponent.create !== 'function') {
+            throw new Error('[HomeRenderer] MovieCard component must be loaded before rendering cards');
         }
 
         const movieObj = item.movie || item;
@@ -408,7 +386,7 @@ class HomeRenderer {
             ...options
         };
 
-        return MovieCard.create(cardData, cardOptions);
+        return movieCardComponent.create(cardData, cardOptions);
     }
 
 

@@ -429,6 +429,101 @@ releaseLifecycleCache({ movie_card_ratings_v4: {} });
 await lifecycleFlush;
 assert.equal(lifecycleNavigationCalls, 0);
 
+// Test: English title search fallback when Kinopoisk has 0 ratings and no imdbId
+let imdbTitleSearchCalls = 0;
+const titleSearchService = new MovieRatingsEnrichmentService({
+    storage: {
+        get(keys, callback) { callback({ movie_card_ratings_v4: {} }); },
+        set(values, callback) { callback?.(); }
+    },
+    enableDetailFallback: true,
+    navigationService: {
+        async resolve() {
+            return {
+                kinopoiskId: 6548088,
+                kpRating: 0,
+                imdbRating: 0,
+                imdbId: null,
+                originalTitle: 'The Dog Stars'
+            };
+        }
+    },
+    kinopoiskService: {
+        async scrapeMoviePageRatingsOffscreen() {
+            return { kpRating: 0, imdbRating: 0, imdbId: null };
+        }
+    },
+    imdbParser: {
+        async getImdbRatingByTitle(title, year) {
+            imdbTitleSearchCalls += 1;
+            assert.equal(title, 'The Dog Stars');
+            assert.equal(year, 2026);
+            return { rating: 6.5, votes: 2000, imdbId: 'tt21285562' };
+        }
+    }
+});
+const dogStarsCard = createCard(1384216);
+dogStarsCard.dataset.movieTitle = 'Собачьи звёзды';
+dogStarsCard.dataset.movieOriginalTitle = 'The Dog Stars';
+dogStarsCard.dataset.movieYear = '2026';
+titleSearchService.pendingCards.add(dogStarsCard);
+await flushAndWaitForProviders(titleSearchService);
+assert.equal(imdbTitleSearchCalls, 1);
+assert.equal(dogStarsCard.appliedRatings.imdbRating, 6.5);
+assert.equal(dogStarsCard.appliedRatings.imdbId, 'tt21285562');
+assert.equal(dogStarsCard.appliedRatings.votes.imdb, 2000);
+console.log('✅ Direct English title search fallback successfully resolves missing IMDb ratings');
+
+// Test: TMDB external_ids fallback when card has tmdbId and KP has 0 ratings and no imdbId
+let tmdbExternalIdsCalls = 0;
+let directImdbIdCalls = 0;
+const tmdbExtService = new MovieRatingsEnrichmentService({
+    storage: {
+        get(keys, callback) { callback({ movie_card_ratings_v4: {} }); },
+        set(values, callback) { callback?.(); }
+    },
+    enableDetailFallback: true,
+    tmdbService: {
+        async getExternalIds(tmdbId) {
+            tmdbExternalIdsCalls += 1;
+            assert.equal(tmdbId, 1384216);
+            return { id: 1384216, imdb_id: 'tt21285562' };
+        }
+    },
+    navigationService: {
+        async resolve() {
+            return {
+                kinopoiskId: 6548088,
+                kpRating: 0,
+                imdbRating: 0,
+                imdbId: null
+            };
+        }
+    },
+    kinopoiskService: {
+        async scrapeMoviePageRatingsOffscreen() {
+            return { kpRating: 0, imdbRating: 0, imdbId: null };
+        }
+    },
+    imdbParser: {
+        async getImdbRating(imdbId) {
+            directImdbIdCalls += 1;
+            assert.equal(imdbId, 'tt21285562');
+            return { rating: 6.5, votes: 2000, imdbId: 'tt21285562' };
+        }
+    }
+});
+const tmdbExtCard = createCard(1384216);
+tmdbExtCard.dataset.movieTitle = 'Собачьи звёзды';
+tmdbExtCard.dataset.movieYear = '2026';
+tmdbExtService.pendingCards.add(tmdbExtCard);
+await flushAndWaitForProviders(tmdbExtService);
+assert.equal(tmdbExternalIdsCalls, 1);
+assert.equal(directImdbIdCalls, 1);
+assert.equal(tmdbExtCard.appliedRatings.imdbRating, 6.5);
+assert.equal(tmdbExtCard.appliedRatings.imdbId, 'tt21285562');
+console.log('✅ TMDB external_ids resolution fallback successfully resolves missing IMDb ratings');
+
 }
 
 run().catch(error => {

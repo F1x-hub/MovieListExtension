@@ -230,7 +230,7 @@ class PersonDetailsPageController {
 
         if (this.personContainer) {
             this.personContainer.addEventListener('click', (e) => {
-                const target = e.target?.closest?.('.movie-card-component, .person-details-card-fallback, [data-action="view-details"]');
+                const target = e.target?.closest?.('.movie-card-component, [data-action="view-details"]');
                 if (!target) return;
 
                 const actionTarget = e.target?.closest?.('[data-action="view-details"]');
@@ -256,7 +256,7 @@ class PersonDetailsPageController {
 
                 if (action === 'view-details') {
                     const href = btn.getAttribute('href');
-                    const card = btn.closest('.movie-card-component, .person-details-card-fallback');
+                    const card = btn.closest('.movie-card-component');
                     const movieId = btn.getAttribute('data-movie-id')
                         || card?.getAttribute('data-movie-id')
                         || '';
@@ -864,7 +864,7 @@ class PersonDetailsPageController {
             return { cardWidth: 0, gap: 0, viewportWidth: 0, scrollWidth: 0, maxScrollLeft: 0, visibleCardCount: 0, scrollStep: 0 };
         }
 
-        const card = carousel.querySelector('.movie-card-component, .person-details-card-fallback');
+        const card = carousel.querySelector('.movie-card-component');
         const cardWidth = card?.getBoundingClientRect?.().width || 0;
         const styles = typeof window.getComputedStyle === 'function' ? window.getComputedStyle(carousel) : null;
         const gap = Number.parseFloat(styles?.columnGap || styles?.gap || '0') || 0;
@@ -945,74 +945,57 @@ class PersonDetailsPageController {
     createPersonMovieCard(item) {
         const hasNavigationTarget = this.hasNavigationTarget(item);
 
-        if (typeof window.MovieCard !== 'undefined') {
-            const cardData = {
-                movie: {
-                    id: hasNavigationTarget ? item.kinopoiskId : null,
-                    kinopoiskId: hasNavigationTarget ? item.kinopoiskId : null,
-                    tmdbId: item.tmdbId || null,
-                    isTmdbOnly: !hasNavigationTarget,
-                    name: item.name || item.originalName,
-                    alternativeName: item.originalName,
-                    year: item.year,
-                    posterUrl: item.posterUrl,
-                    // Isolate rating: do not mislabel TMDB vote average as Kinopoisk score
-                    ratingKp: null,
-                    genres: []
-                }
-            };
-            const card = window.MovieCard.create(cardData, {
-                variant: 'search',
-                showGenres: false,
-                showDescription: false,
-                showThreeDotMenu: hasNavigationTarget,
-                showFavorite: hasNavigationTarget,
-                showWatchlist: hasNavigationTarget,
-                showWatching: hasNavigationTarget,
-                showWatched: hasNavigationTarget
-            });
+        if (!window.MovieCard || typeof window.MovieCard.create !== 'function') {
+            throw new Error('[PersonDetails] MovieCard component must be loaded before rendering cards');
+        }
 
-            if (!item.posterUrl) {
-                this.replacePersonMoviePosterFallback(card);
-            }
-
-            console.log('[PersonDetails] Movie card rendered', {
-                name: item.name || item.originalName || null,
+        const cardData = {
+            movie: {
+                id: hasNavigationTarget ? item.kinopoiskId : null,
+                kinopoiskId: hasNavigationTarget ? item.kinopoiskId : null,
                 tmdbId: item.tmdbId || null,
-                kinopoiskId: item.kinopoiskId || null,
-                posterUrl: item.posterUrl || null,
-                posterSource: item.posterSource || null,
-                hasArtwork: Boolean(item.hasArtwork),
-                hasNavigationTarget,
-                cardTag: card.tagName || null,
-                href: card.querySelector?.('[data-action="view-details"]')?.getAttribute('href')
-                    || card.getAttribute?.('href')
-                    || null
-            });
-
-            if (!hasNavigationTarget) {
-                this.applyKinopoiskSearchNavigation(card, item);
+                isTmdbOnly: !hasNavigationTarget,
+                name: item.name || item.originalName,
+                alternativeName: item.originalName,
+                year: item.year,
+                posterUrl: item.posterUrl,
+                // Isolate rating: do not mislabel TMDB vote average as Kinopoisk score
+                ratingKp: null,
+                genres: []
             }
-            return card;
+        };
+        const card = window.MovieCard.create(cardData, {
+            variant: 'search',
+            showGenres: false,
+            showDescription: false,
+            showThreeDotMenu: hasNavigationTarget,
+            showFavorite: hasNavigationTarget,
+            showWatchlist: hasNavigationTarget,
+            showWatching: hasNavigationTarget,
+            showWatched: hasNavigationTarget
+        });
+
+        if (!item.posterUrl) {
+            this.replacePersonMoviePosterFallback(card);
         }
 
-        // Fallback standard element if MovieCard not loaded
-        const card = document.createElement(hasNavigationTarget ? 'a' : 'div');
-        if (hasNavigationTarget) {
-            card.href = `../movie-details/movie-details.html?movieId=${encodeURIComponent(item.kinopoiskId)}`;
-            card.setAttribute('data-movie-id', String(item.kinopoiskId));
+        console.log('[PersonDetails] Movie card rendered', {
+            name: item.name || item.originalName || null,
+            tmdbId: item.tmdbId || null,
+            kinopoiskId: item.kinopoiskId || null,
+            posterUrl: item.posterUrl || null,
+            posterSource: item.posterSource || null,
+            hasArtwork: Boolean(item.hasArtwork),
+            hasNavigationTarget,
+            cardTag: card.tagName || null,
+            href: card.querySelector?.('[data-action="view-details"]')?.getAttribute('href')
+                || card.getAttribute?.('href')
+                || null
+        });
+
+        if (!hasNavigationTarget) {
+            this.applyKinopoiskSearchNavigation(card, item);
         }
-        card.className = 'movie-card movie-card--search person-details-card-fallback';
-        card.setAttribute('aria-label', item.name || item.originalName || 'Movie');
-        card.innerHTML = `
-            <div class="poster-container">
-                ${item.posterUrl ? `<img src="${this.escapeHtml(item.posterUrl)}" alt="" class="movie-poster" loading="lazy">` : `<span class="person-details-poster-placeholder" aria-hidden="true">${this.getPersonMoviePosterPlaceholder()}</span>`}
-            </div>
-            <div class="movie-info">
-                <div class="movie-title">${this.escapeHtml(item.name || item.originalName || 'Movie')}</div>
-                ${item.year ? `<div class="movie-year">${this.escapeHtml(String(item.year))}</div>` : ''}
-            </div>
-        `;
         return card;
     }
 

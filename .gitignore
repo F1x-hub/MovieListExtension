@@ -13,6 +13,8 @@ yarn-error.log*
 .env.development.local
 .env.test.local
 .env.production.local
+functions/.env.*
+serviceAccountKey.json
 
 # IDE files
 .vscode/
@@ -50,6 +52,7 @@ temp/
 # Firebase config (if contains sensitive data)
 firebase-config.js
 src/shared/config/tmdb.config.js
+src/shared/config/firebase.runtime.js
 
 # Build outputs
 dist/
@@ -59,7 +62,9 @@ build/
 *.md
 !README.md
 !AGENT.md
+!CONTEXT.md
 !docs/TASKS.md
+!docs/design-system.md
 
 # Telegram Bot
 telegram-bot/

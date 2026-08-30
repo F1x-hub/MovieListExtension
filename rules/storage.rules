@@ -1,6 +1,22 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    function isAdmin() {
+      return request.auth != null
+        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+
+    // Shared custom comment reaction assets. SVG is intentionally excluded:
+    // reaction images are rendered in extension UI and must stay inert.
+    match /comment_reaction_assets/{assetName} {
+      allow read: if true;
+      allow create, update: if isAdmin()
+        && request.resource.size > 0
+        && request.resource.size <= 256 * 1024
+        && request.resource.contentType in ['image/png', 'image/webp', 'image/gif'];
+      allow delete: if isAdmin();
+    }
+
     // Allow anyone to read avatars, but only owner can write
     match /avatars/{userId}/{allPaths=**} {
       allow read: if true;

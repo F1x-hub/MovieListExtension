@@ -284,12 +284,18 @@ class TMDBService {
         const results = Array.isArray(data.results) ? data.results : [];
         const todayStr = new Date().toISOString().split('T')[0];
 
-        // Filter out future unreleased movies, adult titles, and titles with no audience ratings
+        // Filter out future unreleased movies, adult titles, promo materials, and titles with no audience ratings
         const filtered = results.filter(item => {
             if (item.adult) return false;
             if (!item.release_date) return false;
             if (item.release_date > todayStr) return false;
             if ((Number(item.vote_count) || 0) < 5) return false;
+            const classifier = (typeof MediaClassifier !== 'undefined')
+                ? MediaClassifier
+                : (typeof globalThis !== 'undefined' && globalThis.MediaClassifier ? globalThis.MediaClassifier : null);
+            if (classifier && typeof classifier.isPromoContent === 'function' && classifier.isPromoContent(item)) {
+                return false;
+            }
             return true;
         });
 
@@ -330,6 +336,12 @@ class TMDBService {
             if (!item.release_date) return false;
             if (item.release_date > todayStr) return false;
             if ((Number(item.vote_count) || 0) < 2) return false;
+            const classifier = (typeof MediaClassifier !== 'undefined')
+                ? MediaClassifier
+                : (typeof globalThis !== 'undefined' && globalThis.MediaClassifier ? globalThis.MediaClassifier : null);
+            if (classifier && typeof classifier.isPromoContent === 'function' && classifier.isPromoContent(item)) {
+                return false;
+            }
             return true;
         });
 
@@ -370,6 +382,12 @@ class TMDBService {
             if (!item.first_air_date) return false;
             if (item.first_air_date > todayStr) return false;
             if ((Number(item.vote_count) || 0) < 2) return false;
+            const classifier = (typeof MediaClassifier !== 'undefined')
+                ? MediaClassifier
+                : (typeof globalThis !== 'undefined' && globalThis.MediaClassifier ? globalThis.MediaClassifier : null);
+            if (classifier && typeof classifier.isPromoContent === 'function' && classifier.isPromoContent(item)) {
+                return false;
+            }
             return true;
         });
 
@@ -397,6 +415,7 @@ class TMDBService {
             kinopoiskId: null,
             name: title,
             alternativeName: originalTitle,
+            englishTitle: originalTitle,
             posterUrl: this.buildImageUrl(item.poster_path),
             backdrop: this.buildImageUrl(item.backdrop_path),
             year: this.getYear(releaseDate),
@@ -1396,7 +1415,7 @@ class TMDBService {
             },
             ratingMpaa: this.getCertification(releaseDates, 'US'),
             externalId: {
-                imdb: imdbId || '',
+                imdb: imdbId || movie.imdb_id || movie.external_ids?.imdb_id || '',
                 tmdb: movie.id || null
             },
             additionalDataSource: 'tmdb',
@@ -1632,7 +1651,7 @@ class TMDBService {
             },
             ratingMpaa: usRating,
             externalId: {
-                imdb: imdbId || '',
+                imdb: imdbId || tv.external_ids?.imdb_id || tv.imdb_id || '',
                 tmdb: tv.id || null
             },
             additionalDataSource: 'tmdb',

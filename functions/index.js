@@ -1,15 +1,84 @@
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onRequest } = require("firebase-functions/v2/https");
-const { defineSecret } = require("firebase-functions/params");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { defineSecret, defineString } = require("firebase-functions/params");
 const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
-const { getFirestore } = require("firebase-admin/firestore");
+const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { getDatabaseWithUrl } = require("firebase-admin/database");
 const { createKinopoiskProxyHandler } = require("./kinopoiskProxy");
+const { getFirestoreUsage } = require("./firestoreUsage");
+const { createAdminAuthVerifier, setAdminCors } = require("./adminAuth");
+const { createProviderKeyVault } = require("./providerKeyVault");
+const { createProviderKeyPool } = require("./providerKeyPool");
+const { createTmdbProxyHandler } = require("./tmdbProxy");
+const {
+  createProviderKeyManagementHandler,
+  createProviderKeyManagementService,
+} = require("./providerKeyManagement");
+const { createWatchRoomService } = require("./watchRoomService");
+const { createWatchRoomsStagingHandler } = require("./watchRoomsStaging");
+const { createExpiredWatchRoomCleanup } = require("./watchRoomCleanup");
+const { selectUniqueMovieRatings } = require("./ratingAggregation");
 
-initializeApp();
-const db = getFirestore();
+const app = initializeApp();
+const db = getFirestore(app);
 const TMDB_API_TOKEN = defineSecret("TMDB_API_TOKEN");
 const KINOPOISK_API_KEYS = defineSecret("KINOPOISK_API_KEYS");
+const WATCH_ROOM_STAGING_DATABASE_URL = defineString("WATCH_ROOM_STAGING_DATABASE_URL");
+const verifyAdminRequest = createAdminAuthVerifier({ auth: getAuth(), db });
+let providerKeyManagementHandler = null;
+const providerKeyPools = new Map();
+const DEFAULT_COMMENT_REACTION_TYPES = [
+  "like",
+  "love",
+  "laugh",
+  "wow",
+  "sad",
+  "fire",
+  "clap",
+  "rocket",
+  "party",
+  "thinking",
+  "eyes",
+  "hundred",
+];
+
+async function getActiveCommentReactionTypes() {
+  try {
+    const snapshot = await db.collection("settings").doc("commentReactions").get();
+    const configuredTypes = snapshot.exists ? snapshot.data()?.reactionTypes : null;
+    if (Array.isArray(configuredTypes) && configuredTypes.length > 0) {
+      const types = [...new Set(configuredTypes
+        .map((type) => String(type ?? "").trim().toLowerCase())
+        .filter((type) => /^[a-z0-9](?:[a-z0-9_-]{0,47})$/.test(type))
+      )].slice(0, 24);
+      if (types.length > 0) return types;
+    }
+  } catch (error) {
+    console.warn("[CommentReactions] Failed to load shared config; using defaults:", error.message);
+  }
+  return DEFAULT_COMMENT_REACTION_TYPES;
+}
+
+function getProviderKeyPool(provider = "kinopoisk") {
+  if (!providerKeyPools.has(provider)) {
+    providerKeyPools.set(provider, createProviderKeyPool({
+      db,
+      vault: createProviderKeyVault(),
+      provider,
+    }));
+  }
+  return providerKeyPools.get(provider);
+}
+
+function getWatchRoomStagingDatabase() {
+  const url = WATCH_ROOM_STAGING_DATABASE_URL.value();
+  if (!/^https:\/\/[a-z0-9-]+\.firebaseio\.com$/i.test(url || "")) {
+    throw new Error("Watch-room staging database URL is invalid");
+  }
+  return getDatabaseWithUrl(url, app);
+}
 
 exports.kinopoiskProxy = onRequest(
   {
@@ -21,34 +90,26 @@ exports.kinopoiskProxy = onRequest(
   createKinopoiskProxyHandler({
     getSecretValue: () => KINOPOISK_API_KEYS.value(),
     verifyIdToken: (idToken) => getAuth().verifyIdToken(idToken),
+    keyPool: {
+      getActiveKeys: () => getProviderKeyPool("kinopoisk").getActiveKeys(),
+      reportOutcome: (outcome) => getProviderKeyPool("kinopoisk").reportOutcome(outcome),
+    },
   })
 );
 
-function setTmdbCors(req, res) {
-  const origin = req.headers.origin;
-  if (!origin || origin.startsWith("chrome-extension://") || origin.startsWith("http://localhost")) {
-    if (origin) res.set("Access-Control-Allow-Origin", origin);
-    res.set("Vary", "Origin");
-    res.set("Access-Control-Allow-Methods", "GET, OPTIONS");
-    res.set("Access-Control-Allow-Headers", "Content-Type");
-    return true;
-  }
-  return false;
-}
-
 /**
- * Bounded TMDB proxy for extension clients without a local token.
- * The token is injected from Firebase Secret Manager and never reaches the client.
+ * Read Firestore free-tier usage through Cloud Monitoring for the admin panel.
+ * Usage data is intentionally not persisted in Firestore. The admin check still
+ * performs one normal user-document read per request.
  */
-exports.tmdbProxy = onRequest(
+exports.firestoreUsage = onRequest(
   {
     region: "us-central1",
-    timeoutSeconds: 60,
+    timeoutSeconds: 30,
     memory: "256MiB",
-    secrets: [TMDB_API_TOKEN],
   },
   async (req, res) => {
-    if (!setTmdbCors(req, res)) {
+    if (!setAdminCors(req, res)) {
       res.status(403).json({ error: "Origin is not allowed" });
       return;
     }
@@ -62,47 +123,100 @@ exports.tmdbProxy = onRequest(
       return;
     }
 
-    const rawTarget = typeof req.query.url === "string" ? req.query.url : "";
-    if (!rawTarget || rawTarget.length > 4096) {
-      res.status(400).json({ error: "A valid TMDB target URL is required" });
-      return;
-    }
-
-    let targetUrl;
     try {
-      targetUrl = new URL(rawTarget);
-    } catch {
-      res.status(400).json({ error: "TMDB target URL is invalid" });
-      return;
-    }
-
-    if (targetUrl.origin !== "https://api.themoviedb.org" || !targetUrl.pathname.startsWith("/3/")) {
-      res.status(400).json({ error: "TMDB target URL is not allowed" });
-      return;
-    }
-
-    const token = TMDB_API_TOKEN.value();
-    if (!token) {
-      res.status(503).json({ error: "TMDB proxy is not configured" });
-      return;
-    }
-
-    try {
-      const upstream = await fetch(targetUrl, {
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      const body = await upstream.text();
-      res.status(upstream.status);
-      res.set("Content-Type", upstream.headers.get("content-type") || "application/json");
-      res.send(body);
+      await verifyAdminRequest(req);
+      const usage = await getFirestoreUsage();
+      res.set("Cache-Control", "no-store");
+      res.status(200).json(usage);
     } catch (error) {
-      console.error("[tmdbProxy] Upstream request failed:", error);
-      res.status(502).json({ error: "TMDB upstream request failed" });
+      const statusCode = Number.isInteger(error.statusCode) ? error.statusCode : 500;
+      if (statusCode >= 500) {
+        console.error("[firestoreUsage] Failed to read usage:", error);
+      }
+      res.status(statusCode).json({
+        error: statusCode === 500 ? "Firestore usage is temporarily unavailable" : error.message,
+      });
     }
   }
+);
+
+function getProviderKeyManagementHandler() {
+  if (!providerKeyManagementHandler) {
+    const service = createProviderKeyManagementService({
+      db,
+      vault: createProviderKeyVault(),
+    });
+    providerKeyManagementHandler = createProviderKeyManagementHandler({
+      service,
+      verifyAdminRequest,
+      setCors: setAdminCors,
+    });
+  }
+  return providerKeyManagementHandler;
+}
+
+exports.providerKeysAdmin = onRequest(
+  {
+    region: "us-central1",
+    timeoutSeconds: 60,
+    memory: "256MiB",
+  },
+  async (req, res) => getProviderKeyManagementHandler()(req, res)
+);
+
+/**
+ * Bounded TMDB proxy for extension clients without a local token.
+ * The token is injected from Firebase Secret Manager and never reaches the client.
+ */
+exports.tmdbProxy = onRequest(
+  {
+    region: "us-central1",
+    timeoutSeconds: 60,
+    memory: "256MiB",
+    secrets: [TMDB_API_TOKEN],
+  },
+  createTmdbProxyHandler({
+    getLegacySecretValue: () => TMDB_API_TOKEN.value(),
+    keyPool: {
+      getActiveKeys: () => getProviderKeyPool("tmdb").getActiveKeys(),
+      reportOutcome: (outcome) => getProviderKeyPool("tmdb").reportOutcome(outcome),
+    },
+  })
+);
+
+/**
+ * Temporary two-client proof surface. It is intentionally private-only,
+ * limited to two approved users, and uses the separately provisioned staging
+ * RTDB instance. It stores no playback URLs or credentials.
+ */
+exports.watchRoomsStaging = onRequest(
+  {
+    region: "us-central1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+  },
+  createWatchRoomsStagingHandler({
+    service: createWatchRoomService({ db, collectionPrefix: "watchRoomsStaging", emitAclOutbox: false }),
+    verifyIdToken: (idToken) => getAuth(app).verifyIdToken(idToken),
+    getRealtimeDatabase: getWatchRoomStagingDatabase,
+  })
+);
+
+exports.cleanupExpiredWatchRoomsStaging = onSchedule(
+  {
+    schedule: "15 4 * * *",
+    timeZone: "Asia/Tbilisi",
+    region: "us-central1",
+    memory: "256MiB",
+    timeoutSeconds: 120,
+    maxInstances: 1,
+    retryCount: 1,
+    maxRetrySeconds: 300,
+  },
+  async () => createExpiredWatchRoomCleanup({
+    db,
+    getRealtimeDatabase: getWatchRoomStagingDatabase,
+  }).run()
 );
 
 /**
@@ -126,19 +240,22 @@ exports.aggregateMovieRatings = onDocumentWritten("ratings/{ratingId}", async (e
     .where("movieId", "in", movieIdCandidates)
     .get();
 
-  let ratingsCount = 0;
+  const currentRatings = selectUniqueMovieRatings(
+    ratingsSnapshot.docs.map((doc) => ({
+      id: doc.id,
+      data: doc.data(),
+      updateTime: doc.updateTime,
+      createTime: doc.createTime,
+    })),
+    numMovieId
+  );
   let ratingsSum = 0;
   let latestTimestamp = null;
 
-  ratingsSnapshot.forEach((doc) => {
-    const ratingData = doc.data();
-    const ratingVal = Number(ratingData.rating);
-    if (!isNaN(ratingVal)) {
-      ratingsSum += ratingVal;
-      ratingsCount += 1;
-    }
+  currentRatings.forEach(({ data: ratingData, updateTime, createTime }) => {
+    ratingsSum += Number(ratingData.rating);
 
-    const ratingTimestamp = ratingData.updatedAt || ratingData.createdAt || doc.updateTime || doc.createTime;
+    const ratingTimestamp = ratingData.updatedAt || ratingData.createdAt || updateTime || createTime;
     if (ratingTimestamp) {
       const ratingMillis = ratingTimestamp.toMillis ? ratingTimestamp.toMillis() : new Date(ratingTimestamp).getTime();
       const latestMillis = latestTimestamp
@@ -149,6 +266,8 @@ exports.aggregateMovieRatings = onDocumentWritten("ratings/{ratingId}", async (e
       }
     }
   });
+
+  const ratingsCount = currentRatings.length;
 
   const avgRating = ratingsCount > 0 ? Math.round((ratingsSum / ratingsCount) * 10) / 10 : 0;
 
@@ -174,6 +293,72 @@ exports.aggregateMovieRatings = onDocumentWritten("ratings/{ratingId}", async (e
   );
 
   console.log(`[Cloud Function v2] Aggregated movie ${movieId}: count=${ratingsCount}, sum=${ratingsSum}, avg=${avgRating}`);
+  return null;
+});
+
+/**
+ * Rebuild the derived reaction summary for one comment.
+ * Reaction documents never touch /ratings, so this trigger cannot invoke the
+ * movie rating aggregate function above.
+ */
+exports.aggregateCommentReactions = onDocumentWritten("commentReactions/{reactionId}", async (event) => {
+  const dataAfter = event.data?.after?.exists ? event.data.after.data() : null;
+  const dataBefore = event.data?.before?.exists ? event.data.before.data() : null;
+  const ratingId = dataAfter?.ratingId || dataBefore?.ratingId || event.params?.reactionId?.split("_")[0];
+  if (!ratingId) return null;
+
+  // The rating is the authoritative movie binding. This also prevents an
+  // orphaned reaction document from creating a publicly readable summary.
+  const ratingSnapshot = await db.collection("ratings").doc(ratingId).get();
+  if (!ratingSnapshot.exists) {
+    await db.collection("commentReactionSummaries").doc(ratingId).delete();
+    return null;
+  }
+  const rating = ratingSnapshot.data() || {};
+
+  const reactionsSnapshot = await db
+    .collection("commentReactions")
+    .where("ratingId", "==", ratingId)
+    .get();
+
+  const activeReactionTypes = await getActiveCommentReactionTypes();
+  const counts = Object.fromEntries(activeReactionTypes.map((type) => [type, 0]));
+
+  const movieId = rating.movieId ?? dataAfter?.movieId ?? dataBefore?.movieId ?? null;
+  const orderSet = new Set();
+  const sortedDocs = reactionsSnapshot.docs.slice().sort((a, b) => {
+    const dataA = a.data() || {};
+    const dataB = b.data() || {};
+    const timeA = dataA.createdAt?.toMillis ? dataA.createdAt.toMillis() : (dataA.createdAt ? new Date(dataA.createdAt).getTime() : 0);
+    const timeB = dataB.createdAt?.toMillis ? dataB.createdAt.toMillis() : (dataB.createdAt ? new Date(dataB.createdAt).getTime() : 0);
+    return timeA - timeB;
+  });
+
+  sortedDocs.forEach((reactionDoc) => {
+    const reaction = reactionDoc.data() || {};
+    const rawTypes = Array.isArray(reaction.types) ? reaction.types : [reaction.type];
+    const reactionTypes = [...new Set(rawTypes
+      .map((reactionType) => String(reactionType ?? "").trim().toLowerCase())
+      .filter((reactionType) => Object.prototype.hasOwnProperty.call(counts, reactionType))
+    )].slice(0, 3);
+    reactionTypes.forEach((reactionType) => {
+      counts[reactionType] += 1;
+      orderSet.add(reactionType);
+    });
+  });
+
+  const order = Array.from(orderSet).filter((type) => counts[type] > 0);
+  const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+  await db.collection("commentReactionSummaries").doc(ratingId).set({
+    ratingId,
+    movieId,
+    counts,
+    order,
+    total,
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  console.log(`[Cloud Function v2] Aggregated reactions for ${ratingId}: total=${total}`);
   return null;
 });
 

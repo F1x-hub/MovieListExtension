@@ -5,6 +5,25 @@
  */
 const audio = document.getElementById('radio');
 const scraperFrame = document.getElementById('scraperFrame');
+let activeScraperRequestId = null;
+let scraperLoadStartedAt = 0;
+
+scraperFrame?.addEventListener('load', () => {
+    console.info('[KinopoiskOffscreenTrace]', {
+        stage: 'iframe:load',
+        requestId: activeScraperRequestId,
+        stageDurationMs: scraperLoadStartedAt ? Date.now() - scraperLoadStartedAt : null
+    });
+});
+
+scraperFrame?.addEventListener('error', (error) => {
+    console.warn('[KinopoiskOffscreenTrace]', {
+        stage: 'iframe:error',
+        requestId: activeScraperRequestId,
+        stageDurationMs: scraperLoadStartedAt ? Date.now() - scraperLoadStartedAt : null,
+        error: error?.message || 'iframe-load-error'
+    });
+});
 
 // Default volume
 if (audio) {
@@ -17,6 +36,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         switch (message.type) {
             case 'LOAD_SEARCH_FRAME':
                 if (scraperFrame) {
+                    activeScraperRequestId = message.requestId || null;
+                    scraperLoadStartedAt = Date.now();
+                    console.info('[KinopoiskOffscreenTrace]', {
+                        stage: 'iframe:load-start',
+                        requestId: activeScraperRequestId,
+                        searchUrl: message.searchUrl
+                    });
                     console.log('[Offscreen] Loading scraper iframe:', message.searchUrl);
                     scraperFrame.src = message.searchUrl || 'about:blank';
                     sendResponse({ success: true });
@@ -27,8 +53,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
             case 'CLEANUP_SEARCH_FRAME':
                 if (scraperFrame) {
+                    console.info('[KinopoiskOffscreenTrace]', {
+                        stage: 'iframe:cleanup',
+                        requestId: activeScraperRequestId
+                    });
                     console.log('[Offscreen] Cleaning up scraper iframe');
                     scraperFrame.src = 'about:blank';
+                    activeScraperRequestId = null;
+                    scraperLoadStartedAt = 0;
                     sendResponse({ success: true });
                 } else {
                     sendResponse({ success: false });

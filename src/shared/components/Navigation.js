@@ -40,6 +40,12 @@ class Navigation {
                 if (!this.i18n.currentLocale || this.i18n.currentLocale === 'en') {
                     await this.i18n.init();
                 }
+
+                // Keep the protected admin surface consistent with its Russian copy.
+                // This is intentionally local to the page and does not persist a global preference.
+                if (this.currentPage === 'admin') {
+                    this.i18n.currentLocale = 'ru';
+                }
             }
         } catch (e) {
             console.warn('Navigation: i18n module not loaded', e);
@@ -1645,103 +1651,25 @@ class Navigation {
     }
 
     getCustomThemes() {
-        try {
-            const raw = localStorage.getItem('movieExtensionCustomThemes');
-            return raw ? JSON.parse(raw) : [];
-        } catch (error) {
-            console.error('Error reading custom themes from localStorage:', error);
-            return [];
-        }
+        return window.ThemeService ? window.ThemeService.getCustomThemes() : [];
     }
 
     saveCustomThemes(customThemes) {
-        try {
-            localStorage.setItem('movieExtensionCustomThemes', JSON.stringify(customThemes));
-            if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-                chrome.storage.local.set({ customThemes });
-            }
-        } catch (error) {
-            console.error('Error saving custom themes to localStorage:', error);
+        if (window.ThemeService) {
+            return window.ThemeService.saveCustomThemes(customThemes);
         }
+        return [];
     }
 
     getCurrentTheme() {
-        try {
-            const savedTheme = localStorage.getItem('movieExtensionTheme');
-            return savedTheme || 'dark';
-        } catch (error) {
-            console.error('Error reading theme from localStorage:', error);
-            return 'dark';
-        }
+        return window.ThemeService ? window.ThemeService.getCurrentTheme() : 'dark';
     }
 
     applyTheme(theme) {
-        try {
-            let isLight = theme === 'light';
-            let customTheme = null;
-
-            if (theme && theme.startsWith('custom_')) {
-                const customs = this.getCustomThemes();
-                customTheme = customs.find(t => t.id === theme);
-                if (customTheme) {
-                    isLight = customTheme.base === 'light';
-                }
-            }
-
-            // Apply theme class to document root and body
-            if (isLight) {
-                document.documentElement.classList.add('light-theme');
-                if (document.body) document.body.classList.add('light-theme');
-            } else {
-                document.documentElement.classList.remove('light-theme');
-                if (document.body) document.body.classList.remove('light-theme');
-            }
-
-            // Apply custom CSS variables or reset to stylesheet defaults
-            const customVariablesList = [
-                '--theme-bg-primary',
-                '--theme-bg-secondary',
-                '--theme-bg-tertiary',
-                '--theme-bg-card',
-                '--theme-text-primary',
-                '--theme-text-secondary',
-                '--theme-text-muted',
-                '--theme-border',
-                '--theme-input-bg',
-                '--theme-input-text',
-                '--theme-hover-bg',
-                '--theme-active-bg',
-                '--accent-color'
-            ];
-
-            if (customTheme && customTheme.variables) {
-                Object.keys(customTheme.variables).forEach(varName => {
-                    document.documentElement.style.setProperty(varName, customTheme.variables[varName]);
-                });
-            } else {
-                customVariablesList.forEach(v => document.documentElement.style.removeProperty(v));
-            }
-
-            // Save active theme to localStorage & chrome.storage
-            localStorage.setItem('movieExtensionTheme', theme);
-            if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-                chrome.storage.local.set({ theme });
-            }
-
-            // Update extension icon
-            if (typeof IconUtils !== 'undefined') {
-                IconUtils.updateExtensionIcon(isLight ? 'light' : 'dark');
-                const navLogoImg = document.querySelector('#navLogo img');
-                if (navLogoImg) {
-                    navLogoImg.src = chrome.runtime.getURL(IconUtils.getIconPath(isLight ? 'light' : 'dark', 48));
-                }
-            }
-
-            // Update theme button text and icon
-            this.updateThemeButton(theme);
-        } catch (error) {
-            console.error('Error applying theme:', error);
-        }
+        if (!window.ThemeService) return 'dark';
+        const state = window.ThemeService.applyTheme(theme);
+        this.updateThemeButton(state.theme);
+        return state.theme;
     }
 
     updateThemeButton(theme) {
@@ -2403,10 +2331,19 @@ class Navigation {
             return;
         }
 
+        const authTitle = document.body.classList.contains('admin-page-body')
+            ? 'Админ-панель'
+            : null;
+        const authLocale = document.body.classList.contains('admin-page-body')
+            ? 'ru'
+            : null;
+
         this.authModal = new AuthClass({
             container: document.body,
             mode: 'modal',
             initialView: initialView,
+            title: authTitle,
+            locale: authLocale,
             onAuthSuccess: async (user) => {
                 if (this.authModal) {
                     this.authModal.destroy();

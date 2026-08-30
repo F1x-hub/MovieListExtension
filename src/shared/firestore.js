@@ -5,6 +5,7 @@ const TOKEN_REFRESH_THRESHOLD = 2 * 60 * 60 * 1000; // 2 hours before expiration
 class FirebaseManager {
     constructor() {
         this.db = null;
+        this.rtdb = null;
         this.auth = null;
         this.user = null;
         this.isInitialized = false;
@@ -15,6 +16,9 @@ class FirebaseManager {
 
     init() {
         try {
+            const runtimeDatabaseUrl = typeof globalThis !== 'undefined'
+                ? globalThis.MOVIELIST_RUNTIME_CONFIG?.databaseURL
+                : null;
             const firebaseConfig = {
                 apiKey: "AIzaSyC6PI4cBRzn6KLVJ6ikensKus6LaulabO4",
                 authDomain: "movielistdb-13208.firebaseapp.com",
@@ -24,6 +28,10 @@ class FirebaseManager {
                 appId: "1:532518163829:web:36a6a62a14adc188f1af3c",
                 measurementId: "G-ERR3F3Z7S4"
               };
+
+            if (typeof runtimeDatabaseUrl === 'string' && /^https:\/\/[a-z0-9-]+\.firebaseio\.com$/i.test(runtimeDatabaseUrl)) {
+                firebaseConfig.databaseURL = runtimeDatabaseUrl;
+            }
 
             if (!firebase.apps.length) {
                 firebase.initializeApp(firebaseConfig);
@@ -89,6 +97,27 @@ class FirebaseManager {
             console.error('Firebase initialization error:', error);
             this.isInitialized = false;
         }
+    }
+
+    /**
+     * Returns the dedicated watch-room Realtime Database only when a room flow
+     * explicitly needs it. Normal pages keep using Firestore and never create
+     * an RTDB connection.
+     */
+    getRealtimeDatabase() {
+        if (!this.isInitialized || !this.auth) {
+            throw new Error('Firebase is not initialized');
+        }
+        if (typeof firebase === 'undefined' || typeof firebase.database !== 'function') {
+            throw new Error('Realtime Database SDK is not loaded');
+        }
+        if (!firebase.apps?.[0]?.options?.databaseURL) {
+            throw new Error('Realtime Database URL is not configured');
+        }
+        if (!this.rtdb) {
+            this.rtdb = firebase.database();
+        }
+        return this.rtdb;
     }
 
     async shouldValidateToken() {
@@ -386,6 +415,98 @@ class FirebaseManager {
             console.error('Error deleting profile photo:', error);
             throw error;
         }
+    }
+
+    async uploadCommentReactionAsset(file, reactionId) {
+        const user = this.getCurrentUser();
+        if (!user) throw new Error('No authenticated user');
+
+        const allowedTypes = globalThis.CommentReactionService?.REACTION_ASSET_CONTENT_TYPES
+            || ['image/png', 'image/webp', 'image/gif'];
+        const maxSize = globalThis.CommentReactionService?.MAX_REACTION_ASSET_SIZE || (256 * 1024);
+        const contentType = String(file?.type || '').toLowerCase();
+        const normalizedId = String(reactionId || '').trim();
+        if (!file || !allowedTypes.includes(contentType)) {
+            throw new Error('Поддерживаются только PNG, WebP и GIF.');
+        }
+        if (!Number.isFinite(file.size) || file.size <= 0 || file.size > maxSize) {
+            throw new Error('Размер изображения не должен превышать 256 КБ.');
+        }
+        if (!/^custom_[a-z0-9_-]{1,80}$/i.test(normalizedId)) {
+            throw new Error('Некорректный идентификатор реакции.');
+        }
+
+        const extension = {
+            'image/png': 'png',
+            'image/webp': 'webp',
+            'image/gif': 'gif'
+        }[contentType];
+        const objectPath = `comment_reaction_assets/${normalizedId}.${extension}`;
+        const token = await user.getIdToken();
+        const bucket = 'movielistdb-13208.firebasestorage.app';
+        const uploadUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o?name=${encodeURIComponent(objectPath)}&uploadType=media`;
+        const response = await fetch(uploadUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': contentType
+            },
+            body: file
+        });
+
+        if (!response.ok) {
+            throw new Error(`Не удалось загрузить изображение (${response.status}).`);
+        }
+
+        const info = await response.json();
+        const uploadedPath = info.name || objectPath;
+        const tokenValue = Array.isArray(info.downloadTokens)
+            ? info.downloadTokens[0]
+            : info.downloadTokens;
+        const imageUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(uploadedPath)}?alt=media${tokenValue ? `&token=${encodeURIComponent(tokenValue)}` : ''}`;
+
+        try {
+            const metadataUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(uploadedPath)}`;
+            await fetch(metadataUrl, {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ cacheControl: 'public, max-age=31536000' })
+            });
+        } catch (metadataError) {
+            console.warn('Failed to update reaction asset metadata:', metadataError);
+        }
+
+        return {
+            imageUrl,
+            storagePath: uploadedPath,
+            contentType,
+            size: file.size
+        };
+    }
+
+    async deleteCommentReactionAsset(storagePath) {
+        const normalizedPath = String(storagePath || '').trim();
+        if (!normalizedPath.startsWith('comment_reaction_assets/')
+            || normalizedPath.includes('..')
+            || normalizedPath.includes('\\')) return false;
+
+        const user = this.getCurrentUser();
+        if (!user) throw new Error('No authenticated user');
+        const token = await user.getIdToken();
+        const bucket = 'movielistdb-13208.firebasestorage.app';
+        const url = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(normalizedPath)}`;
+        const response = await fetch(url, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (!response.ok && response.status !== 404) {
+            throw new Error(`Не удалось удалить изображение (${response.status}).`);
+        }
+        return true;
     }
 
     async uploadBanner(file) {
@@ -1057,6 +1178,9 @@ class FirebaseManager {
     initializeServices() {
         this.movieCacheService = new MovieCacheService(this);
         this.ratingService = new RatingService(this);
+        this.commentReactionService = typeof CommentReactionService !== 'undefined'
+            ? new CommentReactionService(this)
+            : null;
         this.userService = new UserService(this);
         this.kinopoiskService = new KinopoiskService();
         this.ratingsCacheService = new RatingsCacheService(this);
@@ -1081,6 +1205,16 @@ class FirebaseManager {
             this.ratingService = new RatingService(this);
         }
         return this.ratingService;
+    }
+
+    getCommentReactionService() {
+        if (!this.commentReactionService) {
+            if (typeof CommentReactionService === 'undefined') {
+                throw new Error('CommentReactionService class not found. Check if CommentReactionService.js is loaded.');
+            }
+            this.commentReactionService = new CommentReactionService(this);
+        }
+        return this.commentReactionService;
     }
 
     getUserService() {

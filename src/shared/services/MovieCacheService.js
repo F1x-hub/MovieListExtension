@@ -2,11 +2,106 @@
  * MovieCacheService - Service for caching movie data in Firestore
  * Reduces API calls by storing movie information locally
  */
+const MOVIE_METADATA_FIELDS = [
+    'name',
+    'alternativeName',
+    'enName',
+    'englishTitle',
+    'year',
+    'releaseDate',
+    'posterUrl',
+    'posterPreviewUrl',
+    'backdropUrl',
+    'backdrop',
+    'description',
+    'shortDescription',
+    'slogan',
+    'genres',
+    'countries',
+    'duration',
+    'movieLength',
+    'type',
+    'mediaType',
+    'isSeries'
+];
+
+function hasUsableMovieMetadata(field, value) {
+    if (value === undefined || value === null) return false;
+
+    if (Array.isArray(value)) {
+        return value.length > 0;
+    }
+
+    if (typeof value === 'string') {
+        const normalized = value.trim();
+        if (!normalized || ['loading...', 'unknown movie', 'unknown title'].includes(normalized.toLowerCase())) {
+            return false;
+        }
+        if (field === 'description' || field === 'shortDescription') {
+            return normalized.length >= 20;
+        }
+        if (field.endsWith('Url') || field === 'backdrop') {
+            return /^https?:\/\//i.test(normalized);
+        }
+        return true;
+    }
+
+    if (typeof value === 'number') {
+        return Number.isFinite(value) && value > 0;
+    }
+
+    if (typeof value === 'object') {
+        return Object.keys(value).length > 0;
+    }
+
+    return true;
+}
+
 class MovieCacheService {
     constructor(firebaseManager) {
         this.db = firebaseManager.db;
         this.collection = 'movies';
         this.localMovieCachePrefix = 'local_movie_cache_';
+    }
+
+    /**
+     * Merge movie metadata without allowing empty or placeholder fields from a
+     * newer partial response to erase a complete cached value.
+     *
+     * `primary` remains authoritative when its field is usable. `fallback` is
+     * used only to heal missing or clearly incomplete metadata fields.
+     */
+    static mergeMovieMetadata(primary = {}, fallback = {}) {
+        const preferred = primary && typeof primary === 'object' ? primary : {};
+        const backup = fallback && typeof fallback === 'object' ? fallback : {};
+        const merged = { ...preferred };
+
+        MOVIE_METADATA_FIELDS.forEach(field => {
+            if (!hasUsableMovieMetadata(field, preferred[field]) && hasUsableMovieMetadata(field, backup[field])) {
+                merged[field] = backup[field];
+            }
+        });
+
+        return merged;
+    }
+
+    mergeMovieMetadata(primary = {}, fallback = {}) {
+        return MovieCacheService.mergeMovieMetadata(primary, fallback);
+    }
+
+    /**
+     * Return only metadata fields suitable for a movie-document update.
+     * Aggregate rating fields must remain owned by the rating transaction and
+     * Cloud Function.
+     */
+    getMovieMetadataPatch(primary = {}, fallback = {}) {
+        const merged = this.mergeMovieMetadata(primary, fallback);
+        return MOVIE_METADATA_FIELDS.reduce((patch, field) => {
+            if (Object.prototype.hasOwnProperty.call(merged, field) && merged[field] !== undefined) {
+                patch[field] = merged[field];
+            }
+            return patch;
+        }, {});
     }
 
     getLocalMovieCacheKey(kinopoiskId) {
@@ -211,18 +306,24 @@ class MovieCacheService {
 
             const movieRef = this.db.collection(this.collection).doc(movieId);
             const existingMovie = await movieRef.get();
+            const existingMovieData = existingMovie.exists ? existingMovie.data() : {};
+            const safeCacheData = this.mergeMovieMetadata(cacheData, existingMovieData);
             const isCommunityRated = existingMovie.exists && existingMovie.data().hasCommunityRating === true;
 
             if (isCommunityRated) {
                 // Merge pure metadata into existing Firestore document without touching aggregate fields
-                await movieRef.set(cacheData, { merge: true });
-                this.saveToLocalStorage(movieId, { id: movieId, ...movieData, lastUpdated: cacheData.lastUpdated });
+                await movieRef.set(safeCacheData, { merge: true });
+                this.saveToLocalStorage(movieId, {
+                    id: movieId,
+                    ...this.mergeMovieMetadata(movieData, existingMovieData),
+                    lastUpdated: cacheData.lastUpdated
+                });
             } else {
                 // Keep purely unrated movies in local cache to avoid polluting Firestore
                 await this.setLocalMovieCache(movieId, { ...movieData, lastUpdated: cacheData.lastUpdated });
             }
 
-            return { id: movieId, ...cacheData };
+            return { id: movieId, ...safeCacheData };
         } catch (error) {
             console.warn('[MovieCacheService] Warning while caching movie:', error);
             return { id: movieData.kinopoiskId || movieData.id, ...movieData };
@@ -302,14 +403,19 @@ class MovieCacheService {
             delete updatePayload.lastRatingUpdatedAt;
 
             const movieDoc = await docRef.get();
+            const existingMovieData = movieDoc.exists ? movieDoc.data() : {};
+            const safeUpdatePayload = this.mergeMovieMetadata(updatePayload, existingMovieData);
             if (movieDoc.exists && movieDoc.data().hasCommunityRating === true) {
-                await docRef.set(updatePayload, { merge: true });
+                await docRef.set(safeUpdatePayload, { merge: true });
                 const updatedDoc = await docRef.get();
                 return { id: updatedDoc.id, ...updatedDoc.data() };
             }
 
             const localMovie = await this.getLocalMovieCache(movieId);
-            const updatedLocalMovie = { ...(localMovie || {}), ...updateData, kinopoiskId: Number(kinopoiskId), lastUpdated: updatePayload.lastUpdated };
+            const updatedLocalMovie = this.mergeMovieMetadata(
+                { ...(localMovie || {}), ...updateData, kinopoiskId: Number(kinopoiskId), lastUpdated: updatePayload.lastUpdated },
+                localMovie || {}
+            );
             await this.setLocalMovieCache(movieId, updatedLocalMovie);
             return { id: movieId, ...updatedLocalMovie };
         } catch (error) {

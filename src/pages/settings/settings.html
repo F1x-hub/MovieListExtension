@@ -14,6 +14,7 @@
     <link rel="stylesheet" href="../../shared/styles/navigation.css">
     <link rel="stylesheet" href="settings.css">
     <link rel="stylesheet" href="../../shared/styles/report-widget.css">
+    <script src="/src/shared/services/ThemeService.js"></script>
 </head>
 <body class="settings-page-body">
     <div class="app-container">
@@ -113,7 +114,7 @@
                             <p class="section-description" data-i18n="settings.select_language">Select your preferred language.</p>
                             
                             <div class="custom-dropdown" id="languageDropdown">
-                                <div class="dropdown-header">
+                                <div class="dropdown-trigger">
                                     <div class="selected-content">
                                         <span class="selected-flag">🇷🇺</span>
                                         <span class="selected-name">Русский</span>
@@ -123,7 +124,7 @@
                                     </span>
                                 </div>
                                 <div class="dropdown-list">
-                                    <div class="dropdown-item" data-value="ru">
+                                    <div class="dropdown-option" data-value="ru">
                                         <span class="item-flag">🇷🇺</span>
                                         <div class="item-text">
                                             <span class="native-name">Русский</span>
@@ -131,7 +132,7 @@
                                         </div>
                                         <span class="check-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
                                     </div>
-                                    <div class="dropdown-item" data-value="en">
+                                    <div class="dropdown-option" data-value="en">
                                         <span class="item-flag">🇺🇸</span>
                                         <div class="item-text">
                                             <span class="native-name">English</span>
@@ -201,7 +202,7 @@
                 
                 <!-- Action Footer -->
                 <div class="settings-actions-footer">
-                    <button id="resetBtn" class="btn btn-ghost" data-i18n="settings.reset">Reset to Defaults</button>
+                    <button id="resetBtn" class="btn btn-secondary" data-i18n="settings.reset">Reset to Defaults</button>
                     <button id="saveBtn" class="btn btn-primary" data-i18n="settings.save">Save Settings</button>
                 </div>
             </div>

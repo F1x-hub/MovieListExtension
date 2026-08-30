@@ -207,7 +207,7 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.6px;
-    color: var(--theme-text-muted, #71717a);
+    color: var(--theme-text-secondary, #a1a1aa);
 }
 
 .light-theme .full-page-auth-divider::before,
@@ -320,7 +320,7 @@
     padding: 12px 18px;
     border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 10px;
-    background: linear-gradient(135deg, #ffffff 0%, #e4e4e7 100%);
+    background: #f4f4f5;
     color: #09090b;
     font-weight: 600;
     font-size: 14px;
@@ -337,7 +337,7 @@
 }
 
 .full-page-auth-submit-btn:hover:not(:disabled) {
-    background: linear-gradient(135deg, #f4f4f5 0%, #d4d4d8 100%);
+    background: #e4e4e7;
     transform: translateY(-1px);
     box-shadow: 0 6px 20px rgba(255, 255, 255, 0.25);
 }
@@ -348,7 +348,7 @@
 }
 
 .light-theme .full-page-auth-submit-btn {
-    background: linear-gradient(135deg, #09090b 0%, #27272a 100%);
+    background: #18181b;
     color: #ffffff;
     border-color: rgba(0, 0, 0, 0.1);
 }

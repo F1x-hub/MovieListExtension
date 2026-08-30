@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Panel - Movie Ratings</title>
+    <title>Админ-панель — Movie Ratings</title>
     <link rel="stylesheet" href="../../shared/styles/common.css">
     <link rel="stylesheet" href="../../shared/styles/theme.css">
     <link rel="stylesheet" href="../../shared/styles/components.css">
@@ -11,11 +11,12 @@
     <link rel="stylesheet" href="../../shared/styles/admin.css">
     <link rel="stylesheet" href="../../shared/styles/report-widget.css">
     <link rel="stylesheet" href="../../shared/styles/image-lightbox.css">
+    <script src="../../shared/services/ThemeService.js"></script>
 </head>
 <body class="settings-page-body admin-page-body">
     <div class="app-container">
         <!-- Navigation will be injected here -->
-        <nav class="navbar" id="navbar"></nav>
+        <nav class="navbar" id="navbar" aria-label="Основная навигация"></nav>
         
         <main class="main-content settings-main">
             <div class="settings-layout admin-shell">
@@ -27,9 +28,9 @@
                 </header>
 
                 <!-- Section navigation -->
-                <aside class="settings-sidebar admin-section-nav">
+                <aside class="settings-sidebar admin-section-nav" id="adminSectionNav" style="display: none;">
                     
-                    <nav class="sidebar-nav">
+                    <nav class="sidebar-nav" aria-label="Разделы админ-панели">
                         <button class="sidebar-link active" data-target="users">
                             <span class="icon">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
@@ -63,6 +64,25 @@
                             <span>Проверка TMDB</span>
                             <span class="admin-nav-count admin-nav-count-warning" id="adminNavTmdbCount">—</span>
                         </button>
+                        <button class="sidebar-link" data-target="usage">
+                            <span class="icon">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5"></path><path d="M4 19h16"></path><path d="m8 16 3-4 3 2 4-6"></path></svg>
+                            </span>
+                            <span>Использование</span>
+                            <span class="admin-nav-count" id="adminNavUsageStatus">—</span>
+                        </button>
+                        <button class="sidebar-link" data-target="provider-keys">
+                            <span class="icon" aria-hidden="true">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"></circle><path d="m21 2-9.6 9.6"></path><path d="m15 5 4 4"></path><path d="m18 2 4 4"></path></svg>
+                            </span>
+                            <span>API-ключи</span>
+                            <span class="admin-nav-count" id="adminNavProviderKeysCount">—</span>
+                        </button>
+                        <button class="sidebar-link" data-target="reaction-settings">
+                            <span class="icon" aria-hidden="true">😊</span>
+                            <span>Реакции</span>
+                            <span class="admin-nav-count" id="adminNavReactionCount">—</span>
+                        </button>
                         <div class="sidebar-spacer"></div>
                     </nav>
                 </aside>
@@ -72,11 +92,11 @@
                     <!-- Loading State -->
                     <div class="admin-loading app-loader app-loader--section" id="adminLoading" role="status" aria-live="polite">
                         <div class="app-loader__indicator" aria-hidden="true"></div>
-                        <p class="app-loader__label">Loading data...</p>
+                        <p class="app-loader__label">Загрузка данных…</p>
                     </div>
 
                     <!-- Error Message -->
-                    <div class="admin-error" id="adminError" style="display: none;">
+                    <div class="admin-error" id="adminError" role="alert" aria-live="assertive" aria-hidden="true" style="display: none;">
                         <span class="error-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></span>
                         <p id="errorText"></p>
                     </div>
@@ -90,28 +110,28 @@
                                     <p>Профили, права и активность участников MovieList.</p>
                                 </div>
                                 <div class="pane-actions">
-                                    <span class="badge-count" id="usersCount">0 users</span>
+                                    <span class="badge-count" id="usersCount">0 пользователей</span>
                                 </div>
                             </div>
 
                             <div class="settings-section">
                                 <div class="ratings-filters" style="margin-bottom: var(--space-lg); padding: var(--space-md); border-radius: var(--radius-md); display: flex; gap: var(--space-md); flex-wrap: wrap;">
                                     <div class="filter-group" style="flex: 1; min-width: 260px; max-width: 400px;">
-                                        <label class="filter-label">Найти пользователя</label>
+                                        <label class="filter-label" for="userSearchFilterInput">Найти пользователя</label>
                                         <input type="text" id="userSearchFilterInput" class="filter-input" placeholder="Имя, email или ID…">
                                     </div>
                                     <div class="filter-group" style="min-width: 180px; max-width: 220px;">
-                                        <label class="filter-label">Статус аккаунта</label>
+                                        <label class="filter-label" for="userStatusFilterSelect">Статус аккаунта</label>
                                         <select id="userStatusFilterSelect" class="filter-input filter-select">
                                             <option value="all">Все статусы</option>
-                                            <option value="approved">Approved (Одобрен)</option>
-                                            <option value="pending">Pending (Ожидает)</option>
-                                            <option value="rejected">Rejected (Отклонён)</option>
+                                            <option value="approved">Одобрен</option>
+                                            <option value="pending">Ожидает</option>
+                                            <option value="rejected">Отклонён</option>
                                         </select>
                                     </div>
                                 </div>
                                 
-                                <div class="users-table-container">
+                                <div class="users-table-container" tabindex="0" role="region" aria-label="Таблица пользователей">
                                     <table class="users-table">
                                         <thead>
                                             <tr>
@@ -139,7 +159,7 @@
                                         <span id="user-page-numbers" class="page-numbers">Страница 1</span>
                                         <button id="user-next-page" class="btn-page">Вперед ›</button>
                                         
-                                        <select id="user-page-size-select" class="page-size-select">
+                                        <select id="user-page-size-select" class="page-size-select" aria-label="Строк на странице">
                                             <option value="20" selected>20 / стр</option>
                                             <option value="50">50 / стр</option>
                                             <option value="100">100 / стр</option>
@@ -171,7 +191,7 @@
                             </div>
 
                             <div class="settings-section">
-                                <div class="users-table-container">
+                                <div class="users-table-container" tabindex="0" role="region" aria-label="Таблица заявок на одобрение">
                                     <table class="users-table approvals-table">
                                         <thead>
                                             <tr>
@@ -278,7 +298,7 @@
                                 </div>
 
                                 <!-- Ratings Table -->
-                                <div class="ratings-table-container">
+                                <div class="ratings-table-container" tabindex="0" role="region" aria-label="Таблица оценок">
                                     <table class="ratings-table">
                                         <thead>
                                             <tr>
@@ -333,46 +353,74 @@
                                 </div>
                             </div>
 
+                            <section class="identity-workspace" aria-labelledby="identityWorkspaceTitle">
+                                <div class="identity-workspace-heading">
+                                    <div>
+                                        <p class="identity-workspace-eyebrow">Рабочая очередь</p>
+                                        <h3 id="identityWorkspaceTitle">Следующее действие</h3>
+                                        <p id="identityWorkspaceSummary" class="identity-workspace-summary" aria-live="polite">
+                                            Загружаем задачи для проверки.
+                                        </p>
+                                    </div>
+                                    <button id="startIdentityWorkflowBtn" class="identity-workspace-cta" type="button" hidden>
+                                        Открыть задачи
+                                    </button>
+                                </div>
+                                <div class="identity-workstream-list" aria-label="Очереди проверки">
+                                    <button class="identity-workstream-card" data-identity-subtab="tmdb-to-kp" type="button">
+                                        <span class="identity-workstream-label">Главная · TMDB → Кинопоиск</span>
+                                        <strong id="identityTmdbSummaryCount">0</strong>
+                                        <span class="identity-workstream-state" id="identityTmdbSummaryState">Нет активных задач</span>
+                                    </button>
+                                    <button class="identity-workstream-card" data-identity-subtab="kp-to-imdb" type="button">
+                                        <span class="identity-workstream-label">Оценки · Кинопоиск → IMDb</span>
+                                        <strong id="identityImdbSummaryCount">0</strong>
+                                        <span class="identity-workstream-state" id="identityImdbSummaryState">Нет активных задач</span>
+                                    </button>
+                                </div>
+                            </section>
+
                             <!-- Sub-tabs navigation -->
-                            <div class="admin-subtabs">
-                                <button class="admin-subtab-btn active" data-subtab="tmdb-to-kp" type="button">
+                            <div class="admin-subtabs" role="tablist" aria-label="Тип проверки идентификаторов">
+                                <button class="admin-subtab-btn active" id="tab-tmdb-to-kp" data-subtab="tmdb-to-kp" type="button" role="tab" aria-selected="true" aria-controls="subtab-tmdb-to-kp">
                                     TMDB → Кинопоиск (Главная) <span class="badge-count-inline" id="unmappedTmdbCountBadge">0</span>
                                 </button>
-                                <button class="admin-subtab-btn" data-subtab="kp-to-imdb" type="button">
+                                <button class="admin-subtab-btn" id="tab-kp-to-imdb" data-subtab="kp-to-imdb" type="button" role="tab" aria-selected="false" aria-controls="subtab-kp-to-imdb">
                                     Кинопоиск → IMDb (Оценки) <span class="badge-count-inline" id="kpMissingImdbCountBadge">0</span>
                                 </button>
                             </div>
 
                             <!-- Sub-tab 1: TMDB -> Kinopoisk Manual Mapping -->
-                            <div class="admin-subtab-content" id="subtab-tmdb-to-kp">
+                            <div class="admin-subtab-content" id="subtab-tmdb-to-kp" role="tabpanel" aria-labelledby="tab-tmdb-to-kp">
                                 <!-- Manual Quick Mapping Form -->
                                 <div class="tmdb-form-card">
-                                    <h3 class="tmdb-form-title">Быстрая ручная привязка</h3>
-                                    <p class="tmdb-form-desc">Укажите TMDB ID и соответствующий Kinopoisk ID для гарантированного отображения карточки на Главной странице.</p>
+                                    <h3 class="tmdb-form-title">Добавить связь вручную</h3>
+                                    <p class="tmdb-form-desc">Сначала проверим карточку Кинопоиска, затем вы подтвердите связь для Главной страницы.</p>
                                     <form id="quickManualMappingForm" class="tmdb-form-grid">
                                         <div class="tmdb-form-group">
-                                            <label class="tmdb-form-label">Тип медиа</label>
+                                            <label class="tmdb-form-label" for="manualMapMediaType">Тип медиа</label>
                                             <select id="manualMapMediaType" class="tmdb-select">
                                                 <option value="tv">Сериал / Аниме (tv)</option>
                                                 <option value="movie">Фильм (movie)</option>
                                             </select>
                                         </div>
                                         <div class="tmdb-form-group">
-                                            <label class="tmdb-form-label">TMDB ID / ссылка</label>
+                                            <label class="tmdb-form-label" for="manualMapTmdbId">TMDB ID / ссылка</label>
                                             <input type="text" id="manualMapTmdbId" class="tmdb-input" placeholder="например, 312949" required>
                                         </div>
                                         <div class="tmdb-form-group">
-                                            <label class="tmdb-form-label">Kinopoisk ID / ссылка</label>
+                                            <label class="tmdb-form-label" for="manualMapKpId">Kinopoisk ID / ссылка</label>
                                             <input type="text" id="manualMapKpId" class="tmdb-input" placeholder="например, 5912401" required>
                                         </div>
                                         <div class="tmdb-form-group">
-                                            <label class="tmdb-form-label">Название (опционально)</label>
+                                            <label class="tmdb-form-label" for="manualMapTitle">Название (опционально)</label>
                                             <input type="text" id="manualMapTitle" class="tmdb-input" placeholder="Название тайтла">
                                         </div>
                                         <div>
-                                            <button type="submit" class="tmdb-btn-bind">Привязать</button>
+                                            <button type="submit" class="tmdb-btn-bind">Проверить кандидата</button>
                                         </div>
                                     </form>
+                                    <div id="quickManualMappingPreview" class="identity-manual-preview" aria-live="polite"></div>
                                 </div>
 
                                 <!-- Unmapped Queue from Discovery -->
@@ -387,7 +435,7 @@
                                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
                                                 Автоматически сопоставить очередь
                                             </button>
-                                            <button id="clearUnmappedQueueBtn" class="btn-secondary" type="button" style="font-size: 0.8rem; padding: 6px 12px; border-radius: 6px;">Очистить очередь</button>
+                                            <button id="clearUnmappedQueueBtn" class="btn btn-secondary" type="button" style="font-size: 0.8rem; padding: 6px 12px; border-radius: 6px;">Очистить очередь</button>
                                         </div>
                                     </div>
 
@@ -412,11 +460,12 @@
                                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
                                         <div>
                                             <h3 style="margin: 0; font-size: 1.1rem; color: var(--theme-text-primary);">Активные ручные привязки</h3>
-                                            <p style="margin: 4px 0 0; color: var(--text-secondary); font-size: 0.8rem;">Ручные привязки хранятся локально в этом экземпляре расширения.</p>
+                                            <p style="margin: 4px 0 0; color: var(--text-secondary); font-size: 0.8rem;">Подтверждённые связи публикуются в общей базе для авторизованных пользователей.</p>
                                         </div>
                                         <div style="display: flex; gap: 8px;">
-                                            <button id="exportManualMappingsBtn" class="btn-secondary" type="button" style="font-size: 0.8rem; padding: 6px 12px; border-radius: 6px;">Экспорт JSON</button>
-                                            <button id="importManualMappingsBtn" class="btn-secondary" type="button" style="font-size: 0.8rem; padding: 6px 12px; border-radius: 6px;">Импорт JSON</button>
+                                            <button id="publishManualMappingsBtn" class="btn btn-secondary" type="button" style="font-size: 0.8rem; padding: 6px 12px; border-radius: 6px;">Опубликовать локальные связи</button>
+                                            <button id="exportManualMappingsBtn" class="btn btn-secondary" type="button" style="font-size: 0.8rem; padding: 6px 12px; border-radius: 6px;">Экспорт JSON</button>
+                                            <button id="importManualMappingsBtn" class="btn btn-secondary" type="button" style="font-size: 0.8rem; padding: 6px 12px; border-radius: 6px;">Импорт JSON</button>
                                             <input type="file" id="importManualMappingsFile" accept=".json" style="display: none;">
                                         </div>
                                     </div>
@@ -427,7 +476,7 @@
                             </div>
 
                             <!-- Sub-tab 2: Kinopoisk -> IMDb Fallback Queue -->
-                            <div class="admin-subtab-content" id="subtab-kp-to-imdb" style="display: none;">
+                            <div class="admin-subtab-content" id="subtab-kp-to-imdb" role="tabpanel" aria-labelledby="tab-kp-to-imdb" hidden>
                                 <div class="settings-section">
                                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
                                         <div>
@@ -443,6 +492,184 @@
                                         <div class="reports-loading">Загрузка очереди...</div>
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+
+                        <!-- Firestore Usage Pane -->
+                        <div class="settings-pane" id="pane-usage">
+                            <div class="pane-header admin-pane-header firestore-usage-header">
+                                <div>
+                                    <span class="firestore-usage-eyebrow">FIRESTORE / FREE TIER</span>
+                                    <h2>Использование Firestore</h2>
+                                    <p>Текущее потребление бесплатных лимитов проекта.</p>
+                                </div>
+                                <div class="pane-actions">
+                                    <span class="firestore-usage-updated" id="firestoreUsageUpdated">Ещё не загружено</span>
+                                    <button id="refreshFirestoreUsageBtn" class="button-refresh" type="button">
+                                        <span class="refresh-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg></span>
+                                        Обновить
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="settings-section firestore-usage-section">
+                                <div class="firestore-usage-grid" id="firestoreUsageCards" aria-busy="false">
+                                    <article class="firestore-usage-card" data-usage-card="storage">
+                                        <div class="firestore-usage-card-topline">
+                                            <span class="firestore-usage-card-kicker">ХРАНИЛИЩЕ</span>
+                                            <span class="firestore-usage-status usage-status--neutral" id="firestoreUsageStorageStatus">Ожидание</span>
+                                        </div>
+                                        <h3>Хранилище</h3>
+                                        <div class="firestore-usage-value-row">
+                                            <strong id="firestoreUsageStorageValue">—</strong>
+                                            <span id="firestoreUsageStorageLimit">из 1 GiB</span>
+                                        </div>
+                                        <div class="firestore-usage-progress" role="progressbar" aria-label="Использование хранилища" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                                            <span id="firestoreUsageStorageBar"></span>
+                                        </div>
+                                        <p class="firestore-usage-card-note" id="firestoreUsageStorageNote">Метрика ещё не запрошена.</p>
+                                    </article>
+
+                                    <article class="firestore-usage-card" data-usage-card="reads">
+                                        <div class="firestore-usage-card-topline">
+                                            <span class="firestore-usage-card-kicker">ЧТЕНИЯ / ДЕНЬ</span>
+                                            <span class="firestore-usage-status usage-status--neutral" id="firestoreUsageReadsStatus">Ожидание</span>
+                                        </div>
+                                        <h3>Чтения сегодня</h3>
+                                        <div class="firestore-usage-value-row">
+                                            <strong id="firestoreUsageReadsValue">—</strong>
+                                            <span id="firestoreUsageReadsLimit">из 50 000</span>
+                                        </div>
+                                        <div class="firestore-usage-progress" role="progressbar" aria-label="Чтения Firestore за сегодня" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                                            <span id="firestoreUsageReadsBar"></span>
+                                        </div>
+                                            <p class="firestore-usage-card-note" id="firestoreUsageReadsNote">Дневной лимит сбрасывается по тихоокеанскому времени.</p>
+                                    </article>
+
+                                    <article class="firestore-usage-card" data-usage-card="writes">
+                                        <div class="firestore-usage-card-topline">
+                                            <span class="firestore-usage-card-kicker">ЗАПИСИ / ДЕНЬ</span>
+                                            <span class="firestore-usage-status usage-status--neutral" id="firestoreUsageWritesStatus">Ожидание</span>
+                                        </div>
+                                        <h3>Записи сегодня</h3>
+                                        <div class="firestore-usage-value-row">
+                                            <strong id="firestoreUsageWritesValue">—</strong>
+                                            <span id="firestoreUsageWritesLimit">из 20 000</span>
+                                        </div>
+                                        <div class="firestore-usage-progress" role="progressbar" aria-label="Записи Firestore за сегодня" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                                            <span id="firestoreUsageWritesBar"></span>
+                                        </div>
+                                            <p class="firestore-usage-card-note" id="firestoreUsageWritesNote">Дневной лимит сбрасывается по тихоокеанскому времени.</p>
+                                    </article>
+                                </div>
+
+                                <div class="firestore-usage-error" id="firestoreUsageError" role="alert" hidden></div>
+                                <div class="firestore-usage-footnote" id="firestoreUsageFootnote">
+                                    Данные поступают из Cloud Monitoring и могут обновляться с задержкой до нескольких минут.
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Provider API keys Pane -->
+                        <div class="settings-pane" id="pane-provider-keys">
+                            <div class="pane-header admin-pane-header provider-keys-header">
+                                <div>
+                                    <span class="provider-keys-eyebrow">SERVER-SIDE CREDENTIALS</span>
+                                    <h2>API-ключи провайдеров</h2>
+                                    <p>Ключи хранятся на сервере. В браузере видны только маска, статус и квота.</p>
+                                </div>
+                                <div class="pane-actions">
+                                    <div class="provider-keys-quota-summary" id="providerKeysQuotaSummary" aria-live="polite">
+                                        <span class="provider-keys-quota-summary-label" id="providerKeysQuotaLabel">Дневная квота</span>
+                                        <strong id="providerKeysQuotaValue">— / —</strong>
+                                        <small id="providerKeysQuotaNote">Загрузка данных ключей…</small>
+                                    </div>
+                                    <button id="refreshProviderKeysBtn" class="button-refresh" type="button">Обновить</button>
+                                    <button id="addProviderKeyBtn" class="btn-primary" type="button">Добавить ключ</button>
+                                </div>
+                            </div>
+
+                            <div class="settings-section provider-keys-section">
+                                <div class="provider-keys-notice" role="note">
+                                    <strong>Безопасность:</strong> исходное значение показывается только в форме добавления и не сохраняется в браузере.
+                                </div>
+                                <div class="provider-keys-state" id="providerKeysLoading" role="status" aria-live="polite" hidden>Загрузка ключей…</div>
+                                <div class="provider-keys-error" id="providerKeysError" role="alert" hidden></div>
+                                <div class="provider-keys-list" id="providerKeysList" aria-live="polite">
+                                    <div class="provider-keys-empty">Откройте раздел, чтобы загрузить реестр ключей.</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Comment Reactions Pane -->
+                        <div class="settings-pane" id="pane-reaction-settings">
+                            <div class="pane-header admin-pane-header reaction-settings-header">
+                                <div>
+                                    <span class="reaction-settings-eyebrow">COMMUNITY UI</span>
+                                    <h2>Реакции комментариев</h2>
+                                    <p>Общий каталог эмодзи для всех пользователей и версий с поддержкой реакций.</p>
+                                </div>
+                                <div class="pane-actions">
+                                    <span class="badge-count" id="commentReactionCount">—</span>
+                                    <button id="refreshCommentReactionsBtn" class="button-refresh" type="button">Обновить</button>
+                                </div>
+                            </div>
+
+                            <div class="settings-section comment-reaction-admin-section">
+                                <div class="comment-reaction-admin-layout">
+                                    <form class="comment-reaction-form" id="commentReactionForm">
+                                        <div class="comment-reaction-form-heading">
+                                            <h3>Добавить эмодзи</h3>
+                                            <p>Новая реакция появится у всех после сохранения каталога.</p>
+                                        </div>
+                                        <label class="admin-form-field" for="commentReactionEmojiInput">
+                                            <span>Эмодзи или shortcode</span>
+                                            <input id="commentReactionEmojiInput" class="admin-input comment-reaction-emoji-input" type="text" maxlength="32" autocomplete="off" placeholder="👏 или :b45:" required aria-describedby="commentReactionEmojiHint">
+                                            <small id="commentReactionEmojiHint">Обычный эмодзи или код кастомного, например :b45:.</small>
+                                        </label>
+                                        <label class="admin-form-field" for="commentReactionLabelInput">
+                                            <span>Название реакции</span>
+                                            <input id="commentReactionLabelInput" class="admin-input" type="text" maxlength="64" autocomplete="off" placeholder="Аплодисменты" required>
+                                        </label>
+                                        <div class="admin-form-field">
+                                            <span>Картинка кастомного эмодзи <small>(необязательно)</small></span>
+                                            <div id="commentReactionAssetDropzone" class="comment-reaction-asset-dropzone"
+                                                role="button" tabindex="0" aria-label="Добавить картинку кастомного эмодзи"
+                                                aria-describedby="commentReactionAssetHint" aria-keyshortcuts="Control+V">
+                                                <span class="comment-reaction-asset-dropzone-icon" aria-hidden="true">↑</span>
+                                                <span class="comment-reaction-asset-dropzone-copy">
+                                                    <strong>Добавить картинку</strong>
+                                                    <span>Перетащите сюда, выберите файл или вставьте Ctrl+V</span>
+                                                </span>
+                                                <input id="commentReactionAssetInput" class="comment-reaction-asset-input" type="file"
+                                                    accept="image/png,image/webp,image/gif" tabindex="-1" aria-hidden="true">
+                                            </div>
+                                            <small id="commentReactionAssetHint">PNG, WebP или GIF, максимум 256 КБ.</small>
+                                        </div>
+                                        <div class="comment-reaction-asset-preview" id="commentReactionAssetPreview" hidden>
+                                            <img id="commentReactionAssetPreviewImage" alt="Предпросмотр кастомного эмодзи">
+                                            <span id="commentReactionAssetPreviewName"></span>
+                                        </div>
+                                        <button id="addCommentReactionBtn" class="btn-primary comment-reaction-submit" type="submit">
+                                            Добавить реакцию
+                                        </button>
+                                    </form>
+
+                                    <div class="comment-reaction-catalog-card">
+                                        <div class="comment-reaction-catalog-heading">
+                                            <div>
+                                                <h3>Активный каталог</h3>
+                                                <p>Пользователь может выбрать до 3 реакций на один комментарий.</p>
+                                            </div>
+                                            <span class="comment-reaction-config-status" id="commentReactionConfigStatus" role="status" aria-live="polite">Загрузка…</span>
+                                        </div>
+                                        <div class="comment-reaction-admin-list" id="commentReactionList" aria-live="polite">
+                                            <div class="comment-reaction-admin-state">Откройте раздел, чтобы загрузить каталог.</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="comment-reaction-admin-error" id="commentReactionError" role="alert" hidden></div>
+                                <p class="comment-reaction-admin-footnote">Удаление скрывает реакцию для новых клиентов. Исторические пользовательские документы не удаляются.</p>
                             </div>
                         </div>
 
@@ -483,71 +710,133 @@
         </main>
     </div>
 
-    <!-- Delete Confirmation Modal -->
-    <div class="modal-overlay" id="deleteModal" style="display: none;">
-        <div class="modal-content delete-modal">
+    <!-- Add provider key modal -->
+    <div class="modal-overlay provider-key-modal" id="addProviderKeyModal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="addProviderKeyTitle">
+        <div class="modal provider-key-dialog">
             <div class="modal-header">
-                <h3>Confirm Delete User</h3>
-                <button class="modal-close" id="closeDeleteModal" aria-label="Close">
+                <h3 id="addProviderKeyTitle">Добавить API-ключ</h3>
+                <button class="modal-close" id="closeAddProviderKeyBtn" type="button" aria-label="Закрыть">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <form class="modal-body provider-key-form" id="providerKeyForm">
+                <div class="provider-key-form-note">Ключ будет проверен у провайдера и сохранён в защищённом хранилище.</div>
+                <label class="admin-form-field" for="providerKeyProvider">
+                    <span>Провайдер</span>
+                    <select id="providerKeyProvider" name="provider" class="admin-input" required>
+                        <option value="kinopoisk">Кинопоиск</option>
+                        <option value="tmdb">TMDB</option>
+                    </select>
+                </label>
+                <label class="admin-form-field" for="providerKeyLabel">
+                    <span>Название ключа</span>
+                    <input id="providerKeyLabel" name="label" class="admin-input" type="text" maxlength="80" autocomplete="off" required aria-invalid="false" placeholder="Например, основной">
+                </label>
+                <label class="admin-form-field" for="providerKeyPurpose">
+                    <span>Для чего используется</span>
+                    <input id="providerKeyPurpose" name="purpose" class="admin-input" type="text" maxlength="160" autocomplete="off" required aria-invalid="false" placeholder="Поиск и карточки фильмов">
+                </label>
+                <label class="admin-form-field" for="providerKeySecret">
+                    <span>Секретное значение</span>
+                    <div class="provider-key-secret-wrap">
+                        <input id="providerKeySecret" name="secret" class="admin-input" type="password" maxlength="4096" autocomplete="new-password" required aria-invalid="false" aria-describedby="providerKeySecretHint providerKeyFormError">
+                        <button id="toggleProviderKeySecretBtn" class="provider-key-secret-toggle" type="button" aria-label="Показать ключ">Показать</button>
+                    </div>
+                    <small id="providerKeySecretHint">После сохранения полное значение нельзя будет посмотреть.</small>
+                </label>
+                <div class="provider-key-form-error" id="providerKeyFormError" role="alert" aria-live="polite" hidden></div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" id="cancelAddProviderKeyBtn" type="button">Отмена</button>
+                    <button class="btn btn-primary" id="submitProviderKeyBtn" type="submit">Проверить и сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Provider key revoke confirmation modal -->
+    <div class="modal-overlay provider-key-modal" id="providerKeyConfirmModal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="providerKeyConfirmTitle">
+        <div class="modal provider-key-dialog">
+            <div class="modal-header">
+                <h3 id="providerKeyConfirmTitle">Отозвать ключ?</h3>
+                <button class="modal-close" id="closeProviderKeyConfirmBtn" type="button" aria-label="Закрыть">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
             </div>
             <div class="modal-body">
-                <p class="warning-text">You are about to permanently delete this user:</p>
+                <p id="providerKeyConfirmText">Ключ будет отключён и удалён из Secret Manager. Это действие нельзя отменить.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancelProviderKeyConfirmBtn" type="button">Отмена</button>
+                <button class="btn btn-danger" id="confirmProviderKeyBtn" type="button">Отозвать ключ</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div class="modal-overlay" id="deleteModal" style="display: none;" role="dialog" aria-modal="true" aria-label="Подтверждение удаления пользователя">
+        <div class="modal delete-modal">
+            <div class="modal-header">
+                <h3>Удалить пользователя?</h3>
+                <button class="modal-close" id="closeDeleteModal" aria-label="Закрыть">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p class="warning-text">Пользователь будет удалён навсегда:</p>
                 <div class="user-preview" id="userPreview">
                     <!-- User info will be inserted here -->
                 </div>
                 <div class="deletion-stats">
-                    <p><strong>This will delete:</strong></p>
+                    <p><strong>Будут удалены:</strong></p>
                     <ul id="deletionStatsList">
                         <!-- Stats will be inserted here -->
                     </ul>
                 </div>
-                <p class="irreversible-warning">This action is <strong>irreversible</strong>. All data will be permanently deleted.</p>
+                <p class="irreversible-warning">Действие <strong>необратимо</strong>. Все данные будут удалены.</p>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" id="cancelDeleteBtn">Cancel</button>
-                <button class="btn btn-danger" id="confirmDeleteBtn">Delete User</button>
+                <button class="btn btn-secondary" id="cancelDeleteBtn">Отмена</button>
+                <button class="btn btn-danger" id="confirmDeleteBtn">Удалить пользователя</button>
             </div>
         </div>
     </div>
 
     <!-- Delete Rating Confirmation Modal -->
-    <div class="modal-overlay" id="deleteRatingModal" style="display: none;">
-        <div class="modal-content delete-modal">
+    <div class="modal-overlay" id="deleteRatingModal" style="display: none;" role="dialog" aria-modal="true" aria-label="Подтверждение удаления оценки">
+        <div class="modal delete-modal">
             <div class="modal-header">
-                <h3>Confirm Delete Rating</h3>
-                <button class="modal-close" id="closeDeleteRatingModal" aria-label="Close">
+                <h3>Удалить оценку?</h3>
+                <button class="modal-close" id="closeDeleteRatingModal" aria-label="Закрыть">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
             </div>
             <div class="modal-body">
-                <p class="warning-text">You are about to permanently delete this rating:</p>
+                <p class="warning-text">Оценка будет удалена навсегда:</p>
                 <div class="rating-preview" id="ratingPreview">
                     <!-- Rating info will be inserted here -->
                 </div>
                 <div class="deletion-stats">
-                    <p><strong>This will:</strong></p>
+                    <p><strong>Будет выполнено:</strong></p>
                     <ul id="ratingDeletionStatsList">
-                        <li>Delete the rating from the database</li>
-                        <li>Remove the movie from all user's collections</li>
+                        <li>Удалить оценку из базы данных</li>
+                        <li>Удалить фильм из коллекций пользователей</li>
                     </ul>
                 </div>
-                <p class="irreversible-warning">This action is <strong>irreversible</strong>.</p>
+                <p class="irreversible-warning">Действие <strong>необратимо</strong>.</p>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" id="cancelDeleteRatingBtn">Cancel</button>
-                <button class="btn btn-danger" id="confirmDeleteRatingBtn">Delete Rating</button>
+                <button class="btn btn-secondary" id="cancelDeleteRatingBtn">Отмена</button>
+                <button class="btn btn-danger" id="confirmDeleteRatingBtn">Удалить оценку</button>
             </div>
         </div>
     </div>
 
     <!-- Bulk Delete Confirmation Modal -->
-    <div class="modal-overlay" id="bulkDeleteModal" style="display: none;">
-        <div class="modal-content delete-modal">
+    <div class="modal-overlay" id="bulkDeleteModal" style="display: none;" role="dialog" aria-modal="true" aria-label="Подтверждение массового удаления">
+        <div class="modal delete-modal">
             <div class="modal-header">
                 <h3>Подтверждение удаления</h3>
-                <button class="modal-close" id="closeBulkDeleteModal" aria-label="Close">
+                <button class="modal-close" id="closeBulkDeleteModal" aria-label="Закрыть">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
             </div>
@@ -576,6 +865,7 @@
     <script src="/libs/firebase-app-compat.js"></script>
     <script src="/libs/firebase-firestore-compat.js"></script>
     <script src="/libs/firebase-auth-compat.js"></script>
+    <script src="/src/shared/services/CommentReactionService.js"></script>
     <script src="/src/shared/firestore.js"></script>
     <script src="/src/shared/config/kinopoisk.config.js"></script>
     <script src="/src/shared/services/UserService.js"></script>

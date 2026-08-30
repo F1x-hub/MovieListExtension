@@ -1,5 +1,7 @@
 // Kinopoisk API Configuration
-const QUOTA_STORAGE_KEY = 'kp_quota_exhausted_until';
+// Versioned after the registry migration so a stale pre-fix cooldown cannot
+// suppress requests after the proxy has recovered.
+const QUOTA_STORAGE_KEY = 'kp_quota_exhausted_until_v2';
 const QUOTA_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 let _quotaExhaustedUntilCache = null;
 

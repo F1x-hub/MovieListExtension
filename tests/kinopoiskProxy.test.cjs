@@ -93,6 +93,44 @@ async function run() {
     assert.equal(calls, 2);
 
     calls = 0;
+    const poolOutcomes = [];
+    const registryRotationHandler = createKinopoiskProxyHandler({
+        getSecretValue: async () => {
+            throw new Error('Legacy aggregate secret must not be read when registry keys exist');
+        },
+        keyPool: {
+            async getActiveKeys() {
+                return {
+                    configuredCount: 2,
+                    keys: [
+                        { keyId: 'key-1', provider: 'kinopoisk', value: 'registry-key-1' },
+                        { keyId: 'key-2', provider: 'kinopoisk', value: 'registry-key-2' }
+                    ]
+                };
+            },
+            reportOutcome(outcome) {
+                poolOutcomes.push(outcome);
+            }
+        },
+        verifyIdToken: async () => {},
+        fetchImpl: async (url, options) => {
+            calls += 1;
+            assert.equal(options.headers['X-API-KEY'], calls === 1 ? 'registry-key-1' : 'registry-key-2');
+            return calls === 1
+                ? response(401, '{"message":"invalid key"}')
+                : response(200, '{"id":456}', { 'content-type': 'application/json' });
+        },
+        sleepImpl: async () => {}
+    });
+    const registryRotationResult = createTestResponse();
+    await registryRotationHandler(request({ headers: { authorization: 'Bearer firebase-token' } }), registryRotationResult);
+    assert.equal(registryRotationResult.statusCode, 200);
+    assert.deepEqual(poolOutcomes, [
+        { keyId: 'key-1', outcome: 'rejected' },
+        { keyId: 'key-2', outcome: 'success' }
+    ]);
+
+    calls = 0;
     const rotationHandler = createKinopoiskProxyHandler({
         getSecretValue: async () => '["test-key-1", "test-key-2"]',
         verifyIdToken: async (token) => assert.equal(token, 'firebase-token'),
