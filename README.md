@@ -30,6 +30,8 @@ lists, provider-aware playback, and Firebase synchronization in one interface.
   collections, ratings, and related titles.
 - Resume series playback, track watched episodes, switch providers, and select a
   season or episode without losing the active playback context.
+- Use the optional local MediaPlayer torrent source picker for films without exposing
+  Jackett credentials or torrent locators to the extension.
 - Use HLS and direct-video playback, AniSkip integration, and the built-in anime
   radio.
 - Add watchlist and rating controls to supported external movie websites through
@@ -46,7 +48,7 @@ lists, provider-aware playback, and Firebase synchronization in one interface.
 | Extension | Chrome Manifest V3 |
 | Client | Vanilla JavaScript, HTML, CSS |
 | Backend | Firebase Authentication, Firestore, Storage, Cloud Functions |
-| Providers | Kinopoisk, TMDB, IMDb, YouTube, The Numbers, AniSkip, Spotify |
+| Providers | Kinopoisk, TMDB, IMDb, YouTube, The Numbers, AniSkip, Spotify, MediaPlayer |
 | Playback | HLS.js, HTML5 video, provider-specific adapters |
 | Build | npm, copyfiles, Terser, Rimraf, Nodemon |
 | Quality | ESLint, Node.js regression tests, JSDOM, Playwright |
@@ -72,6 +74,9 @@ stores account data, ratings, aggregates, and synchronized collections.
 Playback is isolated behind parser and provider capability contracts. The player
 controller owns selection, lifecycle, progress, and episode state so provider
 switches do not silently overwrite the user's explicit season or episode choice.
+The optional MediaPlayer torrent flow is a separate local capability: Native
+Messaging pairs the extension, while the extension handles only opaque source IDs
+and short-lived playback sessions.
 
 ## Repository layout
 
@@ -154,6 +159,7 @@ switches do not silently overwrite the user's explicit season or episode choice.
 | `npm run test-word-guess` | Run WordGuess data, controller, and persistence tests |
 | `npm run test-games-modal` | Run mini-games launcher and Rubik's Cube tests |
 | `npm run test:visual-design` | Verify the monochrome palette and shared UI token contract |
+| `npm run test:media-player` | Verify the local MediaPlayer client and torrent picker contract |
 | `npm run package` | Build and create `movie-rating-extension.zip` |
 | `npm run backfill` | Run the administrative Firestore backfill utility |
 
@@ -209,6 +215,74 @@ manifest and package version remain the source of truth for the build version.
 
 ### Features
 
+- Add optional 5000-character movie reviews with bounded previews and a full reader.
+- Integrate review previews into rating cards without a nested card surface.
+- Use the themed surface for the full review reader modal.
+- Preserve rating aggregates and compact caches during review-only edits.
+- Add review reports with Firestore-validated target metadata.
+
+- Keep torrent playback above the release browser with accessible in-modal scrolling.
+- Restore player focus after torrent selection and keep the modal above navigation.
+- Show durable per-film torrent downloads after reopening Movie Details.
+- Add pause, resume, retry, play, delete, progress, speed, peers, and ETA actions.
+- Preserve downloaded torrent pieces when a user pauses an active movie download.
+- Add panel-local torrent quality filters and sorting by seeds, quality, and size.
+- Add an optional MediaPlayer torrent source picker for film playback.
+- Add a MediaPlayer setup gate for enablement, install-folder selection, and verification.
+- Support Native Host folder selection and installation verification.
+- Hide MediaPlayer setup controls while the integration is disabled.
+- Add MediaPlayer retention settings with a seven-day default and a Never option.
+- Pair with MediaPlayer through Native Messaging and keep Jackett credentials local.
+- Show bounded torrent metadata and monitor playback download progress.
+- Negotiate browser codecs for remux-first torrent playback through MediaPlayer.
+- Advertise browser AV1/fMP4 support so compatible 4K video is copied without downscaling.
+- Keep AV1 disabled when browser capability detection is unavailable.
+- Send codec capabilities when reopening saved downloads as well as starting new torrents.
+- Show HLS-ready duration separately from torrent download percentage.
+- Wait for a mode-aware playback buffer before starting torrent video autoplay.
+- Show whether fallback preparation affects only audio or only video.
+- Poll incremental torrent search results and append bounded batches while indexers continue.
+- Fix torrent source visibility for films with empty season metadata.
+- Bound Native Host pairing waits and surface bridge timeout errors.
+- Allow cold Jackett searches to finish before the client timeout.
+- Allow slow Jackett aggregate searches to finish before the client timeout.
+- Clarify torrent download progress separately from the available playback time.
+- Show growing HLS playback duration beside torrent speed, peers, and download ETA.
+- Replace the Torrent status strip with a unified inline workspace for active and saved downloads.
+- Add progressive 10-item release reveal with accessible disclosure and active-download actions.
+- Reuse one native player for delayed torrent HLS sources and preserve its lifecycle.
+- Expose available HLS audio and subtitle tracks in the shared player settings menu.
+- Add an isolated, lazy timeline hover preview that never seeks the main video.
+- Add persistent subtitle appearance controls for size, color, position, offset,
+  background opacity, and text shadow.
+- Apply saved subtitle appearance changes to supported native captions in an open player.
+- Move subtitle appearance controls into the player's Subtitles menu for in-context changes.
+- Release the first priority-safe parsed source before slower providers finish.
+- Continue background source discovery and persist the final normalized provider set.
+
+- Add an optional cursor-driven sphere view for exploring rated movies with local magnification.
+- Add 24-hour poster caching and non-overlapping radial cursor-focus behavior.
+- Add gradual focus-priority poster loading with a bounded per-frame budget.
+- Restrict Canvas poster decoding and drawing to a maximum 32-item cursor focus group.
+- Keep the focus field gently moving while preventing peripheral image loads during sweeps.
+- Persist poster bytes across page reloads through the extension-origin cache and background fetch.
+- Normalize poster cache keys and version cache metadata for reliable 24-hour reuse.
+- Cancel poster requests that leave the focus group and pause the renderer in hidden tabs.
+- Use a fixed radial falloff with a 4x center and base scale beyond 1.25 lens radii.
+- Add live `k1`, `k2`, radius-scale, and strength controls for radial-lens calibration.
+- Deform all 255 Canvas cells while keeping poster loading bounded to the focus group.
+- Use LUT-backed inverse hit-testing with monotonicity, derivative, boundary, and round-trip guards.
+- Transform the local dot field with the same radial map while keeping the outer CSS field static.
+- Use a rectangular focus surface without a circular lens overlay or circular clip.
+- Use a rectangular `Сетка / Фокус` mode switcher without pill-shaped corners.
+- Keep the selected film as a subtle idle focal point after the pointer leaves the canvas.
+- Restore the flat grid when the selected film is cleared and keep hover focus prioritized.
+- Show selected movie previews, full details actions, and an accessible movie-list fallback.
+- Preserve the grid as the default view with responsive touch and reduced-motion support.
+- Fix poster loading so new exploration items do not stack in the upper-left corner.
+- Document the Canvas exploration architecture and implementation sequence.
+- Add Canvas layout, pointer, and selection contract coverage.
+
 - Add an action-led admin ID workspace that opens the active queue and requires
   Kinopoisk candidate verification before a manual TMDB mapping can be confirmed.
 - Share admin-verified TMDB→Kinopoisk mappings through Firestore for authenticated users,
@@ -218,7 +292,7 @@ manifest and package version remain the source of truth for the build version.
 - Add the server-only watch-room access foundation: RTDB ACL gates, room rules,
   public-index query limits, and an opt-in provider sync capability contract.
 - Provision an isolated staging RTDB target and durable room/invite lifecycle outbox.
-- Add private two-client staging room controls with one-time invite codes and host-only
+- Add private staging room controls with one-time invite codes and host-only
   KinoGo timeline synchronization.
 - Add a server-verified controller role: the owner may grant or revoke shared timeline
   control for the invited participant while source, invite, and role authority stay owner-only.
@@ -239,6 +313,11 @@ manifest and package version remain the source of truth for the build version.
   synchronously, and rebind room telemetry whenever KinoGo replaces its media element.
 - Keep staging room persistence server-only in Firestore and mirror membership ACLs to
   the isolated RTDB target before a client subscribes.
+- Raise staging rooms to 10 total participants with 9 invite redemptions.
+- Add per-connection RTDB presence with stale detection and heartbeat.
+- Restore room sessions after transient RTDB disconnects without a new join.
+- Isolate V2 presence connections from legacy clients and make room creation retry-safe.
+- Publish 10-person room capacity and reconnect presence changes to Firebase.
 - Deploy a bounded daily cleanup for expired staging rooms with a 50-room cap and one retry.
 - Publish the provider-key management function to us-central1.
 - Migrate 3 Kinopoisk credentials into the per-key Secret Manager registry.
@@ -248,6 +327,34 @@ manifest and package version remain the source of truth for the build version.
 - Separate Kinopoisk daily quota from TMDB's non-numeric rate-limit status.
 
 ### Fixes
+
+- Repair missing rated-film projections and prevent client-side aggregate drift.
+- Deploy Firestore guards that reserve rating aggregate fields for server-owned writes.
+- Route restored torrent selections to the torrent workspace instead of an external-protocol iframe.
+- Retry transient progressive HLS failures while a torrent is still downloading.
+- Keep completed torrent percentage separate from actual HLS playback readiness.
+- Collapse visually identical torrent releases across indexers before display.
+- Hide empty playback status containers and use a compact active-download status card.
+- Keep torrent quality filters visible when the selected quality has no releases.
+- Surface probing, remux, and fallback-transcode states instead of a generic spinner.
+- Use the shorter startup buffer for audio-only fallback preparation.
+- Label torrent ETA as time to full download instead of confusing it with video duration.
+- Link playback sessions to canonical download cards to prevent duplicate torrent entries.
+- Keep playback failures separate from active torrent download failures.
+- Mark torrent cards as stale and back off polling when the local MediaPlayer is unavailable.
+- Recover torrent/download progress automatically after the local service returns.
+- Cancel obsolete MediaPlayer polling requests during torrent monitor teardown.
+- Cover MediaPlayer polling backoff and cancellation with regression tests.
+- Prevent duplicate player wrappers after delayed torrent source mounting.
+- Stop timeline preview fetching and clear stale frames on leave or source teardown.
+- Restore previous and next episode actions through the trusted canonical player bridge.
+- Keep the center Play action mathematically centered while isolating its optical glyph offset.
+- Optically center the lower Play triangle with leftward and upward path corrections.
+
+- Revoke MediaPlayer playback sessions when the player is destroyed.
+- Handle missing MediaPlayer, missing TMDB identity, and unavailable indexers in the picker.
+- Extend the Native Host folder-picker timeout while users browse for an installation.
+- Fix the dirty Settings save button contrast against the primary gradient.
 
 - Execute native HLS quality actions directly instead of clicking a missing provider control.
 - Bind IMDb automatic lookup to the same pending queue shown in the admin workspace.
@@ -264,6 +371,8 @@ manifest and package version remain the source of truth for the build version.
 - Complete a viewer source switch only after the replacement player confirms readiness.
 - Retry early iframe readiness probes and serialize coalesced host room-state updates.
 - Arm presence cleanup before recording the user as online.
+- Preserve watch-room HTTP status and error codes for terminal 409 handling.
+- Expand expired-room cleanup to 10 members while retaining one invite document.
 - Clear the room-code copy confirmation automatically and preserve participant names.
 - Reuse the local profile-display cache in room presence and remove the duplicate room count.
 - Fall back to the visible profile name when Auth and cache metadata are empty in a room.
@@ -302,17 +411,36 @@ manifest and package version remain the source of truth for the build version.
 - Prefer canonical numeric personal ratings when incomplete legacy records have the same movie ID.
 - Configure the isolated watch-room RTDB in the versioned Firebase client config so Git installs can create rooms.
 - Allow a signed-in user to bootstrap their missing canonical comment-reaction document inside a transaction.
+- Require provider bridge acknowledgements to match the active frame, origin, provider, season, and episode.
+- Reject stale overlapping episode bridge responses before they can change playback.
+- Require cleaner-side provider DOM confirmation before returning `APPLIED`.
+- Label native HLS quality choices from manifest heights instead of guessed provider ladders.
+- Remove the legacy embedded episode-list button from the default player path.
+- Retire the legacy episode-picker emergency flag and empty toggle listener.
+- Avoid caching empty parser source results as successful video discovery.
+- Stream parser results into source preloading while preserving provider priority order.
 
 ### Docs
 
+- Document MediaPlayer service-health recovery and stale download-state handling.
+- Document staged ratings recovery, server-owned aggregates, and integrity monitoring.
+
+- Add a unified player parsing, performance, quality, and episode-picker audit plan.
+
+- Document the approved unified Torrent workspace redesign and its state matrix.
+- Document the plan to retire the ratings Focus mode and preserve the default grid.
 - Add a durable migration plan for shared TMDB–Kinopoisk identity mappings.
 - Define the Yin-Yang monochrome visual contract and CSS ownership rules.
 - Document approved color exceptions and the dark/light visual review checklist.
 - Define and harden the private watch-room plan: RTDB-confirmed activation, indexed
   repair queues, recoverable approval gates and low Firebase usage.
+- Harden the comment/review plan with aggregate, cache, moderation, and rollout gates.
 
 ### Refactor
 
+- Remove the experimental ratings Focus mode and keep the ordinary grid as the only view.
+- Remove the retired Canvas renderer and sphere-only poster loading bridge.
+- Delete the retired 24-hour sphere poster cache namespace without touching other caches.
 - Start the canonical neutral token migration for shared, Home, and Catalog UI.
 - Add an automated visual design contract for palette and focus-token regressions.
 - Extend neutral interaction states across MovieDetails, Player, Profile, Search,
@@ -380,6 +508,7 @@ manifest and package version remain the source of truth for the build version.
 - Enable reactions on all ratings even when no text comment is provided.
 - Add sign-in warning toast on unauthenticated reaction clicks in Search.
 - Expose native TMDB IMDb IDs and unblock direct IMDb rating enrichment when KP ratings are missing.
+- Fix admin comment reaction preview layout by constraining asset image overflow and sizing.
 
 ### Refactor
 

@@ -10,6 +10,8 @@ class AdminRatingsCacheService {
         // Cache keys
         this.MOVIES_CACHE_KEY = 'admin_movies_cache';
         this.RATINGS_CACHE_KEY = 'admin_ratings_cache';
+        this.RATINGS_CACHE_VERSION_KEY = 'admin_ratings_cache_schema_version';
+        this.RATINGS_CACHE_SCHEMA_VERSION = 2;
         this.USERS_CACHE_KEY = 'admin_users_cache';
         this.CACHE_TIMESTAMP_KEY = 'admin_cache_timestamp';
         this.USERS_CACHE_TIMESTAMP_KEY = 'admin_users_cache_timestamp';
@@ -103,6 +105,9 @@ class AdminRatingsCacheService {
         try {
             const cached = localStorage.getItem(this.RATINGS_CACHE_KEY);
             if (!cached) return null;
+            if (localStorage.getItem(this.RATINGS_CACHE_VERSION_KEY) !== String(this.RATINGS_CACHE_SCHEMA_VERSION)) {
+                return null;
+            }
             return JSON.parse(cached);
         } catch (e) {
             console.error('[AdminCacheService] Error reading ratings cache:', e);
@@ -147,9 +152,24 @@ class AdminRatingsCacheService {
      */
     saveRatingsToCache(ratings) {
         try {
-            localStorage.setItem(this.RATINGS_CACHE_KEY, JSON.stringify(ratings));
+            const safeRatings = ratings.map(rating => {
+                const safeRating = { ...rating };
+                const review = typeof safeRating.review === 'string'
+                    ? safeRating.review.replace(/\r\n?/g, '\n').trim()
+                    : '';
+                const hasReview = review.length > 0 || safeRating.hasReview === true;
+                const reviewLength = review.length > 0
+                    ? Array.from(review).length
+                    : Math.max(0, Number(safeRating.reviewLength) || 0);
+                delete safeRating.review;
+                safeRating.hasReview = hasReview;
+                safeRating.reviewLength = reviewLength;
+                return safeRating;
+            });
+            localStorage.setItem(this.RATINGS_CACHE_KEY, JSON.stringify(safeRatings));
+            localStorage.setItem(this.RATINGS_CACHE_VERSION_KEY, String(this.RATINGS_CACHE_SCHEMA_VERSION));
             localStorage.setItem(this.CACHE_TIMESTAMP_KEY, Date.now().toString());
-            console.log(`[AdminCacheService] Saved ${ratings.length} ratings to cache`);
+            console.log(`[AdminCacheService] Saved ${safeRatings.length} ratings to cache`);
         } catch (e) {
             console.error('[AdminCacheService] Error saving ratings to cache:', e);
         }
@@ -197,6 +217,7 @@ class AdminRatingsCacheService {
         try {
             localStorage.removeItem(this.MOVIES_CACHE_KEY);
             localStorage.removeItem(this.RATINGS_CACHE_KEY);
+            localStorage.removeItem(this.RATINGS_CACHE_VERSION_KEY);
             localStorage.removeItem(this.USERS_CACHE_KEY);
             localStorage.removeItem(this.CACHE_TIMESTAMP_KEY);
             localStorage.removeItem(this.USERS_CACHE_TIMESTAMP_KEY);
@@ -325,9 +346,17 @@ class AdminRatingsCacheService {
                 .get();
 
             snapshot.forEach(doc => {
+                const data = doc.data();
+                const review = typeof data.review === 'string'
+                    ? data.review.replace(/\r\n?/g, '\n').trim()
+                    : '';
                 ratings.push({
                     id: doc.id,
-                    ...doc.data()
+                    ...data,
+                    hasReview: review.length > 0 || data.hasReview === true,
+                    reviewLength: review.length > 0
+                        ? Array.from(review).length
+                        : Math.max(0, Number(data.reviewLength) || 0)
                 });
             });
 

@@ -136,6 +136,7 @@ function createWatchRoomService({
   const rooms = db.collection(collectionPrefix);
   const invites = db.collection(isDefaultCollection ? "watchRoomInvites" : `${collectionPrefix}Invites`);
   const aclOutbox = db.collection(isDefaultCollection ? "watchRoomAclOutbox" : `${collectionPrefix}AclOutbox`);
+  const createRequests = db.collection(isDefaultCollection ? "watchRoomCreateRequests" : `${collectionPrefix}CreateRequests`);
 
   async function getApprovedProfile(uid) {
     const userId = requireUid(uid);
@@ -253,6 +254,113 @@ function createWatchRoomService({
     });
 
     return { inviteId, secret, expiresAtMs: expiresAt.getTime(), maxUses: normalizedMaxUses };
+  }
+
+  async function createRoomWithInvite({
+    actorUid,
+    requestId,
+    visibility = "private",
+    maxParticipants,
+    maxUses = 1,
+    content,
+  } = {}) {
+    requireUid(actorUid);
+    requireRequestId(requestId);
+    const ownerProfile = await getApprovedProfile(actorUid);
+    const normalizedVisibility = normalizeVisibility(visibility);
+    const normalizedCapacity = normalizeMaxParticipants(maxParticipants);
+    const normalizedMaxUses = Number(maxUses);
+    if (!Number.isInteger(normalizedMaxUses) || normalizedMaxUses < 1 || normalizedMaxUses > MAX_PARTICIPANTS - 1) {
+      throw createWatchRoomError("INVALID_INVITE_USES", "Invite usage limit is invalid");
+    }
+    const normalizedContent = normalizeContent(content);
+    const createdAt = now();
+    const expiresAt = new Date(createdAt.getTime() + roomTtlMs);
+    const roomId = randomId();
+    const inviteId = randomId();
+    const secret = randomBytes(32).toString("base64url");
+    const roomRef = rooms.doc(roomId);
+    const memberRef = roomRef.collection("members").doc(actorUid);
+    const inviteRef = invites.doc(inviteId);
+    const requestRef = createRequests.doc(`${actorUid}_${requestId}`);
+    const room = createSafeRoomDto(roomId, {
+      visibility: normalizedVisibility,
+      status: "lobby",
+      maxParticipants: normalizedCapacity,
+      memberCount: 1,
+      expiresAt,
+      content: normalizedContent,
+      contentSyncState: "idle",
+    }, "owner");
+    const joinCode = `${inviteId}.${secret}`;
+
+    return db.runTransaction(async (transaction) => {
+      const requestSnapshot = await transaction.get(requestRef);
+      if (requestSnapshot.exists) {
+        const stored = requestSnapshot.data() || {};
+        if (stored.action !== "create" || stored.actorUid !== actorUid
+          || typeof stored.joinCode !== "string" || !stored.room) {
+          throw createWatchRoomError("IDEMPOTENCY_CONFLICT", "Create request cannot be reused", 409);
+        }
+        return { room: stored.room, joinCode: stored.joinCode };
+      }
+
+      const aclVersion = 1;
+      transaction.set(roomRef, {
+        ownerId: actorUid,
+        visibility: normalizedVisibility,
+        status: "lobby",
+        maxParticipants: normalizedCapacity,
+        memberCount: 1,
+        aclRevision: aclVersion,
+        publicIndexRevision: normalizedVisibility === "public" ? 1 : 0,
+        lastActivityAt: createdAt,
+        content: normalizedContent,
+        pendingContent: null,
+        contentSyncState: "idle",
+        createdAt,
+        expiresAt,
+        endedAt: null,
+      });
+      transaction.set(memberRef, {
+        role: "owner",
+        joinedAt: createdAt,
+        ...ownerProfile,
+      });
+      transaction.set(inviteRef, {
+        roomId,
+        inviteHash: hashInviteSecret(secret),
+        expiresAt: new Date(createdAt.getTime() + inviteTtlMs),
+        maxUses: normalizedMaxUses,
+        uses: 0,
+        revokedAt: null,
+        createdAt,
+        createdBy: actorUid,
+      });
+      if (emitAclOutbox) {
+        transaction.set(
+          aclOutbox.doc(`${roomId}_${actorUid}_${aclVersion}`),
+          createAclOutbox({
+            roomId,
+            userId: actorUid,
+            desiredRole: "owner",
+            aclVersion,
+            operation: "grant",
+            createdAt,
+          })
+        );
+      }
+      transaction.set(requestRef, {
+        action: "create",
+        actorUid,
+        roomId,
+        room,
+        joinCode,
+        createdAt,
+        expiresAt,
+      });
+      return { room, joinCode };
+    });
   }
 
   async function redeemInvite({ actorUid, requestId, inviteId, secret } = {}) {
@@ -427,6 +535,7 @@ function createWatchRoomService({
   return {
     createInvite,
     createRoom,
+    createRoomWithInvite,
     getApprovedProfile,
     leaveRoom,
     redeemInvite,

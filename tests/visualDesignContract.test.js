@@ -163,8 +163,20 @@ const movieCard = read(migrationGuardFiles.movieCard);
 assert.doesNotMatch(movieCard, /rgba\(\s*(?:147\s*,\s*51\s*,\s*234|192\s*,\s*132\s*,\s*252)/i);
 
 const movieDetails = read(migrationGuardFiles.movieDetails);
+const settingsStyles = read('src/pages/settings/settings.css');
+const settingsScript = read('src/pages/settings/settings.js');
 assert.doesNotMatch(movieDetails, /rgba\(\s*(?:59\s*,\s*130\s*,\s*246|168\s*,\s*85\s*,\s*247|42\s*,\s*171\s*,\s*238)/i);
 assert.match(movieDetails, /\.tab-btn\.disabled\s*\{[\s\S]*?color:\s*var\(--theme-text-muted\);[\s\S]*?opacity:\s*1;/);
+assert.match(movieDetails, /\.torrent-playback-status__metrics\s*\{[\s\S]*?grid-template-columns:\s*repeat\(5,/);
+assert.match(movieDetails, /\.torrent-playback-status__download-fill\s*\{[\s\S]*?transition:\s*width 220ms ease-out;/);
+assert.match(movieDetails, /\.torrent-playback-status\[data-state="error"\]/);
+assert.match(movieDetails, /\.torrent-playback-status\[hidden\][\s\S]*?display:\s*none !important;/);
+assert.match(movieDetails, /\.torrent-source-disclosure\s*\{/);
+assert.match(movieDetails, /\.torrent-source-empty\s*\{/);
+assert.match(movieDetails, /\.torrent-playback-status__actions\s*\{/);
+assert.match(movieDetails, /var\(--ui-color-interactive\)/);
+assert.match(settingsScript, /saveBtn\.classList\.toggle\('is-dirty', isDirty\)/);
+assert.match(settingsStyles, /\.settings-actions-footer \.btn-primary\.is-dirty\s*\{[\s\S]*?background:\s*var\(--ui-color-status-success/);
 
 for (const file of [files.components, migrationGuardFiles.popup, migrationGuardFiles.player, migrationGuardFiles.search]) {
     assert.doesNotMatch(read(file), /--popover-(?:bg|border|radius|shadow|backdrop)\s*:/i, `${file} redefines a legacy generic popover token`);

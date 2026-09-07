@@ -90,9 +90,21 @@
                         <span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></span> <span data-i18n="movie_details.write_review">Write a Review</span>
                     </button>
                     <div id="reviewContainer" class="review-container" style="display: none;">
-                        <textarea id="ratingComment" class="review-textarea" rows="4" maxlength="500" data-i18n="movie_details.review_placeholder" placeholder="What did you think about this movie?"></textarea>
-                        <div class="char-counter">
-                            <span id="charCount">0</span>/500
+                        <div class="rating-text-field">
+                            <label for="ratingComment" class="rating-text-label">Короткое мнение</label>
+                            <textarea id="ratingComment" class="review-textarea" rows="4" maxlength="500" data-i18n="movie_details.review_placeholder" placeholder="What did you think about this movie?"></textarea>
+                            <div class="char-counter" aria-live="polite">
+                                <span id="charCount">0</span>/500
+                            </div>
+                        </div>
+                        <div class="rating-text-field rating-review-field">
+                            <label for="ratingReview" class="rating-text-label">Подробная рецензия</label>
+                            <p class="rating-review-visibility">Рецензия будет видна другим пользователям.</p>
+                            <textarea id="ratingReview" class="review-textarea review-textarea--long" rows="10" maxlength="5000" placeholder="Расскажите, что вы думаете о фильме..."></textarea>
+                            <div class="char-counter" aria-live="polite">
+                                <span id="reviewCharCount">0</span>/5000
+                            </div>
+                            <div id="ratingReviewError" class="rating-review-error" role="alert" hidden></div>
                         </div>
                     </div>
                 </div>
@@ -102,6 +114,27 @@
             <div class="rating-modal-footer">
                 <button id="cancelRatingBtn" class="btn btn-secondary" data-i18n="movie_details.cancel">Cancel</button>
                 <button id="saveRatingBtn" class="btn btn-accent" data-i18n="movie_details.save_rating">Save Rating</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Full review reader -->
+    <div id="reviewReaderModal" class="modal-overlay movie-details-modal-overlay review-reader-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="reviewReaderTitle" tabindex="-1">
+        <div class="modal review-reader-modal">
+            <div class="review-reader-header">
+                <div>
+                    <p class="review-reader-eyebrow">Рецензия</p>
+                    <h2 class="modal-title" id="reviewReaderTitle">Подробная рецензия</h2>
+                    <p id="reviewReaderMeta" class="review-reader-meta"></p>
+                </div>
+                <button class="modal-close" id="reviewReaderClose" type="button" aria-label="Закрыть рецензию" title="Закрыть">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div id="reviewReaderBody" class="review-reader-body"></div>
+            <div class="review-reader-footer">
+                <button id="reviewReaderReport" class="btn btn-secondary" type="button" hidden>Пожаловаться на рецензию</button>
+                <button id="reviewReaderCloseAction" class="btn btn-primary" type="button">Закрыть</button>
             </div>
         </div>
     </div>
@@ -190,6 +223,7 @@
                         <svg viewBox="0 0 24 24" fill="none"><path d="M8 7.5h8M6 12h12M9 16.5h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
                     </span>
                     <div class="source-buttons-container" id="sourceButtonsContainer" role="toolbar" aria-label="Player sources" aria-controls="videoContainer"></div>
+                    <button type="button" class="torrent-workspace-link" id="torrentWorkspaceBtn" aria-controls="torrentSourcePanel" hidden>Раздачи ↓</button>
                 </div>
                 <div class="player-source-guidance" id="playerSourceGuidance" style="display: none;" role="status" aria-live="polite">
                     <span class="player-source-guidance__icon" aria-hidden="true">
@@ -197,14 +231,11 @@
                     </span>
                     <span class="player-source-guidance__text"></span>
                 </div>
-                <div class="video-container player-surface" id="videoContainer" aria-label="Video player">
-                    <!-- Player iframe will be inserted here -->
+                <div class="video-container player-surface" id="videoContainer" aria-label="Video player" tabindex="-1">
                     <div class="video-placeholder app-loader app-loader--player" data-player-bootstrap-loader role="status" aria-live="polite">
                         <div class="app-loader__indicator" aria-hidden="true"></div>
                         <span class="app-loader__label" data-i18n="movie_details.loading_player">Loading player...</span>
                     </div>
-
-                    <!-- Auto-Next Prompt Overlay (Phase 3G) -->
                     <div class="player-autonext-prompt" id="playerAutoNextPrompt" style="display: none;" role="status" aria-live="polite">
                         <div class="player-autonext-prompt__header">
                             <span class="player-autonext-prompt__countdown" id="playerAutoNextCountdown">Следующая серия через 10 сек</span>
@@ -216,6 +247,59 @@
                         </div>
                     </div>
                 </div>
+                <section class="torrent-source-panel" id="torrentSourcePanel" hidden aria-labelledby="torrentSourceTitle" tabindex="-1">
+                    <div class="torrent-source-panel__header">
+                        <div>
+                            <p class="torrent-source-panel__eyebrow">MediaPlayer</p>
+                            <h3 class="torrent-source-panel__title" id="torrentSourceTitle">Торрент-раздачи</h3>
+                        </div>
+                        <button class="torrent-source-panel__close" id="torrentSourceCloseBtn" type="button" aria-label="Закрыть список раздач" title="Закрыть">×</button>
+                    </div>
+                    <div class="torrent-source-panel__status" id="torrentSourceStatus" role="status" aria-live="polite"></div>
+                    <section class="torrent-playback-status" id="torrentPlaybackStatus" hidden aria-labelledby="torrentPlaybackTitle"></section>
+                    <section class="torrent-download-library" id="torrentDownloadLibrary" hidden aria-labelledby="torrentDownloadLibraryTitle">
+                        <div class="torrent-download-library__heading">
+                            <h4 id="torrentDownloadLibraryTitle">Сохранённые загрузки</h4>
+                            <span>Продолжаются отдельно от страницы</span>
+                        </div>
+                        <div class="torrent-download-list" id="torrentDownloadList" role="list" aria-label="Сохранённые загрузки фильма"></div>
+                    </section>
+                    <details class="torrent-source-disclosure" id="torrentSourceDisclosure" hidden>
+                        <summary>
+                            <span>Другие раздачи</span>
+                            <span class="torrent-source-disclosure__count" data-torrent-disclosure-count></span>
+                        </summary>
+                        <div class="torrent-source-disclosure__body">
+                            <div class="torrent-source-controls" id="torrentSourceControls" hidden>
+                                <div class="torrent-source-controls__filters" role="group" aria-label="Фильтр качества">
+                                    <button class="torrent-quality-chip is-active" type="button" data-quality-filter="all">Все</button>
+                                    <button class="torrent-quality-chip" type="button" data-quality-filter="4k">4K</button>
+                                    <button class="torrent-quality-chip" type="button" data-quality-filter="2k">2K</button>
+                                    <button class="torrent-quality-chip" type="button" data-quality-filter="1080p">1080p</button>
+                                    <button class="torrent-quality-chip" type="button" data-quality-filter="720p">720p</button>
+                                    <button class="torrent-quality-chip" type="button" data-quality-filter="sd">SD</button>
+                                </div>
+                                <label class="torrent-source-controls__sort">
+                                    <span>Сортировка</span>
+                                    <select id="torrentSourceSort">
+                                        <option value="recommended">Рекомендуемые</option>
+                                        <option value="seeders">Сиды: больше</option>
+                                        <option value="quality">Качество: выше</option>
+                                        <option value="size-asc">Размер: меньше</option>
+                                        <option value="size-desc">Размер: больше</option>
+                                    </select>
+                                </label>
+                                <button class="torrent-source-controls__search" id="torrentSourceSearchBtn" type="button" hidden>
+                                    Найти другие раздачи
+                                </button>
+                            </div>
+                            <div class="torrent-source-list" id="torrentSourceList" role="list" aria-label="Список торрент-раздач"></div>
+                            <button class="torrent-source-show-more" id="torrentSourceShowMoreBtn" type="button" hidden>
+                                Показать ещё
+                            </button>
+                        </div>
+                    </details>
+                </section>
             </div>
         </div>
     </div>
@@ -323,6 +407,7 @@
     <script defer src="../../shared/services/KinopoiskRatingParsingService.js"></script>
     <script defer src="../../shared/services/MovieCacheService.js"></script>
     <script defer src="../../shared/services/RatingsRefreshService.js"></script>
+    <script defer src="../../shared/config/rating.config.js"></script>
     <script defer src="../../shared/services/RatingService.js"></script>
     <script defer src="../../shared/services/CommentReactionService.js"></script>
     <script defer src="../../shared/components/CommentReactionBar.js"></script>
@@ -375,6 +460,7 @@
     <script defer src="../../shared/utils/IconUtils.js"></script>
     <script defer src="../../shared/utils/Icons.js"></script>
     <script defer src="../../shared/utils/LazyLoader.js"></script>
+    <script defer src="../../shared/services/MediaPlayerService.js"></script>
     <script defer src="../../shared/components/BackToTop.js"></script>
     <script defer src="../../shared/components/Navigation.js"></script>
     <script defer src="../../shared/components/ImageLightbox.js"></script>

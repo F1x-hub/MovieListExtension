@@ -4,6 +4,26 @@
 const ROOM_SYNC_TIMELINE_ACTIONS = new Set(['play', 'pause', 'seek']);
 const ROOM_SYNC_OBSERVED_TELEMETRY_KINDS = new Set(['play', 'pause', 'seeking', 'seeked']);
 const ROOM_SYNC_PUBLISHED_TELEMETRY_KINDS = new Set(['play', 'pause', 'seeked']);
+const PRESENCE_HEARTBEAT_MS = 30_000;
+const PRESENCE_STALE_MS = 90_000;
+const PRESENCE_STALE_CHECK_MS = 15_000;
+const RTDB_SERVER_TIMESTAMP = { '.sv': 'timestamp' };
+const PRESENCE_V2_NODE = 'presenceV2';
+
+class WatchRoomApiError extends Error {
+    constructor(message, { code = 'ROOM_API_ERROR', status = 0, cause } = {}) {
+        super(message);
+        this.name = 'WatchRoomApiError';
+        this.code = code;
+        this.status = status;
+        this.statusCode = status;
+        if (cause) this.cause = cause;
+    }
+
+    get retryable() {
+        return this.status === 0 || this.status >= 500;
+    }
+}
 
 class WatchRoomStagingController {
     constructor({
@@ -47,6 +67,16 @@ class WatchRoomStagingController {
         this.membersRef = null;
         this.presenceRef = null;
         this.presenceRoomRef = null;
+        this.legacyPresenceRoomRef = null;
+        this.connectionStateRef = null;
+        this.presenceConnectionId = null;
+        this.presenceReady = false;
+        this.presenceWriteChain = Promise.resolve();
+        this.presenceSessionGeneration = 0;
+        this.presenceHeartbeatTimer = null;
+        this.presenceStaleTimer = null;
+        this.presenceTimerGeneration = 0;
+        this.rtdbConnected = null;
         this.memberState = {};
         this.presenceState = {};
         this.pending = new Map();
@@ -64,6 +94,7 @@ class WatchRoomStagingController {
         this.roomExpiryTimer = null;
         this.roomExpiryCheckDisposer = null;
         this.roomExpiryGeneration = 0;
+        this.pendingCreateRequestId = null;
     }
 
     makeRequestId(prefix) {
@@ -80,7 +111,7 @@ class WatchRoomStagingController {
         });
     }
 
-    async callApi(action, payload = {}) {
+    async callApi(action, payload = {}, { requestId = null } = {}) {
         const firebaseManager = window.firebaseManager;
         // A movie page can finish rendering before Firebase restores the saved
         // session. Waiting here prevents a legitimate first click on “Создать”
@@ -89,21 +120,35 @@ class WatchRoomStagingController {
             || await firebaseManager?.waitForAuthReady?.(10_000);
         if (!user) throw new Error('Нужен авторизованный аккаунт');
         const token = await user.getIdToken();
-        const response = await fetch(
-            'https://us-central1-movielistdb-13208.cloudfunctions.net/watchRoomsStaging',
-            {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action,
-                    requestId: this.makeRequestId(action),
-                    displayName: await this.currentUserDisplayName(user),
-                    ...payload,
-                }),
-            }
-        );
+        const displayName = await this.currentUserDisplayName(user);
+        let response;
+        try {
+            response = await fetch(
+                'https://us-central1-movielistdb-13208.cloudfunctions.net/watchRoomsStaging',
+                {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action,
+                        requestId: requestId || this.makeRequestId(action),
+                        displayName,
+                        ...payload,
+                    }),
+                }
+            );
+        } catch (error) {
+            throw new WatchRoomApiError('Соединение с сервером комнаты недоступно', {
+                code: 'NETWORK_ERROR',
+                cause: error,
+            });
+        }
         const body = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(body.error || 'Не удалось выполнить действие комнаты');
+        if (!response.ok) {
+            throw new WatchRoomApiError(body.error || 'Не удалось выполнить действие комнаты', {
+                code: body.code || `HTTP_${response.status}`,
+                status: response.status,
+            });
+        }
         return body;
     }
 
@@ -147,13 +192,26 @@ class WatchRoomStagingController {
     async create() {
         this.onStatus('Создаю комнату…');
         const providerHint = this.currentProviderId();
-        const result = await this.callApi('create', {
-            content: this.currentContent(),
-            providerHint,
-            providerSource: this.currentProviderSource(providerHint),
-        });
-        await this.connect(result.room, 'owner');
-        return result.joinCode;
+        const content = this.currentContent();
+        const providerSource = this.currentProviderSource(providerHint);
+        this.pendingCreateRequestId ||= this.makeRequestId('create');
+        try {
+            const result = await this.callApi('create', {
+                content,
+                providerHint,
+                providerSource,
+            }, { requestId: this.pendingCreateRequestId });
+            this.pendingCreateRequestId = null;
+            await this.connect(result.room, 'owner');
+            return result.joinCode;
+        } catch (error) {
+            // Keep the key for retryable failures: the server may have
+            // committed the room before the response was lost or failed.
+            if (!error?.retryable) {
+                this.pendingCreateRequestId = null;
+            }
+            throw error;
+        }
     }
 
     async join(joinCode) {
@@ -181,6 +239,8 @@ class WatchRoomStagingController {
         }
         this.rtdb = window.firebaseManager?.getRealtimeDatabase?.();
         if (!this.rtdb) throw new Error('Realtime Database недоступна в этой сборке');
+        const userId = this.currentUserId();
+        if (!userId) throw new Error('Нужен авторизованный аккаунт');
         const probe = await this.probePlayer();
         const required = ['observeTime', 'play', 'pause', 'seek', 'duration'];
         if (!required.every((name) => probe.capabilities?.[name] === true)) {
@@ -200,8 +260,11 @@ class WatchRoomStagingController {
         this.bindNativeVideoTelemetry();
         this.stateRef = this.rtdb.ref(`roomLive/${room.roomId}/state`);
         this.membersRef = this.rtdb.ref(`roomLive/${room.roomId}/members`);
-        this.presenceRef = this.rtdb.ref(`roomLive/${room.roomId}/presence/${this.currentUserId()}`);
-        this.presenceRoomRef = this.rtdb.ref(`roomLive/${room.roomId}/presence`);
+        this.presenceConnectionId = this.makeRequestId('presence');
+        this.presenceRef = this.rtdb.ref(`roomLive/${room.roomId}/${PRESENCE_V2_NODE}/${userId}/${this.presenceConnectionId}`);
+        this.presenceRoomRef = this.rtdb.ref(`roomLive/${room.roomId}/${PRESENCE_V2_NODE}`);
+        this.legacyPresenceRoomRef = this.rtdb.ref(`roomLive/${room.roomId}/presence`);
+        this.connectionStateRef = this.rtdb.ref('.info/connected');
         this.stateRef.on('value', (snapshot) => {
             const nextState = snapshot.val();
             this.trace('state-received', {
@@ -230,19 +293,43 @@ class WatchRoomStagingController {
         this.membersRef.on('value', (snapshot) => {
             this.memberState = snapshot.val() || {};
             const currentMemberRole = this.memberState[this.currentUserId()]?.role;
+            const previousRole = this.role;
             if (currentMemberRole === 'owner' || currentMemberRole === 'controller' || currentMemberRole === 'viewer') {
                 this.role = currentMemberRole;
             }
             this.emitRoomUpdate();
+            if (previousRole && previousRole !== this.role) void this.markPresence();
         });
-        this.presenceRoomRef.on('value', (snapshot) => {
-            this.presenceState = snapshot.val() || {};
+        const updatePresenceSource = (source, snapshot) => {
+            if (!snapshot?.key) return;
+            const current = this.presenceState[snapshot.key] || {};
+            const value = snapshot.val();
+            if (value && typeof value === 'object') current[source] = value;
+            else delete current[source];
+            if (Object.keys(current).length > 0) this.presenceState[snapshot.key] = current;
+            else delete this.presenceState[snapshot.key];
             this.emitRoomUpdate();
-        });
-        await this.markPresence();
+        };
+        const handlePresenceChild = (snapshot) => updatePresenceSource('v2', snapshot);
+        const handleLegacyPresenceChild = (snapshot) => updatePresenceSource('legacy', snapshot);
+        const handlePresenceRemoved = (snapshot) => updatePresenceSource('v2', snapshot);
+        const handleLegacyPresenceRemoved = (snapshot) => updatePresenceSource('legacy', snapshot);
+        const handleRealtimeListenerError = (error) => this.handleRealtimeListenerError(error);
+        this.presenceRoomRef.on('child_added', handlePresenceChild, handleRealtimeListenerError);
+        this.presenceRoomRef.on('child_changed', handlePresenceChild, handleRealtimeListenerError);
+        this.presenceRoomRef.on('child_removed', handlePresenceRemoved, handleRealtimeListenerError);
+        this.legacyPresenceRoomRef.on('child_added', handleLegacyPresenceChild, handleRealtimeListenerError);
+        this.legacyPresenceRoomRef.on('child_changed', handleLegacyPresenceChild, handleRealtimeListenerError);
+        this.legacyPresenceRoomRef.on('child_removed', handleLegacyPresenceRemoved, handleRealtimeListenerError);
+        this.connectionStateRef.on('value', (snapshot) => {
+            this.handleRealtimeConnectionState(snapshot?.val?.() === true);
+        }, handleRealtimeListenerError);
+        await this.markPresence({ rearmDisconnect: true });
         if (!this.room || this.room.roomId !== room.roomId) return false;
         this.armRoomExpiry(room);
-        this.onStatus('');
+        this.schedulePresenceHeartbeat();
+        this.schedulePresenceStaleCheck();
+        if (this.rtdbConnected !== false) this.onStatus('');
         return true;
     }
 
@@ -424,11 +511,42 @@ class WatchRoomStagingController {
         return task.completionPromise;
     }
 
+    getLatestPresenceRecord(value) {
+        if (!value || typeof value !== 'object') return null;
+        if (Object.prototype.hasOwnProperty.call(value, 'v2')
+            || Object.prototype.hasOwnProperty.call(value, 'legacy')) {
+            return [value.v2, value.legacy]
+                .map((source) => this.getLatestPresenceRecord(source))
+                .filter(Boolean)
+                .sort((left, right) => {
+                    const leftSeen = Number(left.lastSeenAtMs ?? left.connectedAtMs ?? 0);
+                    const rightSeen = Number(right.lastSeenAtMs ?? right.connectedAtMs ?? 0);
+                    return rightSeen - leftSeen;
+                })[0] || null;
+        }
+        if (value.role || value.lastSeenAtMs !== undefined || value.connectedAtMs !== undefined) return value;
+        return Object.values(value)
+            .filter((record) => record && typeof record === 'object')
+            .sort((left, right) => {
+                const leftSeen = Number(left.lastSeenAtMs ?? left.connectedAtMs ?? 0);
+                const rightSeen = Number(right.lastSeenAtMs ?? right.connectedAtMs ?? 0);
+                return rightSeen - leftSeen;
+            })[0] || null;
+    }
+
+    isPresenceOnline(presence) {
+        if (!presence) return false;
+        const lastSeenAtMs = Number(presence.lastSeenAtMs ?? presence.connectedAtMs);
+        if (!Number.isFinite(lastSeenAtMs)) return true;
+        return this.now() - lastSeenAtMs <= PRESENCE_STALE_MS;
+    }
+
     emitRoomUpdate() {
         if (!this.room) return;
         const members = Object.entries(this.memberState).map(([uid, member]) => {
             const memberDisplayName = String(member?.displayName || '').trim();
-            const presenceDisplayName = String(this.presenceState[uid]?.displayName || '').trim();
+            const presence = this.getLatestPresenceRecord(this.presenceState[uid]);
+            const presenceDisplayName = String(presence?.displayName || '').trim();
             const displayName = (memberDisplayName && memberDisplayName !== 'Участник'
                 ? memberDisplayName
                 : presenceDisplayName || memberDisplayName || (member?.role === 'owner' ? 'Создатель' : 'Участник')
@@ -442,7 +560,7 @@ class WatchRoomStagingController {
                 uid,
                 role,
                 displayName,
-                online: Boolean(this.presenceState[uid]),
+                online: this.isPresenceOnline(presence),
                 isCurrentUser: uid === this.currentUserId(),
             };
         }).sort((left, right) => {
@@ -453,28 +571,121 @@ class WatchRoomStagingController {
         this.onRoomUpdate({ roomId: this.room.roomId, role: this.role, members });
     }
 
-    async markPresence() {
-        if (!this.presenceRef || !this.role) return;
+    handleRealtimeListenerError(error) {
+        this.trace('rtdb-listener-error', { code: error?.code || null });
+        if (this.room) {
+            this.onStatus(error?.code === 'permission_denied'
+                ? 'Доступ к комнате больше недоступен'
+                : 'Соединение с комнатой восстанавливается…');
+        }
+    }
+
+    handleRealtimeConnectionState(connected) {
+        if (!this.room) return;
+        this.rtdbConnected = connected;
+        this.trace('rtdb-connection-state', { connected });
+        if (!connected) {
+            this.onStatus('Соединение с комнатой восстанавливается…');
+            this.emitRoomUpdate();
+            return;
+        }
+        this.onStatus('');
+        void this.markPresence({ rearmDisconnect: true }).then(() => {
+            if (this.room) this.emitRoomUpdate();
+        });
+    }
+
+    async writePresence({ rearmDisconnect = false } = {}) {
+        const presenceRef = this.presenceRef;
+        const roomId = this.room?.roomId;
+        const sessionGeneration = this.presenceSessionGeneration;
+        const isCurrentSession = () => this.presenceSessionGeneration === sessionGeneration
+            && this.presenceRef === presenceRef
+            && this.room?.roomId === roomId;
+        if (!presenceRef || !this.role || !roomId || this.rtdbConnected === false) return false;
         const displayName = await this.currentUserDisplayName();
+        if (!isCurrentSession()) return false;
+        const role = this.role;
+        if (!role) return false;
         const record = {
-            connectedAtMs: Date.now(),
-            role: this.role,
+            connectedAtMs: RTDB_SERVER_TIMESTAMP,
+            lastSeenAtMs: RTDB_SERVER_TIMESTAMP,
+            role,
             ...(displayName ? { displayName } : {}),
         };
-        try {
-            const disconnect = this.presenceRef.onDisconnect?.();
+        if (rearmDisconnect) {
+            const disconnect = presenceRef.onDisconnect?.();
             await Promise.resolve(disconnect?.remove?.());
-            await this.presenceRef.set(record);
-        } catch (error) {
-            this.onStatus(`Не удалось обновить присутствие: ${error.message}`);
+            if (!isCurrentSession()) return false;
         }
+        try {
+            if (this.presenceReady) {
+                await presenceRef.update({ lastSeenAtMs: RTDB_SERVER_TIMESTAMP, role });
+            } else {
+                await presenceRef.set(record);
+            }
+        } catch (error) {
+            if (!isCurrentSession()) return false;
+            if (!this.presenceReady) throw error;
+            await presenceRef.set(record);
+        }
+        if (!isCurrentSession()) return false;
+        this.presenceReady = true;
+        return true;
+    }
+
+    async markPresence(options = {}) {
+        const task = this.presenceWriteChain
+            .catch(() => {})
+            .then(() => this.writePresence(options))
+            .catch((error) => {
+                this.onStatus(`Не удалось обновить присутствие: ${error.message}`);
+                return false;
+            });
+        this.presenceWriteChain = task;
+        return task;
+    }
+
+    schedulePresenceHeartbeat() {
+        this.cancelTimeout(this.presenceHeartbeatTimer);
+        const generation = ++this.presenceTimerGeneration;
+        const tick = async () => {
+            if (this.presenceTimerGeneration !== generation || !this.room) return;
+            if (this.rtdbConnected !== false) await this.markPresence();
+            if (this.presenceTimerGeneration !== generation || !this.room) return;
+            this.presenceHeartbeatTimer = this.scheduleTimeout(tick, PRESENCE_HEARTBEAT_MS);
+            this.presenceHeartbeatTimer?.unref?.();
+        };
+        this.presenceHeartbeatTimer = this.scheduleTimeout(tick, PRESENCE_HEARTBEAT_MS);
+        this.presenceHeartbeatTimer?.unref?.();
+    }
+
+    schedulePresenceStaleCheck() {
+        this.cancelTimeout(this.presenceStaleTimer);
+        const generation = this.presenceTimerGeneration;
+        const tick = () => {
+            if (this.presenceTimerGeneration !== generation || !this.room) return;
+            this.emitRoomUpdate();
+            this.presenceStaleTimer = this.scheduleTimeout(tick, PRESENCE_STALE_CHECK_MS);
+            this.presenceStaleTimer?.unref?.();
+        };
+        this.presenceStaleTimer = this.scheduleTimeout(tick, PRESENCE_STALE_CHECK_MS);
+        this.presenceStaleTimer?.unref?.();
     }
 
     disconnect(updateStatus = true, { presenceMode = 'remove' } = {}) {
         this.clearRoomExpiry();
+        this.presenceTimerGeneration += 1;
+        this.presenceSessionGeneration += 1;
+        this.cancelTimeout(this.presenceHeartbeatTimer);
+        this.cancelTimeout(this.presenceStaleTimer);
+        this.presenceHeartbeatTimer = null;
+        this.presenceStaleTimer = null;
         if (this.stateRef) this.stateRef.off();
         if (this.membersRef) this.membersRef.off();
         if (this.presenceRoomRef) this.presenceRoomRef.off();
+        if (this.legacyPresenceRoomRef) this.legacyPresenceRoomRef.off();
+        if (this.connectionStateRef) this.connectionStateRef.off();
         if (this.presenceRef) {
             this.presenceRef.off();
             if (presenceMode === 'remove') {
@@ -486,6 +697,12 @@ class WatchRoomStagingController {
         this.membersRef = null;
         this.presenceRef = null;
         this.presenceRoomRef = null;
+        this.legacyPresenceRoomRef = null;
+        this.connectionStateRef = null;
+        this.presenceConnectionId = null;
+        this.presenceReady = false;
+        this.presenceWriteChain = Promise.resolve();
+        this.rtdbConnected = null;
         this.rtdb = null;
         this.room = null;
         this.role = null;

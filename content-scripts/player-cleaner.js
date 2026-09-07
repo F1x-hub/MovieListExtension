@@ -21,11 +21,16 @@
     let activeRequestGuard = () => true;
     let activeWrapperListenerScope = null;
     let activeWrapper = null;
+    let activeSubtitleAppearanceStyle = null;
+    let activeSubtitleAppearanceWrapper = null;
+    let activeSubtitleControlsDock = null;
+    let activeSubtitleResizeObserver = null;
     let observerRoot = null;
     let pendingActiveEpisodeLabel = null; // Track clicked episode label
     let structuredPlaybackState = null; // Structured provider playback state (Phase 5B)
     let canonicalPickerRequested = false;
     let providerContentErrorReported = false;
+    let selectionOperationGeneration = 0;
     let roomSyncSubscriptionId = null;
     let roomSyncTelemetryVideo = null;
     let roomSyncTelemetryDisposers = [];
@@ -79,14 +84,21 @@
     const applyCanonicalPickerVisibility = () => {
         const legacyButtons = document.querySelectorAll('.episode-list-btn');
         const nativeNavigationButtons = document.querySelectorAll('.provider-native-episode-nav');
-        const buttons = [...legacyButtons, ...nativeNavigationButtons];
-        buttons.forEach(button => {
+        legacyButtons.forEach(button => {
             if (!button.dataset.canonicalPickerDisplay) {
                 button.dataset.canonicalPickerDisplay = button.style.display || '';
             }
             button.style.display = canonicalPickerRequested
                 ? 'none'
                 : button.dataset.canonicalPickerDisplay;
+        });
+        nativeNavigationButtons.forEach(button => {
+            if (!button.dataset.canonicalPickerDisplay) {
+                button.dataset.canonicalPickerDisplay = button.style.display || '';
+            }
+            // The host picker owns episode selection, but these arrows are still
+            // useful controls: they now request navigation from that same owner.
+            button.style.display = button.dataset.canonicalPickerDisplay || 'flex';
         });
         return {
             legacyButtonCount: legacyButtons.length,
@@ -211,6 +223,7 @@
 
     window.addEventListener('message', (event) => {
         if (event.data?.type === 'RESET_PERMANENT_VIDEO') {
+            selectionOperationGeneration += 1;
             if (hlsInstance) {
                 try { hlsInstance.destroy?.(); } catch { /* ignore */ }
                 hlsInstance = null;
@@ -230,6 +243,28 @@
             });
         } else if (event.data?.type === 'APPLY_PLAYBACK_SELECTION') {
             const request = event.data;
+            const expectedParent = window.parent && window.parent !== window
+                ? window.parent
+                : window;
+            const requestedSeason = Number(request.seasonNumber);
+            const requestedEpisode = Number(request.episodeNumber);
+            if (event.source !== expectedParent
+                || !Number.isInteger(requestedSeason)
+                || requestedSeason < 1
+                || !Number.isInteger(requestedEpisode)
+                || requestedEpisode < 1
+                || (request.providerId != null && typeof request.providerId !== 'string')) {
+                console.warn('[ExFsBridgeTrace] cleaner rejected invalid selection request', {
+                    requestId: request.requestId || null,
+                    hasExpectedParent: event.source === expectedParent,
+                    seasonNumber: request.seasonNumber,
+                    episodeNumber: request.episodeNumber,
+                    providerId: request.providerId || null
+                });
+                return;
+            }
+            const operationGeneration = ++selectionOperationGeneration;
+            const isCurrentOperation = () => operationGeneration === selectionOperationGeneration;
             console.info('[ExFsBridgeTrace] cleaner selection message received', {
                 requestId: request.requestId,
                 providerId: request.providerId || null,
@@ -239,23 +274,22 @@
                 hostname: window.location.hostname
             });
             const dispatchResult = async () => {
-                const applySelection = window.movieExtension_applySelection
-                    || window.movieExtension_restoreProgress;
+                if (!isCurrentOperation()) return false;
+                const applySelection = window.movieExtension_applySelection;
                 console.info('[ExFsBridgeTrace] cleaner selection handler lookup', {
                     requestId: request.requestId,
                     handler: typeof window.movieExtension_applySelection === 'function'
                         ? 'movieExtension_applySelection'
-                        : typeof window.movieExtension_restoreProgress === 'function'
-                            ? 'movieExtension_restoreProgress'
-                            : 'none'
+                        : 'none'
                 });
                 if (typeof applySelection !== 'function') return false;
                 try {
                     return await Promise.resolve(applySelection(
                         request.seasonNumber,
                         request.episodeNumber,
-                        request.providerId || null
-                    )) !== false;
+                        request.providerId || null,
+                        isCurrentOperation
+                    )) === true;
                 } catch (error) {
                     console.warn('[PlayerCleaner] Native selection dispatch failed:', error);
                     return false;
@@ -265,15 +299,29 @@
                 const response = {
                     type: 'PLAYBACK_SELECTION_RESULT',
                     requestId: request.requestId,
+                    providerId: request.providerId || null,
                     status,
                     reason,
                     seasonNumber: request.seasonNumber,
                     episodeNumber: request.episodeNumber
                 };
+                const responseOrigin = event.origin && event.origin !== 'null'
+                    ? event.origin
+                    : null;
+                if (!responseOrigin || !event.source?.postMessage) {
+                    console.warn('[ExFsBridgeTrace] cleaner skipped selection result without a trusted reply target', {
+                        requestId: request.requestId,
+                        responseOrigin
+                    });
+                    return;
+                }
                 try {
-                    event.source?.postMessage(response, event.origin || '*');
+                    event.source.postMessage(response, responseOrigin);
                 } catch {
-                    window.parent?.postMessage(response, '*');
+                    console.warn('[ExFsBridgeTrace] cleaner failed to send selection result', {
+                        requestId: request.requestId,
+                        responseOrigin
+                    });
                 }
                 console.info('[ExFsBridgeTrace] cleaner selection result sent', {
                     requestId: request.requestId,
@@ -283,13 +331,28 @@
             };
             let attemptsLeft = 8;
             const tryDispatch = async () => {
+                if (!isCurrentOperation()) {
+                    acknowledge('CANCELLED', 'stale-selection');
+                    return;
+                }
                 if (await dispatchResult()) {
+                    if (!isCurrentOperation()) {
+                        acknowledge('CANCELLED', 'stale-selection');
+                        return;
+                    }
                     console.log('[PlayerCleaner] Native selection dispatched', {
                         requestId: request.requestId,
                         seasonNumber: request.seasonNumber,
                         episodeNumber: request.episodeNumber
                     });
-                    acknowledge('DISPATCHED', 'provider-native-selector');
+                    // The provider bridge waits for the selected season/episode
+                    // to be reflected in its DOM before resolving. This is an
+                    // applied selection, not merely a click dispatch.
+                    acknowledge('APPLIED', 'provider-native-selector');
+                    return;
+                }
+                if (!isCurrentOperation()) {
+                    acknowledge('CANCELLED', 'stale-selection');
                     return;
                 }
                 if (attemptsLeft-- > 0) {
@@ -383,10 +446,24 @@
     }
 
     function teardownActiveWrapper() {
+        window._iframeGhostPlayer?.destroy?.();
+        window._iframeGhostPlayer = null;
         activePlaybackRetry?.cancel?.();
         activePlaybackRetry = null;
         activeWrapperListenerScope?.dispose?.();
         activeWrapperListenerScope = null;
+        activeSubtitleResizeObserver?.disconnect?.();
+        activeSubtitleResizeObserver = null;
+        activeSubtitleAppearanceStyle?.remove?.();
+        activeSubtitleAppearanceStyle = null;
+        activeSubtitleAppearanceWrapper?.classList?.remove('movie-extension-subtitle-host');
+        activeSubtitleAppearanceWrapper = null;
+        activeSubtitleControlsDock = null;
+        if (subtitleAppearanceSaveTimer) {
+            clearTimeout(subtitleAppearanceSaveTimer);
+            subtitleAppearanceSaveTimer = null;
+            saveSubtitleAppearance();
+        }
         activeWrapper = null;
     }
 
@@ -453,6 +530,171 @@
     // Subtitle Persistence Keys (Shared)
     const SUB_ENABLED_KEY = 'movieExtension_subs_enabled';
     const SUB_TRACK_KEY = 'movieExtension_subs_track';
+    const SUBTITLE_APPEARANCE_STORAGE_KEY = 'movieExtensionSubtitleAppearanceV1';
+    const DEFAULT_SUBTITLE_APPEARANCE = Object.freeze({
+        version: 1,
+        fontSizePercent: 100,
+        color: '#ffffff',
+        position: 'bottom',
+        offsetPercent: 6,
+        backgroundOpacity: 0.45,
+        textShadow: 'strong'
+    });
+    let subtitleAppearance = { ...DEFAULT_SUBTITLE_APPEARANCE };
+
+    const clampSubtitleAppearanceNumber = (value, min, max, fallback) => {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed)) return fallback;
+        return Math.min(max, Math.max(min, parsed));
+    };
+
+    const normalizeSubtitleAppearanceStep = (value, min, max, step, fallback) => {
+        const bounded = clampSubtitleAppearanceNumber(value, min, max, fallback);
+        return Number((Math.round((bounded - min) / step) * step + min).toFixed(2));
+    };
+
+    const normalizeSubtitleAppearance = rawValue => {
+        const raw = rawValue && typeof rawValue === 'object' ? rawValue : {};
+        const color = typeof raw.color === 'string' && /^#[0-9a-f]{6}$/i.test(raw.color)
+            ? raw.color.toLowerCase()
+            : DEFAULT_SUBTITLE_APPEARANCE.color;
+        const position = raw.position === 'top' ? 'top' : 'bottom';
+        const textShadow = ['none', 'soft', 'strong'].includes(raw.textShadow)
+            ? raw.textShadow
+            : DEFAULT_SUBTITLE_APPEARANCE.textShadow;
+
+        return {
+            version: 1,
+            fontSizePercent: normalizeSubtitleAppearanceStep(
+                raw.fontSizePercent, 75, 200, 5, DEFAULT_SUBTITLE_APPEARANCE.fontSizePercent
+            ),
+            color,
+            position,
+            offsetPercent: normalizeSubtitleAppearanceStep(
+                raw.offsetPercent, 2, 20, 1, DEFAULT_SUBTITLE_APPEARANCE.offsetPercent
+            ),
+            backgroundOpacity: normalizeSubtitleAppearanceStep(
+                raw.backgroundOpacity, 0, 0.9, 0.05, DEFAULT_SUBTITLE_APPEARANCE.backgroundOpacity
+            ),
+            textShadow
+        };
+    };
+
+    const getSubtitleAppearanceTextShadow = appearance => {
+        if (appearance.textShadow === 'none') return 'none';
+        if (appearance.textShadow === 'soft') return '0 1px 3px rgba(0, 0, 0, .82)';
+        return '0 2px 4px rgba(0, 0, 0, .96), 0 0 2px rgba(0, 0, 0, .9)';
+    };
+
+    const getSubtitleAppearanceRgb = color => {
+        const value = Number.parseInt(color.slice(1), 16);
+        return `${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}`;
+    };
+
+    const updateActiveSubtitleAppearance = () => {
+        const wrapper = activeSubtitleAppearanceWrapper;
+        const style = activeSubtitleAppearanceStyle;
+        if (!wrapper || !style || !document.contains(wrapper)) return;
+
+        const video = wrapper.querySelector('video');
+        const playerHeight = wrapper.clientHeight || video?.clientHeight || window.innerHeight || 0;
+        const userOffset = Math.round(playerHeight * (subtitleAppearance.offsetPercent / 100));
+        const dockHeight = activeSubtitleControlsDock?.offsetHeight || 0;
+        const dockBottom = Number.parseFloat(activeSubtitleControlsDock?.style.bottom || '14') || 14;
+        const controlsSafetyOffset = dockBottom + dockHeight + 12;
+        const bottomOffset = wrapper.classList.contains('controls-visible')
+            ? Math.max(userOffset, controlsSafetyOffset)
+            : userOffset;
+        const captionReserve = Math.min(140, Math.max(64, Math.round(playerHeight * 0.16)));
+        const translateY = subtitleAppearance.position === 'top'
+            ? -Math.max(0, playerHeight - userOffset - captionReserve)
+            : -bottomOffset;
+        const rgb = getSubtitleAppearanceRgb(subtitleAppearance.color);
+
+        style.textContent = `
+            .native-player-wrapper.movie-extension-subtitle-host video::cue {
+                color: ${subtitleAppearance.color} !important;
+                background-color: rgba(0, 0, 0, ${subtitleAppearance.backgroundOpacity}) !important;
+                font-size: ${(subtitleAppearance.fontSizePercent / 100).toFixed(2)}em !important;
+                text-shadow: ${getSubtitleAppearanceTextShadow(subtitleAppearance)} !important;
+            }
+            .native-player-wrapper.movie-extension-subtitle-host video::-webkit-media-text-track-display {
+                color: ${subtitleAppearance.color} !important;
+                background-color: rgba(0, 0, 0, ${subtitleAppearance.backgroundOpacity}) !important;
+                transform: translateY(${translateY}px) !important;
+                transition: transform 180ms ease !important;
+                text-shadow: ${getSubtitleAppearanceTextShadow(subtitleAppearance)} !important;
+            }
+            .native-player-wrapper.movie-extension-subtitle-host video::-webkit-media-text-track-container {
+                color: rgb(${rgb}) !important;
+            }
+        `;
+    };
+
+    const activateSubtitleAppearance = (wrapper, controlsDock) => {
+        activeSubtitleResizeObserver?.disconnect?.();
+        activeSubtitleAppearanceStyle?.remove?.();
+        activeSubtitleAppearanceWrapper = wrapper;
+        activeSubtitleControlsDock = controlsDock;
+        wrapper.classList.add('movie-extension-subtitle-host');
+        activeSubtitleAppearanceStyle = document.createElement('style');
+        activeSubtitleAppearanceStyle.dataset.movieExtensionSubtitleAppearance = 'true';
+        document.head.appendChild(activeSubtitleAppearanceStyle);
+        updateActiveSubtitleAppearance();
+
+        if (typeof ResizeObserver === 'function') {
+            activeSubtitleResizeObserver = new ResizeObserver(updateActiveSubtitleAppearance);
+            activeSubtitleResizeObserver.observe(wrapper);
+            if (controlsDock) activeSubtitleResizeObserver.observe(controlsDock);
+        }
+    };
+
+    const setSubtitleAppearance = rawValue => {
+        subtitleAppearance = normalizeSubtitleAppearance(rawValue);
+        updateActiveSubtitleAppearance();
+    };
+
+    let subtitleAppearanceSaveTimer = null;
+    const saveSubtitleAppearance = () => {
+        if (typeof chrome === 'undefined' || !chrome.storage?.local?.set) return;
+        try {
+            const result = chrome.storage.local.set({
+                [SUBTITLE_APPEARANCE_STORAGE_KEY]: { ...subtitleAppearance }
+            });
+            result?.catch?.(() => {});
+        } catch {
+            // Keep the in-memory value when extension storage is unavailable.
+        }
+    };
+
+    const persistSubtitleAppearance = rawValue => {
+        setSubtitleAppearance(rawValue);
+        if (subtitleAppearanceSaveTimer) clearTimeout(subtitleAppearanceSaveTimer);
+        subtitleAppearanceSaveTimer = setTimeout(() => {
+            subtitleAppearanceSaveTimer = null;
+            saveSubtitleAppearance();
+        }, 120);
+    };
+
+    const loadSubtitleAppearance = () => {
+        if (typeof chrome === 'undefined' || !chrome.storage?.local) return;
+        try {
+            chrome.storage.local.get(SUBTITLE_APPEARANCE_STORAGE_KEY, stored => {
+                if (chrome.runtime?.lastError) return;
+                setSubtitleAppearance(stored?.[SUBTITLE_APPEARANCE_STORAGE_KEY]);
+            });
+        } catch {
+            // The player still has a safe local default when extension storage is unavailable.
+        }
+    };
+
+    if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+        chrome.storage.onChanged.addListener((changes, areaName) => {
+            if (areaName !== 'local' || !changes[SUBTITLE_APPEARANCE_STORAGE_KEY]) return;
+            setSubtitleAppearance(changes[SUBTITLE_APPEARANCE_STORAGE_KEY].newValue);
+        });
+    }
+    loadSubtitleAppearance();
 
     // === Anime Skip Button Logic (Global Scope) ===
     const showSkipButton = () => {
@@ -795,6 +1037,7 @@
             if (!activeRequestGuard()) activePlaybackRetry?.cancel?.();
         },
         _test: {
+            replacePlayerForTest: () => replacePlayer({ allowTestContext: true }),
             tryPlayWithLimit,
             createListenerScope,
             activateWrapperListenerScope,
@@ -834,7 +1077,7 @@
             console.warn('[PlayerCleaner] Unable to verify iframe ancestry:', e.message);
         }
 
-        if (!isInsideExtension) {
+        if (!isInsideExtension && !lifecycleOptions.allowTestContext) {
             return;
         }
 
@@ -1031,7 +1274,8 @@
             return; // No video found yet
         }
         
-        if (!siteVideo.src && !siteVideo.currentSrc && siteVideo.querySelectorAll('source').length === 0) {
+        if (!siteVideo.src && !siteVideo.currentSrc && siteVideo.querySelectorAll('source').length === 0
+            && !siteVideo._movieExtensionHls) {
             return; // Video has no source
         }
         
@@ -1044,7 +1288,7 @@
         // Extract source from site's video
         const initialSrc = siteVideo.src || siteVideo.currentSrc || (siteVideo.querySelector('source') ? siteVideo.querySelector('source').src : '');
         
-        if (!initialSrc) {
+        if (!initialSrc && !siteVideo._movieExtensionHls) {
             return; // No valid source
         }
         
@@ -1055,7 +1299,7 @@
         
         // Configure the existing video element
         permanentVideo.removeAttribute('controls'); // Remove native controls
-        permanentVideo.autoplay = true;
+        permanentVideo.autoplay = permanentVideo.dataset.playerProvider !== 'torrent';
         permanentVideo.playsInline = true;
         permanentVideo.style.width = '100%';
         permanentVideo.style.height = '100%';
@@ -1321,20 +1565,10 @@
             
             // State for Voiceovers (Removed local decl, using global)
             
-            // Inject Dynamic Styles for Subtitles
+            // Inject cleaner-owned styles. Subtitle appearance itself is kept in
+            // a separate dynamic style so it can react to local user settings.
             const subParams = document.createElement('style');
             subParams.textContent = `
-                /* Move subtitles up when controls are visible */
-                .native-player-wrapper.controls-visible video::-webkit-media-text-track-display {
-                    transform: translateY(-80px) !important;
-                    transition: transform 0.3s ease !important;
-                }
-                /* Reset when controls hidden */
-                .native-player-wrapper:not(.controls-visible) video::-webkit-media-text-track-display {
-                    transform: translateY(0) !important;
-                    transition: transform 0.3s ease !important;
-                }
-
                 /* Consistent keyboard focus for cleaner-owned controls */
                 .native-player-wrapper button:focus-visible {
                     outline: 3px solid #fff !important;
@@ -1360,7 +1594,10 @@
                 .native-player-wrapper .player-center-action svg {
                     width: 40px !important;
                     height: 40px !important;
-                    transform: translateX(1px);
+                    transform: none !important;
+                }
+                .native-player-wrapper .player-center-action[data-icon="play"] svg {
+                    transform: translateX(1px) !important;
                 }
                 .native-player-wrapper .player-control-dock {
                     min-height: 52px;
@@ -1422,7 +1659,15 @@
                         border-color 160ms ease, transform 120ms cubic-bezier(.23, 1, .32, 1) !important;
                 }
                 .native-player-wrapper .player-control-dock .player-control-button--primary svg {
-                    transform: translateX(1px);
+                    display: block;
+                    transform: none;
+                }
+                .native-player-wrapper .player-control-dock .player-control-button--primary[data-icon="play"] svg {
+                    /* M8 5v14l11-7z is optically right- and bottom-heavy. */
+                    transform: translate(-1.5px, -0.5px);
+                }
+                .native-player-wrapper .player-control-dock .player-control-button--primary {
+                    line-height: 0 !important;
                 }
                 .native-player-wrapper .player-control-dock .player-control-button:hover {
                     color: #fff !important;
@@ -1568,6 +1813,113 @@
                 }
                 .native-player-wrapper .player-settings-menu__list::-webkit-scrollbar-corner {
                     background: transparent;
+                }
+                .native-player-wrapper .player-subtitle-appearance__body {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 10px;
+                    max-height: 292px;
+                    padding: 10px 8px 8px;
+                    overflow-x: hidden;
+                    overflow-y: auto;
+                    overscroll-behavior: contain;
+                    scrollbar-width: thin;
+                    scrollbar-color: rgba(161, 161, 170, .48) transparent;
+                }
+                .native-player-wrapper .player-subtitle-appearance__body::-webkit-scrollbar {
+                    width: 6px;
+                }
+                .native-player-wrapper .player-subtitle-appearance__body::-webkit-scrollbar-thumb {
+                    background: rgba(161, 161, 170, .42);
+                    border: 1px solid transparent;
+                    border-radius: 999px;
+                    background-clip: padding-box;
+                }
+                .native-player-wrapper .player-subtitle-appearance__preview {
+                    min-height: 62px;
+                    display: flex;
+                    align-items: flex-end;
+                    justify-content: center;
+                    padding: 10px;
+                    overflow: hidden;
+                    background: linear-gradient(145deg, rgba(63, 63, 70, .9), rgba(9, 9, 11, .98));
+                    border: 1px solid rgba(255, 255, 255, .1);
+                    border-radius: 10px;
+                }
+                .native-player-wrapper .player-subtitle-appearance__preview[data-position="top"] {
+                    align-items: flex-start;
+                }
+                .native-player-wrapper .player-subtitle-appearance__caption {
+                    max-width: 100%;
+                    padding: 3px 6px;
+                    overflow-wrap: anywhere;
+                    color: var(--player-subtitle-preview-color, #fff);
+                    background: rgba(0, 0, 0, var(--player-subtitle-preview-bg, .45));
+                    border-radius: 4px;
+                    font-size: var(--player-subtitle-preview-size, 1em);
+                    line-height: 1.2;
+                    text-align: center;
+                    text-shadow: var(--player-subtitle-preview-shadow, 0 2px 4px rgba(0, 0, 0, .96));
+                }
+                .native-player-wrapper .player-subtitle-appearance__control {
+                    display: grid;
+                    gap: 5px;
+                }
+                .native-player-wrapper .player-subtitle-appearance__control > label {
+                    display: flex;
+                    align-items: baseline;
+                    justify-content: space-between;
+                    gap: 8px;
+                    color: #d4d4d8;
+                    font-size: 12px;
+                    font-weight: 600;
+                }
+                .native-player-wrapper .player-subtitle-appearance__control output {
+                    color: #a1a1aa;
+                    font-variant-numeric: tabular-nums;
+                    font-weight: 500;
+                }
+                .native-player-wrapper .player-subtitle-appearance__control input[type="range"] {
+                    width: 100%;
+                    margin: 0;
+                    accent-color: #f4f4f5;
+                }
+                .native-player-wrapper .player-subtitle-appearance__control input[type="color"],
+                .native-player-wrapper .player-subtitle-appearance__control select {
+                    box-sizing: border-box;
+                    width: 100%;
+                    min-height: 32px;
+                    color: #f4f4f5;
+                    color-scheme: dark;
+                    background: rgba(39, 39, 42, .86);
+                    border: 1px solid rgba(255, 255, 255, .12);
+                    border-radius: 8px;
+                }
+                .native-player-wrapper .player-subtitle-appearance__control input[type="color"] {
+                    padding: 2px;
+                    cursor: pointer;
+                }
+                .native-player-wrapper .player-subtitle-appearance__control select {
+                    padding: 0 8px;
+                }
+                .native-player-wrapper .player-subtitle-appearance__note {
+                    color: #a1a1aa;
+                    font-size: 11px;
+                    line-height: 1.35;
+                }
+                .native-player-wrapper .player-subtitle-appearance__reset {
+                    min-height: 34px;
+                    padding: 7px 10px;
+                    color: #d4d4d8;
+                    background: rgba(255, 255, 255, .07);
+                    border: 1px solid rgba(255, 255, 255, .1);
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font: 600 12px/1.2 system-ui, sans-serif;
+                }
+                .native-player-wrapper .player-subtitle-appearance__reset:hover {
+                    color: #fff;
+                    background: rgba(255, 255, 255, .12);
                 }
                 .native-player-wrapper .player-settings-menu__option {
                     min-height: 42px;
@@ -2033,6 +2385,7 @@
                 } else {
                     newContainer.classList.remove('controls-visible');
                 }
+                updateActiveSubtitleAppearance();
                 
                 // Update center button visibility
                 // Hide center button if loading
@@ -2205,6 +2558,8 @@
             const updatePlayBtnIcon = () => {
                 // Use current video always
                 const currentVid = permanentVideo || video;
+                playPauseBtn.dataset.icon = currentVid.paused ? 'play' : 'pause';
+                centerPlayBtn.dataset.icon = currentVid.paused ? 'play' : 'pause';
                 
                 if (currentVid.paused) {
                     // Bottom Btn: Play
@@ -2626,11 +2981,21 @@
                 // Logic to update buttons
                 updateNavButtons = () => {
                     if (canonicalPickerRequested) {
-                        prevEpisodeBtn.style.display = 'none';
-                        nextEpisodeBtn.style.display = 'none';
+                        prevEpisodeBtn.style.display = 'flex';
+                        nextEpisodeBtn.style.display = 'flex';
+                        // In canonical mode the host owns the episode list and
+                        // boundary checks. Never disable these request controls
+                        // from a stale provider-local dropdown snapshot.
+                        [prevEpisodeBtn, nextEpisodeBtn].forEach(button => {
+                            button.disabled = false;
+                            button.style.opacity = '1';
+                            button.style.cursor = 'pointer';
+                        });
+                        prevTooltip.textContent = 'Предыдущая серия';
+                        nextTooltip.textContent = 'Следующая серия';
                         return;
                     }
-                    // Check if we have episodes
+                    // Standalone provider mode can use its own episode list.
                     if (episodeDropdown && typeof episodeDropdown.getNavState === 'function') {
                         const state = episodeDropdown.getNavState();
                         
@@ -2665,7 +3030,13 @@
                 // Actions
                 prevEpisodeBtn.onclick = (e) => {
                     e.stopPropagation();
-                    if (canonicalPickerRequested) return;
+                    if (canonicalPickerRequested && window.parent && window.parent !== window) {
+                        window.parent.postMessage({
+                            type: 'PLAYER_EPISODE_NAVIGATE',
+                            direction: 'previous'
+                        }, '*');
+                        return;
+                    }
                     if (permanentVideo) permanentVideo.focus(); // Fix focus
                     if (episodeDropdown && typeof episodeDropdown.navigate === 'function') {
                         episodeDropdown.navigate(-1);
@@ -2674,7 +3045,13 @@
                 };
                 nextEpisodeBtn.onclick = (e) => {
                     e.stopPropagation();
-                    if (canonicalPickerRequested) return;
+                    if (canonicalPickerRequested && window.parent && window.parent !== window) {
+                        window.parent.postMessage({
+                            type: 'PLAYER_EPISODE_NAVIGATE',
+                            direction: 'next'
+                        }, '*');
+                        return;
+                    }
                     if (permanentVideo) permanentVideo.focus(); // Fix focus
                      if (episodeDropdown && typeof episodeDropdown.navigate === 'function') {
                         episodeDropdown.navigate(1);
@@ -2707,7 +3084,11 @@
             }
 
             // --- KINOGO NATIVE SEASON/EPISODE BRIDGE ---
-            const applyKinogoProviderSelection = async (targetSeason, targetEpisode) => {
+            const applyKinogoProviderSelection = async (
+                targetSeason,
+                targetEpisode,
+                isCurrentOperation = () => true
+            ) => {
                 const seasonNumber = Number(targetSeason);
                 const episodeNumber = Number(targetEpisode);
                 if (!Number.isInteger(seasonNumber) || seasonNumber < 1
@@ -2734,6 +3115,7 @@
 
                 const waitFor = async (predicate, attempts = 20, delayMs = 150) => {
                     for (let attempt = 0; attempt < attempts; attempt += 1) {
+                        if (!isCurrentOperation()) return null;
                         const value = predicate();
                         if (value) return value;
                         await new Promise(resolve => setTimeout(resolve, delayMs));
@@ -2766,6 +3148,7 @@
 
                 const seasonChanged = Number(getActiveId(seasonSelect)) !== seasonNumber;
                 if (seasonChanged) {
+                    if (!isCurrentOperation()) return false;
                     seasonItem.click();
                     console.info('[KinoGoBridgeTrace] season item clicked', {
                         seasonNumber,
@@ -2794,6 +3177,7 @@
                     return getItem(currentEpisodeSelect, episodeNumber);
                 }, 24, 150);
                 if (episodeItem) {
+                    if (!isCurrentOperation()) return false;
                     episodeItem.click();
                     console.info('[KinoGoBridgeTrace] episode item clicked', {
                         seasonNumber,
@@ -2827,7 +3211,11 @@
             };
 
             // --- RESTORE PROGRESS IMPLEMENTATION ---
-            const applyNativeProviderSelection = async (targetSeason, targetEpisode) => {
+            const applyNativeProviderSelection = async (
+                targetSeason,
+                targetEpisode,
+                isCurrentOperation = () => true
+            ) => {
                 const listContainer = document.querySelector('div[class*="controls_"] div[class*="list_"]')
                     || document.querySelector('div[class*="list_"]');
                 const getDropdowns = () => Array.from(
@@ -2836,11 +3224,17 @@
                 const getItems = dropdown => Array.from(
                     dropdown?.querySelectorAll?.('div[class*="item_"]') || []
                 );
+                const isActiveItem = item => Boolean(
+                    item?.classList?.contains('active')
+                    || String(item?.className || '').includes('active_')
+                    || item?.getAttribute?.('aria-selected') === 'true'
+                );
                 const numberFromLabel = value => {
                     const match = String(value || '').match(/\d+/);
                     return match ? Number(match[0]) : null;
                 };
                 const clickExactItem = (dropdown, number, suffix) => {
+                    if (!isCurrentOperation()) return null;
                     const items = getItems(dropdown);
                     const item = items.find(candidate =>
                         numberFromLabel(candidate.textContent) === Number(number)
@@ -2853,17 +3247,18 @@
                         itemLabels: items.map(candidate => String(candidate.textContent || '').trim()).slice(0, 20),
                         matchedLabel: item ? String(item.textContent || '').trim() : null
                     });
-                    if (!item) return false;
+                    if (!item) return null;
                     item.click();
                     console.info('[ExFsBridgeTrace] cleaner provider item clicked', {
                         targetNumber: Number(number),
                         suffix,
                         label: String(item.textContent || '').trim()
                     });
-                    return true;
+                    return item;
                 };
                 const waitFor = async (predicate, attempts = 24, delayMs = 150) => {
                     for (let attempt = 0; attempt < attempts; attempt += 1) {
+                        if (!isCurrentOperation()) return false;
                         const value = predicate();
                         if (value) return value;
                         await new Promise(resolve => setTimeout(resolve, delayMs));
@@ -2886,26 +3281,80 @@
                 const episodeDropdownElement = dropdowns[1];
                 if (!seasonDropdown || !episodeDropdownElement) return false;
 
-                const seasonChanged = clickExactItem(seasonDropdown, targetSeason, 'сезон');
+                const activeSeason = getItems(seasonDropdown).find(isActiveItem);
+                const seasonAlreadySelected = Number(activeSeason
+                    && numberFromLabel(activeSeason.textContent)) === Number(targetSeason);
+                const seasonChanged = seasonAlreadySelected
+                    ? activeSeason
+                    : clickExactItem(seasonDropdown, targetSeason, 'сезон');
+                if (!seasonChanged) return false;
+                if (!seasonAlreadySelected) {
+                    const seasonApplied = await waitFor(() => {
+                        const currentSeasonDropdown = getDropdowns()[0] || seasonDropdown;
+                        const currentActiveSeason = getItems(currentSeasonDropdown).find(isActiveItem);
+                        return Number(currentActiveSeason
+                            && numberFromLabel(currentActiveSeason.textContent)) === Number(targetSeason)
+                            ? currentActiveSeason
+                            : false;
+                    }, 12, 100);
+                    if (!seasonApplied) {
+                        console.warn('[KinoGoBridgeTrace] class bridge season confirmation failed', {
+                            targetSeason: Number(targetSeason)
+                        });
+                        return false;
+                    }
+                }
                 const selectEpisode = () => clickExactItem(
                     getDropdowns()[1] || episodeDropdownElement,
                     targetEpisode,
                     'серия'
                 );
 
-                if (!seasonChanged) return selectEpisode();
+                const currentEpisodeDropdown = () => getDropdowns()[1] || episodeDropdownElement;
+                const activeEpisode = getItems(currentEpisodeDropdown()).find(isActiveItem);
+                const episodeAlreadySelected = Number(activeEpisode
+                    && numberFromLabel(activeEpisode.textContent)) === Number(targetEpisode);
                 // React/Vue providers rebuild the episode menu after a season
                 // click; resolve the new menu before selecting the episode.
-                const episodeClicked = await waitFor(selectEpisode);
+                const episodeClicked = episodeAlreadySelected
+                    ? activeEpisode
+                    : await waitFor(selectEpisode);
+                if (!episodeClicked) return false;
+                const episodeApplied = await waitFor(() => {
+                    const activeItem = getItems(currentEpisodeDropdown()).find(isActiveItem);
+                    return activeItem
+                        && numberFromLabel(activeItem.textContent) === Number(targetEpisode)
+                        ? activeItem
+                        : false;
+                }, 12, 100);
                 console.info('[KinoGoBridgeTrace] class bridge episode confirmation', {
                     targetSeason: Number(targetSeason),
                     targetEpisode: Number(targetEpisode),
-                    confirmed: Boolean(episodeClicked)
+                    clicked: Boolean(episodeClicked),
+                    confirmed: Boolean(episodeApplied),
+                    seasonConfirmed: seasonAlreadySelected || Boolean(
+                        getItems(getDropdowns()[0] || seasonDropdown).find(item =>
+                            isActiveItem(item)
+                            && numberFromLabel(item.textContent) === Number(targetSeason)
+                        )
+                    )
                 });
-                return Boolean(episodeClicked);
+                return Boolean(episodeApplied && (
+                    seasonAlreadySelected
+                    || getItems(getDropdowns()[0] || seasonDropdown).some(item =>
+                        isActiveItem(item)
+                        && numberFromLabel(item.textContent) === Number(targetSeason)
+                    )
+                ));
             };
 
-            window.movieExtension_applySelection = async (targetSeason, targetEpisode, providerId = null) => {
+            window.movieExtension_applySelection = async (
+                targetSeason,
+                targetEpisode,
+                providerId = null,
+                isCurrentOperation = () => true
+            ) => {
+                if (!isCurrentOperation()) return false;
                 const hasKinogoDataSelect = Boolean(
                     document.querySelector('[data-select="seasonType1"]')
                         && document.querySelector('[data-select="episodeType1"]')
@@ -2923,7 +3372,8 @@
                 if (hasKinogoDataSelect) {
                     const kinogoApplied = await applyKinogoProviderSelection(
                         targetSeason,
-                        targetEpisode
+                        targetEpisode,
+                        isCurrentOperation
                     );
                     if (kinogoApplied) return true;
                     console.warn('[KinoGoBridgeTrace] data-select bridge did not apply; trying class bridge', {
@@ -2940,16 +3390,16 @@
                     targetEpisode: Number(targetEpisode),
                     providerId
                 });
-                const dispatched = applyNativeProviderSelection(targetSeason, targetEpisode);
+                const dispatched = await applyNativeProviderSelection(
+                    targetSeason,
+                    targetEpisode,
+                    isCurrentOperation
+                );
                 if (dispatched) {
                     console.log('[MovieExtension] Native provider selection clicked:', {
                         season: targetSeason,
                         episode: targetEpisode
                     });
-                    return true;
-                }
-                if (typeof window.movieExtension_restoreProgress === 'function') {
-                    window.movieExtension_restoreProgress(targetSeason, targetEpisode);
                     return true;
                 }
                 return false;
@@ -3350,46 +3800,6 @@
             });
             */
 
-            // --- EPISODE LIST BUTTON ---
-            if (episodeDropdown && seriesData.hasSeries) {
-                const episodeListBtn = document.createElement('button');
-                episodeListBtn.className = 'episode-list-btn player-control-button';
-                episodeListBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" height="26px" width="26px" version="1.1" id="Capa_1" viewBox="0 0 261.791 261.791" xml:space="preserve"><><path style="fill:#ffffff;" d="M213.02,58.899h-59.203l48-45.983c2.991-2.866,3.093-7.613,0.227-10.604   c-2.866-2.991-7.613-3.093-10.604-0.227l-59.308,56.815h-0.533L88.83,17.557c-2.979-2.879-7.727-2.798-10.605,0.18   c-2.879,2.978-2.798,7.726,0.18,10.605l31.612,30.558H48.771c-12.407,0-22.5,10.093-22.5,22.5v134.764   c0,12.407,10.093,22.5,22.5,22.5H213.02c12.406,0,22.5-10.093,22.5-22.5V81.399C235.52,68.993,225.426,58.899,213.02,58.899z    M220.52,216.163c0,4.135-3.364,7.5-7.5,7.5H48.771c-4.135,0-7.5-3.365-7.5-7.5V81.399c0-4.135,3.365-7.5,7.5-7.5H213.02   c4.136,0,7.5,3.365,7.5,7.5V216.163z"/>	</g></svg>`;
-                episodeListBtn.style.background = 'none';
-                episodeListBtn.style.border = 'none';
-                episodeListBtn.style.cursor = 'pointer';
-                episodeListBtn.style.padding = '5px';
-                episodeListBtn.style.width = '40px'; 
-                episodeListBtn.style.height = '40px';
-                episodeListBtn.style.opacity = '0.7'; 
-                episodeListBtn.style.display = 'flex';
-                episodeListBtn.style.alignItems = 'center';
-                episodeListBtn.style.justifyContent = 'center';
-                episodeListBtn.style.color = 'white'; // FIX: Ensure icon is white initially
-                episodeListBtn.title = 'Список серий';
-                if (canonicalPickerRequested) {
-                    episodeListBtn.style.display = 'none';
-                }
-                
-                episodeListBtn.addEventListener('mouseenter', () => {
-                    episodeListBtn.style.opacity = '1';
-                    episodeListBtn.style.color = '#4da6ff'; // Highlight color
-                });
-                episodeListBtn.addEventListener('mouseleave', () => {
-                    episodeListBtn.style.opacity = '0.7';
-                    episodeListBtn.style.color = 'white';
-                });
-                
-                episodeListBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    if (permanentVideo) permanentVideo.focus(); // Fix focus
-                    if (episodeDropdown.toggle) episodeDropdown.toggle();
-                });
-                
-                rightControls.appendChild(episodeListBtn);
-                applyCanonicalPickerVisibility();
-            }
-
             // --- SUBTITLES BUTTON START ---
             const subtitlesBtn = document.createElement('button');
             subtitlesBtn.className = 'subtitles-toggle-btn player-control-button';
@@ -3605,7 +4015,7 @@
             };
 
             // Generic Sub-menu Renderer
-            const renderSubMenuView = (title, items, activeCondition) => {
+            const renderSubMenuView = (title, items, activeCondition, onBack = renderMainView) => {
                 settingsMenu.innerHTML = '';
                 
                 // Header with Back Button
@@ -3613,7 +4023,8 @@
                 header.type = 'button';
                 header.className = 'player-settings-menu__back';
                 header.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg><span>${title}</span>`;
-                header.onclick = (e) => { e.stopPropagation(); renderMainView(); };
+                header.setAttribute('aria-label', `Назад: ${title}`);
+                header.onclick = (e) => { e.stopPropagation(); onBack(); };
                 settingsMenu.appendChild(header);
 
                 // Items list
@@ -3662,9 +4073,207 @@
                 renderSubMenuView('Скорость', items);
             }
 
+            const appendSubtitleAppearanceItem = () => {
+                const list = settingsMenu.querySelector('.player-settings-menu__list');
+                if (!list) return;
+                const appearanceItem = createMenuItem(
+                    'Настройки субтитров', `${subtitleAppearance.fontSizePercent}%`
+                );
+                appearanceItem.setAttribute('aria-label', 'Настройки оформления субтитров');
+                appearanceItem.onclick = (e) => {
+                    e.stopPropagation();
+                    renderSubtitleAppearanceView();
+                };
+                list.appendChild(appearanceItem);
+            };
+
+            const renderSubtitleAppearanceView = () => {
+                settingsMenu.innerHTML = '';
+
+                const header = document.createElement('button');
+                header.type = 'button';
+                header.className = 'player-settings-menu__back';
+                header.setAttribute('aria-label', 'Назад к дорожкам субтитров');
+                header.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg><span>Настройки субтитров</span>';
+                header.onclick = (e) => { e.stopPropagation(); renderSubsView(); };
+                settingsMenu.appendChild(header);
+
+                const body = document.createElement('div');
+                body.className = 'player-subtitle-appearance__body';
+                body.setAttribute('role', 'group');
+                body.setAttribute('aria-label', 'Настройки оформления субтитров');
+
+                const preview = document.createElement('div');
+                preview.className = 'player-subtitle-appearance__preview';
+                preview.setAttribute('aria-label', 'Предпросмотр субтитров');
+                const caption = document.createElement('span');
+                caption.className = 'player-subtitle-appearance__caption';
+                caption.textContent = 'Пример субтитров';
+                preview.appendChild(caption);
+                body.appendChild(preview);
+
+                const updatePreview = () => {
+                    preview.dataset.position = subtitleAppearance.position;
+                    preview.style.setProperty(
+                        '--player-subtitle-preview-size',
+                        `${(subtitleAppearance.fontSizePercent / 100).toFixed(2)}em`
+                    );
+                    preview.style.setProperty('--player-subtitle-preview-color', subtitleAppearance.color);
+                    preview.style.setProperty(
+                        '--player-subtitle-preview-bg', String(subtitleAppearance.backgroundOpacity)
+                    );
+                    preview.style.setProperty(
+                        '--player-subtitle-preview-shadow',
+                        getSubtitleAppearanceTextShadow(subtitleAppearance)
+                    );
+                };
+
+                const appendControl = ({ id, label, key, type = 'range', min, max, step, suffix, format }) => {
+                    const control = document.createElement('div');
+                    control.className = 'player-subtitle-appearance__control';
+                    const labelEl = document.createElement('label');
+                    labelEl.htmlFor = id;
+                    const labelText = document.createElement('span');
+                    labelText.textContent = label;
+                    labelEl.appendChild(labelText);
+                    const output = document.createElement('output');
+                    output.htmlFor = id;
+                    output.setAttribute('aria-live', 'polite');
+                    labelEl.appendChild(output);
+                    control.appendChild(labelEl);
+
+                    const input = document.createElement(type === 'select' ? 'select' : 'input');
+                    input.id = id;
+                    input.name = id;
+                    if (type !== 'select') input.type = type;
+                    if (type === 'range') {
+                        input.min = String(min);
+                        input.max = String(max);
+                        input.step = String(step);
+                    }
+                    if (type === 'color') input.title = label;
+                    input.value = String(subtitleAppearance[key]);
+                    if (type === 'select') {
+                        const options = key === 'position'
+                            ? [['bottom', 'Снизу'], ['top', 'Сверху']]
+                            : [['none', 'Нет'], ['soft', 'Мягкая'], ['strong', 'Сильная']];
+                        options.forEach(([value, text]) => {
+                            const option = document.createElement('option');
+                            option.value = value;
+                            option.textContent = text;
+                            input.appendChild(option);
+                        });
+                        input.value = subtitleAppearance[key];
+                    }
+                    control.appendChild(input);
+
+                    const formatValue = value => {
+                        if (format) return format(value);
+                        return `${value}${suffix || ''}`;
+                    };
+                    const syncOutput = () => {
+                        output.textContent = type === 'color' || type === 'select'
+                            ? ''
+                            : formatValue(subtitleAppearance[key]);
+                    };
+                    const apply = () => {
+                        persistSubtitleAppearance({ ...subtitleAppearance, [key]: input.value });
+                        syncOutput();
+                        updatePreview();
+                    };
+                    input.addEventListener('input', apply);
+                    input.addEventListener('change', apply);
+                    syncOutput();
+                    body.appendChild(control);
+                };
+
+                appendControl({
+                    id: 'playerSubtitleFontSize',
+                    label: 'Размер',
+                    key: 'fontSizePercent',
+                    min: 75,
+                    max: 200,
+                    step: 5,
+                    suffix: '%'
+                });
+                appendControl({
+                    id: 'playerSubtitleColor',
+                    label: 'Цвет текста',
+                    key: 'color',
+                    type: 'color'
+                });
+                appendControl({
+                    id: 'playerSubtitlePosition',
+                    label: 'Расположение',
+                    key: 'position',
+                    type: 'select'
+                });
+                appendControl({
+                    id: 'playerSubtitleOffset',
+                    label: 'Отступ от края',
+                    key: 'offsetPercent',
+                    min: 2,
+                    max: 20,
+                    step: 1,
+                    suffix: '%'
+                });
+                appendControl({
+                    id: 'playerSubtitleBackgroundOpacity',
+                    label: 'Фон под текстом',
+                    key: 'backgroundOpacity',
+                    min: 0,
+                    max: 0.9,
+                    step: 0.05,
+                    format: value => `${Math.round(Number(value) * 100)}%`
+                });
+                appendControl({
+                    id: 'playerSubtitleTextShadow',
+                    label: 'Тень текста',
+                    key: 'textShadow',
+                    type: 'select'
+                });
+
+                const note = document.createElement('div');
+                note.className = 'player-subtitle-appearance__note';
+                note.textContent = 'Изменения применяются сразу и сохраняются для следующих видео.';
+                body.appendChild(note);
+
+                const reset = document.createElement('button');
+                reset.type = 'button';
+                reset.className = 'player-subtitle-appearance__reset';
+                reset.textContent = 'Сбросить настройки';
+                reset.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    persistSubtitleAppearance(DEFAULT_SUBTITLE_APPEARANCE);
+                    renderSubtitleAppearanceView();
+                });
+                body.appendChild(reset);
+                settingsMenu.appendChild(body);
+                updatePreview();
+            };
+
             // Subtitles View
             const renderSubsView = () => {
                 const currentVid = permanentVideo || video;
+                const hls = currentVid._movieExtensionHls;
+                if (hls?.subtitleTracks?.length) {
+                    const select = index => {
+                        hls.subtitleTrack = index;
+                        hls.subtitleDisplay = index >= 0;
+                        updateSubBtnState(index >= 0);
+                    };
+                    renderSubMenuView('Субтитры', [
+                        { label: 'Откл', isActive: hls.subtitleTrack < 0 || !hls.subtitleDisplay,
+                            action: () => select(-1), refreshFn: renderSubsView },
+                        ...hls.subtitleTracks.map((track, index) => ({
+                            label: track.name || track.lang || `Дорожка ${index + 1}`,
+                            isActive: hls.subtitleDisplay && hls.subtitleTrack === index,
+                            action: () => select(index), refreshFn: renderSubsView
+                        }))
+                    ]);
+                    appendSubtitleAppearanceItem();
+                    return;
+                }
                 const tracks = Array.from(currentVid.textTracks || []);
                 // Add "Off" option
                 const items = [{
@@ -3709,6 +4318,7 @@
                 }
                 
                 renderSubMenuView('Субтитры', items);
+                appendSubtitleAppearanceItem();
             };
 
             // Quality View
@@ -3791,8 +4401,6 @@
                 return text || 'Auto';
             };
 
-            const RUTUBE_QUALITY_LADDER = [2160, 1440, 1080, 720, 480, 360, 240, 144];
-
             const getNativeHlsQualityOptions = () => {
                 const hls = permanentVideo?._movieExtensionHls;
                 const levels = Array.isArray(hls?.levels) ? hls.levels : [];
@@ -3811,8 +4419,6 @@
                     .sort((left, right) => right.level.height - left.level.height);
                 if (variants.length < 2) return [];
 
-                const isRutube = permanentVideo?.dataset?.playerProvider === 'rutube';
-                const firstRutubeQuality = Math.max(0, RUTUBE_QUALITY_LADDER.length - variants.length);
                 const selectLevel = levelIndex => {
                     hls.currentLevel = levelIndex;
                     hls.nextLevel = levelIndex;
@@ -3824,13 +4430,11 @@
                         isActive: hls.autoLevelEnabled,
                         action: () => { hls.currentLevel = -1; }
                     },
-                    ...variants.map(({ index, level }, rank) => ({
-                        // Rutube's direct stream reports non-display internal heights
-                        // (for example 800). Its own player presents a fixed quality
-                        // ladder, so use that user-facing naming here too.
-                        label: isRutube
-                            ? `${RUTUBE_QUALITY_LADDER[firstRutubeQuality + rank]}p`
-                            : `${Math.round(level.height)}p`,
+                    ...variants.map(({ index, level }) => ({
+                        // Keep the label tied to the manifest metadata. A provider's
+                        // visual ladder must not turn an internal height into a false
+                        // 1080p/720p claim.
+                        label: `${Math.round(level.height)}p`,
                         isActive: !hls.autoLevelEnabled && hls.currentLevel === index,
                         action: () => selectLevel(index)
                     }))
@@ -3840,6 +4444,7 @@
             const getQualityOptions = () => {
                 const nativeHlsOptions = getNativeHlsQualityOptions();
                 if (nativeHlsOptions.length > 0) return nativeHlsOptions;
+                if (permanentVideo?.dataset?.playerProvider === 'torrent') return [];
                 const keywords = ['2160p', '1440p', '1080p', '720p', '480p', '360p', 'Auto', '4k', 'Ultra'];
                 const rawOptions = findControlOptions(keywords);
                 return rawOptions.map(opt => ({
@@ -3878,6 +4483,16 @@
 
             // Voiceover View
             const renderVoiceoverView = () => {
+                const hls = (permanentVideo || video)._movieExtensionHls;
+                if (hls?.audioTracks?.length) {
+                    renderSubMenuView('Озвучка', hls.audioTracks.map((track, index) => ({
+                        label: track.name || track.lang || `Дорожка ${index + 1}`,
+                        isActive: hls.audioTrack === index,
+                        action: () => { hls.audioTrack = index; },
+                        refreshFn: renderVoiceoverView
+                    })));
+                    return;
+                }
                 const items = currentVoiceoverOptions.map(opt => ({
                     label: opt.name,
                     isActive: opt.isActive || false, 
@@ -3933,10 +4548,17 @@
                 // Quality Item
                 const qualityItem = createMenuItem('Качество', qualityLabel); 
                 qualityItem.onclick = (e) => { e.stopPropagation(); renderQualityView(); };
-                settingsMenu.appendChild(qualityItem);
+                if (qualityOpts.length || currentVid.dataset?.playerProvider !== 'torrent') settingsMenu.appendChild(qualityItem);
 
                 // Voiceover Item (New)
-                if (currentVoiceoverOptions.length > 0) {
+                const hlsAudio = currentVid._movieExtensionHls?.audioTracks || [];
+                if (hlsAudio.length) {
+                    const selected = hlsAudio[currentVid._movieExtensionHls.audioTrack];
+                    const voiceItem = createMenuItem('Озвучка', '');
+                    voiceItem.querySelector('.player-settings-menu__value').textContent = selected?.name || selected?.lang || 'Основная';
+                    voiceItem.onclick = e => { e.stopPropagation(); renderVoiceoverView(); };
+                    settingsMenu.appendChild(voiceItem);
+                } else if (currentVoiceoverOptions.length > 0 && currentVid.dataset?.playerProvider !== 'torrent') {
                     const activeVoiceover = currentVoiceoverOptions.find(o => o.isActive) || currentVoiceoverOptions[0];
                     const voiceLabel = activeVoiceover ? activeVoiceover.name : 'Unknown';
                     
@@ -3953,8 +4575,18 @@
                 // Subtitles Item
                 const tracks = Array.from(currentVid.textTracks || []);
                 const activeTrack = tracks.find(t => t.mode === 'showing');
+                const hlsSubtitleTracks = currentVid._movieExtensionHls?.subtitleTracks || [];
+                const hlsSubtitleState = currentVid._movieExtensionHls;
+                const activeHlsSubtitle = hlsSubtitleState?.subtitleDisplay
+                    ? hlsSubtitleTracks[hlsSubtitleState.subtitleTrack]
+                    : null;
                 // Clean up label (remove " - 1", " - 2" suffixes if present)
-                let subLabel = activeTrack ? (activeTrack.label || activeTrack.language) : 'Откл';
+                let subLabel = activeHlsSubtitle
+                    ? (activeHlsSubtitle.name || activeHlsSubtitle.lang)
+                    : activeTrack
+                        ? (activeTrack.label || activeTrack.language)
+                        : 'Откл';
+                subLabel = subLabel || 'Откл';
                 subLabel = subLabel.replace(/\s*-\s*\d+$/, ''); 
 
                 const subsItem = createMenuItem('Субтитры', subLabel);
@@ -4199,6 +4831,7 @@
             });
 
             newContainer.appendChild(bottomControls);
+            activateSubtitleAppearance(newContainer, bottomControls);
 
             console.info('[PlayerCleaner] Native player ready', {
                 origin: window.location.origin,
@@ -4212,6 +4845,8 @@
                     progressContainer: progressContainer,
                     getActiveVideo: () => permanentVideo || document.querySelector('video'),
                     getCurrentUrl: () => {
+                        const activeHls = permanentVideo?._movieExtensionHls;
+                        if (activeHls?.url) return activeHls.url;
                         if (lastRealSource && !lastRealSource.startsWith('blob:')) return lastRealSource;
                         
                         // 1. Try our own hlsInstance
@@ -4237,7 +4872,7 @@
                         const vid = permanentVideo || document.querySelector('video');
                         return vid ? (vid.src || vid.currentSrc) : null;
                     },
-                    getCurrentHls: () => hlsInstance || window.hls || null,
+                    getCurrentHls: () => permanentVideo?._movieExtensionHls || hlsInstance || window.hls || null,
                     HlsClass: (typeof Hls !== 'undefined') ? Hls : null,
                 });
             }
@@ -4523,6 +5158,16 @@
         // Call replacePlayer for initial setup
         replacePlayer();
     });
+
+    // HLS attaches a source after insertion. Mount controls without relying on a
+    // later unrelated DOM mutation; retain the same video/primary HLS owner.
+    const mountReadyVideo = event => {
+        if (event.target?.tagName !== 'VIDEO' || event.target.dataset.ghost === 'true') return;
+        if (!isExtensionNativeVideo(event.target)) return;
+        replacePlayer();
+    };
+    document.addEventListener('extension-player-source-ready', mountReadyVideo);
+    document.addEventListener('loadedmetadata', mountReadyVideo, true);
     
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {
@@ -4580,6 +5225,8 @@ class GhostPlayer {
         this._tooltip    = null;
         this._ghostVideo = null;
         this._timeLabel  = null;
+        this._targetTime = null;
+        this._destroyed = false;
 
         this._build();
         this._bind();
@@ -4606,6 +5253,14 @@ class GhostPlayer {
         this._tooltip.appendChild(this._ghostVideo);
         this._tooltip.appendChild(this._timeLabel);
         document.body.appendChild(this._tooltip);
+        this._onMetadata = () => this._applyTarget();
+        this._onSeeked = () => {
+            if (this._targetTime !== null && Math.abs(this._ghostVideo.currentTime - this._targetTime) < 0.5) {
+                this._ghostVideo.style.visibility = 'visible';
+            }
+        };
+        this._ghostVideo.addEventListener('loadedmetadata', this._onMetadata);
+        this._ghostVideo.addEventListener('seeked', this._onSeeked);
     }
 
     // ─── Events ───────────────────────────────────────────────────────────────
@@ -4624,13 +5279,16 @@ class GhostPlayer {
         if (!video) {
             return;
         }
-        if (!video.duration || isNaN(video.duration)) {
+        if (!Number.isFinite(video.duration) || video.duration <= 0) {
             return;
         }
 
         const rect     = this._progressContainer.getBoundingClientRect();
         const ratio    = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
         const seekTime = ratio * video.duration;
+
+        this._targetTime = null;
+        this._ghostVideo.style.visibility = 'hidden';
 
         this._showTooltip(e.clientX, rect.top, seekTime);
 
@@ -4640,6 +5298,9 @@ class GhostPlayer {
 
     _handleLeave() {
         clearTimeout(this._debounce);
+        this._targetTime = null;
+        this._ghostHls?.stopLoad();
+        this._ghostVideo.pause();
         this._tooltip.classList.remove('ghost-tooltip--visible');
 
         // Небольшая задержка перед реальным hide — плавный fade-out
@@ -4653,6 +5314,7 @@ class GhostPlayer {
     // ─── Core ─────────────────────────────────────────────────────────────────
 
     _seekGhost(time) {
+        if (this._destroyed) return;
         const url = this._getCurrentUrl();
 
         if (!url) {
@@ -4664,17 +5326,18 @@ class GhostPlayer {
             this._lastUrl = url;
         }
 
-        // Ждём метаданных, потом сикаем
-        const doSeek = () => {
-            this._ghostVideo.currentTime = time;
-            this._ghostVideo.pause();
-        };
+        this._targetTime = time;
+        this._ghostHls?.startLoad(time);
+        this._applyTarget();
+    }
 
-        if (this._ghostVideo.readyState >= 1) {
-            doSeek();
-        } else {
-            this._ghostVideo.addEventListener('loadedmetadata', doSeek, { once: true });
-        }
+    _applyTarget() {
+        if (this._destroyed || this._targetTime === null || this._ghostVideo.readyState < 1) return;
+        const ranges = this._getActiveVideo()?.seekable;
+        if (ranges?.length && !Array.from({ length: ranges.length }, (_, i) => i)
+            .some(i => this._targetTime >= ranges.start(i) && this._targetTime < ranges.end(i))) return;
+        this._ghostVideo.currentTime = this._targetTime;
+        this._ghostVideo.pause();
     }
 
     _initSource(url) {
@@ -4689,9 +5352,11 @@ class GhostPlayer {
 
         if (isHlsUrl && this._Hls && this._Hls.isSupported()) {
             this._ghostHls = new this._Hls({
+                autoStartLoad: false,
                 maxBufferLength:    8,
                 maxMaxBufferLength: 16,
-                startFragPrefetch:  true,
+                backBufferLength: 0,
+                startFragPrefetch: false,
             });
             this._ghostHls.on(this._Hls.Events.ERROR, (event, data) => {
                 console.error('[GhostPlayer] ghostHls ERROR —', data.type, data.details);
@@ -4721,6 +5386,8 @@ class GhostPlayer {
     // ─── UI ───────────────────────────────────────────────────────────────────
 
     _showTooltip(clientX, barTop, time) {
+        const host = document.fullscreenElement || document.body;
+        if (this._tooltip.parentElement !== host) host.appendChild(this._tooltip);
         this._tooltip.style.display = 'flex';
         // Принудительный reflow, чтобы offsetWidth был актуален
         const w = this._tooltip.offsetWidth || 180;
@@ -4729,7 +5396,7 @@ class GhostPlayer {
         let left = clientX - w / 2;
         left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
 
-        const top = barTop - h - 14; // Relative to viewport, no scroll needed for position: fixed
+        const top = Math.max(8, barTop - h - 14);
 
         this._tooltip.style.left = `${left}px`;
         this._tooltip.style.top  = `${top}px`;
@@ -4738,7 +5405,7 @@ class GhostPlayer {
         
         // Use requestAnimationFrame to ensure display: flex is applied before adding visibility class
         requestAnimationFrame(() => {
-            this._tooltip.classList.add('ghost-tooltip--visible');
+            if (!this._destroyed) this._tooltip.classList.add('ghost-tooltip--visible');
         });
 
     }
@@ -4755,6 +5422,8 @@ class GhostPlayer {
     // ─── Lifecycle ────────────────────────────────────────────────────────────
 
     destroy() {
+        if (this._destroyed) return;
+        this._destroyed = true;
         clearTimeout(this._debounce);
         this._progressContainer.removeEventListener('mousemove',  this._onMove);
         this._progressContainer.removeEventListener('mouseleave', this._onLeave);
@@ -4762,6 +5431,11 @@ class GhostPlayer {
             this._ghostHls.destroy();
             this._ghostHls = null;
         }
+        this._ghostVideo.removeEventListener('loadedmetadata', this._onMetadata);
+        this._ghostVideo.removeEventListener('seeked', this._onSeeked);
+        this._ghostVideo.pause();
+        this._ghostVideo.removeAttribute('src');
+        this._ghostVideo.load();
         this._tooltip.remove();
     }
 }

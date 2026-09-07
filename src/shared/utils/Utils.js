@@ -227,6 +227,22 @@ class Utils {
     }
 
     /**
+     * Normalize the optional long rating review without accepting structured data.
+     * @param {*} value - Raw review value from Firestore or a form
+     * @returns {string} Normalized review text
+     */
+    static normalizeRatingReview(value) {
+        if (value === null || value === undefined) return '';
+        if (typeof value !== 'string') return '';
+
+        const config = typeof globalThis !== 'undefined' ? globalThis.RatingConfig : null;
+        const normalized = config?.normalizeLineBreaks
+            ? config.normalizeLineBreaks(value).trim()
+            : value.replace(/\r\n?/g, '\n').trim();
+        return normalized;
+    }
+
+    /**
      * Truncate text to specified length
      * @param {string} text - Text to truncate
      * @param {number} maxLength - Maximum length

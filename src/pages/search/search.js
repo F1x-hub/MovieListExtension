@@ -314,8 +314,14 @@ class SearchManager {
                         this.showRatingModal(movie);
                     } else if (this.selectedMovie && String(this.selectedMovie.kinopoiskId) === String(targetMovieId)) {
                          this.showRatingModal(this.selectedMovie);
-                    }
-                }
+                     }
+                 }
+            } else if (action === 'open-review' && movieId) {
+                const params = new URLSearchParams({ movieId: String(movieId) });
+                if (ratingId) params.set('reviewId', String(ratingId));
+                window.location.href = chrome.runtime.getURL(
+                    `src/pages/movie-details/movie-details.html?${params.toString()}`
+                );
             }
         });
         

@@ -319,7 +319,10 @@ class BaseParserService {
             try {
                 const sources = await this.getVideoSources(searchResult);
                 const normalized = Array.isArray(sources) ? sources : [];
-                if (cacheGeneration === this._cacheGeneration) {
+                // An empty source list is not a successful discovery result. Do
+                // not poison the source cache after a transient provider page,
+                // expired token, or incomplete iframe response.
+                if (cacheGeneration === this._cacheGeneration && normalized.length > 0) {
                     this._sourceCache.set(sourceKey, { data: normalized, timestamp: Date.now() });
                 }
                 return normalized;

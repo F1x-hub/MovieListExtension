@@ -1,11 +1,136 @@
 import { i18n } from '../../shared/i18n/I18n.js';
 
+const SUBTITLE_APPEARANCE_STORAGE_KEY = 'movieExtensionSubtitleAppearanceV1';
+const MEDIA_PLAYER_SETUP_STORAGE_KEY = 'mediaplayer_setup_v1';
+const MEDIA_PLAYER_SETUP_DEFAULTS = Object.freeze({
+    enabled: false,
+    status: 'disabled',
+    installPath: '',
+    version: '',
+    verifiedAt: '',
+    checks: [],
+    errorCode: '',
+    errorMessage: ''
+});
+const SUBTITLE_APPEARANCE_DEFAULTS = Object.freeze({
+    version: 1,
+    fontSizePercent: 100,
+    color: '#ffffff',
+    position: 'bottom',
+    offsetPercent: 6,
+    backgroundOpacity: 0.45,
+    textShadow: 'strong'
+});
+
+const SUBTITLE_APPEARANCE_LIMITS = Object.freeze({
+    fontSizePercent: { min: 75, max: 200, step: 5 },
+    offsetPercent: { min: 2, max: 20, step: 1 },
+    backgroundOpacity: { min: 0, max: 0.9, step: 0.05 }
+});
+
+function normalizeSubtitleAppearanceNumber(value, { min, max, step }, fallback) {
+    if (
+        (typeof value !== 'number' && typeof value !== 'string') ||
+        (typeof value === 'string' && value.trim() === '')
+    ) {
+        return fallback;
+    }
+
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return fallback;
+
+    const boundedValue = Math.min(max, Math.max(min, numericValue));
+    const steppedValue = Math.round((boundedValue - min) / step) * step + min;
+    return Number(steppedValue.toFixed(2));
+}
+
+function normalizeSubtitleAppearance(value) {
+    const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const color = typeof source.color === 'string' && /^#[\da-f]{6}$/i.test(source.color)
+        ? source.color.toLowerCase()
+        : SUBTITLE_APPEARANCE_DEFAULTS.color;
+
+    return {
+        version: SUBTITLE_APPEARANCE_DEFAULTS.version,
+        fontSizePercent: normalizeSubtitleAppearanceNumber(
+            source.fontSizePercent,
+            SUBTITLE_APPEARANCE_LIMITS.fontSizePercent,
+            SUBTITLE_APPEARANCE_DEFAULTS.fontSizePercent
+        ),
+        color,
+        position: ['bottom', 'top'].includes(source.position)
+            ? source.position
+            : SUBTITLE_APPEARANCE_DEFAULTS.position,
+        offsetPercent: normalizeSubtitleAppearanceNumber(
+            source.offsetPercent,
+            SUBTITLE_APPEARANCE_LIMITS.offsetPercent,
+            SUBTITLE_APPEARANCE_DEFAULTS.offsetPercent
+        ),
+        backgroundOpacity: normalizeSubtitleAppearanceNumber(
+            source.backgroundOpacity,
+            SUBTITLE_APPEARANCE_LIMITS.backgroundOpacity,
+            SUBTITLE_APPEARANCE_DEFAULTS.backgroundOpacity
+        ),
+        textShadow: ['none', 'soft', 'strong'].includes(source.textShadow)
+            ? source.textShadow
+            : SUBTITLE_APPEARANCE_DEFAULTS.textShadow
+    };
+}
+
+function createDefaultSubtitleAppearance() {
+    return { ...SUBTITLE_APPEARANCE_DEFAULTS };
+}
+
+function normalizeMediaPlayerSetup(value, enabled = false) {
+    const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const isEnabled = enabled === true || source.enabled === true;
+    const validStatuses = ['disabled', 'path_required', 'verifying', 'ready', 'error'];
+    const status = !isEnabled
+        ? 'disabled'
+        : validStatuses.includes(source.status) && source.status !== 'disabled'
+            ? source.status
+            : 'path_required';
+    return {
+        ...MEDIA_PLAYER_SETUP_DEFAULTS,
+        ...source,
+        enabled: isEnabled,
+        status,
+        installPath: String(source.installPath || '').trim(),
+        version: source.version ? String(source.version) : '',
+        verifiedAt: source.verifiedAt ? String(source.verifiedAt) : '',
+        checks: Array.isArray(source.checks) ? source.checks : [],
+        errorCode: source.errorCode ? String(source.errorCode) : '',
+        errorMessage: source.errorMessage ? String(source.errorMessage) : ''
+    };
+}
+
+function createDefaultMediaPlayerSetup() {
+    return { ...MEDIA_PLAYER_SETUP_DEFAULTS, checks: [] };
+}
+
+function haveMatchingMediaPlayerSetup(first, second) {
+    const left = normalizeMediaPlayerSetup(first, first?.enabled === true);
+    const right = normalizeMediaPlayerSetup(second, second?.enabled === true);
+    return left.enabled === right.enabled
+        && left.status === right.status
+        && left.installPath === right.installPath;
+}
+
+function haveMatchingSubtitleAppearances(first, second) {
+    return Object.keys(SUBTITLE_APPEARANCE_DEFAULTS)
+        .every((key) => first?.[key] === second?.[key]);
+}
+
 let initialState = {
     displayMode: 'popup',
     language: 'en',
     showAnimeRadio: false,
     animeRadioSource: 'anison',
-    showGames: false
+    showGames: false,
+    torrentRetentionDays: 7,
+    mediaPlayerEnabled: false,
+    mediaPlayerSetup: createDefaultMediaPlayerSetup(),
+    subtitleAppearance: createDefaultSubtitleAppearance()
 };
 
 let currentState = { ...initialState };
@@ -29,6 +154,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     const dropdownItems = languageDropdown.querySelectorAll('.dropdown-option');
     const saveBtn = document.getElementById('saveBtn');
     const resetBtn = document.getElementById('resetBtn');
+    const torrentRetentionSelect = document.getElementById('torrentRetentionDays');
+    const mediaplayerRetentionStatus = document.getElementById('mediaplayerRetentionStatus');
+    const mediaPlayerEnabledToggle = document.getElementById('mediaPlayerEnabledToggle');
+    const mediaPlayerSetupPanel = document.getElementById('mediaPlayerSetupPanel');
+    const mediaPlayerInstallPath = document.getElementById('mediaPlayerInstallPath');
+    const mediaPlayerChooseFolderBtn = document.getElementById('mediaPlayerChooseFolderBtn');
+    const mediaPlayerVerifyBtn = document.getElementById('mediaPlayerVerifyBtn');
+    const mediaPlayerSetupStatus = document.getElementById('mediaPlayerSetupStatus');
+    const mediaPlayerSetupChecks = document.getElementById('mediaPlayerSetupChecks');
+    const mediaPlayerService = typeof window.MediaPlayerService === 'function'
+        ? new window.MediaPlayerService()
+        : null;
+    let mediaPlayerRetentionLoaded = false;
+    const subtitleFontSizePercentInput = document.getElementById('subtitleFontSizePercent');
+    const subtitleFontSizePercentOutput = document.getElementById('subtitleFontSizePercentOutput');
+    const subtitleColorInput = document.getElementById('subtitleColor');
+    const subtitleColorOutput = document.getElementById('subtitleColorOutput');
+    const subtitlePositionSelect = document.getElementById('subtitlePosition');
+    const subtitleOffsetPercentInput = document.getElementById('subtitleOffsetPercent');
+    const subtitleOffsetPercentOutput = document.getElementById('subtitleOffsetPercentOutput');
+    const subtitleBackgroundOpacityInput = document.getElementById('subtitleBackgroundOpacity');
+    const subtitleBackgroundOpacityOutput = document.getElementById('subtitleBackgroundOpacityOutput');
+    const subtitleTextShadowSelect = document.getElementById('subtitleTextShadow');
+    const subtitleAppearanceResetBtn = document.getElementById('subtitleAppearanceResetBtn');
+    const subtitleAppearancePreviewFrame = document.getElementById('subtitleAppearancePreviewFrame');
+    const subtitleAppearancePreviewCaption = document.getElementById('subtitleAppearancePreviewCaption');
     
     // Anime Radio Elements
     const animeRadioToggle = document.getElementById('animeRadioToggle');
@@ -94,15 +245,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             currentState.language !== initialState.language ||
             currentState.showAnimeRadio !== initialState.showAnimeRadio ||
             currentState.animeRadioSource !== initialState.animeRadioSource ||
-            currentState.showGames !== initialState.showGames;
+            currentState.showGames !== initialState.showGames ||
+            currentState.mediaPlayerEnabled !== initialState.mediaPlayerEnabled ||
+            !haveMatchingMediaPlayerSetup(currentState.mediaPlayerSetup, initialState.mediaPlayerSetup) ||
+            !haveMatchingSubtitleAppearances(currentState.subtitleAppearance, initialState.subtitleAppearance) ||
+            (mediaPlayerRetentionLoaded && currentState.torrentRetentionDays !== initialState.torrentRetentionDays);
             
-        if (isDirty) {
-            saveBtn.style.backgroundColor = '#22c55e';
-            saveBtn.style.color = '#ffffff';
-        } else {
-            saveBtn.style.backgroundColor = '';
-            saveBtn.style.color = '';
-        }
+        saveBtn.classList.toggle('is-dirty', isDirty);
         return isDirty;
     }
 
@@ -150,8 +299,173 @@ document.addEventListener('DOMContentLoaded', async () => {
         language: 'en',
         showAnimeRadio: false,
         animeRadioSource: 'anison',
-        showGames: false
+        showGames: false,
+        mediaPlayerEnabled: false
     };
+
+    function updateSubtitleAppearanceUI() {
+        const appearance = normalizeSubtitleAppearance(currentState.subtitleAppearance);
+        const textShadows = {
+            none: 'none',
+            soft: '0 1px 3px rgb(0 0 0 / 0.72)',
+            strong: '0 2px 6px rgb(0 0 0 / 0.92), 0 0 1px rgb(0 0 0 / 0.98)'
+        };
+
+        currentState.subtitleAppearance = appearance;
+
+        if (subtitleFontSizePercentInput) subtitleFontSizePercentInput.value = String(appearance.fontSizePercent);
+        if (subtitleFontSizePercentOutput) subtitleFontSizePercentOutput.textContent = `${appearance.fontSizePercent}%`;
+        if (subtitleColorInput) subtitleColorInput.value = appearance.color;
+        if (subtitleColorOutput) subtitleColorOutput.textContent = appearance.color.toUpperCase();
+        if (subtitlePositionSelect) subtitlePositionSelect.value = appearance.position;
+        if (subtitleOffsetPercentInput) subtitleOffsetPercentInput.value = String(appearance.offsetPercent);
+        if (subtitleOffsetPercentOutput) subtitleOffsetPercentOutput.textContent = `${appearance.offsetPercent}%`;
+        if (subtitleBackgroundOpacityInput) subtitleBackgroundOpacityInput.value = String(appearance.backgroundOpacity);
+        if (subtitleBackgroundOpacityOutput) subtitleBackgroundOpacityOutput.textContent = `${Math.round(appearance.backgroundOpacity * 100)}%`;
+        if (subtitleTextShadowSelect) subtitleTextShadowSelect.value = appearance.textShadow;
+
+        if (subtitleAppearancePreviewFrame) {
+            subtitleAppearancePreviewFrame.dataset.position = appearance.position;
+            subtitleAppearancePreviewFrame.style.setProperty(
+                '--subtitle-preview-offset',
+                `${Math.round(appearance.offsetPercent * 1.8)}px`
+            );
+        }
+
+        if (subtitleAppearancePreviewCaption) {
+            subtitleAppearancePreviewCaption.style.setProperty('--subtitle-preview-color', appearance.color);
+            subtitleAppearancePreviewCaption.style.setProperty('--subtitle-preview-font-size', `${appearance.fontSizePercent / 100}rem`);
+            subtitleAppearancePreviewCaption.style.setProperty('--subtitle-preview-background-opacity', String(appearance.backgroundOpacity));
+            subtitleAppearancePreviewCaption.style.setProperty('--subtitle-preview-text-shadow', textShadows[appearance.textShadow]);
+        }
+    }
+
+    function updateSubtitleAppearance(field, value) {
+        currentState.subtitleAppearance = normalizeSubtitleAppearance({
+            ...currentState.subtitleAppearance,
+            [field]: value
+        });
+        updateSubtitleAppearanceUI();
+        updateDirtyState();
+    }
+
+    function getMediaPlayerSetupStatusText(setup) {
+        if (!currentState.mediaPlayerEnabled) return 'MediaPlayer выключен.';
+        if (setup.status === 'path_required') return 'Укажите папку установки MediaPlayer.';
+        if (setup.status === 'verifying') return 'Проверяем MediaPlayer…';
+        if (setup.status === 'ready') {
+            return setup.version
+                ? `MediaPlayer готов к работе (версия ${setup.version}).`
+                : 'MediaPlayer готов к работе.';
+        }
+        return setup.errorMessage || 'Проверка установки MediaPlayer не пройдена.';
+    }
+
+    function renderMediaPlayerSetup() {
+        const setup = normalizeMediaPlayerSetup(currentState.mediaPlayerSetup, currentState.mediaPlayerEnabled);
+        currentState.mediaPlayerSetup = setup;
+        const enabled = currentState.mediaPlayerEnabled === true;
+        const hasPath = Boolean(setup.installPath);
+
+        if (mediaPlayerEnabledToggle) mediaPlayerEnabledToggle.checked = enabled;
+        if (mediaPlayerSetupPanel) mediaPlayerSetupPanel.hidden = !enabled;
+        if (mediaPlayerInstallPath) mediaPlayerInstallPath.value = setup.installPath;
+        if (mediaPlayerChooseFolderBtn) mediaPlayerChooseFolderBtn.disabled = !enabled || setup.status === 'verifying';
+        if (mediaPlayerVerifyBtn) mediaPlayerVerifyBtn.disabled = !enabled || !hasPath || setup.status === 'verifying';
+        if (mediaPlayerSetupStatus) {
+            mediaPlayerSetupStatus.textContent = getMediaPlayerSetupStatusText(setup);
+            mediaPlayerSetupStatus.dataset.state = setup.status;
+        }
+        if (mediaPlayerSetupChecks) {
+            mediaPlayerSetupChecks.replaceChildren();
+            setup.checks.forEach(check => {
+                const item = document.createElement('li');
+                item.className = 'mediaplayer-setup-check';
+                item.dataset.status = String(check.status || 'pending');
+                const label = document.createElement('span');
+                label.textContent = check.label || check.id || 'Проверка';
+                const message = document.createElement('span');
+                message.textContent = check.message || check.status || '';
+                item.append(label, message);
+                mediaPlayerSetupChecks.appendChild(item);
+            });
+        }
+
+        if (torrentRetentionSelect) {
+            torrentRetentionSelect.disabled = !mediaPlayerRetentionLoaded || !enabled || setup.status !== 'ready';
+        }
+    }
+
+    async function chooseMediaPlayerFolder() {
+        if (!mediaPlayerService || !currentState.mediaPlayerEnabled) return;
+        try {
+            const result = await mediaPlayerService.selectInstallFolder();
+            currentState.mediaPlayerSetup = normalizeMediaPlayerSetup({
+                ...currentState.mediaPlayerSetup,
+                enabled: true,
+                status: 'path_required',
+                installPath: result.installPath,
+                checks: [],
+                errorCode: '',
+                errorMessage: ''
+            }, true);
+            mediaPlayerRetentionLoaded = false;
+            renderMediaPlayerSetup();
+            if (mediaplayerRetentionStatus) {
+                mediaplayerRetentionStatus.textContent = 'Проверьте установку MediaPlayer, чтобы открыть настройки торрентов.';
+            }
+            updateDirtyState();
+        } catch (error) {
+            currentState.mediaPlayerSetup = normalizeMediaPlayerSetup({
+                ...currentState.mediaPlayerSetup,
+                enabled: true,
+                status: 'error',
+                errorCode: error?.code || 'setup_verification_failed',
+                errorMessage: error?.message || 'Не удалось выбрать папку MediaPlayer.'
+            }, true);
+            renderMediaPlayerSetup();
+            updateDirtyState();
+        }
+    }
+
+    async function verifyMediaPlayerInstallation() {
+        const installPath = currentState.mediaPlayerSetup?.installPath;
+        if (!mediaPlayerService || !currentState.mediaPlayerEnabled || !installPath) return;
+        currentState.mediaPlayerSetup = normalizeMediaPlayerSetup({
+            ...currentState.mediaPlayerSetup,
+            enabled: true,
+            status: 'verifying',
+            errorCode: '',
+            errorMessage: ''
+        }, true);
+        renderMediaPlayerSetup();
+        try {
+            const setup = await mediaPlayerService.verifyInstallation(installPath);
+            currentState.mediaPlayerSetup = normalizeMediaPlayerSetup(setup, true);
+            mediaPlayerRetentionLoaded = false;
+            renderMediaPlayerSetup();
+            if (currentState.mediaPlayerSetup.status === 'ready') {
+                await loadMediaPlayerSettings();
+            } else if (mediaplayerRetentionStatus) {
+                mediaplayerRetentionStatus.textContent = 'Настройки торрентов заблокированы до успешной проверки.';
+            }
+            updateDirtyState();
+        } catch (error) {
+            currentState.mediaPlayerSetup = normalizeMediaPlayerSetup({
+                ...currentState.mediaPlayerSetup,
+                enabled: true,
+                status: 'error',
+                errorCode: error?.code || 'setup_verification_failed',
+                errorMessage: error?.message || 'Не удалось проверить MediaPlayer.'
+            }, true);
+            mediaPlayerRetentionLoaded = false;
+            renderMediaPlayerSetup();
+            if (mediaplayerRetentionStatus) {
+                mediaplayerRetentionStatus.textContent = 'Настройки торрентов заблокированы до успешной проверки.';
+            }
+            updateDirtyState();
+        }
+    }
 
     /**
      * Update UI from currentState
@@ -195,6 +509,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 gamesBtn.style.display = currentState.showGames ? 'inline-flex' : 'none';
             }
         }
+
+        if (torrentRetentionSelect && mediaPlayerRetentionLoaded) {
+            torrentRetentionSelect.value = String(currentState.torrentRetentionDays);
+        }
+
+        renderMediaPlayerSetup();
+        updateSubtitleAppearanceUI();
     }
 
     /**
@@ -202,17 +523,40 @@ document.addEventListener('DOMContentLoaded', async () => {
      */
     async function loadSettings() {
         try {
-            const result = await chrome.storage.local.get(['displayMode', 'language', 'showAnimeRadio', 'animeRadioSource', 'showGames']);
+            mediaPlayerRetentionLoaded = false;
+            if (torrentRetentionSelect) torrentRetentionSelect.disabled = true;
+            const result = await chrome.storage.local.get([
+                'displayMode',
+                'language',
+                'showAnimeRadio',
+                'animeRadioSource',
+                'showGames',
+                'mediaPlayerEnabled',
+                MEDIA_PLAYER_SETUP_STORAGE_KEY,
+                SUBTITLE_APPEARANCE_STORAGE_KEY
+            ]);
+            const mediaPlayerEnabled = result.mediaPlayerEnabled === true;
+            const storedMediaPlayerSetup = normalizeMediaPlayerSetup(
+                result[MEDIA_PLAYER_SETUP_STORAGE_KEY],
+                mediaPlayerEnabled
+            );
             
             initialState = {
                 displayMode: result.displayMode || DEFAULT_SETTINGS.displayMode,
                 language: result.language || i18n.currentLocale || DEFAULT_SETTINGS.language,
                 showAnimeRadio: result.showAnimeRadio ?? false,
                 animeRadioSource: result.animeRadioSource || 'anison',
-                showGames: result.showGames ?? false
+                showGames: result.showGames ?? false,
+                torrentRetentionDays: initialState.torrentRetentionDays ?? 7,
+                mediaPlayerEnabled,
+                mediaPlayerSetup: storedMediaPlayerSetup,
+                subtitleAppearance: normalizeSubtitleAppearance(result[SUBTITLE_APPEARANCE_STORAGE_KEY])
             };
             
-            currentState = { ...initialState };
+            currentState = {
+                ...initialState,
+                subtitleAppearance: { ...initialState.subtitleAppearance }
+            };
             
             updateUIFromState();
             
@@ -223,8 +567,66 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             
             updateDirtyState();
+            await loadMediaPlayerSettings();
         } catch (error) {
             console.error('Failed to load settings:', error);
+        }
+    }
+
+    async function loadMediaPlayerSettings() {
+        if (!currentState.mediaPlayerEnabled) {
+            mediaPlayerRetentionLoaded = false;
+            if (mediaplayerRetentionStatus) mediaplayerRetentionStatus.textContent = 'Включите MediaPlayer и завершите проверку установки.';
+            renderMediaPlayerSetup();
+            return;
+        }
+        if (currentState.mediaPlayerSetup.status !== 'ready') {
+            mediaPlayerRetentionLoaded = false;
+            if (torrentRetentionSelect) torrentRetentionSelect.disabled = true;
+            if (mediaplayerRetentionStatus) mediaplayerRetentionStatus.textContent = 'Настройки торрентов заблокированы до успешной проверки.';
+            renderMediaPlayerSetup();
+            return;
+        }
+        if (!mediaPlayerService || !torrentRetentionSelect) {
+            if (mediaplayerRetentionStatus) mediaplayerRetentionStatus.textContent = 'MediaPlayer недоступен на этой странице.';
+            return;
+        }
+        if (mediaplayerRetentionStatus) mediaplayerRetentionStatus.textContent = 'Подключение к MediaPlayer…';
+        try {
+            const runtimeSetup = await mediaPlayerService.getRuntimeReadiness();
+            currentState.mediaPlayerSetup = normalizeMediaPlayerSetup(runtimeSetup, true);
+            initialState.mediaPlayerSetup = normalizeMediaPlayerSetup(runtimeSetup, true);
+            if (currentState.mediaPlayerSetup.status !== 'ready') {
+                mediaPlayerRetentionLoaded = false;
+                if (torrentRetentionSelect) torrentRetentionSelect.disabled = true;
+                renderMediaPlayerSetup();
+                if (mediaplayerRetentionStatus) {
+                    mediaplayerRetentionStatus.textContent = 'Настройки торрентов заблокированы до успешной проверки.';
+                }
+                return;
+            }
+            const settings = await mediaPlayerService.getSettings();
+            const days = Number(settings.torrentRetentionDays);
+            currentState.torrentRetentionDays = days;
+            initialState.torrentRetentionDays = days;
+            mediaPlayerRetentionLoaded = true;
+            torrentRetentionSelect.disabled = false;
+            updateUIFromState();
+            updateDirtyState();
+            if (mediaplayerRetentionStatus) mediaplayerRetentionStatus.textContent = 'Изменения применяются после нажатия «Сохранить».';
+        } catch (error) {
+            mediaPlayerRetentionLoaded = false;
+            torrentRetentionSelect.disabled = true;
+            currentState.mediaPlayerSetup = normalizeMediaPlayerSetup({
+                ...currentState.mediaPlayerSetup,
+                enabled: true,
+                status: 'error',
+                errorCode: error?.code || 'connection_failed',
+                errorMessage: error?.message || 'Проверьте запуск службы.'
+            }, true);
+            renderMediaPlayerSetup();
+            if (mediaplayerRetentionStatus) mediaplayerRetentionStatus.textContent = `MediaPlayer недоступен: ${error?.message || 'проверьте запуск службы.'}`;
+            updateDirtyState();
         }
     }
 
@@ -233,12 +635,35 @@ document.addEventListener('DOMContentLoaded', async () => {
      */
     async function saveSettings() {
         try {
+            const retentionChanged = mediaPlayerRetentionLoaded
+                && currentState.torrentRetentionDays !== initialState.torrentRetentionDays;
+            if (retentionChanged) {
+                if (!mediaPlayerService) throw new Error('MediaPlayer недоступен.');
+                const settings = await mediaPlayerService.updateSettings({
+                    torrentRetentionDays: currentState.torrentRetentionDays
+                });
+                currentState.torrentRetentionDays = settings.torrentRetentionDays;
+                if (mediaplayerRetentionStatus) mediaplayerRetentionStatus.textContent = 'Срок хранения обновлён.';
+            }
+            const subtitleAppearance = normalizeSubtitleAppearance(currentState.subtitleAppearance);
+            currentState.subtitleAppearance = subtitleAppearance;
+            if (!currentState.mediaPlayerEnabled) {
+                currentState.mediaPlayerSetup = createDefaultMediaPlayerSetup();
+            } else {
+                currentState.mediaPlayerSetup = normalizeMediaPlayerSetup(currentState.mediaPlayerSetup, true);
+            }
+            if (mediaPlayerService) {
+                await mediaPlayerService.writeSetupState(currentState.mediaPlayerSetup);
+            }
             await chrome.storage.local.set({
                 displayMode: currentState.displayMode,
                 language: currentState.language,
                 showAnimeRadio: currentState.showAnimeRadio,
                 animeRadioSource: currentState.animeRadioSource,
-                showGames: currentState.showGames
+                showGames: currentState.showGames,
+                mediaPlayerEnabled: currentState.mediaPlayerEnabled,
+                [MEDIA_PLAYER_SETUP_STORAGE_KEY]: currentState.mediaPlayerSetup,
+                [SUBTITLE_APPEARANCE_STORAGE_KEY]: subtitleAppearance
             });
 
             // If language changed, ensure i18n saves it globally depending on how it's structured, but i18n.setLanguage was already called on preview.
@@ -250,11 +675,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                     language: currentState.language,
                     showAnimeRadio: currentState.showAnimeRadio,
                     animeRadioSource: currentState.animeRadioSource,
-                    showGames: currentState.showGames
+                    showGames: currentState.showGames,
+                    mediaPlayerEnabled: currentState.mediaPlayerEnabled,
+                    mediaPlayerSetup: currentState.mediaPlayerSetup,
+                    [SUBTITLE_APPEARANCE_STORAGE_KEY]: subtitleAppearance
                 }
             });
 
-            initialState = { ...currentState };
+            initialState = {
+                ...currentState,
+                subtitleAppearance: { ...subtitleAppearance }
+            };
             updateDirtyState();
 
             showToast(i18n.get('settings.saved'));
@@ -270,7 +701,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     async function resetSettings() {
         if (confirm(i18n.get('settings.reset_confirm'))) {
             try {
-                await chrome.storage.local.set(DEFAULT_SETTINGS);
+                if (mediaPlayerRetentionLoaded && currentState.torrentRetentionDays !== 7) {
+                    if (!mediaPlayerService) throw new Error('MediaPlayer недоступен.');
+                    await mediaPlayerService.updateSettings({ torrentRetentionDays: 7 });
+                }
+                const defaultSubtitleAppearance = createDefaultSubtitleAppearance();
+                const defaultMediaPlayerSetup = createDefaultMediaPlayerSetup();
+                if (mediaPlayerService) await mediaPlayerService.writeSetupState(defaultMediaPlayerSetup);
+                await chrome.storage.local.set({
+                    ...DEFAULT_SETTINGS,
+                    [MEDIA_PLAYER_SETUP_STORAGE_KEY]: defaultMediaPlayerSetup,
+                    [SUBTITLE_APPEARANCE_STORAGE_KEY]: defaultSubtitleAppearance
+                });
                 
                 // Reload UI
                 await loadSettings();
@@ -278,7 +720,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // Notify background
                 chrome.runtime.sendMessage({
                     type: 'SETTINGS_UPDATED',
-                    settings: DEFAULT_SETTINGS
+                    settings: {
+                        ...DEFAULT_SETTINGS,
+                        mediaPlayerSetup: defaultMediaPlayerSetup,
+                        [SUBTITLE_APPEARANCE_STORAGE_KEY]: defaultSubtitleAppearance
+                    }
                 });
 
                 showToast(i18n.get('settings.reset_done'));
@@ -356,6 +802,88 @@ document.addEventListener('DOMContentLoaded', async () => {
     for (const radio of radioSourceRadios) {
         radio.addEventListener('change', (e) => {
             currentState.animeRadioSource = e.target.value;
+            updateDirtyState();
+        });
+    }
+
+    if (subtitleFontSizePercentInput) {
+        subtitleFontSizePercentInput.addEventListener('input', (event) => {
+            updateSubtitleAppearance('fontSizePercent', event.target.value);
+        });
+    }
+
+    if (subtitleColorInput) {
+        subtitleColorInput.addEventListener('input', (event) => {
+            updateSubtitleAppearance('color', event.target.value);
+        });
+    }
+
+    if (subtitlePositionSelect) {
+        subtitlePositionSelect.addEventListener('change', (event) => {
+            updateSubtitleAppearance('position', event.target.value);
+        });
+    }
+
+    if (subtitleOffsetPercentInput) {
+        subtitleOffsetPercentInput.addEventListener('input', (event) => {
+            updateSubtitleAppearance('offsetPercent', event.target.value);
+        });
+    }
+
+    if (subtitleBackgroundOpacityInput) {
+        subtitleBackgroundOpacityInput.addEventListener('input', (event) => {
+            updateSubtitleAppearance('backgroundOpacity', event.target.value);
+        });
+    }
+
+    if (subtitleTextShadowSelect) {
+        subtitleTextShadowSelect.addEventListener('change', (event) => {
+            updateSubtitleAppearance('textShadow', event.target.value);
+        });
+    }
+
+    if (subtitleAppearanceResetBtn) {
+        subtitleAppearanceResetBtn.addEventListener('click', () => {
+            currentState.subtitleAppearance = createDefaultSubtitleAppearance();
+            updateSubtitleAppearanceUI();
+            updateDirtyState();
+        });
+    }
+
+    if (mediaPlayerEnabledToggle) {
+        mediaPlayerEnabledToggle.addEventListener('change', (event) => {
+            const enabled = event.target.checked;
+            currentState.mediaPlayerEnabled = enabled;
+            currentState.mediaPlayerSetup = normalizeMediaPlayerSetup({
+                ...currentState.mediaPlayerSetup,
+                enabled,
+                status: enabled ? 'path_required' : 'disabled',
+                errorCode: '',
+                errorMessage: ''
+            }, enabled);
+            mediaPlayerRetentionLoaded = false;
+            renderMediaPlayerSetup();
+            if (mediaplayerRetentionStatus) {
+                mediaplayerRetentionStatus.textContent = enabled
+                    ? 'Выберите папку и завершите проверку MediaPlayer.'
+                    : 'Включите MediaPlayer и завершите проверку установки.';
+            }
+            updateDirtyState();
+        });
+    }
+
+    if (mediaPlayerChooseFolderBtn) {
+        mediaPlayerChooseFolderBtn.addEventListener('click', chooseMediaPlayerFolder);
+    }
+
+    if (mediaPlayerVerifyBtn) {
+        mediaPlayerVerifyBtn.addEventListener('click', verifyMediaPlayerInstallation);
+    }
+
+    if (torrentRetentionSelect) {
+        torrentRetentionSelect.addEventListener('change', (event) => {
+            currentState.torrentRetentionDays = Number(event.target.value);
+            if (mediaplayerRetentionStatus) mediaplayerRetentionStatus.textContent = 'Есть несохранённое изменение.';
             updateDirtyState();
         });
     }

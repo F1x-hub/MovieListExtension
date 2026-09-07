@@ -36,11 +36,41 @@ service cloud.firestore {
         && data.movieId is int && data.movieId > 0
         && data.rating is int && data.rating >= 1 && data.rating <= 10
         && data.comment is string && data.comment.size() <= 500
+        && (!('review' in data) || data.review is string && data.review.size() <= 5000)
+        && (!('contentUpdatedAt' in data) || data.contentUpdatedAt is timestamp)
         && (!('userName' in data) || data.userName is string && data.userName.size() <= 120)
         && (!('userPhoto' in data) || data.userPhoto is string && data.userPhoto.size() <= 2048)
         && (!('movieTitle' in data) || data.movieTitle is string && data.movieTitle.size() <= 300)
         && (!('posterPath' in data) || data.posterPath is string && data.posterPath.size() <= 2048)
         && (!('isFavorite' in data) || data.isFavorite is bool);
+    }
+
+    function isTextOnlyRatingUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'comment', 'review', 'contentUpdatedAt', 'userName', 'userPhoto'
+      ])
+      && request.resource.data.userId == resource.data.userId
+      && request.resource.data.movieId == resource.data.movieId
+      && request.resource.data.rating == resource.data.rating;
+    }
+
+    function hasReviewReportTarget(data) {
+      return data.keys().hasAny([
+        'targetType', 'targetRatingId', 'targetMovieId', 'targetAuthorId'
+      ]);
+    }
+
+    function isValidReviewReport(data) {
+      let ratingPath = /databases/$(database)/documents/ratings/$(data.targetRatingId);
+      return data.targetType == 'rating-review'
+        && data.targetRatingId is string
+        && data.targetMovieId is int && data.targetMovieId > 0
+        && data.targetAuthorId is string
+        && exists(ratingPath)
+        && get(ratingPath).data.review is string
+        && get(ratingPath).data.review.size() > 0
+        && string(get(ratingPath).data.movieId) == string(data.targetMovieId)
+        && get(ratingPath).data.userId == data.targetAuthorId;
     }
 
     function hasCanonicalRatingId(ratingId, data) {
@@ -164,10 +194,31 @@ service cloud.firestore {
         && getAfter(mappingPath).data.kpId == lockData.kpId;
     }
     
-    // Movies collection - read for all, write for approved users, delete for admins
+    function movieAggregateFields() {
+      return [
+        'hasCommunityRating',
+        'hasRatings',
+        'ratingsCount',
+        'ratingsSum',
+        'avgRating',
+        'lastRatingUpdatedAt'
+      ];
+    }
+
+    function createsMovieWithServerFields() {
+      return request.resource.data.keys().hasAny(movieAggregateFields());
+    }
+
+    function changesMovieServerFields() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny(movieAggregateFields());
+    }
+
+    // Movies collection - read for all, metadata writes for approved users,
+    // server-owned aggregate writes through the Cloud Function/Admin SDK only.
     match /movies/{movieId} {
       allow read: if true; // Anyone can read cached movies
-      allow write: if isApprovedUser(); // Only approved users can cache/update movies
+      allow create: if isApprovedUser() && !createsMovieWithServerFields();
+      allow update: if isApprovedUser() && !changesMovieServerFields();
       allow delete: if isAdmin(); // Only admins can delete movies
     }
     
@@ -187,7 +238,12 @@ service cloud.firestore {
         && resource.data.userId == request.auth.uid
         && request.resource.data.userId == resource.data.userId
         && request.resource.data.movieId == resource.data.movieId
-        && isValidRatingData(request.resource.data);
+        && isValidRatingData(request.resource.data)
+        && (!isTextOnlyRatingUpdate() || (
+          request.resource.data.rating == resource.data.rating
+          && request.resource.data.movieId == resource.data.movieId
+          && request.resource.data.userId == resource.data.userId
+        ));
       allow delete: if (isApprovedUser() && resource.data.userId == request.auth.uid) || isAdmin();
     }
 
@@ -270,7 +326,8 @@ service cloud.firestore {
     
     // Reports collection
     match /reports/{reportId} {
-      allow create: if true; // Anyone can create a report
+      allow create: if !hasReviewReportTarget(request.resource.data)
+        || isValidReviewReport(request.resource.data);
       allow read, update, delete: if isAdmin(); // Only admins can read, update, delete
     }
 
@@ -361,7 +418,7 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // The two-client proof uses a separate durable namespace, but retains the
+    // The private staging proof uses a separate durable namespace, but retains the
     // same server-only boundary as the production room model.
     match /watchRoomsStaging/{roomId} {
       allow read, write: if false;
@@ -376,6 +433,10 @@ service cloud.firestore {
     }
 
     match /watchRoomsStagingAclOutbox/{eventId} {
+      allow read, write: if false;
+    }
+
+    match /watchRoomsStagingCreateRequests/{requestId} {
       allow read, write: if false;
     }
     

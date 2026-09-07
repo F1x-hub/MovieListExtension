@@ -49,6 +49,12 @@
                             </span>
                             <span data-i18n="settings.nav.extras">Дополнительно</span>
                         </button>
+                        <button class="sidebar-link" data-target="mediaplayer">
+                            <span class="icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m10 8 6 4-6 4z"></path></svg>
+                            </span>
+                            <span>MediaPlayer</span>
+                        </button>
                         <div class="sidebar-spacer"></div>
                     </nav>
                 </aside>
@@ -98,6 +104,69 @@
                                         </div>
                                     </div>
                                 </label>
+                            </div>
+                        </div>
+
+                        <div class="settings-section subtitle-appearance-section" aria-labelledby="subtitleAppearanceTitle">
+                            <h3 class="section-title" id="subtitleAppearanceTitle">Оформление субтитров</h3>
+                            <p class="section-description" id="subtitleAppearanceDescription">Настройте размер, цвет и положение текста для более комфортного просмотра.</p>
+
+                            <div class="subtitle-appearance-support-note" role="note">
+                                <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 10v5"></path><path d="M12 7h.01"></path></svg>
+                                <span>Оформление применяется к поддерживаемым субтитрам встроенного плеера.</span>
+                            </div>
+
+                            <div class="subtitle-appearance-editor" aria-describedby="subtitleAppearanceDescription">
+                                <div class="subtitle-appearance-preview" id="subtitleAppearancePreview" aria-label="Предпросмотр оформления субтитров">
+                                    <div class="subtitle-appearance-preview__frame" id="subtitleAppearancePreviewFrame" data-position="bottom">
+                                        <span class="subtitle-appearance-preview__caption" id="subtitleAppearancePreviewCaption">Пример субтитров</span>
+                                    </div>
+                                </div>
+
+                                <fieldset class="subtitle-appearance-controls">
+                                    <legend class="sr-only">Параметры оформления субтитров</legend>
+
+                                    <div class="subtitle-appearance-control">
+                                        <label for="subtitleFontSizePercent">Размер текста <output id="subtitleFontSizePercentOutput" for="subtitleFontSizePercent" aria-live="polite">100%</output></label>
+                                        <input id="subtitleFontSizePercent" type="range" min="75" max="200" step="5" value="100">
+                                    </div>
+
+                                    <div class="subtitle-appearance-control subtitle-appearance-control--color">
+                                        <label for="subtitleColor">Цвет текста <output id="subtitleColorOutput" for="subtitleColor" aria-live="polite">#FFFFFF</output></label>
+                                        <input id="subtitleColor" type="color" value="#ffffff" aria-describedby="subtitleAppearanceDescription">
+                                    </div>
+
+                                    <div class="subtitle-appearance-control">
+                                        <label for="subtitlePosition">Расположение</label>
+                                        <select id="subtitlePosition">
+                                            <option value="bottom">Снизу</option>
+                                            <option value="top">Сверху</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="subtitle-appearance-control">
+                                        <label for="subtitleOffsetPercent">Отступ от края <output id="subtitleOffsetPercentOutput" for="subtitleOffsetPercent" aria-live="polite">6%</output></label>
+                                        <input id="subtitleOffsetPercent" type="range" min="2" max="20" step="1" value="6">
+                                    </div>
+
+                                    <div class="subtitle-appearance-control">
+                                        <label for="subtitleBackgroundOpacity">Фон <output id="subtitleBackgroundOpacityOutput" for="subtitleBackgroundOpacity" aria-live="polite">45%</output></label>
+                                        <input id="subtitleBackgroundOpacity" type="range" min="0" max="0.9" step="0.05" value="0.45">
+                                    </div>
+
+                                    <div class="subtitle-appearance-control">
+                                        <label for="subtitleTextShadow">Контур и тень</label>
+                                        <select id="subtitleTextShadow">
+                                            <option value="none">Без тени</option>
+                                            <option value="soft">Мягкая</option>
+                                            <option value="strong">Выразительная</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="subtitle-appearance-actions">
+                                        <button id="subtitleAppearanceResetBtn" class="btn btn-secondary subtitle-appearance-reset" type="button">Сбросить оформление</button>
+                                    </div>
+                                </fieldset>
                             </div>
                         </div>
                     </div>
@@ -198,6 +267,67 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- MediaPlayer Pane -->
+                    <div class="settings-pane" id="pane-mediaplayer">
+                        <div class="pane-header">
+                            <h2>MediaPlayer</h2>
+                            <p>Настройки локального торрент-плеера и хранения скачанных фильмов.</p>
+                        </div>
+
+                        <div class="settings-section mediaplayer-setup-section">
+                            <div class="setting-group-row">
+                                <div class="setting-info">
+                                    <h3 class="setting-title">Использовать MediaPlayer</h3>
+                                    <p class="setting-desc">Торрент появится в плеере только после проверки установки.</p>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="mediaPlayerEnabledToggle">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="mediaplayer-setup-panel" id="mediaPlayerSetupPanel" hidden>
+                                <div class="mediaplayer-setup-path-row">
+                                    <label class="setting-info" for="mediaPlayerInstallPath">
+                                        <span class="setting-title">Папка установки</span>
+                                        <span class="setting-desc">Выберите каталог, где установлен MediaPlayer.</span>
+                                    </label>
+                                    <input id="mediaPlayerInstallPath" class="mediaplayer-install-path" type="text" readonly placeholder="Папка не выбрана">
+                                    <button id="mediaPlayerChooseFolderBtn" class="btn btn-secondary" type="button">Выбрать папку</button>
+                                </div>
+                                <div class="mediaplayer-setup-actions">
+                                    <button id="mediaPlayerVerifyBtn" class="btn btn-primary" type="button" disabled>Проверить MediaPlayer</button>
+                                </div>
+                                <p class="mediaplayer-setup-status" id="mediaPlayerSetupStatus" role="status" aria-live="polite"></p>
+                                <ul class="mediaplayer-setup-checks" id="mediaPlayerSetupChecks" aria-live="polite"></ul>
+                            </div>
+                        </div>
+
+                        <div class="settings-section">
+                            <h3 class="section-title">Хранение фильмов</h3>
+                            <p class="section-description">Готовый фильм удаляется автоматически после выбранного срока с последнего открытия.</p>
+
+                            <div class="setting-group-row mediaplayer-retention-row">
+                                <div class="setting-info">
+                                    <h3 class="setting-title">Срок жизни скачанного фильма</h3>
+                                    <p class="setting-desc">Активный просмотр продлевает срок. Незавершённые загрузки не удаляются.</p>
+                                </div>
+                                <label class="setting-select-wrap" for="torrentRetentionDays">
+                                    <span class="sr-only">Срок хранения</span>
+                                    <select id="torrentRetentionDays" disabled>
+                                        <option value="1">1 день</option>
+                                        <option value="3">3 дня</option>
+                                        <option value="7">7 дней (по умолчанию)</option>
+                                        <option value="14">14 дней</option>
+                                        <option value="30">30 дней</option>
+                                        <option value="0">Никогда</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <p class="mediaplayer-retention-status" id="mediaplayerRetentionStatus" role="status" aria-live="polite">Подключение к MediaPlayer…</p>
+                        </div>
+                    </div>
                 </section>
                 
                 <!-- Action Footer -->
@@ -224,6 +354,7 @@
     <script src="../../shared/components/BackToTop.js"></script>
     <script src="/src/shared/components/Navigation.js"></script>
     <script src="/src/shared/utils/MigrationTool.js"></script>
+    <script src="../../shared/services/MediaPlayerService.js"></script>
     <script src="settings.js" type="module"></script>
     <script defer src="../../shared/components/ReportWidget.js"></script>
 </body>

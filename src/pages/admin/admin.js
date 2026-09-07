@@ -2545,6 +2545,9 @@ class AdminPanelManager {
         const movieTitle = movie.name || 'Фильм без названия';
         const movieYear = movie.year ? ` (${movie.year})` : '';
         const truncatedComment = ratingComment.length > 50 ? ratingComment.substring(0, 50) + '...' : ratingComment;
+        const reviewIndicator = hasRating && latestRating?.hasReview
+            ? `<span class="admin-review-indicator" title="Рецензия: ${latestRating.reviewLength || 0} символов">Есть рецензия</span>`
+            : '';
 
         if (isSelected) {
             row.classList.add('selected');
@@ -2594,6 +2597,7 @@ class AdminPanelManager {
             <td>
                 <div class="rating-comment" title="${this.escapeHtml(ratingComment)}">
                     ${hasRating ? this.escapeHtml(truncatedComment) : '<span class="unrated-cell">—</span>'}
+                    ${reviewIndicator}
                 </div>
             </td>
             <td>

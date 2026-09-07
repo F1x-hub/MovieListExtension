@@ -31,6 +31,7 @@
     "https://*.firebaseio.com/*",
     "https://*.googleapis.com/*",
     "https://api.themoviedb.org/*",
+    "https://image.tmdb.org/*",
     "https://us-central1-movielistdb-13208.cloudfunctions.net/*",
     "https://www.youtube.com/*",
     "https://firebasestorage.googleapis.com/*",
@@ -73,7 +74,8 @@
     "https://*.rutube.ru/*",
     "https://*.rtbcdn.ru/*",
     "http://localhost:3579/*",
-    "http://127.0.0.1:3579/*"
+    "http://127.0.0.1:3579/*",
+    "http://127.0.0.1:3000/*"
   ],
   "oauth2": {
     "client_id": "532518163829-5kst3gcs78q6omaljmua2vdrooi6fcb3.apps.googleusercontent.com",

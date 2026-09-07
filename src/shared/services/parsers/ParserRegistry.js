@@ -72,20 +72,42 @@ class ParserRegistry {
      * 
      * @param {string} title - Movie/series title
      * @param {string|number|null} year - Release year
-     * @param {Object} [options] - Provider-specific search options
+     * @param {Object} [options] - Provider-specific search options. `onResult`
+     * and `onSettled` are optional non-blocking parser lifecycle callbacks.
      * @returns {Promise<SearchResult[]>} Successful results from all parsers
      */
     async searchAll(title, year, options = {}) {
         const parsers = this.getAll();
+        const { onResult, onSettled, ...parserOptions } = options || {};
         
         const results = await Promise.allSettled(
             parsers.map(async (parser) => {
-                const result = await parser.cachedSearch(title, year, options);
-                if (result) {
-                    // Ensure parserId is set
-                    result.parserId = parser.id;
+                let result = null;
+                try {
+                    result = await parser.cachedSearch(title, year, parserOptions);
+                    if (result) {
+                        // Ensure parserId is set
+                        result.parserId = parser.id;
+                        if (typeof onResult === 'function') {
+                            try {
+                                // Do not await this callback: source extraction can
+                                // begin while slower parser searches are pending.
+                                onResult(result, parser);
+                            } catch (error) {
+                                console.warn('[ParserRegistry] onResult callback failed:', error);
+                            }
+                        }
+                    }
+                    return result;
+                } finally {
+                    if (typeof onSettled === 'function') {
+                        try {
+                            onSettled(result, parser);
+                        } catch (error) {
+                            console.warn('[ParserRegistry] onSettled callback failed:', error);
+                        }
+                    }
                 }
-                return result;
             })
         );
 

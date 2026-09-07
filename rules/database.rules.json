@@ -70,7 +70,7 @@
         "presence": {
           "$uid": {
             ".write": "auth != null && auth.uid === $uid && root.child('approvedRoomAccess').child(auth.uid).child('approved').val() === true && root.child('roomAccess').child(auth.uid).child($roomId).child('expiresAtMs').val() > now",
-            ".validate": "!newData.exists() || (newData.hasChildren(['connectedAtMs', 'role']) && newData.child('connectedAtMs').isNumber() && newData.child('connectedAtMs').val() <= now + 10000 && newData.child('connectedAtMs').val() >= now - 60000 && newData.child('role').isString() && newData.child('role').val() === root.child('roomAccess').child(auth.uid).child($roomId).child('role').val() && (!newData.child('displayName').exists() || (newData.child('displayName').isString() && newData.child('displayName').val().length > 0 && newData.child('displayName').val().length <= 48)))",
+            ".validate": "!newData.exists() || !newData.child('role').exists() || (newData.hasChildren(['connectedAtMs', 'role']) && newData.child('connectedAtMs').isNumber() && newData.child('connectedAtMs').val() <= now + 10000 && newData.child('connectedAtMs').val() >= now - 60000 && newData.child('role').isString() && newData.child('role').val() === root.child('roomAccess').child(auth.uid).child($roomId).child('role').val() && (!newData.child('displayName').exists() || (newData.child('displayName').isString() && newData.child('displayName').val().length > 0 && newData.child('displayName').val().length <= 48)))",
             "connectedAtMs": {
               ".write": "auth != null && auth.uid === $uid && root.child('approvedRoomAccess').child(auth.uid).child('approved').val() === true && root.child('roomAccess').child(auth.uid).child($roomId).child('expiresAtMs').val() > now"
             },
@@ -81,8 +81,49 @@
               ".write": "auth != null && auth.uid === $uid && root.child('approvedRoomAccess').child(auth.uid).child('approved').val() === true && root.child('roomAccess').child(auth.uid).child($roomId).child('expiresAtMs').val() > now",
               ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 48"
             },
-            "$other": {
-              ".validate": false
+            "$connectionId": {
+              ".write": "auth != null && auth.uid === $uid && root.child('approvedRoomAccess').child(auth.uid).child('approved').val() === true && root.child('roomAccess').child(auth.uid).child($roomId).child('expiresAtMs').val() > now",
+              ".validate": "!newData.exists() || (newData.hasChildren(['connectedAtMs', 'lastSeenAtMs', 'role']) && newData.child('connectedAtMs').isNumber() && newData.child('lastSeenAtMs').isNumber() && newData.child('lastSeenAtMs').val() <= now + 10000 && newData.child('lastSeenAtMs').val() >= now - 90000 && newData.child('role').isString() && newData.child('role').val() === root.child('roomAccess').child(auth.uid).child($roomId).child('role').val() && (!newData.child('displayName').exists() || (newData.child('displayName').isString() && newData.child('displayName').val().length > 0 && newData.child('displayName').val().length <= 48)))",
+              "connectedAtMs": {
+                ".write": "auth != null && auth.uid === $uid && root.child('approvedRoomAccess').child(auth.uid).child('approved').val() === true && root.child('roomAccess').child(auth.uid).child($roomId).child('expiresAtMs').val() > now"
+              },
+              "lastSeenAtMs": {
+                ".write": "auth != null && auth.uid === $uid && root.child('approvedRoomAccess').child(auth.uid).child('approved').val() === true && root.child('roomAccess').child(auth.uid).child($roomId).child('expiresAtMs').val() > now"
+              },
+              "role": {
+                ".write": "auth != null && auth.uid === $uid && root.child('approvedRoomAccess').child(auth.uid).child('approved').val() === true && root.child('roomAccess').child(auth.uid).child($roomId).child('expiresAtMs').val() > now"
+              },
+              "displayName": {
+                ".write": "auth != null && auth.uid === $uid && root.child('approvedRoomAccess').child(auth.uid).child('approved').val() === true && root.child('roomAccess').child(auth.uid).child($roomId).child('expiresAtMs').val() > now",
+                ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 48"
+              },
+              "$other": {
+                ".validate": false
+              }
+            }
+          }
+        },
+        "presenceV2": {
+          "$uid": {
+            "$connectionId": {
+              ".write": "auth != null && auth.uid === $uid && root.child('approvedRoomAccess').child(auth.uid).child('approved').val() === true && root.child('roomAccess').child(auth.uid).child($roomId).child('expiresAtMs').val() > now",
+              ".validate": "!newData.exists() || (newData.hasChildren(['connectedAtMs', 'lastSeenAtMs', 'role']) && newData.child('connectedAtMs').isNumber() && newData.child('lastSeenAtMs').isNumber() && newData.child('lastSeenAtMs').val() <= now + 10000 && newData.child('lastSeenAtMs').val() >= now - 90000 && newData.child('role').isString() && newData.child('role').val() === root.child('roomAccess').child(auth.uid).child($roomId).child('role').val() && (!newData.child('displayName').exists() || (newData.child('displayName').isString() && newData.child('displayName').val().length > 0 && newData.child('displayName').val().length <= 48)))",
+              "connectedAtMs": {
+                ".write": "auth != null && auth.uid === $uid && root.child('approvedRoomAccess').child(auth.uid).child('approved').val() === true && root.child('roomAccess').child(auth.uid).child($roomId).child('expiresAtMs').val() > now"
+              },
+              "lastSeenAtMs": {
+                ".write": "auth != null && auth.uid === $uid && root.child('approvedRoomAccess').child(auth.uid).child('approved').val() === true && root.child('roomAccess').child(auth.uid).child($roomId).child('expiresAtMs').val() > now"
+              },
+              "role": {
+                ".write": "auth != null && auth.uid === $uid && root.child('approvedRoomAccess').child(auth.uid).child('approved').val() === true && root.child('roomAccess').child(auth.uid).child($roomId).child('expiresAtMs').val() > now"
+              },
+              "displayName": {
+                ".write": "auth != null && auth.uid === $uid && root.child('approvedRoomAccess').child(auth.uid).child('approved').val() === true && root.child('roomAccess').child(auth.uid).child($roomId).child('expiresAtMs').val() > now",
+                ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 48"
+              },
+              "$other": {
+                ".validate": false
+              }
             }
           }
         },

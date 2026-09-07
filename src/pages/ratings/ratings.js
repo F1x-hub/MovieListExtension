@@ -426,7 +426,16 @@ class RatingsPageManager {
                      this.editRating(movieId, r, c);
                      break;
                  }
-            }
+                 case 'open-review':
+                     if (movieId) {
+                         const params = new URLSearchParams({ movieId: String(movieId) });
+                         if (ratingId) params.set('reviewId', String(ratingId));
+                         window.location.href = chrome.runtime.getURL(
+                             `src/pages/movie-details/movie-details.html?${params.toString()}`
+                         );
+                     }
+                     break;
+             }
         });
         
         // Modal close buttons
@@ -1890,6 +1899,7 @@ class RatingsPageManager {
             this.attachGridEventListeners(grid);
             grid.setAttribute('data-listeners-attached', 'true');
         }
+
     }
 
     attachGridEventListeners(grid) {
@@ -2443,7 +2453,7 @@ class RatingsPageManager {
     }
 
     showMovieDetails(movieId) {
-        const movieData = this.filteredMovies.find(m => m.movie?.kinopoiskId === movieId);
+        const movieData = this.filteredMovies.find(m => String(this.getMovieId(m)) === String(movieId));
         if (!movieData) return;
         
         const { movie, rating, averageRating, ratingsCount, comment } = movieData;

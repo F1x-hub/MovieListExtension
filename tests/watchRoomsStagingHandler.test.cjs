@@ -1,5 +1,15 @@
 const assert = require('node:assert/strict');
-const { grantRoomAccess, memberDisplayName, normalizeProviderHint, normalizeProviderSource, revokeRoomAccess, syncRoomMemberRole } = require('../functions/watchRoomsStaging');
+const {
+  STAGING_MAX_INVITE_USES,
+  STAGING_MAX_PARTICIPANTS,
+  createWatchRoomsStagingHandler,
+  grantRoomAccess,
+  memberDisplayName,
+  normalizeProviderHint,
+  normalizeProviderSource,
+  revokeRoomAccess,
+  syncRoomMemberRole,
+} = require('../functions/watchRoomsStaging');
 
 const updates = [];
 const rtdb = {
@@ -54,12 +64,50 @@ const rtdb = {
   await revokeRoomAccess(rtdb, { userId: 'viewer', roomId: 'room-1' });
   assert.equal(updates[2]['roomAccess/viewer/room-1'], null);
   assert.equal(updates[2]['roomLive/room-1/presence/viewer'], null);
+  assert.equal(updates[2]['roomLive/room-1/presenceV2/viewer'], null);
   await syncRoomMemberRole(rtdb, { userId: 'viewer', roomId: 'room-1', role: 'controller' });
   assert.deepEqual(updates[3], {
     'roomAccess/viewer/room-1/role': 'controller',
     'roomLive/room-1/members/viewer/role': 'controller',
   });
   assert.equal(Object.keys(updates[3]).some((key) => /(?:presence|state|approvedRoomAccess)/.test(key)), false);
+  assert.equal(STAGING_MAX_PARTICIPANTS, 10);
+  assert.equal(STAGING_MAX_INVITE_USES, 9);
+
+  let createdRoomArgs;
+  const handler = createWatchRoomsStagingHandler({
+    verifyIdToken: async () => ({ uid: 'owner', name: 'Owner' }),
+    getRealtimeDatabase: () => rtdb,
+    service: {
+      createRoomWithInvite: async (args) => {
+        createdRoomArgs = args;
+        return {
+          room: {
+            roomId: 'handler-room',
+            role: 'owner',
+            expiresAtMs: Date.now() + 60_000,
+            content: room.content,
+          },
+          joinCode: 'invite-1.secret',
+        };
+      },
+    },
+  });
+  const response = {
+    statusCode: 200,
+    status(code) { this.statusCode = code; return this; },
+    json(value) { this.body = value; },
+    send(value) { this.body = value; },
+    set() {},
+  };
+  await handler({
+    method: 'POST',
+    body: { action: 'create', requestId: 'handler-create-0001' },
+    get(header) { return header === 'authorization' ? 'Bearer token' : ''; },
+  }, response);
+  assert.equal(createdRoomArgs.maxParticipants, STAGING_MAX_PARTICIPANTS);
+  assert.equal(createdRoomArgs.maxUses, STAGING_MAX_INVITE_USES);
+  assert.equal(response.statusCode, 201);
   console.log('watchRoomsStagingHandler.test.cjs: staging ACL is immediately mirrored to RTDB');
 })().catch((error) => {
   console.error(error);

@@ -189,20 +189,113 @@ const service = createWatchRoomService({
 
   const stagingDb = new FakeDb();
   stagingDb.docs.set("users/owner", { approvalStatus: "approved", displayName: "Owner" });
+  for (let index = 1; index <= 10; index += 1) {
+    stagingDb.docs.set(`users/guest-${index}`, { approvalStatus: "approved", displayName: `Guest ${index}` });
+  }
+  let stagingSequence = 0;
   const stagingService = createWatchRoomService({
     db: stagingDb,
     now: () => now,
-    randomId: () => "staging-room",
+    randomId: () => `staging-${++stagingSequence}`,
     randomBytes: () => Buffer.alloc(32, 7),
     collectionPrefix: "watchRoomsStaging",
     emitAclOutbox: false,
   });
-  await stagingService.createRoom({
+  const stagingRoom = await stagingService.createRoom({
     actorUid: "owner",
     requestId: "staging-create-0001",
     content: { kinopoiskId: 2976, mediaType: "movie", title: "Фаворит" },
   });
-  assert.strictEqual(stagingDb.docs.has("watchRoomsStagingAclOutbox/staging-room_owner_1"), false);
+  assert.strictEqual(stagingRoom.maxParticipants, 20, "generic service keeps its 20-member ceiling");
+  assert.strictEqual(stagingDb.docs.has("watchRoomsStagingAclOutbox/staging-1_owner_1"), false);
+
+  const sharedInvite = await stagingService.createInvite({
+    actorUid: "owner",
+    requestId: "staging-invite-0001",
+    roomId: stagingRoom.roomId,
+    maxUses: 9,
+  });
+  for (let index = 1; index <= 9; index += 1) {
+    await stagingService.redeemInvite({
+      actorUid: `guest-${index}`,
+      requestId: `staging-join-${String(index).padStart(3, "0")}`,
+      inviteId: sharedInvite.inviteId,
+      secret: sharedInvite.secret,
+    });
+  }
+  assert.strictEqual(stagingDb.docs.get(`watchRoomsStaging/${stagingRoom.roomId}`).memberCount, 10);
+  await assert.rejects(
+    () => stagingService.redeemInvite({
+      actorUid: "guest-10",
+      requestId: "staging-join-010",
+      inviteId: sharedInvite.inviteId,
+      secret: sharedInvite.secret,
+    }),
+    (error) => error.code === "INVITE_EXHAUSTED"
+  );
+
+  const idempotentDb = new FakeDb();
+  idempotentDb.docs.set("users/owner", { approvalStatus: "approved", displayName: "Owner" });
+  let idempotentSequence = 0;
+  const idempotentService = createWatchRoomService({
+    db: idempotentDb,
+    now: () => now,
+    randomId: () => `idempotent-${++idempotentSequence}`,
+    randomBytes: () => Buffer.alloc(32, 7),
+    collectionPrefix: "watchRoomsStaging",
+    emitAclOutbox: false,
+  });
+  const firstCreate = await idempotentService.createRoomWithInvite({
+    actorUid: "owner",
+    requestId: "idempotent-create-0001",
+    maxParticipants: 10,
+    maxUses: 9,
+    content: { kinopoiskId: 2976, mediaType: "movie", title: "Первый запрос" },
+  });
+  const repeatedCreate = await idempotentService.createRoomWithInvite({
+    actorUid: "owner",
+    requestId: "idempotent-create-0001",
+    maxParticipants: 10,
+    maxUses: 9,
+    content: { kinopoiskId: 9999, mediaType: "movie", title: "Повторный запрос" },
+  });
+  assert.deepStrictEqual(repeatedCreate, firstCreate, "create retry reuses the original room and invite");
+  assert.equal([...idempotentDb.docs.keys()].filter((path) => path.startsWith("watchRoomsStaging/")).length, 2,
+    "retry does not create a second room or member document");
+  assert.equal([...idempotentDb.docs.keys()].filter((path) => path.startsWith("watchRoomsStagingInvites/")).length, 1,
+    "retry does not create a second invite");
+  assert.equal(idempotentDb.docs.get("watchRoomsStagingCreateRequests/owner_idempotent-create-0001").joinCode,
+    firstCreate.joinCode);
+
+  const capacityRoom = await stagingService.createRoom({
+    actorUid: "owner",
+    requestId: "staging-create-0002",
+    maxParticipants: 10,
+    content: { kinopoiskId: 2976, mediaType: "movie", title: "Фаворит" },
+  });
+  const capacityInvite = await stagingService.createInvite({
+    actorUid: "owner",
+    requestId: "staging-invite-0002",
+    roomId: capacityRoom.roomId,
+    maxUses: 19,
+  });
+  for (let index = 1; index <= 9; index += 1) {
+    await stagingService.redeemInvite({
+      actorUid: `guest-${index}`,
+      requestId: `capacity-join-${String(index).padStart(2, "0")}`,
+      inviteId: capacityInvite.inviteId,
+      secret: capacityInvite.secret,
+    });
+  }
+  await assert.rejects(
+    () => stagingService.redeemInvite({
+      actorUid: "guest-10",
+      requestId: "capacity-join-10",
+      inviteId: capacityInvite.inviteId,
+      secret: capacityInvite.secret,
+    }),
+    (error) => error.code === "ROOM_FULL"
+  );
 
   console.log("watchRoomService.test.cjs: durable room, invite, join, and leave contracts passed");
 })().catch((error) => {

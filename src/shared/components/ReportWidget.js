@@ -15,6 +15,7 @@ class ReportWidget {
         this.btnText = null;
         this.reportBody = null;
         this.lastFocusedElement = null;
+        this.reportContext = null;
 
         this.selectedFile = null;
         this.MAX_CHARS = 5000;
@@ -113,7 +114,10 @@ class ReportWidget {
 
     attachEventListeners() {
         // Toggle Drawer
-        this.triggerBtn.addEventListener('click', () => this.openDrawer());
+        this.triggerBtn.addEventListener('click', () => {
+            this.reportContext = null;
+            this.openDrawer();
+        });
         this.closeBtn.addEventListener('click', () => this.closeDrawer());
         this.overlay.addEventListener('click', () => this.closeDrawer());
         this.drawer.addEventListener('keydown', (event) => this.handleDrawerKeydown(event));
@@ -192,6 +196,18 @@ class ReportWidget {
                 this.textarea.focus();
             }
         }, 100);
+    }
+
+    openForContext(context) {
+        this.reportContext = context && context.targetType === 'rating-review'
+            ? {
+                targetType: 'rating-review',
+                targetRatingId: String(context.targetRatingId || ''),
+                targetMovieId: Number(context.targetMovieId),
+                targetAuthorId: String(context.targetAuthorId || '')
+            }
+            : null;
+        this.openDrawer();
     }
 
     closeDrawer() {
@@ -346,7 +362,7 @@ class ReportWidget {
             }
 
             const pageUrl = window.location.href;
-            await window.firebaseManager.addReport(text, file, pageUrl);
+            await window.firebaseManager.addReport(text, file, pageUrl, this.reportContext);
 
             this.showMessage('Ваше сообщение успешно отправлено!', 'success');
             
@@ -355,6 +371,7 @@ class ReportWidget {
                 this.closeDrawer();
                 this.resetForm();
                 this.setLoading(false);
+                this.reportContext = null;
             }, 2000);
 
         } catch (error) {
