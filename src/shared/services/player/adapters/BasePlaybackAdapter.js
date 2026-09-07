@@ -166,7 +166,23 @@ class BasePlaybackAdapter {
         }
 
         const requestId = `selection-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const requestSequence = (this._selectionRequestSequence || 0) + 1;
+        this._selectionRequestSequence = requestSequence;
         const timeoutMs = context.timeoutMs || 5000;
+        let expectedOrigin = null;
+        try {
+            expectedOrigin = new URL(iframe.src || iframe.getAttribute?.('src') || '', window.location.href).origin;
+        } catch {
+            expectedOrigin = null;
+        }
+        if (!expectedOrigin || expectedOrigin === 'null') {
+            console.warn('[ExFsBridgeTrace] adapter bridge rejected invalid iframe origin', {
+                adapterId: this.id,
+                requestId,
+                iframeSrc: iframe.src || iframe.getAttribute?.('src') || null
+            });
+            return false;
+        }
         console.info('[ExFsBridgeTrace] adapter bridge request', {
             adapterId: this.id,
             requestId,
@@ -187,6 +203,33 @@ class BasePlaybackAdapter {
             const onMessage = event => {
                 const data = event?.data;
                 if (!data || data.type !== 'PLAYBACK_SELECTION_RESULT' || data.requestId !== requestId) return;
+                if (requestSequence !== this._selectionRequestSequence) {
+                    finish(false);
+                    return;
+                }
+                if (event.source !== iframe.contentWindow || event.origin !== expectedOrigin) {
+                    console.warn('[ExFsBridgeTrace] adapter bridge ignored untrusted result', {
+                        adapterId: this.id,
+                        requestId,
+                        sourceMatches: event.source === iframe.contentWindow,
+                        originMatches: event.origin === expectedOrigin
+                    });
+                    return;
+                }
+                const responseSeason = Number(data.seasonNumber);
+                const responseEpisode = Number(data.episodeNumber);
+                if (data.providerId && data.providerId !== this.id
+                    || responseSeason !== Number(selection.seasonNumber)
+                    || responseEpisode !== Number(selection.episodeNumber)) {
+                    console.warn('[ExFsBridgeTrace] adapter bridge ignored mismatched result', {
+                        adapterId: this.id,
+                        requestId,
+                        responseProviderId: data.providerId || null,
+                        responseSeason,
+                        responseEpisode
+                    });
+                    return;
+                }
                 console.info('[ExFsBridgeTrace] adapter bridge result received', {
                     adapterId: this.id,
                     requestId,
@@ -196,7 +239,7 @@ class BasePlaybackAdapter {
                     episodeNumber: data.episodeNumber,
                     messageOrigin: event.origin || null
                 });
-                finish(data.status === 'DISPATCHED' || data.status === 'APPLIED');
+                finish(data.status === 'APPLIED');
             };
             const timeout = setTimeout(() => {
                 console.warn('[ExFsBridgeTrace] adapter bridge timeout', {
@@ -214,7 +257,7 @@ class BasePlaybackAdapter {
                 providerId: this.id,
                 seasonNumber: selection.seasonNumber,
                 episodeNumber: selection.episodeNumber
-            }, '*');
+            }, expectedOrigin);
             console.info('[ExFsBridgeTrace] adapter bridge postMessage sent', {
                 adapterId: this.id,
                 requestId

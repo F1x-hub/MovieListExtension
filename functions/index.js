@@ -19,13 +19,20 @@ const {
 const { createWatchRoomService } = require("./watchRoomService");
 const { createWatchRoomsStagingHandler } = require("./watchRoomsStaging");
 const { createExpiredWatchRoomCleanup } = require("./watchRoomCleanup");
-const { selectUniqueMovieRatings } = require("./ratingAggregation");
+const {
+  buildMovieRatingProjection,
+  isAggregateRelevantRatingChange,
+} = require("./ratingAggregation");
+const { scanRatingProjectionIntegrity } = require("./ratingIntegrityService");
 
 const app = initializeApp();
 const db = getFirestore(app);
 const TMDB_API_TOKEN = defineSecret("TMDB_API_TOKEN");
 const KINOPOISK_API_KEYS = defineSecret("KINOPOISK_API_KEYS");
 const WATCH_ROOM_STAGING_DATABASE_URL = defineString("WATCH_ROOM_STAGING_DATABASE_URL");
+const RATING_INTEGRITY_AUTO_REPAIR = defineString("RATING_INTEGRITY_AUTO_REPAIR", {
+  default: "false",
+});
 const verifyAdminRequest = createAdminAuthVerifier({ auth: getAuth(), db });
 let providerKeyManagementHandler = null;
 const providerKeyPools = new Map();
@@ -185,8 +192,7 @@ exports.tmdbProxy = onRequest(
 );
 
 /**
- * Temporary two-client proof surface. It is intentionally private-only,
- * limited to two approved users, and uses the separately provisioned staging
+ * Temporary private staging proof surface. It uses the separately provisioned staging
  * RTDB instance. It stores no playback URLs or credentials.
  */
 exports.watchRoomsStaging = onRequest(
@@ -227,6 +233,11 @@ exports.aggregateMovieRatings = onDocumentWritten("ratings/{ratingId}", async (e
   const dataAfter = event.data?.after?.exists ? event.data.after.data() : null;
   const dataBefore = event.data?.before?.exists ? event.data.before.data() : null;
 
+  if (!isAggregateRelevantRatingChange(dataBefore, dataAfter)) {
+    console.log(`[Cloud Function v2] Ignored text-only rating update ${event.params?.ratingId || "unknown"}`);
+    return null;
+  }
+
   const movieId = (dataAfter && dataAfter.movieId) || (dataBefore && dataBefore.movieId);
   if (!movieId) return null;
 
@@ -240,7 +251,7 @@ exports.aggregateMovieRatings = onDocumentWritten("ratings/{ratingId}", async (e
     .where("movieId", "in", movieIdCandidates)
     .get();
 
-  const currentRatings = selectUniqueMovieRatings(
+  const projection = buildMovieRatingProjection(
     ratingsSnapshot.docs.map((doc) => ({
       id: doc.id,
       data: doc.data(),
@@ -249,50 +260,16 @@ exports.aggregateMovieRatings = onDocumentWritten("ratings/{ratingId}", async (e
     })),
     numMovieId
   );
-  let ratingsSum = 0;
-  let latestTimestamp = null;
-
-  currentRatings.forEach(({ data: ratingData, updateTime, createTime }) => {
-    ratingsSum += Number(ratingData.rating);
-
-    const ratingTimestamp = ratingData.updatedAt || ratingData.createdAt || updateTime || createTime;
-    if (ratingTimestamp) {
-      const ratingMillis = ratingTimestamp.toMillis ? ratingTimestamp.toMillis() : new Date(ratingTimestamp).getTime();
-      const latestMillis = latestTimestamp
-        ? (latestTimestamp.toMillis ? latestTimestamp.toMillis() : new Date(latestTimestamp).getTime())
-        : 0;
-      if (Number.isFinite(ratingMillis) && ratingMillis > latestMillis) {
-        latestTimestamp = ratingTimestamp;
-      }
-    }
-  });
-
-  const ratingsCount = currentRatings.length;
-
-  const avgRating = ratingsCount > 0 ? Math.round((ratingsSum / ratingsCount) * 10) / 10 : 0;
 
   const movieRef = db.collection("movies").doc(movieId.toString());
-  if (ratingsCount === 0) {
-    await movieRef.delete();
-    console.log(`[Cloud Function v2] Deleted unrated movie ${movieId}`);
-    return null;
-  }
+  if (!projection) return null;
 
-  // Update the aggregated movie document.
-  await movieRef.set(
-    {
-      kinopoiskId: numMovieId,
-      ratingsCount,
-      ratingsSum,
-      avgRating,
-      hasCommunityRating: ratingsCount > 0,
-      hasRatings: ratingsCount > 0,
-      lastRatingUpdatedAt: latestTimestamp,
-    },
-    { merge: true }
-  );
+  // Aggregates are derived state. Keep the movie document so metadata remains
+  // available for repair and make the zero-rating state explicit instead of
+  // deleting the projection from an eventually ordered trigger.
+  await movieRef.set(projection, { merge: true });
 
-  console.log(`[Cloud Function v2] Aggregated movie ${movieId}: count=${ratingsCount}, sum=${ratingsSum}, avg=${avgRating}`);
+  console.log(`[Cloud Function v2] Aggregated movie ${movieId}: count=${projection.ratingsCount}, sum=${projection.ratingsSum}, avg=${projection.avgRating}`);
   return null;
 });
 
@@ -373,101 +350,109 @@ exports.aggregateCommentReactions = onDocumentWritten("commentReactions/{reactio
  * (from updatedAt or createdAt on rating docs), NOT FieldValue.serverTimestamp().
  * Using serverTimestamp() would give all movies the same time, destroying sort order.
  *
- * Call via HTTP GET after deploying:
- *   curl https://<region>-<project>.cloudfunctions.net/backfillMovieAggregates
+ * Call with an admin ID token after deploying. GET/POST is dry-run by default;
+ * add ?apply=true only after inspecting the complete response.
  *
  * Safe to call multiple times — it's idempotent.
  */
 exports.backfillMovieAggregates = onRequest(
-  { timeoutSeconds: 540, memory: "512MiB" },
+  { region: "us-central1", timeoutSeconds: 540, memory: "512MiB" },
   async (req, res) => {
     try {
-      console.log("[backfill] Starting full movie aggregation backfill...");
-
-      // Step 1: Get ALL ratings
-      const allRatingsSnapshot = await db.collection("ratings").get();
-      console.log(`[backfill] Total rating documents: ${allRatingsSnapshot.size}`);
-
-      // Step 2: Group by movieId — aggregate counts AND track latest timestamp
-      const movieAggregates = new Map();
-
-      allRatingsSnapshot.forEach((doc) => {
-        const data = doc.data();
-        const movieId = data.movieId;
-        if (!movieId) return;
-
-        const key = movieId.toString();
-        if (!movieAggregates.has(key)) {
-          movieAggregates.set(key, { count: 0, sum: 0, latestTimestamp: null });
-        }
-
-        const agg = movieAggregates.get(key);
-        const ratingVal = Number(data.rating);
-        if (!isNaN(ratingVal)) {
-          agg.sum += ratingVal;
-          agg.count += 1;
-        }
-
-        // Track the latest rating timestamp for this movie.
-        // Prefer updatedAt (rating was edited), fall back to createdAt.
-        const ratingTs = data.updatedAt || data.createdAt || doc.updateTime || doc.createTime;
-        if (ratingTs) {
-          // Convert to millis for comparison (Firestore Timestamps have .toMillis())
-          const tsMillis = ratingTs.toMillis ? ratingTs.toMillis() : new Date(ratingTs).getTime();
-          const currentLatest = agg.latestTimestamp
-            ? (agg.latestTimestamp.toMillis ? agg.latestTimestamp.toMillis() : new Date(agg.latestTimestamp).getTime())
-            : 0;
-          if (tsMillis > currentLatest) {
-            agg.latestTimestamp = ratingTs;
-          }
-        }
-      });
-
-      console.log(`[backfill] Unique movies with ratings: ${movieAggregates.size}`);
-
-      // Step 3: Batch-update all movie documents
-      const BATCH_SIZE = 500;
-      const entries = Array.from(movieAggregates.entries());
-      let updatedCount = 0;
-
-      for (let i = 0; i < entries.length; i += BATCH_SIZE) {
-        const batch = db.batch();
-        const chunk = entries.slice(i, i + BATCH_SIZE);
-
-        chunk.forEach(([movieIdStr, agg]) => {
-          const movieRef = db.collection("movies").doc(movieIdStr);
-          const avgRating = agg.count > 0
-            ? Math.round((agg.sum / agg.count) * 10) / 10
-            : 0;
-
-          batch.set(
-            movieRef,
-            {
-              kinopoiskId: Number(movieIdStr),
-              ratingsCount: agg.count,
-              ratingsSum: agg.sum,
-              avgRating,
-              hasCommunityRating: agg.count > 0,
-              hasRatings: agg.count > 0,
-              // Use the actual latest rating timestamp, not the backfill execution time.
-              lastRatingUpdatedAt: agg.latestTimestamp,
-            },
-            { merge: true }
-          );
-        });
-
-        await batch.commit();
-        updatedCount += chunk.length;
-        console.log(`[backfill] Updated batch ${Math.floor(i / BATCH_SIZE) + 1}: ${chunk.length} docs (total: ${updatedCount}/${entries.length})`);
+      if (!setAdminCors(req, res)) {
+        res.status(403).json({ success: false, error: "Origin is not allowed" });
+        return;
       }
+      if (req.method === "OPTIONS") {
+        res.status(204).send("");
+        return;
+      }
+      if (!["GET", "POST"].includes(req.method)) {
+        res.status(405).json({ success: false, error: "Only GET or POST is supported" });
+        return;
+      }
+      await verifyAdminRequest(req);
 
-      const summary = `Backfill complete. Processed ${allRatingsSnapshot.size} ratings across ${movieAggregates.size} movies. Updated ${updatedCount} movie documents.`;
-      console.log(`[backfill] ${summary}`);
-      res.status(200).json({ success: true, message: summary });
+      const apply = String(req.query.apply || "").toLowerCase() === "true";
+      const result = await scanRatingProjectionIntegrity({ db, apply });
+      const response = { success: true, dryRun: !apply, ...result };
+      console.log("[backfill]", response);
+      res.status(200).json(response);
     } catch (error) {
       console.error("[backfill] Error:", error);
-      res.status(500).json({ success: false, error: error.message });
+      const statusCode = Number.isInteger(error.statusCode) ? error.statusCode : 500;
+      res.status(statusCode).json({ success: false, error: error.message });
     }
+  }
+);
+
+/**
+ * Bounded integrity check for the ratings -> movies projection.
+ * Dry-run is the default; ?apply=true requires an admin token and repairs only
+ * derived movie fields through the shared projection calculator.
+ */
+exports.auditRatingIntegrity = onRequest(
+  {
+    region: "us-central1",
+    timeoutSeconds: 540,
+    memory: "512MiB",
+  },
+  async (req, res) => {
+    try {
+      if (!setAdminCors(req, res)) {
+        res.status(403).json({ success: false, error: "Origin is not allowed" });
+        return;
+      }
+      if (req.method === "OPTIONS") {
+        res.status(204).send("");
+        return;
+      }
+      if (req.method !== "GET" && req.method !== "POST") {
+        res.status(405).json({ success: false, error: "Only GET or POST is supported" });
+        return;
+      }
+      await verifyAdminRequest(req);
+
+      const apply = String(req.query.apply || "").toLowerCase() === "true";
+      const rawMovieIds = String(req.query.movieIds || "").trim();
+      const movieIds = rawMovieIds
+        ? rawMovieIds.split(",").map((value) => value.trim()).filter(Boolean)
+        : null;
+      const result = await scanRatingProjectionIntegrity({ db, apply, movieIds });
+      res.status(200).json({ success: true, dryRun: !apply, ...result });
+    } catch (error) {
+      console.error("[auditRatingIntegrity] Error:", error);
+      const statusCode = Number.isInteger(error.statusCode) ? error.statusCode : 500;
+      res.status(statusCode).json({
+        success: false,
+        error: statusCode === 500 ? "Rating integrity audit is temporarily unavailable" : error.message,
+      });
+    }
+  }
+);
+
+exports.auditRatingIntegrityDaily = onSchedule(
+  {
+    schedule: "45 4 * * *",
+    timeZone: "Asia/Tbilisi",
+    region: "us-central1",
+    timeoutSeconds: 540,
+    memory: "512MiB",
+    maxInstances: 1,
+    retryCount: 1,
+    maxRetrySeconds: 300,
+  },
+  async () => {
+    const apply = String(RATING_INTEGRITY_AUTO_REPAIR.value()).toLowerCase() === "true";
+    const result = await scanRatingProjectionIntegrity({ db, apply });
+    console.log("[auditRatingIntegrityDaily]", {
+      ...result,
+      dryRun: !apply,
+    });
+    if (result.violationCount > 0 && !apply) {
+      console.warn("[auditRatingIntegrityDaily] Violations found while auto-repair is disabled");
+    }
+    return result;
   }
 );
 
@@ -476,9 +461,23 @@ exports.backfillMovieAggregates = onRequest(
  * Use ?dryRun=true to inspect candidates or ?confirm=true to delete them.
  */
 exports.cleanupUnratedMovies = onRequest(
-  { timeoutSeconds: 540, memory: "512MiB" },
+  { region: "us-central1", timeoutSeconds: 540, memory: "512MiB" },
   async (req, res) => {
     try {
+      if (!setAdminCors(req, res)) {
+        res.status(403).json({ success: false, error: "Origin is not allowed" });
+        return;
+      }
+      if (req.method === "OPTIONS") {
+        res.status(204).send("");
+        return;
+      }
+      if (req.method !== "GET" && req.method !== "POST") {
+        res.status(405).json({ success: false, error: "Only GET or POST is supported" });
+        return;
+      }
+      await verifyAdminRequest(req);
+
       const dryRun = String(req.query.dryRun || "").toLowerCase() === "true";
       const confirmed = String(req.query.confirm || "").toLowerCase() === "true";
       if (!dryRun && !confirmed) {
@@ -492,6 +491,12 @@ exports.cleanupUnratedMovies = onRequest(
       let lastDoc = null;
       let matchedCount = 0;
       let deletedCount = 0;
+      const ratingsSnapshot = await db.collection("ratings").get();
+      const ratedMovieIds = new Set(
+        ratingsSnapshot.docs
+          .map((doc) => String(doc.data()?.movieId ?? "").trim())
+          .filter(Boolean)
+      );
 
       while (true) {
         let query = db.collection("movies").orderBy("__name__").limit(500);
@@ -499,7 +504,11 @@ exports.cleanupUnratedMovies = onRequest(
         const snapshot = await query.get();
         if (snapshot.empty) break;
 
-        const staleDocs = snapshot.docs.filter((doc) => doc.data().hasCommunityRating !== true);
+        const staleDocs = snapshot.docs.filter((doc) => {
+          const data = doc.data();
+          const movieId = String(data.kinopoiskId ?? doc.id).trim();
+          return data.hasCommunityRating !== true && !ratedMovieIds.has(movieId);
+        });
         matchedCount += staleDocs.length;
 
         if (confirmed && staleDocs.length > 0) {

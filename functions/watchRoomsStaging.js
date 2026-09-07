@@ -1,6 +1,8 @@
 const { createWatchRoomError } = require("./watchRoomService");
 
 const EXTENSION_ORIGIN = "chrome-extension://dgdejomdgiabgcfijcdhjefijdfiemhd";
+const STAGING_MAX_PARTICIPANTS = 10;
+const STAGING_MAX_INVITE_USES = STAGING_MAX_PARTICIPANTS - 1;
 
 function setStagingCors(req, res) {
   const origin = req.get?.("origin");
@@ -102,6 +104,7 @@ async function revokeRoomAccess(rtdb, { userId, roomId }) {
     [`roomAccess/${userId}/${roomId}`]: null,
     [`roomLive/${roomId}/members/${userId}`]: null,
     [`roomLive/${roomId}/presence/${userId}`]: null,
+    [`roomLive/${roomId}/presenceV2/${userId}`]: null,
     [`roomLive/${roomId}/readiness/${userId}`]: null,
   });
 }
@@ -133,20 +136,15 @@ function createWatchRoomsStagingHandler({ service, verifyIdToken, getRealtimeDat
       const rtdb = getRealtimeDatabase();
 
       if (action === "create") {
-        const inviteRequestId = `${requestId.slice(0, 120)}-invite`;
-        const room = await service.createRoom({
+        const created = await service.createRoomWithInvite({
           actorUid,
           requestId,
           visibility: "private",
-          maxParticipants: 2,
+          maxParticipants: STAGING_MAX_PARTICIPANTS,
+          maxUses: STAGING_MAX_INVITE_USES,
           content: req.body?.content,
         });
-        const invite = await service.createInvite({
-          actorUid,
-          requestId: inviteRequestId,
-          roomId: room.roomId,
-          maxUses: 1,
-        });
+        const room = created.room;
         await grantRoomAccess(rtdb, {
           userId: actorUid,
           room,
@@ -159,7 +157,7 @@ function createWatchRoomsStagingHandler({ service, verifyIdToken, getRealtimeDat
         });
         res.status(201).json({
           room,
-          joinCode: `${invite.inviteId}.${invite.secret}`,
+          joinCode: created.joinCode,
         });
         return;
       }
@@ -213,6 +211,8 @@ function createWatchRoomsStagingHandler({ service, verifyIdToken, getRealtimeDat
 
 module.exports = {
   EXTENSION_ORIGIN,
+  STAGING_MAX_INVITE_USES,
+  STAGING_MAX_PARTICIPANTS,
   createWatchRoomsStagingHandler,
   grantRoomAccess,
   memberDisplayName,

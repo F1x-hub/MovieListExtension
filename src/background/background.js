@@ -1,4 +1,5 @@
 try {
+    importScripts('../shared/config/rating.config.js');
     importScripts('../shared/config/kinopoisk.config.js');
     importScripts('../shared/utils/IconUtils.js');
     importScripts('../shared/config/spotify.config.js');
@@ -7,6 +8,23 @@ try {
 } catch (e) {
     console.error('Failed to import scripts:', e);
 }
+
+const RETIRED_RATINGS_CACHE_NAME = 'ratings-sphere-posters-v2';
+
+async function removeRetiredRatingsPosterCache() {
+    if (typeof caches === 'undefined') return;
+
+    try {
+        const deleted = await caches.delete(RETIRED_RATINGS_CACHE_NAME);
+        if (deleted) {
+            console.info('[Ratings] Removed retired poster cache');
+        }
+    } catch (error) {
+        console.warn('[Ratings] Failed to remove retired poster cache:', error);
+    }
+}
+
+void removeRetiredRatingsPosterCache();
 
 chrome.runtime.onInstalled.addListener(() => {
     console.log('Movie Rating Extension installed');
@@ -302,25 +320,25 @@ async function checkWatchlistStatusViaAPI(userId, movieId) {
     }
 }
 
-async function addRatingViaAPI(movieId, movieTitle, posterPath, rating, comment) {
+async function addRatingViaAPI(movieId, movieTitle, posterPath, rating, comment, review, hasReview = false) {
     try {
         const token = await getIdToken();
         const authenticatedUser = await getAuthenticatedUser();
         const { userId: authenticatedUserId, userName, userPhoto } = authenticatedUser;
 
+        if (typeof RatingConfig === 'undefined') {
+            throw new Error('RatingConfig is not loaded');
+        }
         const normalizedMovieId = Number(movieId);
         const normalizedRating = Number(rating);
-        const normalizedComment = String(comment || '').trim();
+        const normalizedComment = RatingConfig.normalizeComment(comment);
+        const normalizedReview = hasReview ? RatingConfig.normalizeReview(review) : null;
         if (!Number.isInteger(normalizedMovieId) || normalizedMovieId <= 0) {
             throw new Error('Movie ID must be a positive integer');
         }
         if (!Number.isInteger(normalizedRating) || normalizedRating < 1 || normalizedRating > 10) {
             throw new Error('Rating must be an integer between 1 and 10');
         }
-        if (normalizedComment.length > 500) {
-            throw new Error('Comment must be 500 characters or less');
-        }
-
         const projectId = 'movielistdb-13208';
         const docId = `${authenticatedUserId}_${normalizedMovieId}`;
         const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/ratings/${encodeURIComponent(docId)}`;
@@ -341,6 +359,9 @@ async function addRatingViaAPI(movieId, movieTitle, posterPath, rating, comment)
                 updatedAt: { timestampValue: now }
             }
         };
+        if (hasReview) {
+            ratingData.fields.review = { stringValue: normalizedReview };
+        }
 
         const createResponse = await fetch(`${url}?currentDocument.exists=false`, {
             method: 'PATCH',
@@ -370,6 +391,7 @@ async function addRatingViaAPI(movieId, movieTitle, posterPath, rating, comment)
             'userId', 'userName', 'userPhoto', 'movieId', 'movieTitle',
             'posterPath', 'rating', 'comment', 'updatedAt'
         ];
+        if (hasReview) updateFields.push('review');
         const updateParams = updateFields
             .map(field => `updateMask.fieldPaths=${encodeURIComponent(field)}`)
             .join('&');
@@ -739,7 +761,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             return false;
         }
         console.log('[Background] Received trusted ADD_RATING request for movie:', message.movieId, 'rating:', message.rating);
-        addRatingViaAPI(message.movieId, message.movieTitle, message.posterPath, message.rating, message.comment)
+        addRatingViaAPI(
+            message.movieId,
+            message.movieTitle,
+            message.posterPath,
+            message.rating,
+            message.comment,
+            message.review,
+            Object.prototype.hasOwnProperty.call(message, 'review')
+        )
             .then(() => {
                 console.log('[Background] Successfully added rating via API');
                 sendResponse({ success: true });

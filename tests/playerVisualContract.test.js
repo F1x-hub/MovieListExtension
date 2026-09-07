@@ -15,8 +15,9 @@ assert.doesNotMatch(css, /\.watch-btn(?:\b|-)/, 'legacy Netflix-red watch button
 assert.doesNotMatch(css, /height:\s*(?:80|70)vh\b/, 'player modal must not use fixed 80vh/70vh heights');
 assert.match(css, /aspect-ratio:\s*16\s*\/\s*9/, 'player viewport must use a 16:9 aspect ratio');
 assert.match(css, /body\.player-modal-open\s*\{[\s\S]*?overflow:\s*hidden/, 'open player must lock page scrolling');
-assert.match(css, /width:\s*min\(94vw,\s*1180px,\s*calc\(177\.78dvh\s*-\s*220px\)\)/, 'modal width must reserve vertical room for its controls');
-assert.match(css, /\.video-modal\s*>\s*\.video-body\s*\{[\s\S]*?overflow:\s*hidden\s*!important/, 'player body must not expose a vertical scrollbar');
+// Exact viewport fit is exercised in Chromium by torrentModalLayout.test.cjs.
+assert.match(css, /width:\s*min\(94vw,\s*1180px,\s*calc\(177\.78dvh\s*-\s*\d+px\)\)/, 'modal width must reserve vertical room for its controls');
+assert.match(css, /\.video-modal\s*>\s*\.video-body\s*\{[^}]*overflow-y:\s*auto\s*!important/, 'player body must allow access to the torrent workspace');
 
 const sourceListCss = css.match(/\.source-buttons-container\s*\{([\s\S]*?)\}/)?.[1] || '';
 assert.match(sourceListCss, /flex-wrap:\s*nowrap/, 'source buttons must stay on one row');
@@ -55,6 +56,15 @@ assert.match(cleaner, /bottomControls\.className = 'player-control-dock'/);
 assert.match(cleaner, /bottomControls\.style\.bottom = '14px'/, 'custom controls must use a floating dock');
 assert.match(cleaner, /centerPlayBtn\.style\.borderRadius = '20px'/, 'center action must use the modern squircle shape');
 assert.match(cleaner, /centerPlayBtn = document\.createElement\('button'\)/, 'center action must be a native keyboard control');
+assert.match(cleaner, /centerPlayBtn\.style\.top = '50%'/, 'center action must sit halfway down the surface');
+assert.match(cleaner, /centerPlayBtn\.style\.left = '50%'/, 'center action must sit halfway across the surface');
+assert.match(cleaner, /centerPlayBtn\.style\.transform = 'translate\(-50%, -50%\)'/, 'center action must be geometrically centered');
+assert.match(cleaner, /centerPlayBtn\.dataset\.icon = currentVid\.paused \? 'play' : 'pause'/, 'play and pause must expose their visual state');
+assert.match(cleaner, /\.native-player-wrapper \.player-center-action\[data-icon="play"\] svg/, 'only the Play glyph may receive its optical offset');
+assert.match(css, /\.video-container \.player-center-action\[data-icon="play"\] svg/, 'shared player CSS must scope the optical offset to Play');
+assert.match(cleaner, /playPauseBtn\.dataset\.icon = currentVid\.paused \? 'play' : 'pause'/, 'bottom Play and Pause states must be distinguishable for optical alignment');
+assert.match(cleaner, /player-control-button--primary\[data-icon="play"\] svg\s*\{[\s\S]*?translate\(-1\.5px, -0\.5px\)/, 'bottom Play glyph must compensate for its horizontal and vertical optical offset');
+assert.match(css, /player-control-button--primary\[data-icon="play"\] svg\s*\{[\s\S]*?translate\(-1\.5px, -0\.5px\)/, 'shared player CSS must keep the bottom Play glyph optically centered');
 assert.match(cleaner, /progressContainer\.className = 'player-progress-track'/);
 assert.doesNotMatch(cleaner, /const thumbTooltip = document\.createElement\('div'\)/, 'progress track must not create a duplicate time tooltip');
 assert.match(cleaner, /new GhostPlayer\(/, 'GhostPlayer must remain the single hover-preview owner');
@@ -65,5 +75,15 @@ assert.match(cleaner, /player-settings-menu__list::-webkit-scrollbar-button/, 'c
 assert.match(cleaner, /player-settings-menu__option\.is-active/, 'settings popup must use the shared monochrome active state');
 assert.match(cleaner, /function makeKeyboardActivatable/);
 assert.match(cleaner, /player-keyboard-action:focus-visible/);
+assert.match(cleaner, /const SUBTITLE_APPEARANCE_STORAGE_KEY = 'movieExtensionSubtitleAppearanceV1';/, 'player must read the shared subtitle appearance preference');
+assert.match(cleaner, /movie-extension-subtitle-host/, 'subtitle styling must remain scoped to the active native-player wrapper');
+assert.match(cleaner, /controlsSafetyOffset/, 'visible controls must reserve caption-safe space');
+assert.match(cleaner, /activeSubtitleResizeObserver/, 'caption positioning must react to player geometry changes');
+assert.match(cleaner, /chrome\.storage\.onChanged\.addListener/, 'an open player must react to saved subtitle changes');
+assert.match(cleaner, /const renderSubtitleAppearanceView = \(\)/, 'subtitle appearance must be editable inside the player');
+assert.match(cleaner, /Настройки субтитров/, 'subtitle track menu must expose its appearance settings');
+assert.match(cleaner, /player-subtitle-appearance__body/, 'in-player subtitle controls must have a scoped body');
+assert.match(cleaner, /persistSubtitleAppearance/, 'in-player subtitle controls must persist changes');
+assert.match(cleaner, /type: 'PLAYER_EPISODE_NAVIGATE'/, 'embedded arrows must request canonical host navigation');
 
 console.log('✅ Player visual contract tests passed!');

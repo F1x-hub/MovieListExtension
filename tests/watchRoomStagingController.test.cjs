@@ -7,6 +7,7 @@ const listenerErrors = new Map();
 const writes = [];
 const updatesToRtdb = [];
 const presenceLifecycle = [];
+const presenceSnapshot = (key, value) => ({ key, val: () => value });
 const rtdb = {
   ref(path = '') {
     return {
@@ -16,7 +17,11 @@ const rtdb = {
       },
       off() {},
       set(value) { writes.push({ path, value }); presenceLifecycle.push(`${path}:set`); return Promise.resolve(); },
-      update(value) { updatesToRtdb.push({ path, value }); return Promise.resolve(); },
+      update(value) {
+        updatesToRtdb.push({ path, value });
+        if (path.includes('/presence')) presenceLifecycle.push(`${path}:update`);
+        return Promise.resolve();
+      },
       remove() { writes.push({ path, value: null }); return Promise.resolve(); },
       onDisconnect() {
         return {
@@ -60,14 +65,31 @@ global.document = {
   controller.postToPlayer = () => {};
 
   await controller.connect({ roomId: 'room-1', expiresAtMs: Date.now() + 60_000 }, 'owner');
+  assert.equal(writes[0].path.startsWith('roomLive/room-1/presenceV2/owner/'), true);
+  assert.equal(writes.some(({ path }) => path.startsWith('roomLive/room-1/presence/')), false,
+    'new clients never write the legacy presence path');
   assert.deepEqual(writes[0], {
-    path: 'roomLive/room-1/presence/owner',
-    value: { connectedAtMs: writes[0].value.connectedAtMs, role: 'owner', displayName: 'Фикс' },
+    path: writes[0].path,
+    value: {
+      connectedAtMs: writes[0].value.connectedAtMs,
+      lastSeenAtMs: writes[0].value.lastSeenAtMs,
+      role: 'owner',
+      displayName: 'Фикс',
+    },
   });
-  assert.deepEqual(presenceLifecycle.slice(0, 2), [
-    'roomLive/room-1/presence/owner:arm-disconnect',
-    'roomLive/room-1/presence/owner:set',
-  ]);
+  assert.equal(presenceLifecycle[0].endsWith(':arm-disconnect'), true);
+  assert.equal(presenceLifecycle[1].endsWith(':set'), true);
+
+  const connectionStatuses = [];
+  controller.onStatus = (status) => connectionStatuses.push(status);
+  listeners.get('.info/connected:value')({ val: () => false });
+  assert.equal(controller.room.roomId, 'room-1', 'a transient RTDB disconnect preserves the room');
+  assert.equal(connectionStatuses.at(-1), 'Соединение с комнатой восстанавливается…');
+  listeners.get('.info/connected:value')({ val: () => true });
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(presenceLifecycle.some((entry) => entry.endsWith(':arm-disconnect')), true,
+    'reconnect re-arms server-side presence cleanup');
 
   listeners.get('roomLive/room-1/state:value')({ val: () => ({
     providerHint: 'kinogo', phase: 'paused', basePositionMs: 0, effectiveAtMs: Date.now(), revision: 0,
@@ -103,14 +125,42 @@ global.document = {
     controller: { role: 'controller', displayName: 'Помощник' },
     viewer: { role: 'viewer', displayName: 'Участник' },
   }) });
-  listeners.get('roomLive/room-1/presence:value')({ val: () => ({ viewer: { role: 'viewer', displayName: 'Ика' } }) });
+  listeners.get('roomLive/room-1/presenceV2:child_added')(
+    presenceSnapshot('viewer', {
+      'presence-old': { connectedAtMs: Date.now() - 20_000, lastSeenAtMs: Date.now() - 20_000, role: 'viewer', displayName: 'Старое имя' },
+      'presence-current': { connectedAtMs: Date.now() - 1_000, lastSeenAtMs: Date.now(), role: 'viewer', displayName: 'Ика' },
+    })
+  );
+  listeners.get('roomLive/room-1/presence:child_added')(
+    presenceSnapshot('viewer', {
+      connectedAtMs: Date.now() - 30_000,
+      role: 'viewer',
+      displayName: 'Старый клиент',
+    })
+  );
+  listeners.get('roomLive/room-1/presence:child_removed')(presenceSnapshot('viewer', null));
+  assert.equal(controller.presenceState.viewer.legacy, undefined,
+    'legacy presence removal cannot erase the canonical V2 source');
 
   assert.deepEqual(updates.at(-1).members, [
     { uid: 'owner', role: 'owner', displayName: 'Фикс', online: false, isCurrentUser: true },
     { uid: 'controller', role: 'controller', displayName: 'Помощник', online: false, isCurrentUser: false },
     { uid: 'viewer', role: 'viewer', displayName: 'Ика', online: true, isCurrentUser: false },
   ]);
+  const presenceEvaluation = new WatchRoomStagingController({ now: () => 200_000 });
+  assert.equal(presenceEvaluation.isPresenceOnline({ lastSeenAtMs: 150_000 }), true);
+  assert.equal(presenceEvaluation.isPresenceOnline({ lastSeenAtMs: 109_999 }), false);
+
+  let releaseDisplayName;
+  controller.currentUserDisplayName = async () => {
+    await new Promise((resolve) => { releaseDisplayName = resolve; });
+    return 'Отложенное имя';
+  };
+  const pendingPresence = controller.markPresence();
+  await new Promise((resolve) => setImmediate(resolve));
   controller.disconnect(false);
+  releaseDisplayName();
+  assert.equal(await pendingPresence, false, 'stale presence work is fenced after disconnect');
 
   const providerChanges = [];
   const playerCommands = [];
@@ -455,8 +505,8 @@ global.document = {
   staleExpiryCallback();
   assert.equal(expiryController.room.roomId, 'new-room', 'a stale expiry callback cannot close a new room');
   expiryController.disconnect(false);
-  assert.equal(presenceLifecycle.at(-1), 'roomLive/new-room/presence/owner:cancel-disconnect');
-  assert.equal(writes.at(-1).path, 'roomLive/new-room/presence/owner');
+  assert.equal(presenceLifecycle.at(-1).endsWith(':cancel-disconnect'), true);
+  assert.equal(writes.at(-1).path.startsWith('roomLive/new-room/presenceV2/owner/'), true);
   assert.equal(writes.at(-1).value, null, 'manual disconnect still removes presence');
 
   const deletedStateUpdates = [];
@@ -529,6 +579,39 @@ global.document = {
   assert.equal(apiRequest.url, 'https://us-central1-movielistdb-13208.cloudfunctions.net/watchRoomsStaging');
   assert.equal(apiRequest.options.headers.Authorization, 'Bearer test-token');
   assert.equal(JSON.parse(apiRequest.options.body).action, 'create');
+
+  const createBodies = [];
+  let createAttempts = 0;
+  global.fetch = async (url, options) => {
+    createBodies.push(JSON.parse(options.body));
+    createAttempts += 1;
+    if (createAttempts === 1) throw new Error('response lost');
+    return {
+      ok: true,
+      json: async () => ({ room: { roomId: 'retried-room' }, joinCode: 'invite.secret' }),
+    };
+  };
+  const retryController = new WatchRoomStagingController({
+    getMovie: () => ({ kinopoiskId: 123, nameRu: 'Фильм' }),
+  });
+  retryController.connect = async () => true;
+  await assert.rejects(() => retryController.create(), (error) => error.code === 'NETWORK_ERROR');
+  assert.equal(await retryController.create(), 'invite.secret');
+  assert.equal(createBodies[0].requestId, createBodies[1].requestId,
+    'create retry reuses the idempotency key after a transport failure');
+
+  global.fetch = async () => ({
+    ok: false,
+    status: 409,
+    json: async () => ({ error: 'Room is full', code: 'ROOM_FULL' }),
+  });
+  await assert.rejects(
+    () => authReadyController.callApi('join', { joinCode: 'invite.secret' }),
+    (error) => error.name === 'WatchRoomApiError'
+      && error.status === 409
+      && error.code === 'ROOM_FULL'
+      && error.retryable === false
+  );
 
   const movieDetailsSource = fs.readFileSync('src/pages/movie-details/movie-details.js', 'utf8');
   const membersRenderer = movieDetailsSource.match(/renderWatchRoomMembers\([\s\S]*?\n    async setWatchRoomMemberRole\(/)?.[0] || '';

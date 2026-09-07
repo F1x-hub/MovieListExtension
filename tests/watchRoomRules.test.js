@@ -32,7 +32,16 @@ assert.strictEqual(roomLive.presence.$uid['.write'].includes('auth.uid === $uid'
 assert.strictEqual(roomLive.presence.$uid['.write'].includes("child('expiresAtMs').val() > now"), true);
 assert.strictEqual(roomLive.presence.$uid.displayName['.write'].includes('auth.uid === $uid'), true);
 assert.strictEqual(roomLive.presence.$uid.displayName['.validate'].includes('length <= 48'), true);
-assert.strictEqual(roomLive.presence.$uid.$other['.validate'], false);
+assert.strictEqual(roomLive.presence.$uid.$connectionId['.write'].includes('auth.uid === $uid'), true);
+assert.strictEqual(roomLive.presence.$uid.$connectionId['.validate'].includes('lastSeenAtMs'), true);
+assert.strictEqual(roomLive.presence.$uid.$connectionId['.validate'].includes('now - 90000'), true);
+assert.strictEqual(roomLive.presence.$uid.$connectionId.$other['.validate'], false);
+assert.strictEqual(roomLive.presenceV2.$uid.$connectionId['.write'].includes('auth.uid === $uid'), true);
+assert.strictEqual(roomLive.presenceV2.$uid['.write'], undefined,
+  'V2 presence cannot be replaced or deleted as one user-wide branch');
+assert.strictEqual(roomLive.presenceV2.$uid.$connectionId['.validate'].includes('lastSeenAtMs'), true);
+assert.strictEqual(roomLive.presenceV2.$uid.$connectionId['.validate'].includes('now - 90000'), true);
+assert.strictEqual(roomLive.presenceV2.$uid.$connectionId.$other['.validate'], false);
 assert.strictEqual(roomLive.readiness.$uid['.validate'].includes("'unavailable'"), true);
 assert.deepStrictEqual(rtdbRules.publicRoomIndex['.indexOn'], ['sortKey']);
 assert.deepStrictEqual(rtdbRules.publicIndexRepairQueue['.indexOn'], ['nextAttemptAt']);
@@ -48,7 +57,8 @@ for (const path of [
     'watchRoomApprovalOutbox/{eventId}',
     'watchRoomsStaging/{roomId}',
     'watchRoomsStagingInvites/{inviteId}',
-    'watchRoomsStagingAclOutbox/{eventId}'
+    'watchRoomsStagingAclOutbox/{eventId}',
+    'watchRoomsStagingCreateRequests/{requestId}'
 ]) {
     assert.match(firestoreRules, new RegExp(`match /${path.replace(/[{}]/g, '\\$&')} \\{[\\s\\S]*?allow read, write: if false;`));
 }

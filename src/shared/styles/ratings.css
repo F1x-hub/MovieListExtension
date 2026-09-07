@@ -10,13 +10,11 @@
     padding-top: 24px;
     color: var(--theme-text-primary);
 }
-
 .ratings-container {
     max-width: 1240px;
     margin: 0 auto;
     padding: 0 24px 60px;
 }
-
 /* Filters Section (Glassmorphic) */
 .filters-section {
     background: var(--theme-bg-card);

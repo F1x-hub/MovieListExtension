@@ -8,6 +8,8 @@ class RatingsCacheService {
         this.CACHE_KEY = 'recent_ratings_cache';
         this.CACHE_TIMESTAMP_KEY = 'recent_ratings_timestamp';
         this.CACHE_HASH_KEY = 'recent_ratings_hash';
+        this.CACHE_VERSION_KEY = 'recent_ratings_schema_version';
+        this.CACHE_SCHEMA_VERSION = 2;
         this.AVERAGE_RATINGS_CACHE_KEY = 'average_ratings_cache';
         this.AVERAGE_RATINGS_TIMESTAMP_KEY = 'average_ratings_timestamp';
         this.CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
@@ -466,9 +468,23 @@ class RatingsCacheService {
             const hashKey = this.getCacheHashKey(userId);
             
             const cacheData = {
-                [cacheKey]: ratings.slice(0, this.MAX_CACHED_RATINGS),
+                [cacheKey]: ratings.slice(0, this.MAX_CACHED_RATINGS).map(rating => {
+                    const safeRating = { ...rating };
+                    const review = typeof safeRating.review === 'string'
+                        ? safeRating.review.replace(/\r\n?/g, '\n').trim()
+                        : '';
+                    const hasReview = review.length > 0 || safeRating.hasReview === true;
+                    const reviewLength = review.length > 0
+                        ? Array.from(review).length
+                        : Math.max(0, Number(safeRating.reviewLength) || 0);
+                    delete safeRating.review;
+                    safeRating.hasReview = hasReview;
+                    safeRating.reviewLength = reviewLength;
+                    return safeRating;
+                }),
                 [timestampKey]: timestamp,
-                [hashKey]: hash
+                [hashKey]: hash,
+                [this.CACHE_VERSION_KEY]: this.CACHE_SCHEMA_VERSION
             };
 
             await chrome.storage.local.set(cacheData);
@@ -498,10 +514,13 @@ class RatingsCacheService {
             const result = await chrome.storage.local.get([
                 cacheKey,
                 timestampKey,
-                hashKey
+                hashKey,
+                this.CACHE_VERSION_KEY
             ]);
 
-            if (!result[cacheKey] || !result[timestampKey]) {
+            if (!result[cacheKey]
+                || !result[timestampKey]
+                || result[this.CACHE_VERSION_KEY] !== this.CACHE_SCHEMA_VERSION) {
                 console.log(`RatingsCacheService: No cached data found for user ${userId || 'all'}`);
                 return null;
             }
@@ -608,6 +627,29 @@ class RatingsCacheService {
             console.log('Ratings cache cleared');
         } catch (error) {
             console.error('Error clearing cache:', error);
+        }
+    }
+
+    /**
+     * Invalidate only rating text caches. Average-rating caches are independent
+     * and must survive review/comment edits.
+     * @param {string|null} userId - Optional owner cache scope
+     * @param {string|null} ratingId - Reserved for future targeted invalidation
+     */
+    async clearRatingTextCache(userId = null, ratingId = null) {
+        void ratingId;
+        void userId;
+        try {
+            if (typeof chrome === 'undefined' || !chrome.storage?.local) return;
+            const allStorage = await chrome.storage.local.get(null);
+            const keys = Object.keys(allStorage).filter(key => {
+                // A text edit changes both the author's cache and public movie feeds.
+                // Clear every compact ratings snapshot so no surface can show stale text.
+                return key.startsWith('recent_ratings_');
+            });
+            if (keys.length > 0) await chrome.storage.local.remove(keys);
+        } catch (error) {
+            console.error('Error clearing rating text cache:', error);
         }
     }
 

@@ -265,7 +265,8 @@ assert(ratingServiceSource.includes("String(movieId)"), 'Rating reads support le
 console.log('✅ Rating reads and writes support both legacy string and canonical numeric IDs');
 
 assert(ratingServiceSource.includes('resolveMovieDataForRating'), 'Rating writes recover cached movie metadata when callers omit movieData');
-assert(ratingServiceSource.includes('getMovieMetadataPatch'), 'Rating writes persist only safe metadata with the aggregate');
+assert(!ratingServiceSource.includes('movieRef.set'), 'Rating writes do not perform client-side movie aggregate updates');
+assert(ratingServiceSource.includes('transaction.set(ratingRef') || ratingServiceSource.includes('transaction.update(ratingRef'), 'Rating writes persist the canonical rating document');
 assert(ratingsPageSource.includes('const cachedMovie = rating.movie'), 'Ratings cache hydration keeps cached movie metadata');
 assert(ratingsPageSource.includes('window.MovieCacheService?.mergeMovieMetadata'), 'Ratings cache hydration reuses shared metadata merge');
 

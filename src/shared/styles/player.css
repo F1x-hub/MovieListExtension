@@ -8,6 +8,10 @@ body.player-modal-open {
     overflow: hidden;
 }
 
+#videoPlayerModal.modal-overlay {
+    z-index: var(--z-modal);
+}
+
 #trailerModal.modal-overlay {
     animation: trailerOverlayIn 180ms cubic-bezier(0.23, 1, 0.32, 1) both;
 }
@@ -41,7 +45,7 @@ body.player-modal-open {
 
 .video-modal {
     /* Reserve vertical room for the header, toolbar and guidance at any browser zoom. */
-    width: min(94vw, 1180px, calc(177.78dvh - 220px));
+    width: min(94vw, 1180px, calc(177.78dvh - 320px));
     max-width: 1180px;
     height: auto;
     max-height: calc(100dvh - 24px);
@@ -68,6 +72,7 @@ body.player-modal-open {
 }
 
 .video-header {
+    flex: 0 0 auto;
     min-height: 64px;
     padding: 12px 16px 12px 20px;
     border: 0;
@@ -378,7 +383,10 @@ body.player-modal-open {
     flex-direction: column;
     gap: 10px;
     padding: 10px;
-    overflow: hidden !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
     max-height: none;
     border-bottom-left-radius: 22px;
     border-bottom-right-radius: 22px;
@@ -631,7 +639,7 @@ body.player-modal-open {
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .video-modal {
-        width: min(96vw, calc(177.78dvh - 280px));
+        width: min(96vw, calc(177.78dvh - 320px));
         max-height: calc(100dvh - 12px);
     }
 
@@ -647,7 +655,7 @@ body.player-modal-open {
 
 @media (max-height: 520px) {
     .video-modal {
-        width: min(88vw, calc(177.78dvh - 240px));
+        width: min(88vw, calc(177.78dvh - 320px));
     }
 
     .video-header {
@@ -738,6 +746,10 @@ body.player-modal-open {
 .video-container .player-center-action svg {
     width: 40px;
     height: 40px;
+    transform: none;
+}
+
+.video-container .player-center-action[data-icon="play"] svg {
     transform: translateX(1px);
 }
 
@@ -825,7 +837,17 @@ body.player-modal-open {
 .video-container .player-control-dock .player-control-button--primary svg {
     width: 26px !important;
     height: 26px !important;
-    transform: translateX(1px);
+    display: block;
+    transform: none;
+}
+
+.video-container .player-control-dock .player-control-button--primary[data-icon="play"] svg {
+    /* The Play path is optically right- and bottom-heavy inside its viewBox. */
+    transform: translate(-1.5px, -0.5px);
+}
+
+.video-container .player-control-dock .player-control-button--primary {
+    line-height: 0 !important;
 }
 
 .video-container .player-timecode {

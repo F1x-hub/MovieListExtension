@@ -189,6 +189,8 @@ class MovieCard {
         const isWatched = options.isWatched || data.isWatched || false;
         const isInWatchlist = options.isInWatchlist || data.isInWatchlist || false;
         const isFavorite = data.isFavorite || options.isFavorite || false;
+        const hasReview = data.hasReview === true
+            || (typeof data.review === 'string' && data.review.trim().length > 0);
 
         // Truncate description
         const truncatedDescription = description.length > 150 
@@ -219,6 +221,7 @@ class MovieCard {
         if (movie.year || movie.releaseDate) card.dataset.movieYear = String(movie.year || String(movie.releaseDate).slice(0, 4));
         if (movie.mediaType || movie.type) card.dataset.mediaType = String(movie.mediaType || movie.type);
         if (data.id) card.dataset.ratingId = data.id;
+        if (hasReview) card.dataset.hasReview = 'true';
 
         const detailsUrl = canonicalMovieId 
             ? chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${canonicalMovieId}`)
@@ -277,6 +280,14 @@ class MovieCard {
                                     ${isInWatchlist ? 'style="background-color: #c0c0c0; color: #000;"' : ''}>
                                 <span class="mc-menu-item-icon">${isInWatchlist ? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>'}</span>
                                 <span class="mc-menu-item-text" ${isInWatchlist ? 'style="font-weight: 500;"' : ''}>${isInWatchlist ? window.i18n?.get('movie_card.remove_watchlist') : window.i18n?.get('movie_card.add_watchlist')}</span>
+                            </button>
+                        ` : ''}
+                        ${hasReview && canonicalMovieId ? `
+                            <button class="mc-menu-item" data-action="open-review"
+                                    data-movie-id="${canonicalMovieId}"
+                                    data-rating-id="${this.escapeHtml(data.id || '')}">
+                                <span class="mc-menu-item-icon">▤</span>
+                                <span class="mc-menu-item-text">Читать рецензию</span>
                             </button>
                         ` : ''}
                         ${showEditRating ? `
@@ -367,6 +378,7 @@ class MovieCard {
                             data-movie-title="${this.escapeHtml(title)}">
                             ${isLoading ? '' : this.escapeHtml(title)}
                         </a>
+                        ${hasReview ? '<span class="mc-review-indicator" title="Есть рецензия" aria-label="Есть рецензия">Рецензия</span>' : ''}
                     </div>
                     
                     <div class="mc-meta-subtitle ${isLoading ? 'mc-skeleton' : ''}">
@@ -428,6 +440,14 @@ class MovieCard {
                                     ${isInWatchlist ? 'style="background-color: #c0c0c0; color: #000;"' : ''}>
                                 <span class="mc-menu-item-icon">${isInWatchlist ? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>'}</span>
                                 <span class="mc-menu-item-text" ${isInWatchlist ? 'style="font-weight: 500;"' : ''}>${isInWatchlist ? window.i18n?.get('movie_card.remove_watchlist') : window.i18n?.get('movie_card.add_watchlist')}</span>
+                            </button>
+                        ` : ''}
+                        ${hasReview && canonicalMovieId ? `
+                            <button class="mc-menu-item" data-action="open-review"
+                                    data-movie-id="${canonicalMovieId}"
+                                    data-rating-id="${this.escapeHtml(data.id || '')}">
+                                <span class="mc-menu-item-icon">▤</span>
+                                <span class="mc-menu-item-text">Читать рецензию</span>
                             </button>
                         ` : ''}
                         ${showEditRating ? `
@@ -518,6 +538,7 @@ class MovieCard {
                         data-movie-title="${this.escapeHtml(title)}">
                         ${isLoading ? '' : this.escapeHtml(title)}
                     </a>
+                    ${hasReview ? '<span class="mc-review-indicator" title="Есть рецензия" aria-label="Есть рецензия">Рецензия</span>' : ''}
                     ${year ? `<span class="mc-year">${year}</span>` : (isLoading ? '<span class="mc-year mc-skeleton" style="width: 40px; height: 1.2em; border-radius: 4px;"></span>' : '')}
                 </div>
                 

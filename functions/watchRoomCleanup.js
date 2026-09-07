@@ -1,8 +1,10 @@
 const STAGING_ROOM_COLLECTION = "watchRoomsStaging";
 const STAGING_INVITE_COLLECTION = "watchRoomsStagingInvites";
+const STAGING_CREATE_REQUEST_COLLECTION = "watchRoomsStagingCreateRequests";
 const MAX_ROOMS_PER_RUN = 50;
-const MAX_MEMBERS_PER_STAGING_ROOM = 2;
+const MAX_MEMBERS_PER_STAGING_ROOM = 10;
 const MAX_INVITES_PER_STAGING_ROOM = 1;
+const MAX_CREATE_REQUESTS_PER_STAGING_ROOM = 1;
 
 function createSanitizedError(failed) {
   return new Error(`Watch-room cleanup failed for ${failed} room operation(s)`);
@@ -18,6 +20,7 @@ function createExpiredWatchRoomCleanup({ db, getRealtimeDatabase, now = () => ne
 
   const rooms = db.collection(STAGING_ROOM_COLLECTION);
   const invites = db.collection(STAGING_INVITE_COLLECTION);
+  const createRequests = db.collection(STAGING_CREATE_REQUEST_COLLECTION);
 
   let rtdb = null;
 
@@ -28,12 +31,15 @@ function createExpiredWatchRoomCleanup({ db, getRealtimeDatabase, now = () => ne
 
   async function deleteRoom(roomSnapshot) {
     const roomId = roomSnapshot.id;
-    const [membersSnapshot, invitesSnapshot] = await Promise.all([
+    const [membersSnapshot, invitesSnapshot, createRequestsSnapshot] = await Promise.all([
       roomSnapshot.ref.collection("members").limit(MAX_MEMBERS_PER_STAGING_ROOM + 1).get(),
       invites.where("roomId", "==", roomId).limit(MAX_INVITES_PER_STAGING_ROOM + 1).get(),
+      createRequests.where("roomId", "==", roomId).limit(MAX_CREATE_REQUESTS_PER_STAGING_ROOM + 1).get(),
     ]);
 
-    if (membersSnapshot.size > MAX_MEMBERS_PER_STAGING_ROOM || invitesSnapshot.size > MAX_INVITES_PER_STAGING_ROOM) {
+    if (membersSnapshot.size > MAX_MEMBERS_PER_STAGING_ROOM
+      || invitesSnapshot.size > MAX_INVITES_PER_STAGING_ROOM
+      || createRequestsSnapshot.size > MAX_CREATE_REQUESTS_PER_STAGING_ROOM) {
       return { deleted: false, unexpectedShape: true };
     }
 
@@ -46,6 +52,7 @@ function createExpiredWatchRoomCleanup({ db, getRealtimeDatabase, now = () => ne
     const batch = db.batch();
     membersSnapshot.docs.forEach((memberSnapshot) => batch.delete(memberSnapshot.ref));
     invitesSnapshot.docs.forEach((inviteSnapshot) => batch.delete(inviteSnapshot.ref));
+    createRequestsSnapshot.docs.forEach((requestSnapshot) => batch.delete(requestSnapshot.ref));
     batch.delete(roomSnapshot.ref);
     await batch.commit();
     return { deleted: true, unexpectedShape: false };
@@ -98,8 +105,10 @@ function createExpiredWatchRoomCleanup({ db, getRealtimeDatabase, now = () => ne
 
 module.exports = {
   MAX_INVITES_PER_STAGING_ROOM,
+  MAX_CREATE_REQUESTS_PER_STAGING_ROOM,
   MAX_MEMBERS_PER_STAGING_ROOM,
   MAX_ROOMS_PER_RUN,
+  STAGING_CREATE_REQUEST_COLLECTION,
   STAGING_INVITE_COLLECTION,
   STAGING_ROOM_COLLECTION,
   createExpiredWatchRoomCleanup,

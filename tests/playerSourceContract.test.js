@@ -21,8 +21,10 @@ const playerCleanerSource = fs.readFileSync(
 );
 assert.match(playerCleanerSource, /getNativeHlsQualityOptions/,
     'the existing player settings menu exposes native HLS quality choices');
-assert.match(playerCleanerSource, /RUTUBE_QUALITY_LADDER/,
-    'Rutube HLS levels use the player-facing quality naming ladder');
+assert.doesNotMatch(playerCleanerSource, /RUTUBE_QUALITY_LADDER/,
+    'quality labels must not use a provider-specific guessed ladder');
+assert.match(playerCleanerSource, /Math\.round\(level\.height\)/,
+    'native HLS quality labels must use manifest height metadata');
 assert.match(playerCleanerSource, /hls\.currentLevel = -1/,
     'the Automatic choice restores hls.js adaptive bitrate selection');
 assert.match(playerCleanerSource, /typeof opt\.action === 'function'/,

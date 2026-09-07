@@ -585,7 +585,7 @@ async function runAllTests() {
 
     // 30. 1366x768 layout contract
     await test('30. 1366x768 viewport layout constraints in player.css', () => {
-        assert.match(cssContent, /width:\s*min\(94vw,\s*1180px,\s*calc\(177\.78dvh\s*-\s*220px\)\)/);
+        assert.match(cssContent, /width:\s*min\(94vw,\s*1180px,\s*calc\(177\.78dvh\s*-\s*320px\)\)/);
         assert.match(cssContent, /max-height:\s*calc\(100dvh\s*-\s*24px\)/);
         assert.match(cssContent, /aspect-ratio:\s*16\s*\/\s*9/);
     });

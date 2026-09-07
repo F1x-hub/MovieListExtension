@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict");
 const {
+  MAX_CREATE_REQUESTS_PER_STAGING_ROOM,
   MAX_INVITES_PER_STAGING_ROOM,
   MAX_MEMBERS_PER_STAGING_ROOM,
   MAX_ROOMS_PER_RUN,
@@ -10,9 +11,10 @@ function snapshot(docs) {
   return { docs, size: docs.length };
 }
 
-function makeDocument(id, { members = [], invites = [] } = {}) {
+function makeDocument(id, { members = [], invites = [], createRequests = [] } = {}) {
   const memberDocs = members.map((memberId) => ({ id: memberId, ref: { path: `members/${memberId}` } }));
   const inviteDocs = invites.map((inviteId) => ({ id: inviteId, ref: { path: `invites/${inviteId}` } }));
+  const createRequestDocs = createRequests.map((requestId) => ({ id: requestId, ref: { path: `createRequests/${requestId}` } }));
   const ref = {
     path: `rooms/${id}`,
     collection(name) {
@@ -25,7 +27,7 @@ function makeDocument(id, { members = [], invites = [] } = {}) {
       };
     },
   };
-  return { id, ref, inviteDocs };
+  return { id, ref, inviteDocs, createRequestDocs };
 }
 
 function createHarness({ roomSpecs = [], failRtdbFor = new Set(), failBatch = false } = {}) {
@@ -50,6 +52,21 @@ function createHarness({ roomSpecs = [], failRtdbFor = new Set(), failBatch = fa
                     return { get: async () => snapshot(roomDocs) };
                   },
                 };
+              },
+            };
+          },
+        };
+      }
+      if (name === "watchRoomsStagingCreateRequests") {
+        return {
+          where(field, operator, roomId) {
+            assert.equal(field, "roomId");
+            assert.equal(operator, "==");
+            const roomDoc = roomDocs.find((doc) => doc.id === roomId);
+            return {
+              limit(limit) {
+                assert.equal(limit, MAX_CREATE_REQUESTS_PER_STAGING_ROOM + 1);
+                return { get: async () => snapshot(roomDoc?.createRequestDocs || []) };
               },
             };
           },
@@ -130,11 +147,22 @@ function createHarness({ roomSpecs = [], failRtdbFor = new Set(), failBatch = fa
   assert.deepEqual(await noRooms.cleanup.run(), { scanned: 0, deleted: 0, skippedUnexpectedShape: 0, failed: 0 });
   assert.equal(noRooms.rtdbFactoryCalls(), 0);
 
-  const malformed = createHarness({ roomSpecs: [{ id: "room-2", members: ["a", "b", "c"] }] });
+  const malformed = createHarness({ roomSpecs: [{ id: "room-2", members: Array.from({ length: 11 }, (_, index) => `member-${index}`) }] });
   assert.deepEqual(await malformed.cleanup.run(), { scanned: 1, deleted: 0, skippedUnexpectedShape: 1, failed: 0 });
   assert.equal(malformed.rtdbFactoryCalls(), 0);
   assert.deepEqual(malformed.batchDeletes, []);
   assert.equal(malformed.logs.warn.some(([message]) => message.includes("unexpected_room_shape")), true);
+
+  const tenMembers = createHarness({
+    roomSpecs: [{
+      id: "room-10",
+      members: Array.from({ length: 10 }, (_, index) => `member-${index}`),
+      invites: ["invite-10"],
+      createRequests: ["create-request-10"],
+    }],
+  });
+  assert.deepEqual(await tenMembers.cleanup.run(), { scanned: 1, deleted: 1, skippedUnexpectedShape: 0, failed: 0 });
+  assert.equal(tenMembers.batchDeletes[0].length, 13, "10 members + invite + request + room are deleted");
 
   const rtdbFailure = createHarness({
     roomSpecs: [{ id: "bad-room", members: ["owner"] }, { id: "good-room", members: ["viewer"] }],

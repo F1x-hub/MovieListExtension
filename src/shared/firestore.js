@@ -1026,7 +1026,7 @@ class FirebaseManager {
     }
 
     // Report System Methods
-    async addReport(text, file, pageUrl) {
+    async addReport(text, file, pageUrl, context = null) {
         try {
             if (!this.isInitialized) throw new Error('Firebase not initialized');
             
@@ -1082,6 +1082,18 @@ class FirebaseManager {
                 userId: this.user ? this.user.uid : null,
                 pageUrl: pageUrl || window.location.href
             };
+
+            if (context?.targetType === 'rating-review'
+                && typeof context.targetRatingId === 'string'
+                && Number.isInteger(Number(context.targetMovieId))
+                && typeof context.targetAuthorId === 'string') {
+                Object.assign(reportData, {
+                    targetType: 'rating-review',
+                    targetRatingId: context.targetRatingId,
+                    targetMovieId: Number(context.targetMovieId),
+                    targetAuthorId: context.targetAuthorId
+                });
+            }
 
             await this.db.collection('reports').doc(reportId).set(reportData);
             return { id: reportId, ...reportData };

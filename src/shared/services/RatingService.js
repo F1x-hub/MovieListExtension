@@ -8,6 +8,42 @@ class RatingService {
         this.collection = 'ratings';
     }
 
+    getRatingConfig() {
+        const config = typeof globalThis !== 'undefined' ? globalThis.RatingConfig : null;
+        if (!config || config.SHORT_COMMENT_MAX_LENGTH !== 500 || config.LONG_REVIEW_MAX_LENGTH !== 5000) {
+            throw new Error('RatingConfig must be loaded before RatingService');
+        }
+        return config;
+    }
+
+    normalizeCommentForWrite(value) {
+        const config = this.getRatingConfig();
+        const normalized = value === null || value === undefined ? '' : String(value);
+        return config.normalizeComment(normalized);
+    }
+
+    normalizeReviewForWrite(value) {
+        return this.getRatingConfig().normalizeReview(value);
+    }
+
+    toRatingViewModel(rating, options = {}) {
+        const includeReview = options?.includeReview === true;
+        const source = rating && typeof rating === 'object' ? { ...rating } : {};
+        const rawReview = typeof source.review === 'string' ? source.review : '';
+        const review = rawReview.replace(/\r\n?/g, '\n').trim();
+        source.comment = typeof source.comment === 'string' ? source.comment : '';
+        source.hasReview = review.length > 0 || source.hasReview === true;
+        source.reviewLength = review.length > 0
+            ? Array.from(review).length
+            : Math.max(0, Number(source.reviewLength) || 0);
+        if (includeReview) {
+            source.review = review;
+        } else {
+            delete source.review;
+        }
+        return source;
+    }
+
     getRatingDocumentId(userId, movieId) {
         const normalizedUserId = String(userId || '').trim();
         const normalizedMovieId = Number(movieId);
@@ -164,10 +200,12 @@ class RatingService {
      * @param {number} rating - Rating (1-10)
      * @param {string} comment - Optional comment (max 500 chars)
      * @param {Object} movieData - Movie data to cache (optional)
+     * @param {Object} options - Optional presence-based fields, including review
      * @returns {Promise<Object>} - Created/updated rating
      */
-    async addOrUpdateRating(userId, userName, userPhoto, movieId, rating, comment = '', movieData = null) {
+    async addOrUpdateRating(userId, userName, userPhoto, movieId, rating, comment = '', movieData = null, options = {}) {
         try {
+            const config = this.getRatingConfig();
             const normalizedMovieId = Number(movieId);
             if (!Number.isInteger(normalizedMovieId) || normalizedMovieId <= 0) {
                 throw new Error('Movie ID must be a positive integer');
@@ -179,10 +217,10 @@ class RatingService {
                 throw new Error('Rating must be an integer between 1 and 10');
             }
 
-            // Validate comment length
-            if (comment && comment.length > 500) {
-                throw new Error('Comment must be 500 characters or less');
-            }
+            const normalizedComment = config.normalizeComment(comment === null || comment === undefined ? '' : String(comment));
+            const hasReviewOption = Boolean(options && typeof options === 'object'
+                && Object.prototype.hasOwnProperty.call(options, 'review'));
+            const normalizedReview = hasReviewOption ? this.normalizeReviewForWrite(options.review) : null;
 
             const canonicalRatingId = this.getRatingDocumentId(userId, movieId);
             // Legacy documents stay updateable until the separately approved
@@ -190,25 +228,16 @@ class RatingService {
             const existingRating = await this.getRating(userId, movieId);
             
             const ratingVal = Number(rating);
-            const movieRef = this.db.collection('movies').doc(movieId.toString());
             const ratingRef = this.db.collection(this.collection).doc(existingRating?.id || canonicalRatingId);
             const resolvedMovieData = await this.resolveMovieDataForRating(movieId, movieData);
-            const localMovieCache = resolvedMovieData || await this.getLocalMovieCacheForPromotion(movieId);
-            const movieCacheService = typeof window !== 'undefined'
-                ? window.firebaseManager?.getMovieCacheService?.()
-                : null;
 
             let result;
-            let promotedFromLocalCache = false;
 
             await this.db.runTransaction(async (transaction) => {
-                // 1. READ DocumentReferences inside transaction
-                const movieDoc = await transaction.get(movieRef);
+                // The rating event is the write owner. The Cloud Function trigger
+                // rebuilds movies/{movieId}; the client must never calculate or
+                // overwrite aggregate fields from a stale movie snapshot.
                 const ratingDoc = await transaction.get(ratingRef);
-
-                const currentMovieData = movieDoc.exists ? movieDoc.data() : {};
-                let ratingsSum = Number(currentMovieData.ratingsSum) || 0;
-                let ratingsCount = Number(currentMovieData.ratingsCount) || 0;
 
                 const ratingData = {
                     userId,
@@ -216,13 +245,16 @@ class RatingService {
                     userPhoto,
                     movieId,
                     rating: ratingVal,
-                    comment: comment.trim(),
+                    comment: normalizedComment,
                     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                 };
 
                 const actualExistingData = ratingDoc.exists ? ratingDoc.data() : null;
 
-                // 2. WRITE operations inside transaction
+                if (hasReviewOption) {
+                    ratingData.review = normalizedReview;
+                }
+
                 if (actualExistingData) {
                     ratingData.createdAt = actualExistingData.createdAt || firebase.firestore.FieldValue.serverTimestamp();
                     if (actualExistingData.isFavorite !== undefined) ratingData.isFavorite = actualExistingData.isFavorite;
@@ -230,9 +262,10 @@ class RatingService {
 
                     transaction.update(ratingRef, ratingData);
                     result = { id: ratingRef.id, ...ratingData };
+                    if (!hasReviewOption && Object.prototype.hasOwnProperty.call(actualExistingData, 'review')) {
+                        result.review = actualExistingData.review;
+                    }
 
-                    const oldRating = Number(actualExistingData.rating) || 0;
-                    ratingsSum += (ratingVal - oldRating);
                 } else {
                     ratingData.createdAt = firebase.firestore.FieldValue.serverTimestamp();
                     ratingData.isFavorite = false;
@@ -241,48 +274,8 @@ class RatingService {
                     transaction.set(ratingRef, ratingData);
                     result = { id: ratingRef.id, ...ratingData };
 
-                    ratingsSum += ratingVal;
-                    ratingsCount += 1;
-                }
-
-                const avgRating = ratingsCount > 0 ? Math.round((ratingsSum / ratingsCount) * 10) / 10 : 0;
-
-                const movieUpdates = {
-                    ratingsSum,
-                    ratingsCount,
-                    avgRating,
-                    hasCommunityRating: ratingsCount > 0,
-                    hasRatings: ratingsCount > 0,
-                    lastRatingUpdatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-                    lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
-                };
-
-                if (resolvedMovieData) {
-                    const metadataPatch = movieCacheService?.getMovieMetadataPatch
-                        ? movieCacheService.getMovieMetadataPatch(resolvedMovieData, currentMovieData)
-                        : resolvedMovieData;
-                    Object.assign(movieUpdates, metadataPatch);
-                }
-
-                if (movieDoc.exists) {
-                    transaction.update(movieRef, movieUpdates);
-                } else {
-                    promotedFromLocalCache = Boolean(localMovieCache);
-                    transaction.set(movieRef, {
-                        ...localMovieCache,
-                        kinopoiskId: movieId,
-                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                        lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
-                        ...movieUpdates
-                    });
                 }
             });
-
-            await this.verifyMovieRatingAggregate(movieRef, movieId);
-
-            if (promotedFromLocalCache) {
-                await this.removeLocalMovieCacheAfterPromotion(movieId);
-            }
 
             // Always cache movie metadata when rating to ensure name, poster, and flags are set in Firestore
             if (resolvedMovieData) {
@@ -344,6 +337,88 @@ class RatingService {
         }
     }
 
+    /**
+     * Update only textual/profile content on an existing rating.
+     * Rating identity, stars and aggregate timestamps remain untouched.
+     * @param {string} userId - Authenticated owner ID
+     * @param {string} ratingId - Existing rating document ID
+     * @param {Object} patch - Presence-based content patch
+     * @returns {Promise<Object>} Updated rating view model
+     */
+    async updateRatingText(userId, ratingId, patch = {}) {
+        try {
+            if (!userId || !ratingId || !patch || typeof patch !== 'object' || Array.isArray(patch)) {
+                throw new Error('A valid user, rating and content patch are required');
+            }
+
+            const allowedKeys = new Set(['comment', 'review', 'userName', 'userPhoto']);
+            const patchKeys = Object.keys(patch);
+            if (patchKeys.length === 0 || patchKeys.some(key => !allowedKeys.has(key))) {
+                throw new Error('Unsupported rating content field');
+            }
+
+            const hasComment = Object.prototype.hasOwnProperty.call(patch, 'comment');
+            const hasReview = Object.prototype.hasOwnProperty.call(patch, 'review');
+            const hasUserName = Object.prototype.hasOwnProperty.call(patch, 'userName');
+            const hasUserPhoto = Object.prototype.hasOwnProperty.call(patch, 'userPhoto');
+            const updates = {};
+
+            if (hasComment) updates.comment = this.normalizeCommentForWrite(patch.comment);
+            if (hasReview) updates.review = this.normalizeReviewForWrite(patch.review);
+            if (hasUserName) {
+                if (typeof patch.userName !== 'string' || patch.userName.length > 120) {
+                    throw new Error('User name must be a string of 120 characters or less');
+                }
+                updates.userName = patch.userName.trim();
+            }
+            if (hasUserPhoto) {
+                if (typeof patch.userPhoto !== 'string' || patch.userPhoto.length > 2048) {
+                    throw new Error('User photo must be a string of 2048 characters or less');
+                }
+                updates.userPhoto = patch.userPhoto;
+            }
+            updates.contentUpdatedAt = firebase.firestore.FieldValue.serverTimestamp();
+
+            const ratingRef = this.db.collection(this.collection).doc(String(ratingId));
+            let result = null;
+            await this.db.runTransaction(async (transaction) => {
+                const ratingDoc = await transaction.get(ratingRef);
+                if (!ratingDoc.exists) throw new Error('Rating not found');
+
+                const current = ratingDoc.data() || {};
+                if (current.userId !== userId) throw new Error('Only the rating owner can edit its text');
+                if (!Number.isInteger(Number(current.rating)) || Number(current.rating) < 1 || Number(current.rating) > 10) {
+                    throw new Error('Rating is invalid');
+                }
+
+                transaction.update(ratingRef, updates);
+                result = this.toRatingViewModel({ id: ratingRef.id, ...current, ...updates }, { includeReview: true });
+            });
+
+            await this.invalidateRatingTextCaches(userId, ratingId);
+            return result;
+        } catch (error) {
+            console.error('Error updating rating text:', error);
+            throw new Error(`Failed to update rating text: ${error.message}`, { cause: error });
+        }
+    }
+
+    async invalidateRatingTextCaches(userId = null, ratingId = null) {
+        try {
+            const ratingsCacheService = typeof window !== 'undefined'
+                ? window.firebaseManager?.getRatingsCacheService?.()
+                : null;
+            if (ratingsCacheService?.clearRatingTextCache) {
+                await ratingsCacheService.clearRatingTextCache(userId, ratingId);
+            } else if (ratingsCacheService?.clearCache) {
+                await ratingsCacheService.clearCache(userId);
+            }
+            await this.invalidateRatingsCache(userId);
+        } catch (error) {
+            console.warn('RatingService: Failed to invalidate rating text caches', error);
+        }
+    }
+
     normalizeMovieDataForRating(movieId, movieData) {
         if (!movieData || typeof movieData !== 'object') return null;
 
@@ -402,70 +477,6 @@ class RatingService {
         return candidates
             .map(candidate => this.normalizeMovieDataForRating(movieId, candidate))
             .find(Boolean) || null;
-    }
-
-    async getLocalMovieCacheForPromotion(movieId) {
-        try {
-            if (typeof chrome === 'undefined' || !chrome.storage?.local) return null;
-            const key = `local_movie_cache_${movieId}`;
-            const stored = await chrome.storage.local.get(key);
-            const cachedMovie = stored[key];
-            if (!cachedMovie || typeof cachedMovie !== 'object') return null;
-
-            return this.normalizeMovieDataForRating(movieId, cachedMovie);
-        } catch (error) {
-            console.warn('RatingService: Failed to read local movie cache for promotion', error);
-            return null;
-        }
-    }
-
-    async removeLocalMovieCacheAfterPromotion(movieId) {
-        try {
-            if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-                await chrome.storage.local.remove(`local_movie_cache_${movieId}`);
-            }
-        } catch (error) {
-            console.warn('RatingService: Failed to remove promoted local movie cache', error);
-        }
-    }
-
-    /**
-     * Logs incomplete rating aggregates immediately after a rating write.
-     * @param {firebase.firestore.DocumentReference} movieRef Movie document reference
-     * @param {number} movieId Kinopoisk movie ID
-     * @returns {Promise<void>}
-     */
-    async verifyMovieRatingAggregate(movieRef, movieId) {
-        try {
-            const movieSnapshot = await movieRef.get();
-            const data = movieSnapshot.exists ? movieSnapshot.data() : null;
-            const isComplete = Boolean(
-                data &&
-                data.hasCommunityRating === true &&
-                data.hasRatings === true &&
-                Number.isFinite(Number(data.ratingsCount)) &&
-                Number(data.ratingsCount) > 0 &&
-                Number.isFinite(Number(data.avgRating)) &&
-                data.lastRatingUpdatedAt
-            );
-
-            if (!isComplete) {
-                console.error('[RatingService] Incomplete movie rating aggregate after rating write', {
-                    movieId,
-                    exists: movieSnapshot.exists,
-                    hasCommunityRating: data?.hasCommunityRating,
-                    hasRatings: data?.hasRatings,
-                    ratingsCount: data?.ratingsCount,
-                    avgRating: data?.avgRating,
-                    lastRatingUpdatedAt: data?.lastRatingUpdatedAt
-                });
-            }
-        } catch (error) {
-            console.error('[RatingService] Failed to verify movie rating aggregate after rating write', {
-                movieId,
-                error: error.message
-            });
-        }
     }
 
     /**
@@ -564,7 +575,7 @@ class RatingService {
         this.getCurrentRatings(queriedRatings, userId).forEach(data => {
             const normalizedMovieId = Number(data?.movieId);
             if (!Number.isInteger(normalizedMovieId) || normalizedMovieId <= 0) return;
-            ratingsByMovieId.set(String(normalizedMovieId), data);
+            ratingsByMovieId.set(String(normalizedMovieId), this.toRatingViewModel(data));
         });
 
         const rejectedRequests = settledRequests.filter(result => result.status === 'rejected');
@@ -758,7 +769,7 @@ class RatingService {
      * @param {string|null} userId - Optional user ID to filter ratings
      * @returns {Promise<Object>} - Ratings and pagination info
      */
-    async getAllRatings(limit = 50, lastDocInput = null, userId = null) {
+    async getAllRatings(limit = 50, lastDocInput = null, userId = null, options = {}) {
         try {
             let query = this.db.collection(this.collection);
 
@@ -785,7 +796,7 @@ class RatingService {
             const ratings = [];
 
             results.forEach(doc => {
-                ratings.push({ id: doc.id, ...doc.data() });
+                ratings.push(this.toRatingViewModel({ id: doc.id, ...doc.data() }, options));
             });
 
             const lastDoc = results.docs.length > 0 ? results.docs[results.docs.length - 1] : null;
@@ -897,34 +908,15 @@ class RatingService {
             const movieId = ratingData?.movieId;
 
             if (movieId) {
-                const movieRef = this.db.collection('movies').doc(movieId.toString());
                 await this.db.runTransaction(async (transaction) => {
-                    // 1. All READ operations first
                     const freshRatingDoc = await transaction.get(ratingRef);
                     if (!freshRatingDoc.exists) {
                         return;
                     }
-                    const movieDoc = await transaction.get(movieRef);
-
-                    // 2. All WRITE operations second
-                    const freshRatingData = freshRatingDoc.data();
+                    // The aggregate trigger owns movies/{movieId}. Deleting the
+                    // event is enough; client-side subtraction is race-prone and
+                    // can resurrect stale counts or remove a live projection.
                     transaction.delete(ratingRef);
-
-                    if (movieDoc.exists) {
-                        const currentMovieData = movieDoc.data();
-                        let ratingsSum = Math.max(0, (currentMovieData.ratingsSum || 0) - (freshRatingData.rating || 0));
-                        let ratingsCount = Math.max(0, (currentMovieData.ratingsCount || 0) - 1);
-                        let avgRating = ratingsCount > 0 ? Math.round((ratingsSum / ratingsCount) * 10) / 10 : 0;
-
-                        transaction.update(movieRef, {
-                            ratingsSum,
-                            ratingsCount,
-                            avgRating,
-                            hasCommunityRating: ratingsCount > 0,
-                            hasRatings: ratingsCount > 0,
-                            lastRatingUpdatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                        });
-                    }
                 });
             } else {
                 await ratingRef.delete();
@@ -1021,7 +1013,7 @@ class RatingService {
      * @param {number} limit - Maximum number of ratings
      * @returns {Promise<Array>} - Movie ratings
      */
-    async getMovieRatings(movieId, limit = 20) {
+    async getMovieRatings(movieId, limit = 20, options = {}) {
         try {
             const ratings = [];
             const normalizedMovieId = Number(movieId);
@@ -1051,7 +1043,7 @@ class RatingService {
             });
 
             // Apply limit after sorting
-            return currentRatings.slice(0, limit);
+            return currentRatings.slice(0, limit).map(rating => this.toRatingViewModel(rating, options));
         } catch (error) {
             console.error('Error getting movie ratings:', error);
             return [];
