@@ -130,7 +130,8 @@ let initialState = {
     torrentRetentionDays: 7,
     mediaPlayerEnabled: false,
     mediaPlayerSetup: createDefaultMediaPlayerSetup(),
-    subtitleAppearance: createDefaultSubtitleAppearance()
+    subtitleAppearance: createDefaultSubtitleAppearance(),
+    autoUpdateEnabled: true
 };
 
 let currentState = { ...initialState };
@@ -188,6 +189,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Mini Games Elements
     const gamesToggle = document.getElementById('gamesToggle');
+    const extensionAutoUpdateToggle = document.getElementById('extensionAutoUpdateToggle');
+    const extensionUpdateStatus = document.getElementById('extensionUpdateStatus');
+    const extensionUpdateSetupBtn = document.getElementById('extensionUpdateSetupBtn');
+    const extensionUpdateDownloadBtn = document.getElementById('extensionUpdateDownloadBtn');
+    const extensionUpdateDownloadStatus = document.getElementById('extensionUpdateDownloadStatus');
     
     // Sidebar Navigation Elements
     const sidebarLinks = document.querySelectorAll('.sidebar-link');
@@ -249,6 +255,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             currentState.mediaPlayerEnabled !== initialState.mediaPlayerEnabled ||
             !haveMatchingMediaPlayerSetup(currentState.mediaPlayerSetup, initialState.mediaPlayerSetup) ||
             !haveMatchingSubtitleAppearances(currentState.subtitleAppearance, initialState.subtitleAppearance) ||
+            currentState.autoUpdateEnabled !== initialState.autoUpdateEnabled ||
             (mediaPlayerRetentionLoaded && currentState.torrentRetentionDays !== initialState.torrentRetentionDays);
             
         saveBtn.classList.toggle('is-dirty', isDirty);
@@ -510,6 +517,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         }
 
+        if (extensionAutoUpdateToggle) {
+            extensionAutoUpdateToggle.checked = currentState.autoUpdateEnabled === true;
+        }
+
         if (torrentRetentionSelect && mediaPlayerRetentionLoaded) {
             torrentRetentionSelect.value = String(currentState.torrentRetentionDays);
         }
@@ -535,6 +546,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 MEDIA_PLAYER_SETUP_STORAGE_KEY,
                 SUBTITLE_APPEARANCE_STORAGE_KEY
             ]);
+            const updateStateResponse = await new Promise((resolve) => {
+                chrome.runtime.sendMessage({ type: 'GET_UPDATE_STATE' }, (response) => {
+                    resolve(chrome.runtime.lastError ? null : response);
+                });
+            });
             const mediaPlayerEnabled = result.mediaPlayerEnabled === true;
             const storedMediaPlayerSetup = normalizeMediaPlayerSetup(
                 result[MEDIA_PLAYER_SETUP_STORAGE_KEY],
@@ -550,7 +566,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 torrentRetentionDays: initialState.torrentRetentionDays ?? 7,
                 mediaPlayerEnabled,
                 mediaPlayerSetup: storedMediaPlayerSetup,
-                subtitleAppearance: normalizeSubtitleAppearance(result[SUBTITLE_APPEARANCE_STORAGE_KEY])
+                subtitleAppearance: normalizeSubtitleAppearance(result[SUBTITLE_APPEARANCE_STORAGE_KEY]),
+                autoUpdateEnabled: updateStateResponse?.settings?.autoUpdateEnabled !== false
             };
             
             currentState = {
@@ -568,6 +585,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             updateDirtyState();
             await loadMediaPlayerSettings();
+            if (extensionUpdateStatus) {
+                const setupRequired = updateStateResponse?.state?.configured === false
+                    || updateStateResponse?.state?.status === 'setup_required';
+                extensionUpdateStatus.textContent = setupRequired
+                    ? i18n.get('settings.updates.setup_required')
+                    : updateStateResponse?.state?.availableVersion
+                        ? i18n.get('settings.updates.available').replace('{version}', updateStateResponse.state.availableVersion)
+                        : i18n.get('settings.updates.automatic');
+                if (extensionUpdateSetupBtn) extensionUpdateSetupBtn.hidden = !setupRequired;
+            }
         } catch (error) {
             console.error('Failed to load settings:', error);
         }
@@ -612,6 +639,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             mediaPlayerRetentionLoaded = true;
             torrentRetentionSelect.disabled = false;
             updateUIFromState();
+
             updateDirtyState();
             if (mediaplayerRetentionStatus) mediaplayerRetentionStatus.textContent = 'Изменения применяются после нажатия «Сохранить».';
         } catch (error) {
@@ -666,6 +694,19 @@ document.addEventListener('DOMContentLoaded', async () => {
                 [SUBTITLE_APPEARANCE_STORAGE_KEY]: subtitleAppearance
             });
 
+            await new Promise((resolve, reject) => {
+                chrome.runtime.sendMessage({
+                    type: 'SET_AUTO_UPDATE',
+                    enabled: currentState.autoUpdateEnabled === true
+                }, (response) => {
+                    if (chrome.runtime.lastError || !response?.success) {
+                        reject(new Error(response?.error || chrome.runtime.lastError?.message || 'Не удалось сохранить обновления'));
+                        return;
+                    }
+                    resolve(response);
+                });
+            });
+
             // If language changed, ensure i18n saves it globally depending on how it's structured, but i18n.setLanguage was already called on preview.
             // Notify background script
             chrome.runtime.sendMessage({
@@ -677,6 +718,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     animeRadioSource: currentState.animeRadioSource,
                     showGames: currentState.showGames,
                     mediaPlayerEnabled: currentState.mediaPlayerEnabled,
+                    autoUpdateEnabled: currentState.autoUpdateEnabled,
                     mediaPlayerSetup: currentState.mediaPlayerSetup,
                     [SUBTITLE_APPEARANCE_STORAGE_KEY]: subtitleAppearance
                 }
@@ -712,6 +754,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     ...DEFAULT_SETTINGS,
                     [MEDIA_PLAYER_SETUP_STORAGE_KEY]: defaultMediaPlayerSetup,
                     [SUBTITLE_APPEARANCE_STORAGE_KEY]: defaultSubtitleAppearance
+                });
+                await new Promise((resolve) => {
+                    chrome.runtime.sendMessage({ type: 'SET_AUTO_UPDATE', enabled: true }, () => resolve());
                 });
                 
                 // Reload UI
@@ -803,6 +848,61 @@ document.addEventListener('DOMContentLoaded', async () => {
         radio.addEventListener('change', (e) => {
             currentState.animeRadioSource = e.target.value;
             updateDirtyState();
+        });
+    }
+
+    if (extensionAutoUpdateToggle) {
+        extensionAutoUpdateToggle.addEventListener('change', (event) => {
+            currentState.autoUpdateEnabled = event.target.checked;
+            if (extensionUpdateStatus) {
+                extensionUpdateStatus.textContent = event.target.checked
+                    ? i18n.get('settings.updates.enabled')
+                    : i18n.get('settings.updates.disabled');
+            }
+            updateDirtyState();
+        });
+    }
+
+    if (extensionUpdateSetupBtn) {
+        extensionUpdateSetupBtn.addEventListener('click', () => {
+            chrome.tabs.create({ url: UpdateService.getSetupUrl() }, () => {
+                if (chrome.runtime.lastError) {
+                    console.error('Could not open updater setup:', chrome.runtime.lastError.message);
+                }
+            });
+        });
+    }
+
+    if (extensionUpdateDownloadBtn) {
+        extensionUpdateDownloadBtn.addEventListener('click', async () => {
+            extensionUpdateDownloadBtn.disabled = true;
+            if (extensionUpdateDownloadStatus) {
+                extensionUpdateDownloadStatus.hidden = false;
+                extensionUpdateDownloadStatus.textContent = i18n.get('settings.updates.install_latest_preparing');
+            }
+
+            try {
+                const result = await UpdateService.installLatestReleaseForTesting();
+                if (extensionUpdateDownloadStatus) {
+                    extensionUpdateDownloadStatus.textContent = i18n
+                        .get('settings.updates.install_latest_started')
+                        .replace('{version}', result.availableVersion || '');
+                }
+            } catch (error) {
+                console.error('Could not install latest extension release:', error);
+                if (extensionUpdateDownloadStatus) {
+                    const messageKey = error?.message === 'SETUP_REQUIRED'
+                        ? 'settings.updates.setup_required'
+                        : error?.message === 'UPDATE_NOT_SAFE'
+                            ? 'settings.updates.install_latest_not_safe'
+                            : error?.message === 'UPDATE_IN_PROGRESS'
+                                ? 'settings.updates.install_latest_in_progress'
+                            : 'settings.updates.install_latest_failed';
+                    extensionUpdateDownloadStatus.textContent = i18n.get(messageKey);
+                }
+            } finally {
+                extensionUpdateDownloadBtn.disabled = false;
+            }
         });
     }
 

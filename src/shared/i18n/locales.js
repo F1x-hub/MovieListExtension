@@ -136,7 +136,24 @@ export const locales = {
             reset_confirm: "Are you sure you want to reset all settings to default?",
             saved: "Settings saved successfully!",
             save_failed: "Failed to save settings",
-            reset_done: "Settings reset to defaults"
+            reset_done: "Settings reset to defaults",
+            updates: {
+                title: "Automatic updates",
+                description: "Download new versions in the background and install them after playback ends.",
+                checking: "Checking updater connection...",
+                setup_required: "Run MovieListSetup.exe once to connect automatic updates.",
+                setup_button: "Connect automatic updates",
+                install_latest_button: "Download and install latest version (test)",
+                install_latest_preparing: "Preparing the latest release installation...",
+                install_latest_started: "Installation of version {version} started.",
+                install_latest_not_safe: "Stop playback before starting the test installation.",
+                install_latest_in_progress: "Another update installation is already in progress.",
+                install_latest_failed: "Could not start the latest release installation.",
+                available: "Version {version} is ready.",
+                automatic: "Automatic checks run in the background.",
+                enabled: "New versions will install after a safe playback check.",
+                disabled: "Automatic installation is off. Available versions can be started manually."
+            }
         },
         navbar: {
             home: "Home",
@@ -769,7 +786,24 @@ export const locales = {
             reset_confirm: "Вы уверены, что хотите сбросить все настройки к значениям по умолчанию?",
             saved: "Настройки успешно сохранены!",
             save_failed: "Не удалось сохранить настройки",
-            reset_done: "Настройки сброшены"
+            reset_done: "Настройки сброшены",
+            updates: {
+                title: "Автоматические обновления",
+                description: "Загружать новые версии в фоне и устанавливать их после завершения просмотра.",
+                checking: "Проверка подключения обновлятора…",
+                setup_required: "Один раз запустите MovieListSetup.exe, чтобы подключить обновления.",
+                setup_button: "Подключить автообновления",
+                install_latest_button: "Скачать и установить последнюю версию (тест)",
+                install_latest_preparing: "Подготовка установки последнего релиза...",
+                install_latest_started: "Установка версии {version} запущена.",
+                install_latest_not_safe: "Остановите воспроизведение перед тестовой установкой.",
+                install_latest_in_progress: "Другая установка обновления уже выполняется.",
+                install_latest_failed: "Не удалось начать установку последнего релиза.",
+                available: "Доступна версия {version}.",
+                automatic: "Проверка обновлений выполняется автоматически.",
+                enabled: "Новые версии будут устанавливаться после безопасной проверки.",
+                disabled: "Автоматическая установка отключена. Доступные версии можно запустить вручную."
+            }
         },
         navbar: {
             home: "Главная",
