@@ -213,6 +213,16 @@ Release entries are intentionally collapsed to keep this page readable. The
 manifest and package version remain the source of truth for the build version.
 
 <details>
+<summary><strong>1.3.3</strong> — исправлен запуск установщика</summary>
+
+### Fixes
+
+- Открывать setup-окно при двойном клике по `MovieListSetup.exe`.
+- Сохранить отдельные режимы Native Messaging и фонового выполнения обновления.
+
+</details>
+
+<details>
 <summary><strong>1.3.2</strong> — cross-platform release checks</summary>
 
 ### Fixes

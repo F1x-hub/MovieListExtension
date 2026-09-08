@@ -31,7 +31,7 @@ jobs:
         run: npm test
 
       - name: Run updater contract tests
-        run: npm run test:update-service && npm run test-popup-surface-contract
+        run: npm run test:update-service && npm run test-popup-surface-contract && npm run test:updater-setup
 
       - name: Build and package extension
         run: npm run package-release
