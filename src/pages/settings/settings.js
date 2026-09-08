@@ -914,6 +914,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    function sendUpdateRuntimeMessage(message) {
+        return new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage(message, (response) => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                    return;
+                }
+                if (!response?.success) {
+                    reject(new Error(response?.error || 'UPDATE_REQUEST_FAILED'));
+                    return;
+                }
+                resolve(response);
+            });
+        });
+    }
+
     if (extensionUpdateInstallBtn) {
         extensionUpdateInstallBtn.addEventListener('click', async () => {
             extensionUpdateInstallBtn.disabled = true;
@@ -923,14 +939,29 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             try {
-                let result = await UpdateService.checkAndInstallLatestRelease();
+                const checkResponse = await sendUpdateRuntimeMessage({
+                    type: 'CHECK_FOR_UPDATES',
+                    force: true,
+                    interactive: true
+                });
+                let result = checkResponse.state;
                 if (result.status === 'waiting_for_safe_moment' && result.requiresConfirmation) {
                     const confirmed = await showPlaybackUpdateDialog(result.availableVersion);
                     if (!confirmed) {
                         extensionUpdateInstallStatus.textContent = i18n.get('settings.updates.install_latest_declined');
                         return;
                     }
-                    result = await UpdateService.applyUpdate({ automatic: false, allowPlayback: true });
+                    result = (await sendUpdateRuntimeMessage({
+                        type: 'APPLY_UPDATE',
+                        automatic: false,
+                        allowPlayback: true
+                    })).state;
+                } else if (['available', 'available_manual', 'deferred'].includes(result.status)) {
+                    result = (await sendUpdateRuntimeMessage({
+                        type: 'APPLY_UPDATE',
+                        automatic: false,
+                        allowPlayback: false
+                    })).state;
                 }
 
                 if (extensionUpdateInstallStatus) {

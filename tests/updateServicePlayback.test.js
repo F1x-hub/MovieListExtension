@@ -6,7 +6,16 @@ const source = fs.readFileSync('src/shared/services/UpdateService.js', 'utf8');
 const settingsSource = fs.readFileSync('src/pages/settings/settings.js', 'utf8');
 const localesSource = fs.readFileSync('src/shared/i18n/locales.js', 'utf8');
 
-function createHarness({ executeResult = false, executeError = false, automatic = false, allowPlayback = false, nativeApplyStatus = 'succeeded' }) {
+function createHarness({
+    executeResult = false,
+    executeError = false,
+    automatic = false,
+    allowPlayback = false,
+    nativeApplyStatus = 'succeeded',
+    nativeOperation = null,
+    initialStatePatch = {},
+    extensionPage = false
+}) {
     const storage = {
         extension_update_state_v2: {
             status: 'available',
@@ -21,13 +30,15 @@ function createHarness({ executeResult = false, executeError = false, automatic 
                 size: 123
             },
             metadataText: '{}',
-            signature: 'signature'
+            signature: 'signature',
+            ...initialStatePatch
         },
         extension_update_settings_v1: { autoUpdateEnabled: true }
     };
     const alarms = [];
     let applyCalls = 0;
     let reloadCalls = 0;
+    const removedTabIds = [];
 
     const chrome = {
         runtime: {
@@ -44,7 +55,7 @@ function createHarness({ executeResult = false, executeError = false, automatic 
                     callback({ success: true, status: nativeApplyStatus, operationId: 'operation-1' });
                     return;
                 }
-            callback({ success: true, configured: true, updaterVersion: '1.1.1', operation: null });
+            callback({ success: true, configured: true, updaterVersion: '1.1.1', operation: nativeOperation });
             }
         },
         storage: {
@@ -61,7 +72,15 @@ function createHarness({ executeResult = false, executeError = false, automatic 
             hasDocument: async () => false
         },
         tabs: {
-            query: async () => [{ id: 7, url: 'https://example.com' }]
+            query: async () => [{
+                id: 7,
+                url: extensionPage
+                    ? 'chrome-extension://ext/src/pages/settings/settings.html'
+                    : 'https://example.com'
+            }],
+            remove: async (tabId) => {
+                removedTabIds.push(tabId);
+            }
         },
         scripting: {
             executeScript: async () => {
@@ -106,6 +125,7 @@ function createHarness({ executeResult = false, executeError = false, automatic 
         get reloadCalls() {
             return reloadCalls;
         },
+        removedTabIds,
         alarms
     };
 }
@@ -122,6 +142,28 @@ function createHarness({ executeResult = false, executeError = false, automatic 
     assert.strictEqual(queuedResult.status, 'queued');
     assert.strictEqual(reloadBeforeReplacement.reloadCalls, 1,
         'the extension must reload before the native host replaces its unpacked folder');
+
+    const extensionPage = createHarness({ nativeApplyStatus: 'queued', extensionPage: true });
+    await extensionPage.apply();
+    assert.deepStrictEqual(extensionPage.removedTabIds, [7],
+        'the background updater must close extension pages before replacing the unpacked folder');
+
+    const staleStartedState = createHarness({
+        nativeOperation: {
+            operationId: 'operation-1',
+            status: 'failed',
+            errorCode: 'UPDATE_REPLACEMENT_FAILED',
+            errorMessage: 'The extension folder could not be replaced.'
+        },
+        initialStatePatch: {
+            status: 'installing',
+            operationId: 'operation-1'
+        }
+    });
+    const reconciledState = await staleStartedState.getState();
+    assert.strictEqual(reconciledState.state.status, 'failed',
+        'settings must reconcile a stale installing state with the native operation journal');
+    assert.strictEqual(reconciledState.state.errorCode, 'UPDATE_REPLACEMENT_FAILED');
 
     const activePlayback = createHarness({ executeResult: true });
     const blockedResult = await activePlayback.apply();

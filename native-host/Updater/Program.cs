@@ -13,7 +13,7 @@ internal static class Program
     private const string RepositoryPrefix = "https://github.com/F1x-hub/MovieListExtension/releases/download/";
     private const string AppName = "MovieListExtensionUpdater";
     private const int ProtocolVersion = 1;
-    private const string UpdaterVersion = "1.1.1";
+    private const string UpdaterVersion = "1.1.2";
     private const string ApplyMutexName = @"Local\MovieListExtensionUpdater.Apply";
     private const string SetupMutexName = @"Local\MovieListExtensionUpdater.Setup";
     private const string RecoveryRunOnceName = "MovieListExtensionUpdaterRecovery";
@@ -980,7 +980,9 @@ xwIDAQAB
                 Thread.Sleep(1000);
             }
         }
-        throw new IOException("Could not move the extension directory after retries.", last);
+        throw new IOException(
+            $"Could not move the extension directory after retries. Last error: {last?.Message}",
+            last);
     }
 
     private static void UpdateOperationState(string operationId, Action<OperationState> update)

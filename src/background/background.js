@@ -835,7 +835,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             .catch(error => sendResponse({ success: false, error: error.message }));
         return true;
     } else if (message.type === 'APPLY_UPDATE') {
-        UpdateService.applyUpdate()
+        UpdateService.applyUpdate({
+            automatic: message.automatic === true,
+            allowPlayback: message.allowPlayback === true
+        })
             .then(state => sendResponse({ success: true, state }))
             .catch(error => sendResponse({ success: false, error: error.message }));
         return true;
@@ -851,7 +854,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     } else if (message.type === 'CHECK_FOR_UPDATES') {
         console.log('[Background] Received CHECK_FOR_UPDATES request');
-        UpdateService.checkForUpdates({ force: message.force === true })
+        UpdateService.checkForUpdates({
+            force: message.force === true,
+            interactive: message.interactive === true
+        })
             .then(state => {
                 sendResponse({ success: true, state });
             })
