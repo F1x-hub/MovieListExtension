@@ -51,7 +51,9 @@ xwIDAQAB
     private static int Main(string[] args)
     {
         Directory.CreateDirectory(DataRoot);
-        if (args.Any(arg => string.Equals(arg, "--setup", StringComparison.OrdinalIgnoreCase)))
+        var setupRequested = args.Length == 0
+            || args.Any(arg => string.Equals(arg, "--setup", StringComparison.OrdinalIgnoreCase));
+        if (setupRequested)
         {
             ApplicationConfiguration.Initialize();
             Application.Run(new SetupForm());
