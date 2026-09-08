@@ -213,6 +213,17 @@ Release entries are intentionally collapsed to keep this page readable. The
 manifest and package version remain the source of truth for the build version.
 
 <details>
+<summary><strong>1.3.4</strong> — улучшена обратная связь setup-режима</summary>
+
+### Fixes
+
+- Показывать видимый статус и подтверждение после подключения автообновлений.
+- Показывать понятную ошибку при невозможности регистрации Native Messaging host.
+- Не считать необязательное копирование пути в буфер обмена ошибкой установки.
+
+</details>
+
+<details>
 <summary><strong>1.3.3</strong> — исправлен запуск установщика</summary>
 
 ### Fixes
