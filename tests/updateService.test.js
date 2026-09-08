@@ -4,6 +4,7 @@ const vm = require('vm');
 
 const source = fs.readFileSync('src/shared/services/UpdateService.js', 'utf8');
 const backgroundSource = fs.readFileSync('src/background/background.js', 'utf8');
+const popupSource = fs.readFileSync('src/popup/popup.js', 'utf8');
 const nativeHostSource = fs.readFileSync('native-host/Updater/Program.cs', 'utf8');
 const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
 const settingsHtmlSource = fs.readFileSync('src/pages/settings/settings.html', 'utf8');
@@ -99,6 +100,9 @@ vm.runInNewContext(source, context, { filename: 'UpdateService.js' });
     assert.doesNotMatch(nativeHostSource, /chrome-extension:\/\/\{extensionId\}\/\*\//);
     assert.match(nativeHostSource, /FirstOrDefault\(arg => arg\.StartsWith\("chrome-extension:\/\/"/);
     assert.match(nativeHostSource, /\?\.TrimEnd\('\/'\)/);
+    assert.doesNotMatch(source, /rollbackUpdate/);
+    assert.doesNotMatch(backgroundSource, /ROLLBACK_UPDATE/);
+    assert.doesNotMatch(popupSource, /rollbackAvailable|ROLLBACK_UPDATE/);
     await context.UpdateService.handleAlarm({ name: 'checkUpdatesSafeRetry' });
     assert.strictEqual(fetchCount, 4);
     console.log('updateService.test.js passed');

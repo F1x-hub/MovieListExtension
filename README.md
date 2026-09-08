@@ -213,6 +213,16 @@ Release entries are intentionally collapsed to keep this page readable. The
 manifest and package version remain the source of truth for the build version.
 
 <details>
+<summary><strong>1.3.8</strong> — отключены постоянные backup-папки updater</summary>
+
+### Fixes
+
+- Replace the stable unpacked-extension folder without retaining backup directories.
+- Remove rollback controls that are unavailable without backups.
+
+</details>
+
+<details>
 <summary><strong>1.3.7</strong> — проверка автоматического обновления</summary>
 
 ### Docs

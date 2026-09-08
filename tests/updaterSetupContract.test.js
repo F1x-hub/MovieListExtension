@@ -23,5 +23,13 @@ assert.match(source, /Height = 360/);
 assert.match(source, /Text = "Готово к подключению\."/);
 assert.match(source, /MessageBox\.Show\(\s*this,\s*"Автоматические обновления подключены/);
 assert.match(source, /MessageBox\.Show\(this, status\.Text, "Ошибка подключения"/);
+assert.match(
+    source,
+    /Directory\.Delete\(input\.InstallPath, recursive: true\);/,
+    'updates must replace the configured folder without creating a backup directory'
+);
+assert.doesNotMatch(source, /\.backup-/i, 'the updater must not create persistent backup directories');
+assert.doesNotMatch(source, /BackupPath/, 'rollback state must not remain in the no-backup updater');
+assert.doesNotMatch(source, /Восстановить предыдущую версию/, 'setup must not expose unavailable rollback');
 
 console.log('updaterSetupContract.test.js passed');

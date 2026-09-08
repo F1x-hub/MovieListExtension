@@ -125,7 +125,6 @@ xwIDAQAB
             "apply" => StartApply(request, config),
             "test_apply" => StartApply(request, config, allowSameVersion: true),
             "confirm" => Confirm(request),
-            "rollback" => Rollback(config),
             _ => ErrorResponse("ACTION_UNSUPPORTED", "Unsupported updater action.")
         };
     }
@@ -139,8 +138,6 @@ xwIDAQAB
             configured = Directory.Exists(config.ExtensionPath),
             installPath = config.ExtensionPath,
             extensionId = config.ExtensionId,
-            rollbackAvailable = operation?.BackupPath is not null
-                && Directory.Exists(operation.BackupPath),
             operation
         };
     }
@@ -294,69 +291,7 @@ xwIDAQAB
             state.Status = "succeeded";
             state.ConfirmedAt = DateTimeOffset.UtcNow;
             WriteJsonAtomic(StatePath, state);
-            CleanupOldBackups(state.InstallPath);
             return new { success = true, status = state.Status, version = state.Version };
-        }
-        finally
-        {
-            if (mutexAcquired) operationMutex.ReleaseMutex();
-        }
-    }
-
-    private static object Rollback(InstallConfig config)
-    {
-        using var operationMutex = new Mutex(false, @"Local\MovieListExtensionUpdater.Apply");
-        var mutexAcquired = false;
-        try
-        {
-            mutexAcquired = TryAcquireOperationMutex(operationMutex);
-            if (!mutexAcquired)
-            {
-                return ErrorResponse("UPDATE_IN_PROGRESS", "Another update operation is already running.");
-            }
-
-            var state = ReadJson<OperationState>(StatePath);
-            if (state is null
-                || !string.Equals(state.Status, "awaiting_confirmation", StringComparison.Ordinal)
-                || string.IsNullOrWhiteSpace(state.BackupPath)
-                || !Directory.Exists(state.BackupPath))
-            {
-                return ErrorResponse("ROLLBACK_UNAVAILABLE", "No verified backup is available.");
-            }
-
-            var failedPath = state.InstallPath + ".failed-" + DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-                + "-" + Guid.NewGuid().ToString("N");
-            MoveWithRetry(state.InstallPath, failedPath);
-            try
-            {
-                MoveWithRetry(state.BackupPath, state.InstallPath);
-            }
-            catch
-            {
-                try
-                {
-                    if (!Directory.Exists(state.InstallPath) && Directory.Exists(failedPath))
-                    {
-                        MoveWithRetry(failedPath, state.InstallPath);
-                    }
-                }
-                catch
-                {
-                    // Preserve the original rollback error; the failed path remains recoverable.
-                }
-
-                throw;
-            }
-
-            state.Status = "rolled_back";
-            state.ErrorCode = null;
-            state.ErrorMessage = null;
-            WriteJsonAtomic(StatePath, state);
-            return new { success = true, status = state.Status };
-        }
-        catch (Exception error)
-        {
-            return ErrorResponse("ROLLBACK_FAILED", error.Message);
         }
         finally
         {
@@ -387,22 +322,12 @@ xwIDAQAB
             ValidateManifest(manifestPath, input.Metadata);
 
             UpdateOperationState(operationId, state => state.Status = "replacing");
-            var backupPath = input.InstallPath + ".backup-" + operationId;
-            MoveWithRetry(input.InstallPath, backupPath);
-            try
-            {
-                MoveWithRetry(extractionPath, input.InstallPath);
-            }
-            catch
-            {
-                MoveWithRetry(backupPath, input.InstallPath);
-                throw;
-            }
+            Directory.Delete(input.InstallPath, recursive: true);
+            MoveWithRetry(extractionPath, input.InstallPath);
 
             UpdateOperationState(operationId, state =>
             {
                 state.Status = "awaiting_confirmation";
-                state.BackupPath = backupPath;
                 state.ErrorCode = null;
                 state.ErrorMessage = null;
             });
@@ -610,20 +535,6 @@ xwIDAQAB
         throw new IOException("Could not move the extension directory after retries.", last);
     }
 
-    private static void CleanupOldBackups(string installPath)
-    {
-        var parent = Path.GetDirectoryName(installPath);
-        if (parent is null || !Directory.Exists(parent)) return;
-        var backups = Directory.GetDirectories(parent, Path.GetFileName(installPath) + ".backup-*")
-            .OrderByDescending(path => Directory.GetCreationTimeUtc(path))
-            .Skip(2)
-            .ToArray();
-        foreach (var backup in backups)
-        {
-            try { Directory.Delete(backup, recursive: true); } catch { }
-        }
-    }
-
     private static void UpdateOperationState(string operationId, Action<OperationState> update)
     {
         var state = ReadJson<OperationState>(StatePath) ?? new OperationState { OperationId = operationId };
@@ -737,12 +648,9 @@ xwIDAQAB
             install.Click += (_, _) => Install();
             var chrome = new Button { Text = "Открыть chrome://extensions", AutoSize = true };
             chrome.Click += (_, _) => Process.Start(new ProcessStartInfo("chrome://extensions") { UseShellExecute = true });
-            var recover = new Button { Text = "Восстановить предыдущую версию", AutoSize = true };
-            recover.Click += (_, _) => Recover();
             var buttons = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(0, 16, 0, 0) };
             buttons.Controls.Add(install);
             buttons.Controls.Add(chrome);
-            buttons.Controls.Add(recover);
 
             var panel = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(24), RowCount = 5 };
             panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -822,19 +730,6 @@ xwIDAQAB
             }
         }
 
-        private void Recover()
-        {
-            try
-            {
-                var config = LoadConfig() ?? throw new InvalidOperationException("Автоматические обновления ещё не подключены.");
-                var result = Rollback(config);
-                status.Text = JsonSerializer.Serialize(result, JsonOptions);
-            }
-            catch (Exception error)
-            {
-                status.Text = "Не удалось восстановить предыдущую версию: " + error.Message;
-            }
-        }
     }
 
     private sealed class InstallConfig
@@ -858,7 +753,6 @@ xwIDAQAB
         public string Status { get; set; } = "idle";
         public string Version { get; set; } = string.Empty;
         public string InstallPath { get; set; } = string.Empty;
-        public string? BackupPath { get; set; }
         public string? ErrorCode { get; set; }
         public string? ErrorMessage { get; set; }
         public DateTimeOffset StartedAt { get; set; }
