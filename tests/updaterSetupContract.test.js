@@ -19,5 +19,9 @@ assert.match(
     /if \(args\.Length >= 2 && string\.Equals\(args\[0\], "--execute", StringComparison\.OrdinalIgnoreCase\)\)/,
     'background update execution must keep its explicit --execute mode'
 );
+assert.match(source, /Height = 360/);
+assert.match(source, /Text = "Готово к подключению\."/);
+assert.match(source, /MessageBox\.Show\(\s*this,\s*"Автоматические обновления подключены/);
+assert.match(source, /MessageBox\.Show\(this, status\.Text, "Ошибка подключения"/);
 
 console.log('updaterSetupContract.test.js passed');

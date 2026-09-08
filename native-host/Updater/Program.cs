@@ -688,15 +688,23 @@ xwIDAQAB
     private sealed class SetupForm : Form
     {
         private readonly TextBox pathBox = new() { Dock = DockStyle.Fill };
-        private readonly Label status = new() { AutoSize = true, MaximumSize = new Size(500, 0) };
+        private readonly Label status = new()
+        {
+            AutoSize = true,
+            MaximumSize = new Size(560, 0),
+            Dock = DockStyle.Fill,
+            Padding = new Padding(0, 16, 0, 0),
+            ForeColor = Color.FromArgb(70, 70, 70),
+            Text = "Готово к подключению."
+        };
 
         public SetupForm()
         {
             Text = "MovieList Extension — установка обновлений";
             Width = 620;
-            Height = 300;
+            Height = 360;
             StartPosition = FormStartPosition.CenterScreen;
-            MinimumSize = new Size(620, 300);
+            MinimumSize = new Size(620, 360);
 
             var title = new Label
             {
@@ -784,12 +792,30 @@ xwIDAQAB
                 });
                 using var keyHandle = Registry.CurrentUser.CreateSubKey($"Software\\Google\\Chrome\\NativeMessagingHosts\\{HostName}");
                 keyHandle?.SetValue(null, hostManifestPath);
-                Clipboard.SetText(extensionPath);
+
+                try
+                {
+                    Clipboard.SetText(extensionPath);
+                }
+                catch
+                {
+                    // Clipboard access is only a convenience and must not make setup look failed.
+                }
+
+                status.ForeColor = Color.DarkGreen;
                 status.Text = $"Готово. ID расширения: {extensionId}. Путь скопирован в буфер обмена. Теперь загрузите эту папку в Chrome и откройте расширение один раз.";
+                MessageBox.Show(
+                    this,
+                    "Автоматические обновления подключены. Теперь загрузите выбранную папку в Chrome через «Загрузить распакованное расширение».",
+                    "Готово",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
             }
             catch (Exception error)
             {
+                status.ForeColor = Color.Firebrick;
                 status.Text = "Не удалось подключить обновления: " + error.Message;
+                MessageBox.Show(this, status.Text, "Ошибка подключения", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
