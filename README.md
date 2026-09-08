@@ -225,6 +225,7 @@ manifest and package version remain the source of truth for the build version.
 
 - Add signed GitHub ZIP updates through Native Messaging with automatic and manual installation.
 - Replace the stable unpacked-extension folder without persistent backup directories.
+- Create Windows Explorer-compatible release ZIPs with root-relative archive paths.
 
 - Keep torrent playback above the release browser with accessible in-modal scrolling.
 - Restore player focus after torrent selection and keep the modal above navigation.

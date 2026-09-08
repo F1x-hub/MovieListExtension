@@ -33,4 +33,5 @@ The Native Messaging manifest uses the exact extension origin with a trailing `/
 wildcards are not valid in `allowed_origins`. The release workflow also runs the
 regression and updater contract tests, verifies that the signing secret matches the
 public key embedded in the Native Host, and publishes assets through a draft release
-before making the release visible.
+before making the release visible. The ZIP is validated to contain a root-level
+`manifest.json` and no `./`-prefixed paths so Windows Explorer can display it.
