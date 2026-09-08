@@ -213,6 +213,16 @@ Release entries are intentionally collapsed to keep this page readable. The
 manifest and package version remain the source of truth for the build version.
 
 <details>
+<summary><strong>1.3.1</strong> — проверка обновления с 1.3.0</summary>
+
+### Fixes
+
+- Publish a signed release for validating the 1.3.0 to 1.3.1 update path.
+- Keep the Windows Explorer-compatible ZIP archive validation in the release pipeline.
+
+</details>
+
+<details>
 <summary><strong>1.3.0</strong> — provider-key endpoint deployment</summary>
 
 ### Features
