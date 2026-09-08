@@ -72,9 +72,12 @@ xwIDAQAB
     private static int RunNativeHost(string[] args)
     {
         var config = LoadConfig();
-        var callerOrigin = args.Length > 0 ? args[0] : string.Empty;
-        if (config is null || !string.Equals(callerOrigin, $"chrome-extension://{config.ExtensionId}", StringComparison.Ordinal))
+        var callerOrigin = args
+            .FirstOrDefault(arg => arg.StartsWith("chrome-extension://", StringComparison.OrdinalIgnoreCase))
+            ?.TrimEnd('/');
+        if (config is null || !string.Equals(callerOrigin, $"chrome-extension://{config.ExtensionId}", StringComparison.OrdinalIgnoreCase))
         {
+            Console.Error.WriteLine("Native host caller origin was not recognized.");
             return 1;
         }
 

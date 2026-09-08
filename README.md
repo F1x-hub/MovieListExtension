@@ -213,6 +213,16 @@ Release entries are intentionally collapsed to keep this page readable. The
 manifest and package version remain the source of truth for the build version.
 
 <details>
+<summary><strong>1.3.6</strong> — усилена совместимость Native Messaging</summary>
+
+### Fixes
+
+- Принимать origin Chrome с завершающим `/` и дополнительными аргументами Windows.
+- Сохранять строгую проверку конкретного extension ID.
+
+</details>
+
+<details>
 <summary><strong>1.3.5</strong> — исправлен доступ к GitHub release assets</summary>
 
 ### Fixes

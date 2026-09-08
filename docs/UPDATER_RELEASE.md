@@ -26,6 +26,8 @@ To publish a version:
    immutable release metadata.
 4. Give users `MovieListSetup.exe` for the one-time connection. They select the
    folder containing `manifest.json`, then load that same folder in Chrome.
+   If Chrome was already open while setup registered the Native Messaging host,
+   fully restart Chrome before testing the extension connection.
 
 The Native Messaging manifest uses the exact extension origin with a trailing `/`;
 wildcards are not valid in `allowed_origins`. The release workflow also runs the
