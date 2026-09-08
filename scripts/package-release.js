@@ -17,6 +17,26 @@ function run(command, args) {
     if (result.status !== 0) fail(`${command} failed with exit code ${result.status}`);
 }
 
+function validateArchive(archivePath) {
+    const result = spawnSync('tar', ['-t', '-f', archivePath], {
+        cwd: root,
+        encoding: 'utf8',
+        shell: false
+    });
+    if (result.status !== 0) fail('Could not inspect the extension archive after creation.');
+
+    const entries = String(result.stdout || '')
+        .split(/\r?\n/)
+        .map(entry => entry.trim())
+        .filter(Boolean);
+    if (!entries.includes('manifest.json')) {
+        fail('The extension archive does not contain a root manifest.json.');
+    }
+    if (entries.some(entry => entry.startsWith('./'))) {
+        fail('The extension archive contains ./-prefixed paths that Windows Explorer cannot display reliably.');
+    }
+}
+
 if (process.platform === 'win32') {
     run('cmd.exe', ['/d', '/c', 'npm', 'run', 'build']);
 } else {
@@ -55,8 +75,13 @@ const assetName = `MovieList-extension-${manifest.version}.zip`;
 const assetPath = path.join(root, assetName);
 if (fs.existsSync(assetPath)) fs.rmSync(assetPath, { force: true });
 
-// Windows ships bsdtar. It creates a real ZIP when the archive name ends in .zip.
-run('tar', ['-a', '-c', '-f', assetPath, '-C', dist, '.']);
+const archiveEntries = fs.readdirSync(dist);
+if (archiveEntries.length === 0) fail('dist is empty; refusing to publish an empty extension archive.');
+
+// Windows ships bsdtar. Pass real top-level entries instead of `.` so the ZIP
+// contains normal paths (`manifest.json`, `src/...`) that Explorer can display.
+run('tar', ['-a', '-c', '-f', assetPath, '-C', dist, ...archiveEntries]);
+validateArchive(assetPath);
 
 const updaterProject = path.join(root, 'native-host', 'Updater', 'MovieListUpdater.csproj');
 if (fs.existsSync(updaterProject)) {
