@@ -13,7 +13,7 @@ internal static class Program
     private const string RepositoryPrefix = "https://github.com/F1x-hub/MovieListExtension/releases/download/";
     private const string AppName = "MovieListExtensionUpdater";
     private const int ProtocolVersion = 1;
-    private const string UpdaterVersion = "1.1.0";
+    private const string UpdaterVersion = "1.1.1";
     private const string ApplyMutexName = @"Local\MovieListExtensionUpdater.Apply";
     private const string SetupMutexName = @"Local\MovieListExtensionUpdater.Setup";
     private const string RecoveryRunOnceName = "MovieListExtensionUpdaterRecovery";
@@ -482,7 +482,10 @@ xwIDAQAB
                     && string.Equals(failedState.OperationId, operationId, StringComparison.Ordinal)
                     && string.Equals(failedState.Status, "replacing", StringComparison.Ordinal))
                 {
-                    RecoverInterruptedOperation(failedState, config: LoadConfig() ?? throw new InvalidOperationException("Updater setup is not configured."));
+                    RecoverInterruptedOperation(
+                        failedState,
+                        config: LoadConfig() ?? throw new InvalidOperationException("Updater setup is not configured."),
+                        interruptionMessage: error.Message);
                 }
                 else
                 {
@@ -682,7 +685,10 @@ xwIDAQAB
         }
     }
 
-    private static void RecoverInterruptedOperation(OperationState state, InstallConfig config)
+    private static void RecoverInterruptedOperation(
+        OperationState state,
+        InstallConfig config,
+        string? interruptionMessage = null)
     {
         var currentVersion = ReadCurrentManifestVersion(config.ExtensionPath);
         if (currentVersion is not null && CompareVersions(state.Version, currentVersion) == 0)
@@ -718,8 +724,12 @@ xwIDAQAB
             }
 
             state.Status = "failed";
-            state.ErrorCode = "RECOVERED_AFTER_INTERRUPTION";
-            state.ErrorMessage = "The interrupted update was rolled back.";
+            state.ErrorCode = interruptionMessage is null
+                ? "RECOVERED_AFTER_INTERRUPTION"
+                : "UPDATE_REPLACEMENT_FAILED";
+            state.ErrorMessage = interruptionMessage is null
+                ? "The interrupted update was rolled back."
+                : $"The extension folder could not be replaced and the update was rolled back: {interruptionMessage}";
             state.CleanupPending = true;
             state.LastProgressAt = DateTimeOffset.UtcNow;
             WriteJsonAtomic(StatePath, state);

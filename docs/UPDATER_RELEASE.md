@@ -22,7 +22,7 @@ mid-replacement, the next user logon can restore the previous extension folder;
 when restoration is impossible, the updater reports `RECOVERY_REQUIRED` and blocks
 another replacement until the journal is repaired.
 
-The hardened updater requires MovieListSetup.exe version 1.1.0 or newer. A user
+The hardened updater requires MovieListSetup.exe version 1.1.1 or newer. A user
 who already connected an older Setup must run the current Setup once, select the same
 extension folder, and click **Connect automatic updates**. This is a one-time
 migration; future extension releases do not require reinstalling the Setup executable.

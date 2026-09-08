@@ -20,7 +20,7 @@
     const CHECK_INTERVAL_MINUTES = 360;
     const RETRY_DELAY_MINUTES = 30;
     const HOST_PROTOCOL_VERSION = 1;
-    const MIN_SUPPORTED_UPDATER_VERSION = '1.1.0';
+    const MIN_SUPPORTED_UPDATER_VERSION = '1.1.1';
     const OPERATION_STATUSES = new Set([
         'installing',
         'queued',
@@ -30,6 +30,7 @@
 
     let alarmRegistered = false;
     let activeCheck = null;
+    let reloadScheduled = false;
 
     function now() {
         return Date.now();
@@ -104,6 +105,19 @@
         } catch {
             // Alarm cleanup is best effort; the next tick will be harmless.
         }
+    }
+
+    function scheduleExtensionReload() {
+        if (reloadScheduled || typeof chrome.runtime?.reload !== 'function') return;
+        reloadScheduled = true;
+        setTimeout(() => {
+            try {
+                chrome.runtime.reload();
+            } catch (error) {
+                reloadScheduled = false;
+                console.warn('[Update] Could not reload the extension before replacement:', error);
+            }
+        }, 250);
     }
 
     async function readState() {
@@ -371,9 +385,7 @@
                 status: 'awaiting_confirmation',
                 operationId: operation.operationId
             });
-            if (reloadWhenReady) {
-                setTimeout(() => chrome.runtime.reload(), 250);
-            }
+            if (reloadWhenReady) scheduleExtensionReload();
         } else if (operation.status === 'succeeded') {
             clearOperationAlarm();
             await writeState({ status: 'succeeded', operationId: operation.operationId });
@@ -462,6 +474,10 @@
                 errorCode: null,
                 errorMessage: null
             });
+            // Unpacked extensions keep service-worker/page files open while they
+            // are active. Reload once before the native host replaces the folder;
+            // the post-replacement confirmation reload is handled by polling.
+            if (isOperationPending(nextState)) scheduleExtensionReload();
             void pollNativeOperation(nextState.operationId);
             return nextState;
         } catch (error) {
