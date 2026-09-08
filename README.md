@@ -213,6 +213,15 @@ Release entries are intentionally collapsed to keep this page readable. The
 manifest and package version remain the source of truth for the build version.
 
 <details>
+<summary><strong>1.3.1</strong> — release-test portability</summary>
+
+### Fixes
+
+- Normalize regression-test line endings for Windows GitHub Actions checkouts.
+
+</details>
+
+<details>
 <summary><strong>1.3.0</strong> — provider-key endpoint deployment</summary>
 
 ### Features
