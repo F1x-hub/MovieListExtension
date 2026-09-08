@@ -148,65 +148,6 @@
         return { metadata, metadataText, signature };
     }
 
-    async function installLatestReleaseForTesting() {
-        const release = await fetchReleaseMetadata();
-        const { metadata } = release;
-        const { state } = await readState();
-        if (['installing', 'awaiting_confirmation', 'waiting_for_safe_moment'].includes(state.status)) {
-            throw new Error('UPDATE_IN_PROGRESS');
-        }
-
-        const hostStatus = await getNativeStatus();
-        if (hostStatus.configured !== true) {
-            throw new Error('SETUP_REQUIRED');
-        }
-        if (['queued', 'downloading', 'replacing', 'awaiting_confirmation'].includes(hostStatus.operation?.status)) {
-            throw new Error('UPDATE_IN_PROGRESS');
-        }
-        if (!(await isSafeToApply())) {
-            throw new Error('UPDATE_NOT_SAFE');
-        }
-
-        const operationId = crypto.randomUUID();
-        await writeState({
-            status: 'installing',
-            currentVersion: chrome.runtime.getManifest().version,
-            availableVersion: metadata.version,
-            operationId,
-            metadata,
-            metadataText: release.metadataText,
-            signature: release.signature,
-            deferredUntil: 0,
-            errorCode: null,
-            errorMessage: null
-        });
-
-        try {
-            const response = await nativeMessage({
-                action: 'test_apply',
-                operationId,
-                metadata,
-                metadataText: release.metadataText,
-                signature: release.signature
-            });
-            const nextState = await writeState({
-                status: response.status || 'installing',
-                operationId: response.operationId || operationId,
-                errorCode: null,
-                errorMessage: null
-            });
-            void pollNativeOperation(nextState.operationId);
-            return nextState;
-        } catch (error) {
-            return writeState({
-                status: 'failed',
-                operationId,
-                errorCode: 'TEST_APPLY_FAILED',
-                errorMessage: error.message || 'TEST_APPLY_FAILED'
-            });
-        }
-    }
-
     async function checkForUpdates(options = {}) {
         if (activeCheck) return activeCheck;
         activeCheck = (async () => {
@@ -258,7 +199,7 @@
                 }
 
                 if (settings.autoUpdateEnabled && !nextState.deferredUntil) {
-                    return applyUpdate({ automatic: true });
+                    return applyUpdate();
                 }
                 return nextState;
             } catch (error) {
@@ -274,6 +215,14 @@
             }
         })();
         return activeCheck;
+    }
+
+    async function checkAndInstallLatestRelease() {
+        const state = await checkForUpdates({ force: true });
+        if (['available', 'available_manual', 'deferred'].includes(state.status)) {
+            return applyUpdate({ automatic: false });
+        }
+        return state;
     }
 
     async function getNativeStatus() {
@@ -351,13 +300,10 @@
         return response;
     }
 
-    async function applyUpdate(options = {}) {
-        const { state, settings } = await readState();
+    async function applyUpdate() {
+        const { state } = await readState();
         if (!state.metadata || !state.signature || !state.availableVersion) {
             return writeState({ status: 'idle', errorCode: 'NO_UPDATE_READY' });
-        }
-        if (!options.automatic && settings.autoUpdateEnabled === false) {
-            // A manual click is still allowed when automatic installation is off.
         }
         if (state.status === 'installing' || state.status === 'awaiting_confirmation') return state;
 
@@ -447,7 +393,7 @@
         await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
         const { state } = await readState();
         if (settings.autoUpdateEnabled && state.availableVersion && !state.deferredUntil) {
-            return applyUpdate({ automatic: true });
+            return applyUpdate();
         }
         return state;
     }
@@ -506,7 +452,7 @@
         setAutoUpdateEnabled,
         syncNativeOperation,
         setupBackground,
-        installLatestReleaseForTesting,
+        checkAndInstallLatestRelease,
         getSetupUrl: () => SETUP_URL
     };
 }(globalThis));

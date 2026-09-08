@@ -123,7 +123,6 @@ xwIDAQAB
         {
             "status" => StatusResponse(config),
             "apply" => StartApply(request, config),
-            "test_apply" => StartApply(request, config, allowSameVersion: true),
             "confirm" => Confirm(request),
             _ => ErrorResponse("ACTION_UNSUPPORTED", "Unsupported updater action.")
         };
@@ -142,7 +141,7 @@ xwIDAQAB
         };
     }
 
-    private static object StartApply(JsonElement request, InstallConfig config, bool allowSameVersion = false)
+    private static object StartApply(JsonElement request, InstallConfig config)
     {
         var operationId = request.TryGetProperty("operationId", out var operationElement)
             ? operationElement.GetString()
@@ -202,7 +201,7 @@ xwIDAQAB
             }
 
             var currentVersion = ReadCurrentManifestVersion(config.ExtensionPath);
-            if (!allowSameVersion && currentVersion is not null
+            if (currentVersion is not null
                 && CompareVersions(metadata.Version, currentVersion) <= 0)
             {
                 return ErrorResponse("UPDATE_NOT_NEWER", "The release is not newer than the installed version.");

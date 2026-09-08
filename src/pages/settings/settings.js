@@ -192,8 +192,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const extensionAutoUpdateToggle = document.getElementById('extensionAutoUpdateToggle');
     const extensionUpdateStatus = document.getElementById('extensionUpdateStatus');
     const extensionUpdateSetupBtn = document.getElementById('extensionUpdateSetupBtn');
-    const extensionUpdateDownloadBtn = document.getElementById('extensionUpdateDownloadBtn');
-    const extensionUpdateDownloadStatus = document.getElementById('extensionUpdateDownloadStatus');
+    const extensionUpdateInstallBtn = document.getElementById('extensionUpdateInstallBtn');
+    const extensionUpdateInstallStatus = document.getElementById('extensionUpdateInstallStatus');
     
     // Sidebar Navigation Elements
     const sidebarLinks = document.querySelectorAll('.sidebar-link');
@@ -873,24 +873,33 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    if (extensionUpdateDownloadBtn) {
-        extensionUpdateDownloadBtn.addEventListener('click', async () => {
-            extensionUpdateDownloadBtn.disabled = true;
-            if (extensionUpdateDownloadStatus) {
-                extensionUpdateDownloadStatus.hidden = false;
-                extensionUpdateDownloadStatus.textContent = i18n.get('settings.updates.install_latest_preparing');
+    if (extensionUpdateInstallBtn) {
+        extensionUpdateInstallBtn.addEventListener('click', async () => {
+            extensionUpdateInstallBtn.disabled = true;
+            if (extensionUpdateInstallStatus) {
+                extensionUpdateInstallStatus.hidden = false;
+                extensionUpdateInstallStatus.textContent = i18n.get('settings.updates.install_latest_preparing');
             }
 
             try {
-                const result = await UpdateService.installLatestReleaseForTesting();
-                if (extensionUpdateDownloadStatus) {
-                    extensionUpdateDownloadStatus.textContent = i18n
-                        .get('settings.updates.install_latest_started')
+                const result = await UpdateService.checkAndInstallLatestRelease();
+                if (extensionUpdateInstallStatus) {
+                    const messageKey = result.status === 'up_to_date'
+                        ? 'settings.updates.install_latest_up_to_date'
+                        : result.status === 'setup_required'
+                            ? 'settings.updates.setup_required'
+                            : result.status === 'waiting_for_safe_moment'
+                                ? 'settings.updates.install_latest_not_safe'
+                                : result.status === 'installing' || result.status === 'queued'
+                                    ? 'settings.updates.install_latest_started'
+                                    : 'settings.updates.install_latest_failed';
+                    extensionUpdateInstallStatus.textContent = i18n
+                        .get(messageKey)
                         .replace('{version}', result.availableVersion || '');
                 }
             } catch (error) {
                 console.error('Could not install latest extension release:', error);
-                if (extensionUpdateDownloadStatus) {
+                if (extensionUpdateInstallStatus) {
                     const messageKey = error?.message === 'SETUP_REQUIRED'
                         ? 'settings.updates.setup_required'
                         : error?.message === 'UPDATE_NOT_SAFE'
@@ -898,10 +907,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                             : error?.message === 'UPDATE_IN_PROGRESS'
                                 ? 'settings.updates.install_latest_in_progress'
                             : 'settings.updates.install_latest_failed';
-                    extensionUpdateDownloadStatus.textContent = i18n.get(messageKey);
+                    extensionUpdateInstallStatus.textContent = i18n.get(messageKey);
                 }
             } finally {
-                extensionUpdateDownloadBtn.disabled = false;
+                extensionUpdateInstallBtn.disabled = false;
             }
         });
     }

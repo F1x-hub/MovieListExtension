@@ -3,9 +3,9 @@
 The extension is distributed as an unpacked Chrome installation. The first setup
 requires `MovieListSetup.exe` and one manual Chrome **Load unpacked** action. Later
 versions are downloaded and installed by the updater after a safe playback check.
-Settings also expose a test-only action that downloads and installs the latest signed
-release through the configured Native Host path, even when the installed version is
-equal to or newer than that release. It never accepts a path from the UI.
+Settings also expose a manual action that uses the same signed production path as
+automatic updates. It never accepts a path from the UI and never installs a release
+that is equal to or older than the installed version.
 
 Before the first signed release, generate a release key pair once:
 
