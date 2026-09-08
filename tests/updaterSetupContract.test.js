@@ -4,6 +4,10 @@ const path = require('node:path');
 
 const sourcePath = path.join(__dirname, '..', 'native-host', 'Updater', 'Program.cs');
 const source = fs.readFileSync(sourcePath, 'utf8').replace(/\r\n?/g, '\n');
+const projectSource = fs.readFileSync(
+    path.join(__dirname, '..', 'native-host', 'Updater', 'MovieListUpdater.csproj'),
+    'utf8'
+).replace(/\r\n?/g, '\n');
 const metadataScript = fs.readFileSync(
     path.join(__dirname, '..', 'scripts', 'generate-update-metadata.js'),
     'utf8'
@@ -35,6 +39,8 @@ assert.match(
 assert.match(source, /private static string GetRecoveryPath\(/);
 assert.match(source, /CleanupOperationArtifacts\(state\);/);
 assert.match(source, /private const string ApplyMutexName/);
+assert.match(source, /private const string UpdaterVersion = "1\.1\.2";/);
+assert.match(projectSource, /<InvariantGlobalization>false<\/InvariantGlobalization>/);
 assert.match(source, /private const string SetupMutexName/);
 assert.match(source, /private const string RecoveryRunOnceName/);
 assert.match(source, /private const string RecoveryRunOncePath/);

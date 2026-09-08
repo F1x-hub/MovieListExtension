@@ -120,6 +120,39 @@
         }, 250);
     }
 
+    async function closeExtensionPages() {
+        if (typeof chrome.tabs?.query !== 'function' || typeof chrome.tabs?.remove !== 'function') {
+            return 0;
+        }
+
+        let tabs;
+        try {
+            tabs = await chrome.tabs.query({});
+        } catch {
+            return 0;
+        }
+
+        const extensionOrigin = `chrome-extension://${chrome.runtime.id}/`;
+        const extensionTabIds = (Array.isArray(tabs) ? tabs : [])
+            .filter(tab => Number.isInteger(tab?.id) && String(tab.url || '').startsWith(extensionOrigin))
+            .map(tab => tab.id);
+
+        await Promise.all(extensionTabIds.map(async (tabId) => {
+            try {
+                await chrome.tabs.remove(tabId);
+            } catch {
+                // The tab may already have been closed by the user.
+            }
+        }));
+
+        // Chrome releases extension-page file handles asynchronously. The native
+        // host moves the whole unpacked directory, so let those handles drain.
+        if (extensionTabIds.length > 0) {
+            await new Promise(resolve => setTimeout(resolve, 250));
+        }
+        return extensionTabIds.length;
+    }
+
     async function readState() {
         const result = await chrome.storage.local.get([STATE_KEY, SETTINGS_KEY]);
         return {
@@ -274,7 +307,7 @@
                     });
                 }
 
-                if (settings.autoUpdateEnabled && !nextState.deferredUntil) {
+                if (settings.autoUpdateEnabled && !nextState.deferredUntil && options.interactive !== true) {
                     return applyUpdate({ automatic: options.interactive !== true });
                 }
                 return nextState;
@@ -461,6 +494,7 @@
         });
         createOperationAlarm();
         try {
+            await closeExtensionPages();
             const response = await nativeMessage({
                 action: 'apply',
                 operationId,
@@ -533,6 +567,18 @@
         });
     }
 
+    async function getState() {
+        const snapshot = await readState();
+        if (isOperationPending(snapshot.state) || snapshot.state.status === 'awaiting_confirmation') {
+            try {
+                await syncNativeOperation();
+            } catch {
+                // The caller still receives the persisted state and can retry.
+            }
+        }
+        return readState();
+    }
+
     async function setAutoUpdateEnabled(enabled) {
         const settings = { autoUpdateEnabled: enabled === true };
         await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
@@ -598,7 +644,7 @@
         confirmInstalled,
         deferUpdate,
         getNativeStatus,
-        getState: readState,
+        getState,
         handleAlarm,
         setAutoUpdateEnabled,
         syncNativeOperation,
