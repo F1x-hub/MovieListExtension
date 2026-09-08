@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import { i18n } from '../src/shared/i18n/I18n.js';
 
+const readText = (path) => fs.readFileSync(path, 'utf8').replace(/\r\n?/g, '\n');
+
 i18n.currentLocale = 'ru';
 
 // Mock DOM elements and browser environment
@@ -122,8 +124,7 @@ const utilsStub = {
     linkify: (t) => t || ''
 };
 
-const source = fs
-    .readFileSync(new URL('../src/pages/movie-details/movie-details.js', import.meta.url), 'utf8')
+const source = readText(new URL('../src/pages/movie-details/movie-details.js', import.meta.url))
     .replace(/^import .*;\r?$/gm, '');
 
 const context = vm.createContext({
@@ -253,7 +254,7 @@ console.log('--- 5: Testing Valid personKey Preservation ---');
 // =========================================================================
 console.log('--- 6, 7 & 8: Testing Status Badge Contract & CSS Rules ---');
 {
-    const css = fs.readFileSync('src/pages/movie-details/movie-details.css', 'utf8');
+    const css = readText('src/pages/movie-details/movie-details.css');
 
     // 6. Status badge classes
     const movieReleased = { kinopoiskId: 1, name: 'T1', status: 'released' };
@@ -392,7 +393,7 @@ console.log('--- 13 & 14: Testing Rating Hierarchy & Isolation ---');
     assert(html.includes('7.9'), 'TMDB score 7.9 present in About tab');
     assert(html.includes('15k'), 'TMDB votes 15k formatted in About tab');
 
-    const css = fs.readFileSync('src/pages/movie-details/movie-details.css', 'utf8');
+    const css = readText('src/pages/movie-details/movie-details.css');
     assert(css.includes('.rating-item-large.kp {\n    flex: 1 1 0;'), 'KP has equal 50% flex 1 1 0');
     assert(css.includes('.rating-item-large.imdb {\n    flex: 1 1 0;'), 'IMDb has equal 50% flex 1 1 0');
     assert(css.includes('.meta-item--tmdb'), 'CSS contains meta-item--tmdb styling');
@@ -445,7 +446,7 @@ console.log('--- 15 & 16: Testing CSP Zero-Inline & Person Navigation Routes ---
 // =========================================================================
 console.log('--- 17: Testing Metadata Grid Layout Contract ---');
 {
-    const css = fs.readFileSync('src/pages/movie-details/movie-details.css', 'utf8');
+    const css = readText('src/pages/movie-details/movie-details.css');
     assert(css.includes('grid-template-columns: 160px 1fr;'), 'Standard meta grid uses 160px label + 1fr value');
     assert(css.includes('.meta-item--nested {\n    display: grid;\n    grid-template-columns: 146px 1fr;'),
         'Nested meta rows maintain aligned 146px label column');
@@ -458,7 +459,7 @@ console.log('--- 17: Testing Metadata Grid Layout Contract ---');
 // =========================================================================
 console.log('--- 19A: Testing Movie action button typography contract ---');
 {
-    const css = fs.readFileSync('src/pages/movie-details/movie-details.css', 'utf8');
+    const css = readText('src/pages/movie-details/movie-details.css');
     assert(css.includes('.movie-actions-container .btn-lg {'),
         'Movie action buttons use a scoped typography variant');
     assert(css.includes('font-size: var(--font-size-base);'),
@@ -471,7 +472,7 @@ console.log('--- 19A: Testing Movie action button typography contract ---');
 // =========================================================================
 console.log('--- 19: Testing Phase UI-1 / UI-2 Presentation Contracts ---');
 {
-    const css = fs.readFileSync('src/pages/movie-details/movie-details.css', 'utf8');
+    const css = readText('src/pages/movie-details/movie-details.css');
 
     // UI-1: the backdrop must no longer be a fixed 380px clipped layer.
     assert(css.includes('height: clamp(440px, 56vw, 640px);'),
@@ -490,7 +491,7 @@ console.log('--- 19: Testing Phase UI-1 / UI-2 Presentation Contracts ---');
         'Light theme no longer applies a blanket logo filter');
     assert(css.includes('background: linear-gradient('),
         'Light theme logo presentation provides a contrast well');
-    const rendererSource = fs.readFileSync('src/pages/movie-details/movie-details.js', 'utf8');
+    const rendererSource = readText('src/pages/movie-details/movie-details.js');
     assert(rendererSource.includes('data-fallback="company-logo"'),
         'Company logo failed-image fallback contract remains in the renderer');
 
