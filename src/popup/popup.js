@@ -786,7 +786,6 @@ class PopupManager {
 
         if (banner && versionEl) {
             const setupRequired = status === 'setup_required';
-            const rollback = status === 'failed' && state.rollbackAvailable === true;
             const busy = ['installing', 'awaiting_confirmation', 'waiting_for_safe_moment'].includes(status);
             versionEl.textContent = `${i18n.get('popup.update.version')} ${version}`;
             if (statusEl) {
@@ -803,11 +802,9 @@ class PopupManager {
             banner.style.display = 'flex';
             updateBtn.textContent = setupRequired
                 ? (i18n.currentLocale === 'ru' ? 'Подключить обновления' : 'Connect updates')
-                : rollback
-                    ? (i18n.currentLocale === 'ru' ? 'Восстановить' : 'Restore')
-                    : status === 'failed'
-                        ? (i18n.currentLocale === 'ru' ? 'Повторить' : 'Retry')
-                        : (i18n.currentLocale === 'ru' ? 'Обновить' : 'Update');
+                : status === 'failed'
+                    ? (i18n.currentLocale === 'ru' ? 'Повторить' : 'Retry')
+                    : (i18n.currentLocale === 'ru' ? 'Обновить' : 'Update');
             updateBtn.disabled = busy;
 
             // Update button handler
@@ -820,12 +817,10 @@ class PopupManager {
                     });
                     return;
                 }
-                updateBtn.textContent = rollback
-                    ? (i18n.currentLocale === 'ru' ? 'Восстановление...' : 'Restoring...')
-                    : (i18n.currentLocale === 'ru' ? 'Установка...' : 'Installing...');
+                updateBtn.textContent = i18n.currentLocale === 'ru' ? 'Установка...' : 'Installing...';
                 updateBtn.disabled = true;
                 
-                chrome.runtime.sendMessage({ type: rollback ? 'ROLLBACK_UPDATE' : 'APPLY_UPDATE' }, (response) => {
+                chrome.runtime.sendMessage({ type: 'APPLY_UPDATE' }, (response) => {
                     if (chrome.runtime.lastError) {
                         updateBtn.textContent = i18n.currentLocale === 'ru' ? 'Ошибка' : 'Error';
                         updateBtn.disabled = false;
@@ -833,9 +828,7 @@ class PopupManager {
                         return;
                     }
                     if (response && response.success) {
-                        updateBtn.textContent = rollback
-                            ? (i18n.currentLocale === 'ru' ? 'Восстановление...' : 'Restoring...')
-                            : (i18n.currentLocale === 'ru' ? 'Установка...' : 'Installing...');
+                        updateBtn.textContent = i18n.currentLocale === 'ru' ? 'Установка...' : 'Installing...';
                     } else {
                         updateBtn.textContent = i18n.currentLocale === 'ru' ? 'Ошибка' : 'Error';
                         updateBtn.disabled = false;

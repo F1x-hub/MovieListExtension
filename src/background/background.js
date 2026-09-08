@@ -844,11 +844,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             .then(state => sendResponse({ success: true, state }))
             .catch(error => sendResponse({ success: false, error: error.message }));
         return true;
-    } else if (message.type === 'ROLLBACK_UPDATE') {
-        UpdateService.rollbackUpdate()
-            .then(state => sendResponse({ success: true, state }))
-            .catch(error => sendResponse({ success: false, error: error.message }));
-        return true;
     } else if (message.type === 'SET_AUTO_UPDATE') {
         UpdateService.setAutoUpdateEnabled(message.enabled)
             .then(state => sendResponse({ success: true, state }))

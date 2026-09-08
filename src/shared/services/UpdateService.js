@@ -55,7 +55,6 @@
             deferredUntil: 0,
             errorCode: null,
             errorMessage: null,
-            rollbackAvailable: false,
             configured: null
         };
     }
@@ -178,7 +177,6 @@
             metadataText: release.metadataText,
             signature: release.signature,
             deferredUntil: 0,
-            rollbackAvailable: false,
             errorCode: null,
             errorMessage: null
         });
@@ -336,21 +334,19 @@
             await writeState({
                 status: 'failed',
                 operationId: operation.operationId,
-                rollbackAvailable: Boolean(operation.backupPath),
                 errorCode: operation.errorCode || 'EXECUTION_FAILED',
                 errorMessage: operation.errorMessage || 'UPDATE_EXECUTION_FAILED'
             });
         } else if (operation.status === 'awaiting_confirmation') {
             await writeState({
                 status: 'awaiting_confirmation',
-                operationId: operation.operationId,
-                rollbackAvailable: Boolean(operation.backupPath)
+                operationId: operation.operationId
             });
             if (reloadWhenReady) {
                 setTimeout(() => chrome.runtime.reload(), 250);
             }
         } else if (operation.status === 'succeeded') {
-            await writeState({ status: 'succeeded', operationId: operation.operationId, rollbackAvailable: false });
+            await writeState({ status: 'succeeded', operationId: operation.operationId });
         }
         return response;
     }
@@ -388,7 +384,6 @@
         await writeState({
             status: 'installing',
             operationId,
-            rollbackAvailable: false,
             errorCode: null,
             errorMessage: null
         });
@@ -432,7 +427,6 @@
                 metadata: null,
                 metadataText: null,
                 signature: null,
-                rollbackAvailable: false,
                 errorCode: null,
                 errorMessage: null
             });
@@ -446,21 +440,6 @@
             status: 'deferred',
             deferredUntil: now() + 24 * 60 * 60 * 1000
         });
-    }
-
-    async function rollbackUpdate() {
-        try {
-            const response = await nativeMessage({ action: 'rollback' });
-            const state = await writeState({
-                status: 'rolled_back',
-                errorCode: null,
-                errorMessage: null
-            });
-            setTimeout(() => chrome.runtime.reload(), 250);
-            return { ...state, nativeStatus: response.status };
-        } catch (error) {
-            return writeState({ status: 'failed', errorCode: 'ROLLBACK_FAILED', errorMessage: error.message });
-        }
     }
 
     async function setAutoUpdateEnabled(enabled) {
@@ -524,7 +503,6 @@
         getNativeStatus,
         getState: readState,
         handleAlarm,
-        rollbackUpdate,
         setAutoUpdateEnabled,
         syncNativeOperation,
         setupBackground,
