@@ -115,7 +115,7 @@
                 chrome.runtime.reload();
             } catch (error) {
                 reloadScheduled = false;
-                console.warn('[Update] Could not reload the extension before replacement:', error);
+                console.warn('[Update] Could not activate the installed extension:', error);
             }
         }, 250);
     }
@@ -389,7 +389,7 @@
         }
     }
 
-    async function syncNativeOperation({ reloadWhenReady = false } = {}) {
+    async function syncNativeOperation() {
         const response = await getNativeStatus();
         const operation = response.operation;
         if (!operation?.operationId) return response;
@@ -413,12 +413,18 @@
                 errorMessage: operation.errorMessage || 'UPDATE_RECOVERY_REQUIRED'
             });
         } else if (operation.status === 'awaiting_confirmation') {
-            clearOperationAlarm();
+            createOperationAlarm();
             await writeState({
                 status: 'awaiting_confirmation',
-                operationId: operation.operationId
+                operationId: operation.operationId,
+                availableVersion: operation.version || state.availableVersion
             });
-            if (reloadWhenReady) scheduleExtensionReload();
+            const targetVersion = operation.version || state.availableVersion;
+            if (targetVersion === chrome.runtime.getManifest().version) {
+                await confirmInstalled();
+            } else {
+                scheduleExtensionReload();
+            }
         } else if (operation.status === 'succeeded') {
             clearOperationAlarm();
             await writeState({ status: 'succeeded', operationId: operation.operationId });
@@ -508,10 +514,8 @@
                 errorCode: null,
                 errorMessage: null
             });
-            // Unpacked extensions keep service-worker/page files open while they
-            // are active. Reload once before the native host replaces the folder;
-            // the post-replacement confirmation reload is handled by polling.
-            if (isOperationPending(nextState)) scheduleExtensionReload();
+            // Reload only after the host has finished replacing files. Reloading
+            // while queued restarts the old version and interrupts this observer.
             void pollNativeOperation(nextState.operationId);
             return nextState;
         } catch (error) {
@@ -543,6 +547,7 @@
         if (compareVersions(version, state.availableVersion) !== 0) return;
         try {
             await nativeMessage({ action: 'confirm', operationId: state.operationId, version });
+            clearOperationAlarm();
             await writeState({
                 status: 'succeeded',
                 currentVersion: version,
@@ -595,7 +600,7 @@
             const { state } = await readState();
             if (state.operationId !== operationId || state.status === 'failed' || state.status === 'succeeded') return;
             try {
-                await syncNativeOperation({ reloadWhenReady: true });
+                await syncNativeOperation();
                 const refreshed = await readState();
                 if (refreshed.state.status === 'awaiting_confirmation') return;
             } catch (error) {
@@ -611,8 +616,7 @@
         chrome.alarms.create(CHECK_ALARM, { periodInMinutes: CHECK_INTERVAL_MINUTES });
         (async () => {
             await confirmInstalled();
-            const refreshed = await readState();
-            await syncNativeOperation({ reloadWhenReady: isOperationPending(refreshed.state) }).catch(() => {});
+            await syncNativeOperation().catch(() => {});
             const afterSync = await readState();
             if (isOperationPending(afterSync.state) || afterSync.state.status === 'awaiting_confirmation') return;
             await checkForUpdates();
@@ -625,9 +629,7 @@
         if (state.deferredUntil && state.deferredUntil <= now()) {
             await writeState({ deferredUntil: 0 });
         }
-        await syncNativeOperation({
-            reloadWhenReady: isOperationPending(state)
-        }).catch(() => {});
+        await syncNativeOperation().catch(() => {});
         await confirmInstalled();
         const refreshed = await readState();
         if (isOperationPending(refreshed.state) || refreshed.state.status === 'awaiting_confirmation') return;

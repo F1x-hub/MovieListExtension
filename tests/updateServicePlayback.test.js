@@ -140,8 +140,29 @@ function createHarness({
     const reloadBeforeReplacement = createHarness({ nativeApplyStatus: 'queued' });
     const queuedResult = await reloadBeforeReplacement.apply();
     assert.strictEqual(queuedResult.status, 'queued');
-    assert.strictEqual(reloadBeforeReplacement.reloadCalls, 1,
-        'the extension must reload before the native host replaces its unpacked folder');
+    assert.strictEqual(reloadBeforeReplacement.reloadCalls, 0,
+        'queued updates must not reload the old version before replacement finishes');
+
+    const readyUpdate = createHarness({
+        nativeOperation: { operationId: 'operation-1', status: 'awaiting_confirmation', version: '1.3.1' },
+        initialStatePatch: { status: 'installing', operationId: 'operation-1' }
+    });
+    await readyUpdate.getState();
+    assert.strictEqual(readyUpdate.reloadCalls, 1,
+        'a settings status read must activate the new version when replacement is ready');
+    await readyUpdate.getState();
+    assert.strictEqual(readyUpdate.reloadCalls, 1,
+        'concurrent status reads must not schedule duplicate reloads');
+    assert.ok(readyUpdate.alarms.some(alarm => alarm.name === 'checkUpdateOperation'),
+        'ready updates must retain the operation alarm until activation is confirmed');
+
+    const resumedReadyUpdate = createHarness({
+        nativeOperation: { operationId: 'operation-1', status: 'awaiting_confirmation', version: '1.3.1' },
+        initialStatePatch: { status: 'awaiting_confirmation', operationId: 'operation-1' }
+    });
+    await resumedReadyUpdate.getState();
+    assert.strictEqual(resumedReadyUpdate.reloadCalls, 1,
+        'a resumed ready operation must still trigger activation');
 
     const extensionPage = createHarness({ nativeApplyStatus: 'queued', extensionPage: true });
     await extensionPage.apply();

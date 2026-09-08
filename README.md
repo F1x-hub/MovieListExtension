@@ -233,7 +233,7 @@ manifest and package version remain the source of truth for the build version.
 - Retry locked staging and recovery files instead of accumulating backups.
 - Serialize startup reconciliation before background release checks.
 - Keep long-running native operations observable through a persistent alarm.
-- Reload the extension before native replacement so active unpacked files are released.
+- Reload after native replacement and retain polling until activation is confirmed.
 - Show failed and completed update states instead of leaving a stale started message.
 - Preserve the native replacement error when rollback is required.
 - Require updater 1.1.3, which enables WinForms cultures and replacement diagnostics.
