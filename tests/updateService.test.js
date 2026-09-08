@@ -11,7 +11,7 @@ const settingsHtmlSource = fs.readFileSync('src/pages/settings/settings.html', '
 const settingsJsSource = fs.readFileSync('src/pages/settings/settings.js', 'utf8');
 const storage = {};
 const alarms = [];
-let nativeUpdaterVersion = '1.1.0';
+let nativeUpdaterVersion = '1.1.1';
 const extensionId = 'dgdejomdgiabgcfijcdhjefijdfiemhd';
 
 const chrome = {
@@ -48,7 +48,7 @@ const metadata = {
     assetUrl: 'https://github.com/F1x-hub/MovieListExtension/releases/download/v1.3.0/MovieList-extension-1.3.0.zip',
     sha256: 'a'.repeat(64),
     size: 123,
-    minUpdaterVersion: '1.1.0',
+    minUpdaterVersion: '1.1.1',
     publishedAt: '2026-09-08T00:00:00.000Z'
 };
 

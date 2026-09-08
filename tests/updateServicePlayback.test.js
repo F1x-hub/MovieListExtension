@@ -6,7 +6,7 @@ const source = fs.readFileSync('src/shared/services/UpdateService.js', 'utf8');
 const settingsSource = fs.readFileSync('src/pages/settings/settings.js', 'utf8');
 const localesSource = fs.readFileSync('src/shared/i18n/locales.js', 'utf8');
 
-function createHarness({ executeResult = false, executeError = false, automatic = false, allowPlayback = false }) {
+function createHarness({ executeResult = false, executeError = false, automatic = false, allowPlayback = false, nativeApplyStatus = 'succeeded' }) {
     const storage = {
         extension_update_state_v2: {
             status: 'available',
@@ -27,20 +27,24 @@ function createHarness({ executeResult = false, executeError = false, automatic 
     };
     const alarms = [];
     let applyCalls = 0;
+    let reloadCalls = 0;
 
     const chrome = {
         runtime: {
             id: 'ext',
             getManifest: () => ({ version: '1.3.0' }),
             lastError: null,
+            reload: () => {
+                reloadCalls += 1;
+            },
             sendMessage: () => undefined,
             sendNativeMessage: (name, message, callback) => {
                 if (message.action === 'apply') {
                     applyCalls += 1;
-                    callback({ success: true, status: 'succeeded', operationId: 'operation-1' });
+                    callback({ success: true, status: nativeApplyStatus, operationId: 'operation-1' });
                     return;
                 }
-                callback({ success: true, configured: true, updaterVersion: '1.1.0', operation: null });
+            callback({ success: true, configured: true, updaterVersion: '1.1.1', operation: null });
             }
         },
         storage: {
@@ -82,7 +86,10 @@ function createHarness({ executeResult = false, executeError = false, automatic 
                 ? 'signature'
                 : JSON.stringify(storage.extension_update_state_v2.metadata)
         }),
-        setTimeout: () => 0,
+        setTimeout: (callback) => {
+            callback();
+            return 0;
+        },
         crypto: { randomUUID: () => 'operation-1' },
         globalThis: null
     };
@@ -96,6 +103,9 @@ function createHarness({ executeResult = false, executeError = false, automatic 
         get applyCalls() {
             return applyCalls;
         },
+        get reloadCalls() {
+            return reloadCalls;
+        },
         alarms
     };
 }
@@ -106,6 +116,12 @@ function createHarness({ executeResult = false, executeError = false, automatic 
     assert.strictEqual(inaccessibleResult.status, 'succeeded',
         'an inaccessible ordinary tab must not be treated as active playback');
     assert.strictEqual(inaccessibleTab.applyCalls, 1);
+
+    const reloadBeforeReplacement = createHarness({ nativeApplyStatus: 'queued' });
+    const queuedResult = await reloadBeforeReplacement.apply();
+    assert.strictEqual(queuedResult.status, 'queued');
+    assert.strictEqual(reloadBeforeReplacement.reloadCalls, 1,
+        'the extension must reload before the native host replaces its unpacked folder');
 
     const activePlayback = createHarness({ executeResult: true });
     const blockedResult = await activePlayback.apply();
@@ -136,6 +152,8 @@ function createHarness({ executeResult = false, executeError = false, automatic 
 
     assert.match(settingsSource, /showPlaybackUpdateDialog/);
     assert.match(settingsSource, /allowPlayback: true/);
+    assert.match(settingsSource, /EXTENSION_UPDATE_STATE_STORAGE_KEY/);
+    assert.match(settingsSource, /storage\.onChanged\.addListener/);
     assert.match(localesSource, /playback_confirm_button/);
     assert.match(localesSource, /playback_decline_button/);
 

@@ -1,6 +1,7 @@
 import { i18n } from '../../shared/i18n/I18n.js';
 
 const SUBTITLE_APPEARANCE_STORAGE_KEY = 'movieExtensionSubtitleAppearanceV1';
+const EXTENSION_UPDATE_STATE_STORAGE_KEY = 'extension_update_state_v2';
 const MEDIA_PLAYER_SETUP_STORAGE_KEY = 'mediaplayer_setup_v1';
 const MEDIA_PLAYER_SETUP_DEFAULTS = Object.freeze({
     enabled: false,
@@ -585,19 +586,59 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             updateDirtyState();
             await loadMediaPlayerSettings();
-            if (extensionUpdateStatus) {
-                const setupRequired = updateStateResponse?.state?.configured === false
-                    || updateStateResponse?.state?.status === 'setup_required';
-                extensionUpdateStatus.textContent = setupRequired
-                    ? i18n.get('settings.updates.setup_required')
-                    : updateStateResponse?.state?.availableVersion
-                        ? i18n.get('settings.updates.available').replace('{version}', updateStateResponse.state.availableVersion)
-                        : i18n.get('settings.updates.automatic');
-                if (extensionUpdateSetupBtn) extensionUpdateSetupBtn.hidden = !setupRequired;
-            }
+            renderExtensionUpdateState(updateStateResponse?.state);
         } catch (error) {
             console.error('Failed to load settings:', error);
         }
+    }
+
+    function renderExtensionUpdateState(state) {
+        if (!state) return;
+
+        const status = String(state.status || 'idle');
+        const version = state.availableVersion || state.currentVersion || '';
+        const setupRequired = state.configured === false || status === 'setup_required';
+        const pending = ['installing', 'queued', 'downloading', 'replacing'].includes(status);
+
+        if (extensionUpdateStatus) {
+            extensionUpdateStatus.textContent = setupRequired
+                ? i18n.get('settings.updates.setup_required')
+                : pending || status === 'awaiting_confirmation'
+                    ? i18n.get('settings.updates.install_latest_started').replace('{version}', version)
+                    : state.availableVersion
+                        ? i18n.get('settings.updates.available').replace('{version}', state.availableVersion)
+                        : i18n.get('settings.updates.automatic');
+        }
+        if (extensionUpdateSetupBtn) extensionUpdateSetupBtn.hidden = !setupRequired;
+
+        if (!extensionUpdateInstallStatus) return;
+        if (status === 'awaiting_confirmation') {
+            extensionUpdateInstallStatus.hidden = false;
+            extensionUpdateInstallStatus.textContent = i18n.get('settings.updates.install_latest_restarting')
+                .replace('{version}', version);
+        } else if (pending) {
+            extensionUpdateInstallStatus.hidden = false;
+            extensionUpdateInstallStatus.textContent = i18n.get('settings.updates.install_latest_started')
+                .replace('{version}', version);
+        } else if (status === 'failed') {
+            extensionUpdateInstallStatus.hidden = false;
+            extensionUpdateInstallStatus.textContent = i18n.get('settings.updates.install_latest_failed');
+        } else if (status === 'succeeded') {
+            extensionUpdateInstallStatus.hidden = false;
+            extensionUpdateInstallStatus.textContent = i18n.get('settings.updates.install_latest_succeeded')
+                .replace('{version}', version);
+        } else if (status === 'up_to_date') {
+            extensionUpdateInstallStatus.hidden = false;
+            extensionUpdateInstallStatus.textContent = i18n.get('settings.updates.install_latest_up_to_date');
+        }
+    }
+
+    if (chrome.storage?.onChanged?.addListener) {
+        chrome.storage.onChanged.addListener((changes, areaName) => {
+            if (areaName !== 'local') return;
+            const updateChange = changes[EXTENSION_UPDATE_STATE_STORAGE_KEY];
+            if (updateChange?.newValue) renderExtensionUpdateState(updateChange.newValue);
+        });
     }
 
     async function loadMediaPlayerSettings() {
@@ -908,6 +949,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         .get(messageKey)
                         .replace('{version}', result.availableVersion || '');
                 }
+                renderExtensionUpdateState(result);
             } catch (error) {
                 console.error('Could not install latest extension release:', error);
                 if (extensionUpdateInstallStatus) {

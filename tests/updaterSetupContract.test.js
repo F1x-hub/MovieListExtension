@@ -46,6 +46,8 @@ assert.match(source, /CleanupPending/);
 assert.match(source, /"recovery_required"/);
 assert.match(source, /private static bool IsRecoverableStaleOperation/);
 assert.match(source, /private static Version\? ReadUpdaterVersion/);
+assert.match(source, /interruptionMessage/);
+assert.match(source, /UPDATE_REPLACEMENT_FAILED/);
 assert.match(source, /var validatedMetadata = ParseAndValidateMetadata\(input\.MetadataText, config\);/);
 assert.match(source, /VerifySignature\(Encoding\.UTF8\.GetBytes\(input\.MetadataText\), input\.Signature\)/);
 assert.match(source, /RegisterNativeMessagingHost\("Microsoft\\\\Edge"/);
