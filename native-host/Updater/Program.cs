@@ -13,7 +13,7 @@ internal static class Program
     private const string RepositoryPrefix = "https://github.com/F1x-hub/MovieListExtension/releases/download/";
     private const string AppName = "MovieListExtensionUpdater";
     private const int ProtocolVersion = 1;
-    private const string UpdaterVersion = "1.1.2";
+    private const string UpdaterVersion = "1.1.3";
     private const string ApplyMutexName = @"Local\MovieListExtensionUpdater.Apply";
     private const string SetupMutexName = @"Local\MovieListExtensionUpdater.Setup";
     private const string RecoveryRunOnceName = "MovieListExtensionUpdaterRecovery";
@@ -964,6 +964,7 @@ xwIDAQAB
 
     private static void MoveWithRetry(string source, string destination)
     {
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(destination))!);
         Exception? last = null;
         for (var attempt = 0; attempt < 8; attempt += 1)
         {

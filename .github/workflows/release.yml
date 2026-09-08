@@ -36,6 +36,9 @@ jobs:
       - name: Build and package extension
         run: npm run package-release
 
+      - name: Verify native directory replacement
+        run: dotnet run --project native-host/Updater.Tests/Updater.Tests.csproj --configuration Release
+
       - name: Create signed update metadata
         env:
           UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY }}
@@ -63,3 +66,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release edit $env:GITHUB_REF_NAME --draft=false
+
+      - name: Mark the newest release as latest
+        if: github.ref_name == 'v1.3.1'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit $env:GITHUB_REF_NAME --latest

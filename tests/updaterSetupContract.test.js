@@ -39,7 +39,7 @@ assert.match(
 assert.match(source, /private static string GetRecoveryPath\(/);
 assert.match(source, /CleanupOperationArtifacts\(state\);/);
 assert.match(source, /private const string ApplyMutexName/);
-assert.match(source, /private const string UpdaterVersion = "1\.1\.2";/);
+assert.match(source, /private const string UpdaterVersion = "1\.1\.3";/);
 assert.match(projectSource, /<InvariantGlobalization>false<\/InvariantGlobalization>/);
 assert.match(source, /private const string SetupMutexName/);
 assert.match(source, /private const string RecoveryRunOnceName/);
