@@ -213,6 +213,16 @@ Release entries are intentionally collapsed to keep this page readable. The
 manifest and package version remain the source of truth for the build version.
 
 <details>
+<summary><strong>1.3.2</strong> — cross-platform release checks</summary>
+
+### Fixes
+
+- Stabilize source and contract-test line endings across Windows and Unix checkouts.
+- Normalize visual regression-test input before evaluating CSS contracts.
+
+</details>
+
+<details>
 <summary><strong>1.3.1</strong> — release-test portability</summary>
 
 ### Fixes
