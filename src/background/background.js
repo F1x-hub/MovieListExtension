@@ -5,6 +5,7 @@ try {
     importScripts('../shared/config/spotify.config.js');
     importScripts('../shared/config/theNumbersMappings.js');
     importScripts('../shared/services/TheNumbersService.js');
+    importScripts('../shared/services/UpdateService.js');
 } catch (e) {
     console.error('Failed to import scripts:', e);
 }
@@ -26,10 +27,15 @@ async function removeRetiredRatingsPosterCache() {
 
 void removeRetiredRatingsPosterCache();
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
     console.log('Movie Rating Extension installed');
     updateIconFromStorage();
     setupTheNumbersRefreshAlarm();
+    if (typeof UpdateService !== 'undefined') {
+        UpdateService.confirmInstalled(details).catch((error) => {
+            console.warn('[Update] Activation confirmation failed:', error);
+        });
+    }
 });
 
 chrome.runtime.onStartup.addListener(() => {
@@ -51,8 +57,11 @@ chrome.alarms.onAlarm.addListener((alarm) => {
         checkAuthToken();
     } else if (alarm.name === 'theNumbersRefresh') {
         refreshTrackedTheNumbersMovies();
-    } else if (alarm.name === 'checkUpdates') {
-        checkForUpdates();
+    } else if (['checkUpdates', 'checkUpdatesSafeRetry'].includes(alarm.name)
+        && typeof UpdateService !== 'undefined') {
+        UpdateService.handleAlarm(alarm).catch((error) => {
+            console.warn('[Update] Alarm handling failed:', error);
+        });
     }
 });
 
@@ -820,25 +829,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             .then(token => sendResponse({ success: true, token }))
             .catch(() => sendResponse({ success: false, error: 'AUTH_REQUIRED' }));
         return true;
-    } else if (message.type === 'DOWNLOAD_UPDATE') {
-        console.log('[Background] Received DOWNLOAD_UPDATE request');
-        if (message.url) {
-            downloadUpdate(message.url)
-                .then((downloadId) => {
-                    sendResponse({ success: true, downloadId: downloadId });
-                })
-                .catch((error) => {
-                    sendResponse({ success: false, error: error.message || 'Download failed' });
-                });
-        } else {
-            sendResponse({ success: false, error: 'No URL provided' });
-        }
-        return true; // Keep channel open for async response
+    } else if (message.type === 'GET_UPDATE_STATE') {
+        UpdateService.getState()
+            .then(({ state, settings }) => sendResponse({ success: true, state, settings }))
+            .catch(error => sendResponse({ success: false, error: error.message }));
+        return true;
+    } else if (message.type === 'APPLY_UPDATE') {
+        UpdateService.applyUpdate()
+            .then(state => sendResponse({ success: true, state }))
+            .catch(error => sendResponse({ success: false, error: error.message }));
+        return true;
+    } else if (message.type === 'DEFER_UPDATE') {
+        UpdateService.deferUpdate()
+            .then(state => sendResponse({ success: true, state }))
+            .catch(error => sendResponse({ success: false, error: error.message }));
+        return true;
+    } else if (message.type === 'ROLLBACK_UPDATE') {
+        UpdateService.rollbackUpdate()
+            .then(state => sendResponse({ success: true, state }))
+            .catch(error => sendResponse({ success: false, error: error.message }));
+        return true;
+    } else if (message.type === 'SET_AUTO_UPDATE') {
+        UpdateService.setAutoUpdateEnabled(message.enabled)
+            .then(state => sendResponse({ success: true, state }))
+            .catch(error => sendResponse({ success: false, error: error.message }));
+        return true;
     } else if (message.type === 'CHECK_FOR_UPDATES') {
         console.log('[Background] Received CHECK_FOR_UPDATES request');
-        checkForUpdates()
-            .then(() => {
-                sendResponse({ success: true });
+        UpdateService.checkForUpdates({ force: message.force === true })
+            .then(state => {
+                sendResponse({ success: true, state });
             })
             .catch(error => {
                 console.error('[Background] Error checking for updates:', error);
@@ -1476,118 +1496,8 @@ async function searchKinopoiskMovie(kpId, title, year) {
 
 // --- Automatic Update System ---
 
-const UPDATE_CONFIG = {
-    githubOwner: 'F1x-hub',
-    githubRepo: 'MovieListExtension',
-    checkInterval: 60, // Check every 60 minutes
-    extensionPath: 'd:\\Programing\\JS\\Projects\\MovieListExstension' // Should match user's path
-};
-
-// Check for updates on startup and periodically
-chrome.runtime.onStartup.addListener(() => {
-    checkForUpdates();
-});
-
-chrome.alarms.create('checkUpdates', { periodInMinutes: UPDATE_CONFIG.checkInterval });
-
-chrome.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name === 'checkUpdates') {
-        checkForUpdates();
-    }
-});
-
-async function checkForUpdates() {
-    try {
-        const manifest = chrome.runtime.getManifest();
-        const currentVersion = manifest.version;
-
-        const response = await fetch(`https://api.github.com/repos/${UPDATE_CONFIG.githubOwner}/${UPDATE_CONFIG.githubRepo}/releases/latest`);
-        if (!response.ok) {
-            throw new Error(`GitHub API error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        const latestVersion = data.tag_name.replace('v', ''); // Remove 'v' prefix if present
-
-        if (compareVersions(latestVersion, currentVersion) > 0) {
-            console.log(`[Update] Update available: ${currentVersion} -> ${latestVersion}`);
-            
-            // Find zip asset
-            const zipAsset = data.assets.find(asset => asset.name.endsWith('.zip')) || 
-                             data.assets[0]; // Fallback to first asset
-            
-            const downloadUrl = zipAsset ? zipAsset.browser_download_url : data.zipball_url;
-
-            if (downloadUrl) {
-                showUpdateNotification(latestVersion, downloadUrl);
-            } else {
-                console.error('[Update] No download URL found');
-            }
-        } else {
-            // Clear any pending update info if version matches or is older
-            chrome.storage.local.remove(['pendingUpdateUrl', 'pendingUpdateVersion', 'updateAvailable']);
-        }
-    } catch (error) {
-        console.error('[Update] Error checking for updates:', error);
-    }
-}
-
-// Expose for debugging
-self.checkForUpdates = checkForUpdates;
-
-
-function compareVersions(v1, v2) {
-    const parts1 = v1.split('.').map(Number);
-    const parts2 = v2.split('.').map(Number);
-
-    for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
-        const p1 = parts1[i] || 0;
-        const p2 = parts2[i] || 0;
-        if (p1 > p2) return 1;
-        if (p1 < p2) return -1;
-    }
-    return 0;
-}
-
-function showUpdateNotification(version, downloadUrl) {
-    // Store update info for popup to display
-    chrome.storage.local.set({ 
-        pendingUpdateUrl: downloadUrl, 
-        pendingUpdateVersion: version,
-        updateAvailable: true 
-    }, () => {
-        console.log(`[Update] Update info stored for popup: v${version}`);
-        // Optionally send a message to popup if it's open to update UI immediately
-        chrome.runtime.sendMessage({ 
-            type: 'UPDATE_AVAILABLE', 
-            version: version, 
-            url: downloadUrl 
-        }).catch(() => {
-            // Popup might be closed, which is fine
-        });
-    });
-}
-
-// Removed chrome.notifications.onButtonClicked listener as we moved to popup UI
-
-function downloadUpdate(url) {
-    console.log('[Update] Downloading repository from:', url);
-    return new Promise((resolve, reject) => {
-        chrome.downloads.download({
-            url: url,
-            filename: 'MovieListExtension-update.zip',
-            conflictAction: 'overwrite',
-            saveAs: false
-        }, (downloadId) => {
-            if (chrome.runtime.lastError) {
-                console.error('[Update] Download failed:', chrome.runtime.lastError);
-                reject(chrome.runtime.lastError);
-            } else {
-                console.log('[Update] Download started, ID:', downloadId);
-                resolve(downloadId);
-            }
-        });
-    });
+if (typeof UpdateService !== 'undefined') {
+    UpdateService.setupBackground();
 }
 
 // --- Display Mode Logic ---

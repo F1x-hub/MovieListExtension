@@ -1,0 +1,61 @@
+name: Build and publish extension release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run lint
+        run: npm run lint
+
+      - name: Run regression tests
+        run: npm test
+
+      - name: Run updater contract tests
+        run: npm run test:update-service && npm run test-popup-surface-contract
+
+      - name: Build and package extension
+        run: npm run package-release
+
+      - name: Create signed update metadata
+        env:
+          UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY }}
+        run: node scripts/generate-update-metadata.js
+
+      - name: Create draft release with all assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          gh release create $env:GITHUB_REF_NAME `
+            --verify-tag `
+            --draft `
+            --title "MovieList Extension $env:GITHUB_REF_NAME" `
+            --generate-notes `
+            "MovieList-extension-$version.zip" "MovieListSetup.exe" "update.json" "update.json.sig"
+
+      - name: Publish release after asset upload
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit $env:GITHUB_REF_NAME --draft=false

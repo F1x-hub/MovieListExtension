@@ -3,6 +3,7 @@ const path = require('path');
 const { minify } = require('terser');
 
 const distDir = path.join(__dirname, '..', 'dist');
+let failures = 0;
 
 async function processDirectory(dir) {
     if (!fs.existsSync(dir)) return;
@@ -37,6 +38,7 @@ async function processDirectory(dir) {
                     fs.writeFileSync(fullPath + '.map', result.map, 'utf8');
                 }
             } catch (e) {
+                failures += 1;
                 console.error(`Error minifying ${fullPath}:`, e);
             }
         }
@@ -44,5 +46,13 @@ async function processDirectory(dir) {
 }
 
 processDirectory(distDir).then(() => {
+    if (failures > 0) {
+        console.error(`Minification failed for ${failures} file(s).`);
+        process.exitCode = 1;
+        return;
+    }
     console.log('Minification complete.');
-}).catch(console.error);
+}).catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+});

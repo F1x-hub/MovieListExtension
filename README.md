@@ -199,6 +199,8 @@ files live under `src/`; `dist/` is generated output and must not be edited by h
   — MovieDetails performance tracing.
 - [`docs/design-system.md`](docs/design-system.md) — visual language, neutral palette,
   CSS ownership, allowed color exceptions, and UI review checklist.
+- [`docs/UPDATER_RELEASE.md`](docs/UPDATER_RELEASE.md) — signed GitHub release and
+  one-time Windows updater setup.
 - [`docs/README.md`](docs/README.md) — extended user-facing feature guide.
 
 ## License
@@ -633,6 +635,20 @@ manifest and package version remain the source of truth for the build version.
 ### Docs
 
 - Document the admin-panel visual, functional, responsive, and accessibility audit.
+
+### Features
+
+- Add signed GitHub ZIP metadata and a Native Messaging updater for Windows.
+- Add a one-time setup mode with automatic staging, rollback, and activation checks.
+- Add automatic-update settings with deferred and failure states in the popup.
+- Add a direct Setup download action when the Native Host is not connected.
+- Retry waiting updates automatically after playback becomes safe to replace.
+- Distinguish update retry errors from rollback-available failures.
+- Guard the updater with exact origins, version gates, size limits, and operation locks.
+- Serialize confirmation and rollback, and restore the active install after a failed rollback move.
+- Add a settings test control to download and install the latest GitHub release.
+- Run regression tests and publish release assets through a draft release pipeline.
+- Fail release packaging when the archive contains local configuration or build errors.
 
 </details>
 

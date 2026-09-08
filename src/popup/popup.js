@@ -53,8 +53,9 @@ class PopupManager {
             Utils.bindSpoilerReveal(document);
         }
 
-        // Trigger update check when popup opens
-        chrome.runtime.sendMessage({ type: 'CHECK_FOR_UPDATES' });
+        // Ask the background coordinator for its cached state. The coordinator
+        // throttles network checks, so opening the popup does not hit GitHub.
+        chrome.runtime.sendMessage({ type: 'GET_UPDATE_STATE' });
     }
 
     async initI18n() {
@@ -752,64 +753,102 @@ class PopupManager {
     }
 
     checkPendingUpdate() {
-        chrome.storage.local.get(['pendingUpdateUrl', 'pendingUpdateVersion', 'updateAvailable'], (result) => {
-            if (result.updateAvailable && result.pendingUpdateUrl && result.pendingUpdateVersion) {
-                // Verify that the pending update is actually newer than current version
-                const manifest = chrome.runtime.getManifest();
-                if (this.compareVersions(result.pendingUpdateVersion, manifest.version) > 0) {
-                    this.showUpdateBanner(result.pendingUpdateVersion, result.pendingUpdateUrl);
-                } else {
-                    // Stale update info, clear it
-                    console.log('PopupManager: Clearing stale update info', result.pendingUpdateVersion);
-                    chrome.storage.local.remove(['pendingUpdateUrl', 'pendingUpdateVersion', 'updateAvailable']);
-                }
-            }
+        chrome.runtime.sendMessage({ type: 'GET_UPDATE_STATE' }, (response) => {
+            if (chrome.runtime.lastError || !response?.success) return;
+            this.renderUpdateState(response.state, response.settings);
         });
 
         // Listen for real-time update messages from background
         chrome.runtime.onMessage.addListener((message) => {
-            if (message.type === 'UPDATE_AVAILABLE') {
-                const manifest = chrome.runtime.getManifest();
-                if (this.compareVersions(message.version, manifest.version) > 0) {
-                    this.showUpdateBanner(message.version, message.url);
-                }
+            if (message.type === 'UPDATE_STATE_CHANGED') {
+                this.renderUpdateState(message.state, message.settings);
             }
         });
     }
 
-    showUpdateBanner(version, url) {
+    renderUpdateState(state, settings = {}) {
+        const version = state?.availableVersion;
+        const deferred = state?.deferredUntil && state.deferredUntil > Date.now();
+        if (!version || deferred || ['up_to_date', 'idle', 'succeeded', 'deferred'].includes(state.status)) {
+            const banner = document.getElementById('updateBanner');
+            if (banner) banner.style.display = 'none';
+            return;
+        }
+        this.showUpdateBanner(version, state.status, settings, state);
+    }
+
+    showUpdateBanner(version, status, settings = {}, state = {}) {
         const banner = document.getElementById('updateBanner');
         const versionEl = document.getElementById('updateVersion');
+        const statusEl = document.getElementById('updateStatus');
         const updateBtn = document.getElementById('updateBtn');
         const dismissBtn = document.getElementById('dismissUpdateBtn');
 
         if (banner && versionEl) {
+            const setupRequired = status === 'setup_required';
+            const rollback = status === 'failed' && state.rollbackAvailable === true;
+            const busy = ['installing', 'awaiting_confirmation', 'waiting_for_safe_moment'].includes(status);
             versionEl.textContent = `${i18n.get('popup.update.version')} ${version}`;
+            if (statusEl) {
+                statusEl.textContent = status === 'installing'
+                    ? (i18n.currentLocale === 'ru' ? 'Установка…' : 'Installing…')
+                    : status === 'waiting_for_safe_moment'
+                        ? (i18n.currentLocale === 'ru' ? 'Ожидает завершения просмотра' : 'Waiting for playback to finish')
+                    : status === 'setup_required'
+                        ? (i18n.currentLocale === 'ru' ? 'Нужно один раз запустить Setup' : 'Run Setup once')
+                    : status === 'failed'
+                        ? (i18n.currentLocale === 'ru' ? 'Ошибка обновления' : 'Update failed')
+                        : (i18n.currentLocale === 'ru' ? 'Готово к установке' : 'Ready to install');
+            }
             banner.style.display = 'flex';
+            updateBtn.textContent = setupRequired
+                ? (i18n.currentLocale === 'ru' ? 'Подключить обновления' : 'Connect updates')
+                : rollback
+                    ? (i18n.currentLocale === 'ru' ? 'Восстановить' : 'Restore')
+                    : status === 'failed'
+                        ? (i18n.currentLocale === 'ru' ? 'Повторить' : 'Retry')
+                        : (i18n.currentLocale === 'ru' ? 'Обновить' : 'Update');
+            updateBtn.disabled = busy;
 
             // Update button handler
             updateBtn.onclick = () => {
-                updateBtn.textContent = i18n.currentLocale === 'ru' ? 'Загрузка...' : 'Downloading...';
+                if (setupRequired) {
+                    chrome.tabs.create({ url: UpdateService.getSetupUrl() }, () => {
+                        if (chrome.runtime.lastError) {
+                            console.error('Could not open updater setup:', chrome.runtime.lastError.message);
+                        }
+                    });
+                    return;
+                }
+                updateBtn.textContent = rollback
+                    ? (i18n.currentLocale === 'ru' ? 'Восстановление...' : 'Restoring...')
+                    : (i18n.currentLocale === 'ru' ? 'Установка...' : 'Installing...');
                 updateBtn.disabled = true;
                 
-                chrome.runtime.sendMessage({ type: 'DOWNLOAD_UPDATE', url: url }, (response) => {
+                chrome.runtime.sendMessage({ type: rollback ? 'ROLLBACK_UPDATE' : 'APPLY_UPDATE' }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        updateBtn.textContent = i18n.currentLocale === 'ru' ? 'Ошибка' : 'Error';
+                        updateBtn.disabled = false;
+                        console.error('Update request failed:', chrome.runtime.lastError.message);
+                        return;
+                    }
                     if (response && response.success) {
-                        // Banner will stay until download completes and instructions open
-                        // But we can update text to show progress
-                        updateBtn.textContent = i18n.currentLocale === 'ru' ? 'Открытие...' : 'Opening...';
+                        updateBtn.textContent = rollback
+                            ? (i18n.currentLocale === 'ru' ? 'Восстановление...' : 'Restoring...')
+                            : (i18n.currentLocale === 'ru' ? 'Установка...' : 'Installing...');
                     } else {
                         updateBtn.textContent = i18n.currentLocale === 'ru' ? 'Ошибка' : 'Error';
                         updateBtn.disabled = false;
-                        console.error('Update download failed:', response?.error);
+                        console.error('Update apply failed:', response?.error);
                     }
+                    this.checkPendingUpdate();
                 });
             };
 
             // Dismiss button handler
             dismissBtn.onclick = () => {
                 banner.style.display = 'none';
-                // Optional: Mark as dismissed for this session? 
-                // For now just hide it. It will reappear next time popup opens if still pending.
+                chrome.runtime.sendMessage({ type: 'DEFER_UPDATE' });
             };
         }
     }

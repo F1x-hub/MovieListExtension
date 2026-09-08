@@ -265,6 +265,21 @@
                                     <span class="toggle-slider"></span>
                                 </label>
                             </div>
+
+                            <div class="setting-group-row" style="margin-top: var(--space-lg); border-top: 1px solid var(--border-color); padding-top: var(--space-lg);">
+                                <div class="setting-info">
+                                    <h3 class="setting-title" data-i18n="settings.updates.title">Automatic updates</h3>
+                                    <p class="setting-desc" data-i18n="settings.updates.description">Download new versions in the background and install them after playback ends.</p>
+                                    <p class="setting-desc" id="extensionUpdateStatus" role="status" aria-live="polite" data-i18n="settings.updates.checking">Checking updater connection...</p>
+                                    <button id="extensionUpdateSetupBtn" class="btn btn-secondary" type="button" hidden data-i18n="settings.updates.setup_button">Connect automatic updates</button>
+                                    <button id="extensionUpdateDownloadBtn" class="btn btn-secondary" type="button" data-i18n="settings.updates.install_latest_button">Download and install latest version (test)</button>
+                                    <p class="setting-desc" id="extensionUpdateDownloadStatus" role="status" aria-live="polite" hidden></p>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="extensionAutoUpdateToggle" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
                         </div>
                     </div>
 
@@ -355,6 +370,7 @@
     <script src="/src/shared/components/Navigation.js"></script>
     <script src="/src/shared/utils/MigrationTool.js"></script>
     <script src="../../shared/services/MediaPlayerService.js"></script>
+    <script src="../../shared/services/UpdateService.js"></script>
     <script src="settings.js" type="module"></script>
     <script defer src="../../shared/components/ReportWidget.js"></script>
 </body>
