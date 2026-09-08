@@ -97,6 +97,8 @@ vm.runInNewContext(source, context, { filename: 'UpdateService.js' });
     assert.match(backgroundSource, /\['checkUpdates', 'checkUpdatesSafeRetry'\]\.includes\(alarm\.name\)/);
     assert.match(nativeHostSource, /allowed_origins = new\[\] \{ \$"chrome-extension:\/\/\{extensionId\}\/" \}/);
     assert.doesNotMatch(nativeHostSource, /chrome-extension:\/\/\{extensionId\}\/\*\//);
+    assert.match(nativeHostSource, /FirstOrDefault\(arg => arg\.StartsWith\("chrome-extension:\/\/"/);
+    assert.match(nativeHostSource, /\?\.TrimEnd\('\/'\)/);
     await context.UpdateService.handleAlarm({ name: 'checkUpdatesSafeRetry' });
     assert.strictEqual(fetchCount, 4);
     console.log('updateService.test.js passed');
