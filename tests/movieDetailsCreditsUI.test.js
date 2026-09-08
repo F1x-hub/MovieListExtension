@@ -88,8 +88,11 @@ class MockMovieDetailsManager {
     }
 }
 
+// Read source files with platform-independent line endings.
+const readText = (path) => fs.readFileSync(path, 'utf8').replace(/\r\n?/g, '\n');
+
 // Read movie-details.js and attach our tested methods
-const movieDetailsSource = fs.readFileSync('src/pages/movie-details/movie-details.js', 'utf8');
+const movieDetailsSource = readText('src/pages/movie-details/movie-details.js');
 
 // Extract getMovieCast, getMovieCrew, formatCrewCategory, renderActorCard, renderActorsTab
 const extractMethod = (src, methodName) => {
@@ -464,7 +467,7 @@ console.log('\n--- Part 43: Security, XSS & CSP Tests ---');
 // ==========================================
 console.log('\n--- Part 44: Phase UI-3 Dense Actors Grid Tests ---');
 {
-    const actorCss = fs.readFileSync('src/pages/movie-details/movie-details.css', 'utf8');
+    const actorCss = readText('src/pages/movie-details/movie-details.css');
     const actorGridBlock = actorCss.match(/\.actors-grid \{[\s\S]*?\n\}/)?.[0] || '';
     const actorPhotoBlock = actorCss.match(/\.actor-photo-container \{[\s\S]*?\n\}/)?.[0] || '';
 
@@ -495,7 +498,7 @@ console.log('\n--- Part 44: Phase UI-3 Dense Actors Grid Tests ---');
 // ==========================================
 console.log('\n--- Part 46: Phase UI-3.1 Actors Expansion Layout Tests ---');
 {
-    const actorCss = fs.readFileSync('src/pages/movie-details/movie-details.css', 'utf8');
+    const actorCss = readText('src/pages/movie-details/movie-details.css');
     const makeCast = (count) => Array.from({ length: count }, (_, index) => ({
         id: `tmdb:${index + 1}`,
         name: `Actor ${index + 1}`,
@@ -645,7 +648,7 @@ console.log('\n--- Part 45: Phase UI-4 Compact Awards Group Tests ---');
     const emptyHtml = manager.renderAwardsTab([]);
     assert(emptyHtml.includes('Нет информации о наградах'), 'empty awards behavior remains unchanged');
 
-    const awardsCss = fs.readFileSync('src/pages/movie-details/movie-details.css', 'utf8');
+    const awardsCss = readText('src/pages/movie-details/movie-details.css');
     assert(awardsCss.includes('.award-group {') && awardsCss.includes('.award-row {'), 'group and row presentation styles exist');
     assert(awardsCss.includes('overflow-wrap: anywhere'), 'long nomination text wraps without horizontal overflow');
     assert(awardsCss.includes('.light-theme .award-badge.winner'), 'light theme winner treatment remains legible');
