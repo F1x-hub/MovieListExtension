@@ -11,6 +11,9 @@ const updaterSource = fs.readFileSync(
     path.join(root, 'native-host', 'Updater', 'Program.cs'),
     'utf8'
 );
+const updaterVersionMatch = updaterSource.match(
+    /private const string UpdaterVersion = "(\d+\.\d+\.\d+)";/
+);
 
 if (!privateKey) {
     throw new Error('UPDATE_SIGNING_PRIVATE_KEY is required to create a signed release.');
@@ -21,6 +24,7 @@ const embeddedPublicKeyMatch = updaterSource.match(
     /private const string ReleasePublicKey = """([\s\S]*?)""";/
 );
 if (!embeddedPublicKeyMatch) throw new Error('Embedded updater public key is missing.');
+if (!updaterVersionMatch) throw new Error('Updater version is missing.');
 
 const normalizePem = (value) => value.replace(/\s+/g, '');
 const embeddedPublicKey = embeddedPublicKeyMatch[1].trim();
@@ -47,7 +51,7 @@ const metadata = {
     assetUrl: `https://github.com/F1x-hub/MovieListExtension/releases/download/v${manifest.version}/${assetName}`,
     sha256: crypto.createHash('sha256').update(asset).digest('hex'),
     size: asset.length,
-    minUpdaterVersion: '1.0.0',
+    minUpdaterVersion: updaterVersionMatch[1],
     publishedAt: new Date().toISOString()
 };
 const metadataText = `${JSON.stringify(metadata, null, 2)}\n`;

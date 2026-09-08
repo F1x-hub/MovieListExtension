@@ -882,14 +882,25 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             try {
-                const result = await UpdateService.checkAndInstallLatestRelease();
+                let result = await UpdateService.checkAndInstallLatestRelease();
+                if (result.status === 'waiting_for_safe_moment' && result.requiresConfirmation) {
+                    const confirmed = await showPlaybackUpdateDialog(result.availableVersion);
+                    if (!confirmed) {
+                        extensionUpdateInstallStatus.textContent = i18n.get('settings.updates.install_latest_declined');
+                        return;
+                    }
+                    result = await UpdateService.applyUpdate({ automatic: false, allowPlayback: true });
+                }
+
                 if (extensionUpdateInstallStatus) {
                     const messageKey = result.status === 'up_to_date'
                         ? 'settings.updates.install_latest_up_to_date'
                         : result.status === 'setup_required'
                             ? 'settings.updates.setup_required'
-                            : result.status === 'waiting_for_safe_moment'
+                        : result.status === 'waiting_for_safe_moment'
                                 ? 'settings.updates.install_latest_not_safe'
+                                : result.errorCode === 'RECOVERY_REQUIRED'
+                                    ? 'settings.updates.install_latest_recovery_required'
                                 : result.status === 'installing' || result.status === 'queued'
                                     ? 'settings.updates.install_latest_started'
                                     : 'settings.updates.install_latest_failed';
@@ -906,6 +917,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                             ? 'settings.updates.install_latest_not_safe'
                             : error?.message === 'UPDATE_IN_PROGRESS'
                                 ? 'settings.updates.install_latest_in_progress'
+                            : error?.message === 'RECOVERY_REQUIRED'
+                                ? 'settings.updates.install_latest_recovery_required'
                             : 'settings.updates.install_latest_failed';
                     extensionUpdateInstallStatus.textContent = i18n.get(messageKey);
                 }
@@ -1076,6 +1089,72 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Trigger animation
         requestAnimationFrame(() => {
             overlay.classList.add('active');
+        });
+    }
+
+    function showPlaybackUpdateDialog(version) {
+        return new Promise((resolve) => {
+            const overlay = document.createElement('div');
+            overlay.className = 'unsaved-dialog-overlay update-playback-dialog-overlay';
+
+            const dialog = document.createElement('div');
+            dialog.className = 'unsaved-dialog';
+            dialog.setAttribute('role', 'dialog');
+            dialog.setAttribute('aria-modal', 'true');
+            dialog.setAttribute('aria-label', i18n.get('settings.updates.playback_warning_title'));
+
+            const title = document.createElement('h3');
+            title.textContent = i18n.get('settings.updates.playback_warning_title');
+
+            const text = document.createElement('p');
+            text.textContent = i18n.get('settings.updates.playback_warning')
+                .replace('{version}', version || 'latest');
+
+            const actions = document.createElement('div');
+            actions.className = 'unsaved-dialog-actions';
+
+            const declineBtn = document.createElement('button');
+            declineBtn.className = 'btn btn-secondary';
+            declineBtn.type = 'button';
+            declineBtn.textContent = i18n.get('settings.updates.playback_decline_button');
+
+            const confirmBtn = document.createElement('button');
+            confirmBtn.className = 'btn btn-primary';
+            confirmBtn.type = 'button';
+            confirmBtn.textContent = i18n.get('settings.updates.playback_confirm_button');
+
+            let settled = false;
+            const finish = (confirmed) => {
+                if (settled) return;
+                settled = true;
+                document.removeEventListener('keydown', onKeyDown);
+                overlay.classList.remove('active');
+                setTimeout(() => overlay.remove(), 200);
+                resolve(confirmed);
+            };
+            const onKeyDown = (event) => {
+                if (event.key === 'Escape') finish(false);
+            };
+
+            declineBtn.addEventListener('click', () => finish(false));
+            confirmBtn.addEventListener('click', () => finish(true));
+            overlay.addEventListener('click', (event) => {
+                if (event.target === overlay) finish(false);
+            });
+            document.addEventListener('keydown', onKeyDown);
+
+            actions.appendChild(declineBtn);
+            actions.appendChild(confirmBtn);
+            dialog.appendChild(title);
+            dialog.appendChild(text);
+            dialog.appendChild(actions);
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
+
+            requestAnimationFrame(() => {
+                overlay.classList.add('active');
+                confirmBtn.focus();
+            });
         });
     }
 

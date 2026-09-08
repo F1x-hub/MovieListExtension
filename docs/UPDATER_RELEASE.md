@@ -7,6 +7,26 @@ Settings also expose a manual action that uses the same signed production path a
 automatic updates. It never accepts a path from the UI and never installs a release
 that is equal to or older than the installed version.
 
+Setup is persistent per Windows user: it registers the Native Messaging host for
+Chrome and Edge and does not need to be run after a reboot or for each release. The
+host is started by the browser only when the extension sends a request; no permanent
+MovieList updater process or Windows startup entry is required. Only one Setup window
+and one file-replacement operation may run at a time. During replacement, one
+temporary recovery directory is kept and removed after the new version is confirmed;
+it is not a growing backup history.
+
+Before the replacement starts, the host writes a one-time `HKCU\...\RunOnce`
+recovery command for the current operation. It is removed after confirmation or
+rollback and is not a permanent startup process. If Windows or the browser stops
+mid-replacement, the next user logon can restore the previous extension folder;
+when restoration is impossible, the updater reports `RECOVERY_REQUIRED` and blocks
+another replacement until the journal is repaired.
+
+The hardened updater requires MovieListSetup.exe version 1.1.0 or newer. A user
+who already connected an older Setup must run the current Setup once, select the same
+extension folder, and click **Connect automatic updates**. This is a one-time
+migration; future extension releases do not require reinstalling the Setup executable.
+
 Before the first signed release, generate a release key pair once:
 
 ```text

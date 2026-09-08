@@ -57,7 +57,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
         checkAuthToken();
     } else if (alarm.name === 'theNumbersRefresh') {
         refreshTrackedTheNumbersMovies();
-    } else if (['checkUpdates', 'checkUpdatesSafeRetry'].includes(alarm.name)
+    } else if (['checkUpdates', 'checkUpdatesSafeRetry', 'checkUpdateOperation'].includes(alarm.name)
         && typeof UpdateService !== 'undefined') {
         UpdateService.handleAlarm(alarm).catch((error) => {
             console.warn('[Update] Alarm handling failed:', error);

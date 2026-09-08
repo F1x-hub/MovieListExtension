@@ -13,8 +13,9 @@ A powerful Chrome Extension (Manifest V3) that enhances the movie discovery and 
 | Backend     | Firebase Services           | Auth, Firestore, Storage, Cloud Functions, Secret Manager |
 | DB          | Firestore / Realtime Database / Local Storage | Watch rooms use the isolated versioned staging RTDB instance |
 | Observability | Google Cloud Monitoring  | Admin-only Firestore usage metrics |
-| Build       | npm + copyfiles + Terser    | Rimraf clean, copyfiles structure copy, Terser minification |
+| Build       | npm + copyfiles + Terser + .NET 10 | Extension build, signed ZIP packaging, and Windows updater publish |
 | Linter      | ESLint 10.x                 | Linting rules for src and content scripts |
+| Native updater | C#/.NET 10 WinForms       | `com.movielist.updater` Native Messaging host and setup mode |
 
 ## Structure
 ```
@@ -27,6 +28,7 @@ movie-rating-extension/
 │   └── player-cleaner.js   # Heavy script for removing ads/popups & injecting custom players
 ├── dist/                   # Production build target directory (NEVER edit files here)
 ├── docs/                   # Extension documentation, including the visual design contract
+├── native-host/            # Windows updater Native Host and setup executable
 ├── functions/              # Firebase Cloud Functions and server-side provider/usage bridges
 ├── icons/                  # Extension graphics & icons (black/white themes)
 ├── libs/                   # Third-party libraries (e.g. hls.min.js)
@@ -46,6 +48,20 @@ movie-rating-extension/
 
 ## Architecture
 
+- **Windows updater boundary**: `UpdateService` owns update state and user-visible
+  status in the extension. `com.movielist.updater` is a separate Native Messaging
+  host; it validates signed release metadata, downloads and stages ZIPs, replaces the
+  configured unpacked directory through one temporary recovery directory, and confirms
+  activation before cleanup. Setup and apply mutations use named locks, stale journals
+  are recoverable, a one-shot `HKCU\...\RunOnce` entry protects interrupted
+  replacement only, and older Setup binaries cannot downgrade the installed updater.
+  Manual updates require explicit confirmation when playback is detected; automatic
+  updates wait for a safe moment. Inaccessible third-party tabs are not treated as
+  active media. It never accepts shell commands or an arbitrary destination path from
+  the extension. Chrome and Edge user-level Native Messaging registrations point to
+  the same permanent host executable.
+  New extension builds require Native Host 1.1.0 or newer and direct users with
+  older hosts through a one-time Setup migration.
 - **Watch-room staging proof**: `watchRoomsStaging` is an authenticated Cloud Function backed by server-only `watchRoomsStaging*` Firestore collections and the isolated `watchrooms-staging` RTDB target. It creates private rooms for 10 total participants, uses one shared invite with 9 guest redemptions, and mirrors membership ACLs plus sanitized display names before clients subscribe. Staging suppresses its unused Firestore ACL outbox because the endpoint performs the RTDB mirror synchronously. Room creation is idempotent per authenticated actor and request ID through a server-only create-request ledger; expired-room cleanup removes that ledger with the bounded room documents. `cleanupExpiredWatchRoomsStaging` is a separate daily `04:15 Asia/Tbilisi` scheduled function that queries only expired staging rooms, caps every run at 50 rooms, accepts up to 10 member documents, one shared invite document, and one create-request document, removes RTDB live/room-ACL branches before the bounded Firestore room/member/invite/request set, and retries once on failure; expiry rules remain the access boundary. The durable room member role is server-owned: the owner can grant/revoke a member's `controller` role through `setMemberRole`, then one RTDB root update mirrors the role paths. Owner and controller publish and apply the existing play/pause/seek state, while audio tracks, subtitles, quality, volume, and speed remain local. `WatchRoomStagingController` supports iframe and direct native-video mounts, preserves the existing provider-switch and timeline contracts, and writes canonical per-tab `presenceV2/{uid}/{connectionId}` records with strict RTDB rules; the legacy flat `presence/{uid}` path is read-compatible only. Presence uses child listeners, `onDisconnect().remove()`, a 30-second RTDB-only heartbeat, a 90-second stale threshold, and `.info/connected`; transient network loss preserves the room and never calls Firestore `join`. `callApi` preserves HTTP status and backend error codes so terminal `409` capacity/invite errors are not retried as network failures. On room expiry or server deletion the controller detaches local listeners and UI while the server cleanup removes the live RTDB branch. Room membership remains session-scoped after a full page reload; a transient RTDB reconnect does not require a new invite.
 - TMDB requests from builds without the ignored local config use the bounded `tmdbProxy` HTTPS Cloud Function. Active per-key registry tokens are selected server-side and never sent to the extension client; the legacy `TMDB_API_TOKEN` deployment secret is a migration-only bridge when no TMDB registry record exists.
 - Kinopoisk API requests use the authenticated `kinopoiskProxy` HTTPS Cloud Function; keys are read from Firebase Secret Manager, rotated server-side, and never stored in client config or `dist`. Kinopoisk website HTML scraping remains a separate browser-context path.
@@ -250,7 +266,9 @@ MovieDetails comment links use `Utils.extractYouTubeVideoInfo()` to mark verifie
 |-----------------|--------------------------------|
 | npm run dev     | Builds directory and watches for source changes using nodemon |
 | npm run build   | Cleans, copies files, minifies JS files into `dist/` |
-| npm run package | Builds production bundle and zips it |
+| npm run package | Builds the signed-release input bundle and updater executable |
+| npm run package-release | Builds, scans, archives the extension, and publishes the Windows setup binary |
+| npm run generate-update-metadata | Signs release metadata using `UPDATE_SIGNING_PRIVATE_KEY` |
 | npm run lint    | Runs ESLint checking for source JS and content-scripts |
 | npm run test:catalog-navigation | Verifies catalog loads UserService before Navigation |
 | npm run test:visual-design | Verifies the monochrome palette and shared UI token contract |
@@ -261,6 +279,7 @@ MovieDetails comment links use `Utils.extractYouTubeVideoInfo()` to mark verifie
 | npm run test-games-modal | Runs mini-games menu and Rubik's Cube regression tests |
 
 ## Known Issues / TODOs
+- The updater is Windows-only and the first connection still requires Chrome Developer Mode plus one Load unpacked action; Native Host/Chrome end-to-end acceptance, multi-profile path mapping, and the release signing secret setup remain deployment work.
 - The external Native Host must implement `select_install_folder` and `verify_installation`; until then the extension correctly keeps torrent sources hidden and reports setup failure.
 - Route `mediaplayer:torrent` through `changeVideoSource` to the torrent picker; never embed it as a URL. Active torrent play/pause must reuse the mounted video.
 - The staging room UI and endpoint support 10 total participants, but multi-profile native-provider acceptance (owner play/pause/seek and viewer correction) is still required before production rollout.

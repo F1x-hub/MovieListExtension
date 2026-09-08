@@ -13,7 +13,12 @@ internal static class Program
     private const string RepositoryPrefix = "https://github.com/F1x-hub/MovieListExtension/releases/download/";
     private const string AppName = "MovieListExtensionUpdater";
     private const int ProtocolVersion = 1;
-    private const string UpdaterVersion = "1.0.0";
+    private const string UpdaterVersion = "1.1.0";
+    private const string ApplyMutexName = @"Local\MovieListExtensionUpdater.Apply";
+    private const string SetupMutexName = @"Local\MovieListExtensionUpdater.Setup";
+    private const string RecoveryRunOnceName = "MovieListExtensionUpdaterRecovery";
+    private const string RecoveryRunOncePath = @"Software\Microsoft\Windows\CurrentVersion\RunOnce";
+    private static readonly TimeSpan StaleOperationAge = TimeSpan.FromMinutes(15);
     private const long MaxDownloadBytes = 512L * 1024 * 1024;
     private const long MaxArchiveBytes = 512L * 1024 * 1024;
     private const int MaxArchiveEntries = 20_000;
@@ -51,18 +56,44 @@ xwIDAQAB
     private static int Main(string[] args)
     {
         Directory.CreateDirectory(DataRoot);
+        if (args.Length >= 2 && string.Equals(args[0], "--recover", StringComparison.OrdinalIgnoreCase))
+        {
+            return Guid.TryParse(args[1], out var recoveryOperationId)
+                ? RecoverOperationAtLogon(recoveryOperationId.ToString("D"))
+                : 1;
+        }
+
         var setupRequested = args.Length == 0
             || args.Any(arg => string.Equals(arg, "--setup", StringComparison.OrdinalIgnoreCase));
         if (setupRequested)
         {
-            ApplicationConfiguration.Initialize();
-            Application.Run(new SetupForm());
+            using var setupMutex = new Mutex(false, SetupMutexName);
+            if (!TryAcquireOperationMutex(setupMutex))
+            {
+                MessageBox.Show(
+                    "Окно подключения MovieList уже открыто.",
+                    "MovieList Extension",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return 0;
+            }
+
+            try
+            {
+                ApplicationConfiguration.Initialize();
+                Application.Run(new SetupForm());
+            }
+            finally
+            {
+                setupMutex.ReleaseMutex();
+            }
             return 0;
         }
 
         if (args.Length >= 2 && string.Equals(args[0], "--execute", StringComparison.OrdinalIgnoreCase))
         {
-            ExecuteOperation(args[1]);
+            if (!Guid.TryParse(args[1], out var operationId)) return 1;
+            ExecuteOperation(operationId.ToString("D"));
             return 0;
         }
 
@@ -123,20 +154,29 @@ xwIDAQAB
         {
             "status" => StatusResponse(config),
             "apply" => StartApply(request, config),
-            "confirm" => Confirm(request),
+            "confirm" => Confirm(request, config),
             _ => ErrorResponse("ACTION_UNSUPPORTED", "Unsupported updater action.")
         };
     }
 
     private static object StatusResponse(InstallConfig config)
     {
+        RecoverStaleOperationIfPossible(config);
         var operation = ReadJson<OperationState>(StatePath);
+        if (operation?.CleanupPending == true)
+        {
+            RetryCleanup(operation);
+            operation = ReadJson<OperationState>(StatePath);
+        }
+        var currentVersion = ReadCurrentManifestVersion(config.ExtensionPath);
         return new
         {
             success = true,
-            configured = Directory.Exists(config.ExtensionPath),
+            configured = IsConfiguredExtension(config),
             installPath = config.ExtensionPath,
             extensionId = config.ExtensionId,
+            extensionVersion = currentVersion?.ToString(3),
+            updaterVersion = UpdaterVersion,
             operation
         };
     }
@@ -175,7 +215,7 @@ xwIDAQAB
             return ErrorResponse("UPDATE_SIGNATURE_INVALID", "The release metadata signature is invalid.");
         }
 
-        using var operationMutex = new Mutex(false, @"Local\MovieListExtensionUpdater.Apply");
+        using var operationMutex = new Mutex(false, ApplyMutexName);
         var mutexAcquired = false;
         OperationState? state = null;
         try
@@ -195,9 +235,36 @@ xwIDAQAB
             }
 
             var existing = ReadJson<OperationState>(StatePath);
+            if (existing?.CleanupPending == true)
+            {
+                RetryCleanup(existing);
+                existing = ReadJson<OperationState>(StatePath);
+                if (existing?.CleanupPending == true)
+                {
+                    return ErrorResponse("CLEANUP_PENDING", "The previous update is still cleaning up temporary files.");
+                }
+            }
+            if (existing is not null && string.Equals(existing.Status, "recovery_required", StringComparison.Ordinal))
+            {
+                return ErrorResponse(
+                    "RECOVERY_REQUIRED",
+                    existing.ErrorMessage ?? "The previous update requires recovery before another update can start.");
+            }
             if (existing is not null && IsActiveOperation(existing))
             {
-                return ErrorResponse("UPDATE_IN_PROGRESS", "Another update operation is already running.");
+                if (!IsRecoverableStaleOperation(existing))
+                {
+                    return ErrorResponse("UPDATE_IN_PROGRESS", "Another update operation is already running.");
+                }
+
+                RecoverInterruptedOperation(existing, config);
+                existing = ReadJson<OperationState>(StatePath);
+                if (existing is not null && string.Equals(existing.Status, "recovery_required", StringComparison.Ordinal))
+                {
+                    return ErrorResponse(
+                        "RECOVERY_REQUIRED",
+                        existing.ErrorMessage ?? "The previous update requires recovery before another update can start.");
+                }
             }
 
             var currentVersion = ReadCurrentManifestVersion(config.ExtensionPath);
@@ -213,7 +280,8 @@ xwIDAQAB
                 Status = "queued",
                 Version = metadata.Version,
                 InstallPath = config.ExtensionPath,
-                StartedAt = DateTimeOffset.UtcNow
+                StartedAt = DateTimeOffset.UtcNow,
+                LastProgressAt = DateTimeOffset.UtcNow
             };
             WriteJsonAtomic(StatePath, state);
             WriteJsonAtomic(InputPath(state.OperationId), new OperationInput
@@ -223,6 +291,8 @@ xwIDAQAB
                 Metadata = metadata,
                 InstallPath = config.ExtensionPath
             });
+
+            RegisterRecoveryRunOnce(state.OperationId);
 
             var executable = Environment.ProcessPath;
             if (string.IsNullOrWhiteSpace(executable))
@@ -242,6 +312,11 @@ xwIDAQAB
                 return ErrorResponse("EXECUTOR_START_FAILED", "The update executor could not be started.");
             }
 
+            state.ExecutorPid = process.Id;
+            state.ExecutorStartedAt = TryReadProcessStartTime(process);
+            state.LastProgressAt = DateTimeOffset.UtcNow;
+            WriteJsonAtomic(StatePath, state);
+
             return new { success = true, status = state.Status, operationId = state.OperationId };
         }
         catch (Exception error)
@@ -251,7 +326,11 @@ xwIDAQAB
                 state.Status = "failed";
                 state.ErrorCode = "EXECUTOR_START_FAILED";
                 state.ErrorMessage = error.Message;
+                state.CleanupPending = true;
+                state.LastProgressAt = DateTimeOffset.UtcNow;
                 WriteJsonAtomic(StatePath, state);
+                RetryCleanup(state);
+                RemoveRecoveryRunOnce(state.OperationId);
             }
             return ErrorResponse("EXECUTOR_START_FAILED", error.Message);
         }
@@ -261,7 +340,7 @@ xwIDAQAB
         }
     }
 
-    private static object Confirm(JsonElement request)
+    private static object Confirm(JsonElement request, InstallConfig config)
     {
         var operationId = request.TryGetProperty("operationId", out var operationElement)
             ? operationElement.GetString()
@@ -269,7 +348,12 @@ xwIDAQAB
         var version = request.TryGetProperty("version", out var versionElement)
             ? versionElement.GetString()
             : null;
-        using var operationMutex = new Mutex(false, @"Local\MovieListExtensionUpdater.Apply");
+        if (!Guid.TryParse(operationId, out _))
+        {
+            return ErrorResponse("CONFIRMATION_INVALID", "The update operation identifier is invalid.");
+        }
+
+        using var operationMutex = new Mutex(false, ApplyMutexName);
         var mutexAcquired = false;
         try
         {
@@ -287,9 +371,19 @@ xwIDAQAB
                 return ErrorResponse("CONFIRMATION_INVALID", "No matching update is waiting for confirmation.");
             }
 
+            var installedVersion = ReadCurrentManifestVersion(config.ExtensionPath);
+            if (installedVersion is null || CompareVersions(version!, installedVersion) != 0)
+            {
+                return ErrorResponse("CONFIRMATION_INVALID", "The installed extension version does not match the update.");
+            }
+
             state.Status = "succeeded";
             state.ConfirmedAt = DateTimeOffset.UtcNow;
+            state.CleanupPending = true;
+            state.LastProgressAt = DateTimeOffset.UtcNow;
             WriteJsonAtomic(StatePath, state);
+            RetryCleanup(state);
+            RemoveRecoveryRunOnce(state.OperationId);
             return new { success = true, status = state.Status, version = state.Version };
         }
         finally
@@ -300,13 +394,47 @@ xwIDAQAB
 
     private static void ExecuteOperation(string operationId)
     {
+        using var operationMutex = new Mutex(false, ApplyMutexName);
+        var mutexAcquired = false;
         try
         {
+            mutexAcquired = operationMutex.WaitOne(TimeSpan.FromSeconds(30));
+            if (!mutexAcquired) return;
+
+            var config = LoadConfig()
+                ?? throw new InvalidOperationException("Updater setup is not configured.");
+            var state = ReadJson<OperationState>(StatePath)
+                ?? throw new InvalidOperationException("Operation state was not found.");
+            if (!string.Equals(state.OperationId, operationId, StringComparison.Ordinal)
+                || !string.Equals(state.Status, "queued", StringComparison.Ordinal))
+            {
+                return;
+            }
+
             var input = ReadJson<OperationInput>(InputPath(operationId))
                 ?? throw new InvalidOperationException("Operation input was not found.");
+            if (!string.Equals(
+                    Path.GetFullPath(input.InstallPath),
+                    Path.GetFullPath(config.ExtensionPath),
+                    StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(input.InstallPath, state.InstallPath, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException("The operation target no longer matches setup.");
+            }
+
+            var validatedMetadata = ParseAndValidateMetadata(input.MetadataText, config);
+            if (!VerifySignature(Encoding.UTF8.GetBytes(input.MetadataText), input.Signature))
+            {
+                throw new InvalidDataException("The operation metadata signature is invalid.");
+            }
+            if (!string.Equals(validatedMetadata.Version, state.Version, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("The operation version no longer matches signed metadata.");
+            }
+            input.Metadata = validatedMetadata;
             UpdateOperationState(operationId, state => state.Status = "downloading");
 
-            var stageRoot = Path.Combine(Path.GetDirectoryName(input.InstallPath)!, ".movielist-updater", "staging", operationId);
+            var stageRoot = GetStagingPath(input.InstallPath, operationId);
             Directory.CreateDirectory(stageRoot);
             var archivePath = Path.Combine(stageRoot, input.Metadata.AssetName);
             DownloadFile(input.Metadata.AssetUrl, archivePath, input.Metadata.Size);
@@ -321,8 +449,22 @@ xwIDAQAB
             ValidateManifest(manifestPath, input.Metadata);
 
             UpdateOperationState(operationId, state => state.Status = "replacing");
-            Directory.Delete(input.InstallPath, recursive: true);
-            MoveWithRetry(extractionPath, input.InstallPath);
+            var recoveryPath = GetRecoveryPath(input.InstallPath, operationId);
+            UpdateOperationState(operationId, state => state.RecoveryPath = recoveryPath);
+            DeleteKnownDirectory(recoveryPath);
+            MoveWithRetry(input.InstallPath, recoveryPath);
+            try
+            {
+                MoveWithRetry(extractionPath, input.InstallPath);
+            }
+            catch
+            {
+                if (!Directory.Exists(input.InstallPath) && Directory.Exists(recoveryPath))
+                {
+                    MoveWithRetry(recoveryPath, input.InstallPath);
+                }
+                throw;
+            }
 
             UpdateOperationState(operationId, state =>
             {
@@ -333,12 +475,38 @@ xwIDAQAB
         }
         catch (Exception error)
         {
-            UpdateOperationState(operationId, state =>
+            try
             {
-                state.Status = "failed";
-                state.ErrorCode = "EXECUTION_FAILED";
-                state.ErrorMessage = error.Message;
-            });
+                var failedState = ReadJson<OperationState>(StatePath);
+                if (failedState is not null
+                    && string.Equals(failedState.OperationId, operationId, StringComparison.Ordinal)
+                    && string.Equals(failedState.Status, "replacing", StringComparison.Ordinal))
+                {
+                    RecoverInterruptedOperation(failedState, config: LoadConfig() ?? throw new InvalidOperationException("Updater setup is not configured."));
+                }
+                else
+                {
+                    UpdateOperationState(operationId, state =>
+                    {
+                        state.Status = "failed";
+                        state.ErrorCode = "EXECUTION_FAILED";
+                        state.ErrorMessage = error.Message;
+                        state.CleanupPending = true;
+                    });
+                    var cleanupState = ReadJson<OperationState>(StatePath);
+                    if (cleanupState is not null) RetryCleanup(cleanupState);
+                    RemoveRecoveryRunOnce(operationId);
+                }
+            }
+            catch
+            {
+                // Keep the original executor failure from being masked by a
+                // second journal failure during crash recovery.
+            }
+        }
+        finally
+        {
+            if (mutexAcquired) operationMutex.ReleaseMutex();
         }
     }
 
@@ -455,6 +623,259 @@ xwIDAQAB
         return state.Status is "queued" or "downloading" or "replacing" or "awaiting_confirmation";
     }
 
+    private static bool IsRecoverableStaleOperation(OperationState state)
+    {
+        if (state.Status is "recovery_required") return true;
+        if (state.Status is not ("queued" or "downloading" or "replacing")) return false;
+        var lastProgress = state.LastProgressAt == default ? state.StartedAt : state.LastProgressAt;
+        return lastProgress != default
+            && DateTimeOffset.UtcNow - lastProgress > StaleOperationAge
+            && !IsExecutorAlive(state);
+    }
+
+    private static bool IsExecutorAlive(OperationState state)
+    {
+        if (state.ExecutorPid <= 0) return false;
+        try
+        {
+            using var process = Process.GetProcessById(state.ExecutorPid);
+            if (state.ExecutorStartedAt is null) return true;
+            var actualStart = new DateTimeOffset(process.StartTime.ToUniversalTime());
+            return Math.Abs((actualStart - state.ExecutorStartedAt.Value).TotalSeconds) < 10;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static DateTimeOffset? TryReadProcessStartTime(Process process)
+    {
+        try
+        {
+            return new DateTimeOffset(process.StartTime.ToUniversalTime());
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void RecoverStaleOperationIfPossible(InstallConfig config)
+    {
+        var state = ReadJson<OperationState>(StatePath);
+        if (state is null || !IsRecoverableStaleOperation(state)) return;
+
+        using var operationMutex = new Mutex(false, ApplyMutexName);
+        if (!TryAcquireOperationMutex(operationMutex)) return;
+        try
+        {
+            var current = ReadJson<OperationState>(StatePath);
+            if (current is not null && IsRecoverableStaleOperation(current))
+            {
+                RecoverInterruptedOperation(current, config);
+            }
+        }
+        finally
+        {
+            operationMutex.ReleaseMutex();
+        }
+    }
+
+    private static void RecoverInterruptedOperation(OperationState state, InstallConfig config)
+    {
+        var currentVersion = ReadCurrentManifestVersion(config.ExtensionPath);
+        if (currentVersion is not null && CompareVersions(state.Version, currentVersion) == 0)
+        {
+            state.Status = "awaiting_confirmation";
+            state.ErrorCode = null;
+            state.ErrorMessage = null;
+            state.LastProgressAt = DateTimeOffset.UtcNow;
+            WriteJsonAtomic(StatePath, state);
+            RemoveRecoveryRunOnce(state.OperationId);
+            return;
+        }
+
+        var recoveryPath = state.RecoveryPath ?? GetRecoveryPath(state.InstallPath, state.OperationId);
+        var wasReplacing = string.Equals(state.Status, "replacing", StringComparison.Ordinal)
+            || string.Equals(state.Status, "recovery_required", StringComparison.Ordinal);
+        try
+        {
+            if (Directory.Exists(recoveryPath))
+            {
+                if (Directory.Exists(state.InstallPath)) DeleteKnownDirectory(state.InstallPath);
+                MoveWithRetry(recoveryPath, state.InstallPath);
+            }
+            else if (wasReplacing && !Directory.Exists(state.InstallPath))
+            {
+                state.Status = "recovery_required";
+                state.ErrorCode = "RECOVERY_REQUIRED";
+                state.ErrorMessage = "The extension folder is missing and no recovery copy is available.";
+                state.LastProgressAt = DateTimeOffset.UtcNow;
+                WriteJsonAtomic(StatePath, state);
+                RegisterRecoveryRunOnce(state.OperationId);
+                return;
+            }
+
+            state.Status = "failed";
+            state.ErrorCode = "RECOVERED_AFTER_INTERRUPTION";
+            state.ErrorMessage = "The interrupted update was rolled back.";
+            state.CleanupPending = true;
+            state.LastProgressAt = DateTimeOffset.UtcNow;
+            WriteJsonAtomic(StatePath, state);
+            RetryCleanup(state);
+            RemoveRecoveryRunOnce(state.OperationId);
+        }
+        catch (Exception error)
+        {
+            state.Status = "recovery_required";
+            state.ErrorCode = "RECOVERY_REQUIRED";
+            state.ErrorMessage = error.Message;
+            state.LastProgressAt = DateTimeOffset.UtcNow;
+            WriteJsonAtomic(StatePath, state);
+            RegisterRecoveryRunOnce(state.OperationId);
+        }
+    }
+
+    private static int RecoverOperationAtLogon(string operationId)
+    {
+        var config = LoadConfig();
+        if (config is null) return 1;
+
+        using var operationMutex = new Mutex(false, ApplyMutexName);
+        if (!TryAcquireOperationMutex(operationMutex)) return 1;
+        try
+        {
+            var state = ReadJson<OperationState>(StatePath);
+            if (state is null || !string.Equals(state.OperationId, operationId, StringComparison.Ordinal))
+            {
+                RemoveRecoveryRunOnce(operationId);
+                return 0;
+            }
+
+            if (IsExecutorAlive(state)) return 0;
+            if (state.Status is "awaiting_confirmation" or "succeeded" or "failed")
+            {
+                if (state.CleanupPending) RetryCleanup(state);
+                RemoveRecoveryRunOnce(operationId);
+                return 0;
+            }
+
+            RecoverInterruptedOperation(state, config);
+            return 0;
+        }
+        finally
+        {
+            operationMutex.ReleaseMutex();
+        }
+    }
+
+    private static string GetRecoveryPath(string installPath, string operationId)
+    {
+        var parent = Directory.GetParent(Path.GetFullPath(installPath))?.FullName
+            ?? throw new InvalidDataException("The extension install path has no parent directory.");
+        return Path.Combine(parent, ".movielist-updater", "recovery", operationId);
+    }
+
+    private static string GetStagingPath(string installPath, string operationId)
+    {
+        var parent = Directory.GetParent(Path.GetFullPath(installPath))?.FullName
+            ?? throw new InvalidDataException("The extension install path has no parent directory.");
+        return Path.Combine(parent, ".movielist-updater", "staging", operationId);
+    }
+
+    private static bool CleanupOperationArtifacts(OperationState state)
+    {
+        var recoveryClean = false;
+        var stagingClean = false;
+        try
+        {
+            recoveryClean = TryDeleteDirectory(state.RecoveryPath ?? GetRecoveryPath(state.InstallPath, state.OperationId));
+            stagingClean = TryDeleteDirectory(GetStagingPath(state.InstallPath, state.OperationId));
+        }
+        catch
+        {
+            // Keep cleanup_pending when a damaged journal cannot resolve its paths.
+        }
+        var inputClean = TryDeleteFile(InputPath(state.OperationId));
+        return recoveryClean && stagingClean && inputClean;
+    }
+
+    private static void RetryCleanup(OperationState state)
+    {
+        state.CleanupPending = !CleanupOperationArtifacts(state);
+        state.LastProgressAt = DateTimeOffset.UtcNow;
+        WriteJsonAtomic(StatePath, state);
+    }
+
+    private static bool TryDeleteDirectory(string path)
+    {
+        try
+        {
+            DeleteKnownDirectory(path);
+            return !Directory.Exists(path);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void DeleteKnownDirectory(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+        var fullPath = Path.GetFullPath(path);
+        if (Directory.Exists(fullPath)) Directory.Delete(fullPath, recursive: true);
+    }
+
+    private static bool TryDeleteFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path)) File.Delete(path);
+            return !File.Exists(path);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void RegisterRecoveryRunOnce(string operationId)
+    {
+        var executable = Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(executable))
+            throw new InvalidOperationException("The updater executable path is unavailable.");
+
+        var escapedExecutable = executable.Replace("\"", "\\\"");
+        using var key = Registry.CurrentUser.CreateSubKey(RecoveryRunOncePath)
+            ?? throw new InvalidOperationException("Could not open the Windows recovery startup key.");
+        key.SetValue(
+            RecoveryRunOnceName,
+            $"\"{escapedExecutable}\" --recover {operationId}",
+            RegistryValueKind.String);
+    }
+
+    private static void RemoveRecoveryRunOnce(string operationId)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(RecoveryRunOncePath, writable: true);
+            if (key is null) return;
+            var command = key.GetValue(RecoveryRunOnceName) as string;
+            var expectedSuffix = $"--recover {operationId}";
+            if (string.IsNullOrWhiteSpace(command)
+                || command.EndsWith(expectedSuffix, StringComparison.OrdinalIgnoreCase))
+            {
+                key.DeleteValue(RecoveryRunOnceName, throwOnMissingValue: false);
+            }
+        }
+        catch
+        {
+            // A stale one-shot entry is harmless; the next host status retries cleanup.
+        }
+    }
+
     private static bool TryAcquireOperationMutex(Mutex mutex)
     {
         try
@@ -479,6 +900,24 @@ xwIDAQAB
         catch
         {
             return null;
+        }
+    }
+
+    private static bool IsConfiguredExtension(InstallConfig config)
+    {
+        if (!Directory.Exists(config.ExtensionPath)) return false;
+        try
+        {
+            var manifestPath = Path.Combine(config.ExtensionPath, "manifest.json");
+            using var document = JsonDocument.Parse(File.ReadAllText(manifestPath));
+            var key = document.RootElement.GetProperty("key").GetString();
+            return !string.IsNullOrWhiteSpace(key)
+                && string.Equals(ComputeExtensionId(key), config.ExtensionId, StringComparison.Ordinal)
+                && ReadCurrentManifestVersion(config.ExtensionPath) is not null;
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -536,9 +975,59 @@ xwIDAQAB
 
     private static void UpdateOperationState(string operationId, Action<OperationState> update)
     {
-        var state = ReadJson<OperationState>(StatePath) ?? new OperationState { OperationId = operationId };
+        var state = ReadJson<OperationState>(StatePath);
+        if (state is null || !string.Equals(state.OperationId, operationId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The update operation journal no longer matches the executor.");
+        }
         update(state);
+        state.LastProgressAt = DateTimeOffset.UtcNow;
         WriteJsonAtomic(StatePath, state);
+    }
+
+    private static Version? ReadUpdaterVersion(string path)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+            var fileVersion = FileVersionInfo.GetVersionInfo(path).ProductVersion
+                ?? FileVersionInfo.GetVersionInfo(path).FileVersion;
+            var normalized = fileVersion?.Split('+', 2)[0];
+            return TryParseStableVersion(normalized, out var version) ? version : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void CopyExecutableWithRetry(string source, string destination)
+    {
+        Exception? last = null;
+        var temporary = destination + ".new-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            File.Copy(source, temporary, overwrite: true);
+            for (var attempt = 0; attempt < 8; attempt += 1)
+            {
+                try
+                {
+                    File.Move(temporary, destination, overwrite: true);
+                    return;
+                }
+                catch (Exception error)
+                {
+                    last = error;
+                    Thread.Sleep(500);
+                }
+            }
+        }
+        finally
+        {
+            TryDeleteFile(temporary);
+        }
+
+        throw new IOException("Could not replace the installed updater executable.", last);
     }
 
     private static InstallConfig? LoadConfig() => ReadJson<InstallConfig>(ConfigPath);
@@ -618,6 +1107,7 @@ xwIDAQAB
             Height = 360;
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(620, 360);
+            pathBox.Text = LoadConfig()?.ExtensionPath ?? string.Empty;
 
             var title = new Label
             {
@@ -673,6 +1163,14 @@ xwIDAQAB
 
         private void Install()
         {
+            using var operationMutex = new Mutex(false, ApplyMutexName);
+            if (!TryAcquireOperationMutex(operationMutex))
+            {
+                status.ForeColor = Color.Firebrick;
+                status.Text = "Сейчас уже выполняется обновление. Повторите подключение после его завершения.";
+                return;
+            }
+
             try
             {
                 var extensionPath = Path.GetFullPath(pathBox.Text.Trim());
@@ -682,13 +1180,32 @@ xwIDAQAB
                 var key = document.RootElement.GetProperty("key").GetString();
                 if (string.IsNullOrWhiteSpace(key)) throw new InvalidDataException("В manifest.json нет стабильного key.");
                 var extensionId = ComputeExtensionId(key);
-                var config = new InstallConfig { ExtensionPath = extensionPath, ExtensionId = extensionId, SetupVersion = "1.0.0" };
+                var existingOperation = ReadJson<OperationState>(StatePath);
+                if (existingOperation is not null
+                    && IsActiveOperation(existingOperation)
+                    && !string.Equals(
+                        Path.GetFullPath(existingOperation.InstallPath),
+                        extensionPath,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException("Нельзя сменить папку во время активного обновления.");
+                }
+                var config = new InstallConfig { ExtensionPath = extensionPath, ExtensionId = extensionId, SetupVersion = UpdaterVersion, HostVersion = UpdaterVersion };
                 var permanentExecutable = Path.Combine(DataRoot, "MovieListUpdater.exe");
                 var runningExecutable = Environment.ProcessPath
                     ?? throw new InvalidOperationException("The setup executable path is unavailable.");
+                var runningVersion = ReadUpdaterVersion(runningExecutable) ?? Version.Parse(UpdaterVersion);
+                var installedVersion = ReadUpdaterVersion(permanentExecutable);
+                if (installedVersion is not null && installedVersion.CompareTo(runningVersion) > 0)
+                {
+                    throw new InvalidOperationException($"Уже установлена более новая версия обновлятора ({installedVersion}). Запустите новый MovieListSetup.exe.");
+                }
                 if (!string.Equals(Path.GetFullPath(runningExecutable), Path.GetFullPath(permanentExecutable), StringComparison.OrdinalIgnoreCase))
                 {
-                    File.Copy(runningExecutable, permanentExecutable, overwrite: true);
+                    if (installedVersion is null || runningVersion.CompareTo(installedVersion) > 0)
+                    {
+                        CopyExecutableWithRetry(runningExecutable, permanentExecutable);
+                    }
                 }
                 WriteJsonAtomic(ConfigPath, config);
                 var hostManifestPath = Path.Combine(DataRoot, HostName + ".json");
@@ -700,8 +1217,8 @@ xwIDAQAB
                     type = "stdio",
                     allowed_origins = new[] { $"chrome-extension://{extensionId}/" }
                 });
-                using var keyHandle = Registry.CurrentUser.CreateSubKey($"Software\\Google\\Chrome\\NativeMessagingHosts\\{HostName}");
-                keyHandle?.SetValue(null, hostManifestPath);
+                RegisterNativeMessagingHost("Google\\Chrome", hostManifestPath);
+                RegisterNativeMessagingHost("Microsoft\\Edge", hostManifestPath);
 
                 try
                 {
@@ -727,8 +1244,19 @@ xwIDAQAB
                 status.Text = "Не удалось подключить обновления: " + error.Message;
                 MessageBox.Show(this, status.Text, "Ошибка подключения", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+            finally
+            {
+                operationMutex.ReleaseMutex();
+            }
         }
 
+    }
+
+    private static void RegisterNativeMessagingHost(string browserRegistryPath, string manifestPath)
+    {
+        using var keyHandle = Registry.CurrentUser.CreateSubKey(
+            $"Software\\{browserRegistryPath}\\NativeMessagingHosts\\{HostName}");
+        keyHandle?.SetValue(null, manifestPath);
     }
 
     private sealed class InstallConfig
@@ -736,6 +1264,7 @@ xwIDAQAB
         public string ExtensionPath { get; set; } = string.Empty;
         public string ExtensionId { get; set; } = string.Empty;
         public string SetupVersion { get; set; } = string.Empty;
+        public string HostVersion { get; set; } = string.Empty;
     }
 
     private sealed class OperationInput
@@ -755,7 +1284,12 @@ xwIDAQAB
         public string? ErrorCode { get; set; }
         public string? ErrorMessage { get; set; }
         public DateTimeOffset StartedAt { get; set; }
+        public DateTimeOffset LastProgressAt { get; set; }
+        public int ExecutorPid { get; set; }
+        public DateTimeOffset? ExecutorStartedAt { get; set; }
+        public string? RecoveryPath { get; set; }
         public DateTimeOffset? ConfirmedAt { get; set; }
+        public bool CleanupPending { get; set; }
     }
 
     private sealed class UpdateMetadata

@@ -213,6 +213,30 @@ Release entries are intentionally collapsed to keep this page readable. The
 manifest and package version remain the source of truth for the build version.
 
 <details>
+<summary><strong>1.3.2</strong> — playback-aware updater confirmation</summary>
+
+### Fixes
+
+- Ignore inaccessible third-party tabs when checking playback.
+- Ask before manually updating while media is playing.
+- Keep automatic updates deferred until playback is safe.
+- Prevent concurrent Setup windows and concurrent replacement operations.
+- Reject stale Setup executables that would downgrade the installed updater.
+- Recover interrupted replacement operations from one temporary recovery directory.
+- Remove staging, recovery, and operation-input files after confirmation.
+- Register the updater for both Chrome and Edge user-level Native Messaging.
+- Verify the activated manifest version before confirming an update.
+- Report the installed extension and updater versions through Native Messaging.
+- Require one-time migration to the current Setup before using the hardened updater.
+- Explain the one-time Setup migration directly in the settings status message.
+- Register one-time Windows recovery before replacing the extension folder.
+- Retry locked staging and recovery files instead of accumulating backups.
+- Serialize startup reconciliation before background release checks.
+- Keep long-running native operations observable through a persistent alarm.
+
+</details>
+
+<details>
 <summary><strong>1.3.1</strong> — проверка обновления с 1.3.0</summary>
 
 ### Fixes
