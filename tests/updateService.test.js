@@ -83,17 +83,22 @@ vm.runInNewContext(source, context, { filename: 'UpdateService.js' });
         context.UpdateService.getSetupUrl(),
         'https://github.com/F1x-hub/MovieListExtension/releases/latest/download/MovieListSetup.exe'
     );
-    assert.match(source, /installLatestReleaseForTesting/);
-    assert.match(source, /action: 'test_apply'/);
+    assert.match(source, /checkAndInstallLatestRelease/);
+    assert.doesNotMatch(source, /installLatestReleaseForTesting/);
+    assert.doesNotMatch(source, /test_apply/);
     assert.strictEqual(fetchCount, 2);
-    assert.match(settingsHtmlSource, /id="extensionUpdateDownloadBtn"/);
-    assert.match(settingsJsSource, /UpdateService\.installLatestReleaseForTesting\(\)/);
+    assert.match(settingsHtmlSource, /id="extensionUpdateInstallBtn"/);
+    assert.match(settingsJsSource, /UpdateService\.checkAndInstallLatestRelease\(\)/);
+    assert.doesNotMatch(settingsHtmlSource, /\(test\)/i);
+    assert.doesNotMatch(settingsJsSource, /extensionUpdateDownload/);
     assert.ok(
         manifest.host_permissions.includes('https://release-assets.githubusercontent.com/*'),
         'GitHub release redirects must remain accessible to extension fetches'
     );
-    assert.match(nativeHostSource, /"test_apply" => StartApply\(request, config, allowSameVersion: true\)/);
-    assert.match(nativeHostSource, /if \(!allowSameVersion && currentVersion is not null/);
+    assert.match(nativeHostSource, /"apply" => StartApply\(request, config\)/);
+    assert.doesNotMatch(nativeHostSource, /test_apply/);
+    assert.doesNotMatch(nativeHostSource, /allowSameVersion/);
+    assert.match(nativeHostSource, /if \(currentVersion is not null/);
 
     assert.match(backgroundSource, /\['checkUpdates', 'checkUpdatesSafeRetry'\]\.includes\(alarm\.name\)/);
     assert.match(nativeHostSource, /allowed_origins = new\[\] \{ \$"chrome-extension:\/\/\{extensionId\}\/" \}/);

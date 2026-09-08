@@ -213,85 +213,6 @@ Release entries are intentionally collapsed to keep this page readable. The
 manifest and package version remain the source of truth for the build version.
 
 <details>
-<summary><strong>1.3.8</strong> — отключены постоянные backup-папки updater</summary>
-
-### Fixes
-
-- Replace the stable unpacked-extension folder without retaining backup directories.
-- Remove rollback controls that are unavailable without backups.
-
-</details>
-
-<details>
-<summary><strong>1.3.7</strong> — проверка автоматического обновления</summary>
-
-### Docs
-
-- Publish a versioned release for end-to-end updater verification.
-
-</details>
-
-<details>
-<summary><strong>1.3.6</strong> — усилена совместимость Native Messaging</summary>
-
-### Fixes
-
-- Принимать origin Chrome с завершающим `/` и дополнительными аргументами Windows.
-- Сохранять строгую проверку конкретного extension ID.
-
-</details>
-
-<details>
-<summary><strong>1.3.5</strong> — исправлен доступ к GitHub release assets</summary>
-
-### Fixes
-
-- Разрешить загрузку metadata после redirect GitHub на release CDN.
-- Добавить contract-проверку permission для `release-assets.githubusercontent.com`.
-
-</details>
-
-<details>
-<summary><strong>1.3.4</strong> — улучшена обратная связь setup-режима</summary>
-
-### Fixes
-
-- Показывать видимый статус и подтверждение после подключения автообновлений.
-- Показывать понятную ошибку при невозможности регистрации Native Messaging host.
-- Не считать необязательное копирование пути в буфер обмена ошибкой установки.
-
-</details>
-
-<details>
-<summary><strong>1.3.3</strong> — исправлен запуск установщика</summary>
-
-### Fixes
-
-- Открывать setup-окно при двойном клике по `MovieListSetup.exe`.
-- Сохранить отдельные режимы Native Messaging и фонового выполнения обновления.
-
-</details>
-
-<details>
-<summary><strong>1.3.2</strong> — cross-platform release checks</summary>
-
-### Fixes
-
-- Stabilize source and contract-test line endings across Windows and Unix checkouts.
-- Normalize visual regression-test input before evaluating CSS contracts.
-
-</details>
-
-<details>
-<summary><strong>1.3.1</strong> — release-test portability</summary>
-
-### Fixes
-
-- Normalize regression-test line endings for Windows GitHub Actions checkouts.
-
-</details>
-
-<details>
 <summary><strong>1.3.0</strong> — provider-key endpoint deployment</summary>
 
 ### Features
@@ -301,6 +222,9 @@ manifest and package version remain the source of truth for the build version.
 - Use the themed surface for the full review reader modal.
 - Preserve rating aggregates and compact caches during review-only edits.
 - Add review reports with Firestore-validated target metadata.
+
+- Add signed GitHub ZIP updates through Native Messaging with automatic and manual installation.
+- Replace the stable unpacked-extension folder without persistent backup directories.
 
 - Keep torrent playback above the release browser with accessible in-modal scrolling.
 - Restore player focus after torrent selection and keep the modal above navigation.
@@ -718,14 +642,13 @@ manifest and package version remain the source of truth for the build version.
 ### Features
 
 - Add signed GitHub ZIP metadata and a Native Messaging updater for Windows.
-- Add a one-time setup mode with automatic staging, rollback, and activation checks.
+- Add a one-time setup mode with automatic staging and activation checks.
 - Add automatic-update settings with deferred and failure states in the popup.
 - Add a direct Setup download action when the Native Host is not connected.
 - Retry waiting updates automatically after playback becomes safe to replace.
-- Distinguish update retry errors from rollback-available failures.
+- Distinguish update retry errors from failed installation states.
 - Guard the updater with exact origins, version gates, size limits, and operation locks.
-- Serialize confirmation and rollback, and restore the active install after a failed rollback move.
-- Add a settings test control to download and install the latest GitHub release.
+- Serialize confirmation and safely replace the active install after validation.
 - Run regression tests and publish release assets through a draft release pipeline.
 - Fail release packaging when the archive contains local configuration or build errors.
 
