@@ -5,6 +5,7 @@ const vm = require('vm');
 const source = fs.readFileSync('src/shared/services/UpdateService.js', 'utf8');
 const backgroundSource = fs.readFileSync('src/background/background.js', 'utf8');
 const nativeHostSource = fs.readFileSync('native-host/Updater/Program.cs', 'utf8');
+const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
 const settingsHtmlSource = fs.readFileSync('src/pages/settings/settings.html', 'utf8');
 const settingsJsSource = fs.readFileSync('src/pages/settings/settings.js', 'utf8');
 const storage = {};
@@ -86,6 +87,10 @@ vm.runInNewContext(source, context, { filename: 'UpdateService.js' });
     assert.strictEqual(fetchCount, 2);
     assert.match(settingsHtmlSource, /id="extensionUpdateDownloadBtn"/);
     assert.match(settingsJsSource, /UpdateService\.installLatestReleaseForTesting\(\)/);
+    assert.ok(
+        manifest.host_permissions.includes('https://release-assets.githubusercontent.com/*'),
+        'GitHub release redirects must remain accessible to extension fetches'
+    );
     assert.match(nativeHostSource, /"test_apply" => StartApply\(request, config, allowSameVersion: true\)/);
     assert.match(nativeHostSource, /if \(!allowSameVersion && currentVersion is not null/);
 
