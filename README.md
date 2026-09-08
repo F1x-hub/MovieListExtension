@@ -236,8 +236,9 @@ manifest and package version remain the source of truth for the build version.
 - Reload the extension before native replacement so active unpacked files are released.
 - Show failed and completed update states instead of leaving a stale started message.
 - Preserve the native replacement error when rollback is required.
-- Require updater 1.1.2, which enables WinForms cultures and replacement diagnostics.
+- Require updater 1.1.3, which enables WinForms cultures and replacement diagnostics.
 - Disable invariant globalization for WinForms keyboard-layout handling.
+- Create the recovery parent directory before replacing a fresh installation.
 - Close open extension pages from the service worker before replacing the unpacked folder.
 - Synchronize native operation state before rendering the settings update status.
 - Include the last directory-move error in the native updater journal for diagnostics.
