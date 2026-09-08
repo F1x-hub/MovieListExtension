@@ -213,6 +213,16 @@ Release entries are intentionally collapsed to keep this page readable. The
 manifest and package version remain the source of truth for the build version.
 
 <details>
+<summary><strong>1.3.5</strong> — исправлен доступ к GitHub release assets</summary>
+
+### Fixes
+
+- Разрешить загрузку metadata после redirect GitHub на release CDN.
+- Добавить contract-проверку permission для `release-assets.githubusercontent.com`.
+
+</details>
+
+<details>
 <summary><strong>1.3.4</strong> — улучшена обратная связь setup-режима</summary>
 
 ### Fixes
