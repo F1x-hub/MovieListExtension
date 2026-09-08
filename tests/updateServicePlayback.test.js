@@ -105,7 +105,11 @@ function createHarness({
                 ? 'signature'
                 : JSON.stringify(storage.extension_update_state_v2.metadata)
         }),
-        setTimeout: (callback) => {
+        AbortController,
+        URL,
+        clearTimeout: () => {},
+        setTimeout: (callback, delay) => {
+            if (delay >= 20000) return 0;
             callback();
             return 0;
         },

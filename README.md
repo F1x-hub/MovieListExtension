@@ -234,6 +234,8 @@ manifest and package version remain the source of truth for the build version.
 - Serialize startup reconciliation before background release checks.
 - Keep long-running native operations observable through a persistent alarm.
 - Reload after native replacement and retain polling until activation is confirmed.
+- Export bounded updater diagnostics with network timings and native-host status.
+- Limit metadata requests to 30 seconds and native-host requests to 20 seconds.
 - Show failed and completed update states instead of leaving a stale started message.
 - Preserve the native replacement error when rollback is required.
 - Require updater 1.1.3, which enables WinForms cultures and replacement diagnostics.

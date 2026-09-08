@@ -194,6 +194,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     const extensionUpdateStatus = document.getElementById('extensionUpdateStatus');
     const extensionUpdateSetupBtn = document.getElementById('extensionUpdateSetupBtn');
     const extensionUpdateInstallBtn = document.getElementById('extensionUpdateInstallBtn');
+    document.getElementById('extensionUpdateLogsBtn')?.addEventListener('click', async () => {
+        const report = await globalThis.UpdateService.exportDiagnostics();
+        const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `MovieList-update-diagnostics-${Date.now()}.json`;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+    });
     const extensionUpdateInstallStatus = document.getElementById('extensionUpdateInstallStatus');
     
     // Sidebar Navigation Elements

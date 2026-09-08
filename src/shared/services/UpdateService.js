@@ -31,6 +31,56 @@
     let alarmRegistered = false;
     let activeCheck = null;
     let reloadScheduled = false;
+    const DIAGNOSTIC_PREFIX = 'update_diagnostic_';
+
+    function diagnostic(event, details = {}) {
+        const record = { at: new Date().toISOString(), event, details };
+        const key = DIAGNOSTIC_PREFIX + Date.now() + '_' + Math.random().toString(36).slice(2);
+        void chrome.storage.local.set({ [key]: record }).then(async () => {
+            const all = await chrome.storage.local.get(null);
+            const keys = Object.keys(all).filter(item => item.startsWith(DIAGNOSTIC_PREFIX)).sort();
+            if (keys.length > 500) await chrome.storage.local.remove(keys.slice(0, keys.length - 500));
+        }).catch(() => {});
+    }
+
+    async function diagnosticFetch(url, label) {
+        const controller = new AbortController();
+        const started = Date.now();
+        diagnostic('http_start', { label, host: new URL(url).hostname, online: global.navigator?.onLine });
+        const timer = setTimeout(() => controller.abort(), 30000);
+        try {
+            const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
+            diagnostic('http_headers', { label, status: response.status, redirected: response.redirected,
+                host: response.url ? new URL(response.url).hostname : null,
+                contentType: response.headers?.get('content-type'), elapsedMs: Date.now() - started });
+            const body = await response.text();
+            diagnostic('http_complete', { label, status: response.status, characters: body.length,
+                elapsedMs: Date.now() - started });
+            return { ok: response.ok, status: response.status, text: async () => body };
+        } catch (error) {
+            diagnostic('http_failed', { label, type: error.name, timeout: controller.signal.aborted,
+                elapsedMs: Date.now() - started });
+            throw new Error(controller.signal.aborted ? `NETWORK_TIMEOUT_${label}` : `NETWORK_FAILED_${label}`, { cause: error });
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    async function exportDiagnostics() {
+        const all = await chrome.storage.local.get(null);
+        const state = all[STATE_KEY] || {};
+        return {
+            exportedAt: new Date().toISOString(), version: chrome.runtime.getManifest().version,
+            extensionId: chrome.runtime.id, userAgent: global.navigator?.userAgent,
+            online: global.navigator?.onLine, language: global.navigator?.language,
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            state: { status: state.status, currentVersion: state.currentVersion,
+                availableVersion: state.availableVersion, operationId: state.operationId,
+                configured: state.configured, updaterVersion: state.updaterVersion, errorCode: state.errorCode },
+            events: Object.entries(all).filter(([key]) => key.startsWith(DIAGNOSTIC_PREFIX))
+                .map(([, value]) => value).sort((a, b) => a.at.localeCompare(b.at))
+        };
+    }
 
     function now() {
         return Date.now();
@@ -162,6 +212,8 @@
     }
 
     async function writeState(patch) {
+        if (patch.status) diagnostic('state', { status: patch.status, errorCode: patch.errorCode,
+            operationId: patch.operationId, availableVersion: patch.availableVersion });
         const { state } = await readState();
         const next = { ...state, ...patch };
         await chrome.storage.local.set({ [STATE_KEY]: next });
@@ -176,7 +228,14 @@
 
     function nativeMessage(message) {
         return new Promise((resolve, reject) => {
+            const started = Date.now();
+            diagnostic('native_start', { action: message.action });
+            const timer = setTimeout(() => {
+                diagnostic('native_timeout', { action: message.action, elapsedMs: Date.now() - started });
+                reject(new Error('NATIVE_HOST_TIMEOUT'));
+            }, 20000);
             if (!chrome.runtime.sendNativeMessage) {
+                clearTimeout(timer);
                 reject(new Error('NATIVE_MESSAGING_UNAVAILABLE'));
                 return;
             }
@@ -186,6 +245,12 @@
                 extensionId: chrome.runtime.id,
                 ...message
             }, (response) => {
+                clearTimeout(timer);
+                diagnostic('native_response', { action: message.action, elapsedMs: Date.now() - started,
+                    success: response?.success, configured: response?.configured,
+                    updaterVersion: response?.updaterVersion, status: response?.operation?.status,
+                    errorCode: response?.errorCode || response?.operation?.errorCode,
+                    transportError: Boolean(chrome.runtime.lastError) });
                 const runtimeError = chrome.runtime.lastError;
                 if (runtimeError) {
                     reject(new Error(runtimeError.message || 'NATIVE_HOST_UNAVAILABLE'));
@@ -220,8 +285,8 @@
 
     async function fetchReleaseMetadata() {
         const [metadataResponse, signatureResponse] = await Promise.all([
-            fetch(METADATA_URL, { cache: 'no-store', headers: { Accept: 'application/json' } }),
-            fetch(SIGNATURE_URL, { cache: 'no-store', headers: { Accept: 'text/plain' } })
+            diagnosticFetch(METADATA_URL, 'metadata'),
+            diagnosticFetch(SIGNATURE_URL, 'signature')
         ]);
         if (!metadataResponse.ok || !signatureResponse.ok) {
             throw new Error(`RELEASE_METADATA_HTTP_${metadataResponse.status}_${signatureResponse.status}`);
@@ -641,6 +706,7 @@
     }
 
     global.UpdateService = {
+        exportDiagnostics,
         applyUpdate,
         checkForUpdates,
         confirmInstalled,
