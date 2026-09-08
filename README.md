@@ -213,6 +213,15 @@ Release entries are intentionally collapsed to keep this page readable. The
 manifest and package version remain the source of truth for the build version.
 
 <details>
+<summary><strong>1.3.7</strong> — проверка автоматического обновления</summary>
+
+### Docs
+
+- Publish a versioned release for end-to-end updater verification.
+
+</details>
+
+<details>
 <summary><strong>1.3.6</strong> — усилена совместимость Native Messaging</summary>
 
 ### Fixes
