@@ -112,7 +112,7 @@ vm.runInNewContext(source, context, { filename: 'UpdateService.js' });
     assert.match(backgroundSource, /allowPlayback: message\.allowPlayback === true/);
     assert.match(source, /createOperationAlarm\(\)/);
     assert.match(source, /if \(isOperationPending\(state\) \|\| state\.status === 'awaiting_confirmation'\) return state/);
-    assert.match(source, /await syncNativeOperation\(\{ reloadWhenReady: isOperationPending\(refreshed\.state\) \}\)\.catch/);
+    assert.match(source, /await syncNativeOperation\(\)\.catch/);
     assert.match(nativeHostSource, /allowed_origins = new\[\] \{ \$"chrome-extension:\/\/\{extensionId\}\/" \}/);
     assert.doesNotMatch(nativeHostSource, /chrome-extension:\/\/\{extensionId\}\/\*\//);
     assert.match(nativeHostSource, /FirstOrDefault\(arg => arg\.StartsWith\("chrome-extension:\/\/"/);
