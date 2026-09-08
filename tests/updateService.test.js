@@ -11,6 +11,7 @@ const settingsHtmlSource = fs.readFileSync('src/pages/settings/settings.html', '
 const settingsJsSource = fs.readFileSync('src/pages/settings/settings.js', 'utf8');
 const storage = {};
 const alarms = [];
+let nativeUpdaterVersion = '1.1.0';
 const extensionId = 'dgdejomdgiabgcfijcdhjefijdfiemhd';
 
 const chrome = {
@@ -18,7 +19,7 @@ const chrome = {
         id: extensionId,
         getManifest: () => ({ version: '1.2.9' }),
         sendNativeMessage: (name, message, callback) => {
-            callback({ success: true, configured: true, operation: null });
+            callback({ success: true, configured: true, updaterVersion: nativeUpdaterVersion, operation: null });
         }
     },
     storage: {
@@ -47,7 +48,7 @@ const metadata = {
     assetUrl: 'https://github.com/F1x-hub/MovieListExtension/releases/download/v1.3.0/MovieList-extension-1.3.0.zip',
     sha256: 'a'.repeat(64),
     size: 123,
-    minUpdaterVersion: '1.0.0',
+    minUpdaterVersion: '1.1.0',
     publishedAt: '2026-09-08T00:00:00.000Z'
 };
 
@@ -100,7 +101,12 @@ vm.runInNewContext(source, context, { filename: 'UpdateService.js' });
     assert.doesNotMatch(nativeHostSource, /allowSameVersion/);
     assert.match(nativeHostSource, /if \(currentVersion is not null/);
 
-    assert.match(backgroundSource, /\['checkUpdates', 'checkUpdatesSafeRetry'\]\.includes\(alarm\.name\)/);
+    assert.match(backgroundSource, /\['checkUpdates', 'checkUpdatesSafeRetry', 'checkUpdateOperation'\]\.includes\(alarm\.name\)/);
+    assert.match(source, /const OPERATION_ALARM = 'checkUpdateOperation'/);
+    assert.match(source, /function isOperationPending\(/);
+    assert.match(source, /createOperationAlarm\(\)/);
+    assert.match(source, /if \(isOperationPending\(state\) \|\| state\.status === 'awaiting_confirmation'\) return state/);
+    assert.match(source, /await syncNativeOperation\(\{ reloadWhenReady: isOperationPending\(refreshed\.state\) \}\)\.catch/);
     assert.match(nativeHostSource, /allowed_origins = new\[\] \{ \$"chrome-extension:\/\/\{extensionId\}\/" \}/);
     assert.doesNotMatch(nativeHostSource, /chrome-extension:\/\/\{extensionId\}\/\*\//);
     assert.match(nativeHostSource, /FirstOrDefault\(arg => arg\.StartsWith\("chrome-extension:\/\/"/);
@@ -108,9 +114,16 @@ vm.runInNewContext(source, context, { filename: 'UpdateService.js' });
     assert.doesNotMatch(source, /rollbackUpdate/);
     assert.doesNotMatch(backgroundSource, /ROLLBACK_UPDATE/);
     assert.doesNotMatch(popupSource, /rollbackAvailable|ROLLBACK_UPDATE/);
-    await context.UpdateService.handleAlarm({ name: 'checkUpdatesSafeRetry' });
-    assert.strictEqual(fetchCount, 4);
-    console.log('updateService.test.js passed');
+    const cachedState = await context.UpdateService.checkForUpdates();
+    assert.strictEqual(cachedState.status, 'available_manual');
+    assert.strictEqual(fetchCount, 2, 'a throttled check must not fetch the release again');
+   await context.UpdateService.handleAlarm({ name: 'checkUpdatesSafeRetry' });
+   assert.strictEqual(fetchCount, 4);
+    nativeUpdaterVersion = '1.0.0';
+    const migrationState = await context.UpdateService.checkForUpdates({ force: true });
+    assert.strictEqual(migrationState.status, 'setup_required');
+    assert.strictEqual(migrationState.errorCode, 'UPDATER_UPGRADE_REQUIRED');
+   console.log('updateService.test.js passed');
 })().catch((error) => {
     console.error(error);
     process.exitCode = 1;

@@ -16,9 +16,17 @@
     const SETUP_URL = 'https://github.com/F1x-hub/MovieListExtension/releases/latest/download/MovieListSetup.exe';
     const CHECK_ALARM = 'checkUpdates';
     const SAFE_RETRY_ALARM = 'checkUpdatesSafeRetry';
+    const OPERATION_ALARM = 'checkUpdateOperation';
     const CHECK_INTERVAL_MINUTES = 360;
     const RETRY_DELAY_MINUTES = 30;
     const HOST_PROTOCOL_VERSION = 1;
+    const MIN_SUPPORTED_UPDATER_VERSION = '1.1.0';
+    const OPERATION_STATUSES = new Set([
+        'installing',
+        'queued',
+        'downloading',
+        'replacing'
+    ]);
 
     let alarmRegistered = false;
     let activeCheck = null;
@@ -44,6 +52,17 @@
         return 0;
     }
 
+    function isUpdaterCompatible(hostStatus, metadata) {
+        const updaterVersion = normalizeVersion(hostStatus?.updaterVersion);
+        const requiredVersion = normalizeVersion(metadata?.minUpdaterVersion)
+            || MIN_SUPPORTED_UPDATER_VERSION;
+        return Boolean(
+            updaterVersion
+            && compareVersions(updaterVersion, MIN_SUPPORTED_UPDATER_VERSION) >= 0
+            && compareVersions(updaterVersion, requiredVersion) >= 0
+        );
+    }
+
     function defaultState() {
         return {
             status: 'idle',
@@ -55,12 +74,36 @@
             deferredUntil: 0,
             errorCode: null,
             errorMessage: null,
-            configured: null
+            requiresConfirmation: false,
+            playbackReasons: [],
+            configured: null,
+            updaterVersion: null
         };
     }
 
     function defaultSettings() {
         return { autoUpdateEnabled: true };
+    }
+
+    function isOperationPending(state) {
+        return OPERATION_STATUSES.has(state?.status);
+    }
+
+    function createOperationAlarm() {
+        try {
+            chrome.alarms.create(OPERATION_ALARM, { periodInMinutes: 1 });
+        } catch {
+            // The short-lived polling loop remains the immediate fallback.
+        }
+    }
+
+    function clearOperationAlarm() {
+        try {
+            const result = chrome.alarms.clear?.(OPERATION_ALARM);
+            result?.catch?.(() => {});
+        } catch {
+            // Alarm cleanup is best effort; the next tick will be harmless.
+        }
     }
 
     async function readState() {
@@ -115,8 +158,10 @@
         const extensionId = String(metadata?.extensionId || '');
         const assetName = String(metadata?.assetName || '');
         const assetUrl = String(metadata?.assetUrl || '');
+        const minUpdaterVersion = normalizeVersion(metadata?.minUpdaterVersion);
         return Boolean(
             version
+            && minUpdaterVersion
             && extensionId === chrome.runtime.id
             && /^[A-Za-z0-9._-]+\.zip$/.test(assetName)
             && /^https:\/\/github\.com\/F1x-hub\/MovieListExtension\/releases\/download\//.test(assetUrl)
@@ -151,11 +196,15 @@
     async function checkForUpdates(options = {}) {
         if (activeCheck) return activeCheck;
         activeCheck = (async () => {
-            const { state, settings } = await readState();
-            const currentVersion = chrome.runtime.getManifest().version;
-            if (!options.force && state.nextCheckAt > now()) return state;
-
+            let state = null;
             try {
+                const snapshot = await readState();
+                state = snapshot.state;
+                const { settings } = snapshot;
+                if (isOperationPending(state) || state.status === 'awaiting_confirmation') return state;
+                const currentVersion = chrome.runtime.getManifest().version;
+                if (!options.force && state.nextCheckAt > now()) return state;
+
                 const release = await fetchReleaseMetadata();
                 const availableVersion = normalizeVersion(release.metadata.version);
                 if (compareVersions(availableVersion, currentVersion) <= 0) {
@@ -166,7 +215,9 @@
                         lastCheckedAt: now(),
                         nextCheckAt: now() + CHECK_INTERVAL_MINUTES * 60 * 1000,
                         errorCode: null,
-                        errorMessage: null
+                        errorMessage: null,
+                        requiresConfirmation: false,
+                        playbackReasons: []
                     });
                 }
 
@@ -180,13 +231,17 @@
                     lastCheckedAt: now(),
                     nextCheckAt: now() + CHECK_INTERVAL_MINUTES * 60 * 1000,
                     errorCode: null,
-                    errorMessage: null
+                    errorMessage: null,
+                    requiresConfirmation: false,
+                    playbackReasons: []
                 });
 
                 let hostReady = false;
+                let hostVersionReady = false;
                 try {
                     const hostStatus = await getNativeStatus();
                     hostReady = hostStatus.configured === true;
+                    hostVersionReady = hostReady && isUpdaterCompatible(hostStatus, release.metadata);
                 } catch {
                     hostReady = false;
                 }
@@ -197,14 +252,21 @@
                         errorMessage: 'Run MovieListSetup.exe once to connect automatic updates.'
                     });
                 }
+                if (!hostVersionReady) {
+                    return writeState({
+                        status: 'setup_required',
+                        errorCode: 'UPDATER_UPGRADE_REQUIRED',
+                        errorMessage: 'Run the latest MovieListSetup.exe once to upgrade automatic updates.'
+                    });
+                }
 
                 if (settings.autoUpdateEnabled && !nextState.deferredUntil) {
-                    return applyUpdate();
+                    return applyUpdate({ automatic: options.interactive !== true });
                 }
                 return nextState;
             } catch (error) {
                 return writeState({
-                    status: state.availableVersion ? 'available' : 'check_failed',
+                    status: state?.availableVersion ? 'available' : 'check_failed',
                     lastCheckedAt: now(),
                     nextCheckAt: now() + RETRY_DELAY_MINUTES * 60 * 1000,
                     errorCode: 'CHECK_FAILED',
@@ -218,7 +280,7 @@
     }
 
     async function checkAndInstallLatestRelease() {
-        const state = await checkForUpdates({ force: true });
+        const state = await checkForUpdates({ force: true, interactive: true });
         if (['available', 'available_manual', 'deferred'].includes(state.status)) {
             return applyUpdate({ automatic: false });
         }
@@ -228,15 +290,20 @@
     async function getNativeStatus() {
         try {
             const response = await nativeMessage({ action: 'status' });
-            await writeState({ configured: response.configured === true });
+            await writeState({
+                configured: response.configured === true,
+                updaterVersion: response.updaterVersion || null
+            });
             return response;
         } catch (error) {
-            await writeState({ configured: false });
+            await writeState({ configured: false, updaterVersion: null });
             throw error;
         }
     }
 
-    async function isSafeToApply() {
+    async function inspectPlaybackSafety() {
+        const playbackReasons = [];
+
         try {
             if (chrome.offscreen?.hasDocument && await chrome.offscreen.hasDocument()) {
                 const radioState = await new Promise((resolve) => {
@@ -244,12 +311,15 @@
                         resolve(chrome.runtime.lastError ? null : response);
                     });
                 });
-                if (radioState?.isPlaying === true) return false;
+                if (radioState?.isPlaying === true) playbackReasons.push('radio_playing');
             }
 
             const tabs = await chrome.tabs.query({});
-            if (!chrome.scripting?.executeScript) return false;
-            const checks = await Promise.all(tabs
+            if (!chrome.scripting?.executeScript) {
+                return { safe: playbackReasons.length === 0, playbackReasons };
+            }
+
+            await Promise.all(tabs
                 .filter(tab => Number.isInteger(tab.id))
                 .map(async (tab) => {
                     try {
@@ -258,17 +328,17 @@
                             func: () => Array.from(document.querySelectorAll('audio,video'))
                                 .some(media => !media.paused && !media.ended)
                         });
-                        return result?.[0]?.result !== true;
+                        if (result?.[0]?.result === true) playbackReasons.push('tab_media');
                     } catch {
-                        // Chrome-internal pages cannot be inspected. An ordinary
-                        // web page that cannot be inspected is treated as busy.
-                        return !/^https?:/i.test(String(tab.url || ''));
+                        // A missing host permission means that the tab cannot be
+                        // inspected, not that it is playing media. Only a positive
+                        // media signal should block a manual update.
                     }
                 }));
-            return checks.every(Boolean);
+            return { safe: playbackReasons.length === 0, playbackReasons };
         } catch (error) {
             console.warn('[Update] Could not prove a safe install moment:', error);
-            return false;
+            return { safe: playbackReasons.length === 0, playbackReasons };
         }
     }
 
@@ -280,13 +350,23 @@
         if (state.operationId && state.operationId !== operation.operationId) return response;
 
         if (operation.status === 'failed') {
+            clearOperationAlarm();
             await writeState({
                 status: 'failed',
                 operationId: operation.operationId,
                 errorCode: operation.errorCode || 'EXECUTION_FAILED',
                 errorMessage: operation.errorMessage || 'UPDATE_EXECUTION_FAILED'
             });
+        } else if (operation.status === 'recovery_required') {
+            clearOperationAlarm();
+            await writeState({
+                status: 'failed',
+                operationId: operation.operationId,
+                errorCode: operation.errorCode || 'RECOVERY_REQUIRED',
+                errorMessage: operation.errorMessage || 'UPDATE_RECOVERY_REQUIRED'
+            });
         } else if (operation.status === 'awaiting_confirmation') {
+            clearOperationAlarm();
             await writeState({
                 status: 'awaiting_confirmation',
                 operationId: operation.operationId
@@ -295,34 +375,66 @@
                 setTimeout(() => chrome.runtime.reload(), 250);
             }
         } else if (operation.status === 'succeeded') {
+            clearOperationAlarm();
             await writeState({ status: 'succeeded', operationId: operation.operationId });
+        } else if (isOperationPending(operation)) {
+            createOperationAlarm();
         }
         return response;
     }
 
-    async function applyUpdate() {
+    async function applyUpdate({ automatic = false, allowPlayback = false } = {}) {
         const { state } = await readState();
         if (!state.metadata || !state.signature || !state.availableVersion) {
             return writeState({ status: 'idle', errorCode: 'NO_UPDATE_READY' });
         }
-        if (state.status === 'installing' || state.status === 'awaiting_confirmation') return state;
+        if (isOperationPending(state) || state.status === 'awaiting_confirmation') {
+            return state;
+        }
 
         try {
             const hostStatus = await getNativeStatus();
             if (hostStatus.configured !== true) {
                 return writeState({ status: 'setup_required', errorCode: 'SETUP_REQUIRED' });
             }
+            if (!isUpdaterCompatible(hostStatus, state.metadata)) {
+                return writeState({
+                    status: 'setup_required',
+                    errorCode: 'UPDATER_UPGRADE_REQUIRED',
+                    errorMessage: 'Run the latest MovieListSetup.exe once to upgrade automatic updates.'
+                });
+            }
+            if (hostStatus.operation?.status === 'recovery_required') {
+                return writeState({
+                    status: 'failed',
+                    operationId: hostStatus.operation.operationId || null,
+                    errorCode: hostStatus.operation.errorCode || 'RECOVERY_REQUIRED',
+                    errorMessage: hostStatus.operation.errorMessage || 'UPDATE_RECOVERY_REQUIRED'
+                });
+            }
+            if (isOperationPending(hostStatus.operation)) {
+                createOperationAlarm();
+                return writeState({
+                    status: 'installing',
+                    operationId: hostStatus.operation.operationId || null,
+                    errorCode: null,
+                    errorMessage: null
+                });
+            }
         } catch (error) {
             return writeState({ status: 'setup_required', errorCode: 'SETUP_REQUIRED', errorMessage: error.message });
         }
 
-        if (!(await isSafeToApply())) {
+        const playbackCheck = await inspectPlaybackSafety();
+        if (!playbackCheck.safe && !allowPlayback) {
             chrome.alarms.create(SAFE_RETRY_ALARM, { delayInMinutes: 10 });
             return writeState({
                 status: 'waiting_for_safe_moment',
                 nextCheckAt: now() + 10 * 60 * 1000,
                 errorCode: null,
-                errorMessage: null
+                errorMessage: null,
+                requiresConfirmation: !automatic,
+                playbackReasons: playbackCheck.playbackReasons
             });
         }
 
@@ -331,8 +443,11 @@
             status: 'installing',
             operationId,
             errorCode: null,
-            errorMessage: null
+            errorMessage: null,
+            requiresConfirmation: false,
+            playbackReasons: []
         });
+        createOperationAlarm();
         try {
             const response = await nativeMessage({
                 action: 'apply',
@@ -350,6 +465,18 @@
             void pollNativeOperation(nextState.operationId);
             return nextState;
         } catch (error) {
+            clearOperationAlarm();
+            if (error?.message === 'UPDATE_IN_PROGRESS') {
+                const response = await syncNativeOperation().catch(() => null);
+                if (response?.operation?.operationId) {
+                    return writeState({
+                        status: 'installing',
+                        operationId: response.operation.operationId,
+                        errorCode: null,
+                        errorMessage: null
+                    });
+                }
+            }
             return writeState({
                 status: 'failed',
                 errorCode: 'APPLY_FAILED',
@@ -374,7 +501,9 @@
                 metadataText: null,
                 signature: null,
                 errorCode: null,
-                errorMessage: null
+                errorMessage: null,
+                requiresConfirmation: false,
+                playbackReasons: []
             });
         } catch (error) {
             await writeState({ status: 'awaiting_confirmation', errorCode: 'CONFIRM_FAILED', errorMessage: error.message });
@@ -393,7 +522,7 @@
         await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
         const { state } = await readState();
         if (settings.autoUpdateEnabled && state.availableVersion && !state.deferredUntil) {
-            return applyUpdate();
+            return applyUpdate({ automatic: true });
         }
         return state;
     }
@@ -411,33 +540,39 @@
                 await writeState({ status: 'installing', errorCode: 'STATUS_UNAVAILABLE', errorMessage: error.message });
             }
         }
+        createOperationAlarm();
     }
 
     function setupBackground() {
         if (alarmRegistered) return;
         alarmRegistered = true;
         chrome.alarms.create(CHECK_ALARM, { periodInMinutes: CHECK_INTERVAL_MINUTES });
-        readState()
-            .then(async () => {
-                await confirmInstalled();
-                const refreshed = await readState();
-                return syncNativeOperation({
-                    reloadWhenReady: ['installing', 'awaiting_confirmation'].includes(refreshed.state.status)
-                });
-            })
-            .catch(() => {});
-        checkForUpdates().catch(() => {});
+        (async () => {
+            await confirmInstalled();
+            const refreshed = await readState();
+            await syncNativeOperation({ reloadWhenReady: isOperationPending(refreshed.state) }).catch(() => {});
+            const afterSync = await readState();
+            if (isOperationPending(afterSync.state) || afterSync.state.status === 'awaiting_confirmation') return;
+            await checkForUpdates();
+        })().catch(() => {});
     }
 
     async function handleAlarm(alarm) {
-        if (![CHECK_ALARM, SAFE_RETRY_ALARM].includes(alarm?.name)) return;
+        if (![CHECK_ALARM, SAFE_RETRY_ALARM, OPERATION_ALARM].includes(alarm?.name)) return;
         const { state } = await readState();
         if (state.deferredUntil && state.deferredUntil <= now()) {
             await writeState({ deferredUntil: 0 });
         }
         await syncNativeOperation({
-            reloadWhenReady: ['installing', 'awaiting_confirmation'].includes(state.status)
+            reloadWhenReady: isOperationPending(state)
         }).catch(() => {});
+        await confirmInstalled();
+        const refreshed = await readState();
+        if (isOperationPending(refreshed.state) || refreshed.state.status === 'awaiting_confirmation') return;
+        if (alarm.name === OPERATION_ALARM) {
+            clearOperationAlarm();
+            return;
+        }
         await checkForUpdates({ force: alarm.name === SAFE_RETRY_ALARM });
     }
 

@@ -4,6 +4,10 @@ const path = require('node:path');
 
 const sourcePath = path.join(__dirname, '..', 'native-host', 'Updater', 'Program.cs');
 const source = fs.readFileSync(sourcePath, 'utf8').replace(/\r\n?/g, '\n');
+const metadataScript = fs.readFileSync(
+    path.join(__dirname, '..', 'scripts', 'generate-update-metadata.js'),
+    'utf8'
+).replace(/\r\n?/g, '\n');
 
 assert.match(
     source,
@@ -25,11 +29,29 @@ assert.match(source, /MessageBox\.Show\(\s*this,\s*"Автоматические
 assert.match(source, /MessageBox\.Show\(this, status\.Text, "Ошибка подключения"/);
 assert.match(
     source,
-    /Directory\.Delete\(input\.InstallPath, recursive: true\);/,
-    'updates must replace the configured folder without creating a backup directory'
+    /MoveWithRetry\(input\.InstallPath, recoveryPath\);/,
+    'updates must move the current folder to a single temporary recovery location before replacement'
 );
-assert.doesNotMatch(source, /\.backup-/i, 'the updater must not create persistent backup directories');
-assert.doesNotMatch(source, /BackupPath/, 'rollback state must not remain in the no-backup updater');
+assert.match(source, /private static string GetRecoveryPath\(/);
+assert.match(source, /CleanupOperationArtifacts\(state\);/);
+assert.match(source, /private const string ApplyMutexName/);
+assert.match(source, /private const string SetupMutexName/);
+assert.match(source, /private const string RecoveryRunOnceName/);
+assert.match(source, /private const string RecoveryRunOncePath/);
+assert.match(source, /"--recover"/);
+assert.match(source, /private static int RecoverOperationAtLogon\(/);
+assert.match(source, /RegisterRecoveryRunOnce\(state\.OperationId\)/);
+assert.match(source, /private static void RetryCleanup\(/);
+assert.match(source, /CleanupPending/);
+assert.match(source, /"recovery_required"/);
+assert.match(source, /private static bool IsRecoverableStaleOperation/);
+assert.match(source, /private static Version\? ReadUpdaterVersion/);
+assert.match(source, /var validatedMetadata = ParseAndValidateMetadata\(input\.MetadataText, config\);/);
+assert.match(source, /VerifySignature\(Encoding\.UTF8\.GetBytes\(input\.MetadataText\), input\.Signature\)/);
+assert.match(source, /RegisterNativeMessagingHost\("Microsoft\\\\Edge"/);
+assert.doesNotMatch(source, /\.backup-/i, 'the updater must not create persistent versioned backup directories');
 assert.doesNotMatch(source, /Восстановить предыдущую версию/, 'setup must not expose unavailable rollback');
+assert.match(metadataScript, /updaterVersionMatch/);
+assert.match(metadataScript, /minUpdaterVersion: updaterVersionMatch\[1\]/);
 
 console.log('updaterSetupContract.test.js passed');

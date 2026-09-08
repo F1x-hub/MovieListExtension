@@ -1,6 +1,6 @@
 {
   "name": "movie-rating-extension",
-  "version": "1.3.1",
+  "version": "1.3.0",
   "description": "Rate and discover movies with community ratings and Kinopoisk integration",
   "main": "popup.js",
   "scripts": {
@@ -28,7 +28,7 @@
   "test:visual-design": "node tests/visualDesignContract.test.js",
     "test:ratings-page": "node tests/ratingsPageContract.test.js",
     "test:media-player": "node tests/mediaPlayerIntegrationContract.test.js && node tests/movieDetailsTorrentLibrary.test.js && node tests/torrentSharedPlayer.test.cjs",
-    "test:update-service": "node tests/updateService.test.js",
+    "test:update-service": "node tests/updateService.test.js && node tests/updateServicePlayback.test.js",
     "test:updater-setup": "node tests/updaterSetupContract.test.js",
     "test:package-release": "node tests/packageReleaseContract.test.js",
   "test:icon-fallback": "node tests/iconFallbackContract.test.js",
