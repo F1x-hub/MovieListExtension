@@ -1,6 +1,6 @@
 {
   "name": "movie-rating-extension",
-  "version": "1.3.6",
+  "version": "1.3.7",
   "description": "Rate and discover movies with community ratings and Kinopoisk integration",
   "main": "popup.js",
   "scripts": {
