@@ -22,6 +22,12 @@ assert.match(releaseWorkflow, /--clobber/);
 assert.match(releaseWorkflow, /Resuming existing draft release/);
 assert.match(releaseWorkflow, /firebase-tools@latest deploy --only hosting/);
 assert.match(releaseWorkflow, /--config firebase.updates.json/);
+assert.match(releaseWorkflow, /Create Firebase Hosting API access token/);
+assert.match(releaseWorkflow, /create-google-access-token\.cjs/);
+assert.doesNotMatch(releaseWorkflow, /token_format: access_token/);
+const tokenScript = fs.readFileSync('scripts/create-google-access-token.cjs', 'utf8');
+assert.match(tokenScript, /urn:ietf:params:oauth:grant-type:jwt-bearer/);
+assert.match(tokenScript, /GITHUB_ENV/);
 assert.ok(
     releaseWorkflow.indexOf('Publish latest extension ZIP to Firebase Hosting')
         < releaseWorkflow.indexOf('Publish release after asset upload'),
