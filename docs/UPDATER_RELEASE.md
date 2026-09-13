@@ -39,8 +39,8 @@ secret `UPDATE_SIGNING_PRIVATE_KEY`; never commit the private file.
 
 To publish a version:
 
-1. Update the extension `manifest.json` to a three- or four-component Chrome version such as `1.3.2.1`. Keep `package.json` on npm-compatible three-component semver.
-2. Commit the change and create a matching tag such as `v1.3.2.1`.
+1. Update the extension `manifest.json` to a three- or four-component Chrome version such as `1.3.2.2`. Keep `package.json` on npm-compatible three-component semver.
+2. Commit the change and create a matching tag such as `v1.3.2.2`.
 3. Push the tag. `.github/workflows/release.yml` builds the extension, removes local
    configuration, publishes the self-contained setup executable, and signs the
    immutable release metadata.
