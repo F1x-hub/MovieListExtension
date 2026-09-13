@@ -233,6 +233,102 @@
             return this.normalizeSettings(response);
         }
 
+        async getJackettIndexers() {
+            const response = await this.requestJson('/api/jackett/indexers', {
+                scope: 'torrent:control'
+            });
+            return this.normalizeJackettIndexers(response);
+        }
+
+        async getAvailableJackettIndexers() {
+            try {
+                const response = await this.requestJson('/api/jackett/indexers/available', {
+                    scope: 'torrent:control'
+                });
+                return this.normalizeJackettIndexerCatalog(response);
+            } catch (error) {
+                if (error?.status === 404) {
+                    throw new MediaPlayerServiceError(
+                        'mediaplayer_update_required',
+                        'Установленная версия MediaPlayer не поддерживает добавление индексеров. Обновите MediaPlayer Suite.',
+                        404
+                    );
+                }
+                throw error;
+            }
+        }
+
+        async addJackettIndexer(indexerId) {
+            const id = this.normalizeJackettIndexerId(indexerId);
+            const response = await this.requestJson(`/api/jackett/indexers/${encodeURIComponent(id)}`, {
+                method: 'POST',
+                scope: 'torrent:control'
+            });
+            return this.normalizeJackettIndexers(response);
+        }
+
+        async updateJackettIndexers(enabledIds = []) {
+            const ids = Array.isArray(enabledIds)
+                ? enabledIds.map(id => String(id || '').trim().toLowerCase()).filter(Boolean)
+                : [];
+            const response = await this.requestJson('/api/jackett/indexers', {
+                method: 'PATCH',
+                body: { enabledIds: ids },
+                scope: 'torrent:control'
+            });
+            return this.normalizeJackettIndexers(response);
+        }
+
+        async testJackettIndexer(indexerId) {
+            const id = String(indexerId || '').trim().toLowerCase();
+            if (!/^[a-z0-9][a-z0-9_-]{0,127}$/i.test(id)) {
+                throw new MediaPlayerServiceError('invalid_indexer_selection', 'Выбран некорректный индексер.');
+            }
+            return this.requestJson(`/api/jackett/indexers/${encodeURIComponent(id)}/test`, {
+                method: 'POST',
+                scope: 'torrent:control'
+            });
+        }
+
+        async getJackettIndexerConfig(indexerId) {
+            const id = this.normalizeJackettIndexerId(indexerId);
+            const response = await this.requestJson(`/api/jackett/indexers/${encodeURIComponent(id)}/config`, {
+                scope: 'torrent:control'
+            });
+            return this.normalizeJackettIndexerConfig(response);
+        }
+
+        async updateJackettIndexerConfig(indexerId, fields = []) {
+            const id = this.normalizeJackettIndexerId(indexerId);
+            if (!Array.isArray(fields)) {
+                throw new MediaPlayerServiceError('indexer_config_invalid', 'Конфигурация индексера имеет неверный формат.');
+            }
+            const body = {
+                fields: fields
+                    .filter(field => field && typeof field === 'object')
+                    .map(field => ({
+                        id: String(field.id || '').trim(),
+                        value: field.value === undefined ? null : field.value
+                    }))
+                    .filter(field => field.id)
+            };
+            const response = await this.requestJson(`/api/jackett/indexers/${encodeURIComponent(id)}/config`, {
+                method: 'PATCH',
+                body,
+                scope: 'torrent:control'
+            });
+            return this.normalizeJackettIndexerConfig(response);
+        }
+
+        async deleteJackettIndexer(indexerId) {
+            const id = this.normalizeJackettIndexerId(indexerId);
+            const response = await this.requestJson(`/api/jackett/indexers/${encodeURIComponent(id)}`, {
+                method: 'DELETE',
+                scope: 'torrent:control'
+            });
+            return this.normalizeJackettIndexers(response);
+        }
+
         async listDownloads(options = {}) {
             const response = await this.requestJson('/api/downloads', {
                 scope: 'torrent:read',
@@ -790,6 +886,99 @@
             };
         }
 
+        normalizeJackettIndexers(value) {
+            const indexers = Array.isArray(value?.indexers)
+                ? value.indexers
+                    .filter(indexer => indexer && typeof indexer === 'object')
+                    .map(indexer => ({
+                        id: String(indexer.id || '').trim().toLowerCase(),
+                        name: String(indexer.name || indexer.id || 'Индексер'),
+                        description: String(indexer.description || ''),
+                        site: String(indexer.site || ''),
+                        language: String(indexer.language || ''),
+                        type: String(indexer.type || ''),
+                        categories: Array.isArray(indexer.categories)
+                            ? indexer.categories.map(category => String(category || '').trim()).filter(Boolean).slice(0, 20)
+                            : [],
+                        enabled: indexer.enabled === true
+                    }))
+                    .filter(indexer => /^[a-z0-9][a-z0-9_-]{0,127}$/i.test(indexer.id))
+                : [];
+            const enabledIds = Array.isArray(value?.enabledIds)
+                ? value.enabledIds.map(id => String(id || '').trim().toLowerCase()).filter(Boolean)
+                : indexers.filter(indexer => indexer.enabled).map(indexer => indexer.id);
+            if (!indexers.length || !enabledIds.length) {
+                throw new MediaPlayerServiceError(
+                    'indexers_invalid',
+                    'MediaPlayer вернул некорректный список индексеров.'
+                );
+            }
+            return {
+                indexers,
+                enabledIds: [...new Set(enabledIds)]
+            };
+        }
+
+        normalizeJackettIndexerCatalog(value) {
+            const indexers = Array.isArray(value?.indexers)
+                ? value.indexers
+                    .filter(indexer => indexer && typeof indexer === 'object')
+                    .map(indexer => ({
+                        id: String(indexer.id || '').trim().toLowerCase(),
+                        name: String(indexer.name || indexer.id || 'Индексер'),
+                        description: String(indexer.description || ''),
+                        site: String(indexer.site || ''),
+                        language: String(indexer.language || ''),
+                        type: String(indexer.type || ''),
+                        categories: Array.isArray(indexer.categories)
+                            ? indexer.categories.map(category => String(category || '').trim()).filter(Boolean).slice(0, 20)
+                            : []
+                    }))
+                    .filter(indexer => /^[a-z0-9][a-z0-9_-]{0,127}$/i.test(indexer.id))
+                : null;
+            if (!indexers) {
+                throw new MediaPlayerServiceError(
+                    'available_indexers_invalid',
+                    'MediaPlayer вернул некорректный каталог индексеров.'
+                );
+            }
+            return indexers;
+        }
+
+        normalizeJackettIndexerId(indexerId) {
+            const id = String(indexerId || '').trim().toLowerCase();
+            if (!/^[a-z0-9][a-z0-9_-]{0,127}$/i.test(id)) {
+                throw new MediaPlayerServiceError('invalid_indexer_selection', 'Выбран некорректный индексер.');
+            }
+            return id;
+        }
+
+        normalizeJackettIndexerConfig(value) {
+            const id = this.normalizeJackettIndexerId(value?.id);
+            const fields = Array.isArray(value?.fields)
+                ? value.fields
+                    .filter(field => field && typeof field === 'object')
+                    .map(field => ({
+                        id: String(field.id || '').trim(),
+                        name: String(field.name || field.id || 'Параметр'),
+                        type: String(field.type || 'inputstring').trim().toLowerCase(),
+                        value: field.value === null || typeof field.value === 'string'
+                            || typeof field.value === 'boolean' || typeof field.value === 'number'
+                            ? field.value
+                            : null,
+                        options: field.options && typeof field.options === 'object' && !Array.isArray(field.options)
+                            ? Object.fromEntries(Object.entries(field.options).map(([key, option]) => [String(key), String(option ?? key)]))
+                            : {},
+                        pattern: field.pattern ? String(field.pattern) : '',
+                        separator: field.separator ? String(field.separator) : '',
+                        sensitive: field.sensitive === true,
+                        hasValue: field.hasValue === true
+                    }))
+                    .filter(field => /^[a-z0-9][a-z0-9_.()-]{0,255}$/i.test(field.id))
+                : [];
+            return { id, fields };
+        }
+
         normalizeSetupState(value) {
             const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
             const enabled = source.enabled === true;
@@ -832,6 +1021,7 @@
                 pairing_unavailable: 'MediaPlayer ещё не готов к подключению расширения.',
                 pairing_failed: 'Не удалось подключить расширение к MediaPlayer.',
                 unknown_action: 'Установленный Native Host не поддерживает эту операцию. Обновите MediaPlayer.',
+                mediaplayer_update_required: 'Обновите MediaPlayer Suite: установленная версия не поддерживает добавление индексеров.',
                 folder_selection_cancelled: 'Выбор папки установки отменён.',
                 folder_selection_failed: 'Не удалось открыть системный выбор папки установки MediaPlayer.',
                 unauthorized: 'Расширение потеряло подключение к MediaPlayer.',
@@ -842,6 +1032,11 @@
                         : 'MediaPlayer не разрешил поиск раздач.',
                 invalid_settings: 'Выберите допустимый срок хранения фильмов.',
                 settings_invalid: 'MediaPlayer вернул некорректные настройки.',
+                invalid_indexer_selection: 'Выберите хотя бы один настроенный индексер.',
+                available_indexers_invalid: 'MediaPlayer вернул некорректный каталог индексеров.',
+                indexer_config_invalid: 'MediaPlayer вернул некорректную конфигурацию индексера.',
+                indexers_invalid: 'MediaPlayer вернул некорректный список индексеров.',
+                indexers_unavailable: 'Не удалось получить список индексеров Jackett.',
                 download_retention_in_progress: 'Этот файл сейчас удаляется. Повторите позже.',
                 download_control_unavailable: 'Пауза или продолжение загрузки сейчас недоступны. Повторите позже.',
                 torrent_not_configured: 'Торрент-провайдеры MediaPlayer ещё не настроены.',

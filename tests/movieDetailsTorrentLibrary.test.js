@@ -65,6 +65,7 @@ assert.equal(
 );
 assert.equal(blockedPickerOpened, false);
 manager.torrentQualityFilter = 'all';
+manager.torrentLanguageFilter = 'all';
 manager.torrentSort = 'recommended';
 manager.torrentVisibleSourceLimit = 10;
 
@@ -83,9 +84,62 @@ assert.equal(manager.formatTorrentPlaybackDuration(26), '00:26');
 assert.equal(manager.formatTorrentPlaybackDuration(7200), '2:00:00');
 assert.deepEqual(
     manager.getVisibleTorrentSources(sources).map(source => source.sourceId),
-    ['low', 'high', 'full', 'ultra'],
-    'recommended order prioritizes seeders, then quality, then size'
+    ['ultra', 'high', 'full', 'low'],
+    'recommended order prioritizes release quality before swarm size'
 );
+
+const qualitySources = [
+    {
+        sourceId: 'web-dl',
+        title: 'Obsession.2026.1080p.AMZN.WEB-DL.DDP5.1.H264.MP4-BTM',
+        quality: '1080p',
+        seeders: 200,
+        sizeBytes: 5_000
+    },
+    {
+        sourceId: 'telesync',
+        title: 'Obsession.2026.1080p.TELESYNC.x264-UNiON',
+        quality: '1080p',
+        seeders: 20_000,
+        sizeBytes: 5_500
+    },
+    {
+        sourceId: 'english',
+        title: 'Obsession (2026) [1080p AMZN WEB-DL H264 ENG MULTISUB] BTM',
+        quality: '1080p',
+        seeders: 100,
+        sizeBytes: 5_100
+    }
+];
+assert.deepEqual(
+    manager.getVisibleTorrentSources(qualitySources).map(source => source.sourceId),
+    ['english', 'web-dl', 'telesync'],
+    'recommended order demotes telesync below clean web releases'
+);
+assert.equal(manager.getTorrentSourceLanguageLabel(qualitySources[2]), 'EN');
+manager.torrentLanguageFilter = 'en';
+assert.deepEqual(
+    manager.getVisibleTorrentSources(qualitySources).map(source => source.sourceId),
+    ['english'],
+    'language filter keeps English audio releases'
+);
+manager.torrentLanguageFilter = 'all';
+
+const russianRelease = {
+    sourceId: 'russian-release',
+    title: 'Obsession [2025, WEB-DL 720p] Dub (HDRezka Studio) + MVO (HDRezka Studio) + Original Eng + Sub Rus, Eng',
+    quality: '720p',
+    seeders: 100,
+    sizeBytes: 5_000
+};
+assert.equal(manager.getTorrentSourceLanguageLabel(russianRelease), 'RU + EN');
+manager.torrentLanguageFilter = 'ru';
+assert.deepEqual(
+    manager.getVisibleTorrentSources([russianRelease]).map(source => source.sourceId),
+    ['russian-release'],
+    'Russian audio markers and the original English track are recognized together'
+);
+manager.torrentLanguageFilter = 'all';
 
 const duplicateSources = [
     {
@@ -124,6 +178,7 @@ const renderDom = new JSDOM(`
                 <button data-quality-filter="all"></button>
                 <button data-quality-filter="4k"></button>
             </div>
+            <select id="torrentSourceLanguageFilter"><option value="all">Все языки</option></select>
             <div id="torrentSourceList" role="list"></div>
             <button id="torrentSourceShowMoreBtn" hidden></button>
         </details>
@@ -135,6 +190,7 @@ manager.elements = {
     torrentSourceDisclosure: renderDom.window.document.querySelector('#torrentSourceDisclosure'),
     torrentSourceControls: renderDom.window.document.querySelector('#torrentSourceControls'),
     torrentSourceShowMoreBtn: renderDom.window.document.querySelector('#torrentSourceShowMoreBtn'),
+    torrentSourceLanguageFilter: renderDom.window.document.querySelector('#torrentSourceLanguageFilter'),
     torrentSourceStatus: renderDom.window.document.querySelector('#torrentSourceStatus'),
     torrentPlaybackStatus: renderDom.window.document.querySelector('#torrentPlaybackStatus'),
     torrentDownloadLibrary: renderDom.window.document.querySelector('#torrentDownloadLibrary'),
@@ -169,10 +225,19 @@ assert.equal(manager.elements.torrentSourceControls.hidden, false);
 assert.equal(manager.elements.torrentSourceList.querySelectorAll('.torrent-source-card__select').length, 0);
 assert.match(
     manager.elements.torrentSourceList.querySelector('.torrent-source-empty').textContent,
-    /выбранного качества/i,
-    'empty quality filters keep the picker available and explain how to recover'
+    /выбранным фильтрам/i,
+    'empty filters keep the picker available and explain how to recover'
 );
 manager.torrentQualityFilter = 'all';
+
+manager.torrentSources = [];
+manager.torrentSearchState = { status: 'running', found: 0 };
+manager.renderTorrentSources([]);
+assert.match(
+    manager.elements.torrentSourceStatus.textContent,
+    /Ищем раздачи/i,
+    'an empty intermediate batch must not be reported as a completed empty search'
+);
 
 manager.torrentActiveContext = {
     title: 'Example 4K',

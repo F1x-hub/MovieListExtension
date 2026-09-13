@@ -230,6 +230,8 @@
             }
             setPermanentVideo(null);
             activeWrapper = null;
+            pendingActiveEpisodeLabel = null;
+            structuredPlaybackState = null;
         } else if (event.data?.type === 'SEASONVAR_PLAYBACK_STATE') {
             structuredPlaybackState = event.data;
         } else if (event.data?.type === 'SET_CANONICAL_PICKER_MODE') {
@@ -2623,8 +2625,13 @@
                 // --- PROGRESS UPDATE HELPER (Structured Phase 5B) ---
                 const sendProgressUpdate = (episodeLabel, previousTimestamp) => {
                     try {
+                        const parsedEpisodeNumber = episodeLabel
+                            ? parseInt(String(episodeLabel).replace(/\D+/g, ''), 10)
+                            : null;
                         const seasonNum = structuredPlaybackState?.activeSeasonNumber ?? null;
-                        const epNum = structuredPlaybackState?.activeEpisodeNumber ?? (episodeLabel ? parseInt(String(episodeLabel).replace(/\D+/g, ''), 10) : null);
+                        const epNum = Number.isFinite(parsedEpisodeNumber) && parsedEpisodeNumber > 0
+                            ? parsedEpisodeNumber
+                            : (structuredPlaybackState?.activeEpisodeNumber ?? null);
                         const currentSeasonLabel = seasonNum ? `${seasonNum} сезон` : '';
                         const epLabel = episodeLabel || (epNum ? `${epNum} серия` : '');
                         

@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 const root = path.join(__dirname, '..');
+const firebaseAssetUrl = 'https://movielistdb-13208-updates.web.app/updates/latest/MovieList-extension-latest.zip';
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'dist', 'manifest.json'), 'utf8'));
 const assetName = `MovieList-extension-${manifest.version}.zip`;
 const assetPath = path.join(root, assetName);
@@ -49,6 +50,10 @@ const metadata = {
     version: manifest.version,
     assetName,
     assetUrl: `https://github.com/F1x-hub/MovieListExtension/releases/download/v${manifest.version}/${assetName}`,
+    assetUrls: [
+        firebaseAssetUrl,
+        `https://github.com/F1x-hub/MovieListExtension/releases/download/v${manifest.version}/${assetName}`
+    ],
     sha256: crypto.createHash('sha256').update(asset).digest('hex'),
     size: asset.length,
     minUpdaterVersion: updaterVersionMatch[1],

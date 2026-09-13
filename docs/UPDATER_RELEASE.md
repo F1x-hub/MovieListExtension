@@ -22,7 +22,7 @@ mid-replacement, the next user logon can restore the previous extension folder;
 when restoration is impossible, the updater reports `RECOVERY_REQUIRED` and blocks
 another replacement until the journal is repaired.
 
-The hardened updater requires MovieListSetup.exe version 1.1.1 or newer. A user
+The hardened updater requires MovieListSetup.exe version 1.1.4 or newer. A user
 who already connected an older Setup must run the current Setup once, select the same
 extension folder, and click **Connect automatic updates**. This is a one-time
 migration; future extension releases do not require reinstalling the Setup executable.
@@ -39,8 +39,8 @@ secret `UPDATE_SIGNING_PRIVATE_KEY`; never commit the private file.
 
 To publish a version:
 
-1. Update `package.json` and `manifest.json` to the same `MAJOR.MINOR.PATCH` value.
-2. Commit the change and create a tag such as `v1.3.0`.
+1. Update the extension `manifest.json` to a three- or four-component Chrome version such as `1.3.2.1`. Keep `package.json` on npm-compatible three-component semver.
+2. Commit the change and create a matching tag such as `v1.3.2.1`.
 3. Push the tag. `.github/workflows/release.yml` builds the extension, removes local
    configuration, publishes the self-contained setup executable, and signs the
    immutable release metadata.
@@ -55,3 +55,37 @@ regression and updater contract tests, verifies that the signing secret matches 
 public key embedded in the Native Host, and publishes assets through a draft release
 before making the release visible. The ZIP is validated to contain a root-level
 `manifest.json` and no `./`-prefixed paths so Windows Explorer can display it.
+
+The signed metadata keeps the GitHub release URL for compatibility and adds the
+Firebase Hosting mirror at
+`https://movielistdb-13208-updates.web.app/updates/latest/MovieList-extension-latest.zip`.
+The Native Host tries the mirror and then GitHub with bounded retries, while
+checking the signed size and SHA-256 before extraction. The release workflow
+copies only the newest extension ZIP, metadata and signature to a dedicated
+Hosting site using `firebase.updates.json`. `MovieListSetup.exe` remains in the
+GitHub release because Spark blocks Windows executable files. Ordinary player deployments do not
+touch this site. Configure `FIREBASE_SERVICE_ACCOUNT` (service account JSON with
+Hosting deployment and version deletion permissions) in GitHub Actions. Create
+the site `movielistdb-13208-updates` in project `movielistdb-13208` once before the
+first release. Hosting must permit EXE distribution (Spark restricts executable
+files). No credentials are stored in this repository.
+
+The extension retries each metadata file up to three total attempts, then fetches
+both metadata and signature from the mirror. The Native Host verifies the signature
+before trusting any download. Existing installations must run the 1.1.4 Setup once;
+old extensions without metadata fallback need the mirror ZIP installed manually
+if GitHub is entirely unreachable during migration.
+
+Release jobs are serialized. Mirror preparation rejects older versions and different
+ZIP content for the same version, and fails closed when the deployed version cannot
+be read. After deployment, public files are downloaded and compared with local
+release artifacts. Cleanup deletes only finalized historical versions on the dedicated
+site, excluding the active version and rechecking its identity before each deletion.
+The retention setting is also bounded to one previous release (the API minimum);
+explicit deletion removes older archive content. Storage reclamation may be asynchronous.
+Do not publish manually to this site concurrently with a release job.
+
+HTTP 404 and integrity failures switch sources immediately. Transient network and
+408/429/5xx failures retry up to three attempts per source; disk write failures stop
+the operation. Header waits are bounded to 15 seconds, idle reads to 30 seconds,
+each transfer to two minutes and the download operation to ten minutes.

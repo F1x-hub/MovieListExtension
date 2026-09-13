@@ -11,9 +11,10 @@ internal static class Program
 {
     private const string HostName = "com.movielist.updater";
     private const string RepositoryPrefix = "https://github.com/F1x-hub/MovieListExtension/releases/download/";
+    private const string FirebaseAssetUrl = "https://movielistdb-13208-updates.web.app/updates/latest/MovieList-extension-latest.zip";
     private const string AppName = "MovieListExtensionUpdater";
     private const int ProtocolVersion = 1;
-    private const string UpdaterVersion = "1.1.3";
+    private const string UpdaterVersion = "1.1.4";
     private const string ApplyMutexName = @"Local\MovieListExtensionUpdater.Apply";
     private const string SetupMutexName = @"Local\MovieListExtensionUpdater.Setup";
     private const string RecoveryRunOnceName = "MovieListExtensionUpdaterRecovery";
@@ -175,7 +176,7 @@ xwIDAQAB
             configured = IsConfiguredExtension(config),
             installPath = config.ExtensionPath,
             extensionId = config.ExtensionId,
-            extensionVersion = currentVersion?.ToString(3),
+            extensionVersion = currentVersion?.ToString(),
             updaterVersion = UpdaterVersion,
             operation
         };
@@ -437,8 +438,7 @@ xwIDAQAB
             var stageRoot = GetStagingPath(input.InstallPath, operationId);
             Directory.CreateDirectory(stageRoot);
             var archivePath = Path.Combine(stageRoot, input.Metadata.AssetName);
-            DownloadFile(input.Metadata.AssetUrl, archivePath, input.Metadata.Size);
-            VerifyFileHash(archivePath, input.Metadata.Sha256, input.Metadata.Size);
+            DownloadFile(input.Metadata.AssetUrls, archivePath, input.Metadata.Sha256, input.Metadata.Size);
 
             var extractionPath = Path.Combine(stageRoot, "extension");
             Directory.CreateDirectory(extractionPath);
@@ -519,11 +519,18 @@ xwIDAQAB
             ?? throw new InvalidDataException("Release metadata is empty.");
         var expectedAssetName = $"MovieList-extension-{metadata.Version}.zip";
         var expectedAssetUrl = $"{RepositoryPrefix}v{metadata.Version}/{expectedAssetName}";
+        var assetUrls = metadata.AssetUrls is { Count: > 0 }
+            ? metadata.AssetUrls
+            : new List<string> { metadata.AssetUrl };
         if (metadata.SchemaVersion != 1
             || !TryParseStableVersion(metadata.Version, out _)
             || !string.Equals(metadata.ExtensionId, config.ExtensionId, StringComparison.Ordinal)
             || !string.Equals(metadata.AssetName, expectedAssetName, StringComparison.Ordinal)
             || !string.Equals(metadata.AssetUrl, expectedAssetUrl, StringComparison.Ordinal)
+            || assetUrls.Count > 3
+            || !assetUrls.Contains(expectedAssetUrl, StringComparer.Ordinal)
+            || assetUrls.Any(url => !string.Equals(url, expectedAssetUrl, StringComparison.Ordinal)
+                && !string.Equals(url, FirebaseAssetUrl, StringComparison.Ordinal))
             || !metadata.Sha256.All(Uri.IsHexDigit)
             || metadata.Sha256.Length != 64
             || metadata.Size <= 0
@@ -536,6 +543,7 @@ xwIDAQAB
         {
             throw new InvalidDataException($"This update requires updater {metadata.MinUpdaterVersion} or newer.");
         }
+        metadata.AssetUrls = assetUrls;
         return metadata;
     }
 
@@ -557,11 +565,54 @@ xwIDAQAB
         }
     }
 
-    private static void DownloadFile(string url, string destination, long expectedSize)
+    private static void DownloadFile(IReadOnlyList<string> urls, string destination, string expectedHash, long expectedSize)
     {
-        using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+        using var downloadDeadline = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+        Exception? lastError = null;
+        foreach (var url in urls.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            for (var attempt = 1; attempt <= 3 && !downloadDeadline.IsCancellationRequested; attempt++)
+            {
+                try
+                {
+                    DownloadFileOnce(url, destination, expectedSize, downloadDeadline.Token);
+                    VerifyFileHash(destination, expectedHash, expectedSize);
+                    return;
+                }
+                catch (InvalidDataException error)
+                {
+                    lastError = error;
+                    break;
+                }
+                catch (HttpRequestException error) when (error.StatusCode is { } status
+                    && (int)status < 500 && (int)status != 408 && (int)status != 429)
+                {
+                    lastError = error;
+                    break;
+                }
+                catch (Exception error) when (error is HttpRequestException or OperationCanceledException)
+                {
+                    lastError = error;
+                    if (attempt < 3 && !downloadDeadline.IsCancellationRequested)
+                        Thread.Sleep(TimeSpan.FromSeconds(attempt));
+                }
+            }
+        }
+        var detail = lastError is HttpRequestException httpError
+            ? $"HTTP {(int?)httpError.StatusCode}"
+            : lastError is InvalidDataException ? "Archive integrity mismatch" : "Network timeout or transport failure";
+        throw new IOException($"All release download sources failed: {detail}.", lastError);
+    }
+
+    private static void DownloadFileOnce(string url, string destination, long expectedSize, CancellationToken downloadToken)
+    {
+        using var client = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+        using var attemptDeadline = CancellationTokenSource.CreateLinkedTokenSource(downloadToken);
+        attemptDeadline.CancelAfter(TimeSpan.FromMinutes(2));
         client.DefaultRequestHeaders.UserAgent.ParseAdd("MovieListExtensionUpdater/1.0");
-        using var response = client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead).GetAwaiter().GetResult();
+        using var headerDeadline = CancellationTokenSource.CreateLinkedTokenSource(attemptDeadline.Token);
+        headerDeadline.CancelAfter(TimeSpan.FromSeconds(15));
+        using var response = client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, headerDeadline.Token).GetAwaiter().GetResult();
         response.EnsureSuccessStatusCode();
         if (response.Content.Headers.ContentLength is long contentLength && contentLength != expectedSize)
             throw new InvalidDataException("The response size does not match signed metadata.");
@@ -571,8 +622,19 @@ xwIDAQAB
         var buffer = new byte[64 * 1024];
         long total = 0;
         int read;
-        while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+        while (true)
         {
+            using var idleDeadline = CancellationTokenSource.CreateLinkedTokenSource(attemptDeadline.Token);
+            idleDeadline.CancelAfter(TimeSpan.FromSeconds(30));
+            try
+            {
+                read = source.ReadAsync(buffer.AsMemory(), idleDeadline.Token).AsTask().GetAwaiter().GetResult();
+            }
+            catch (IOException error)
+            {
+                throw new HttpRequestException("Download body interrupted.", error);
+            }
+            if (read == 0) break;
             total += read;
             if (total > expectedSize || total > MaxDownloadBytes)
                 throw new InvalidDataException("The downloaded file is larger than signed metadata.");
@@ -935,7 +997,7 @@ xwIDAQAB
     {
         version = new Version(0, 0, 0);
         if (string.IsNullOrWhiteSpace(value)
-            || !System.Text.RegularExpressions.Regex.IsMatch(value, "^\\d+\\.\\d+\\.\\d+$"))
+            || !System.Text.RegularExpressions.Regex.IsMatch(value, "^\\d+(?:\\.\\d+){2,3}$"))
         {
             return false;
         }
@@ -1312,6 +1374,7 @@ xwIDAQAB
         public string Version { get; set; } = string.Empty;
         public string AssetName { get; set; } = string.Empty;
         public string AssetUrl { get; set; } = string.Empty;
+        public List<string> AssetUrls { get; set; } = new();
         public string Sha256 { get; set; } = string.Empty;
         public long Size { get; set; }
         public string MinUpdaterVersion { get; set; } = string.Empty;

@@ -74,6 +74,7 @@ class PlaybackController {
         this.activeAdapter = null;
         this.activeMount = null;
         this.currentTimestamp = 0;
+        this.selectionVersion = 0;
 
         // Canonical Runtime State (Live Telemetry - Phase 3E & 3F)
         this.runtimeState = createDefaultRuntime();
@@ -201,6 +202,19 @@ class PlaybackController {
     }
 
     /**
+     * Returns the canonical selection together with its monotonic version.
+     * Async consumers use this snapshot to reject work started for an older
+     * user intent, including in-place episode switches in the same iframe.
+     * @returns {{selection: Object|null, selectionVersion: number}}
+     */
+    getSelectionContext() {
+        return {
+            selection: this.getSelection(),
+            selectionVersion: Number.isInteger(this.selectionVersion) ? this.selectionVersion : 0
+        };
+    }
+
+    /**
      * Sets the canonical selection.
      * @param {Object} selection
      */
@@ -221,6 +235,7 @@ class PlaybackController {
         }
 
         const normalized = normalizeSelection(selection);
+        this.selectionVersion += 1;
         this.currentSelection = normalized;
         if (normalized.initialTimestamp) {
             this.currentTimestamp = normalized.initialTimestamp;
@@ -260,6 +275,7 @@ class PlaybackController {
      * Clears active canonical selection.
      */
     clearSelection() {
+        this.selectionVersion += 1;
         this.currentSelection = null;
         this.currentTimestamp = 0;
         if (typeof this.onSelectionChange === 'function') {
@@ -1169,9 +1185,22 @@ class PlaybackController {
 
         let seasonNum = null;
         let episodeNum = null;
+        const readNumericValue = (value) => {
+            if (typeof value === 'number') {
+                return Number.isFinite(value) ? value : null;
+            }
+            if (typeof value === 'string' && /^\d+$/.test(value.trim())) {
+                return Number(value.trim());
+            }
+            return null;
+        };
+
+        if (data.seasonNumber != null) {
+            seasonNum = readNumericValue(data.seasonNumber);
+        }
 
         // Parse season number from string like "2 сезон" or number 2
-        if (data.season != null) {
+        if (seasonNum == null && data.season != null) {
             if (typeof data.season === 'number') {
                 seasonNum = data.season;
             } else if (typeof data.season === 'string') {
@@ -1181,7 +1210,10 @@ class PlaybackController {
         }
 
         // Parse episode number from string like "5 серия" or number 5
-        if (data.episode != null) {
+        if (data.episodeNumber != null) {
+            episodeNum = readNumericValue(data.episodeNumber);
+        }
+        if (episodeNum == null && data.episode != null) {
             if (typeof data.episode === 'number') {
                 episodeNum = data.episode;
             } else if (typeof data.episode === 'string') {
@@ -1198,6 +1230,25 @@ class PlaybackController {
         if (data.movieId != null && this.currentSelection?.kinopoiskId != null) {
             if (Number(data.movieId) !== Number(this.currentSelection.kinopoiskId)) {
                 return; // Discard progress from a different movie
+            }
+        }
+
+        if (data.selectionVersion != null && Number(data.selectionVersion) !== this.selectionVersion) {
+            return; // Discard progress emitted by an older canonical selection
+        }
+
+        const currentSelection = this.currentSelection;
+        const hasExplicitEpisode = Boolean(currentSelection && (
+            currentSelection.seasonNumber != null || currentSelection.episodeNumber != null
+        ));
+        if (hasExplicitEpisode && data.selectionVersion != null && data.origin !== 'USER_PROVIDER_SELECTION') {
+            if (seasonNum != null && currentSelection.seasonNumber != null
+                && Number(seasonNum) !== Number(currentSelection.seasonNumber)) {
+                return;
+            }
+            if (episodeNum != null && currentSelection.episodeNumber != null
+                && Number(episodeNum) !== Number(currentSelection.episodeNumber)) {
+                return;
             }
         }
 

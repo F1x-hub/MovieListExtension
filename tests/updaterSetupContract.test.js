@@ -39,7 +39,7 @@ assert.match(
 assert.match(source, /private static string GetRecoveryPath\(/);
 assert.match(source, /CleanupOperationArtifacts\(state\);/);
 assert.match(source, /private const string ApplyMutexName/);
-assert.match(source, /private const string UpdaterVersion = "1\.1\.3";/);
+assert.match(source, /private const string UpdaterVersion = "1\.1\.4";/);
 assert.match(projectSource, /<InvariantGlobalization>false<\/InvariantGlobalization>/);
 assert.match(source, /private const string SetupMutexName/);
 assert.match(source, /private const string RecoveryRunOnceName/);
@@ -61,5 +61,10 @@ assert.doesNotMatch(source, /\.backup-/i, 'the updater must not create persisten
 assert.doesNotMatch(source, /Восстановить предыдущую версию/, 'setup must not expose unavailable rollback');
 assert.match(metadataScript, /updaterVersionMatch/);
 assert.match(metadataScript, /minUpdaterVersion: updaterVersionMatch\[1\]/);
+assert.match(metadataScript, /firebaseAssetUrl/);
+assert.match(metadataScript, /assetUrls:/);
+assert.match(source, /AssetUrls/);
+assert.match(source, /updates\/latest/);
+assert.match(source, /\\\\d\+\(\?:\\\\\.\\\\d\+\)\{2,3\}/);
 
 console.log('updaterSetupContract.test.js passed');

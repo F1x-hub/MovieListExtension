@@ -52,6 +52,7 @@ class RandomManager {
         this._marathonMutationRunning = false;
         this._marathonAuthRefreshId = 0;
         this._marathonPendingRemovals = new Set();
+        this._marathonPendingAdds = new Map();
 
         this.init();
 
@@ -977,12 +978,82 @@ class RandomManager {
         );
     }
 
+    _getMarathonMovieId(movieOrItem) {
+        if (typeof RandomPoolService !== 'undefined' && typeof RandomPoolService.getMovieId === 'function') {
+            return RandomPoolService.getMovieId(movieOrItem);
+        }
+        const value = movieOrItem?.kinopoiskId ?? movieOrItem?.kpId ?? movieOrItem?.movieId ?? movieOrItem?.id;
+        const id = Number(value);
+        return Number.isInteger(id) && id > 0 ? id : null;
+    }
+
+    _getMarathonMovieKey(roundId, movieOrItem) {
+        const movieId = this._getMarathonMovieId(movieOrItem);
+        return movieId && roundId !== undefined && roundId !== null
+            ? `${roundId}:${movieId}`
+            : null;
+    }
+
+    _getMarathonDisplayItems() {
+        const items = Array.isArray(this.marathonState?.items) ? this.marathonState.items : [];
+        const roundId = this.marathonState?.round?.roundId;
+        if (roundId === undefined || roundId === null || !this._marathonPendingAdds.size) return items;
+
+        const visibleKeys = new Set(items
+            .filter((item) => item.state !== 'removed')
+            .map((item) => this._getMarathonMovieKey(roundId, item))
+            .filter(Boolean));
+        const pendingItems = [...this._marathonPendingAdds.values()]
+            .filter((item) => String(item.roundId) === String(roundId))
+            .filter((item) => !visibleKeys.has(this._getMarathonMovieKey(roundId, item)));
+        return items.concat(pendingItems);
+    }
+
+    _addMovieToMarathon(movie) {
+        if (this._marathonMutationRunning || !this.marathonService) return null;
+        const round = this.marathonState?.round;
+        if (!round || round.status !== 'collecting') return null;
+
+        const entry = typeof RandomPoolService !== 'undefined' ? RandomPoolService.createEntry(movie) : null;
+        const movieKey = this._getMarathonMovieKey(round.roundId, entry);
+        if (!entry || !movieKey) return null;
+
+        const displayItems = this._getMarathonDisplayItems();
+        if (displayItems.some((item) => item.state !== 'removed' && this._getMarathonMovieKey(round.roundId, item) === movieKey)) {
+            return null;
+        }
+        const user = typeof firebaseManager !== 'undefined' ? firebaseManager.getCurrentUser?.() : null;
+        const ownCount = displayItems.filter((item) => item.addedBy === user?.uid && item.state !== 'removed').length;
+        if (!this.marathonIsAdmin && ownCount >= RandomMarathonService.maxMoviesPerUser) {
+            const error = new Error('Вы уже добавили три фильма в этот раунд.');
+            error.code = 'MOVIE_LIMIT';
+            window.alert(this._formatMarathonError(error));
+            return null;
+        }
+
+        const optimisticItem = {
+            ...entry,
+            id: `${round.roundId}_${entry.kpId}`,
+            roundId: Number(round.roundId),
+            addedBy: user?.uid || '',
+            addedByName: user?.displayName || user?.email || 'участник',
+            state: 'queued',
+            resolvedAt: null,
+            resolvedBy: null,
+            resolution: null,
+            __pending: true
+        };
+        this._marathonPendingAdds.set(movieKey, optimisticItem);
+        this._renderMarathon();
+        return this._runMarathonAction(() => this.marathonService.addMovie(movie), { pendingAddKey: movieKey });
+    }
+
     _renderMarathon() {
         const summary = document.getElementById('marathonSummary');
         const list = document.getElementById('marathonList');
         const actions = document.getElementById('marathonActions');
         if (!summary || !list || !actions) return;
-        const { round, items, error } = this.marathonState || {};
+        const { round, error } = this.marathonState || {};
         const user = typeof firebaseManager !== 'undefined' ? firebaseManager.getCurrentUser?.() : null;
         if (error) {
             summary.textContent = error;
@@ -1003,7 +1074,7 @@ class RandomManager {
             return;
         }
 
-        const displayItems = items.filter((item) => !this._marathonPendingRemovals.has(item.id));
+        const displayItems = this._getMarathonDisplayItems().filter((item) => !this._marathonPendingRemovals.has(item.id));
         const ownCount = displayItems.filter((item) => item.addedBy === user?.uid && item.state !== 'removed').length;
         const marathonSearchInput = document.getElementById('marathonSearchInput');
         if (marathonSearchInput) {
@@ -1030,7 +1101,9 @@ class RandomManager {
             row.tabIndex = 0;
             row.setAttribute('role', 'button');
             row.setAttribute('aria-label', `Открыть фильм ${item.title || 'Без названия'}`);
-            const stateLabel = { queued: 'в очереди', selected: 'выпал', watched: 'просмотрен', removed: 'удалён' }[item.state] || item.state;
+            const stateLabel = item.__pending
+                ? 'добавляется…'
+                : ({ queued: 'в очереди', selected: 'выпал', watched: 'просмотрен', removed: 'удалён' }[item.state] || item.state);
             const addedBy = item.addedByName || item.addedBy || 'участник';
             const poster = document.createElement('img');
             poster.src = item.poster || '';
@@ -1070,7 +1143,7 @@ class RandomManager {
                     row.click();
                 }
             });
-            if ((round.status === 'collecting' && item.addedBy === user?.uid) || (this.marathonIsAdmin && item.state !== 'watched' && item.state !== 'removed')) {
+            if (!item.__pending && ((round.status === 'collecting' && item.addedBy === user?.uid) || (this.marathonIsAdmin && item.state !== 'watched' && item.state !== 'removed'))) {
                 const remove = document.createElement('button');
                 remove.className = 'pool-list-item-remove';
                 remove.title = 'Удалить из марафона';
@@ -1135,7 +1208,7 @@ class RandomManager {
         });
     }
 
-    async _runMarathonAction(action, { pendingRemovalId = null } = {}) {
+    async _runMarathonAction(action, { pendingRemovalId = null, pendingAddKey = null } = {}) {
         if (this._marathonMutationRunning) return null;
         this._marathonMutationRunning = true;
         document.querySelectorAll('[data-marathon-action]').forEach((button) => {
@@ -1154,6 +1227,7 @@ class RandomManager {
             return null;
         } finally {
             if (pendingRemovalId) this._marathonPendingRemovals.delete(pendingRemovalId);
+            if (pendingAddKey) this._marathonPendingAdds.delete(pendingAddKey);
             this._marathonMutationRunning = false;
             this._renderMarathon();
         }
@@ -1209,7 +1283,9 @@ class RandomManager {
                 row.innerHTML = `<img src="${this._escapeHtml(movie.posterUrl || '')}" alt=""><div class="pool-result-meta"><div class="pool-result-title">${this._escapeHtml(movie.name || movie.alternativeName || '—')}</div><div class="pool-result-sub">${this._escapeHtml(movie.year || '')}</div></div><button class="pool-result-add" title="Добавить" aria-label="Добавить фильм в киномарафон">+</button>`;
                 row.querySelector('button').addEventListener('click', async (event) => {
                     event.stopPropagation();
-                    const result = await this._runMarathonAction(() => this.marathonService.addMovie(movie));
+                    const pending = this._addMovieToMarathon(movie);
+                    if (pending) results.classList.add('hidden');
+                    const result = pending ? await pending : null;
                     if (result) results.classList.add('hidden');
                 });
                 results.appendChild(row);
@@ -1315,6 +1391,17 @@ class RandomManager {
         });
         weights.forEach(w => { totalWeight += w; });
 
+        const marathonRound = this.marathonState?.round;
+        const marathonUser = typeof firebaseManager !== 'undefined' ? firebaseManager.getCurrentUser?.() : null;
+        const marathonItems = this._getMarathonDisplayItems();
+        const marathonOwnCount = marathonUser
+            ? marathonItems.filter((marathonItem) => marathonItem.addedBy === marathonUser.uid && marathonItem.state !== 'removed').length
+            : 0;
+        const marathonCanAdd = typeof RandomMarathonService !== 'undefined'
+            && this.marathonService
+            && marathonRound?.status === 'collecting'
+            && (this.marathonIsAdmin || marathonOwnCount < RandomMarathonService.maxMoviesPerUser);
+
         this.pool.forEach((m, idx) => {
             const addedDate = m.addedAt ? new Date(m.addedAt) : new Date();
             const diffDays = this._getDaysInPool(m.addedAt);
@@ -1332,16 +1419,7 @@ class RandomManager {
                 dateStr = addedDate.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
             }
 
-            const marathonRound = this.marathonState?.round;
-            const marathonUser = typeof firebaseManager !== 'undefined' ? firebaseManager.getCurrentUser?.() : null;
-            const marathonOwnCount = marathonUser
-                ? this.marathonState.items.filter((marathonItem) => marathonItem.addedBy === marathonUser.uid && marathonItem.state !== 'removed').length
-                : 0;
-            const marathonCanAdd = typeof RandomMarathonService !== 'undefined'
-                && this.marathonService
-                && marathonRound?.status === 'collecting'
-                && (this.marathonIsAdmin || marathonOwnCount < RandomMarathonService.maxMoviesPerUser);
-            const inMarathon = marathonRound && this.marathonState.items.some((marathonItem) =>
+            const inMarathon = marathonRound && marathonItems.some((marathonItem) =>
                 marathonItem.roundId === marathonRound.roundId
                 && Number(marathonItem.kpId) === Number(m.kpId)
                 && marathonItem.state !== 'removed'
@@ -1406,9 +1484,7 @@ class RandomManager {
             if (addToMarathonBtn) {
                 addToMarathonBtn.addEventListener('click', async (event) => {
                     event.stopPropagation();
-                    addToMarathonBtn.disabled = true;
-                    await this._runMarathonAction(() => this.marathonService.addMovie(m));
-                    this._renderPoolModal();
+                    await this._addMovieToMarathon(m);
                 });
             }
 

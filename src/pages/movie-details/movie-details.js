@@ -119,6 +119,7 @@ class MovieDetailsManager {
         this.torrentProgressMonitorToken = 0;
         this.torrentProgressPollDelayMs = 2500;
         this.torrentQualityFilter = 'all';
+        this.torrentLanguageFilter = 'all';
         this.torrentSort = 'recommended';
         this.torrentSearchState = { status: 'idle', found: 0 };
         this.currentEpisodes = []; // Track episodes separately from sources/providers
@@ -363,6 +364,7 @@ class MovieDetailsManager {
             torrentSourceStatus: document.getElementById('torrentSourceStatus'),
             torrentSourceControls: document.getElementById('torrentSourceControls'),
             torrentSourceSort: document.getElementById('torrentSourceSort'),
+            torrentSourceLanguageFilter: document.getElementById('torrentSourceLanguageFilter'),
             torrentSourceSearchBtn: document.getElementById('torrentSourceSearchBtn'),
             torrentSourceList: document.getElementById('torrentSourceList'),
             torrentSourceDisclosure: document.getElementById('torrentSourceDisclosure'),
@@ -611,6 +613,13 @@ class MovieDetailsManager {
                 this.renderTorrentSources(this.torrentSources);
             });
         }
+        if (this.elements.torrentSourceLanguageFilter) {
+            this.elements.torrentSourceLanguageFilter.addEventListener('change', (event) => {
+                this.torrentLanguageFilter = String(event.target.value || 'all');
+                this.torrentVisibleSourceLimit = 10;
+                this.renderTorrentSources(this.torrentSources);
+            });
+        }
         if (this.elements.torrentSourceSearchBtn) {
             this.elements.torrentSourceSearchBtn.addEventListener('click', () => {
                 void this.searchTorrentSources();
@@ -750,6 +759,8 @@ class MovieDetailsManager {
                 this.handleWatchedToggle(movieId, actionBtn);
             } else if (action === 'toggle-watchlist' && movieId) {
                 this.handleWatchlistToggle(movieId, actionBtn);
+            } else if (action === 'add-to-random-pool' && movieId) {
+                this.handleAddToRandomPool(movieId, actionBtn);
             } else if (action === 'toggle-collection' && movieId) {
                 const collectionId = actionBtn.getAttribute('data-collection-id');
                 if (collectionId) this.handleToggleCollection(movieId, collectionId, actionBtn);
@@ -2068,6 +2079,7 @@ class MovieDetailsManager {
         this.bindMovieFrameInteractions();
         this.setupActorsGridVisibility();
         this.setProtectedControlsEnabled(this.authVerified);
+        void this.syncRandomPoolAction(movie);
         
         // Setup show all awards button
         const showAllAwardsBtn = this.elements.movieDetailsContainer.querySelector('.btn-show-all-awards');
@@ -2864,6 +2876,13 @@ class MovieDetailsManager {
                                             data-is-in-watchlist="${isInWatchlist}">
                                         <span class="mc-menu-item-icon">${isInWatchlist ? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>'}</span>
                                         <span class="mc-menu-item-text">${isInWatchlist ? i18n.get('movie_card.remove_watchlist') : i18n.get('movie_card.add_watchlist')}</span>
+                                    </button>
+
+                                    <div class="mc-menu-divider"></div>
+                                    <button class="mc-menu-item" data-action="add-to-random-pool"
+                                            data-movie-id="${movie.kinopoiskId}" aria-pressed="false">
+                                        <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"></rect><circle cx="8" cy="8" r="1"></circle><circle cx="16" cy="8" r="1"></circle><circle cx="8" cy="16" r="1"></circle><circle cx="16" cy="16" r="1"></circle><circle cx="12" cy="12" r="1"></circle></svg></span>
+                                        <span class="mc-menu-item-text">${i18n.get('movie_card.add_random_pool')}</span>
                                     </button>
                                     
                                     <div class="mc-menu-collections-slot">${this.renderCollectionsMenu(movie)}</div>
@@ -7752,6 +7771,101 @@ class MovieDetailsManager {
         }
     }
 
+    parsePlaybackNumber(value) {
+        if (typeof value === 'number') {
+            return Number.isFinite(value) ? value : null;
+        }
+        const match = String(value ?? '').match(/\d+/);
+        return match ? Number(match[0]) : null;
+    }
+
+    isExplicitPlaybackSelection(selection) {
+        return Boolean(selection && (
+            selection.seasonNumber != null
+            || selection.episodeNumber != null
+            || [
+                'SEASONS_TAB',
+                'PLAYER_NAVIGATION',
+                'AUTO_NEXT',
+                'RESUME',
+                'NEXT_EPISODE_HERO',
+                'PROVIDER_SWITCH',
+                'PLAYER_PROVIDER_PICKER'
+            ].includes(selection.source)
+        ));
+    }
+
+    getPlaybackSelectionContext() {
+        const context = this.playbackController?.getSelectionContext?.();
+        const selection = context?.selection || this.playbackController?.getSelection?.() || null;
+        return {
+            selection,
+            selectionVersion: Number.isInteger(context?.selectionVersion) ? context.selectionVersion : null,
+            signature: selection
+                ? [
+                    selection.kinopoiskId,
+                    selection.mediaType,
+                    selection.seasonNumber,
+                    selection.episodeNumber,
+                    selection.providerId,
+                    selection.source
+                ].map(value => String(value ?? '')).join('|')
+                : 'none'
+        };
+    }
+
+    restoreProgressForReadyIframe(iframe) {
+        const movieId = this.selectedMovie?.kinopoiskId;
+        if (!iframe?.contentWindow || movieId == null || !this.progressService) return;
+
+        const selectionContext = this.getPlaybackSelectionContext();
+        if (this.isExplicitPlaybackSelection(selectionContext.selection)) return;
+
+        const restoreContext = {
+            movieId: String(movieId),
+            iframe,
+            sourceSwitchRequestId: this.sourceSwitchRequestId,
+            pageGeneration: this.pageGeneration,
+            selectionVersion: selectionContext.selectionVersion,
+            selectionSignature: selectionContext.signature
+        };
+        const previousAttempt = this.progressRestoreAttempt;
+        if (previousAttempt
+            && previousAttempt.iframe === restoreContext.iframe
+            && previousAttempt.movieId === restoreContext.movieId
+            && previousAttempt.sourceSwitchRequestId === restoreContext.sourceSwitchRequestId
+            && previousAttempt.selectionVersion === restoreContext.selectionVersion
+            && previousAttempt.selectionSignature === restoreContext.selectionSignature) {
+            return;
+        }
+        this.progressRestoreAttempt = restoreContext;
+
+        this.progressService.getProgress(movieId).then(progress => {
+            const activeIframe = this.elements?.videoContainer?.querySelector?.('iframe[data-player-source-active="true"]')
+                || this.elements?.videoContainer?.querySelector?.('iframe');
+            const currentSelectionContext = this.getPlaybackSelectionContext();
+            const isCurrent = String(this.selectedMovie?.kinopoiskId) === restoreContext.movieId
+                && activeIframe === restoreContext.iframe
+                && this.sourceSwitchRequestId === restoreContext.sourceSwitchRequestId
+                && this.pageGeneration === restoreContext.pageGeneration
+                && currentSelectionContext.selectionVersion === restoreContext.selectionVersion
+                && currentSelectionContext.signature === restoreContext.selectionSignature
+                && !this.isExplicitPlaybackSelection(currentSelectionContext.selection);
+            if (!isCurrent || !progress?.season || !progress?.episode) return;
+
+            restoreContext.iframe.contentWindow.postMessage({
+                type: 'RESTORE_PROGRESS',
+                season: progress.season,
+                episode: progress.episode
+            }, '*');
+
+            const episodeNumber = this.parsePlaybackNumber(progress.episodeNumber ?? progress.episode);
+            if (episodeNumber != null && episodeNumber > 0) {
+                this.currentEpisode = episodeNumber;
+            }
+        }).catch(e => console.error('Error loading progress:', e));
+    }
+
     setupPlayerMessageListener() {
         if (this.messageListenerSetup) return;
         window.addEventListener('message', async (event) => {
@@ -7781,25 +7895,7 @@ class MovieDetailsManager {
                          currentUrl: this.currentVideoUrl
                      }, '*');
                      
-                     const currentSel = this.playbackController?.getSelection();
-                     const hasExplicitSelection = Boolean(currentSel && (
-                         currentSel.seasonNumber != null ||
-                         currentSel.episodeNumber != null ||
-                         ['SEASONS_TAB', 'PLAYER_NAVIGATION', 'AUTO_NEXT', 'RESUME', 'NEXT_EPISODE_HERO', 'PROVIDER_SWITCH', 'PLAYER_PROVIDER_PICKER'].includes(currentSel.source)
-                     ));
-
-                     if (!hasExplicitSelection && this.selectedMovie && this.selectedMovie.kinopoiskId && this.progressService) {
-                          this.progressService.getProgress(this.selectedMovie.kinopoiskId).then(progress => {
-                              if (progress && progress.season && progress.episode) {
-                                   iframe.contentWindow.postMessage({
-                                       type: 'RESTORE_PROGRESS',
-                                       season: progress.season,
-                                       episode: progress.episode
-                                   }, '*');
-                                   this.currentEpisode = progress.episode;
-                              }
-                          }).catch(e => console.error('Error loading progress:', e));
-                     }
+                     this.restoreProgressForReadyIframe(iframe);
                      this.sendAnimeSkipTimes(iframe);
                  }
             } else if (event.data.type === 'CHANGE_SOURCE') {
@@ -7842,12 +7938,39 @@ class MovieDetailsManager {
             } else if (event.data.type === 'PLAYER_EPISODE_NAVIGATE') {
                 await this.requestPlayerEpisodeNavigation(event.data.direction);
             } else if (event.data.type === 'UPDATE_WATCHING_PROGRESS') {
-                const { season, episode, timestamp } = event.data;
+                const {
+                    season,
+                    episode,
+                    seasonNumber,
+                    episodeNumber,
+                    timestamp,
+                    selectionVersion,
+                    providerId,
+                    origin
+                } = event.data;
+                const currentSelection = this.playbackController?.getSelection?.();
+                const incomingSeasonNumber = this.parsePlaybackNumber(seasonNumber ?? season);
+                const incomingEpisodeNumber = this.parsePlaybackNumber(episodeNumber ?? episode);
+                if (this.isExplicitPlaybackSelection(currentSelection)
+                    && origin !== 'USER_PROVIDER_SELECTION'
+                    && ((incomingSeasonNumber != null
+                        && currentSelection.seasonNumber != null
+                        && incomingSeasonNumber !== Number(currentSelection.seasonNumber))
+                        || (incomingEpisodeNumber != null
+                            && currentSelection.episodeNumber != null
+                            && incomingEpisodeNumber !== Number(currentSelection.episodeNumber)))) {
+                    return;
+                }
                 if (this.playbackController) {
                     this.playbackController.handleProgressUpdate({
                         season,
                         episode,
+                        seasonNumber,
+                        episodeNumber,
                         timestamp,
+                        selectionVersion,
+                        providerId,
+                        origin,
                         movieId: this.selectedMovie?.kinopoiskId
                     });
                 }
@@ -9079,10 +9202,12 @@ class MovieDetailsManager {
         this.torrentSearchState = { status: 'idle', found: 0 };
         this.torrentSort = 'recommended';
         this.torrentQualityFilter = 'all';
+        this.torrentLanguageFilter = 'all';
         this.elements.torrentSourceControls?.querySelectorAll('[data-quality-filter]').forEach((item) => {
             item.classList.toggle('is-active', item.getAttribute('data-quality-filter') === 'all');
         });
         if (this.elements.torrentSourceSort) this.elements.torrentSourceSort.value = 'recommended';
+        if (this.elements.torrentSourceLanguageFilter) this.elements.torrentSourceLanguageFilter.value = 'all';
         this.elements.torrentSourceList?.replaceChildren();
         this.elements.torrentDownloadList?.replaceChildren();
         this.elements.torrentDownloadLibrary?.setAttribute('hidden', '');
@@ -9235,13 +9360,168 @@ class MovieDetailsManager {
         this.torrentRequestId += 1;
     }
 
+    normalizeTorrentLanguage(value) {
+        const text = String(
+            value && typeof value === 'object'
+                ? (value.code || value.language || value.name || value.label || '')
+                : value || '',
+        ).trim().toLowerCase();
+        if (!text) return null;
+        if (/^(?:ru|rus|russian|рус|русс|русский|русская|русское)/i.test(text)) return 'ru';
+        if (/^(?:en|eng|english|англ|английский|английская)/i.test(text)) return 'en';
+        return null;
+    }
+
+    getTorrentLanguageValues(value) {
+        const values = Array.isArray(value)
+            ? value
+            : typeof value === 'string'
+                ? value.split(/[,;/|]+/)
+                : value
+                    ? [value]
+                    : [];
+        return [...new Set(values.map(item => this.normalizeTorrentLanguage(item)).filter(Boolean))];
+    }
+
+    hasTorrentToken(value, tokens = []) {
+        const normalized = this.normalizeTorrentText(value);
+        return tokens.some(token => new RegExp(`(^|[^A-ZА-ЯЁ0-9])${token}(?=$|[^A-ZА-ЯЁ0-9])`, 'i').test(normalized));
+    }
+
+    normalizeTorrentText(value) {
+        return String(value || '')
+            .normalize('NFKD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toUpperCase()
+            .replace(/\[/g, ' ')
+            .replace(/\]/g, ' ')
+            .replace(/[(){},]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    hasTorrentSubtitleContext(value, start, end) {
+        const before = value.slice(Math.max(0, start - 18), start);
+        if (this.hasTorrentToken(before, ['SUB', 'SUBS', 'SUBBED', 'SUBTITLE', 'SUBTITLES', 'СУБТИТР'])) {
+            return true;
+        }
+        const after = value.slice(end, Math.min(value.length, end + 16));
+        return /^\s*[._-]\s*(?:SUB|SUBS|SUBBED|SUBTITLE|SUBTITLES)(?:\b|[._-])/.test(after);
+    }
+
+    hasTorrentAudioToken(value, tokens = []) {
+        const normalized = this.normalizeTorrentText(value);
+        return tokens.some(token => {
+            const escaped = String(token).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const pattern = new RegExp(`(^|[^A-ZА-ЯЁ0-9])${escaped}(?=$|[^A-ZА-ЯЁ0-9])`, 'gi');
+            for (const match of normalized.matchAll(pattern)) {
+                const start = (match.index || 0) + match[1].length;
+                const end = start + String(token).length;
+                if (!this.hasTorrentSubtitleContext(normalized, start, end)) return true;
+            }
+            return false;
+        });
+    }
+
+    getTorrentSourceLanguages(source = {}) {
+        const declaredAudio = this.getTorrentLanguageValues(source.audioLanguages);
+        const declaredLanguage = this.normalizeTorrentLanguage(source.language);
+        if (declaredLanguage && !declaredAudio.includes(declaredLanguage)) declaredAudio.push(declaredLanguage);
+
+        const text = `${source.quality || ''} ${source.title || ''}`;
+        const inferredAudio = [];
+        if (this.hasTorrentAudioToken(text, ['RUS', 'RUSSIAN', 'РУС', 'РУССК', 'РУССИЙ', 'РУССКАЯ'])) inferredAudio.push('ru');
+        if (this.hasTorrentAudioToken(text, ['ENG', 'ENGLISH', 'АНГЛ', 'АНГЛИЙСК'])) inferredAudio.push('en');
+        if (this.hasTorrentToken(text, [
+            'DUB',
+            'DUBBED',
+            'MVO',
+            'HDREZKA',
+            'PARAGRAPH MEDIA',
+            'LOSTFILM',
+            'NEWSTUDIO',
+            'TVSHOW',
+            'JASKIER',
+            'КУБИК В КУБЕ',
+            'ДВОЙНАЯ ОЗВУЧКА',
+            'МНОГОГОЛОСАЯ'
+        ])) inferredAudio.push('ru');
+
+        const audioLanguages = [...new Set([...declaredAudio, ...inferredAudio])];
+        const subtitleLanguages = this.getTorrentLanguageValues(source.subtitleLanguages);
+        const confidence = source.languageConfidence === 'declared' || declaredAudio.length
+            ? 'declared'
+            : audioLanguages.length
+                ? 'title'
+                : 'unknown';
+        return { audioLanguages, subtitleLanguages, confidence };
+    }
+
+    getTorrentQualityDetails(source = {}) {
+        const supplied = source.qualityDetails;
+        if (supplied && typeof supplied === 'object') {
+            const score = Number(supplied.score);
+            const resolution = supplied.resolution === null || supplied.resolution === undefined || supplied.resolution === ''
+                ? NaN
+                : Number(supplied.resolution);
+            if (Number.isFinite(score) || (Number.isFinite(resolution) && resolution > 0)) {
+                return {
+                    ...supplied,
+                    score: Number.isFinite(score) ? score : 0,
+                    resolution: Number.isFinite(resolution) && resolution > 0 ? resolution : null,
+                    label: String(supplied.label || source.quality || 'Качество не указано')
+                };
+            }
+        }
+
+        const text = `${source.quality || ''} ${source.title || ''}`
+            .normalize('NFKD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toUpperCase();
+        const resolution = this.hasTorrentToken(text, ['2160P', '4K', 'UHD']) ? 2160
+            : this.hasTorrentToken(text, ['1440P', '2K', 'QHD']) ? 1440
+                : this.hasTorrentToken(text, ['1080P', 'FHD']) ? 1080
+                    : this.hasTorrentToken(text, ['720P', 'HD']) ? 720
+                        : this.hasTorrentToken(text, ['576P', '576']) ? 576
+                            : this.hasTorrentToken(text, ['480P', '480', 'SD']) ? 480
+                                : null;
+        const releaseSource = this.hasTorrentToken(text, ['REMUX']) ? 'remux'
+            : this.hasTorrentToken(text, ['BLURAY', 'BLU-RAY']) ? 'bluray'
+                : this.hasTorrentToken(text, ['WEB-DL', 'WEBDL']) ? 'web-dl'
+                    : this.hasTorrentToken(text, ['WEBRIP', 'WEB-RIP']) ? 'webrip'
+                        : this.hasTorrentToken(text, ['BDRIP', 'BD-RIP']) ? 'bdrip'
+                            : this.hasTorrentToken(text, ['HDRIP', 'HD-RIP']) ? 'hdrip'
+                                : this.hasTorrentToken(text, ['DVDRIP', 'DVD-RIP']) ? 'dvdrip'
+                                    : this.hasTorrentToken(text, ['CAM', 'CAMRIP', 'TS', 'TELESYNC', 'TC']) ? 'cam'
+                                        : 'unknown';
+        const codec = this.hasTorrentToken(text, ['HEVC', 'H265', 'X265']) ? 'hevc'
+            : this.hasTorrentToken(text, ['AV1']) ? 'av1'
+                : this.hasTorrentToken(text, ['VP9']) ? 'vp9'
+                    : this.hasTorrentToken(text, ['H264', 'H.264', 'AVC', 'X264']) ? 'h264'
+                        : 'unknown';
+        const resolutionScore = { 2160: 40, 1440: 32, 1080: 28, 720: 18, 576: 10, 480: 8 };
+        const sourceScore = { remux: 30, bluray: 27, 'web-dl': 25, webrip: 20, bdrip: 19, hdrip: 14, dvdrip: 8, cam: 0, unknown: 4 };
+        const codecScore = { hevc: 4, av1: 4, vp9: 3, h264: 2, unknown: 0 };
+        const labelSource = { remux: 'Remux', bluray: 'BluRay', 'web-dl': 'WEB-DL', webrip: 'WEBRip', bdrip: 'BDRip', hdrip: 'HDRip', dvdrip: 'DVDRip', cam: 'CAM/TS', unknown: '' };
+        const label = [resolution ? `${resolution}p` : null, labelSource[releaseSource] || null, codec === 'unknown' ? null : codec.toUpperCase()]
+            .filter(Boolean)
+            .join(' · ');
+        return {
+            resolution,
+            source: releaseSource,
+            codec,
+            score: (resolution ? resolutionScore[resolution] : 0) + sourceScore[releaseSource] + codecScore[codec],
+            label: label || String(source.quality || 'Качество не указано')
+        };
+    }
+
     getTorrentQualityRank(source = {}) {
-        const text = `${source.quality || ''} ${source.title || ''}`.toLowerCase();
-        if (/\b(?:4k|2160p|uhd)\b/.test(text)) return 4;
-        if (/\b(?:2k|1440p|qhd)\b/.test(text)) return 3;
-        if (/\b(?:1080p|full[ .-]?hd)\b/.test(text)) return 2;
-        if (/\b(?:720p|hd)\b/.test(text)) return 1;
-        if (/\b(?:576p|480p|sd)\b/.test(text)) return 0;
+        const resolution = this.getTorrentQualityDetails(source).resolution;
+        if (resolution >= 2160) return 4;
+        if (resolution >= 1440) return 3;
+        if (resolution >= 1080) return 2;
+        if (resolution >= 720) return 1;
+        if (resolution >= 480) return 0;
         return -1;
     }
 
@@ -9291,22 +9571,34 @@ class MovieDetailsManager {
     compareTorrentSources(first = {}, second = {}) {
         const firstSeeders = this.getTorrentNumber(first.seeders);
         const secondSeeders = this.getTorrentNumber(second.seeders);
-        const firstQuality = this.getTorrentQualityRank(first);
-        const secondQuality = this.getTorrentQualityRank(second);
+        const firstQualityScore = this.getTorrentQualityDetails(first).score;
+        const secondQualityScore = this.getTorrentQualityDetails(second).score;
         const firstSize = this.getTorrentNumber(first.sizeBytes, Number.MAX_SAFE_INTEGER);
         const secondSize = this.getTorrentNumber(second.sizeBytes, Number.MAX_SAFE_INTEGER);
         const sort = this.torrentSort;
         let difference;
 
-        if (sort === 'quality') difference = secondQuality - firstQuality;
+        if (sort === 'quality') difference = secondQualityScore - firstQualityScore;
         else if (sort === 'size-asc') difference = firstSize - secondSize;
         else if (sort === 'size-desc') difference = secondSize - firstSize;
-        else difference = secondSeeders - firstSeeders;
+        else if (sort === 'recommended') {
+            const firstLanguages = this.getTorrentSourceLanguages(first);
+            const secondLanguages = this.getTorrentSourceLanguages(second);
+            const firstRecommended = firstQualityScore * 100
+                + (firstLanguages.audioLanguages.length ? 3 : 0)
+                + (firstLanguages.confidence === 'declared' ? 2 : 0)
+                + Math.min(firstSeeders, 100);
+            const secondRecommended = secondQualityScore * 100
+                + (secondLanguages.audioLanguages.length ? 3 : 0)
+                + (secondLanguages.confidence === 'declared' ? 2 : 0)
+                + Math.min(secondSeeders, 100);
+            difference = secondRecommended - firstRecommended;
+        } else difference = secondSeeders - firstSeeders;
         if (difference) return difference;
 
         difference = secondSeeders - firstSeeders;
         if (difference) return difference;
-        difference = secondQuality - firstQuality;
+        difference = secondQualityScore - firstQualityScore;
         if (difference) return difference;
         difference = firstSize - secondSize;
         if (difference) return difference;
@@ -9317,11 +9609,31 @@ class MovieDetailsManager {
     }
 
     getVisibleTorrentSources(sources = this.torrentSources) {
-        const filter = this.torrentQualityFilter || 'all';
+        const qualityFilter = this.torrentQualityFilter || 'all';
+        const languageFilter = this.torrentLanguageFilter || 'all';
         return this.deduplicateTorrentSources(sources)
-            .filter(source => filter === 'all' || this.getTorrentQualityBucket(source) === filter)
+            .filter(source => qualityFilter === 'all' || this.getTorrentQualityBucket(source) === qualityFilter)
+            .filter(source => this.hasRequestedTorrentLanguage(source, languageFilter))
             .slice()
             .sort((first, second) => this.compareTorrentSources(first, second));
+    }
+
+    hasRequestedTorrentLanguage(source = {}, filter = 'all') {
+        if (filter === 'all') return true;
+        const languages = new Set(this.getTorrentSourceLanguages(source).audioLanguages);
+        if (filter === 'unknown') return languages.size === 0;
+        if (filter === 'bilingual') return languages.has('ru') && languages.has('en');
+        return languages.has(filter);
+    }
+
+    getTorrentSourceLanguageLabel(source = {}) {
+        const metadata = this.getTorrentSourceLanguages(source);
+        const languages = new Set(metadata.audioLanguages);
+        if (languages.has('ru') && languages.has('en')) return 'RU + EN';
+        if (languages.has('ru')) return 'RU';
+        if (languages.has('en')) return 'EN';
+        if (metadata.subtitleLanguages.length) return 'Субтитры';
+        return 'Язык не указан';
     }
 
     getTorrentMovieKey(movie = this.selectedMovie) {
@@ -9414,7 +9726,11 @@ class MovieDetailsManager {
         const found = this.torrentSearchState.found || this.torrentSources.length;
         const visible = this.getVisibleTorrentSources().length;
         if (!found) {
-            this.setTorrentSourceStatus('Для этого фильма раздачи не найдены.');
+            this.setTorrentSourceStatus(
+                this.torrentSearchState.status === 'running'
+                    ? 'Ищем раздачи…'
+                    : 'Для этого фильма раздачи не найдены.'
+            );
             return;
         }
         const limit = Math.max(1, Number(this.torrentVisibleSourceLimit) || 10);
@@ -9454,7 +9770,11 @@ class MovieDetailsManager {
 
             const quality = document.createElement('span');
             quality.className = 'torrent-source-card__quality';
-            quality.textContent = String(source.quality || 'Качество не указано');
+            quality.textContent = this.getTorrentQualityDetails(source).label;
+
+            const language = document.createElement('span');
+            language.className = 'torrent-source-card__language';
+            language.textContent = this.getTorrentSourceLanguageLabel(source);
 
             const provider = document.createElement('span');
             provider.className = 'torrent-source-card__provider';
@@ -9462,6 +9782,12 @@ class MovieDetailsManager {
 
             const meta = document.createElement('span');
             meta.className = 'torrent-source-card__meta';
+            const releaseYear = Number(source.year);
+            if (Number.isInteger(releaseYear) && releaseYear > 0) {
+                const year = document.createElement('span');
+                year.textContent = `Год: ${releaseYear}`;
+                meta.appendChild(year);
+            }
             const size = document.createElement('span');
             size.textContent = `Размер: ${this.formatTorrentBytes(source.sizeBytes)}`;
             const peers = document.createElement('span');
@@ -9470,7 +9796,7 @@ class MovieDetailsManager {
             leechers.textContent = `Личеры: ${this.getTorrentNumber(source.leechers, '—')}`;
             meta.append(size, peers, leechers);
 
-            card.append(title, quality, provider, meta);
+            card.append(title, quality, language, provider, meta);
             item.appendChild(card);
             list.appendChild(item);
         });
@@ -9478,9 +9804,9 @@ class MovieDetailsManager {
             const empty = document.createElement('div');
             empty.className = 'torrent-source-empty';
             empty.setAttribute('role', 'status');
-            empty.textContent = this.torrentQualityFilter === 'all'
+            empty.textContent = this.torrentQualityFilter === 'all' && (this.torrentLanguageFilter || 'all') === 'all'
                 ? 'Подходящих раздач нет.'
-                : 'Для выбранного качества раздач нет. Выберите «Все» или другое качество.';
+                : 'По выбранным фильтрам раздач нет. Выберите «Все» или другой язык/формат.';
             list.appendChild(empty);
         }
         if (this.elements.torrentSourceDisclosure) {
@@ -11444,6 +11770,60 @@ class MovieDetailsManager {
                     });
                 }
             } catch (e) { console.error('Error updating button:', e); }
+        }
+    }
+
+    updateRandomPoolAction(buttonElement, isInPool) {
+        if (!buttonElement) return;
+
+        const icon = buttonElement.querySelector('.mc-menu-item-icon');
+        const label = buttonElement.querySelector('.mc-menu-item-text');
+        buttonElement.classList.toggle('active', isInPool);
+        buttonElement.setAttribute('aria-pressed', String(isInPool));
+        if (label) {
+            label.textContent = i18n.get(isInPool ? 'movie_card.random_pool_added' : 'movie_card.add_random_pool');
+        }
+        if (icon) {
+            icon.innerHTML = isInPool
+                ? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4L19 6"></path></svg>'
+                : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"></rect><circle cx="8" cy="8" r="1"></circle><circle cx="16" cy="8" r="1"></circle><circle cx="8" cy="16" r="1"></circle><circle cx="16" cy="16" r="1"></circle><circle cx="12" cy="12" r="1"></circle></svg>';
+        }
+    }
+
+    async syncRandomPoolAction(movie = this.selectedMovie) {
+        const actionButton = this.elements.movieDetailsContainer?.querySelector('[data-action="add-to-random-pool"]');
+        if (!actionButton || !movie || typeof RandomPoolService === 'undefined') return;
+        const pageContext = this.capturePageContext(movie);
+
+        try {
+            const pool = await RandomPoolService.getPool();
+            if (!this.isPageContextCurrent(pageContext)) return;
+            this.updateRandomPoolAction(actionButton, RandomPoolService.isInPool(pool, movie));
+        } catch (error) {
+            console.warn('[MovieDetails] Failed to read Random pool state:', error);
+        }
+    }
+
+    async handleAddToRandomPool(movieId, buttonElement) {
+        const movie = this.selectedMovie;
+        if (!movie || String(movie.kinopoiskId) !== String(movieId) || typeof RandomPoolService === 'undefined') return;
+
+        buttonElement.disabled = true;
+        buttonElement.setAttribute('aria-busy', 'true');
+        try {
+            const result = await RandomPoolService.addMovie(movie);
+            this.updateRandomPoolAction(buttonElement, true);
+            document.querySelectorAll('.mc-menu-dropdown.active').forEach(menu => menu.classList.remove('active'));
+            Utils.showToast(
+                i18n.get(result.added ? 'movie_card.add_random_pool' : 'movie_card.random_pool_added'),
+                'success'
+            );
+        } catch (error) {
+            console.error('[MovieDetails] Failed to add movie to Random pool:', error);
+            Utils.showToast(i18n.get('movie_card.random_pool_error'), 'error');
+        } finally {
+            buttonElement.disabled = false;
+            buttonElement.removeAttribute('aria-busy');
         }
     }
 

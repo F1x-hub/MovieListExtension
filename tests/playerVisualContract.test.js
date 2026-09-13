@@ -5,6 +5,7 @@ console.log('🧪 Running player visual contract tests...');
 
 const read = path => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
 const css = read('../src/shared/styles/player.css');
+const backToTopCss = read('../src/shared/styles/back-to-top.css');
 const html = read('../src/pages/movie-details/movie-details.html');
 const movieDetails = read('../src/pages/movie-details/movie-details.js');
 const baseParser = read('../src/shared/services/parsers/BaseParserService.js');
@@ -15,6 +16,19 @@ assert.doesNotMatch(css, /\.watch-btn(?:\b|-)/, 'legacy Netflix-red watch button
 assert.doesNotMatch(css, /height:\s*(?:80|70)vh\b/, 'player modal must not use fixed 80vh/70vh heights');
 assert.match(css, /aspect-ratio:\s*16\s*\/\s*9/, 'player viewport must use a 16:9 aspect ratio');
 assert.match(css, /body\.player-modal-open\s*\{[\s\S]*?overflow:\s*hidden/, 'open player must lock page scrolling');
+assert.match(
+    css,
+    /\.restore-player-btn\s*\{[\s\S]*?bottom:\s*calc\(20px \+ 36px \+ 12px \+ env\(safe-area-inset-bottom, 0px\)\)[\s\S]*?right:\s*20px;[\s\S]*?max-width:\s*calc\(100vw - 40px\)/,
+    'desktop restore dock must stack above the back-to-top control'
+);
+assert.match(css, /\.restore-player-btn\s*\{[\s\S]*?background:\s*var\(--theme-bg-card[\s\S]*?backdrop-filter:\s*blur\(16px\)[\s\S]*?border:\s*1px solid var\(--theme-border/, 'restore dock must share the floating control surface tokens');
+assert.match(
+    css,
+    /@media \(max-width: 480px\) \{[\s\S]*?\.restore-player-btn\s*\{[\s\S]*?right:\s*14px;[\s\S]*?bottom:\s*calc\(14px \+ 36px \+ 12px \+ env\(safe-area-inset-bottom, 0px\)\)/,
+    'mobile restore dock must stack above the back-to-top control'
+);
+assert.match(backToTopCss, /bottom:\s*calc\(20px \+ env\(safe-area-inset-bottom, 0px\)\)/, 'back-to-top must respect the bottom safe area');
+assert.match(backToTopCss, /bottom:\s*calc\(14px \+ env\(safe-area-inset-bottom, 0px\)\)/, 'mobile back-to-top must respect the bottom safe area');
 // Exact viewport fit is exercised in Chromium by torrentModalLayout.test.cjs.
 assert.match(css, /width:\s*min\(94vw,\s*1180px,\s*calc\(177\.78dvh\s*-\s*\d+px\)\)/, 'modal width must reserve vertical room for its controls');
 assert.match(css, /\.video-modal\s*>\s*\.video-body\s*\{[^}]*overflow-y:\s*auto\s*!important/, 'player body must allow access to the torrent workspace');

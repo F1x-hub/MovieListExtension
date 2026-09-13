@@ -60,6 +60,8 @@ MovieList-extension-*.zip
 MovieListSetup.exe
 update.json
 update.json.sig
+.update-mirror/
+gha-creds-*.json
 update-signing-private.pem
 native-host/**/bin/
 native-host/**/obj/

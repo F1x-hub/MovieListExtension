@@ -81,7 +81,8 @@ vm.runInNewContext(source, context, { filename: 'UpdateService.js' });
     const state = await context.UpdateService.checkForUpdates({ force: true });
     assert.strictEqual(state.status, 'available_manual');
     assert.strictEqual(state.availableVersion, '1.3.0');
-    assert.strictEqual(fetchCount, 2);
+assert.strictEqual(fetchCount, 2);
+assert.match(source, /\\d\+\(\?:\\\.\\d\+\)\{2,3\}/);
     assert.strictEqual(alarms.length, 0);
     assert.strictEqual(
         context.UpdateService.getSetupUrl(),
@@ -126,13 +127,39 @@ vm.runInNewContext(source, context, { filename: 'UpdateService.js' });
     const cachedState = await context.UpdateService.checkForUpdates();
     assert.strictEqual(cachedState.status, 'available_manual');
     assert.strictEqual(fetchCount, 2, 'a throttled check must not fetch the release again');
-   await context.UpdateService.handleAlarm({ name: 'checkUpdatesSafeRetry' });
-   assert.strictEqual(fetchCount, 4);
+    await context.UpdateService.handleAlarm({ name: 'checkUpdatesSafeRetry' });
+    assert.strictEqual(fetchCount, 4);
     nativeUpdaterVersion = '1.0.0';
     const migrationState = await context.UpdateService.checkForUpdates({ force: true });
     assert.strictEqual(migrationState.status, 'setup_required');
     assert.strictEqual(migrationState.errorCode, 'UPDATER_UPGRADE_REQUIRED');
-   console.log('updateService.test.js passed');
+    let failedRequests = 0;
+    context.fetch = async () => {
+        failedRequests += 1;
+        throw new TypeError('Failed to fetch');
+    };
+    const failedCheck = await context.UpdateService.checkForUpdates({ force: true });
+    assert.strictEqual(failedCheck.status, 'check_failed', 'stale metadata must not hide a network failure');
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.strictEqual(failedRequests, 12, 'two metadata files on two sources each make at most three attempts');
+    assert.match(failedCheck.errorMessage, /NETWORK_FAILED_/);
+    nativeUpdaterVersion = '1.1.4';
+    let githubFailures = 0;
+    let mirrorRequests = 0;
+    context.fetch = async url => {
+        if (url.startsWith('https://github.com/')) {
+            githubFailures++;
+            throw new TypeError('unreachable');
+        }
+        mirrorRequests++;
+        return { ok: true, status: 200, text: async () => url.endsWith('.sig') ? 'mirror-signature' : JSON.stringify(metadata) };
+    };
+    const mirrorState = await context.UpdateService.checkForUpdates({ force: true });
+    assert.strictEqual(mirrorState.status, 'available_manual');
+    assert.strictEqual(mirrorState.signature, 'mirror-signature');
+    assert.strictEqual(githubFailures, 6);
+    assert.strictEqual(mirrorRequests, 2);
+    console.log('updateService.test.js passed');
 })().catch((error) => {
     console.error(error);
     process.exitCode = 1;

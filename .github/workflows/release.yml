@@ -4,9 +4,14 @@ on:
   push:
     tags:
       - 'v*.*.*'
+      - 'v*.*.*.*'
 
 permissions:
   contents: write
+
+concurrency:
+  group: extension-production-release
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -31,7 +36,7 @@ jobs:
         run: npm test
 
       - name: Run updater contract tests
-        run: npm run test:random-marathon && npm run test:update-service && npm run test:package-release && npm run test-popup-surface-contract && npm run test:updater-setup
+        run: npm run test:random-marathon && npm run test:update-service && npm run test:package-release && npm run test-popup-surface-contract && npm run test:updater-setup && node tests/updateMirror.test.cjs
 
       - name: Build and package extension
         run: npm run package-release
@@ -50,9 +55,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $existingRelease = gh release view $env:GITHUB_REF_NAME 2>$null
-          if ($LASTEXITCODE -eq 0) {
-            gh release delete $env:GITHUB_REF_NAME --yes
-          }
+          if ($LASTEXITCODE -eq 0) { throw 'Release already exists; resume it explicitly instead of deleting published assets.' }
           $version = $env:GITHUB_REF_NAME.TrimStart('v')
           gh release create $env:GITHUB_REF_NAME `
             --verify-tag `
@@ -61,6 +64,24 @@ jobs:
             --generate-notes `
             "MovieList-extension-$version.zip" "MovieListSetup.exe" "update.json" "update.json.sig"
 
+      - name: Authenticate Firebase deployment
+        id: firebase-auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
+          token_format: access_token
+
+      - name: Prepare latest mirror and reject older versions
+        run: node scripts/update-mirror.cjs prepare
+
+      - name: Publish latest extension ZIP to Firebase Hosting
+        run: npx --yes firebase-tools@latest deploy --only hosting --config firebase.updates.json --project movielistdb-13208 --non-interactive
+
+      - name: Verify mirror and remove previous archives
+        env:
+          GOOGLE_ACCESS_TOKEN: ${{ steps.firebase-auth.outputs.access_token }}
+        run: node scripts/update-mirror.cjs verify-cleanup
+
       - name: Publish release after asset upload
         shell: pwsh
         env:
@@ -68,7 +89,6 @@ jobs:
         run: gh release edit $env:GITHUB_REF_NAME --draft=false
 
       - name: Mark the newest release as latest
-        if: github.ref_name == 'v1.3.2'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
