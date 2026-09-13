@@ -70,6 +70,15 @@ the site `movielistdb-13208-updates` in project `movielistdb-13208` once before 
 first release. Hosting must permit EXE distribution (Spark restricts executable
 files). No credentials are stored in this repository.
 
+The repository secret must contain the complete JSON object, including
+`project_id`, `client_email`, and `private_key`. Add it in GitHub under
+**Settings → Secrets and variables → Actions → New repository secret** with the
+exact name `FIREBASE_SERVICE_ACCOUNT`; do not paste the JSON into the workflow.
+The release job validates this secret before creating a draft release, and a
+rerun resumes a draft left by an interrupted job. The error
+`The GitHub Action workflow must specify exactly one of "workload_identity_provider" or "credentials_json"`
+means that `FIREBASE_SERVICE_ACCOUNT` was empty or unavailable to the workflow.
+
 The extension retries each metadata file up to three total attempts, then fetches
 both metadata and signature from the mirror. The Native Host verifies the signature
 before trusting any download. Existing installations must run the 1.1.4 Setup once;
