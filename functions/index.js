@@ -19,6 +19,7 @@ const {
 const { createWatchRoomService } = require("./watchRoomService");
 const { createWatchRoomsStagingHandler } = require("./watchRoomsStaging");
 const { createExpiredWatchRoomCleanup } = require("./watchRoomCleanup");
+const { createRandomMarathonHandler } = require("./randomMarathon");
 const {
   buildMovieRatingProjection,
   isAggregateRelevantRatingChange,
@@ -205,6 +206,24 @@ exports.watchRoomsStaging = onRequest(
     service: createWatchRoomService({ db, collectionPrefix: "watchRoomsStaging", emitAclOutbox: false }),
     verifyIdToken: (idToken) => getAuth(app).verifyIdToken(idToken),
     getRealtimeDatabase: getWatchRoomStagingDatabase,
+  })
+);
+
+/**
+ * Server-owned mutations for the shared Random-page movie marathon.
+ * Firestore remains the read/subscription surface; this endpoint owns
+ * authorization, the per-user proposal cap, and state transitions.
+ */
+exports.randomMarathon = onRequest(
+  {
+    region: "us-central1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+  },
+  createRandomMarathonHandler({
+    db,
+    auth: getAuth(app),
+    FieldValue,
   })
 );
 

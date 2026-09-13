@@ -141,6 +141,9 @@
                 </svg>
                 Пул (<span id="poolCount">0</span>)
             </button>
+            <button class="btn pool-btn-secondary" id="showMarathonBtn">
+                Киномарафон
+            </button>
         </div>
 
         <!-- Result Section (Center) -->
@@ -223,6 +226,27 @@
         </div>
     </div>
 
+    <!-- Shared authenticated marathon modal -->
+    <div id="marathonModal" class="pool-modal hidden" role="dialog" aria-modal="true" aria-labelledby="marathonModalTitle">
+        <div class="pool-modal-inner marathon-modal-inner">
+            <div class="pool-modal-header">
+                <span id="marathonModalTitle">Киномарафон</span>
+                <button class="btn-icon pool-modal-close-btn" id="closeMarathonModal" aria-label="Закрыть">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div id="marathonSummary" class="marathon-summary" aria-live="polite"></div>
+            <div class="marathon-search-wrap">
+                <input type="text" id="marathonSearchInput" class="pool-search-input" placeholder="Добавить фильм в киномарафон...">
+                <div id="marathonSearchResults" class="pool-search-results hidden"></div>
+            </div>
+            <div id="marathonList" class="pool-list marathon-list"></div>
+            <div id="marathonActions" class="pool-modal-footer marathon-actions"></div>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script src="../../../libs/firebase-app-compat.js"></script>
     <script src="../../../libs/firebase-firestore-compat.js"></script>
@@ -243,6 +267,8 @@
     <script src="../../shared/utils/IconUtils.js"></script>
     <script src="../../shared/utils/Icons.js"></script>
     <script src="../../shared/utils/Utils.js"></script>
+    <script src="../../shared/services/RandomPoolService.js"></script>
+    <script src="../../shared/services/RandomMarathonService.js"></script>
     <script src="../../shared/components/BackToTop.js"></script>
     <script src="../../shared/components/Navigation.js"></script>
     <script src="../../shared/firestore.js"></script>

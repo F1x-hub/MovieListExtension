@@ -44,6 +44,14 @@ class RandomManager {
         this._searchTimer = null;
         this.rollAnimRunning = false;
         this.rollDrumOffset = 0;
+        this.marathonService = null;
+        this.marathonState = { round: null, items: [] };
+        this.marathonIsAdmin = false;
+        this._marathonUnsubscribe = null;
+        this._marathonSearchTimer = null;
+        this._marathonMutationRunning = false;
+        this._marathonAuthRefreshId = 0;
+        this._marathonPendingRemovals = new Set();
 
         this.init();
 
@@ -61,6 +69,7 @@ class RandomManager {
         this.loadPreferences(); 
         this.setupEventListeners();
         await this.loadPool();
+        await this.initMarathon();
 
         // Listen for language changes
         chrome.runtime.onMessage.addListener((message) => {
@@ -743,8 +752,7 @@ class RandomManager {
     /** Load pool from chrome.storage.local */
     async loadPool() {
         try {
-            const data = await chrome.storage.local.get(this.POOL_KEY);
-            this.pool = data[this.POOL_KEY] || [];
+            this.pool = await RandomPoolService.getPool();
             this._updatePoolUI();
         } catch {
             console.warn('RandomManager: Failed to load pool');
@@ -754,7 +762,7 @@ class RandomManager {
     /** Persist pool to chrome.storage.local and refresh counter */
     async _savePool() {
         try {
-            await chrome.storage.local.set({ [this.POOL_KEY]: this.pool });
+            this.pool = await RandomPoolService.savePool(this.pool);
         } catch {
             console.warn('RandomManager: Failed to save pool');
         }
@@ -769,7 +777,7 @@ class RandomManager {
 
     /** Check if a kpId is already in the pool */
     _isInPool(kpId) {
-        return this.pool.some(m => m.kpId === kpId);
+        return RandomPoolService.isInPool(this.pool, kpId);
     }
 
     /** Calculate days in pool based on calendar dates */
@@ -786,16 +794,10 @@ class RandomManager {
     /** Add the currently displayed movie to the pool */
     _addCurrentMovieToPool() {
         if (!this.currentMovie) return;
-        const kpId = this.currentMovie.kinopoiskId;
-        if (this._isInPool(kpId)) return;
-        this.pool.push({
-            kpId,
-            title: this.currentMovie.name || this.currentMovie.alternativeName,
-            year: this.currentMovie.year,
-            poster: this.currentMovie.posterUrl,
-            rating: this.currentMovie.kpRating,
-            addedAt: new Date().toISOString()
-        });
+        if (this._isInPool(this.currentMovie.kinopoiskId)) return;
+        const entry = RandomPoolService.createEntry(this.currentMovie);
+        if (!entry) return;
+        this.pool.push(entry);
         this._savePool();
     }
 
@@ -886,6 +888,339 @@ class RandomManager {
                 this._rollFromPool();
             });
         }
+
+        const showMarathonBtn = document.getElementById('showMarathonBtn');
+        if (showMarathonBtn) {
+            showMarathonBtn.addEventListener('click', () => {
+                this._renderMarathon();
+                document.getElementById('marathonModal')?.classList.remove('hidden');
+            });
+        }
+        const closeMarathonBtn = document.getElementById('closeMarathonModal');
+        if (closeMarathonBtn) {
+            closeMarathonBtn.addEventListener('click', () => document.getElementById('marathonModal')?.classList.add('hidden'));
+        }
+        const marathonModal = document.getElementById('marathonModal');
+        if (marathonModal) {
+            marathonModal.addEventListener('click', (event) => {
+                if (event.target === marathonModal) marathonModal.classList.add('hidden');
+            });
+        }
+        document.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape') return;
+            document.getElementById('marathonModal')?.classList.add('hidden');
+            document.getElementById('poolModal')?.classList.add('hidden');
+        });
+        const marathonSearchInput = document.getElementById('marathonSearchInput');
+        if (marathonSearchInput) {
+            marathonSearchInput.addEventListener('input', (event) => {
+                clearTimeout(this._marathonSearchTimer);
+                const query = event.target.value.trim();
+                const results = document.getElementById('marathonSearchResults');
+                if (query.length < 2) {
+                    results?.classList.add('hidden');
+                    return;
+                }
+                this._marathonSearchTimer = setTimeout(() => this._searchForMarathon(query), 500);
+            });
+        }
+    }
+
+    async initMarathon() {
+        if (typeof RandomMarathonService === 'undefined' || typeof firebaseManager === 'undefined') return;
+        try {
+            await firebaseManager.waitForAuthReady();
+            this.marathonService = new RandomMarathonService(firebaseManager);
+            this._marathonAuthHandler = () => this._refreshMarathonForAuth().catch((error) => {
+                console.warn('RandomManager: marathon auth refresh failed', error);
+                this.marathonState = { round: null, items: [], error: this._formatMarathonError(error) };
+                this._renderMarathon();
+            });
+            window.addEventListener('authStateChanged', this._marathonAuthHandler);
+            await this._refreshMarathonForAuth();
+        } catch (error) {
+            console.warn('RandomManager: marathon is unavailable', error);
+            this.marathonState = { round: null, items: [], error: this._formatMarathonError(error) };
+            this._renderMarathon();
+        }
+    }
+
+    async _refreshMarathonForAuth() {
+        if (!this.marathonService || typeof firebaseManager === 'undefined') return;
+        const refreshId = ++this._marathonAuthRefreshId;
+        if (this._marathonUnsubscribe) {
+            this._marathonUnsubscribe();
+            this._marathonUnsubscribe = null;
+        }
+        const user = firebaseManager.getCurrentUser?.() || null;
+        this.marathonIsAdmin = false;
+        this.marathonState = { round: null, items: [] };
+        this._renderMarathon();
+        if (!user) {
+            return;
+        }
+        const isAdmin = await this.marathonService.isAdmin().catch(() => false);
+        if (refreshId !== this._marathonAuthRefreshId) return;
+        this.marathonIsAdmin = isAdmin;
+        this._marathonUnsubscribe = this.marathonService.subscribe(
+            (state) => {
+                if (refreshId !== this._marathonAuthRefreshId) return;
+                this.marathonState = state;
+                this._renderMarathon();
+            },
+            (error) => {
+                if (refreshId !== this._marathonAuthRefreshId) return;
+                console.warn('RandomManager: marathon subscription failed', error);
+                this.marathonState = { round: null, items: [], error: this._formatMarathonError(error) };
+                this._renderMarathon();
+            }
+        );
+    }
+
+    _renderMarathon() {
+        const summary = document.getElementById('marathonSummary');
+        const list = document.getElementById('marathonList');
+        const actions = document.getElementById('marathonActions');
+        if (!summary || !list || !actions) return;
+        const { round, items, error } = this.marathonState || {};
+        const user = typeof firebaseManager !== 'undefined' ? firebaseManager.getCurrentUser?.() : null;
+        if (error) {
+            summary.textContent = error;
+            list.innerHTML = '<div class="pool-list-empty">Попробуйте открыть окно позже.</div>';
+            actions.innerHTML = '';
+            this._refreshPoolModalIfOpen();
+            return;
+        }
+        if (!round) {
+            const marathonSearchInput = document.getElementById('marathonSearchInput');
+            if (marathonSearchInput) marathonSearchInput.disabled = true;
+            summary.textContent = user ? 'Общего раунда ещё нет.' : 'Войдите в аккаунт, чтобы участвовать в киномарафоне.';
+            list.innerHTML = '<div class="pool-list-empty">Администратор может создать новый раунд.</div>';
+            actions.innerHTML = this.marathonIsAdmin
+                ? '<button class="btn-roll-from-pool" data-marathon-action="create">Создать раунд</button>' : '';
+            this._bindMarathonActions();
+            this._refreshPoolModalIfOpen();
+            return;
+        }
+
+        const displayItems = items.filter((item) => !this._marathonPendingRemovals.has(item.id));
+        const ownCount = displayItems.filter((item) => item.addedBy === user?.uid && item.state !== 'removed').length;
+        const marathonSearchInput = document.getElementById('marathonSearchInput');
+        if (marathonSearchInput) {
+            const canAdd = round.status === 'collecting'
+                && (this.marathonIsAdmin || ownCount < RandomMarathonService.maxMoviesPerUser);
+            marathonSearchInput.disabled = !canAdd;
+            marathonSearchInput.placeholder = canAdd
+                ? 'Добавить фильм в киномарафон...'
+                : (round.status === 'collecting' ? 'Лимит три фильма достигнут' : 'Добавление закрыто после запуска');
+        }
+        const activeItems = displayItems.filter((item) => item.state !== 'removed');
+        const resolvedCount = activeItems.filter((item) => item.state === 'watched').length;
+        const statusLabel = { collecting: 'Сбор фильмов', active: 'Марафон идёт', completed: 'Раунд завершён', cancelled: 'Раунд отменён' }[round.status] || round.status;
+        const ownCountLabel = this.marathonIsAdmin ? `${ownCount} (без лимита)` : `${ownCount}/3`;
+        summary.replaceChildren();
+        const status = document.createElement('strong');
+        status.textContent = statusLabel;
+        summary.append(status, ` · Раунд ${Number(round.roundId) || 0} · ${resolvedCount} просмотрено из ${activeItems.length}. Ваших фильмов: ${ownCountLabel}`);
+        list.innerHTML = '';
+        if (!displayItems.length) list.innerHTML = '<div class="pool-list-empty">Пока никто не добавил фильм.</div>';
+        displayItems.forEach((item) => {
+            const row = document.createElement('div');
+            row.className = 'pool-list-item marathon-list-item';
+            row.tabIndex = 0;
+            row.setAttribute('role', 'button');
+            row.setAttribute('aria-label', `Открыть фильм ${item.title || 'Без названия'}`);
+            const stateLabel = { queued: 'в очереди', selected: 'выпал', watched: 'просмотрен', removed: 'удалён' }[item.state] || item.state;
+            const addedBy = item.addedByName || item.addedBy || 'участник';
+            const poster = document.createElement('img');
+            poster.src = item.poster || '';
+            poster.alt = '';
+            const meta = document.createElement('div');
+            meta.className = 'pool-list-item-meta';
+            const title = document.createElement('div');
+            title.className = 'pool-list-item-title';
+            title.textContent = item.title || 'Без названия';
+            const sub = document.createElement('div');
+            sub.className = 'pool-list-item-sub';
+            sub.textContent = item.year || '';
+            const author = document.createElement('div');
+            author.className = 'marathon-item-author';
+            const authorLabel = document.createElement('span');
+            authorLabel.textContent = 'Добавил:';
+            author.append(authorLabel, ` ${addedBy}`);
+            meta.append(title, sub, author);
+            const state = document.createElement('span');
+            state.className = 'marathon-item-state';
+            state.textContent = stateLabel;
+            const rowActions = document.createElement('div');
+            rowActions.className = 'marathon-item-actions';
+            rowActions.appendChild(state);
+            row.append(poster, meta, rowActions);
+            row.addEventListener('click', (event) => {
+                if (event.target.tagName?.toLowerCase() === 'img' && item.poster && typeof window.ImageLightbox !== 'undefined') {
+                    window.ImageLightbox.show(item.poster);
+                    return;
+                }
+                window.location.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${item.kpId}`);
+            });
+            row.addEventListener('keydown', (event) => {
+                if (event.target.closest?.('button')) return;
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    row.click();
+                }
+            });
+            if ((round.status === 'collecting' && item.addedBy === user?.uid) || (this.marathonIsAdmin && item.state !== 'watched' && item.state !== 'removed')) {
+                const remove = document.createElement('button');
+                remove.className = 'pool-list-item-remove';
+                remove.title = 'Удалить из марафона';
+                remove.setAttribute('aria-label', `Удалить ${item.title || 'фильм'} из марафона`);
+                remove.textContent = '×';
+                remove.addEventListener('click', async (event) => {
+                    event.stopPropagation();
+                    this._marathonPendingRemovals.add(item.id);
+                    this._renderMarathon();
+                    await this._runMarathonAction(() => this.marathonService.removeMovie(item.id), { pendingRemovalId: item.id });
+                });
+                rowActions.appendChild(remove);
+            }
+            list.appendChild(row);
+        });
+
+        const current = round.currentItemId ? displayItems.find((item) => item.id === round.currentItemId) : null;
+        if (current) {
+            const currentLabel = document.createElement('div');
+            currentLabel.className = 'marathon-current-movie';
+            currentLabel.textContent = `Сейчас выпал фильм: ${current.title}`;
+            list.prepend(currentLabel);
+        }
+        actions.innerHTML = '';
+        if (this.marathonIsAdmin && round.status === 'collecting') {
+            actions.innerHTML += '<button class="btn-roll-from-pool" data-marathon-action="start">Начать марафон</button>';
+        }
+        if (this.marathonIsAdmin && round.status === 'active' && !round.currentItemId) {
+            actions.innerHTML += '<button class="btn-roll-from-pool" data-marathon-action="roll">Крутить рулетку</button>';
+        }
+        if (this.marathonIsAdmin && round.status === 'active' && current) {
+            actions.innerHTML += '<button class="btn-roll-from-pool" data-marathon-action="watched">Отметить просмотренным</button><button class="btn btn-danger" data-marathon-action="removed">Удалить выпавший</button>';
+        }
+        if (this.marathonIsAdmin && ['completed', 'cancelled'].includes(round.status)) {
+            actions.innerHTML += '<button class="btn-roll-from-pool" data-marathon-action="create">Открыть новый раунд</button>';
+        }
+        this._bindMarathonActions();
+        this._refreshPoolModalIfOpen();
+    }
+
+    _refreshPoolModalIfOpen() {
+        const poolModal = document.getElementById('poolModal');
+        if (poolModal && !poolModal.classList.contains('hidden')) this._renderPoolModal();
+    }
+
+    _bindMarathonActions() {
+        const round = this.marathonState?.round;
+        const expectedRoundId = round?.roundId;
+        const expectedItemId = round?.currentItemId;
+        document.querySelectorAll('[data-marathon-action]').forEach((button) => {
+            button.onclick = async () => {
+                const action = button.dataset.marathonAction;
+                const handlers = {
+                    create: () => this.marathonService.createRound(),
+                    start: () => this.marathonService.startRound(),
+                    roll: () => this.marathonService.rollNext(),
+                    watched: () => this.marathonService.resolveCurrent('watched', expectedRoundId, expectedItemId),
+                    removed: () => this.marathonService.resolveCurrent('removed', expectedRoundId, expectedItemId)
+                };
+                if (handlers[action]) await this._runMarathonAction(handlers[action]);
+            };
+        });
+    }
+
+    async _runMarathonAction(action, { pendingRemovalId = null } = {}) {
+        if (this._marathonMutationRunning) return null;
+        this._marathonMutationRunning = true;
+        document.querySelectorAll('[data-marathon-action]').forEach((button) => {
+            button.disabled = true;
+        });
+        try {
+            const nextState = await action();
+            if (nextState?.round !== undefined && Array.isArray(nextState.items)) {
+                this.marathonState = nextState;
+                this._renderMarathon();
+            }
+            return nextState;
+        } catch (error) {
+            console.warn('RandomManager: marathon action failed', error);
+            window.alert(this._formatMarathonError(error));
+            return null;
+        } finally {
+            if (pendingRemovalId) this._marathonPendingRemovals.delete(pendingRemovalId);
+            this._marathonMutationRunning = false;
+            this._renderMarathon();
+        }
+    }
+
+    _formatMarathonError(error) {
+        const messages = {
+            AUTH_REQUIRED: 'Войдите в аккаунт, чтобы выполнить это действие.',
+            ADMIN_REQUIRED: 'Это действие доступно только администратору.',
+            APPROVAL_REQUIRED: 'Ваш аккаунт ещё не одобрен для участия в киномарафоне.',
+            MOVIE_LIMIT: 'Вы уже добавили три фильма в этот раунд.',
+            COLLECTION_CLOSED: 'Сбор фильмов уже закрыт: раунд начат.',
+            DUPLICATE_MOVIE: 'Этот фильм уже добавлен в текущий раунд.',
+            MOVIE_NOT_FOUND: 'Фильм уже удалён или относится к другому раунду.',
+            STALE_MOVIE: 'Фильм относится к завершённому раунду.',
+            INVALID_ITEM: 'Не удалось определить фильм для удаления.',
+            FORBIDDEN: 'У вас нет права удалить этот фильм.',
+            EMPTY_ROUND: 'Добавьте хотя бы один фильм перед запуском.',
+            ROUND_NOT_FOUND: 'Активный раунд не найден.',
+            ROUND_NOT_COLLECTING: 'Сбор фильмов уже закрыт.',
+            CURRENT_MOVIE_EXISTS: 'Сначала завершите текущий фильм.',
+            CURRENT_MOVIE_MISSING: 'Сначала выберите фильм рулеткой.',
+            CURRENT_MOVIE_STALE: 'Текущий фильм уже обработан. Обновите окно.',
+            ROUND_NOT_ACTIVE: 'Раунд сейчас не запущен.',
+            ROUND_IN_PROGRESS: 'Текущий раунд ещё не завершён.',
+            ORIGIN_NOT_ALLOWED: 'Источник запроса не разрешён.',
+            INVALID_MOVIE: 'Не удалось проверить данные фильма.',
+            INVALID_RESOLUTION: 'Неизвестный результат просмотра.'
+        };
+        if (error?.code && messages[error.code]) return messages[error.code];
+        if (error?.code === 'permission-denied' || /permission|insufficient permissions/i.test(error?.message || '')) {
+            return 'Нет доступа к киномарафону. Проверьте, что опубликованы правила Firestore и ваш аккаунт одобрен администратором.';
+        }
+        return error?.message || 'Не удалось выполнить действие';
+    }
+
+    async _searchForMarathon(query) {
+        const results = document.getElementById('marathonSearchResults');
+        if (!results || !this.marathonService) return;
+        results.innerHTML = '<div style="padding:12px;color:#999;font-size:13px">Поиск...</div>';
+        results.classList.remove('hidden');
+        try {
+            const data = await this.kinopoiskService.searchMovies(query, 1, 20);
+            const movies = data.docs || [];
+            results.innerHTML = '';
+            if (!movies.length) {
+                results.innerHTML = '<div style="padding:12px;color:#999;font-size:13px">Ничего не найдено</div>';
+                return;
+            }
+            movies.slice(0, 8).forEach((movie) => {
+                const row = document.createElement('div');
+                row.className = 'pool-result-item';
+                row.innerHTML = `<img src="${this._escapeHtml(movie.posterUrl || '')}" alt=""><div class="pool-result-meta"><div class="pool-result-title">${this._escapeHtml(movie.name || movie.alternativeName || '—')}</div><div class="pool-result-sub">${this._escapeHtml(movie.year || '')}</div></div><button class="pool-result-add" title="Добавить" aria-label="Добавить фильм в киномарафон">+</button>`;
+                row.querySelector('button').addEventListener('click', async (event) => {
+                    event.stopPropagation();
+                    const result = await this._runMarathonAction(() => this.marathonService.addMovie(movie));
+                    if (result) results.classList.add('hidden');
+                });
+                results.appendChild(row);
+            });
+        } catch (error) {
+            results.innerHTML = `<div style="padding:12px;color:#999;font-size:13px">${this._escapeHtml(error.message || 'Ошибка поиска')}</div>`;
+        }
+    }
+
+    _escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
     }
 
     /** Search Kinopoisk and display dropdown results */
@@ -986,6 +1321,8 @@ class RandomManager {
             const bonusPercent = diffDays;
             const weight = 1.0 + diffDays * 0.01;
             const chancePercent = totalWeight > 0 ? ((weight / totalWeight) * 100).toFixed(1) : '0.0';
+            const numericRating = Number(m.rating);
+            const ratingLabel = Number.isFinite(numericRating) ? numericRating.toFixed(1) : '—';
 
             let dateStr;
             const today = new Date();
@@ -995,28 +1332,50 @@ class RandomManager {
                 dateStr = addedDate.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
             }
 
+            const marathonRound = this.marathonState?.round;
+            const marathonUser = typeof firebaseManager !== 'undefined' ? firebaseManager.getCurrentUser?.() : null;
+            const marathonOwnCount = marathonUser
+                ? this.marathonState.items.filter((marathonItem) => marathonItem.addedBy === marathonUser.uid && marathonItem.state !== 'removed').length
+                : 0;
+            const marathonCanAdd = typeof RandomMarathonService !== 'undefined'
+                && this.marathonService
+                && marathonRound?.status === 'collecting'
+                && (this.marathonIsAdmin || marathonOwnCount < RandomMarathonService.maxMoviesPerUser);
+            const inMarathon = marathonRound && this.marathonState.items.some((marathonItem) =>
+                marathonItem.roundId === marathonRound.roundId
+                && Number(marathonItem.kpId) === Number(m.kpId)
+                && marathonItem.state !== 'removed'
+            );
+            const marathonAction = inMarathon
+                ? '<span class="pool-list-item-marathon-state" aria-label="Фильм уже в киномарафоне">В марафоне</span>'
+                : (marathonCanAdd
+                    ? `<button type="button" class="pool-list-item-marathon-add" title="Добавить в киномарафон" aria-label="Добавить ${this._escapeHtml(m.title || 'фильм')} в киномарафон">В марафон</button>`
+                    : '');
             const item = document.createElement('div');
             item.className = 'pool-list-item';
             item.innerHTML = `
-                <img src="${m.poster || ''}" alt="" onerror="this.style.display='none'">
+                <img src="${this._escapeHtml(m.poster || '')}" alt="">
                 <div class="pool-list-item-meta">
-                    <div class="pool-list-item-title">${m.title || '—'}</div>
-                    <div class="pool-list-item-sub">${m.year || ''} · КП ${m.rating ? m.rating.toFixed(1) : '—'}</div>
+                    <div class="pool-list-item-title">${this._escapeHtml(m.title || '—')}</div>
+                    <div class="pool-list-item-sub">${this._escapeHtml(m.year || '')} · КП ${ratingLabel}</div>
                     <div class="pool-list-item-bonus">
                         <span>Добавлен: ${dateStr}</span>
                         <span class="bonus-tag" title="Базовый шанс + ${bonusPercent}% (+1% за каждый день)">+${bonusPercent}%</span>
                         <span class="chance-tag" title="Итоговый шанс выпадения">${chancePercent}%</span>
                     </div>
                 </div>
-                <button class="pool-list-item-remove" title="Удалить из пула">
+                <div class="pool-list-item-actions">
+                    ${marathonAction}
+                    <button type="button" class="pool-list-item-remove" title="Удалить из пула" aria-label="Удалить ${this._escapeHtml(m.title || 'фильм')} из пула">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                     </svg>
-                </button>`;
+                    </button>
+                </div>`;
 
             // Click on row → go to movie details page
             item.addEventListener('click', (e) => {
-                if (e.target.closest('.pool-list-item-remove')) return;
+                if (e.target.closest('.pool-list-item-actions')) return;
                 
                 // If click on poster, show lightbox instead of navigating
                 if (e.target.tagName.toLowerCase() === 'img' && typeof window.ImageLightbox !== 'undefined') {
@@ -1032,6 +1391,9 @@ class RandomManager {
             const img = item.querySelector('img');
             if (img) {
                 img.style.cursor = 'zoom-in';
+                img.addEventListener('error', () => {
+                    img.style.display = 'none';
+                }, { once: true });
             }
 
             item.querySelector('.pool-list-item-remove').addEventListener('click', () => {
@@ -1039,6 +1401,16 @@ class RandomManager {
                 this._savePool();
                 this._renderPoolModal();
             });
+
+            const addToMarathonBtn = item.querySelector('.pool-list-item-marathon-add');
+            if (addToMarathonBtn) {
+                addToMarathonBtn.addEventListener('click', async (event) => {
+                    event.stopPropagation();
+                    addToMarathonBtn.disabled = true;
+                    await this._runMarathonAction(() => this.marathonService.addMovie(m));
+                    this._renderPoolModal();
+                });
+            }
 
             list.appendChild(item);
         });
