@@ -440,6 +440,21 @@ service cloud.firestore {
       allow read, write: if false;
     }
     
+    // Random-page shared movie marathon. Firestore is the read and subscription
+    // surface; every round and item mutation goes through the server endpoint.
+    match /randomMarathons/current {
+      allow read: if isApprovedUser() || isAdmin();
+      allow create, update, delete: if false;
+
+      match /items/{itemId} {
+        allow read: if isApprovedUser() || isAdmin();
+        // All mutations go through the server-owned randomMarathon function.
+        // The function uses the Admin SDK after checking approval, role,
+        // schema, participant quota, and the round state transactionally.
+        allow create, update, delete: if false;
+      }
+    }
+
     // Users collection
     match /users/{userId} {
       // Allow authenticated users to read profiles (needed for approval check on login)

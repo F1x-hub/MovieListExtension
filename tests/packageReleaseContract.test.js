@@ -10,7 +10,8 @@ assert.match(source, /-C', dist, \.\.\.archiveEntries/);
 assert.match(source, /function validateArchive\(archivePath\)/);
 assert.match(source, /entries\.includes\('manifest\.json'\)/);
 assert.ok(source.includes("entry.startsWith('./')"));
-assert.match(releaseWorkflow, /if: github\.ref_name == 'v1\.3\.1'/);
+assert.match(releaseWorkflow, /if: github\.ref_name == 'v1\.3\.2'/);
+assert.match(releaseWorkflow, /npm run test:random-marathon/);
 assert.match(releaseWorkflow, /gh release edit \$env:GITHUB_REF_NAME --latest/);
 
 console.log('packageReleaseContract.test.js passed');

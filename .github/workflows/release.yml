@@ -31,7 +31,7 @@ jobs:
         run: npm test
 
       - name: Run updater contract tests
-        run: npm run test:update-service && npm run test:package-release && npm run test-popup-surface-contract && npm run test:updater-setup
+        run: npm run test:random-marathon && npm run test:update-service && npm run test:package-release && npm run test-popup-surface-contract && npm run test:updater-setup
 
       - name: Build and package extension
         run: npm run package-release
@@ -68,7 +68,7 @@ jobs:
         run: gh release edit $env:GITHUB_REF_NAME --draft=false
 
       - name: Mark the newest release as latest
-        if: github.ref_name == 'v1.3.1'
+        if: github.ref_name == 'v1.3.2'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
