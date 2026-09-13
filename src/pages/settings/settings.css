@@ -776,6 +776,323 @@
     color: var(--filter-exclude-border);
 }
 
+.mediaplayer-indexers-panel {
+    display: grid;
+    gap: var(--space-md);
+    padding: var(--space-md);
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-md);
+    background: var(--theme-bg-secondary);
+}
+
+.mediaplayer-indexers-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+    flex-wrap: wrap;
+}
+
+.mediaplayer-indexers-status {
+    min-height: 1.25em;
+    margin: 0;
+    color: var(--theme-text-muted);
+    font-size: 0.82rem;
+}
+
+.mediaplayer-indexers-status[data-state="error"] {
+    color: var(--filter-exclude-border);
+}
+
+.jackett-available-search {
+    display: block;
+    width: 100%;
+    min-height: 42px;
+    box-sizing: border-box;
+    padding: 0 12px;
+    color: var(--theme-text-primary);
+    background: var(--theme-bg-primary);
+    border: 1px solid var(--theme-border-hover);
+    border-radius: var(--radius-md);
+    font: inherit;
+}
+
+.jackett-available-search:focus-visible {
+    outline: 2px solid var(--theme-text-primary);
+    outline-offset: 2px;
+}
+
+.jackett-available-filters {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin: 10px 0;
+}
+
+.jackett-available-filter {
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+}
+
+.jackett-available-filter > span {
+    color: var(--theme-text-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.jackett-available-filter select {
+    width: 100%;
+    min-height: 38px;
+    box-sizing: border-box;
+    padding: 0 8px;
+    color: var(--theme-text-primary);
+    background: var(--theme-bg-primary);
+    border: 1px solid var(--theme-border-hover);
+    border-radius: var(--radius-md);
+    font: inherit;
+    font-size: 0.8rem;
+}
+
+.jackett-available-filter select:focus-visible {
+    outline: 2px solid var(--theme-text-primary);
+    outline-offset: 2px;
+}
+
+.jackett-available-summary {
+    min-height: 1.2em;
+    margin: 0 0 8px;
+    color: var(--theme-text-muted);
+    font-size: 0.78rem;
+}
+
+.jackett-available-list {
+    display: grid;
+    gap: 8px;
+    max-height: 52vh;
+    overflow-y: auto;
+    padding-right: 3px;
+}
+
+.jackett-available-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 12px;
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-md);
+    background: var(--theme-bg-primary);
+}
+
+.jackett-available-row:hover {
+    border-color: var(--theme-border-hover);
+}
+
+.jackett-available-info {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.jackett-available-name {
+    color: var(--theme-text-primary);
+    font-weight: 600;
+}
+
+.jackett-available-meta,
+.jackett-available-description,
+.jackett-available-empty {
+    color: var(--theme-text-muted);
+    font-size: 0.78rem;
+    line-height: 1.35;
+}
+
+.jackett-available-description {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.jackett-available-empty {
+    padding: 14px;
+    text-align: center;
+    border: 1px dashed var(--theme-border);
+    border-radius: var(--radius-md);
+}
+
+@media (max-width: 560px) {
+    .jackett-available-filters {
+        grid-template-columns: 1fr;
+    }
+}
+
+.mediaplayer-indexers-list {
+    display: grid;
+    gap: 8px;
+}
+
+.mediaplayer-indexers-list:empty::before {
+    content: 'Настроенные индексеры не найдены.';
+    display: block;
+    padding: 12px;
+    color: var(--theme-text-muted);
+    border: 1px dashed var(--theme-border);
+    border-radius: var(--radius-md);
+    text-align: center;
+    font-size: 0.82rem;
+}
+
+.mediaplayer-indexer-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-md);
+    background: var(--theme-bg-primary);
+}
+
+.mediaplayer-indexer-row:hover {
+    border-color: var(--theme-border-hover);
+}
+
+.mediaplayer-indexer-toggle {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--theme-text-primary);
+}
+
+.mediaplayer-indexer-info {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+}
+
+.mediaplayer-indexer-name {
+    overflow: hidden;
+    color: var(--theme-text-primary);
+    font-size: 0.9rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mediaplayer-indexer-meta {
+    overflow: hidden;
+    color: var(--theme-text-muted);
+    font-size: 0.75rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mediaplayer-indexer-actions {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.mediaplayer-indexer-actions .btn {
+    min-height: 36px;
+    white-space: nowrap;
+}
+
+.mediaplayer-indexer-test {
+    min-width: 76px;
+}
+
+.jackett-indexer-dialog {
+    width: min(560px, 94vw);
+    max-width: 560px;
+    max-height: min(720px, 88vh);
+    overflow: auto;
+    text-align: left;
+}
+
+.jackett-indexer-dialog h3 {
+    text-align: center;
+}
+
+.jackett-indexer-dialog > p {
+    text-align: center;
+}
+
+.jackett-config-form {
+    display: grid;
+    gap: 12px;
+}
+
+.jackett-config-field {
+    display: grid;
+    gap: 7px;
+}
+
+.jackett-config-label {
+    color: var(--theme-text-primary);
+    font-size: 0.82rem;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.jackett-config-field input,
+.jackett-config-field select {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 40px;
+    padding: 0 11px;
+    color: var(--theme-text-primary);
+    background: var(--theme-bg-primary);
+    border: 1px solid var(--theme-border-hover);
+    border-radius: var(--radius-md);
+    font: inherit;
+}
+
+.jackett-config-field input[type="checkbox"] {
+    width: 18px;
+    min-height: 18px;
+    padding: 0;
+    accent-color: var(--theme-text-primary);
+}
+
+.jackett-config-field input:focus-visible,
+.jackett-config-field select:focus-visible {
+    outline: 2px solid var(--theme-text-primary);
+    outline-offset: 2px;
+}
+
+.jackett-config-field--checkbox {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+}
+
+.jackett-config-field--checkbox .jackett-config-label {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+.jackett-config-field--checkbox input {
+    grid-column: 2;
+    grid-row: 1;
+}
+
+.jackett-config-info {
+    margin: 4px 0;
+    padding: 10px 12px;
+    color: var(--theme-text-muted);
+    background: var(--theme-bg-primary);
+    border: 1px dashed var(--theme-border);
+    border-radius: var(--radius-md);
+    font-size: 0.8rem;
+    line-height: 1.4;
+}
+
+.jackett-config-form .unsaved-dialog-actions {
+    margin-top: 4px;
+}
+
 /* Toggle Switch */
 .toggle-switch {
     position: relative;
@@ -981,8 +1298,24 @@
         justify-content: stretch;
     }
     .mediaplayer-setup-actions .btn,
-    .mediaplayer-setup-path-row .btn {
+    .mediaplayer-setup-path-row .btn,
+    .mediaplayer-indexers-toolbar .btn {
         width: 100%;
+    }
+    .mediaplayer-indexers-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+    .mediaplayer-indexer-row {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+    .mediaplayer-indexer-actions {
+        grid-column: 2;
+        width: 100%;
+        justify-content: stretch;
+    }
+    .mediaplayer-indexer-actions .btn {
+        flex: 1 1 120px;
     }
 }
 

@@ -7,7 +7,7 @@ series, cartoons, and anime.
 
 <p>
   <img src="https://img.shields.io/badge/MANIFEST-V3-1687c9?style=flat-square&logo=googlechrome&logoColor=white" alt="Manifest V3">
-  <img src="https://img.shields.io/badge/VERSION-1.3.2-69b500?style=flat-square" alt="Version 1.3.2">
+  <img src="https://img.shields.io/badge/VERSION-1.3.2.1-69b500?style=flat-square" alt="Version 1.3.2.1">
   <img src="https://img.shields.io/badge/JAVASCRIPT-ES6%2B-f0d000?style=flat-square&logo=javascript&logoColor=111827" alt="JavaScript ES6+">
   <img src="https://img.shields.io/badge/VANILLA-ES6%2B-e2c400?style=flat-square" alt="Vanilla ES6+">
   <img src="https://img.shields.io/badge/AUTHOR-FIX-f47721?style=flat-square" alt="Author Fix">
@@ -108,6 +108,59 @@ and short-lived playback sessions.
 - A Firebase project when authentication, ratings, profiles, or synchronization are
   used.
 
+## End-user installation on Windows
+
+The released extension uses a signed ZIP and a small Windows Native Messaging host.
+Install the extension once; after that, enabled automatic updates download and
+install future releases in the background.
+
+### First installation
+
+1. Open the [latest GitHub release](https://github.com/F1x-hub/MovieListExtension/releases/latest)
+   and download both files:
+   [`MovieList-extension-1.3.2.1.zip`](https://github.com/F1x-hub/MovieListExtension/releases/latest/download/MovieList-extension-1.3.2.1.zip)
+   and [`MovieListSetup.exe`](https://github.com/F1x-hub/MovieListExtension/releases/latest/download/MovieListSetup.exe).
+2. Extract the ZIP to a permanent folder, for example
+   `C:\Programs\MovieListExtension`. Keep this folder in place after setup.
+3. Open `chrome://extensions` (or `edge://extensions`), enable **Developer mode**,
+   choose **Load unpacked**, and select the extracted folder containing `manifest.json`.
+4. Start `MovieListSetup.exe`. In the installer, select exactly the same folder that
+   was loaded in the browser, then click **Connect automatic updates**.
+5. If the browser was open while Setup registered the host, completely restart the
+   browser and open the extension settings once.
+6. Open **Settings → Extras**, enable **Automatic updates**, and click **Save Settings**.
+
+`MovieListSetup.exe` is required only for the first connection or when the extension
+asks you to upgrade an old updater. It registers the Native Messaging host for the
+current Windows user; it does not need to run after every reboot or release, and no
+permanent updater window is kept open.
+
+### How updates work
+
+The extension checks the signed release metadata periodically. When a newer version
+is available, it downloads the ZIP, verifies its signature, size, and SHA-256 hash,
+replaces the loaded extension folder, and reloads the extension after activation is
+confirmed. If a movie or audio stream is playing, automatic installation waits for a
+safe moment. A manual update asks whether playback should be interrupted.
+
+To start a manual check, open **Settings → Extras** and click **Check and install
+latest version**. You do not need to download a new ZIP or run Setup for each release.
+
+### If an update fails
+
+1. Leave the extension folder in place and wait a moment before retrying.
+2. Check that the browser can open GitHub and `release-assets.githubusercontent.com`.
+3. Click **Check and install latest version** again.
+4. If the settings page reports a connection or update error, click
+   **Скачать журнал обновлений / Export diagnostics** and send the downloaded JSON
+   file with the problem description.
+5. If the message asks for Setup, download the latest `MovieListSetup.exe`, select
+   the same extension folder, click **Connect automatic updates**, and restart the
+   browser.
+
+Do not select the ZIP file itself, the repository source archive, or a parent folder
+that does not contain `manifest.json`. Do not keep several old Setup windows open.
+
 ## Local setup
 
 1. Install dependencies:
@@ -145,6 +198,25 @@ and short-lived playback sessions.
 
 6. Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**,
    and select the generated `dist/` directory.
+
+## Jackett indexer selection
+
+1. Install the current `MediaPlayerSuiteSetup.exe` from the MediaPlayer project.
+2. Reload the extension, open Settings, enable MediaPlayer, and verify its connection.
+3. Open **Индексеры Jackett** and use **Добавить индексер** to search the available Jackett catalog.
+   Select a source to add it through the MediaPlayer server, then open **Настроить** if it needs
+   tracker credentials.
+4. Toggle sources to choose which indexers participate in new searches. Changes save immediately;
+   at least one configured indexer must remain enabled.
+
+Turning a source off does not delete its Jackett settings or credentials. Setup preserves existing indexer files and
+uses a provisioning marker to avoid restoring defaults deleted after provisioning. The current
+installer ships only RuTor and NoNaMe Club; 1337x, EZTV, TorrentGalaxyClone, and YTS from older
+installations remain visible until removed in Jackett.
+
+**Проверить** confirms that Jackett responds and still lists the configured indexer. It does not
+perform a tracker search or validate tracker credentials. If the list cannot load, check the
+local MediaPlayer and Jackett services; an older Suite version requires the current installer.
 
 ## Development commands
 
@@ -210,10 +282,26 @@ MIT
 ## Changelog
 
 Release entries are intentionally collapsed to keep this page readable. The
-manifest and package version remain the source of truth for the build version.
+The extension manifest is the source of truth for the Chrome build version; `package.json`
+keeps npm-compatible three-component semver metadata.
 
 <details>
 <summary><strong>1.3.2</strong> — playback-aware updater confirmation</summary>
+
+### Features
+
+- Add a Movie Details action for adding films to the Random pool.
+- Add Russian and English audio filters to the torrent release picker.
+- Label each release with detected audio language and release quality.
+- Rank WEB-DL, BluRay, and Remux releases above CAM/TS results.
+- Use MediaPlayer release metadata with a legacy title-based fallback.
+- Recognize Russian Dub, MVO, and HDRezka audio markers in legacy releases.
+- Show the release year in each torrent source card.
+- Keep the packaged MediaPlayer integration aligned with aggregate Jackett search.
+- Add Settings controls for viewing, activating, disabling, and checking configured Jackett indexers.
+- Add Configure and Delete actions for configured Jackett indexers in Settings.
+- Proxy Jackett indexer settings through MediaPlayer while masking credentials.
+- Keep Jackett credentials, cookies, locators, and remote provider URLs outside the extension.
 
 ### Fixes
 
@@ -236,14 +324,26 @@ manifest and package version remain the source of truth for the build version.
 - Reload after native replacement and retain polling until activation is confirmed.
 - Export bounded updater diagnostics with network timings and native-host status.
 - Limit metadata requests to 30 seconds and native-host requests to 20 seconds.
+- Retry transient metadata failures up to three attempts and display failed update checks in settings.
+- Bound native ZIP downloads to ten minutes with a thirty-second read idle timeout.
 - Show failed and completed update states instead of leaving a stale started message.
 - Preserve the native replacement error when rollback is required.
-- Require updater 1.1.3, which enables WinForms cultures and replacement diagnostics.
+- Require updater 1.1.4, which enables WinForms cultures, replacement diagnostics, and the Firebase ZIP fallback.
 - Disable invariant globalization for WinForms keyboard-layout handling.
 - Create the recovery parent directory before replacing a fresh installation.
 - Close open extension pages from the service worker before replacing the unpacked folder.
 - Synchronize native operation state before rendering the settings update status.
 - Include the last directory-move error in the native updater journal for diagnostics.
+- Retry Jackett admin actions through a local UI session after an API-key challenge.
+- Keep in-progress torrent searches from showing a false "no releases" message.
+- Ignore stale series progress restores after an explicit episode switch.
+
+### Docs
+
+- Document Windows installation, one-time Setup connection, automatic updates,
+  and diagnostics export.
+- Document indexer selection setup and the limits of its configuration check.
+- Document the plan to prevent stale series episode restoration after switching.
 
 </details>
 

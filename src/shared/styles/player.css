@@ -1129,38 +1129,39 @@ body.player-modal-open {
 /* Floating Restore Player Button */
 .restore-player-btn {
     position: fixed;
-    bottom: 24px;
-    right: 24px;
+    bottom: calc(20px + 36px + 12px + env(safe-area-inset-bottom, 0px));
+    right: 20px;
+    max-width: calc(100vw - 40px);
     z-index: var(--z-modal, 1000);
     display: flex;
     align-items: center;
     gap: 12px;
     padding: 10px 18px;
-    background: rgba(18, 18, 20, 0.88);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: var(--theme-bg-card, rgba(24, 24, 27, 0.88));
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
     border-radius: 100px;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
     cursor: pointer;
     transition: var(--transition, all 180ms ease);
     user-select: none;
 }
 
 .light-theme .restore-player-btn {
-    background: rgba(255, 255, 255, 0.94);
-    border-color: rgba(9, 9, 11, 0.08);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+    background: var(--theme-bg-card, rgba(255, 255, 255, 0.94));
+    border-color: var(--theme-border, rgba(9, 9, 11, 0.08));
+    box-shadow: 0 8px 24px rgba(9, 9, 11, 0.12);
 }
 
 .restore-player-btn:hover {
     transform: translateY(-2px);
-    border-color: rgba(255, 255, 255, 0.16);
+    border-color: var(--theme-border-hover, rgba(255, 255, 255, 0.16));
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
 }
 
 .light-theme .restore-player-btn:hover {
-    border-color: rgba(9, 9, 11, 0.18);
+    border-color: var(--theme-border-hover, rgba(9, 9, 11, 0.18));
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.18);
 }
 
@@ -1243,6 +1244,26 @@ body.player-modal-open {
 .light-theme .restore-close:hover {
     background: rgba(9, 9, 11, 0.12);
     color: var(--theme-text-primary);
+}
+
+/* Keep the restore dock aligned with and above the back-to-top control. */
+@media (max-width: 480px) {
+    .restore-player-btn {
+        right: 14px;
+        bottom: calc(14px + 36px + 12px + env(safe-area-inset-bottom, 0px));
+        max-width: calc(100vw - 28px);
+        gap: 8px;
+        padding-inline: 12px;
+    }
+
+    .restore-info,
+    .restore-title {
+        min-width: 0;
+    }
+
+    .restore-title {
+        max-width: min(180px, 45vw);
+    }
 }
 
 /* ==========================================================================

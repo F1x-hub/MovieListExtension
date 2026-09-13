@@ -23,6 +23,7 @@ function createHarness({
             availableVersion: '1.3.1',
             metadata: {
                 version: '1.3.1',
+                minUpdaterVersion: '1.1.1',
                 extensionId: 'ext',
                 assetName: 'MovieList-extension-1.3.1.zip',
                 assetUrl: 'https://github.com/F1x-hub/MovieListExtension/releases/download/v1.3.1/MovieList-extension-1.3.1.zip',

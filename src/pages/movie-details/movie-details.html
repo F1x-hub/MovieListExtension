@@ -279,6 +279,16 @@
                                     <button class="torrent-quality-chip" type="button" data-quality-filter="720p">720p</button>
                                     <button class="torrent-quality-chip" type="button" data-quality-filter="sd">SD</button>
                                 </div>
+                                <label class="torrent-source-controls__sort" for="torrentSourceLanguageFilter">
+                                    <span>Язык</span>
+                                    <select id="torrentSourceLanguageFilter">
+                                        <option value="all">Все языки</option>
+                                        <option value="ru">Русская озвучка</option>
+                                        <option value="en">Английская озвучка</option>
+                                        <option value="bilingual">RU + EN</option>
+                                        <option value="unknown">Язык не указан</option>
+                                    </select>
+                                </label>
                                 <label class="torrent-source-controls__sort">
                                     <span>Сортировка</span>
                                     <select id="torrentSourceSort">
@@ -456,6 +466,7 @@
     <script defer src="../../shared/errors/ErrorPresentation.js"></script>
     <script defer src="../../shared/errors/ErrorDialog.js"></script>
     <script defer src="../../shared/utils/Utils.js"></script>
+    <script defer src="../../shared/services/RandomPoolService.js"></script>
     <!-- SpotifyService.js and spotify.config.js removed — lazy-loaded via LazyLoader when Soundtrack tab opens -->
     <script defer src="../../shared/utils/IconUtils.js"></script>
     <script defer src="../../shared/utils/Icons.js"></script>

@@ -343,6 +343,19 @@
                             </div>
                             <p class="mediaplayer-retention-status" id="mediaplayerRetentionStatus" role="status" aria-live="polite">Подключение к MediaPlayer…</p>
                         </div>
+
+                        <div class="settings-section mediaplayer-indexers-section">
+                            <h3 class="section-title">Индексеры Jackett</h3>
+                            <p class="section-description">Ищите источники в каталоге Jackett, добавляйте их для поиска, а затем включайте, проверяйте, настраивайте или удаляйте.</p>
+                            <div class="mediaplayer-indexers-panel">
+                                <div class="mediaplayer-indexers-toolbar">
+                                    <p class="mediaplayer-indexers-status" id="jackettIndexersStatus" role="status" aria-live="polite">Подключение к Jackett…</p>
+                                    <button id="jackettIndexerAddBtn" class="btn btn-primary" type="button">Добавить индексер</button>
+                                    <button id="jackettIndexersRefreshBtn" class="btn btn-secondary" type="button">Обновить список</button>
+                                </div>
+                                <div class="mediaplayer-indexers-list" id="jackettIndexersList" role="list" aria-live="polite"></div>
+                            </div>
+                        </div>
                     </div>
                 </section>
                 

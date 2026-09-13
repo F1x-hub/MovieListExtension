@@ -169,6 +169,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         ? new window.MediaPlayerService()
         : null;
     let mediaPlayerRetentionLoaded = false;
+    const jackettIndexersStatus = document.getElementById('jackettIndexersStatus');
+    const jackettIndexersList = document.getElementById('jackettIndexersList');
+    const jackettIndexerAddBtn = document.getElementById('jackettIndexerAddBtn');
+    const jackettIndexersRefreshBtn = document.getElementById('jackettIndexersRefreshBtn');
+    let jackettIndexersState = { indexers: [], enabledIds: [] };
+    let jackettIndexersLoading = false;
+    let jackettIndexerMutation = false;
     const subtitleFontSizePercentInput = document.getElementById('subtitleFontSizePercent');
     const subtitleFontSizePercentOutput = document.getElementById('subtitleFontSizePercentOutput');
     const subtitleColorInput = document.getElementById('subtitleColor');
@@ -413,6 +420,563 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    function renderJackettIndexers() {
+        if (!jackettIndexersList) return;
+        const ready = currentState.mediaPlayerEnabled && currentState.mediaPlayerSetup.status === 'ready';
+        if (jackettIndexersRefreshBtn) {
+            jackettIndexersRefreshBtn.disabled = !ready || jackettIndexersLoading || jackettIndexerMutation;
+        }
+        if (jackettIndexerAddBtn) {
+            jackettIndexerAddBtn.disabled = !ready || jackettIndexersLoading || jackettIndexerMutation;
+        }
+        jackettIndexersList.replaceChildren();
+        jackettIndexersState.indexers.forEach((indexer) => {
+            const row = document.createElement('div');
+            row.className = 'mediaplayer-indexer-row';
+            row.setAttribute('role', 'listitem');
+
+            const toggle = document.createElement('input');
+            toggle.className = 'mediaplayer-indexer-toggle';
+            toggle.type = 'checkbox';
+            toggle.checked = indexer.enabled === true;
+            toggle.disabled = !ready || jackettIndexersLoading || jackettIndexerMutation;
+            toggle.dataset.indexerId = indexer.id;
+            toggle.setAttribute('aria-label', `Использовать ${indexer.name}`);
+
+            const info = document.createElement('div');
+            info.className = 'mediaplayer-indexer-info';
+            const name = document.createElement('span');
+            name.className = 'mediaplayer-indexer-name';
+            name.textContent = indexer.name;
+            const meta = document.createElement('span');
+            meta.className = 'mediaplayer-indexer-meta';
+            meta.textContent = [indexer.language, indexer.type, indexer.id].filter(Boolean).join(' · ');
+            info.append(name, meta);
+
+            const testBtn = document.createElement('button');
+            testBtn.className = 'btn btn-secondary mediaplayer-indexer-test';
+            testBtn.type = 'button';
+            testBtn.textContent = 'Проверить';
+            testBtn.disabled = !ready || jackettIndexersLoading || jackettIndexerMutation;
+            testBtn.dataset.indexerTestId = indexer.id;
+
+            const actions = document.createElement('div');
+            actions.className = 'mediaplayer-indexer-actions';
+
+            const configureBtn = document.createElement('button');
+            configureBtn.className = 'btn btn-secondary mediaplayer-indexer-configure';
+            configureBtn.type = 'button';
+            configureBtn.textContent = 'Настроить';
+            configureBtn.disabled = !ready || jackettIndexersLoading || jackettIndexerMutation;
+            configureBtn.dataset.indexerConfigureId = indexer.id;
+            configureBtn.setAttribute('aria-label', `Настроить ${indexer.name}`);
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'btn btn-danger mediaplayer-indexer-delete';
+            deleteBtn.type = 'button';
+            deleteBtn.textContent = 'Удалить';
+            deleteBtn.disabled = !ready || jackettIndexersLoading || jackettIndexerMutation;
+            deleteBtn.dataset.indexerDeleteId = indexer.id;
+            deleteBtn.setAttribute('aria-label', `Удалить ${indexer.name} из Jackett`);
+
+            actions.append(configureBtn, testBtn, deleteBtn);
+            row.append(toggle, info, actions);
+            jackettIndexersList.appendChild(row);
+        });
+    }
+
+    function setJackettIndexersStatus(message, state = '') {
+        if (!jackettIndexersStatus) return;
+        jackettIndexersStatus.textContent = message;
+        jackettIndexersStatus.dataset.state = state;
+    }
+
+    async function loadJackettIndexers() {
+        const ready = currentState.mediaPlayerEnabled && currentState.mediaPlayerSetup.status === 'ready';
+        if (!ready || !mediaPlayerService) {
+            jackettIndexersState = { indexers: [], enabledIds: [] };
+            setJackettIndexersStatus('Включите и проверьте MediaPlayer, чтобы управлять индексерами.');
+            renderJackettIndexers();
+            return;
+        }
+
+        jackettIndexersLoading = true;
+        setJackettIndexersStatus('Загружаем настроенные индексеры Jackett…');
+        renderJackettIndexers();
+        try {
+            jackettIndexersState = await mediaPlayerService.getJackettIndexers();
+            const enabledCount = jackettIndexersState.enabledIds.length;
+            setJackettIndexersStatus(`Настроено: ${jackettIndexersState.indexers.length}; активно в поиске: ${enabledCount}.`);
+        } catch (error) {
+            jackettIndexersState = { indexers: [], enabledIds: [] };
+            setJackettIndexersStatus(error?.message || 'Не удалось загрузить индексеры Jackett.', 'error');
+        } finally {
+            jackettIndexersLoading = false;
+            renderJackettIndexers();
+        }
+    }
+
+    async function updateJackettIndexerSelection() {
+        if (!mediaPlayerService || jackettIndexerMutation) return;
+        const previous = jackettIndexersState;
+        const enabledIds = Array.from(jackettIndexersList?.querySelectorAll('[data-indexer-id]:checked') || [])
+            .map(input => input.dataset.indexerId)
+            .filter(Boolean);
+        if (!enabledIds.length) {
+            setJackettIndexersStatus('Оставьте активным хотя бы один индексер.', 'error');
+            renderJackettIndexers();
+            return;
+        }
+
+        jackettIndexerMutation = true;
+        setJackettIndexersStatus('Сохраняем активные индексеры…');
+        renderJackettIndexers();
+        try {
+            jackettIndexersState = await mediaPlayerService.updateJackettIndexers(enabledIds);
+            setJackettIndexersStatus(`Активно в поиске: ${jackettIndexersState.enabledIds.length}.`);
+        } catch (error) {
+            jackettIndexersState = previous;
+            setJackettIndexersStatus(error?.message || 'Не удалось сохранить выбор индексеров.', 'error');
+        } finally {
+            jackettIndexerMutation = false;
+            renderJackettIndexers();
+        }
+    }
+
+    async function testJackettIndexer(indexerId) {
+        if (!mediaPlayerService || jackettIndexerMutation) return;
+        jackettIndexerMutation = true;
+        setJackettIndexersStatus('Проверяем индексер Jackett…');
+        renderJackettIndexers();
+        try {
+            const result = await mediaPlayerService.testJackettIndexer(indexerId);
+            setJackettIndexersStatus(result?.message || 'Индексер Jackett доступен.');
+        } catch (error) {
+            setJackettIndexersStatus(error?.message || 'Проверка индексера не пройдена.', 'error');
+        } finally {
+            jackettIndexerMutation = false;
+            renderJackettIndexers();
+        }
+    }
+
+    function getJackettIndexer(indexerId) {
+        const id = String(indexerId || '').trim().toLowerCase();
+        return jackettIndexersState.indexers.find(indexer => indexer.id === id) || { id, name: id };
+    }
+
+    async function configureJackettIndexer(indexerId) {
+        if (!mediaPlayerService || jackettIndexerMutation) return;
+        const indexer = getJackettIndexer(indexerId);
+        jackettIndexerMutation = true;
+        setJackettIndexersStatus(`Загружаем настройки ${indexer.name}…`);
+        renderJackettIndexers();
+        try {
+            const config = await mediaPlayerService.getJackettIndexerConfig(indexer.id);
+            const updates = await showJackettIndexerConfigDialog(indexer, config);
+            if (!updates) return;
+            setJackettIndexersStatus(`Сохраняем настройки ${indexer.name}…`);
+            await mediaPlayerService.updateJackettIndexerConfig(indexer.id, updates);
+            setJackettIndexersStatus(`Настройки ${indexer.name} сохранены.`);
+        } catch (error) {
+            setJackettIndexersStatus(error?.message || 'Не удалось изменить настройки индексера.', 'error');
+        } finally {
+            jackettIndexerMutation = false;
+            renderJackettIndexers();
+        }
+    }
+
+    async function deleteJackettIndexer(indexerId) {
+        if (!mediaPlayerService || jackettIndexerMutation) return;
+        const indexer = getJackettIndexer(indexerId);
+        if (!await showJackettDeleteDialog(indexer)) return;
+
+        jackettIndexerMutation = true;
+        setJackettIndexersStatus(`Удаляем ${indexer.name} из Jackett…`);
+        renderJackettIndexers();
+        try {
+            jackettIndexersState = await mediaPlayerService.deleteJackettIndexer(indexer.id);
+            setJackettIndexersStatus(`${indexer.name} удалён из Jackett.`);
+        } catch (error) {
+            setJackettIndexersStatus(error?.message || 'Не удалось удалить индексер.', 'error');
+        } finally {
+            jackettIndexerMutation = false;
+            renderJackettIndexers();
+        }
+    }
+
+    async function addJackettIndexer() {
+        if (!mediaPlayerService || jackettIndexerMutation || jackettIndexersLoading) return;
+
+        jackettIndexersLoading = true;
+        setJackettIndexersStatus('Загружаем каталог доступных индексеров Jackett…');
+        renderJackettIndexers();
+        try {
+            const availableIndexers = await mediaPlayerService.getAvailableJackettIndexers();
+            jackettIndexersLoading = false;
+            renderJackettIndexers();
+            const selectedId = await showJackettIndexerAddDialog(availableIndexers);
+            if (!selectedId) {
+                setJackettIndexersStatus(`Настроено: ${jackettIndexersState.indexers.length}; активно в поиске: ${jackettIndexersState.enabledIds.length}.`);
+                return;
+            }
+
+            const selected = availableIndexers.find(indexer => indexer.id === selectedId) || { id: selectedId, name: selectedId };
+            jackettIndexerMutation = true;
+            setJackettIndexersStatus(`Добавляем ${selected.name} в Jackett…`);
+            renderJackettIndexers();
+            jackettIndexersState = await mediaPlayerService.addJackettIndexer(selected.id);
+            setJackettIndexersStatus(`${selected.name} добавлен в Jackett и включён в поиск.`);
+        } catch (error) {
+            setJackettIndexersStatus(error?.message || 'Не удалось добавить индексер Jackett.', 'error');
+        } finally {
+            jackettIndexersLoading = false;
+            jackettIndexerMutation = false;
+            renderJackettIndexers();
+        }
+    }
+
+    function createJackettDialogBase(className, titleText, descriptionText) {
+        const overlay = document.createElement('div');
+        overlay.className = `unsaved-dialog-overlay ${className}`;
+        const dialog = document.createElement('div');
+        dialog.className = 'unsaved-dialog jackett-indexer-dialog';
+        dialog.setAttribute('role', 'dialog');
+        dialog.setAttribute('aria-modal', 'true');
+        dialog.setAttribute('aria-label', titleText);
+        const title = document.createElement('h3');
+        title.textContent = titleText;
+        const description = document.createElement('p');
+        description.textContent = descriptionText;
+        dialog.append(title, description);
+        overlay.appendChild(dialog);
+        return { overlay, dialog };
+    }
+
+    function showJackettIndexerAddDialog(indexers) {
+        return new Promise(resolve => {
+            const { overlay, dialog } = createJackettDialogBase(
+                'jackett-add-dialog-overlay',
+                'Добавить индексер Jackett',
+                'Найдите источник в каталоге Jackett и добавьте его. Секретные параметры настраиваются после добавления.'
+            );
+            const searchInput = document.createElement('input');
+            searchInput.className = 'jackett-available-search';
+            searchInput.type = 'search';
+            searchInput.placeholder = 'Поиск по имени, ID или описанию…';
+            searchInput.setAttribute('aria-label', 'Поиск доступных индексеров');
+            const catalog = Array.isArray(indexers) ? indexers : [];
+            const normalizeFilterValue = value => String(value || '').trim().toLocaleLowerCase();
+            const collectFilterValues = getValue => {
+                const values = new Map();
+                catalog.forEach(indexer => {
+                    const rawValue = getValue(indexer);
+                    const source = Array.isArray(rawValue) ? rawValue : [rawValue];
+                    source.forEach(value => {
+                        const text = String(value || '').trim();
+                        const key = normalizeFilterValue(text);
+                        if (key && !values.has(key)) values.set(key, text);
+                    });
+                });
+                return [...values.values()].sort((left, right) => left.localeCompare(right, 'ru'));
+            };
+            const createFilter = (labelText, allText, values, className) => {
+                const wrapper = document.createElement('label');
+                wrapper.className = 'jackett-available-filter';
+                const label = document.createElement('span');
+                label.textContent = labelText;
+                const select = document.createElement('select');
+                select.className = className;
+                select.setAttribute('aria-label', labelText);
+                const allOption = document.createElement('option');
+                allOption.value = '';
+                allOption.textContent = allText;
+                select.appendChild(allOption);
+                values.forEach(value => {
+                    const option = document.createElement('option');
+                    option.value = value;
+                    option.textContent = value;
+                    select.appendChild(option);
+                });
+                wrapper.append(label, select);
+                return select;
+            };
+            const filters = document.createElement('div');
+            filters.className = 'jackett-available-filters';
+            const languageFilter = createFilter(
+                'Язык',
+                'Все языки',
+                collectFilterValues(indexer => indexer.language),
+                'jackett-available-language-filter'
+            );
+            const accessTypeFilter = createFilter(
+                'Доступ',
+                'Любой доступ',
+                collectFilterValues(indexer => indexer.type),
+                'jackett-available-type-filter'
+            );
+            const categoryFilter = createFilter(
+                'Категория',
+                'Все категории',
+                collectFilterValues(indexer => indexer.categories),
+                'jackett-available-category-filter'
+            );
+            filters.append(languageFilter.parentElement, accessTypeFilter.parentElement, categoryFilter.parentElement);
+            const summary = document.createElement('div');
+            summary.className = 'jackett-available-summary';
+            summary.setAttribute('aria-live', 'polite');
+            const list = document.createElement('div');
+            list.className = 'jackett-available-list';
+            list.setAttribute('role', 'list');
+            dialog.append(searchInput, filters, summary, list);
+
+            const actions = document.createElement('div');
+            actions.className = 'unsaved-dialog-actions';
+            const cancelBtn = document.createElement('button');
+            cancelBtn.className = 'btn btn-secondary';
+            cancelBtn.type = 'button';
+            cancelBtn.textContent = 'Отмена';
+            actions.appendChild(cancelBtn);
+            dialog.appendChild(actions);
+
+            let settled = false;
+            const finish = value => {
+                if (settled) return;
+                settled = true;
+                document.removeEventListener('keydown', onKeyDown);
+                overlay.classList.remove('active');
+                setTimeout(() => overlay.remove(), 200);
+                resolve(value);
+            };
+            const onKeyDown = event => {
+                if (event.key === 'Escape') finish(null);
+            };
+            const render = () => {
+                const query = searchInput.value.trim().toLocaleLowerCase();
+                const language = normalizeFilterValue(languageFilter.value);
+                const accessType = normalizeFilterValue(accessTypeFilter.value);
+                const category = normalizeFilterValue(categoryFilter.value);
+                const filtered = catalog.filter(indexer => [
+                    indexer.name,
+                    indexer.id,
+                    indexer.description,
+                    indexer.site,
+                    indexer.language,
+                    indexer.type,
+                    ...(Array.isArray(indexer.categories) ? indexer.categories : [])
+                ].join(' ').toLocaleLowerCase().includes(query)
+                    && (!language || normalizeFilterValue(indexer.language) === language)
+                    && (!accessType || normalizeFilterValue(indexer.type) === accessType)
+                    && (!category || (Array.isArray(indexer.categories) && indexer.categories.some(
+                        item => normalizeFilterValue(item) === category
+                    ))));
+                summary.textContent = `Показано: ${filtered.length} из ${catalog.length}`;
+                list.replaceChildren();
+                if (!filtered.length) {
+                    const empty = document.createElement('div');
+                    empty.className = 'jackett-available-empty';
+                    empty.textContent = catalog.length ? 'По вашему запросу ничего не найдено.' : 'Доступных не настроенных индексеров нет.';
+                    list.appendChild(empty);
+                    return;
+                }
+                filtered.forEach(indexer => {
+                    const row = document.createElement('div');
+                    row.className = 'jackett-available-row';
+                    row.setAttribute('role', 'listitem');
+                    const info = document.createElement('div');
+                    info.className = 'jackett-available-info';
+                    const name = document.createElement('span');
+                    name.className = 'jackett-available-name';
+                    name.textContent = indexer.name;
+                    const meta = document.createElement('span');
+                    meta.className = 'jackett-available-meta';
+                    meta.textContent = [indexer.language, indexer.type, indexer.id, ...(indexer.categories || [])]
+                        .filter(Boolean)
+                        .join(' · ');
+                    info.append(name, meta);
+                    if (indexer.description) {
+                        const description = document.createElement('span');
+                        description.className = 'jackett-available-description';
+                        description.textContent = indexer.description;
+                        info.appendChild(description);
+                    }
+                    const addBtn = document.createElement('button');
+                    addBtn.className = 'btn btn-primary';
+                    addBtn.type = 'button';
+                    addBtn.textContent = 'Добавить';
+                    addBtn.addEventListener('click', () => finish(indexer.id));
+                    row.append(info, addBtn);
+                    list.appendChild(row);
+                });
+            };
+            const onSearch = () => render();
+            searchInput.addEventListener('input', onSearch);
+            languageFilter.addEventListener('change', onSearch);
+            accessTypeFilter.addEventListener('change', onSearch);
+            categoryFilter.addEventListener('change', onSearch);
+            cancelBtn.addEventListener('click', () => finish(null));
+            overlay.addEventListener('click', event => {
+                if (event.target === overlay) finish(null);
+            });
+            document.addEventListener('keydown', onKeyDown);
+            document.body.appendChild(overlay);
+            render();
+            requestAnimationFrame(() => {
+                overlay.classList.add('active');
+                searchInput.focus();
+            });
+        });
+    }
+
+    function showJackettDeleteDialog(indexer) {
+        return new Promise(resolve => {
+            const { overlay, dialog } = createJackettDialogBase(
+                'jackett-delete-dialog-overlay',
+                `Удалить ${indexer.name}?`,
+                'Jackett удалит индексер из настроенных источников. Скачанные файлы MediaPlayer не затрагиваются.'
+            );
+            const actions = document.createElement('div');
+            actions.className = 'unsaved-dialog-actions';
+            const cancelBtn = document.createElement('button');
+            cancelBtn.className = 'btn btn-secondary';
+            cancelBtn.type = 'button';
+            cancelBtn.textContent = 'Отмена';
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'btn btn-danger';
+            deleteBtn.type = 'button';
+            deleteBtn.textContent = 'Удалить';
+
+            let settled = false;
+            const finish = confirmed => {
+                if (settled) return;
+                settled = true;
+                document.removeEventListener('keydown', onKeyDown);
+                overlay.classList.remove('active');
+                setTimeout(() => overlay.remove(), 200);
+                resolve(confirmed);
+            };
+            const onKeyDown = event => {
+                if (event.key === 'Escape') finish(false);
+            };
+            cancelBtn.addEventListener('click', () => finish(false));
+            deleteBtn.addEventListener('click', () => finish(true));
+            overlay.addEventListener('click', event => {
+                if (event.target === overlay) finish(false);
+            });
+            document.addEventListener('keydown', onKeyDown);
+            actions.append(cancelBtn, deleteBtn);
+            dialog.appendChild(actions);
+            document.body.appendChild(overlay);
+            requestAnimationFrame(() => {
+                overlay.classList.add('active');
+                cancelBtn.focus();
+            });
+        });
+    }
+
+    function showJackettIndexerConfigDialog(indexer, config) {
+        return new Promise(resolve => {
+            const { overlay, dialog } = createJackettDialogBase(
+                'jackett-config-dialog-overlay',
+                `Настройка ${indexer.name}`,
+                'Параметры сохраняются в Jackett. Секретные поля не показываются; оставьте их пустыми, чтобы сохранить текущее значение.'
+            );
+            const form = document.createElement('form');
+            form.className = 'jackett-config-form';
+            const fields = Array.isArray(config?.fields) ? config.fields : [];
+            fields.forEach(field => {
+                const type = String(field.type || 'inputstring').toLowerCase();
+                if (['displayinfo', 'displaytitle', 'info'].includes(type)) {
+                    const info = document.createElement('p');
+                    info.className = 'jackett-config-info';
+                    info.textContent = field.name || 'Информация';
+                    form.appendChild(info);
+                    return;
+                }
+
+                const wrapper = document.createElement('label');
+                wrapper.className = 'jackett-config-field';
+                const label = document.createElement('span');
+                label.className = 'jackett-config-label';
+                label.textContent = field.name || field.id;
+                wrapper.appendChild(label);
+
+                let input;
+                if (type === 'inputbool') {
+                    input = document.createElement('input');
+                    input.type = 'checkbox';
+                    input.checked = field.value === true;
+                    wrapper.classList.add('jackett-config-field--checkbox');
+                } else if (type === 'inputselect') {
+                    input = document.createElement('select');
+                    Object.entries(field.options || {}).forEach(([value, optionLabel]) => {
+                        const option = document.createElement('option');
+                        option.value = value;
+                        option.textContent = optionLabel;
+                        input.appendChild(option);
+                    });
+                    if (field.value !== null && field.value !== undefined) input.value = String(field.value);
+                } else {
+                    input = document.createElement('input');
+                    input.type = field.sensitive || type.includes('password') ? 'password' : 'text';
+                    input.value = field.sensitive ? '' : field.value === null || field.value === undefined ? '' : String(field.value);
+                    if (field.sensitive && field.hasValue) input.placeholder = 'Сохранено — оставьте пустым без изменений';
+                    if (field.pattern) input.pattern = field.pattern;
+                    if (field.separator) input.dataset.separator = field.separator;
+                }
+                input.dataset.jackettConfigField = field.id;
+                input.dataset.jackettConfigType = type;
+                input.dataset.jackettConfigSensitive = field.sensitive === true ? 'true' : 'false';
+                wrapper.appendChild(input);
+                form.appendChild(wrapper);
+            });
+
+            const actions = document.createElement('div');
+            actions.className = 'unsaved-dialog-actions';
+            const cancelBtn = document.createElement('button');
+            cancelBtn.className = 'btn btn-secondary';
+            cancelBtn.type = 'button';
+            cancelBtn.textContent = 'Отмена';
+            const saveBtn = document.createElement('button');
+            saveBtn.className = 'btn btn-primary';
+            saveBtn.type = 'submit';
+            saveBtn.textContent = 'Сохранить';
+            actions.append(cancelBtn, saveBtn);
+            form.appendChild(actions);
+            dialog.appendChild(form);
+
+            let settled = false;
+            const finish = value => {
+                if (settled) return;
+                settled = true;
+                document.removeEventListener('keydown', onKeyDown);
+                overlay.classList.remove('active');
+                setTimeout(() => overlay.remove(), 200);
+                resolve(value);
+            };
+            const onKeyDown = event => {
+                if (event.key === 'Escape') finish(null);
+            };
+            cancelBtn.addEventListener('click', () => finish(null));
+            form.addEventListener('submit', event => {
+                event.preventDefault();
+                const updates = Array.from(form.querySelectorAll('[data-jackett-config-field]')).map(input => ({
+                    id: input.dataset.jackettConfigField,
+                    value: input.type === 'checkbox' ? input.checked : input.value
+                }));
+                finish(updates);
+            });
+            overlay.addEventListener('click', event => {
+                if (event.target === overlay) finish(null);
+            });
+            document.addEventListener('keydown', onKeyDown);
+            document.body.appendChild(overlay);
+            requestAnimationFrame(() => {
+                overlay.classList.add('active');
+                (form.querySelector('input, select') || cancelBtn).focus();
+            });
+        });
+    }
+
     async function chooseMediaPlayerFolder() {
         if (!mediaPlayerService || !currentState.mediaPlayerEnabled) return;
         try {
@@ -621,7 +1185,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (extensionUpdateSetupBtn) extensionUpdateSetupBtn.hidden = !setupRequired;
 
         if (!extensionUpdateInstallStatus) return;
-        if (status === 'awaiting_confirmation') {
+        if (status === 'check_failed') {
+            extensionUpdateInstallStatus.hidden = false;
+            const russian = String(i18n.currentLocale || navigator.language).startsWith('ru');
+            extensionUpdateInstallStatus.textContent = russian
+                ? 'Не удалось проверить обновления. Проверьте интернет и доступ к GitHub, затем повторите попытку. Подробности — в журнале обновлений.'
+                : 'Could not check for updates. Check your connection and access to GitHub, then retry. Export diagnostics for details.';
+        } else if (status === 'awaiting_confirmation') {
             extensionUpdateInstallStatus.hidden = false;
             extensionUpdateInstallStatus.textContent = i18n.get('settings.updates.install_latest_restarting')
                 .replace('{version}', version);
@@ -654,6 +1224,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!currentState.mediaPlayerEnabled) {
             mediaPlayerRetentionLoaded = false;
             if (mediaplayerRetentionStatus) mediaplayerRetentionStatus.textContent = 'Включите MediaPlayer и завершите проверку установки.';
+            await loadJackettIndexers();
             renderMediaPlayerSetup();
             return;
         }
@@ -661,6 +1232,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             mediaPlayerRetentionLoaded = false;
             if (torrentRetentionSelect) torrentRetentionSelect.disabled = true;
             if (mediaplayerRetentionStatus) mediaplayerRetentionStatus.textContent = 'Настройки торрентов заблокированы до успешной проверки.';
+            await loadJackettIndexers();
             renderMediaPlayerSetup();
             return;
         }
@@ -680,6 +1252,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (mediaplayerRetentionStatus) {
                     mediaplayerRetentionStatus.textContent = 'Настройки торрентов заблокированы до успешной проверки.';
                 }
+                await loadJackettIndexers();
                 return;
             }
             const settings = await mediaPlayerService.getSettings();
@@ -689,6 +1262,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             mediaPlayerRetentionLoaded = true;
             torrentRetentionSelect.disabled = false;
             updateUIFromState();
+            await loadJackettIndexers();
 
             updateDirtyState();
             if (mediaplayerRetentionStatus) mediaplayerRetentionStatus.textContent = 'Изменения применяются после нажатия «Сохранить».';
@@ -703,6 +1277,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 errorMessage: error?.message || 'Проверьте запуск службы.'
             }, true);
             renderMediaPlayerSetup();
+            await loadJackettIndexers();
             if (mediaplayerRetentionStatus) mediaplayerRetentionStatus.textContent = `MediaPlayer недоступен: ${error?.message || 'проверьте запуск службы.'}`;
             updateDirtyState();
         }
@@ -1072,6 +1647,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     ? 'Выберите папку и завершите проверку MediaPlayer.'
                     : 'Включите MediaPlayer и завершите проверку установки.';
             }
+            void loadJackettIndexers();
             updateDirtyState();
         });
     }
@@ -1082,6 +1658,40 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (mediaPlayerVerifyBtn) {
         mediaPlayerVerifyBtn.addEventListener('click', verifyMediaPlayerInstallation);
+    }
+
+    if (jackettIndexersRefreshBtn) {
+        jackettIndexersRefreshBtn.addEventListener('click', () => {
+            void loadJackettIndexers();
+        });
+    }
+
+    if (jackettIndexerAddBtn) {
+        jackettIndexerAddBtn.addEventListener('click', () => {
+            void addJackettIndexer();
+        });
+    }
+
+    if (jackettIndexersList) {
+        jackettIndexersList.addEventListener('change', (event) => {
+            if (event.target?.matches?.('[data-indexer-id]')) {
+                void updateJackettIndexerSelection();
+            }
+        });
+        jackettIndexersList.addEventListener('click', (event) => {
+            const configureButton = event.target?.closest?.('[data-indexer-configure-id]');
+            if (configureButton) {
+                void configureJackettIndexer(configureButton.dataset.indexerConfigureId);
+                return;
+            }
+            const deleteButton = event.target?.closest?.('[data-indexer-delete-id]');
+            if (deleteButton) {
+                void deleteJackettIndexer(deleteButton.dataset.indexerDeleteId);
+                return;
+            }
+            const testButton = event.target?.closest?.('[data-indexer-test-id]');
+            if (testButton) void testJackettIndexer(testButton.dataset.indexerTestId);
+        });
     }
 
     if (torrentRetentionSelect) {

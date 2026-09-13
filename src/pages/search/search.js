@@ -40,6 +40,8 @@ class SearchManager {
         this.isHistoryDropdownOpen = false;
         this.isPlaying = false;
         this.currentVideoUrl = '';
+        this.playerRestoreGeneration = 0;
+        this.progressRestoreAttempt = null;
         this.availableCollections = []; // Store for menu
 
         // Infinite Scroll State
@@ -3885,6 +3887,7 @@ class SearchManager {
         }
         
         console.log('🔄 Loading video for first time or different movie');
+        this.invalidatePlayerRestore();
         
         // Reset current sources if it's a new movie (unless preloaded)
         if (this.currentSources && this.currentSources._movieId !== this.selectedMovie.kinopoiskId) {
@@ -4028,32 +4031,19 @@ class SearchManager {
 
             window.addEventListener('message', async (event) => {
                 // Verify origin if possible, but we accept from our iframes
+                const activeIframe = this.getActivePlayerIframe();
+                if (event.source && activeIframe?.contentWindow && event.source !== activeIframe.contentWindow) return;
                 
                 if (event.data.type === 'PLAYER_READY') {
                     // Send sources to iframe
-                    if (iframe && iframe.contentWindow) {
-                        iframe.contentWindow.postMessage({
+                    const readyIframe = this.getActivePlayerIframe();
+                    if (readyIframe && readyIframe.contentWindow) {
+                        readyIframe.contentWindow.postMessage({
                             type: 'SET_SOURCES',
                             sources: this.currentSources, // Send full objects with names
                             currentUrl: this.currentVideoUrl
                         }, '*');
-
-                        // Restore Progress if available
-                        if (this.selectedMovie && this.selectedMovie.kinopoiskId) {
-                            // Use ProgressService
-                            if (this.progressService) {
-                                this.progressService.getProgress(this.selectedMovie.kinopoiskId).then(progress => {
-                                    if (progress && progress.season && progress.episode) {
-                                         console.log('Restoring progress:', progress);
-                                         iframe.contentWindow.postMessage({
-                                             type: 'RESTORE_PROGRESS',
-                                             season: progress.season,
-                                             episode: progress.episode
-                                         }, '*');
-                                    }
-                                }).catch(err => console.error('Error loading progress:', err));
-                            }
-                        }
+                        this.restoreProgressForReadyIframe(readyIframe);
                     }
                 } else if (event.data.type === 'CHANGE_SOURCE') {
                     const newUrl = event.data.url;
@@ -4063,9 +4053,13 @@ class SearchManager {
                         // Auto-play the new source
                         this.togglePlayPause(); 
                     }
+                } else if (event.data.type === 'EPISODE_CHANGED') {
+                    if (event.data.origin === 'USER_PROVIDER_SELECTION') {
+                        this.invalidatePlayerRestore();
+                    }
                 } else if (event.data.type === 'UPDATE_WATCHING_PROGRESS') {
                     // Handle progress update from player
-                    const { season, episode, timestamp } = event.data;
+                    const { season, episode, seasonNumber, episodeNumber, timestamp } = event.data;
                     console.log('Received progress update:', season, episode);
                     
                     if (this.selectedMovie && this.selectedMovie.kinopoiskId && this.progressService) {
@@ -4073,6 +4067,8 @@ class SearchManager {
                              const data = {
                                  season,
                                  episode,
+                                 seasonNumber,
+                                 episodeNumber,
                                  timestamp,
                                  movieId: this.selectedMovie.kinopoiskId,
                                  movieTitle: this.selectedMovie.name || this.selectedMovie.nameRu
@@ -4169,9 +4165,54 @@ class SearchManager {
         });
     }
 
+    getActivePlayerIframe() {
+        return this.elements?.videoContainer?.querySelector?.('iframe') || null;
+    }
+
+    invalidatePlayerRestore() {
+        this.playerRestoreGeneration = (this.playerRestoreGeneration || 0) + 1;
+        this.progressRestoreAttempt = null;
+    }
+
+    restoreProgressForReadyIframe(iframe) {
+        const movieId = this.selectedMovie?.kinopoiskId;
+        if (!iframe?.contentWindow || movieId == null || !this.progressService) return;
+
+        const restoreContext = {
+            movieId: String(movieId),
+            iframe,
+            sourceUrl: this.currentVideoUrl,
+            generation: this.playerRestoreGeneration
+        };
+        const previousAttempt = this.progressRestoreAttempt;
+        if (previousAttempt
+            && previousAttempt.iframe === restoreContext.iframe
+            && previousAttempt.movieId === restoreContext.movieId
+            && previousAttempt.sourceUrl === restoreContext.sourceUrl
+            && previousAttempt.generation === restoreContext.generation) {
+            return;
+        }
+        this.progressRestoreAttempt = restoreContext;
+
+        this.progressService.getProgress(movieId).then(progress => {
+            const isCurrent = String(this.selectedMovie?.kinopoiskId) === restoreContext.movieId
+                && this.currentVideoUrl === restoreContext.sourceUrl
+                && this.playerRestoreGeneration === restoreContext.generation
+                && this.getActivePlayerIframe() === restoreContext.iframe;
+            if (!isCurrent || !progress?.season || !progress?.episode) return;
+
+            console.log('Restoring progress:', progress);
+            restoreContext.iframe.contentWindow.postMessage({
+                type: 'RESTORE_PROGRESS',
+                season: progress.season,
+                episode: progress.episode
+            }, '*');
+        }).catch(err => console.error('Error loading progress:', err));
+    }
+
     changeVideoSource(url) {
         if (!url) return;
-        
+        this.invalidatePlayerRestore();
         this.currentVideoUrl = url;
         // Don't render simple player, just update state. 
         // Actual playback is triggered by togglePlayPause call.
@@ -4223,6 +4264,7 @@ class SearchManager {
         this.isPlaying = !this.isPlaying;
         
         if (this.isPlaying) {
+            this.invalidatePlayerRestore();
             // Check source type
             // We need to know the type associated with the currentVideoUrl.
             // Since we stored only the URL string, we might lose the type.

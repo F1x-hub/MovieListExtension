@@ -1,5 +1,5 @@
 /*
- * GitHub ZIP updater coordinator.
+ * Signed multi-source ZIP updater coordinator.
  *
  * The service worker owns the update state, while the Native Host owns every
  * filesystem operation. The extension never passes a shell command or a
@@ -13,7 +13,10 @@
     const SETTINGS_KEY = 'extension_update_settings_v1';
     const METADATA_URL = 'https://github.com/F1x-hub/MovieListExtension/releases/latest/download/update.json';
     const SIGNATURE_URL = 'https://github.com/F1x-hub/MovieListExtension/releases/latest/download/update.json.sig';
+    const MIRROR_ROOT = 'https://movielistdb-13208-updates.web.app/updates/latest/';
     const SETUP_URL = 'https://github.com/F1x-hub/MovieListExtension/releases/latest/download/MovieListSetup.exe';
+    const FIREBASE_ASSET_URL = MIRROR_ROOT + 'MovieList-extension-latest.zip';
+    const MAX_HTTP_ATTEMPTS = 3;
     const CHECK_ALARM = 'checkUpdates';
     const SAFE_RETRY_ALARM = 'checkUpdatesSafeRetry';
     const OPERATION_ALARM = 'checkUpdateOperation';
@@ -43,7 +46,7 @@
         }).catch(() => {});
     }
 
-    async function diagnosticFetch(url, label) {
+    async function diagnosticFetch(url, label, attempt = 1) {
         const controller = new AbortController();
         const started = Date.now();
         diagnostic('http_start', { label, host: new URL(url).hostname, online: global.navigator?.onLine });
@@ -56,10 +59,23 @@
             const body = await response.text();
             diagnostic('http_complete', { label, status: response.status, characters: body.length,
                 elapsedMs: Date.now() - started });
+            const retryableStatus = response.status === 408 || response.status === 429 || response.status >= 500;
+            if (retryableStatus && attempt < MAX_HTTP_ATTEMPTS) {
+                diagnostic('http_retry', { label, attempt, status: response.status });
+                clearTimeout(timer);
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                return diagnosticFetch(url, label, attempt + 1);
+            }
             return { ok: response.ok, status: response.status, text: async () => body };
         } catch (error) {
             diagnostic('http_failed', { label, type: error.name, timeout: controller.signal.aborted,
                 elapsedMs: Date.now() - started });
+            if (attempt < MAX_HTTP_ATTEMPTS && global.navigator?.onLine !== false) {
+                diagnostic('http_retry', { label, attempt, timeout: controller.signal.aborted });
+                clearTimeout(timer);
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                return diagnosticFetch(url, label, attempt + 1);
+            }
             throw new Error(controller.signal.aborted ? `NETWORK_TIMEOUT_${label}` : `NETWORK_FAILED_${label}`, { cause: error });
         } finally {
             clearTimeout(timer);
@@ -88,14 +104,14 @@
 
     function normalizeVersion(version) {
         const value = String(version || '').trim().replace(/^v/i, '');
-        if (!/^\d+\.\d+\.\d+$/.test(value)) return null;
+        if (!/^\d+(?:\.\d+){2,3}$/.test(value)) return null;
         return value;
     }
 
     function compareVersions(first, second) {
         const left = String(first || '').split('.').map(Number);
         const right = String(second || '').split('.').map(Number);
-        for (let index = 0; index < 3; index += 1) {
+        for (let index = 0; index < 4; index += 1) {
             const a = Number.isFinite(left[index]) ? left[index] : 0;
             const b = Number.isFinite(right[index]) ? right[index] : 0;
             if (a !== b) return a > b ? 1 : -1;
@@ -270,6 +286,9 @@
         const extensionId = String(metadata?.extensionId || '');
         const assetName = String(metadata?.assetName || '');
         const assetUrl = String(metadata?.assetUrl || '');
+        const assetUrls = Array.isArray(metadata?.assetUrls) && metadata.assetUrls.length
+            ? metadata.assetUrls
+            : [assetUrl];
         const minUpdaterVersion = normalizeVersion(metadata?.minUpdaterVersion);
         return Boolean(
             version
@@ -277,6 +296,12 @@
             && extensionId === chrome.runtime.id
             && /^[A-Za-z0-9._-]+\.zip$/.test(assetName)
             && /^https:\/\/github\.com\/F1x-hub\/MovieListExtension\/releases\/download\//.test(assetUrl)
+            && assetUrls.length <= 3
+            && assetUrls.includes(assetUrl)
+            && assetUrls.every((url) => (
+                /^https:\/\/github\.com\/F1x-hub\/MovieListExtension\/releases\/download\//.test(String(url))
+                || String(url) === FIREBASE_ASSET_URL
+            ))
             && /^[a-f0-9]{64}$/i.test(String(metadata?.sha256 || ''))
             && Number.isSafeInteger(Number(metadata?.size))
             && Number(metadata.size) > 0
@@ -284,10 +309,28 @@
     }
 
     async function fetchReleaseMetadata() {
-        const [metadataResponse, signatureResponse] = await Promise.all([
-            diagnosticFetch(METADATA_URL, 'metadata'),
-            diagnosticFetch(SIGNATURE_URL, 'signature')
+        let lastError;
+        for (const [metadataUrl, signatureUrl] of [
+            [METADATA_URL, SIGNATURE_URL],
+            [MIRROR_ROOT + 'update.json', MIRROR_ROOT + 'update.json.sig']
+        ]) {
+            try {
+                return await fetchMetadataPair(metadataUrl, signatureUrl);
+            } catch (error) {
+                lastError = error;
+            }
+        }
+        throw lastError;
+    }
+
+    async function fetchMetadataPair(metadataUrl, signatureUrl) {
+        const results = await Promise.allSettled([
+            diagnosticFetch(metadataUrl, 'metadata'),
+            diagnosticFetch(signatureUrl, 'signature')
         ]);
+        const failed = results.find(result => result.status === 'rejected');
+        if (failed) throw failed.reason;
+        const [metadataResponse, signatureResponse] = results.map(result => result.value);
         if (!metadataResponse.ok || !signatureResponse.ok) {
             throw new Error(`RELEASE_METADATA_HTTP_${metadataResponse.status}_${signatureResponse.status}`);
         }
@@ -308,10 +351,9 @@
     async function checkForUpdates(options = {}) {
         if (activeCheck) return activeCheck;
         activeCheck = (async () => {
-            let state = null;
             try {
                 const snapshot = await readState();
-                state = snapshot.state;
+                const state = snapshot.state;
                 const { settings } = snapshot;
                 if (isOperationPending(state) || state.status === 'awaiting_confirmation') return state;
                 const currentVersion = chrome.runtime.getManifest().version;
@@ -378,7 +420,7 @@
                 return nextState;
             } catch (error) {
                 return writeState({
-                    status: state?.availableVersion ? 'available' : 'check_failed',
+                    status: 'check_failed',
                     lastCheckedAt: now(),
                     nextCheckAt: now() + RETRY_DELAY_MINUTES * 60 * 1000,
                     errorCode: 'CHECK_FAILED',

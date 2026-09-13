@@ -62,6 +62,7 @@ assert.match(serviceSource, /async deleteDownload\(downloadId\)/);
 assert.doesNotMatch(serviceSource, /locator\s*:/, 'The extension client must not construct torrent locators');
 const settingsHtml = read('src/pages/settings/settings.html');
 const settingsCss = read('src/pages/settings/settings.css');
+const settingsSource = read('src/pages/settings/settings.js');
 assert.match(settingsHtml, /shared\/services\/MediaPlayerService\.js/);
 assert.match(settingsHtml, /id="torrentRetentionDays"/);
 assert.match(settingsHtml, /data-target="mediaplayer"/);
@@ -69,6 +70,19 @@ assert.match(settingsHtml, /id="mediaPlayerEnabledToggle"/);
 assert.match(settingsHtml, /id="mediaPlayerInstallPath"/);
 assert.match(settingsHtml, /id="mediaPlayerVerifyBtn"/);
 assert.match(settingsHtml, /id="mediaPlayerSetupChecks"/);
+assert.match(settingsHtml, /id="jackettIndexersList"/);
+assert.match(settingsHtml, /id="jackettIndexersRefreshBtn"/);
+assert.match(settingsHtml, /id="jackettIndexerAddBtn"/);
+assert.match(settingsHtml, /id="jackettIndexersStatus"/);
+assert.match(settingsSource, /data-indexer-configure-id/);
+assert.match(settingsSource, /data-indexer-delete-id/);
+assert.match(settingsSource, /showJackettIndexerConfigDialog/);
+assert.match(settingsSource, /showJackettIndexerAddDialog/);
+assert.match(settingsSource, /jackett-available-language-filter/);
+assert.match(settingsSource, /jackett-available-category-filter/);
+assert.match(settingsSource, /jackett-available-type-filter/);
+assert.match(settingsSource, /categories\.some/);
+assert.match(settingsSource, /Показано: \$\{filtered\.length\} из \$\{catalog\.length\}/);
 assert.match(
     settingsCss,
     /\.mediaplayer-setup-panel\[hidden\]\s*\{[\s\S]*?display:\s*none\s*!important;/,
@@ -80,6 +94,14 @@ assert.match(serviceSource, /unknown_action:/);
 assert.match(movieDetails, /this\.mediaPlayerReady && this\.isTorrentMovie\(\)/);
 assert.match(serviceSource, /async getSettings\(\)/);
 assert.match(serviceSource, /async updateSettings\(\{ torrentRetentionDays \}/);
+assert.match(serviceSource, /async getJackettIndexers\(\)/);
+assert.match(serviceSource, /async getAvailableJackettIndexers\(\)/);
+assert.match(serviceSource, /async addJackettIndexer\(indexerId\)/);
+assert.match(serviceSource, /async updateJackettIndexers\(enabledIds = \[\]\)/);
+assert.match(serviceSource, /async testJackettIndexer\(indexerId\)/);
+assert.match(serviceSource, /async getJackettIndexerConfig\(indexerId\)/);
+assert.match(serviceSource, /async updateJackettIndexerConfig\(indexerId, fields = \[\]\)/);
+assert.match(serviceSource, /async deleteJackettIndexer\(indexerId\)/);
 assert.match(movieDetails, /pauseSavedTorrent/);
 assert.match(movieDetails, /resumeSavedTorrent/);
 assert.match(movieDetails, /dataset\.downloadAction = isActiveDownload \? 'pause' : 'resume'/);
@@ -118,6 +140,84 @@ const fakeWindow = {
                 ok: true,
                 status: 200,
                 json: async () => ({ torrentRetentionDays: 7, options: [0, 1, 3, 7, 14, 30] })
+            };
+        }
+        if (String(url).includes('/api/jackett/indexers/available')) {
+            return {
+                ok: true,
+                status: 200,
+                json: async () => ({
+                    indexers: [{ id: 'nyaa', name: 'Nyaa', language: 'en-US', categories: ['Movies'] }]
+                })
+            };
+        }
+        if (String(url).includes('/api/jackett/indexers/') && options.method === 'POST' && !String(url).endsWith('/test')) {
+            return {
+                ok: true,
+                status: 200,
+                json: async () => ({
+                    enabledIds: ['rutor', 'rutracker'],
+                    indexers: [
+                        { id: 'rutor', name: 'RuTor', enabled: true },
+                        { id: 'rutracker', name: 'RuTracker.org', enabled: true }
+                    ]
+                })
+            };
+        }
+        if (String(url).includes('/api/jackett/indexers/') && options.method === 'POST') {
+            return {
+                ok: true,
+                status: 200,
+                json: async () => ({ id: 'rutracker', name: 'RuTracker.org', ok: true, message: 'ok' })
+            };
+        }
+        if (String(url).includes('/api/jackett/indexers/') && String(url).endsWith('/config')) {
+            return {
+                ok: true,
+                status: 200,
+                json: async () => ({
+                    id: 'rutracker',
+                    fields: [
+                        { id: 'site', name: 'Site', type: 'inputstring', value: 'https://example.test', sensitive: false },
+                        { id: 'cookie', name: 'Cookie', type: 'inputpassword', value: null, sensitive: true, hasValue: true }
+                    ]
+                })
+            };
+        }
+        if (String(url).includes('/api/jackett/indexers/') && options.method === 'DELETE') {
+            return {
+                ok: true,
+                status: 200,
+                json: async () => ({
+                    enabledIds: ['rutracker'],
+                    indexers: [{ id: 'rutracker', name: 'RuTracker.org', enabled: true }]
+                })
+            };
+        }
+        if (String(url).endsWith('/api/jackett/indexers') && options.method === 'PATCH') {
+            return {
+                ok: true,
+                status: 200,
+                json: async () => ({
+                    enabledIds: ['rutracker'],
+                    indexers: [
+                        { id: 'rutor', name: 'RuTor', enabled: false },
+                        { id: 'rutracker', name: 'RuTracker.org', enabled: true }
+                    ]
+                })
+            };
+        }
+        if (String(url).endsWith('/api/jackett/indexers')) {
+            return {
+                ok: true,
+                status: 200,
+                json: async () => ({
+                    enabledIds: ['rutor', 'rutracker'],
+                    indexers: [
+                        { id: 'rutor', name: 'RuTor', language: 'ru-RU', enabled: true },
+                        { id: 'rutracker', name: 'RuTracker.org', language: 'ru-RU', enabled: true }
+                    ]
+                })
             };
         }
         if (String(url).includes('/api/catalog/movie/')) {
@@ -280,6 +380,41 @@ const updatedSettings = await service.updateSettings({ torrentRetentionDays: 14 
 assert.equal(updatedSettings.torrentRetentionDays, 14);
 const settingsPatch = requests.find(request => String(request.url).endsWith('/api/settings') && request.options.method === 'PATCH');
 assert.equal(JSON.parse(settingsPatch.options.body).torrentRetentionDays, 14);
+const indexers = await service.getJackettIndexers();
+assert.deepEqual([...indexers.enabledIds], ['rutor', 'rutracker']);
+const availableIndexers = await service.getAvailableJackettIndexers();
+assert.deepEqual(JSON.parse(JSON.stringify(availableIndexers)), [{
+    id: 'nyaa',
+    name: 'Nyaa',
+    description: '',
+    site: '',
+    language: 'en-US',
+    type: '',
+    categories: ['Movies']
+}]);
+const addedIndexerState = await service.addJackettIndexer('nyaa');
+assert.deepEqual([...addedIndexerState.enabledIds], ['rutor', 'rutracker']);
+const updatedIndexers = await service.updateJackettIndexers(['rutracker']);
+assert.deepEqual([...updatedIndexers.enabledIds], ['rutracker']);
+const indexerPatch = requests.find(request => String(request.url).endsWith('/api/jackett/indexers') && request.options.method === 'PATCH');
+assert.deepEqual(JSON.parse(indexerPatch.options.body).enabledIds, ['rutracker']);
+assert.equal((await service.testJackettIndexer('rutracker')).ok, true);
+const indexerConfig = await service.getJackettIndexerConfig('rutracker');
+assert.equal(indexerConfig.id, 'rutracker');
+assert.equal(indexerConfig.fields[1].value, null);
+const updatedIndexerConfig = await service.updateJackettIndexerConfig('rutracker', [
+    { id: 'site', value: 'https://updated.test' },
+    { id: 'cookie', value: null }
+]);
+assert.equal(updatedIndexerConfig.fields[0].value, 'https://example.test');
+const configPatch = requests.find(request => String(request.url).endsWith('/api/jackett/indexers/rutracker/config') && request.options.method === 'PATCH');
+assert.deepEqual(JSON.parse(configPatch.options.body).fields, [
+    { id: 'site', value: 'https://updated.test' },
+    { id: 'cookie', value: null }
+]);
+const deletedIndexerState = await service.deleteJackettIndexer('rutor');
+assert.deepEqual([...deletedIndexerState.enabledIds], ['rutracker']);
+assert.equal(requests.some(request => String(request.url).endsWith('/api/jackett/indexers/rutor')), true);
 
 const incrementalRequests = [];
 let incrementalPollCount = 0;

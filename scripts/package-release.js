@@ -45,9 +45,9 @@ if (process.platform === 'win32') {
 
 if (!fs.existsSync(manifestPath)) fail('dist/manifest.json is missing after build.');
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-if (!/^\d+\.\d+\.\d+$/.test(manifest.version)) fail('manifest version is not a stable semver value.');
+if (!/^\d+(?:\.\d+){2,3}$/.test(manifest.version)) fail('manifest version must contain three or four numeric components.');
 const releaseRef = process.env.GITHUB_REF_NAME || '';
-if (releaseRef && /^v\d+\.\d+\.\d+$/.test(releaseRef) && releaseRef.slice(1) !== manifest.version) {
+if (releaseRef && /^v\d+(?:\.\d+){2,3}$/.test(releaseRef) && releaseRef.slice(1) !== manifest.version) {
     fail(`tag ${releaseRef} does not match manifest version ${manifest.version}.`);
 }
 
