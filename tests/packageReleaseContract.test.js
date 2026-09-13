@@ -15,6 +15,11 @@ assert.doesNotMatch(releaseWorkflow, /if: github\.ref_name ==/);
 assert.match(releaseWorkflow, /npm run test:random-marathon/);
 assert.match(releaseWorkflow, /gh release edit \$env:GITHUB_REF_NAME --latest/);
 assert.match(releaseWorkflow, /FIREBASE_SERVICE_ACCOUNT/);
+assert.match(releaseWorkflow, /Validate Firebase deployment credentials/);
+assert.match(releaseWorkflow, /FIREBASE_SERVICE_ACCOUNT is not valid JSON/);
+assert.match(releaseWorkflow, /gh release upload \$env:GITHUB_REF_NAME/);
+assert.match(releaseWorkflow, /--clobber/);
+assert.match(releaseWorkflow, /Resuming existing draft release/);
 assert.match(releaseWorkflow, /firebase-tools@latest deploy --only hosting/);
 assert.match(releaseWorkflow, /--config firebase.updates.json/);
 assert.ok(

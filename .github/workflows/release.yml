@@ -49,20 +49,50 @@ jobs:
           UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY }}
         run: node scripts/generate-update-metadata.js
 
+      - name: Validate Firebase deployment credentials
+        shell: pwsh
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:FIREBASE_SERVICE_ACCOUNT)) {
+            throw 'Missing required GitHub Actions secret FIREBASE_SERVICE_ACCOUNT. Add the complete Firebase service-account JSON in repository Settings > Secrets and variables > Actions.'
+          }
+          try {
+            $credentials = $env:FIREBASE_SERVICE_ACCOUNT | ConvertFrom-Json
+          } catch {
+            throw 'FIREBASE_SERVICE_ACCOUNT is not valid JSON.'
+          }
+          if ([string]::IsNullOrWhiteSpace($credentials.project_id) -or
+              [string]::IsNullOrWhiteSpace($credentials.client_email) -or
+              [string]::IsNullOrWhiteSpace($credentials.private_key)) {
+            throw 'FIREBASE_SERVICE_ACCOUNT must contain project_id, client_email, and private_key.'
+          }
+
       - name: Create draft release with all assets
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $existingRelease = gh release view $env:GITHUB_REF_NAME 2>$null
-          if ($LASTEXITCODE -eq 0) { throw 'Release already exists; resume it explicitly instead of deleting published assets.' }
+          $existingReleaseJson = gh release view $env:GITHUB_REF_NAME --json isDraft,isPrerelease 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $existingRelease = $existingReleaseJson | ConvertFrom-Json
+            if ($existingRelease.isDraft -ne $true -or $existingRelease.isPrerelease -eq $true) {
+              throw 'A published or prerelease with this tag already exists; refuse to replace it.'
+            }
+            Write-Host "Resuming existing draft release $env:GITHUB_REF_NAME."
+          } else {
+            gh release create $env:GITHUB_REF_NAME `
+              --verify-tag `
+              --draft `
+              --title "MovieList Extension $env:GITHUB_REF_NAME" `
+              --generate-notes
+            if ($LASTEXITCODE -ne 0) { throw 'Could not create the draft GitHub release.' }
+          }
           $version = $env:GITHUB_REF_NAME.TrimStart('v')
-          gh release create $env:GITHUB_REF_NAME `
-            --verify-tag `
-            --draft `
-            --title "MovieList Extension $env:GITHUB_REF_NAME" `
-            --generate-notes `
+          gh release upload $env:GITHUB_REF_NAME `
+            --clobber `
             "MovieList-extension-$version.zip" "MovieListSetup.exe" "update.json" "update.json.sig"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not upload release assets to GitHub.' }
 
       - name: Authenticate Firebase deployment
         id: firebase-auth
