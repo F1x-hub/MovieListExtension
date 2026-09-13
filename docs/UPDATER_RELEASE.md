@@ -78,6 +78,10 @@ The release job validates this secret before creating a draft release, and a
 rerun resumes a draft left by an interrupted job. The error
 `The GitHub Action workflow must specify exactly one of "workload_identity_provider" or "credentials_json"`
 means that `FIREBASE_SERVICE_ACCOUNT` was empty or unavailable to the workflow.
+The workflow uses the service-account key file for Firebase CLI authentication
+and exchanges a short-lived JWT directly with Google's OAuth endpoint for the
+Hosting cleanup API. It therefore does not require granting the service account
+the `roles/iam.serviceAccountTokenCreator` role on itself.
 
 The extension retries each metadata file up to three total attempts, then fetches
 both metadata and signature from the mirror. The Native Host verifies the signature

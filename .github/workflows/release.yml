@@ -99,7 +99,9 @@ jobs:
         uses: google-github-actions/auth@v2
         with:
           credentials_json: '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
-          token_format: access_token
+
+      - name: Create Firebase Hosting API access token
+        run: node scripts/create-google-access-token.cjs
 
       - name: Prepare latest mirror and reject older versions
         run: node scripts/update-mirror.cjs prepare
@@ -108,8 +110,6 @@ jobs:
         run: npx --yes firebase-tools@latest deploy --only hosting --config firebase.updates.json --project movielistdb-13208 --non-interactive
 
       - name: Verify mirror and remove previous archives
-        env:
-          GOOGLE_ACCESS_TOKEN: ${{ steps.firebase-auth.outputs.access_token }}
         run: node scripts/update-mirror.cjs verify-cleanup
 
       - name: Publish release after asset upload
