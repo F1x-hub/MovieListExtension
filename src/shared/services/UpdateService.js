@@ -33,6 +33,7 @@
 
     let alarmRegistered = false;
     let activeCheck = null;
+    let activeCheckDidFetch = false;
     let reloadScheduled = false;
     const DIAGNOSTIC_PREFIX = 'update_diagnostic_';
 
@@ -92,7 +93,9 @@
             timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             state: { status: state.status, currentVersion: state.currentVersion,
                 availableVersion: state.availableVersion, operationId: state.operationId,
-                configured: state.configured, updaterVersion: state.updaterVersion, errorCode: state.errorCode },
+                configured: state.configured, updaterVersion: state.updaterVersion, errorCode: state.errorCode,
+                requiresConfirmation: state.requiresConfirmation,
+                playbackReasons: Array.isArray(state.playbackReasons) ? state.playbackReasons : [] },
             events: Object.entries(all).filter(([key]) => key.startsWith(DIAGNOSTIC_PREFIX))
                 .map(([, value]) => value).sort((a, b) => a.at.localeCompare(b.at))
         };
@@ -229,7 +232,9 @@
 
     async function writeState(patch) {
         if (patch.status) diagnostic('state', { status: patch.status, errorCode: patch.errorCode,
-            operationId: patch.operationId, availableVersion: patch.availableVersion });
+            operationId: patch.operationId, availableVersion: patch.availableVersion,
+            requiresConfirmation: patch.requiresConfirmation,
+            playbackReasons: Array.isArray(patch.playbackReasons) ? patch.playbackReasons : undefined });
         const { state } = await readState();
         const next = { ...state, ...patch };
         await chrome.storage.local.set({ [STATE_KEY]: next });
@@ -349,7 +354,30 @@
     }
 
     async function checkForUpdates(options = {}) {
-        if (activeCheck) return activeCheck;
+        if (activeCheck) {
+            const inFlightCheck = activeCheck;
+            const sharedState = await inFlightCheck;
+            // A manual request may arrive while the scheduled check is already
+            // fetching metadata. Preserve the caller's intent: a silent
+            // automatic wait must be upgraded to a confirmation-required state.
+            if (options.interactive === true
+                && sharedState?.status === 'waiting_for_safe_moment'
+                && sharedState.requiresConfirmation !== true) {
+                return applyUpdate({ automatic: false });
+            }
+            // A forced/manual request may have joined a background check that
+            // returned only because its persisted nextCheckAt is still future.
+            // Re-run that request once the shared promise is released instead
+            // of silently returning the throttled state to the caller.
+            if ((options.force === true || options.interactive === true)
+                && activeCheckDidFetch !== true
+                && !isOperationPending(sharedState)
+                && sharedState?.status !== 'awaiting_confirmation') {
+                return checkForUpdates(options);
+            }
+            return sharedState;
+        }
+        activeCheckDidFetch = false;
         activeCheck = (async () => {
             try {
                 const snapshot = await readState();
@@ -359,6 +387,7 @@
                 const currentVersion = chrome.runtime.getManifest().version;
                 if (!options.force && state.nextCheckAt > now()) return state;
 
+                activeCheckDidFetch = true;
                 const release = await fetchReleaseMetadata();
                 const availableVersion = normalizeVersion(release.metadata.version);
                 if (compareVersions(availableVersion, currentVersion) <= 0) {
@@ -461,7 +490,7 @@
         try {
             if (chrome.offscreen?.hasDocument && await chrome.offscreen.hasDocument()) {
                 const radioState = await new Promise((resolve) => {
-                    chrome.runtime.sendMessage({ type: 'RADIO_GET_STATE' }, (response) => {
+                    chrome.runtime.sendMessage({ type: 'RADIO_GET_STATE', target: 'offscreen-radio' }, (response) => {
                         resolve(chrome.runtime.lastError ? null : response);
                     });
                 });
@@ -477,12 +506,45 @@
                 .filter(tab => Number.isInteger(tab.id))
                 .map(async (tab) => {
                     try {
-                        const result = await chrome.scripting.executeScript({
-                            target: { tabId: tab.id },
-                            func: () => Array.from(document.querySelectorAll('audio,video'))
-                                .some(media => !media.paused && !media.ended)
-                        });
-                        if (result?.[0]?.result === true) playbackReasons.push('tab_media');
+                        if (String(tab.url || '').startsWith(`chrome-extension://${chrome.runtime.id}/`)
+                            && typeof chrome.tabs.sendMessage === 'function') {
+                            const response = await new Promise((resolve) => {
+                                chrome.tabs.sendMessage(tab.id, { type: 'UPDATE_QUERY_PLAYBACK' }, (result) => {
+                                    resolve(chrome.runtime.lastError ? null : result);
+                                });
+                            });
+                            if (response?.isPlaying === true) playbackReasons.push('extension_page_media');
+                            return;
+                        }
+                        const inspectMedia = () => Array.from(document.querySelectorAll('audio,video'))
+                            .some(media => {
+                                // Pages often keep an empty media element mounted while
+                                // their player is closed. It is playback only when the
+                                // element has a source, metadata, and is actively running.
+                                const source = media.currentSrc || media.src || media.srcObject
+                                    || media.querySelector('source[src]')?.src;
+                                return Boolean(source)
+                                    && media.readyState >= HTMLMediaElement.HAVE_METADATA
+                                    && !media.paused
+                                    && !media.ended
+                                    && !media.error;
+                            });
+                        let result;
+                        try {
+                            result = await chrome.scripting.executeScript({
+                                target: { tabId: tab.id, allFrames: true },
+                                func: inspectMedia
+                            });
+                        } catch {
+                            // A cross-origin frame without host permission can make
+                            // an all-frames injection fail as a whole. Recheck the
+                            // top frame so an accessible player still blocks updates.
+                            result = await chrome.scripting.executeScript({
+                                target: { tabId: tab.id },
+                                func: inspectMedia
+                            });
+                        }
+                        if (result?.some(frame => frame?.result === true)) playbackReasons.push('tab_media');
                     } catch {
                         // A missing host permission means that the tab cannot be
                         // inspected, not that it is playing media. Only a positive

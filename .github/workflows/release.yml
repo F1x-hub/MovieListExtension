@@ -67,6 +67,15 @@ jobs:
             throw 'FIREBASE_SERVICE_ACCOUNT must contain project_id, client_email, and private_key.'
           }
 
+      - name: Authenticate Firebase deployment
+        id: firebase-auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
+
+      - name: Create Firebase Hosting API access token
+        run: node scripts/create-google-access-token.cjs
+
       - name: Create draft release with all assets
         shell: pwsh
         env:
@@ -96,15 +105,6 @@ jobs:
             --clobber `
             "MovieList-extension-$version.zip" "MovieListSetup.exe" "update.json" "update.json.sig"
           if ($LASTEXITCODE -ne 0) { throw 'Could not upload release assets to GitHub.' }
-
-      - name: Authenticate Firebase deployment
-        id: firebase-auth
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
-
-      - name: Create Firebase Hosting API access token
-        run: node scripts/create-google-access-token.cjs
 
       - name: Prepare latest mirror and reject older versions
         run: node scripts/update-mirror.cjs prepare

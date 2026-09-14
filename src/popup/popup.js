@@ -29,6 +29,9 @@ class PopupManager {
         this.lastLoadMoreTime = 0;
         this.MIN_LOAD_MORE_INTERVAL_MS = 300;
         this.isCircuitBreakerTripped = false;
+        this.updateStateListenerRegistered = false;
+        this.updateActionInFlight = false;
+        this.updatePlaybackDialogOpen = false;
         
         // Start initialization
         this.start();
@@ -759,14 +762,23 @@ class PopupManager {
         });
 
         // Listen for real-time update messages from background
-        chrome.runtime.onMessage.addListener((message) => {
-            if (message.type === 'UPDATE_STATE_CHANGED') {
-                this.renderUpdateState(message.state, message.settings);
-            }
-        });
+        if (!this.updateStateListenerRegistered) {
+            this.updateStateListenerRegistered = true;
+            chrome.runtime.onMessage.addListener((message) => {
+                if (message.type === 'UPDATE_STATE_CHANGED') {
+                    this.renderUpdateState(message.state, message.settings);
+                }
+            });
+        }
     }
 
     renderUpdateState(state, settings = {}) {
+        if (['failed', 'check_failed', 'up_to_date', 'idle', 'succeeded', 'waiting_for_safe_moment']
+            .includes(state?.status)) {
+            // A native operation can fail after the popup's original click has
+            // returned. Release the local guard so Retry/Update works again.
+            this.updateActionInFlight = false;
+        }
         const version = state?.availableVersion;
         const deferred = state?.deferredUntil && state.deferredUntil > Date.now();
         if (!version || deferred || ['up_to_date', 'idle', 'succeeded', 'deferred'].includes(state.status)) {
@@ -775,6 +787,93 @@ class PopupManager {
             return;
         }
         this.showUpdateBanner(version, state.status, settings, state);
+    }
+
+    sendUpdateRuntimeMessage(message) {
+        return new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage(message, (response) => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                    return;
+                }
+                if (!response?.success) {
+                    reject(new Error(response?.error || 'UPDATE_REQUEST_FAILED'));
+                    return;
+                }
+                resolve(response);
+            });
+        });
+    }
+
+    showPlaybackUpdateDialog(version) {
+        if (this.updatePlaybackDialogOpen) return Promise.resolve(false);
+        this.updatePlaybackDialogOpen = true;
+        return new Promise((resolve) => {
+            const overlay = document.createElement('div');
+            overlay.className = 'update-playback-dialog-overlay';
+            overlay.setAttribute('role', 'presentation');
+
+            const dialog = document.createElement('div');
+            dialog.className = 'update-playback-dialog';
+            dialog.setAttribute('role', 'dialog');
+            dialog.setAttribute('aria-modal', 'true');
+            dialog.setAttribute('aria-label', i18n.get('settings.updates.playback_warning_title'));
+
+            const title = document.createElement('h3');
+            title.textContent = i18n.get('settings.updates.playback_warning_title');
+            const text = document.createElement('p');
+            text.textContent = i18n.get('settings.updates.playback_warning')
+                .replace('{version}', version || 'latest');
+
+            const actions = document.createElement('div');
+            actions.className = 'update-playback-dialog-actions';
+            const declineBtn = document.createElement('button');
+            declineBtn.type = 'button';
+            declineBtn.className = 'btn-dismiss';
+            declineBtn.textContent = i18n.get('settings.updates.playback_decline_button');
+            const confirmBtn = document.createElement('button');
+            confirmBtn.type = 'button';
+            confirmBtn.className = 'btn-update';
+            confirmBtn.textContent = i18n.get('settings.updates.playback_confirm_button');
+
+            let settled = false;
+            const previousActiveElement = document.activeElement;
+            const getFocusable = () => [declineBtn, confirmBtn].filter(button => !button.disabled);
+            const finish = (confirmed) => {
+                if (settled) return;
+                settled = true;
+                this.updatePlaybackDialogOpen = false;
+                document.removeEventListener('keydown', onKeyDown);
+                overlay.remove();
+                if (previousActiveElement && typeof previousActiveElement.focus === 'function'
+                    && document.contains(previousActiveElement)) previousActiveElement.focus();
+                resolve(confirmed);
+            };
+            const onKeyDown = (event) => {
+                if (event.key === 'Escape') finish(false);
+                if (event.key !== 'Tab') return;
+                const focusable = getFocusable();
+                if (focusable.length === 0) return;
+                const currentIndex = focusable.indexOf(document.activeElement);
+                const nextIndex = event.shiftKey
+                    ? (currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1)
+                    : (currentIndex === -1 || currentIndex === focusable.length - 1 ? 0 : currentIndex + 1);
+                event.preventDefault();
+                focusable[nextIndex].focus();
+            };
+            declineBtn.addEventListener('click', () => finish(false));
+            confirmBtn.addEventListener('click', () => finish(true));
+            overlay.addEventListener('click', (event) => {
+                if (event.target === overlay) finish(false);
+            });
+            document.addEventListener('keydown', onKeyDown);
+
+            actions.append(declineBtn, confirmBtn);
+            dialog.append(title, text, actions);
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
+            confirmBtn.focus();
+        });
     }
 
     showUpdateBanner(version, status, settings = {}, state = {}) {
@@ -786,13 +885,21 @@ class PopupManager {
 
         if (banner && versionEl) {
             const setupRequired = status === 'setup_required';
-            const busy = ['installing', 'awaiting_confirmation', 'waiting_for_safe_moment'].includes(status);
+            const waitingForPlayback = status === 'waiting_for_safe_moment';
+            const needsPlaybackConfirmation = waitingForPlayback && state.requiresConfirmation === true;
+            // A background check may leave the update waiting for playback.
+            // Keep the action available so the user can explicitly confirm an
+            // update from the popup instead of being forced to wait for the
+            // next automatic retry.
+            const busy = ['installing', 'awaiting_confirmation'].includes(status);
             versionEl.textContent = `${i18n.get('popup.update.version')} ${version}`;
             if (statusEl) {
                 statusEl.textContent = status === 'installing'
                     ? (i18n.currentLocale === 'ru' ? 'Установка…' : 'Installing…')
                     : status === 'waiting_for_safe_moment'
-                        ? (i18n.currentLocale === 'ru' ? 'Ожидает завершения просмотра' : 'Waiting for playback to finish')
+                        ? (needsPlaybackConfirmation
+                            ? (i18n.currentLocale === 'ru' ? 'Нужно подтверждение' : 'Confirmation required')
+                            : (i18n.currentLocale === 'ru' ? 'Ожидает завершения просмотра' : 'Waiting for playback to finish'))
                     : status === 'setup_required'
                         ? (i18n.currentLocale === 'ru' ? 'Нужно один раз запустить Setup' : 'Run Setup once')
                     : status === 'failed'
@@ -807,8 +914,10 @@ class PopupManager {
                     : (i18n.currentLocale === 'ru' ? 'Обновить' : 'Update');
             updateBtn.disabled = busy;
 
-            // Update button handler
-            updateBtn.onclick = () => {
+            // Update button handler. A manual click always performs an
+            // interactive check first so playback can be confirmed explicitly.
+            updateBtn.onclick = async () => {
+                if (this.updateActionInFlight) return;
                 if (setupRequired) {
                     chrome.tabs.create({ url: UpdateService.getSetupUrl() }, () => {
                         if (chrome.runtime.lastError) {
@@ -817,25 +926,58 @@ class PopupManager {
                     });
                     return;
                 }
+                this.updateActionInFlight = true;
                 updateBtn.textContent = i18n.currentLocale === 'ru' ? 'Установка...' : 'Installing...';
                 updateBtn.disabled = true;
-                
-                chrome.runtime.sendMessage({ type: 'APPLY_UPDATE' }, (response) => {
-                    if (chrome.runtime.lastError) {
+
+                try {
+                    let result = (await this.sendUpdateRuntimeMessage({
+                        type: 'CHECK_FOR_UPDATES',
+                        force: true,
+                        interactive: true
+                    })).state;
+
+                    if (['available', 'available_manual', 'deferred'].includes(result.status)) {
+                        result = (await this.sendUpdateRuntimeMessage({
+                            type: 'APPLY_UPDATE',
+                            automatic: false,
+                            allowPlayback: false
+                        })).state;
+                    }
+
+                    if (result.status === 'waiting_for_safe_moment' && result.requiresConfirmation) {
+                        const confirmed = await this.showPlaybackUpdateDialog(result.availableVersion);
+                        if (!confirmed) {
+                            updateBtn.textContent = i18n.currentLocale === 'ru' ? 'Подождать' : 'Wait';
+                            updateBtn.disabled = false;
+                            this.updateActionInFlight = false;
+                            return;
+                        }
+                        result = (await this.sendUpdateRuntimeMessage({
+                            type: 'APPLY_UPDATE',
+                            automatic: false,
+                            allowPlayback: true
+                        })).state;
+                    }
+
+                    if (result.status === 'waiting_for_safe_moment') {
+                        updateBtn.textContent = i18n.currentLocale === 'ru'
+                            ? 'Ожидает завершения просмотра'
+                            : 'Waiting for playback to finish';
+                        updateBtn.disabled = false;
+                    } else if (result.status === 'failed' || result.status === 'check_failed') {
                         updateBtn.textContent = i18n.currentLocale === 'ru' ? 'Ошибка' : 'Error';
                         updateBtn.disabled = false;
-                        console.error('Update request failed:', chrome.runtime.lastError.message);
-                        return;
                     }
-                    if (response && response.success) {
-                        updateBtn.textContent = i18n.currentLocale === 'ru' ? 'Установка...' : 'Installing...';
-                    } else {
-                        updateBtn.textContent = i18n.currentLocale === 'ru' ? 'Ошибка' : 'Error';
-                        updateBtn.disabled = false;
-                        console.error('Update apply failed:', response?.error);
-                    }
+                    if (!['installing', 'queued', 'downloading', 'replacing', 'awaiting_confirmation']
+                        .includes(result.status)) this.updateActionInFlight = false;
                     this.checkPendingUpdate();
-                });
+                } catch (error) {
+                    updateBtn.textContent = i18n.currentLocale === 'ru' ? 'Ошибка' : 'Error';
+                    updateBtn.disabled = false;
+                    this.updateActionInFlight = false;
+                    console.error('Update request failed:', error);
+                }
             };
 
             // Dismiss button handler

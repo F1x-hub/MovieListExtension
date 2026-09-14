@@ -99,7 +99,15 @@ class SearchManager {
         await this.initializeUI();
         
         // Listen for language changes
-        chrome.runtime.onMessage.addListener((message) => {
+        chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+            if (message.type === 'UPDATE_QUERY_PLAYBACK') {
+                const nativeMediaPlaying = Array.from(document.querySelectorAll('audio,video'))
+                    .some(media => Boolean(media.currentSrc || media.src || media.srcObject)
+                        && media.readyState >= HTMLMediaElement.HAVE_METADATA
+                        && !media.paused && !media.ended && !media.error);
+                sendResponse({ isPlaying: nativeMediaPlaying || this.isPlaying === true });
+                return false;
+            }
             if (message.type === 'SETTINGS_UPDATED') {
                 this.handleSettingsUpdate(message.settings);
             }

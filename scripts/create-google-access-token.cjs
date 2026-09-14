@@ -3,6 +3,8 @@ const crypto = require('node:crypto');
 
 const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 const DEFAULT_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
+const MAX_TOKEN_ATTEMPTS = 3;
+const TOKEN_RETRY_DELAY_MS = 1500;
 
 function readCredentials() {
     const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS
@@ -50,16 +52,38 @@ async function exchangeJwtForAccessToken(credentials) {
         grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
         assertion: createJwtAssertion(credentials)
     });
-    const response = await fetch(TOKEN_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body,
-        signal: AbortSignal.timeout(30000)
-    });
-    if (!response.ok) throw new Error(`Google OAuth token exchange failed with HTTP ${response.status}`);
-    const result = await response.json();
-    if (!result.access_token) throw new Error('Google OAuth token exchange returned no access token');
-    return result.access_token;
+    let lastError;
+    for (let attempt = 1; attempt <= MAX_TOKEN_ATTEMPTS; attempt += 1) {
+        let response;
+        try {
+            response = await fetch(TOKEN_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body,
+                signal: AbortSignal.timeout(30000)
+            });
+        } catch (error) {
+            lastError = error;
+        }
+
+        if (response) {
+            if (!response.ok) {
+                const error = new Error(`Google OAuth token exchange failed with HTTP ${response.status}`);
+                const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
+                if (!retryable || attempt === MAX_TOKEN_ATTEMPTS) throw error;
+                lastError = error;
+            } else {
+                const result = await response.json();
+                if (!result.access_token) throw new Error('Google OAuth token exchange returned no access token');
+                return result.access_token;
+            }
+        }
+
+        if (attempt < MAX_TOKEN_ATTEMPTS) {
+            await new Promise(resolve => setTimeout(resolve, TOKEN_RETRY_DELAY_MS));
+        }
+    }
+    throw lastError || new Error('Google OAuth token exchange failed');
 }
 
 function writeTokenToGithubEnvironment(token) {

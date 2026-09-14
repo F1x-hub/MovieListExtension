@@ -1768,6 +1768,65 @@ body {
     color: #fff;
 }
 
+.update-playback-dialog-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.62);
+}
+
+.update-playback-dialog {
+    width: min(340px, 100%);
+    padding: 18px;
+    border: 1px solid var(--theme-border);
+    border-radius: 12px;
+    background: var(--theme-bg-secondary);
+    color: var(--theme-text-primary);
+    box-shadow: var(--shadow-xl);
+}
+
+.update-playback-dialog h3 {
+    margin: 0 0 8px;
+    font-size: 15px;
+}
+
+.update-playback-dialog p {
+    margin: 0;
+    color: var(--theme-text-secondary);
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.update-playback-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.update-playback-dialog-actions .btn-dismiss,
+.update-playback-dialog-actions .btn-update {
+    min-height: 32px;
+    padding: 0 10px;
+    font-size: 12px;
+}
+
+.update-playback-dialog-actions .btn-dismiss {
+    width: auto;
+    color: var(--theme-text-primary);
+    border: 1px solid var(--theme-border);
+}
+
+.update-playback-dialog-actions .btn-update {
+    align-self: auto;
+    background: var(--theme-text-primary);
+    color: var(--theme-bg-secondary);
+}
+
 
 /* Responsive Design */
 @media (max-width: 400px) {

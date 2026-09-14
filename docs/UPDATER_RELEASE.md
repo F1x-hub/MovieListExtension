@@ -91,6 +91,8 @@ The workflow uses the service-account key file for Firebase CLI authentication
 and exchanges a short-lived JWT directly with Google's OAuth endpoint for the
 Hosting cleanup API. It therefore does not require granting the service account
 the `roles/iam.serviceAccountTokenCreator` role on itself.
+Firebase authentication and the short-lived token exchange run before a GitHub
+draft is created; transient OAuth failures receive three total attempts.
 
 The extension retries each metadata file up to three total attempts, then fetches
 both metadata and signature from the mirror. The Native Host verifies the signature

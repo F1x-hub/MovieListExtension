@@ -95,6 +95,12 @@ assert.match(source, /\\d\+\(\?:\\\.\\d\+\)\{2,3\}/);
     assert.match(settingsHtmlSource, /id="extensionUpdateInstallBtn"/);
     assert.match(settingsJsSource, /type: 'CHECK_FOR_UPDATES'/);
     assert.match(settingsJsSource, /type: 'APPLY_UPDATE'/);
+    assert.match(popupSource, /type: 'CHECK_FOR_UPDATES'/,
+        'the popup update action must perform an interactive update check');
+    assert.match(popupSource, /showPlaybackUpdateDialog/,
+        'the popup must ask before interrupting active playback');
+    assert.match(popupSource, /this\.updateActionInFlight = false/,
+        'the popup must release its action lock after a terminal update state');
     assert.doesNotMatch(settingsHtmlSource, /\(test\)/i);
     assert.doesNotMatch(settingsJsSource, /extensionUpdateDownload/);
     assert.ok(
@@ -109,6 +115,8 @@ assert.match(source, /\\d\+\(\?:\\\.\\d\+\)\{2,3\}/);
     assert.match(backgroundSource, /\['checkUpdates', 'checkUpdatesSafeRetry', 'checkUpdateOperation'\]\.includes\(alarm\.name\)/);
     assert.match(source, /const OPERATION_ALARM = 'checkUpdateOperation'/);
     assert.match(source, /function isOperationPending\(/);
+    assert.match(source, /activeCheckDidFetch/,
+        'manual checks must detect when a shared check was throttled before fetching');
     assert.match(source, /async function closeExtensionPages\(/);
     assert.match(source, /await closeExtensionPages\(\)/);
     assert.match(source, /async function getState\(/);
@@ -159,6 +167,78 @@ assert.match(source, /\\d\+\(\?:\\\.\\d\+\)\{2,3\}/);
     assert.strictEqual(mirrorState.signature, 'mirror-signature');
     assert.strictEqual(githubFailures, 6);
     assert.strictEqual(mirrorRequests, 2);
+
+    let releaseRaceRead;
+    let raceReadBlocked = new Promise(resolve => { releaseRaceRead = resolve; });
+    let raceFirstRead = true;
+    let raceFetchCount = 0;
+    const raceStorageData = {
+        extension_update_state_v2: {
+            status: 'up_to_date',
+            currentVersion: '1.2.9',
+            availableVersion: null,
+            nextCheckAt: Date.now() + 60 * 60 * 1000
+        },
+        extension_update_settings_v1: { autoUpdateEnabled: false }
+    };
+    const raceStorage = {
+        async get(keys) {
+            if (raceFirstRead && Array.isArray(keys)
+                && keys.includes('extension_update_state_v2')) {
+                raceFirstRead = false;
+                await raceReadBlocked;
+            }
+            if (Array.isArray(keys)) {
+                return Object.fromEntries(keys.map(key => [key, raceStorageData[key]]));
+            }
+            return { ...raceStorageData };
+        },
+        async set(values) {
+            Object.assign(raceStorageData, values);
+        }
+    };
+    const raceChrome = {
+        runtime: {
+            id: extensionId,
+            getManifest: () => ({ version: '1.2.9' }),
+            sendNativeMessage: (name, message, callback) => {
+                callback({ success: true, configured: true, updaterVersion: '1.1.4', operation: null });
+            }
+        },
+        storage: { local: raceStorage },
+        alarms: { create() {} }
+    };
+    const raceContext = {
+        chrome: raceChrome,
+        fetch: async url => {
+            raceFetchCount += 1;
+            return {
+                ok: true,
+                status: 200,
+                async text() {
+                    return url.endsWith('.sig') ? 'race-signature' : JSON.stringify(metadata);
+                }
+            };
+        },
+        console,
+        globalThis: null,
+        setTimeout,
+        clearTimeout,
+        AbortController,
+        URL,
+        crypto: { randomUUID: () => '00000000-0000-4000-8000-000000000002' }
+    };
+    raceContext.globalThis = raceContext;
+    vm.runInNewContext(source, raceContext, { filename: 'UpdateService-race.js' });
+    const backgroundCheck = raceContext.UpdateService.checkForUpdates();
+    const manualCheck = raceContext.UpdateService.checkForUpdates({ force: true, interactive: true });
+    releaseRaceRead();
+    const [backgroundState, manualState] = await Promise.all([backgroundCheck, manualCheck]);
+    assert.strictEqual(backgroundState.status, 'up_to_date');
+    assert.strictEqual(manualState.status, 'available_manual',
+        'a manual force check must not inherit a throttled background result');
+    assert.strictEqual(raceFetchCount, 2,
+        'the manual request must perform one fresh metadata/signature fetch pair');
     console.log('updateService.test.js passed');
 })().catch((error) => {
     console.error(error);
