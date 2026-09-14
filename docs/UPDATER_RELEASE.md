@@ -80,7 +80,11 @@ The repository secret must contain the complete JSON object, including
 **Settings → Secrets and variables → Actions → New repository secret** with the
 exact name `FIREBASE_SERVICE_ACCOUNT`; do not paste the JSON into the workflow.
 The release job validates this secret before creating a draft release, and a
-rerun resumes a draft left by an interrupted job. The error
+rerun resumes a draft left by an interrupted job. If the selected tag already
+has a published non-prerelease, the job replaces only that release's four
+generated assets with the files built from the current tag; this supports
+recovering an interrupted or stale release without creating a second version.
+Prereleases are rejected. The error
 `The GitHub Action workflow must specify exactly one of "workload_identity_provider" or "credentials_json"`
 means that `FIREBASE_SERVICE_ACCOUNT` was empty or unavailable to the workflow.
 The workflow uses the service-account key file for Firebase CLI authentication
