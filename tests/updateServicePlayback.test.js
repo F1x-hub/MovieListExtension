@@ -4,6 +4,8 @@ const vm = require('vm');
 
 const source = fs.readFileSync('src/shared/services/UpdateService.js', 'utf8');
 const settingsSource = fs.readFileSync('src/pages/settings/settings.js', 'utf8');
+const movieDetailsSource = fs.readFileSync('src/pages/movie-details/movie-details.js', 'utf8');
+const searchSource = fs.readFileSync('src/pages/search/search.js', 'utf8');
 const localesSource = fs.readFileSync('src/shared/i18n/locales.js', 'utf8');
 
 function createHarness({
@@ -14,7 +16,8 @@ function createHarness({
     nativeApplyStatus = 'succeeded',
     nativeOperation = null,
     initialStatePatch = {},
-    extensionPage = false
+    extensionPage = false,
+    extensionPlayback = false
 }) {
     const storage = {
         extension_update_state_v2: {
@@ -79,6 +82,11 @@ function createHarness({
                     ? 'chrome-extension://ext/src/pages/settings/settings.html'
                     : 'https://example.com'
             }],
+            sendMessage: (tabId, message, callback) => {
+                callback(extensionPlayback && message.type === 'UPDATE_QUERY_PLAYBACK'
+                    ? { isPlaying: true }
+                    : { isPlaying: false });
+            },
             remove: async (tabId) => {
                 removedTabIds.push(tabId);
             }
@@ -174,6 +182,12 @@ function createHarness({
     assert.deepStrictEqual(extensionPage.removedTabIds, [7],
         'the background updater must close extension pages before replacing the unpacked folder');
 
+    const extensionPagePlayback = createHarness({ extensionPage: true, extensionPlayback: true });
+    const extensionPlaybackResult = await extensionPagePlayback.apply();
+    assert.strictEqual(extensionPlaybackResult.status, 'waiting_for_safe_moment',
+        'extension-owned playback must block a manual update');
+    assert.deepStrictEqual(Array.from(extensionPlaybackResult.playbackReasons), ['extension_page_media']);
+
     const staleStartedState = createHarness({
         nativeOperation: {
             operationId: 'operation-1',
@@ -220,6 +234,28 @@ function createHarness({
 
     assert.match(settingsSource, /showPlaybackUpdateDialog/);
     assert.match(settingsSource, /allowPlayback: true/);
+    assert.match(settingsSource, /result\.status === 'waiting_for_safe_moment' && result\.requiresConfirmation/,
+        'manual settings updates must confirm playback discovered after the initial metadata check');
+    assert.match(source, /media\.currentSrc \|\| media\.src/,
+        'empty media elements must not block an update');
+    assert.match(source, /media\.srcObject/,
+        'MediaStream-backed players must block an update');
+    assert.match(source, /HAVE_METADATA/,
+        'media playback detection must require loaded media metadata');
+    assert.match(source, /allFrames: true/,
+        'embedded frame playback must be included in the safety check');
+    assert.match(source, /target: 'offscreen-radio'/,
+        'radio state queries must reach the offscreen audio document');
+    assert.match(source, /UPDATE_QUERY_PLAYBACK/,
+        'extension-owned pages must report their playback state');
+    assert.match(movieDetailsSource, /UPDATE_QUERY_PLAYBACK/,
+        'movie details must answer the updater playback query');
+    assert.match(searchSource, /UPDATE_QUERY_PLAYBACK/,
+        'search playback must answer the updater playback query');
+    assert.match(source, /options\.interactive === true/,
+        'manual checks must preserve intent while a background check is in flight');
+    assert.match(source, /playbackReasons: Array\.isArray\(state\.playbackReasons\)/,
+        'diagnostics must export the playback reason');
     assert.match(settingsSource, /EXTENSION_UPDATE_STATE_STORAGE_KEY/);
     assert.match(settingsSource, /storage\.onChanged\.addListener/);
     assert.match(localesSource, /playback_confirm_button/);

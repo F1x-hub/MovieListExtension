@@ -1546,6 +1546,23 @@ document.addEventListener('DOMContentLoaded', async () => {
                         automatic: false,
                         allowPlayback: false
                     })).state;
+
+                    // The first safe check can discover playback only after the
+                    // metadata request completes. In that case the confirmation
+                    // dialog must still be shown instead of displaying the old
+                    // imperative "stop playback" message.
+                    if (result.status === 'waiting_for_safe_moment' && result.requiresConfirmation) {
+                        const confirmed = await showPlaybackUpdateDialog(result.availableVersion);
+                        if (!confirmed) {
+                            extensionUpdateInstallStatus.textContent = i18n.get('settings.updates.install_latest_declined');
+                            return;
+                        }
+                        result = (await sendUpdateRuntimeMessage({
+                            type: 'APPLY_UPDATE',
+                            automatic: false,
+                            allowPlayback: true
+                        })).state;
+                    }
                 }
 
                 if (extensionUpdateInstallStatus) {
