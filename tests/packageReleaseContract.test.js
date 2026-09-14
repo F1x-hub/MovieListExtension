@@ -20,6 +20,7 @@ assert.match(releaseWorkflow, /FIREBASE_SERVICE_ACCOUNT is not valid JSON/);
 assert.match(releaseWorkflow, /gh release upload \$env:GITHUB_REF_NAME/);
 assert.match(releaseWorkflow, /--clobber/);
 assert.match(releaseWorkflow, /Resuming existing draft release/);
+assert.match(releaseWorkflow, /Updating existing published release/);
 assert.match(releaseWorkflow, /firebase-tools@latest deploy --only hosting/);
 assert.match(releaseWorkflow, /--config firebase.updates.json/);
 assert.match(releaseWorkflow, /Create Firebase Hosting API access token/);
