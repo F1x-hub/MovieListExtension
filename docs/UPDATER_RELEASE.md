@@ -70,6 +70,11 @@ the site `movielistdb-13208-updates` in project `movielistdb-13208` once before 
 first release. Hosting must permit EXE distribution (Spark restricts executable
 files). No credentials are stored in this repository.
 
+The service account used by GitHub Actions must have the project roles
+`roles/firebasehosting.admin` and `roles/serviceusage.apiKeysViewer`. The first
+role permits Hosting deployment and version cleanup; the second is required by
+the Firebase CLI when it reads project configuration.
+
 The repository secret must contain the complete JSON object, including
 `project_id`, `client_email`, and `private_key`. Add it in GitHub under
 **Settings → Secrets and variables → Actions → New repository secret** with the
