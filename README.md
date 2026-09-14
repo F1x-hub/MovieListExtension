@@ -7,7 +7,7 @@ series, cartoons, and anime.
 
 <p>
   <img src="https://img.shields.io/badge/MANIFEST-V3-1687c9?style=flat-square&logo=googlechrome&logoColor=white" alt="Manifest V3">
-  <img src="https://img.shields.io/badge/VERSION-1.3.2.2-69b500?style=flat-square" alt="Version 1.3.2.2">
+  <img src="https://img.shields.io/badge/VERSION-1.3.3-69b500?style=flat-square" alt="Version 1.3.3">
   <img src="https://img.shields.io/badge/JAVASCRIPT-ES6%2B-f0d000?style=flat-square&logo=javascript&logoColor=111827" alt="JavaScript ES6+">
   <img src="https://img.shields.io/badge/VANILLA-ES6%2B-e2c400?style=flat-square" alt="Vanilla ES6+">
   <img src="https://img.shields.io/badge/AUTHOR-FIX-f47721?style=flat-square" alt="Author Fix">
@@ -118,7 +118,7 @@ install future releases in the background.
 
 1. Open the [latest GitHub release](https://github.com/F1x-hub/MovieListExtension/releases/latest)
    and download both files:
-   [`MovieList-extension-1.3.2.2.zip`](https://github.com/F1x-hub/MovieListExtension/releases/latest/download/MovieList-extension-1.3.2.2.zip)
+   [`MovieList-extension-1.3.3.zip`](https://github.com/F1x-hub/MovieListExtension/releases/latest/download/MovieList-extension-1.3.3.zip)
    and [`MovieListSetup.exe`](https://github.com/F1x-hub/MovieListExtension/releases/latest/download/MovieListSetup.exe).
 2. Extract the ZIP to a permanent folder, for example
    `C:\Programs\MovieListExtension`. Keep this folder in place after setup.
@@ -286,11 +286,12 @@ The extension manifest is the source of truth for the Chrome build version; `pac
 keeps npm-compatible three-component semver metadata.
 
 <details>
-<summary><strong>1.3.2.2</strong> — Firebase release pipeline recovery</summary>
+<summary><strong>1.3.3</strong> — Firebase release pipeline recovery</summary>
 
 ### Fixes
 
 - Validate the Firebase Actions service-account secret before creating a draft release.
+- Authenticate Firebase Hosting cleanup without service-account self-impersonation.
 - Resume an existing draft release and replace its assets safely after an interrupted run.
 - Document the required `FIREBASE_SERVICE_ACCOUNT` repository secret.
 
