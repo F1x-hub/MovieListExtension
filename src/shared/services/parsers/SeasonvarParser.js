@@ -22,6 +22,9 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
         this.seasonsCache = new Map();
         this.seasonsInFlight = new Map();
         this.maxDiscoveryCacheEntries = 50;
+        // Raw pages only bridge overlapping seriesInfo/seasons discovery of the
+        // same URL; their parsed results have their own caches.
+        this.maxPageCacheEntries = 10;
     }
 
     beginSelectionRequest() {
@@ -31,6 +34,22 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
 
     isSelectionRequestCurrent(requestId) {
         return requestId === this.selectionRequestId;
+    }
+
+    /**
+     * Publish the structured playback state to the same-window player-cleaner.
+     * Target this page's own origin so the episode/translation URLs are not
+     * delivered to any other listener.
+     * @private
+     */
+    _postPlaybackState(state) {
+        if (typeof window === 'undefined' || typeof window.postMessage !== 'function') return;
+        const origin = window.location?.origin;
+        try {
+            window.postMessage(state, origin && origin !== 'null' ? origin : '*');
+        } catch {
+            // ignore
+        }
     }
 
     normalizePageUrl(url) {
@@ -43,10 +62,19 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
         }
     }
 
-    rememberDiscoveryValue(cache, key, value) {
+    rememberDiscoveryValue(cache, key, value, maxEntries = this.maxDiscoveryCacheEntries) {
         if (cache.has(key)) cache.delete(key);
         cache.set(key, { value, timestamp: Date.now() });
-        while (cache.size > this.maxDiscoveryCacheEntries) cache.delete(cache.keys().next().value);
+        while (cache.size > maxEntries) cache.delete(cache.keys().next().value);
+    }
+
+    /**
+     * A cached page is stored as HTML only; a parsed Document per entry costs
+     * far more memory than re-parsing on the rare second use.
+     * @private
+     */
+    _toParsedPage(entry) {
+        return { url: entry.url, html: entry.html, doc: new DOMParser().parseFromString(entry.html, 'text/html') };
     }
 
     getCachedDiscoveryValue(cache, key) {
@@ -63,34 +91,38 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
         const cached = this.getCachedDiscoveryValue(this.pageCache, key);
         if (cached) {
             perf?.recordCall('SEASONVAR_PAGE', { cacheHit: true });
-            return cached;
+            return this._toParsedPage(cached);
         }
         const pending = this.pageInFlight.get(key);
         if (pending) {
             perf?.recordCall('SEASONVAR_PAGE', { inFlightDedupHit: true });
-            return pending;
+            return pending.then(entry => this._toParsedPage(entry));
         }
         perf?.recordCall('SEASONVAR_PAGE');
         const request = (async () => {
             const response = perf
-                ? await perf.trackRequest('SEASONVAR_DETAIL', { purpose, url: key }, () => fetch(key))
-                : await fetch(key);
+                ? await perf.trackRequest('SEASONVAR_DETAIL', { purpose, url: key }, () => this.fetchWithTimeout(key))
+                : await this.fetchWithTimeout(key);
             if (!response.ok) throw new Error('Failed to load series page');
             const html = await response.text();
-            const doc = new DOMParser().parseFromString(html, 'text/html');
-            const page = { url: key, html, doc };
-            this.rememberDiscoveryValue(this.pageCache, key, page);
-            return page;
+            const entry = { url: key, html };
+            this.rememberDiscoveryValue(this.pageCache, key, entry, this.maxPageCacheEntries);
+            return entry;
         })();
         this.pageInFlight.set(key, request);
         try {
-            return await request;
+            return this._toParsedPage(await request);
         } finally {
             if (this.pageInFlight.get(key) === request) this.pageInFlight.delete(key);
         }
     }
 
-    async getCachedDiscovery(cache, inFlight, url, purpose, loader) {
+    /**
+     * Cache and coalesce one discovery loader. `shouldCache` keeps degraded
+     * results (an empty playlist after a transient failure) out of the cache so
+     * the next request retries instead of serving them for the whole TTL.
+     */
+    async getCachedDiscovery(cache, inFlight, url, purpose, loader, shouldCache = () => true) {
         const key = this.normalizePageUrl(url);
         const cached = this.getCachedDiscoveryValue(cache, key);
         if (cached) return cached;
@@ -98,7 +130,7 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
         if (pending) return pending;
         const request = (async () => {
             const value = await loader(key, purpose);
-            this.rememberDiscoveryValue(cache, key, value);
+            if (shouldCache(value)) this.rememberDiscoveryValue(cache, key, value);
             return value;
         })();
         inFlight.set(key, request);
@@ -128,13 +160,13 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
      * @returns {Promise<SearchResult|null>} Best matching result
      */
     async search(title, year, options = {}) {
-        console.log(`[DEBUG SeasonvarParser] search() called. title: "${title}", year: ${year}`);
+        this.debugLog(`[DEBUG SeasonvarParser] search() called. title: "${title}", year: ${year}`);
         try {
             const url = `${this.searchUrl}?q=${encodeURIComponent(title)}`;
             const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
             const response = perf
-                ? await perf.trackRequest('SEASONVAR_SEARCH', { purpose: 'search', url }, () => fetch(url))
-                : await fetch(url);
+                ? await perf.trackRequest('SEASONVAR_SEARCH', { purpose: 'search', url }, () => this.fetchWithTimeout(url))
+                : await this.fetchWithTimeout(url);
             
             if (!response.ok) {
                 throw new Error(`Search failed: ${response.status}`);
@@ -149,7 +181,7 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
             if (!best) return null;
 
             best.parserId = this.id;
-            console.log(`[DEBUG SeasonvarParser] search result: url=${best.url?.substring(0,80)}, title=${best.title}`);
+            this.debugLog(`[DEBUG SeasonvarParser] search result: url=${best.url?.substring(0,80)}, title=${best.title}`);
             return best;
 
         } catch (error) {
@@ -170,8 +202,8 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
                 throw new Error(`[SeasonvarParser] getVideoSources requires an absolute http/https URL, received: "${rawUrl}"`);
             }
             const url = rawUrl;
-            console.log('=== ДИАГНОСТИКА СЕЗОНОВ (getVideoSources) ===');
-            console.log('URL:', url);
+            this.debugLog('=== ДИАГНОСТИКА СЕЗОНОВ (getVideoSources) ===');
+            this.debugLog('URL:', url);
             
             const seriesInfo = await this.getSeriesInfo(url, 'getVideoSources');
             
@@ -183,9 +215,9 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
                  console.warn('Failed to fetch seasons in getVideoSources', e);
             }
 
-            console.log('Полученные данные о сериале (seriesInfo):', seriesInfo);
-            console.log('Количество найденных сезонов (getSeasons):', seasons ? seasons.length : 0);
-            console.log('Массив сезонов:', seasons);
+            this.debugLog('Полученные данные о сериале (seriesInfo):', seriesInfo);
+            this.debugLog('Количество найденных сезонов (getSeasons):', seasons ? seasons.length : 0);
+            this.debugLog('Массив сезонов:', seasons);
 
             if (!seriesInfo || !seriesInfo.episodes || seriesInfo.episodes.length === 0) {
                 return [];
@@ -198,6 +230,7 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
                 type: 'video',
                 subtitle: ep.subtitle || null
             }));
+            videoSources.translations = seriesInfo.translations || null;
             return videoSources;
         } catch (error) {
             console.error(`[${this.name}] getVideoSources error:`, error);
@@ -304,7 +337,7 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
         }
 
         let episodes = sources;
-        let translations = options.translations || null;
+        let translations = options.translations || sources?.translations || null;
         let seasons = options.seasons || null;
 
         // --- CANONICAL SEASON SELECTION ---
@@ -327,7 +360,7 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
 
                 if (!isRenderCurrent()) return false;
                 
-                console.log(`[${this.name}] Auto-select check. Progress:`, progress);
+                this.debugLog(`[${this.name}] Auto-select check. Progress:`, progress);
 
                 if (progress && progress.season && seasons && seasons.length > 0) {
                     const progSeasonNum = parseInt(progress.season, 10);
@@ -335,7 +368,7 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
                          const targetSeason = seasons.find(s => Number(s.season_number) === progSeasonNum);
                          if (targetSeason) {
                              activeSeasonUrl = targetSeason.url;
-                             console.log(`[${this.name}] Will auto-switch to season ${progSeasonNum}: ${activeSeasonUrl}`);
+                             this.debugLog(`[${this.name}] Will auto-switch to season ${progSeasonNum}: ${activeSeasonUrl}`);
                          }
                     }
                 }
@@ -372,10 +405,25 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
                         type: 'video',
                         subtitle: ep.subtitle
                     }));
-                    translations = seriesInfo.translations;
+                    translations = seriesInfo.translations || null;
                  }
             } catch (err) {
                 console.error(`[${this.name}] Failed to load target season`, err);
+            }
+        } else if ((!translations || translations.length === 0) && activeSeasonUrl) {
+            const cachedInfo = this.getCachedDiscoveryValue(this.seriesInfoCache, this.normalizePageUrl(activeSeasonUrl));
+            if (cachedInfo?.translations?.length) {
+                translations = cachedInfo.translations;
+            } else {
+                try {
+                    const seriesInfo = await this.getSeriesInfo(activeSeasonUrl);
+                    if (!isRenderCurrent()) return false;
+                    if (seriesInfo?.translations?.length) {
+                        translations = seriesInfo.translations;
+                    }
+                } catch (err) {
+                    console.warn(`[${this.name}] Failed to discover translations for season`, err);
+                }
             }
         }
 
@@ -438,11 +486,7 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
             mountToken: this.renderRequestId
         };
 
-        try {
-            window.postMessage(structuredState, '*');
-        } catch {
-            // ignore
-        }
+        this._postPlaybackState(structuredState);
         container.__seasonvarPlaybackState = structuredState;
 
         if (!firstEp?.url || (!firstEp.url.startsWith('http://') && !firstEp.url.startsWith('https://'))) {
@@ -454,10 +498,13 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
             return false;
         }
 
+        // Episode URLs are decoded from the provider playlist; the scheme is
+        // checked above and the value must never break out of the attribute.
+        const episodeSrc = SeasonvarParser.escapeAttribute(firstEp.url);
         const playerHtml = `
             <div class="player-clean player-surface__content">
-                <video id="seasonvarVideo" class="player-surface__media" controls>
-                    <source src="${firstEp.url}" type="video/mp4">
+                <video id="seasonvarVideo" class="player-surface__media" controls data-progress-owner="canonical">
+                    <source src="${episodeSrc}" type="video/mp4">
                     Ваш браузер не поддерживает video тег.
                 </video>
                 <div class="player-surface__bridge" hidden aria-hidden="true">
@@ -476,6 +523,8 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
             ? document.getElementById('seasonvarVideo')
             : (container?.querySelector ? container.querySelector('video') : null);
 
+        this._updateVideoSubtitles(videoElement, firstEp.subtitle);
+
         if (options.movieId) {
             this.handleProgressRestoration(videoElement, options.movieId, episodes, options);
         }
@@ -487,17 +536,61 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
         return true;
     }
 
+    _updateVideoSubtitles(video, subtitleStr) {
+        if (!video || typeof document === 'undefined') return;
+        try {
+            video.querySelectorAll('track').forEach(t => t.remove());
+            if (!subtitleStr || typeof subtitleStr !== 'string') return;
+
+            // Format: [ru]https://...vtt?shift=0,[eng]https://...vtt?shift=0
+            const trackRegex = /\[([a-z0-9_-]+)\](https?:\/\/[^,]+)/gi;
+            let match;
+            const langLabels = {
+                ru: 'Русский',
+                rus: 'Русский',
+                en: 'English',
+                eng: 'English',
+                uk: 'Українська',
+                ukr: 'Українська'
+            };
+            let count = 0;
+            while ((match = trackRegex.exec(subtitleStr)) !== null) {
+                const code = match[1].toLowerCase();
+                const src = match[2];
+                const track = document.createElement('track');
+                track.kind = 'subtitles';
+                track.srclang = code;
+                track.label = langLabels[code] || code.toUpperCase();
+                track.src = src;
+                if (count === 0) {
+                    track.default = true;
+                }
+                video.appendChild(track);
+                count++;
+            }
+        } catch (e) {
+            console.warn(`[${this.name}] Failed to update video subtitles:`, e);
+        }
+    }
+
     _renderTranslationSelect(translations, activeTranslationUrl = null) {
         if (!translations || translations.length <= 1) return '';
+        const hasExplicitActive = translations.some(t => activeTranslationUrl ? t.url === activeTranslationUrl : Boolean(t.active));
         return `
             <div id="seasonvar-voiceover-source">
-                ${translations.map(t => `
-                    <div class="seasonvar-voiceover-item ${t.active ? 'active' : ''}" 
-                            data-url="${t.url}" 
-                            data-id="${t.id}">
-                            ${t.name}
+                ${translations.map((t, idx) => {
+                    const isActive = activeTranslationUrl
+                        ? t.url === activeTranslationUrl
+                        : (hasExplicitActive ? Boolean(t.active) : idx === 0);
+                    const escape = SeasonvarParser.escapeAttribute;
+                    return `
+                    <div class="seasonvar-voiceover-item ${isActive ? 'active' : ''}"
+                            data-url="${escape(t.url)}"
+                            data-id="${escape(t.id)}">
+                            ${escape(t.name)}
                     </div>
-                `).join('')}
+                `;
+                }).join('')}
             </div>
         `;
     }
@@ -563,6 +656,7 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
                      if (currentVideo) {
                          currentVideo.pause();
                          currentVideo.src = newEp.url;
+                         this._updateVideoSubtitles(currentVideo, newEp.subtitle);
                          currentVideo.load();
                      }
 
@@ -577,11 +671,12 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
                          }));
                          container.__seasonvarPlaybackState.activeEpisodeUrl = newEp.url;
                          container.__seasonvarPlaybackState.activeEpisodeNumber = this.extractEpisodeNumber(newEp);
-                         try {
-                             window.postMessage(container.__seasonvarPlaybackState, '*');
-                         } catch {
-                             // ignore
+                         if (container.__seasonvarPlaybackState.translations) {
+                             container.__seasonvarPlaybackState.translations.forEach(t => {
+                                 t.active = (t.url === url);
+                             });
                          }
+                         this._postPlaybackState(container.__seasonvarPlaybackState);
                      }
                      
                      setSourceState('ready');
@@ -722,7 +817,7 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
 
             // Only perform source swap if legacy fallback found a different target and NO canonical selection exists
             if (!hasCanonicalSelection && targetSource && targetSource.url && video.src && targetSource.url !== video.src) {
-                console.log(`[${this.name}] Restoring to episode: ${targetSource.name}`);
+                this.debugLog(`[${this.name}] Restoring to episode: ${targetSource.name}`);
                 video.pause();
                 video.removeAttribute('src');
                 video.load();
@@ -738,7 +833,7 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
                     }
 
                     const episodeLabel = targetSource.name || targetSource.title || '';
-                    console.log(`[${this.name}] Dispatching episodeRestored event:`, episodeLabel);
+                    this.debugLog(`[${this.name}] Dispatching episodeRestored event:`, episodeLabel);
                     document.dispatchEvent(new CustomEvent('episodeRestored', { 
                         detail: { label: episodeLabel, url: targetSource.url } 
                     }));
@@ -858,7 +953,8 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
             this.seriesInfoInFlight,
             url,
             purpose,
-            (key, requestPurpose) => this.getSeriesInfoUncached(key, requestPurpose)
+            (key, requestPurpose) => this.getSeriesInfoUncached(key, requestPurpose),
+            info => Array.isArray(info?.episodes) && info.episodes.length > 0
         );
     }
 
@@ -868,10 +964,25 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
             const { html, doc } = page;
 
             // NEW PARSING LOGIC: Handle multiple translations structure
-            // 1. Extract all pl[id] = "url" mappings from the raw HTML first (most robust)
+            // 1. Extract all pl mappings from raw HTML:
+            // a) Initial object or string: var pl = {'0': "..."} or var pl = {0: "..."} or var pl = "..."
             const playlistMap = {};
-            // Regex to match: pl[123] = "/path/to/playlist.txt";
-            // Supports variations in spacing and quotes
+            const plInitMatch = html.match(/var\s+pl\s*=\s*(\{[\s\S]*?\}|['"][^'"]+['"])/);
+            if (plInitMatch) {
+                const initVal = plInitMatch[1].trim();
+                if (initVal.startsWith('{')) {
+                    const pairRegex = /['"]?(\d+)['"]?\s*:\s*['"]([^'"]+)['"]/g;
+                    let pairMatch;
+                    while ((pairMatch = pairRegex.exec(initVal)) !== null) {
+                        playlistMap[pairMatch[1]] = pairMatch[2];
+                    }
+                } else {
+                    const cleanVal = initVal.replace(/^['"]|['"]$/g, '');
+                    playlistMap['0'] = cleanVal;
+                }
+            }
+
+            // b) Subsequent array index assignments: pl[1] = "..."
             const plRegex = /pl\[['"]?(\d+)['"]?\]\s*=\s*['"]([^"']+)['"]/g;
             let match;
             while ((match = plRegex.exec(html)) !== null) {
@@ -887,7 +998,7 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
                 const id = li.getAttribute('data-translate');
                 const name = li.textContent.trim();
                 const percent = li.getAttribute('data-translate-percent');
-                const isActive = li.classList.contains('act');
+                const isActive = li.classList.contains('act') || (translations.length === 0 && id === '0');
                 const url = playlistMap[id];
 
                 // Filter out utility items like "Trailers"
@@ -898,10 +1009,6 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
                 if (url) {
                     // Fix URL if relative
                     const fullUrl = url.startsWith('/') ? this.baseUrl + url : url;
-                    
-                    if (isActive) {
-                        // activeTranslationId = id; // redundant
-                    }
 
                     translations.push({
                         id: id,
@@ -913,14 +1020,27 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
                 }
             });
 
-            // Fallback: If no translations found via regex/DOM (old structure or single translation)
+            // Fallback: If no translations found via DOM list (old structure or single translation)
+            if (translations.length === 0 && Object.keys(playlistMap).length > 0) {
+                Object.keys(playlistMap).forEach((k, idx) => {
+                    let u = playlistMap[k];
+                    if (u.startsWith('/')) u = this.baseUrl + u;
+                    translations.push({
+                        id: k,
+                        name: k === '0' ? 'Стандартный' : `Перевод ${k}`,
+                        popularity: k === '0' ? 100 : 0,
+                        url: u,
+                        active: idx === 0
+                    });
+                });
+            }
+
+            // Fallback: Check for legacy var pl match if playlistMap was completely empty
             if (translations.length === 0) {
-                 // Try finding single simple variable: var pl = {...} or var pl = "/path"
                  const simplePlMatch = html.match(/var\s+pl\s*=\s*(['"][^'"]+['"]|{[^;]+})/);
                  if (simplePlMatch) {
                      let val = simplePlMatch[1];
                      if (val.startsWith('{')) {
-                         // JSON object format (Old Seasonvar)
                          try {
                              val = val.replace(/'/g, '"');
                              const parsed = JSON.parse(val);
@@ -935,9 +1055,8 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
                                       active: k === '0'
                                   });
                              });
-                            } catch { /* Ignore */ }
+                         } catch { /* Ignore */ }
                      } else {
-                         // Simple string format
                          let u = val.replace(/['"]/g, '');
                          if (u.startsWith('/')) u = this.baseUrl + u;
                          translations.push({
@@ -947,8 +1066,7 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
                              url: u,
                              active: true
                          });
-                          // activeTranslationId = '0'; // redundant
-                      }
+                     }
                  }
             }
             
@@ -958,11 +1076,25 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
             }
 
             // Determine active playlist URL
-            // Prefer the one marked 'active', otherwise the most popular, otherwise first
             let activeTranslation = translations.find(t => t.active) || translations.sort((a,b) => b.popularity - a.popularity)[0] || translations[0];
+            translations.forEach(t => {
+                t.active = (t.id === activeTranslation.id);
+            });
             
             // Fetch episodes for the active translation
             const episodes = await this.fetchAndParsePlaylist(activeTranslation.url);
+
+            // If activeTranslation name is 'Стандартный' and episodes contain studio details (e.g. LostFilm)
+            if (activeTranslation && activeTranslation.name.toLowerCase() === 'стандартный' && episodes.length > 0) {
+                const sampleRaw = episodes[0]?.rawTitle || '';
+                const studioMatch = sampleRaw.match(/<br\s*\/?>\s*([^<]+)$/i);
+                if (studioMatch && studioMatch[1]) {
+                    const studio = studioMatch[1].trim();
+                    if (studio && !studio.toLowerCase().includes('серия') && !studio.toLowerCase().includes('стандартный')) {
+                        activeTranslation.name = `Стандартный (${studio})`;
+                    }
+                }
+            }
 
             return {
                 episodes: episodes,
@@ -983,8 +1115,8 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
         try {
             const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
             const response = perf
-                ? await perf.trackRequest('SEASONVAR_DETAIL', { purpose: 'playlist', url }, () => fetch(url))
-                : await fetch(url);
+                ? await perf.trackRequest('SEASONVAR_DETAIL', { purpose: 'playlist', url }, () => this.fetchWithTimeout(url))
+                : await this.fetchWithTimeout(url);
             if (!response.ok) throw new Error('Failed to load playlist');
             const data = await response.json();
             return this.flattenPlaylist(data);
@@ -1035,7 +1167,8 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
                 result.push({
                     title: finalTitle,
                     url: this.decodeUrl(item.file),
-                    subtitle: item.subtitle || null
+                    subtitle: item.subtitle || null,
+                    rawTitle: item.title || null
                 });
             }
         });
@@ -1056,8 +1189,8 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
             const url = `${this.searchUrl}?q=${encodeURIComponent(name)}`;
             const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
             const response = perf
-                ? await perf.trackRequest('SEASONVAR_SEARCH', { purpose: 'searchBestMatch', url }, () => fetch(url))
-                : await fetch(url);
+                ? await perf.trackRequest('SEASONVAR_SEARCH', { purpose: 'searchBestMatch', url }, () => this.fetchWithTimeout(url))
+                : await this.fetchWithTimeout(url);
             if (!response.ok) throw new Error(`Search failed: ${response.status}`);
             
             const html = await response.text();
@@ -1083,7 +1216,8 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
             this.seasonsInFlight,
             url,
             purpose,
-            (key, requestPurpose) => this.getSeasonsUncached(key, requestPurpose)
+            (key, requestPurpose) => this.getSeasonsUncached(key, requestPurpose),
+            seasons => Array.isArray(seasons) && seasons.length > 0
         );
     }
 
@@ -1135,9 +1269,9 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
                 });
             }
 
-            console.log('=== ПАРСИНГ SEASONVAR (getSeasons) ===');
-            console.log('Найденный блок tabs-result:', tabsResult ? 'Да' : 'Нет');
-            console.log('Извлеченные данные сезонов:', seasons);
+            this.debugLog('=== ПАРСИНГ SEASONVAR (getSeasons) ===');
+            this.debugLog('Найденный блок tabs-result:', tabsResult ? 'Да' : 'Нет');
+            this.debugLog('Извлеченные данные сезонов:', seasons);
 
             // Identify seasons with missing episode counts
             const fetchPromises = seasons.map(async (s) => {

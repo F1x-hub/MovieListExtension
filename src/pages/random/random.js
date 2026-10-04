@@ -3,6 +3,54 @@ import { i18n } from '../../shared/i18n/I18n.js';
 
 const DEFAULT_SPINNER_POSTER = '/src/shared/assets/icons/app/icon128-white.png';
 const PREVIEW_POSTERS = [];
+const DEFAULT_ROLL_DURATION_SECONDS = 6;
+const MIN_ROLL_DURATION_SECONDS = 2;
+const MAX_ROLL_DURATION_SECONDS = 1800;
+const ROLL_DURATION_STORAGE_KEY = 'random_wheel_duration_seconds';
+const SAFE_MARATHON_POSTER_HOSTS = new Set([
+    'image.tmdb.org',
+    'image.openmoviedb.com',
+    'st.kp.yandex.net'
+]);
+
+function getSafeMarathonPosterUrl(value) {
+    if (typeof value !== 'string' || !value.trim() || value.length > 2048) return '';
+
+    try {
+        const url = new URL(value.trim());
+        const host = url.hostname.toLowerCase();
+        const isSupportedHost = SAFE_MARATHON_POSTER_HOSTS.has(host);
+        if (url.protocol === 'http:' && isSupportedHost) url.protocol = 'https:';
+        if (url.protocol !== 'https:' || url.port || url.username || url.password || !isSupportedHost) {
+            return '';
+        }
+
+        const isImagePath = /\.(?:jpe?g|png|webp)$/i.test(url.pathname);
+        if (!isImagePath) return '';
+        if (host === 'image.tmdb.org' && !url.pathname.startsWith('/t/p/')) return '';
+        if (host === 'st.kp.yandex.net' && !url.pathname.startsWith('/images/')) return '';
+
+        url.search = '';
+        url.hash = '';
+        return url.href;
+    } catch {
+        return '';
+    }
+}
+
+function getMarathonPosterUrls(value, kpId) {
+    const urls = [];
+    const savedUrl = getSafeMarathonPosterUrl(value);
+    if (savedUrl) urls.push(savedUrl);
+
+    const movieId = Number(kpId);
+    if (Number.isSafeInteger(movieId) && movieId > 0) {
+        const fallbackUrl = `https://st.kp.yandex.net/images/film_iphone/iphone360_${movieId}.jpg`;
+        if (!urls.includes(fallbackUrl)) urls.push(fallbackUrl);
+    }
+
+    return urls;
+}
 
 /**
  * RandomManager - Controller for the Random Movie page
@@ -43,13 +91,19 @@ class RandomManager {
         this.POOL_KEY = 'randomPool';
         this._searchTimer = null;
         this.rollAnimRunning = false;
-        this.rollDrumOffset = 0;
+        this._rollAnimationId = 0;
+        const savedRollDuration = Number(localStorage.getItem(ROLL_DURATION_STORAGE_KEY));
+        this.rollDurationSeconds = Number.isInteger(savedRollDuration)
+            && savedRollDuration >= MIN_ROLL_DURATION_SECONDS
+            && savedRollDuration <= MAX_ROLL_DURATION_SECONDS
+            ? savedRollDuration : DEFAULT_ROLL_DURATION_SECONDS;
         this.marathonService = null;
         this.marathonState = { round: null, items: [] };
         this.marathonIsAdmin = false;
         this._marathonUnsubscribe = null;
         this._marathonSearchTimer = null;
         this._marathonMutationRunning = false;
+        this._marathonPendingAction = null;
         this._marathonAuthRefreshId = 0;
         this._marathonPendingRemovals = new Set();
         this._marathonPendingAdds = new Map();
@@ -886,7 +940,7 @@ class RandomManager {
         if (rollFromPoolBtn) {
             rollFromPoolBtn.addEventListener('click', () => {
                 document.getElementById('poolModal').classList.add('hidden');
-                this._rollFromPool();
+                this._showRollReady(this.pool, () => this._rollFromPool());
             });
         }
 
@@ -1017,6 +1071,7 @@ class RandomManager {
         const entry = typeof RandomPoolService !== 'undefined' ? RandomPoolService.createEntry(movie) : null;
         const movieKey = this._getMarathonMovieKey(round.roundId, entry);
         if (!entry || !movieKey) return null;
+        entry.poster = getMarathonPosterUrls(entry.poster, entry.kpId)[0] || '';
 
         const displayItems = this._getMarathonDisplayItems();
         if (displayItems.some((item) => item.state !== 'removed' && this._getMarathonMovieKey(round.roundId, item) === movieKey)) {
@@ -1045,7 +1100,7 @@ class RandomManager {
         };
         this._marathonPendingAdds.set(movieKey, optimisticItem);
         this._renderMarathon();
-        return this._runMarathonAction(() => this.marathonService.addMovie(movie), { pendingAddKey: movieKey });
+        return this._runMarathonAction(() => this.marathonService.addMovie(entry), { pendingAddKey: movieKey });
     }
 
     _renderMarathon() {
@@ -1070,6 +1125,7 @@ class RandomManager {
             actions.innerHTML = this.marathonIsAdmin
                 ? '<button class="btn-roll-from-pool" data-marathon-action="create">Создать раунд</button>' : '';
             this._bindMarathonActions();
+            this._syncMarathonActionState();
             this._refreshPoolModalIfOpen();
             return;
         }
@@ -1105,9 +1161,46 @@ class RandomManager {
                 ? 'добавляется…'
                 : ({ queued: 'в очереди', selected: 'выпал', watched: 'просмотрен', removed: 'удалён' }[item.state] || item.state);
             const addedBy = item.addedByName || item.addedBy || 'участник';
+            const posterUrls = getMarathonPosterUrls(item.poster, item.kpId);
             const poster = document.createElement('img');
-            poster.src = item.poster || '';
-            poster.alt = '';
+            poster.className = 'marathon-item-poster';
+            poster.alt = item.title ? `Открыть постер фильма «${item.title}»` : 'Открыть постер фильма';
+            let posterUrlIndex = 0;
+            const markPosterUnavailable = () => {
+                poster.classList.add('marathon-item-poster--unavailable');
+                poster.removeAttribute('src');
+                poster.removeAttribute('role');
+                poster.removeAttribute('title');
+                poster.tabIndex = -1;
+            };
+            const loadNextPoster = () => {
+                if (posterUrlIndex >= posterUrls.length) {
+                    markPosterUnavailable();
+                    return;
+                }
+                poster.src = posterUrls[posterUrlIndex++];
+            };
+            poster.tabIndex = posterUrls.length ? 0 : -1;
+            if (posterUrls.length) {
+                poster.addEventListener('error', loadNextPoster);
+                poster.setAttribute('role', 'button');
+                poster.title = 'Увеличить постер';
+                const openPoster = (event) => {
+                    event.stopPropagation();
+                    if (!poster.hasAttribute('src')) return;
+                    const currentPosterUrl = poster.currentSrc || poster.src;
+                    if (currentPosterUrl && typeof window.ImageLightbox !== 'undefined') window.ImageLightbox.show(currentPosterUrl);
+                };
+                poster.addEventListener('click', openPoster);
+                poster.addEventListener('keydown', (event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                    event.preventDefault();
+                    openPoster(event);
+                });
+                loadNextPoster();
+            } else {
+                markPosterUnavailable();
+            }
             const meta = document.createElement('div');
             meta.className = 'pool-list-item-meta';
             const title = document.createElement('div');
@@ -1129,11 +1222,7 @@ class RandomManager {
             rowActions.className = 'marathon-item-actions';
             rowActions.appendChild(state);
             row.append(poster, meta, rowActions);
-            row.addEventListener('click', (event) => {
-                if (event.target.tagName?.toLowerCase() === 'img' && item.poster && typeof window.ImageLightbox !== 'undefined') {
-                    window.ImageLightbox.show(item.poster);
-                    return;
-                }
+            row.addEventListener('click', () => {
                 window.location.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${item.kpId}`);
             });
             row.addEventListener('keydown', (event) => {
@@ -1164,7 +1253,11 @@ class RandomManager {
         if (current) {
             const currentLabel = document.createElement('div');
             currentLabel.className = 'marathon-current-movie';
-            currentLabel.textContent = `Сейчас выпал фильм: ${current.title}`;
+            const currentLink = document.createElement('a');
+            currentLink.className = 'marathon-current-movie-link';
+            currentLink.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${current.kpId}`);
+            currentLink.textContent = current.title || 'Без названия';
+            currentLabel.append('Сейчас выпал фильм: ', currentLink);
             list.prepend(currentLabel);
         }
         actions.innerHTML = '';
@@ -1181,7 +1274,72 @@ class RandomManager {
             actions.innerHTML += '<button class="btn-roll-from-pool" data-marathon-action="create">Открыть новый раунд</button>';
         }
         this._bindMarathonActions();
+        this._syncMarathonActionState();
         this._refreshPoolModalIfOpen();
+    }
+
+    async _rollMarathonWithAnimation() {
+        if (this._marathonMutationRunning || !this.marathonService) return;
+
+        const queuedItems = this._getMarathonDisplayItems()
+            .filter((item) => item.state !== 'watched' && item.state !== 'removed');
+        if (!queuedItems.length) return;
+
+        this._showRollPendingAnimation(queuedItems);
+        const nextState = await this._runMarathonAction(
+            () => this.marathonService.rollNext(),
+            { deferRender: true }
+        );
+        if (!nextState) {
+            this._stopRollAnimation();
+            return;
+        }
+        const winnerId = nextState?.round?.currentItemId;
+        const candidates = (nextState?.items || [])
+            .filter((item) => item.state !== 'watched' && item.state !== 'removed');
+        const winnerIndex = candidates.findIndex((item) => String(item.id) === String(winnerId));
+        if (winnerIndex < 0) {
+            this._stopRollAnimation();
+            this._renderMarathon();
+            return;
+        }
+
+        this._showRollAnimation(candidates, winnerIndex, {
+            actionLabel: () => 'Вернуться к марафону',
+            onWinner: async (_winner, overlay) => {
+                overlay.classList.add('hidden');
+                this._renderMarathon();
+            }
+        });
+    }
+
+    _showRollPendingAnimation(entries) {
+        const candidates = Array.isArray(entries) ? entries.filter(Boolean) : [];
+        const overlay = document.getElementById('rollAnimOverlay');
+        const wheel = document.getElementById('rollWheel');
+        const center = document.getElementById('rollCenterBtn');
+        const actionsBox = document.getElementById('rollActions');
+        const title = overlay?.querySelector('.roll-title');
+        if (!candidates.length || !overlay || !wheel || !center || !actionsBox) return;
+
+        this._renderRollCandidates(wheel, candidates);
+        if (title) title.textContent = 'Выбираем фильм...';
+        actionsBox.style.visibility = 'hidden';
+        center.disabled = true;
+        center.textContent = 'Крутим';
+        wheel.classList.add('roll-wheel--pending');
+        overlay.classList.remove('hidden');
+        this._setRollBusy(true);
+    }
+
+    _stopRollAnimation() {
+        const overlay = document.getElementById('rollAnimOverlay');
+        const wheel = document.getElementById('rollWheel');
+        this._rollAnimationId++;
+        wheel?.classList.remove('roll-wheel--pending');
+        if (wheel) wheel.style.removeProperty('transform');
+        overlay?.classList.add('hidden');
+        this._setRollBusy(false);
     }
 
     _refreshPoolModalIfOpen() {
@@ -1199,26 +1357,60 @@ class RandomManager {
                 const handlers = {
                     create: () => this.marathonService.createRound(),
                     start: () => this.marathonService.startRound(),
-                    roll: () => this.marathonService.rollNext(),
                     watched: () => this.marathonService.resolveCurrent('watched', expectedRoundId, expectedItemId),
                     removed: () => this.marathonService.resolveCurrent('removed', expectedRoundId, expectedItemId)
                 };
-                if (handlers[action]) await this._runMarathonAction(handlers[action]);
+                if (action === 'roll') {
+                    const candidates = this._getMarathonDisplayItems()
+                        .filter((item) => item.state === 'queued');
+                    this._showRollReady(candidates, () => this._rollMarathonWithAnimation());
+                } else if (handlers[action]) {
+                    await this._runMarathonAction(handlers[action], { pendingAction: action });
+                }
             };
         });
     }
 
-    async _runMarathonAction(action, { pendingRemovalId = null, pendingAddKey = null } = {}) {
+    _syncMarathonActionState() {
+        const labels = {
+            create: 'Создаём…',
+            start: 'Запускаем…',
+            watched: 'Отмечаем…',
+            removed: 'Удаляем…'
+        };
+        const buttons = [...document.querySelectorAll('#marathonActions [data-marathon-action]')];
+        const loadingButton = this._marathonMutationRunning && this._marathonPendingAction
+            ? buttons.find((button) => button.dataset.marathonAction === this._marathonPendingAction) || buttons[0]
+            : null;
+        buttons.forEach((button) => {
+            const loading = button === loadingButton;
+            button.disabled = this._marathonMutationRunning;
+            button.classList.toggle('marathon-action-loading', loading);
+            if (loading) {
+                button.dataset.marathonIdleLabel ||= button.textContent;
+                button.textContent = labels[this._marathonPendingAction] || 'Сохраняем…';
+                button.setAttribute('aria-busy', 'true');
+            } else {
+                if (button.dataset.marathonIdleLabel) {
+                    button.textContent = button.dataset.marathonIdleLabel;
+                    delete button.dataset.marathonIdleLabel;
+                }
+                button.removeAttribute('aria-busy');
+            }
+        });
+    }
+
+    async _runMarathonAction(action, { pendingRemovalId = null, pendingAddKey = null, pendingAction = null, deferRender = false } = {}) {
         if (this._marathonMutationRunning) return null;
         this._marathonMutationRunning = true;
-        document.querySelectorAll('[data-marathon-action]').forEach((button) => {
-            button.disabled = true;
-        });
+        this._marathonPendingAction = pendingAction;
+        let shouldRender = true;
+        this._syncMarathonActionState();
         try {
             const nextState = await action();
             if (nextState?.round !== undefined && Array.isArray(nextState.items)) {
                 this.marathonState = nextState;
-                this._renderMarathon();
+                shouldRender = !deferRender;
             }
             return nextState;
         } catch (error) {
@@ -1229,7 +1421,9 @@ class RandomManager {
             if (pendingRemovalId) this._marathonPendingRemovals.delete(pendingRemovalId);
             if (pendingAddKey) this._marathonPendingAdds.delete(pendingAddKey);
             this._marathonMutationRunning = false;
-            this._renderMarathon();
+            this._marathonPendingAction = null;
+            if (shouldRender) this._renderMarathon();
+            else this._syncMarathonActionState();
         }
     }
 
@@ -1514,7 +1708,17 @@ class RandomManager {
             }
         }
 
-        this._showRollAnimation(winnerIdx);
+        this._showRollAnimation(this.pool, winnerIdx, {
+            onWinner: async (winner, overlay) => {
+                // Remove from pool only after the user has seen the result.
+                this.pool = this.pool.filter(m => m.kpId !== winner.kpId);
+                await this._savePool();
+                overlay.classList.add('hidden');
+                window.location.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${winner.kpId}`);
+            },
+            reroll: () => this._rollFromPool(),
+            actionLabel: (winner) => `Смотреть · ${winner.title}`
+        });
     }
 
     // ── Roll Animation ────────────────────────────────────────────
@@ -1524,149 +1728,296 @@ class RandomManager {
         el.id = 'rollAnimOverlay';
         el.className = 'roll-modal-overlay hidden';
         el.innerHTML = `
-            <div class="roll-modal-box">
-                <div class="roll-title">Выбираем фильм...</div>
-                <div class="roll-drum-wrap" id="rollDrumWrap">
-                    <div class="roll-drum-track" id="rollDrumTrack"></div>
-                    <div class="roll-drum-border" id="rollDrumBorder"></div>
-                    <div class="roll-winner-badge" id="rollWinnerBadge">Выбран!</div>
+            <div class="roll-modal-box" role="dialog" aria-modal="true" aria-labelledby="rollTitle">
+                <button class="roll-settings-btn" id="rollSettingsBtn" type="button" aria-label="Настроить время вращения" aria-expanded="false" aria-controls="rollSettingsPanel">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-1.88 1.88-.06-.06A1.7 1.7 0 0 0 16 18.4a1.7 1.7 0 0 0-1 1.57V21h-6v-1.03A1.7 1.7 0 0 0 8 18.4a1.7 1.7 0 0 0-1.88.34l-.06.06-1.88-1.88.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.57-1H2v-4h1.03A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88L4.2 7.06l1.88-1.88.06.06A1.7 1.7 0 0 0 8 5.6a1.7 1.7 0 0 0 1-1.57V3h6v1.03A1.7 1.7 0 0 0 16 5.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 1.88 1.88-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.57 1H22v4h-1.03A1.7 1.7 0 0 0 19.4 15Z"/></svg>
+                </button>
+                <button class="roll-close-btn" id="rollCloseBtn" type="button" aria-label="Закрыть колесо">×</button>
+                <div class="roll-title" id="rollTitle">Колесо фильмов</div>
+                <form class="roll-settings-panel" id="rollSettingsPanel" novalidate hidden>
+                    <label for="rollDurationInput">Время вращения</label>
+                    <div class="roll-settings-field"><input id="rollDurationInput" type="number" min="2" max="1800" step="1" inputmode="numeric" aria-describedby="rollSettingsHint rollSettingsError" required><span>секунд</span></div>
+                    <div class="roll-settings-hint" id="rollSettingsHint">От 2 секунд до 30 минут (1800 секунд). Начало быстрое, конец плавный.</div>
+                    <div class="roll-settings-error" id="rollSettingsError" aria-live="polite"></div>
+                    <button class="roll-settings-save" type="submit">Сохранить</button>
+                </form>
+                <div class="roll-wheel-stage">
+                    <div class="roll-wheel-pointer" aria-hidden="true"></div>
+                    <div class="roll-wheel-frame"><div class="roll-wheel" id="rollWheel" aria-hidden="true"></div></div>
+                    <button class="roll-wheel-center" id="rollCenterBtn">Крутить</button>
                 </div>
-                <div class="roll-pool-chips" id="rollPoolChips"></div>
-                <div class="roll-actions" id="rollActions" style="display:none">
-                    <button class="roll-action-btn secondary" id="rollRerollBtn" style="flex:1" title="Перекрутить">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-                    </button>
+                <div class="roll-result" id="rollResult" aria-live="polite"></div>
+                <div class="roll-actions" id="rollActions" style="visibility:hidden">
+                    <button class="roll-action-btn secondary" id="rollRerollBtn">Крутить снова</button>
                     <button class="roll-action-btn" id="rollGoBtn" style="flex:3">Смотреть</button>
                 </div>
             </div>`;
         document.body.appendChild(el);
 
-        // Закрыть по фону
-        el.addEventListener('click', (e) => {
-            if (e.target === el && !this.rollAnimRunning) {
-                el.classList.add('hidden');
+        const settingsButton = el.querySelector('#rollSettingsBtn');
+        const settingsPanel = el.querySelector('#rollSettingsPanel');
+        const durationInput = el.querySelector('#rollDurationInput');
+        const settingsError = el.querySelector('#rollSettingsError');
+        const hideSettings = () => {
+            settingsPanel.hidden = true;
+            settingsButton.setAttribute('aria-expanded', 'false');
+        };
+        settingsButton.addEventListener('click', () => {
+            if (settingsPanel.hidden) {
+                durationInput.value = this.rollDurationSeconds;
+                settingsError.textContent = '';
+                settingsPanel.hidden = false;
+                settingsButton.setAttribute('aria-expanded', 'true');
+                durationInput.focus();
+            } else {
+                hideSettings();
+                settingsButton.focus();
             }
         });
-
-        // Делегирование клика для заголовка фильма
-        const track = el.querySelector('#rollDrumTrack');
-        if (track) {
-            track.addEventListener('click', (e) => {
-                const titleEl = e.target.closest('.roll-drum-card-title');
-                if (titleEl && titleEl.dataset.kpid) {
-                    window.location.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${titleEl.dataset.kpid}`);
+        settingsPanel.addEventListener('submit', (event) => {
+            event.preventDefault();
+            const seconds = Number(durationInput.value);
+            if (!Number.isInteger(seconds) || seconds < MIN_ROLL_DURATION_SECONDS || seconds > MAX_ROLL_DURATION_SECONDS) {
+                settingsError.textContent = 'Введите целое число от 2 до 1800 секунд (до 30 минут).';
+                durationInput.focus();
+                return;
+            }
+            this.rollDurationSeconds = seconds;
+            localStorage.setItem(ROLL_DURATION_STORAGE_KEY, String(seconds));
+            hideSettings();
+            settingsButton.focus();
+        });
+        const close = () => {
+            if (!this.rollAnimRunning) {
+                hideSettings();
+                el.classList.add('hidden');
+            }
+        };
+        el.addEventListener('click', (event) => {
+            if (event.target === el) close();
+        });
+        el.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && !this.rollAnimRunning) {
+                event.stopPropagation();
+                if (!settingsPanel.hidden) {
+                    hideSettings();
+                    settingsButton.focus();
+                } else {
+                    close();
                 }
-            });
-        }
+            }
+        });
+        el.querySelector('#rollCloseBtn').addEventListener('click', close);
+        el.querySelector('#rollCenterBtn').addEventListener('click', () => this._rollStart?.());
+        el.querySelector('#rollRerollBtn').addEventListener('click', () => this._rollAnimationReroll?.());
+    }
 
-        // Перекрутить
-        const rerollBtn = el.querySelector('#rollRerollBtn');
-        if (rerollBtn) {
-            rerollBtn.addEventListener('click', () => {
-                this._rollFromPool();
-            });
+    _setRollBusy(busy) {
+        this.rollAnimRunning = busy;
+        const overlay = document.getElementById('rollAnimOverlay');
+        if (!overlay) return;
+        overlay.querySelector('#rollSettingsBtn').disabled = busy;
+        overlay.querySelector('#rollCloseBtn').disabled = busy;
+        if (busy) {
+            overlay.querySelector('#rollSettingsPanel').hidden = true;
+            overlay.querySelector('#rollSettingsBtn').setAttribute('aria-expanded', 'false');
         }
     }
 
-    _showRollAnimation(winnerIdx) {
+    _showRollReady(entries, start) {
+        const candidates = Array.isArray(entries) ? entries.filter(Boolean) : [];
+        if (!candidates.length || this.rollAnimRunning) return;
         const overlay = document.getElementById('rollAnimOverlay');
-        const track   = document.getElementById('rollDrumTrack');
-        const border  = document.getElementById('rollDrumBorder');
-        const badge   = document.getElementById('rollWinnerBadge');
-        const chips   = document.getElementById('rollPoolChips');
-        const goBtn   = document.getElementById('rollGoBtn');
-        const actionsBox = document.getElementById('rollActions');
-        const CARD_W  = 340;
-
-        border.classList.remove('winner');
-        badge.classList.remove('show');
-        actionsBox.style.display = 'none';
-        goBtn.disabled = true;
-        this.rollAnimRunning = true;
-        
-        // Reset offset so we always start from 0
-        this.rollDrumOffset = 0;
-
-        // Ensure we have enough laps regardless of pool size
-        const targetLap = Math.max(3, Math.ceil(20 / this.pool.length));
-        const totalLaps = targetLap + 2; // +2 for visual buffer at the end
-
-        // Собрать карточки
-        track.innerHTML = '';
-        for (let i = 0; i < totalLaps; i++) {
-            this.pool.forEach(m => {
-                const d = document.createElement('div');
-                d.className = 'roll-drum-card';
-                d.innerHTML = `
-                    <img src="${m.poster || ''}" alt=""
-                         onerror="this.style.background='#2a2a2a';this.removeAttribute('src')">
-                    <div class="roll-drum-card-meta">
-                        <div class="roll-drum-card-title" style="cursor: pointer;" data-kpid="${m.kpId}" title="Открыть детали фильма">${m.title || '—'}</div>
-                        <div class="roll-drum-card-sub">${m.year || ''}</div>
-                    </div>
-                    <div class="roll-drum-card-rating">${m.rating ? parseFloat(m.rating).toFixed(1) : '—'}</div>`;
-                track.appendChild(d);
-            });
-        }
-
-        // Чипсы
-        chips.innerHTML = '';
-        this.pool.forEach((m, i) => {
-            const c = document.createElement('div');
-            c.className = 'roll-pool-chip';
-            c.id = `rollChip_${i}`;
-            c.textContent = m.title;
-            chips.appendChild(c);
-        });
-
+        const wheel = document.getElementById('rollWheel');
+        const center = document.getElementById('rollCenterBtn');
+        this._rollAnimationId++;
+        this._rollStart = start;
+        wheel.classList.remove('roll-wheel--pending');
+        wheel.style.transform = 'rotate(0deg)';
+        this._renderRollCandidates(wheel, candidates);
+        center.disabled = false;
+        center.textContent = 'Крутить';
+        overlay.querySelector('.roll-title').textContent = 'Колесо фильмов';
+        overlay.querySelector('#rollResult').textContent = `Фильмов на колесе: ${candidates.length}`;
+        overlay.querySelector('#rollActions').style.visibility = 'hidden';
         overlay.classList.remove('hidden');
+        this._setRollBusy(false);
+        center.focus();
+    }
 
-        // Easing: замедление к концу
-        const easeOut = (t) => 1 - Math.pow(1 - t, 3);
+    _showRollAnimation(entries, winnerIdx, { onWinner = null, reroll = null, actionLabel = null } = {}) {
+        const candidates = Array.isArray(entries) ? entries.filter(Boolean) : [];
+        if (!candidates.length || !Number.isInteger(winnerIdx) || !candidates[winnerIdx]) return;
 
-        const loopLen = this.pool.length * CARD_W;
-        // Целевая позиция: центр победителя по центру барабана
-        const wrapEl = document.getElementById('rollDrumWrap');
-        const drumCenter = wrapEl ? (wrapEl.offsetWidth || 340) / 2 : 170;
-        
-        const targetRaw  = -(targetLap * loopLen + winnerIdx * CARD_W + CARD_W / 2 - drumCenter);
-        const startOffset = 0;
-        const delta = targetRaw - startOffset;
-        const duration = 2600;
+        const overlay = document.getElementById('rollAnimOverlay');
+        const wheel = document.getElementById('rollWheel');
+        const center = document.getElementById('rollCenterBtn');
+        const result = document.getElementById('rollResult');
+        const goBtn = document.getElementById('rollGoBtn');
+        const rerollBtn = document.getElementById('rollRerollBtn');
+        const actionsBox = document.getElementById('rollActions');
+
+        this._rollAnimationReroll = reroll;
+        const finishWinner = onWinner || (async (winner, activeOverlay) => {
+            activeOverlay.classList.add('hidden');
+            window.location.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${winner.kpId}`);
+        });
+        if (rerollBtn) rerollBtn.hidden = typeof reroll !== 'function';
+        actionsBox.style.visibility = 'hidden';
+        goBtn.disabled = true;
+        center.disabled = true;
+        center.textContent = 'Крутим';
+        this._setRollBusy(true);
+        result.textContent = 'Выбираем фильм...';
+        const matrix = getComputedStyle(wheel).transform;
+        const values = matrix.match(/^matrix\(([^)]+)\)$/)?.[1].split(',').map(Number);
+        const startAngle = values ? Math.atan2(values[1], values[0]) * 180 / Math.PI : 0;
+        wheel.classList.remove('roll-wheel--pending');
+        wheel.style.transform = `rotate(${startAngle}deg)`;
+        this._renderRollCandidates(wheel, candidates);
+        overlay.classList.remove('hidden');
+        const stepAngle = 360 / candidates.length;
+        const targetAngle = (360 - (winnerIdx + .5) * stepAngle) % 360;
+        const forwardAngle = (targetAngle - startAngle + 360) % 360;
+        const fullTurns = Math.max(2, Math.round(this.rollDurationSeconds * .65));
+        const endAngle = startAngle + fullTurns * 360 + forwardAngle;
+        const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+        const duration = reducedMotion ? 0 : this.rollDurationSeconds * 1000;
+        const animationId = ++this._rollAnimationId;
         const startTime = performance.now();
 
         const step = (now) => {
-            const elapsed = Math.min(now - startTime, duration);
-            const t = elapsed / duration;
-            const offset = startOffset + delta * easeOut(t);
-            track.style.transform = `translateX(${offset}px)`;
-
-            if (elapsed < duration) {
+            if (animationId !== this._rollAnimationId) return;
+            const progress = duration ? Math.min((now - startTime) / duration, 1) : 1;
+            const eased = 1 - Math.pow(1 - progress, 3);
+            wheel.style.transform = `rotate(${startAngle + (endAngle - startAngle) * eased}deg)`;
+            if (progress < 1) {
                 requestAnimationFrame(step);
             } else {
-                // Финиш
-                this.rollAnimRunning = false;
-                border.classList.add('winner');
-                badge.classList.add('show');
-                const chip = document.getElementById(`rollChip_${winnerIdx}`);
-                if (chip) chip.classList.add('winner');
-
-                const winner = this.pool[winnerIdx];
-                goBtn.textContent = `Смотреть · ${winner.title}`;
-                actionsBox.style.display = 'flex';
+                this._setRollBusy(false);
+                const winner = candidates[winnerIdx];
+                const title = document.createElement('a');
+                title.className = 'roll-result-link';
+                title.textContent = winner.title || 'Без названия';
+                const movieId = Number(winner.kpId);
+                if (Number.isSafeInteger(movieId) && movieId > 0) {
+                    title.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`);
+                } else {
+                    title.removeAttribute('href');
+                }
+                result.replaceChildren(title);
+                overlay.querySelector('.roll-title').textContent = 'Выпал фильм';
+                goBtn.textContent = typeof actionLabel === 'function'
+                    ? actionLabel(winner)
+                    : `Смотреть · ${winner.title}`;
+                actionsBox.style.visibility = 'visible';
                 goBtn.disabled = false;
+                center.textContent = 'Готово';
                 goBtn.onclick = async () => {
-                    // Remove from pool
-                    this.pool = this.pool.filter(m => m.kpId !== winner.kpId);
-                    await this._savePool();
-
-                    overlay.classList.add('hidden');
-                    // Открыть страницу деталей фильма
-                    window.location.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${winner.kpId}`);
+                    goBtn.disabled = true;
+                    await finishWinner(winner, overlay);
                 };
             }
         };
         requestAnimationFrame(step);
+    }
+
+    _renderRollCandidates(wheel, candidates) {
+        wheel.replaceChildren();
+        const count = candidates.length;
+        if (!count) return;
+
+        const baseAngle = -90;
+        const sectorAngle = 360 / count;
+        const getBoundaryAngle = (index) => baseAngle + index * sectorAngle;
+
+        candidates.forEach((movie, index) => {
+            const startAngle = getBoundaryAngle(index);
+            const middleAngle = startAngle + sectorAngle / 2;
+
+            const slice = document.createElement('div');
+            slice.className = 'roll-wheel-slice';
+
+            if (count === 1) {
+                slice.style.clipPath = 'circle(50% at 50% 50%)';
+            } else {
+                const points = ['50% 50%'];
+                const arcSteps = Math.max(6, Math.ceil(sectorAngle / 2));
+                for (let point = 0; point <= arcSteps; point++) {
+                    const angleDeg = startAngle + (point / arcSteps) * sectorAngle;
+                    const rad = angleDeg * Math.PI / 180;
+                    points.push(`${(50 + 50 * Math.cos(rad)).toFixed(4)}% ${(50 + 50 * Math.sin(rad)).toFixed(4)}%`);
+                }
+                slice.style.clipPath = `polygon(${points.join(', ')})`;
+            }
+
+            const radians = middleAngle * Math.PI / 180;
+            const art = document.createElement('img');
+            art.className = 'roll-wheel-poster';
+            art.alt = '';
+            art.style.left = count === 1 ? '50%' : `${(50 + 31 * Math.cos(radians)).toFixed(4)}%`;
+            art.style.top = count === 1 ? '50%' : `${(50 + 31 * Math.sin(radians)).toFixed(4)}%`;
+            art.style.width = count === 1 ? '100%' : `${Math.min(70, Math.max(18, 130 * Math.sin(Math.PI / count)))}%`;
+            if (count === 1) art.style.height = '100%';
+
+            const posterUrls = getMarathonPosterUrls(movie.poster, movie.kpId);
+            let posterIndex = 0;
+            const nextPoster = () => {
+                if (posterIndex >= posterUrls.length) {
+                    art.removeAttribute('src');
+                    slice.classList.add('roll-wheel-slice--no-poster');
+                    return;
+                }
+                art.src = posterUrls[posterIndex++];
+            };
+            if (posterUrls.length) {
+                art.addEventListener('error', nextPoster);
+                nextPoster();
+            } else {
+                slice.classList.add('roll-wheel-slice--no-poster');
+            }
+
+            const label = document.createElement('span');
+            label.className = 'roll-wheel-fallback';
+            label.textContent = String(index + 1).padStart(2, '0');
+            label.style.left = art.style.left;
+            label.style.top = art.style.top;
+
+            slice.append(art, label);
+            wheel.appendChild(slice);
+        });
+
+        if (count > 1) {
+            const svgNs = 'http://www.w3.org/2000/svg';
+            const linesSvg = document.createElementNS(svgNs, 'svg');
+            linesSvg.setAttribute('class', 'roll-wheel-lines');
+            linesSvg.setAttribute('viewBox', '0 0 100 100');
+            linesSvg.setAttribute('aria-hidden', 'true');
+
+            const rInner = 12;
+            const rOuter = 50;
+
+            for (let i = 0; i < count; i++) {
+                const boundaryAngle = getBoundaryAngle(i);
+                const rad = boundaryAngle * Math.PI / 180;
+                const cos = Math.cos(rad);
+                const sin = Math.sin(rad);
+
+                const line = document.createElementNS(svgNs, 'line');
+                line.setAttribute('class', 'roll-wheel-line');
+                line.setAttribute('x1', (50 + rInner * cos).toFixed(4));
+                line.setAttribute('y1', (50 + rInner * sin).toFixed(4));
+                line.setAttribute('x2', (50 + rOuter * cos).toFixed(4));
+                line.setAttribute('y2', (50 + rOuter * sin).toFixed(4));
+                line.setAttribute('stroke', 'var(--ui-color-content)');
+                line.setAttribute('stroke-width', '3.5');
+                line.setAttribute('stroke-linecap', 'round');
+                line.setAttribute('vector-effect', 'non-scaling-stroke');
+                linesSvg.appendChild(line);
+            }
+
+            wheel.appendChild(linesSvg);
+        }
     }
 
     /** Load and display a specific movie by Kinopoisk ID */

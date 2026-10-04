@@ -246,13 +246,33 @@ class FranchiseService {
         if (!options.forceRefresh) {
             const cached = await this.getCachedFranchise(numId);
             if (cached) {
+                const idMapper = this.idMappingService || (typeof window !== 'undefined' && window.firebaseManager?.getIdMappingService?.()) || (typeof IdMappingService !== 'undefined' ? new IdMappingService() : null);
+                let overrideUpdated = false;
+
+                // Self-healing: Check for curated override conflicts in cached parts (e.g. Spider-Man 3 TMDB 559 mapped to wrong KP ID)
+                if (idMapper?.VERIFIED_MAPPING_OVERRIDES && Array.isArray(cached.parts)) {
+                    cached.parts.forEach(part => {
+                        const overrideKey = (typeof idMapper.buildKey === 'function')
+                            ? idMapper.buildKey('movie', part.tmdbId)
+                            : `movie:${part.tmdbId}`;
+                        const override = idMapper.VERIFIED_MAPPING_OVERRIDES[overrideKey];
+                        if (override && Number(part.kinopoiskId) > 0 && Number(part.kinopoiskId) !== Number(override.kpId)) {
+                            console.info(`[FranchiseService] Healing override conflict for TMDB ${part.tmdbId}: ${part.kinopoiskId} -> ${override.kpId}`);
+                            part.kinopoiskId = Number(override.kpId);
+                            overrideUpdated = true;
+                        }
+                    });
+                }
+
                 const unmappedParts = (cached.parts || []).filter(p => !p.kinopoiskId || Number(p.kinopoiskId) <= 0);
                 if (unmappedParts.length === 0) {
+                    if (overrideUpdated) {
+                        await this.setCachedFranchise(numId, cached);
+                    }
                     return cached;
                 }
 
                 // Self-healing remapping: attempt to resolve only unmapped parts
-                const idMapper = this.idMappingService || (typeof window !== 'undefined' && window.firebaseManager?.getIdMappingService?.()) || (typeof IdMappingService !== 'undefined' ? new IdMappingService() : null);
                 if (idMapper) {
                     try {
                         const batchInputs = unmappedParts.map(p => ({
@@ -291,7 +311,7 @@ class FranchiseService {
                             }
                         });
 
-                        if (updated) {
+                        if (updated || overrideUpdated) {
                             await this.setCachedFranchise(numId, cached);
                         }
                     } catch (remapErr) {
@@ -350,12 +370,17 @@ class FranchiseService {
                             const key = (typeof idMapper.buildKey === 'function')
                                 ? idMapper.buildKey('movie', part.tmdbId)
                                 : `movie:${part.tmdbId}`;
-                            const resolved = mappingMap.get(key) || mappingMap.get(part.tmdbId) || mappingMap.get(String(part.tmdbId)) || mappingMap.get(Number(part.tmdbId));
-                            const resolvedKpId = FranchiseService.normalizePositiveId(
-                                resolved?.kinopoiskId ?? resolved?.kpId
-                            );
-                            if (resolvedKpId) {
-                                part.kinopoiskId = resolvedKpId;
+                            const override = idMapper.VERIFIED_MAPPING_OVERRIDES?.[key];
+                            if (override?.kpId) {
+                                part.kinopoiskId = Number(override.kpId);
+                            } else {
+                                const resolved = mappingMap.get(key) || mappingMap.get(part.tmdbId) || mappingMap.get(String(part.tmdbId)) || mappingMap.get(Number(part.tmdbId));
+                                const resolvedKpId = FranchiseService.normalizePositiveId(
+                                    resolved?.kinopoiskId ?? resolved?.kpId
+                                );
+                                if (resolvedKpId) {
+                                    part.kinopoiskId = resolvedKpId;
+                                }
                             }
                         });
                     } catch (mapErr) {

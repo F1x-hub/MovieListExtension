@@ -177,6 +177,7 @@ assert.match(movieDetails, /\.torrent-playback-status__actions\s*\{/);
 assert.match(movieDetails, /var\(--ui-color-interactive\)/);
 assert.match(settingsScript, /saveBtn\.classList\.toggle\('is-dirty', isDirty\)/);
 assert.match(settingsStyles, /\.settings-actions-footer \.btn-primary\.is-dirty\s*\{[\s\S]*?background:\s*var\(--ui-color-status-success/);
+assert.match(settingsStyles, /\.sr-only\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?clip:\s*rect\(0, 0, 0, 0\);/, 'settings assistive labels must not affect layout');
 
 for (const file of [files.components, migrationGuardFiles.popup, migrationGuardFiles.player, migrationGuardFiles.search]) {
     assert.doesNotMatch(read(file), /--popover-(?:bg|border|radius|shadow|backdrop)\s*:/i, `${file} redefines a legacy generic popover token`);

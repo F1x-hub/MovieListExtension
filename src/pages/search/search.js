@@ -4310,13 +4310,23 @@ class SearchManager {
                         return;
                     }
 
-                    if (Hls.isSupported()) {
-                        const hls = new Hls();
-                        hls.loadSource(this.currentVideoUrl);
-                        hls.attachMedia(videoElement);
-                        hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                            videoElement.play().catch(e => console.log('Autoplay blocked:', e));
-                        });
+                    const hls = window.HlsPlaybackFactory?.create(videoElement, this.currentVideoUrl, {
+                        isCurrent: () => videoElement.isConnected,
+                        beforeLoad: (instance) => {
+                            instance.on(Hls.Events.MANIFEST_PARSED, () => {
+                                videoElement.play().catch(e => console.log('Autoplay blocked:', e));
+                            });
+                        },
+                        onFatal: () => {
+                            if (!videoElement.isConnected) return;
+                            this.elements.videoContainer.innerHTML = `
+                                <div class="video-placeholder">
+                                    <span>Video stream is unavailable.</span>
+                                </div>
+                            `;
+                        }
+                    });
+                    if (hls) {
                         this.currentHls = hls; // Store to destroy later
                     } else if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
                         // Safari

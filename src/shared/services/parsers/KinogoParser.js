@@ -20,8 +20,16 @@ class KinogoParser extends BaseParserService {
             id: 'kinogo',
             name: 'KinoGo',
             baseUrl: options.baseUrl || KinogoParser.DEFAULT_MIRRORS[0],
-            cacheTTL: options.cacheTTL || (15 * 60 * 1000) // 15 minutes aligned with token lifespan
+            cacheTTL: options.cacheTTL || (15 * 60 * 1000), // 15 minutes aligned with token lifespan
+            requestTimeoutMs: options.requestTimeoutMs || 7000
         });
+
+        /**
+         * Delay before the next mirror is started while earlier mirrors are
+         * still pending. A failed mirror starts the next one immediately.
+         * @type {number}
+         */
+        this.mirrorHedgeDelayMs = options.mirrorHedgeDelayMs ?? 1500;
 
         /** @type {Array<string>} */
         this.mirrors = Array.isArray(options.mirrors) && options.mirrors.length > 0
@@ -97,14 +105,15 @@ class KinogoParser extends BaseParserService {
     }
 
     _logSearchTrace(message, details = {}) {
+        if (!BaseParserService.isDebugEnabled()) return;
         let serialized;
         try {
             serialized = ` ${JSON.stringify(details)}`;
         } catch {
-            console.log(`[KinogoSearchTrace] ${message} [details-unserializable]`, details);
+            this.debugLog(`[KinogoSearchTrace] ${message} [details-unserializable]`, details);
             return;
         }
-        console.log(`[KinogoSearchTrace] ${message}${serialized}`, details);
+        this.debugLog(`[KinogoSearchTrace] ${message}${serialized}`, details);
     }
 
     getSearchResultCompatibilityReason(result, movieType) {
@@ -205,36 +214,39 @@ class KinogoParser extends BaseParserService {
             activeMirror: this._activeMirror || this.baseUrl,
             mirrors: this.getMirrors({ mediaType })
         });
-        console.log(`[DEBUG KinogoParser] search() called. title: "${title}", year: ${targetYear}, mediaType: ${mediaType || 'unknown'}`);
+        this.debugLog(`[DEBUG KinogoParser] search() called. title: "${title}", year: ${targetYear}, mediaType: ${mediaType || 'unknown'}`);
         const mirrors = this.getMirrors({ mediaType });
-        let lastError = null;
 
-        for (const mirror of mirrors) {
+        const { value: result, mirror: matchedMirror, lastError } = await this._raceMirrors(mirrors, async (mirror, signal) => {
             try {
-                console.log(`[DEBUG KinogoParser] Trying mirror: ${mirror}`);
-                const result = await this._searchMirror(mirror, title, targetYear, mediaType, seasonNumber);
-                if (result) {
-                    this._saveActiveMirror(mirror);
-                    result.parserId = this.id;
-                    result.source = this.id;
-                    this._logSearchTrace('final result selected', {
-                        mirror,
-                        title: result.title,
-                        url: result.url,
-                        year: result.year || null,
-                        detectedType: result.type || 'unknown',
-                        requestedMediaType: mediaType || null,
-                        compatible: this.isSearchResultCompatible(result, mediaType)
-                    });
-                    console.log(`[DEBUG KinogoParser] Match found on ${mirror}:`, result.url, result.year);
-                    return result;
+                this.debugLog(`[DEBUG KinogoParser] Trying mirror: ${mirror}`);
+                const mirrorResult = await this._searchMirror(mirror, title, targetYear, mediaType, seasonNumber, signal);
+                if (!mirrorResult) {
+                    this._logSearchTrace('mirror returned no compatible result', { mirror, title, mediaType });
                 }
-                this._logSearchTrace('mirror returned no compatible result', { mirror, title, mediaType });
+                return mirrorResult;
             } catch (error) {
-                lastError = error;
                 this._logSearchTrace('mirror search error', { mirror, message: error.message });
                 console.warn(`[KinogoParser] Mirror ${mirror} search failed:`, error.message);
+                throw error;
             }
+        });
+
+        if (result) {
+            this._saveActiveMirror(matchedMirror);
+            result.parserId = this.id;
+            result.source = this.id;
+            this._logSearchTrace('final result selected', {
+                mirror: matchedMirror,
+                title: result.title,
+                url: result.url,
+                year: result.year || null,
+                detectedType: result.type || 'unknown',
+                requestedMediaType: mediaType || null,
+                compatible: this.isSearchResultCompatible(result, mediaType)
+            });
+            this.debugLog(`[DEBUG KinogoParser] Match found on ${matchedMirror}:`, result.url, result.year);
+            return result;
         }
 
         if (lastError && mirrors.length === 1) {
@@ -242,7 +254,7 @@ class KinogoParser extends BaseParserService {
         }
 
         this._logSearchTrace('search exhausted without result', { title, targetYear, mediaType, mirrors });
-        console.log(`[DEBUG KinogoParser] No matches found across all mirrors for "${title}"`);
+        this.debugLog(`[DEBUG KinogoParser] No matches found across all mirrors for "${title}"`);
         return null;
     }
 
@@ -254,13 +266,14 @@ class KinogoParser extends BaseParserService {
      * @returns {Promise<SearchResult|null>}
      * @private
      */
-    async _searchMirror(mirror, title, targetYear, mediaType = null, seasonNumber = null) {
+    async _searchMirror(mirror, title, targetYear, mediaType = null, seasonNumber = null, signal = undefined) {
         this._logSearchTrace('mirror search started', { mirror, title, targetYear, mediaType, seasonNumber });
         // Strategy 1: GET /search/{query}
         try {
             const getUrl = `${mirror}/search/${encodeURIComponent(title)}`;
             const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
-            const request = () => fetch(getUrl, {
+            const request = () => this.fetchWithTimeout(getUrl, {
+                signal,
                 headers: {
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
                 }
@@ -284,6 +297,7 @@ class KinogoParser extends BaseParserService {
         }
 
         // Strategy 2: DLE POST /index.php?do=search
+        if (signal?.aborted) return null;
         try {
             const postUrl = `${mirror}/index.php?do=search`;
             const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
@@ -295,7 +309,8 @@ class KinogoParser extends BaseParserService {
             formData.append('result_from', '1');
             formData.append('story', title);
 
-            const request = () => fetch(postUrl, {
+            const request = () => this.fetchWithTimeout(postUrl, {
+                signal,
                 method: 'POST',
                 body: formData,
                 headers: {
@@ -332,7 +347,7 @@ class KinogoParser extends BaseParserService {
      */
     async getVideoSources(searchResult) {
         const rawUrl = typeof searchResult === 'string' ? searchResult : searchResult?.url;
-        console.log(`[DEBUG KinogoParser] getVideoSources() called. url:`, rawUrl?.substring(0, 80));
+        this.debugLog(`[DEBUG KinogoParser] getVideoSources() called. url:`, rawUrl?.substring(0, 80));
         if (!rawUrl) return [];
 
         let pathname = rawUrl;
@@ -353,14 +368,13 @@ class KinogoParser extends BaseParserService {
             ...allMirrors.filter(m => m.replace(/\/+$/, '') !== initialMirror.replace(/\/+$/, ''))
         ];
 
-        let lastError = null;
-
-        for (const mirror of mirrors) {
+        const { value: sources, lastError } = await this._raceMirrors(mirrors, async (mirror, signal) => {
             const candidateUrl = this._buildAbsoluteUrl(pathname, mirror);
             try {
-                console.log(`[DEBUG KinogoParser] Trying mirror for getVideoSources: ${candidateUrl}`);
+                this.debugLog(`[DEBUG KinogoParser] Trying mirror for getVideoSources: ${candidateUrl}`);
                 const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
-                const request = () => fetch(candidateUrl, {
+                const request = () => this.fetchWithTimeout(candidateUrl, {
+                    signal,
                     cache: 'no-store',
                     headers: {
                         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -370,41 +384,103 @@ class KinogoParser extends BaseParserService {
                 });
                 const response = perf ? await perf.trackRequest('KINOGO_SOURCE', { purpose: 'getVideoSources', url: candidateUrl }, request) : await request();
 
-                if (response.ok) {
-                    const html = await response.text();
-                    const sources = this.extractKinogoDirectSources(html, candidateUrl);
-                    if (sources && sources.length > 0) {
-                        if (mirror !== this._activeMirror) {
-                            this._saveActiveMirror(mirror);
-                        }
-                        this._logSearchTrace('source extraction result', {
-                            pageUrl: candidateUrl,
-                            mirror,
-                            sourceCount: sources.length,
-                            sources: sources.map(source => ({
-                                type: source.type || 'iframe',
-                                host: (() => {
-                                    try { return new URL(source.url).host; } catch { return null; }
-                                })(),
-                                url: source.url
-                            }))
-                        });
-                        console.log(`[DEBUG KinogoParser] getVideoSources result: ${sources.length} sources found on ${mirror}`);
-                        return sources;
-                    }
-                } else {
+                if (!response.ok) {
                     console.warn(`[KinogoParser] Mirror ${mirror} page fetch failed: ${response.status}`);
+                    return null;
                 }
+                const html = await response.text();
+                const mirrorSources = this.extractKinogoDirectSources(html, candidateUrl);
+                if (!mirrorSources || mirrorSources.length === 0) return null;
+                if (mirror !== this._activeMirror) {
+                    this._saveActiveMirror(mirror);
+                }
+                this._logSearchTrace('source extraction result', {
+                    pageUrl: candidateUrl,
+                    mirror,
+                    sourceCount: mirrorSources.length,
+                    sources: mirrorSources.map(source => ({
+                        type: source.type || 'iframe',
+                        host: (() => {
+                            try { return new URL(source.url).host; } catch { return null; }
+                        })(),
+                        url: source.url
+                    }))
+                });
+                this.debugLog(`[DEBUG KinogoParser] getVideoSources result: ${mirrorSources.length} sources found on ${mirror}`);
+                return mirrorSources;
             } catch (error) {
-                lastError = error;
                 console.warn(`[KinogoParser] Mirror ${mirror} page fetch error:`, error.message);
+                throw error;
             }
-        }
+        });
 
+        if (sources) return sources;
         if (lastError) {
             console.error(`[${this.name}] getVideoSources error across all mirrors:`, lastError);
         }
         return [];
+    }
+
+    /**
+     * Run one task per mirror in priority order with hedging: the next mirror
+     * starts when the previous one fails or returns nothing, or after
+     * `mirrorHedgeDelayMs` while it is still pending. The first non-empty value
+     * wins and aborts the remaining requests. Without timers (headless tests)
+     * this degrades to the strict sequential order.
+     * @param {Array<string>} mirrors
+     * @param {(mirror: string, signal: AbortSignal|undefined) => Promise<any>} task
+     * @returns {Promise<{value: any, mirror: string|null, lastError: Error|null}>}
+     * @private
+     */
+    _raceMirrors(mirrors, task) {
+        const canHedge = typeof setTimeout === 'function' && this.mirrorHedgeDelayMs > 0;
+        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+
+        return new Promise(resolve => {
+            let nextIndex = 0;
+            let pending = 0;
+            let settled = false;
+            let lastError = null;
+            let hedgeTimer = null;
+
+            const clearHedge = () => {
+                if (hedgeTimer !== null) clearTimeout(hedgeTimer);
+                hedgeTimer = null;
+            };
+            const finish = (value, mirror) => {
+                if (settled) return;
+                settled = true;
+                clearHedge();
+                controller?.abort(new Error('KinoGo mirror race already decided'));
+                resolve({ value, mirror, lastError });
+            };
+            const launchNext = () => {
+                if (settled) return;
+                clearHedge();
+                if (nextIndex >= mirrors.length) {
+                    if (pending === 0) finish(null, null);
+                    return;
+                }
+                const mirror = mirrors[nextIndex++];
+                pending += 1;
+                Promise.resolve()
+                    .then(() => task(mirror, controller?.signal))
+                    .then(value => {
+                        pending -= 1;
+                        if (value && (!Array.isArray(value) || value.length > 0)) finish(value, mirror);
+                        else launchNext();
+                    }, error => {
+                        pending -= 1;
+                        lastError = error;
+                        launchNext();
+                    });
+                if (canHedge && nextIndex < mirrors.length) {
+                    hedgeTimer = setTimeout(launchNext, this.mirrorHedgeDelayMs);
+                }
+            };
+
+            launchNext();
+        });
     }
 
     // ─── Internal Parsing Methods ─────────────────────────────────────
@@ -698,7 +774,7 @@ class KinogoParser extends BaseParserService {
                 const bestMatchesRequestedSeason = requestedSeasonNumber != null
                     && this.extractSearchSeasonNumber(best) === requestedSeasonNumber;
                 if (diff > 2 && normTarget !== normBest && !bestMatchesRequestedSeason) {
-                    console.log(`[DEBUG KinogoParser] Rejecting match "${best.title}" (${best.year}) for "${targetTitle}" (${targetYear}) due to year divergence (${diff} yrs)`);
+                    this.debugLog(`[DEBUG KinogoParser] Rejecting match "${best.title}" (${best.year}) for "${targetTitle}" (${targetYear}) due to year divergence (${diff} yrs)`);
                     return null;
                 }
             }
@@ -785,7 +861,7 @@ class KinogoParser extends BaseParserService {
 
     /**
      * Extract embed player sources from KinoGo movie page HTML.
-     * Supports Ortified, Cinemar, Lumex, Stravers, Namy, Variyt and generic iframes.
+     * Supports Ortified, Nextembed, Cinemar, Lumex, Stravers, Namy, Variyt and generic iframes.
      * 
      * @param {string} html - Page HTML
      * @param {string} [pageUrl] - Current page URL
@@ -831,7 +907,7 @@ class KinogoParser extends BaseParserService {
 
         // 2. Script & HTML regex scanning
         const scriptPatterns = [
-            /(?:https?:)?\/\/(?:api\.)?(?:ortified|variyt|namy)\.ws\/embed\/(?:movie|serial)\/\d+/gi,
+            /(?:https?:)?\/\/(?:api\.)?(?:ortified|variyt|namy|nextembed)\.ws\/embed\/(?:movie|serial)\/\d+/gi,
             /https?:\/\/cinemar\.cc\/embed\/\d+\/[^\s"'<>]+/gi,
             /https?:\/\/[a-zA-Z0-9_-]+\.stravers\.live\/\?token_movie=[^\s"'<>]+/gi,
             /https?:\/\/[a-zA-Z0-9_-]+\.allarknow\.online\/\?token_movie=[^\s"'<>]+/gi,
@@ -860,14 +936,9 @@ class KinogoParser extends BaseParserService {
             })
             .sort((a, b) => this._scoreEmbedUrl(b) - this._scoreEmbedUrl(a));
 
-        // Fallback to youtube trailer only if no real player was found
-        if (validUrls.length === 0) {
-            const trailerMatch = html.match(/https?:\/\/www\.youtube\.com\/embed\/[a-zA-Z0-9_-]+/i);
-            if (trailerMatch) {
-                validUrls.push(trailerMatch[0]);
-            }
-        }
-
+        // A page with only a YouTube trailer has no playable film. Report no
+        // sources so discovery moves on to other providers instead of
+        // presenting the trailer as "KinoGo".
         return validUrls.map(url => ({
             name: 'KinoGo',
             url: url,
@@ -885,6 +956,7 @@ class KinogoParser extends BaseParserService {
         if (!url) return -1000;
         // Known reliable working balancers
         if (url.includes('ortified.ws')) return 100;
+        if (url.includes('nextembed.ws')) return 95;
         if (url.includes('variyt.ws')) return 95;
         if (url.includes('namy.ws')) return 90;
         if (url.includes('lumex.cloud')) return 85;

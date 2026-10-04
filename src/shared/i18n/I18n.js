@@ -38,10 +38,12 @@ class I18n {
         return value || key;
     }
 
-    async setLanguage(lang) {
+    async setLanguage(lang, { persist = true } = {}) {
         if (this.locales[lang]) {
             this.currentLocale = lang;
-            await chrome.storage.sync.set({ language: lang });
+            if (persist) {
+                await chrome.storage.sync.set({ language: lang });
+            }
             this.translatePage();
             this.localeListeners.forEach((listener) => {
                 try {

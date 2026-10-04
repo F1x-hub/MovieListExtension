@@ -45,7 +45,7 @@
 
         <!-- Error State -->
         <div class="error-state" id="errorState" style="display: none;">
-            <div class="error-icon"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #ef4444;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></div>
+            <div class="error-icon"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></div>
             <h3 class="error-title" id="errorMessage">Failed to load movie</h3>
             <button class="btn btn-primary" id="retryLoadBtn">Retry</button>
         </div>
@@ -154,13 +154,13 @@
                 </div>
                 <div class="video-header__actions">
                     <div class="watch-room-controls" id="watchRoomControls" role="group" aria-label="Совместный просмотр">
-                        <button class="player-nav-btn watch-room-controls__button" id="createWatchRoomBtn" type="button" data-watch-room-action="create" title="Создать тестовую комнату">
+                        <button class="player-nav-btn watch-room-controls__button" id="createWatchRoomBtn" type="button" data-watch-room-action="create" title="Создать комнату совместного просмотра">
                             <span aria-hidden="true">◉</span><span class="player-nav-btn__label">Создать</span>
                         </button>
-                        <button class="player-nav-btn watch-room-controls__button" id="joinWatchRoomBtn" type="button" data-watch-room-action="join" title="Войти в тестовую комнату">
+                        <button class="player-nav-btn watch-room-controls__button" id="joinWatchRoomBtn" type="button" data-watch-room-action="join" title="Войти в комнату по коду приглашения" aria-expanded="false" aria-controls="watchRoomInvitePopover" aria-haspopup="dialog">
                             <span aria-hidden="true">↗</span><span class="player-nav-btn__label">Войти</span>
                         </button>
-                        <button class="player-nav-btn watch-room-controls__button" id="copyWatchRoomCodeBtn" type="button" data-watch-room-action="copy-code" title="Скопировать код приглашения" hidden>
+                        <button class="player-nav-btn watch-room-controls__button" id="copyWatchRoomCodeBtn" type="button" data-watch-room-action="copy-code" title="Показать код приглашения" aria-expanded="false" aria-controls="watchRoomInvitePopover" aria-haspopup="dialog" hidden>
                             <span aria-hidden="true">⧉</span><span class="player-nav-btn__label">Код</span>
                         </button>
                         <button class="player-nav-btn watch-room-controls__button" id="watchRoomMembersBtn" type="button" data-watch-room-action="toggle-members" title="Участники комнаты" aria-expanded="false" aria-controls="watchRoomMembersPopover" hidden>
@@ -171,8 +171,18 @@
                             <div class="watch-room-members-popover__title">В комнате</div>
                             <ul class="watch-room-members-popover__list" id="watchRoomMembersList"></ul>
                         </div>
+                        <form class="watch-room-members-popover watch-room-invite-popover" id="watchRoomInvitePopover" role="dialog" aria-labelledby="watchRoomInviteTitle" novalidate hidden>
+                            <div class="watch-room-members-popover__title" id="watchRoomInviteTitle">Код приглашения</div>
+                            <p class="watch-room-invite-popover__hint" id="watchRoomInviteHint"></p>
+                            <input class="watch-room-invite-popover__input" id="watchRoomInviteInput" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200" aria-labelledby="watchRoomInviteTitle" aria-describedby="watchRoomInviteHint watchRoomInviteError">
+                            <p class="watch-room-invite-popover__error" id="watchRoomInviteError" role="alert" hidden></p>
+                            <div class="watch-room-invite-popover__actions">
+                                <button class="watch-room-invite-popover__button" id="watchRoomInviteCancelBtn" type="button" data-watch-room-action="close-invite">Отмена</button>
+                                <button class="watch-room-invite-popover__button watch-room-invite-popover__button--primary" id="watchRoomInviteSubmitBtn" type="submit">Войти</button>
+                            </div>
+                        </form>
                     </div>
-                    <div class="player-nav-controls" id="playerNavControls" style="display: none;" role="group" aria-label="Episode navigation">
+                    <div class="player-nav-controls" id="playerNavControls" style="display: none;" role="group" aria-label="Навигация по сериям">
                         <button class="player-nav-btn player-nav-btn--prev" id="playerPrevEpisodeBtn" type="button" aria-label="Предыдущая серия" title="Предыдущая серия" data-action="player-prev-episode" disabled>
                             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg>
                             <span class="player-nav-btn__label">Предыдущая</span>
@@ -193,7 +203,10 @@
                             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
                         </button>
                     </div>
-                    <button class="modal-close" id="closeVideoBtn" type="button" aria-label="Close player" title="Close player (Esc)">
+                    <button class="modal-close player-minimize-btn" id="minimizeVideoBtn" type="button" aria-label="Свернуть плеер" title="Свернуть плеер">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="18" x2="19" y2="18"></line></svg>
+                    </button>
+                    <button class="modal-close" id="closeVideoBtn" type="button" aria-label="Закрыть плеер" title="Закрыть плеер (Esc)">
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                     </button>
                 </div>
@@ -219,10 +232,8 @@
             </div>
             <div class="modal-body video-body">
                 <div class="source-toolbar">
-                    <span class="source-toolbar__mark" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none"><path d="M8 7.5h8M6 12h12M9 16.5h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-                    </span>
-                    <div class="source-buttons-container" id="sourceButtonsContainer" role="toolbar" aria-label="Player sources" aria-controls="videoContainer"></div>
+                    <span class="source-toolbar__label" id="sourceToolbarLabel">Источник</span>
+                    <div class="source-buttons-container" id="sourceButtonsContainer" role="toolbar" aria-label="Источники видео" aria-controls="videoContainer"></div>
                     <button type="button" class="torrent-workspace-link" id="torrentWorkspaceBtn" aria-controls="torrentSourcePanel" hidden>Раздачи ↓</button>
                 </div>
                 <div class="player-source-guidance" id="playerSourceGuidance" style="display: none;" role="status" aria-live="polite">
@@ -231,11 +242,14 @@
                     </span>
                     <span class="player-source-guidance__text"></span>
                 </div>
-                <div class="video-container player-surface" id="videoContainer" aria-label="Video player" tabindex="-1">
-                    <div class="video-placeholder app-loader app-loader--player" data-player-bootstrap-loader role="status" aria-live="polite">
-                        <div class="app-loader__indicator" aria-hidden="true"></div>
-                        <span class="app-loader__label" data-i18n="movie_details.loading_player">Loading player...</span>
+                <div class="player-stage" id="playerStage">
+                    <div class="video-container player-surface" id="videoContainer" aria-label="Видеоплеер" tabindex="-1">
+                        <div class="video-placeholder app-loader app-loader--player" data-player-bootstrap-loader role="status" aria-live="polite">
+                            <div class="app-loader__indicator" aria-hidden="true"></div>
+                            <span class="app-loader__label" data-i18n="movie_details.loading_player">Loading player...</span>
+                        </div>
                     </div>
+                    <!-- Lives outside #videoContainer: provider renders reset that container. -->
                     <div class="player-autonext-prompt" id="playerAutoNextPrompt" style="display: none;" role="status" aria-live="polite">
                         <div class="player-autonext-prompt__header">
                             <span class="player-autonext-prompt__countdown" id="playerAutoNextCountdown">Следующая серия через 10 сек</span>
@@ -423,6 +437,7 @@
     <script defer src="../../shared/components/CommentReactionBar.js"></script>
     <!-- Parser Infrastructure -->
     <script defer src="../../shared/services/PlayerSourceLifecycle.js"></script>
+    <script defer src="../../shared/services/player/HlsPlaybackFactory.js"></script>
     <script defer src="../../shared/services/parsers/BaseParserService.js"></script>
     <script defer src="../../shared/services/parsers/ParserRegistry.js"></script>
     <script defer src="../../shared/services/parsers/ExFsParser.js"></script>
@@ -481,6 +496,12 @@
     <script defer src="../../shared/components/MovieCard.js"></script>
     <script defer src="../../../content-scripts/player-cleaner.js"></script>
     <script defer src="movie-details-perf.js"></script>
+    <script defer src="ModalStack.js"></script>
+    <script defer src="PlayerSurface.js"></script>
+    <script defer src="PlayerModalController.js"></script>
+    <script defer src="TorrentSourcePanel.js"></script>
+    <script defer src="WatchRoomPanel.js"></script>
+    <script defer src="MetaRenderer.js"></script>
     <script defer src="movie-details.js" type="module"></script>
     <script defer src="../../shared/components/ReportWidget.js"></script>
 </body>

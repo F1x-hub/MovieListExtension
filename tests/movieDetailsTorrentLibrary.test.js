@@ -6,7 +6,10 @@ import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const source = fs.readFileSync(path.join(root, 'src/pages/movie-details/movie-details.js'), 'utf8');
+const movieDetailsSource = fs.readFileSync(path.join(root, 'src/pages/movie-details/movie-details.js'), 'utf8');
+// Torrent workspace methods are installed onto MovieDetailsManager from TorrentSourcePanel.js.
+const torrentPanelSource = fs.readFileSync(path.join(root, 'src/pages/movie-details/TorrentSourcePanel.js'), 'utf8');
+const source = `${movieDetailsSource}\n${torrentPanelSource}`;
 assert.match(source, /ensureTorrentPlaybackStatusMarkup/);
 assert.match(source, /data-status-available/);
 assert.match(source, /Доступно для просмотра/);
@@ -22,7 +25,8 @@ assert.equal(htmlDom.window.document.querySelectorAll('#torrentPlaybackStatus').
 assert.equal(playbackStatus?.parentElement, panel);
 assert.equal(panel?.querySelectorAll('.torrent-playback-status').length, 1);
 assert.ok(panel?.querySelector('#torrentSourceDisclosure'));
-const executableSource = `${source
+const executableSource = `${torrentPanelSource}
+${movieDetailsSource
     .replace(/^import .*?;\r?\n/gm, '')}
 this.__MovieDetailsManager = MovieDetailsManager;`;
 const context = vm.createContext({

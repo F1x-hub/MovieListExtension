@@ -7,6 +7,12 @@ const restoreStart = cleanerSource.indexOf('window.movieExtension_restoreProgres
 const applyContract = cleanerSource.slice(applyStart, restoreStart);
 
 assert.match(cleanerSource, /selectionOperationGeneration/);
+assert.match(cleanerSource, /native provider selection observed/);
+assert.match(cleanerSource, /providerState: 'NATIVE_DOM'/);
+assert.match(cleanerSource, /event\.data\?\.type === 'SET_CANONICAL_PICKER_MODE'/);
+assert.match(cleanerSource, /scheduleNativeProviderSelectionReport\('canonical-mode'\)/);
+assert.match(cleanerSource, /if \(nativeSelectionOperation\) return;/);
+assert.match(cleanerSource, /direction: direction < 0 \? 'previous' : 'next'/);
 assert.match(cleanerSource, /acknowledge\('CANCELLED', 'stale-selection'\)/);
 assert.match(applyContract, /return false;/);
 assert.doesNotMatch(applyContract, /movieExtension_restoreProgress/);

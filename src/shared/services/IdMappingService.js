@@ -34,7 +34,42 @@ class IdMappingService {
         // Verified provider-data exception: the canonical KP 1309570 document
         // currently omits externalId.tmdb, so a valid externalId.tmdb=634649
         // lookup completes with HTTP 200 but zero documents.
+        // Similarly, TMDB 559 (Spider-Man 3) has known collision vulnerabilities on
+        // upstream PoiskKino where KP 840859 ("Отражения") can be erroneously returned.
         this.VERIFIED_MAPPING_OVERRIDES = Object.freeze({
+            'movie:557': Object.freeze({
+                tmdbId: 557,
+                mediaType: 'movie',
+                kpId: 396,
+                kpType: 'movie',
+                status: 'resolved',
+                identityStatus: 'VERIFIED',
+                verificationMethod: 'provider_document_verified',
+                verificationSource: 'curated_provider_exception',
+                resolutionSource: 'curated_provider_exception'
+            }),
+            'movie:558': Object.freeze({
+                tmdbId: 558,
+                mediaType: 'movie',
+                kpId: 397,
+                kpType: 'movie',
+                status: 'resolved',
+                identityStatus: 'VERIFIED',
+                verificationMethod: 'provider_document_verified',
+                verificationSource: 'curated_provider_exception',
+                resolutionSource: 'curated_provider_exception'
+            }),
+            'movie:559': Object.freeze({
+                tmdbId: 559,
+                mediaType: 'movie',
+                kpId: 81692,
+                kpType: 'movie',
+                status: 'resolved',
+                identityStatus: 'VERIFIED',
+                verificationMethod: 'provider_document_verified',
+                verificationSource: 'curated_provider_exception',
+                resolutionSource: 'curated_provider_exception'
+            }),
             'movie:634649': Object.freeze({
                 tmdbId: 634649,
                 mediaType: 'movie',
@@ -343,6 +378,8 @@ class IdMappingService {
             mediaType: this.normalizeMediaType(entry.mediaType),
             kpId,
             kpType: entry.kpType || null,
+            title: entry.title || '',
+            year: Number(entry.year) || null,
             status: 'resolved',
             identityStatus,
             verificationMethod,
@@ -356,6 +393,14 @@ class IdMappingService {
     _writeReverseIndex(cache, entry) {
         const trusted = this._normalizeTrustedMapping(entry);
         if (!trusted) return null;
+
+        // Clean up any stale reverse index entries for this mediaType & tmdbId pointing to a different kpId
+        const oldReversePrefix = `kp:${trusted.mediaType}:`;
+        for (const [key, val] of Object.entries(cache)) {
+            if (key.startsWith(oldReversePrefix) && Number(val?.tmdbId) === Number(trusted.tmdbId) && Number(val?.kpId) !== Number(trusted.kpId)) {
+                delete cache[key];
+            }
+        }
 
         const reverseKey = this.buildReverseKey(trusted.mediaType, trusted.kpId);
         cache[reverseKey] = {
@@ -636,9 +681,42 @@ class IdMappingService {
             .map(([, entry]) => this._normalizeTrustedMapping(entry))
             .filter(entry => entry && entry.kpId === kpId && entry.mediaType === normType);
 
-        const matches = [direct, ...forwardMatches]
+        let matches = [direct, ...forwardMatches]
             .filter(entry => entry && entry.kpId === kpId && entry.mediaType === normType)
             .filter((entry, index, all) => all.findIndex(other => other.tmdbId === entry.tmdbId) === index);
+
+        // Self-heal: If kinopoiskMovie is provided, validate each candidate match.
+        // If a candidate is clearly incompatible (e.g. poisoned reverse mapping), purge it from cache!
+        if (options.kinopoiskMovie && matches.length > 0) {
+            const validMatches = [];
+            let cacheModifiedDueToPurge = false;
+            for (const cand of matches) {
+                const forwardEntry = cache[this.buildKey(cand.mediaType, cand.tmdbId)];
+                const enrichedCand = {
+                    ...cand,
+                    title: cand.title || forwardEntry?.title || '',
+                    year: cand.year || forwardEntry?.year || null
+                };
+                if (this._isTmdbMatchPlausibleForKpMovie(options.kinopoiskMovie, enrichedCand)) {
+                    validMatches.push(cand);
+                } else {
+                    console.warn(`[IdMapping] Purging implausible reverse match for KP ${kpId}:`, cand);
+                    if (cache[reverseKey] && Number(cache[reverseKey]?.tmdbId) === Number(cand.tmdbId)) {
+                        delete cache[reverseKey];
+                        cacheModifiedDueToPurge = true;
+                    }
+                    const fKey = this.buildKey(cand.mediaType, cand.tmdbId);
+                    if (cache[fKey] && Number(cache[fKey]?.kpId) === kpId) {
+                        delete cache[fKey];
+                        cacheModifiedDueToPurge = true;
+                    }
+                }
+            }
+            if (cacheModifiedDueToPurge) {
+                await this.saveMappingCache(cache);
+            }
+            matches = validMatches;
+        }
 
         const highestPriority = Math.max(...matches.map(entry => this._getReverseVerificationPriority(entry)), 0);
         const strongestMatches = matches.filter(entry => this._getReverseVerificationPriority(entry) === highestPriority);
@@ -754,6 +832,177 @@ class IdMappingService {
     }
 
     /**
+     * Validate whether a candidate KP document returned by externalId query
+     * (TMDB or IMDb) is plausible for the input item.
+     * Guards against upstream ID collisions (e.g. TMDB 559 Spider-Man 3 erroneously
+     * returning KP 840859 short film "Отражения").
+     * @param {Object} item
+     * @param {Object} doc
+     * @returns {boolean}
+     */
+    _isCandidatePlausibleForExternalId(item, doc) {
+        if (!item || !doc) return false;
+
+        // 1. Release year plausibility check (if both known)
+        const itemYear = Number(item.year);
+        const docYear = Number(doc.year);
+        if (itemYear && docYear) {
+            if (Math.abs(itemYear - docYear) > 3) {
+                return false;
+            }
+        }
+
+        // 2. Type compatibility
+        if (!this.isCompatibleType(item.mediaType, doc.type, doc)) {
+            return false;
+        }
+
+        // 3. Title plausibility check
+        const inputTitles = [item.title, item.originalTitle, item.name]
+            .map(t => this._normalizeMetadataTitle(t))
+            .filter(Boolean);
+        const candidateTitles = [doc.name, doc.alternativeName, doc.enName, doc.title]
+            .map(t => this._normalizeMetadataTitle(t))
+            .filter(Boolean);
+
+        // If either lacks titles, cannot disprove external ID
+        if (inputTitles.length === 0 || candidateTitles.length === 0) {
+            return true;
+        }
+
+        // Direct equality
+        if (candidateTitles.some(cand => inputTitles.includes(cand))) {
+            return true;
+        }
+
+        // Substring check (min length 3 to avoid noise)
+        for (const inTitle of inputTitles) {
+            for (const candTitle of candidateTitles) {
+                if (inTitle.includes(candTitle) || candTitle.includes(inTitle)) {
+                    if (Math.min(inTitle.length, candTitle.length) >= 3) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // Token overlap check
+        const extractTokens = (titles) => {
+            const tokens = new Set();
+            for (const t of titles) {
+                t.split(' ').forEach(w => {
+                    const word = w.trim();
+                    if (word.length >= 2 || /^\d+$/.test(word)) {
+                        tokens.add(word);
+                    }
+                });
+            }
+            return tokens;
+        };
+
+        const inTokens = extractTokens(inputTitles);
+        const candTokens = extractTokens(candidateTitles);
+        for (const token of inTokens) {
+            if (candTokens.has(token)) {
+                return true;
+            }
+        }
+
+        // Script checks: if both share Cyrillic (or both share Latin) and had 0 overlap, reject!
+        const hasCyrillic = str => /[\u0400-\u04FF]/u.test(str);
+        const hasLatin = str => /[a-zA-Z]/u.test(str);
+
+        const inHasCyrillic = inputTitles.some(hasCyrillic);
+        const candHasCyrillic = candidateTitles.some(hasCyrillic);
+        if (inHasCyrillic && candHasCyrillic) {
+            return false;
+        }
+
+        const inHasLatin = inputTitles.some(hasLatin);
+        const candHasLatin = candidateTitles.some(hasLatin);
+        if (inHasLatin && candHasLatin) {
+            return false;
+        }
+
+        // If scripts are disjoint and no contradictions (year, type) exist, allow cross-language translation
+        return true;
+    }
+
+    /**
+     * Check if a cached reverse TMDB candidate match is plausible for a KP movie.
+     * Prevents a stale/corrupted reverse mapping from attaching an unrelated TMDB
+     * entity to a KP route.
+     * @param {Object} kpMovie
+     * @param {Object} match
+     * @returns {boolean}
+     */
+    _isTmdbMatchPlausibleForKpMovie(kpMovie, match) {
+        if (!kpMovie || !match) return false;
+
+        const kpId = Number(kpMovie.kinopoiskId || kpMovie.id);
+        const candTmdbId = Number(match.tmdbId);
+        if (candTmdbId > 0 && kpId > 0) {
+            const override = this.VERIFIED_MAPPING_OVERRIDES[this.buildKey(match.mediaType || 'movie', candTmdbId)];
+            if (override && Number(override.kpId) !== kpId) {
+                return false;
+            }
+        }
+
+        const kpYear = Number(kpMovie.year);
+        const matchYear = Number(match.year);
+        if (kpYear && matchYear && Math.abs(kpYear - matchYear) > 2) {
+            return false;
+        }
+
+        if (kpMovie.type && match.mediaType) {
+            if (!this.isCompatibleType(match.mediaType, kpMovie.type, kpMovie)) {
+                return false;
+            }
+        }
+
+        const kpDuration = Number(kpMovie.movieLength);
+        const matchDuration = Number(match.runtime || match.movieLength);
+        if (kpDuration && matchDuration) {
+            if ((kpDuration <= 40 && matchDuration >= 60) || (kpDuration >= 60 && matchDuration <= 40)) {
+                return false;
+            }
+        }
+
+        // If match has title metadata, check title plausibility
+        if (match.title) {
+            const kpTitles = this._getKinopoiskMetadataTitles(kpMovie);
+            const matchTitle = this._normalizeMetadataTitle(match.title);
+            if (kpTitles.length > 0 && matchTitle) {
+                if (kpTitles.includes(matchTitle)) return true;
+                if (kpTitles.some(t => t.includes(matchTitle) || matchTitle.includes(t))) return true;
+
+                const extractTokens = (str) => new Set(str.split(' ').filter(w => w.length >= 2 || /^\d+$/.test(w)));
+                const matchTokens = extractTokens(matchTitle);
+                const hasTokenOverlap = kpTitles.some(t => {
+                    const tokens = extractTokens(t);
+                    for (const tok of tokens) {
+                        if (matchTokens.has(tok)) return true;
+                    }
+                    return false;
+                });
+                if (hasTokenOverlap) return true;
+
+                const hasCyrillic = str => /[\u0400-\u04FF]/u.test(str);
+                const hasLatin = str => /[a-zA-Z]/u.test(str);
+                const kpHasCyrillic = kpTitles.some(hasCyrillic);
+                const matchHasCyrillic = hasCyrillic(matchTitle);
+                if (kpHasCyrillic && matchHasCyrillic) return false;
+
+                const kpHasLatin = kpTitles.some(hasLatin);
+                const matchHasLatin = hasLatin(matchTitle);
+                if (kpHasLatin && matchHasLatin) return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Query Kinopoisk API by externalId.imdb batch
      * @param {Array<Object>} chunk - Array of items containing imdbId
      * @param {Object} kinopoiskService
@@ -775,6 +1024,9 @@ class IdMappingService {
             const limit = Math.min(250, chunk.length * 2 + 10);
             params.append('limit', String(limit));
             params.append('selectFields', 'id');
+            params.append('selectFields', 'name');
+            params.append('selectFields', 'alternativeName');
+            params.append('selectFields', 'enName');
             params.append('selectFields', 'externalId');
             params.append('selectFields', 'type');
             params.append('selectFields', 'isSeries');
@@ -815,7 +1067,10 @@ class IdMappingService {
             for (const item of chunk) {
                 if (!item.imdbId) continue;
                 const candidateDocs = docsByImdbId.get(item.imdbId) || [];
-                const matched = candidateDocs.find(doc => this.isCompatibleType(item.mediaType, doc.type, doc));
+                const matched = candidateDocs.find(doc =>
+                    this.isCompatibleType(item.mediaType, doc.type, doc) &&
+                    this._isCandidatePlausibleForExternalId(item, doc)
+                );
                 if (matched) {
                     docsMap.set(item.key, matched);
                 }
@@ -1595,6 +1850,20 @@ class IdMappingService {
                 }
                 cacheModified = true;
             }
+
+            const verifiedOverride = this.VERIFIED_MAPPING_OVERRIDES?.[key];
+            if (verifiedOverride) {
+                if (cache[key]?.kpId && Number(cache[key].kpId) !== Number(verifiedOverride.kpId)) {
+                    const oldReverseKey = this.buildReverseKey(verifiedOverride.mediaType, cache[key].kpId);
+                    if (cache[oldReverseKey] && Number(cache[oldReverseKey].tmdbId) === Number(verifiedOverride.tmdbId)) {
+                        delete cache[oldReverseKey];
+                    }
+                    cache[key] = { ...verifiedOverride };
+                    this._writeReverseIndex(cache, verifiedOverride);
+                    cacheModified = true;
+                }
+            }
+
             const entry = sharedMapping || cache[key];
 
             if (entry && entry.status === 'resolved' && entry.kpId) {
@@ -1710,18 +1979,19 @@ class IdMappingService {
                         continue;
                     }
                     const matchedDoc = docsMap.get(item.key);
-                    const verifiedOverride = !matchedDoc ? this.VERIFIED_MAPPING_OVERRIDES[item.key] : null;
+                    const verifiedOverride = this.VERIFIED_MAPPING_OVERRIDES?.[item.key] || null;
+                    const effectiveDoc = verifiedOverride ? null : matchedDoc;
 
-                    if ((matchedDoc && (matchedDoc.id || matchedDoc.kinopoiskId)) || verifiedOverride?.kpId) {
-                        const kpId = Number(matchedDoc?.id || matchedDoc?.kinopoiskId || verifiedOverride.kpId);
-                        const kpType = matchedDoc?.type || verifiedOverride?.kpType || 'movie';
-                        const verificationMethod = matchedDoc
-                            ? (resolutionMethodsByKey.get(item.key) || 'exact_external_tmdb')
-                            : verifiedOverride.verificationMethod;
-                        const resolutionSource = matchedDoc
-                            ? (verificationMethod === 'exact_title_year_type' ? 'metadata_fallback' : 'automatic')
-                            : verifiedOverride.resolutionSource;
-                        const verificationSource = matchedDoc ? 'automatic' : verifiedOverride.verificationSource;
+                    if (verifiedOverride?.kpId || (effectiveDoc && (effectiveDoc.id || effectiveDoc.kinopoiskId))) {
+                        const kpId = Number(verifiedOverride?.kpId || effectiveDoc?.id || effectiveDoc?.kinopoiskId);
+                        const kpType = verifiedOverride?.kpType || effectiveDoc?.type || 'movie';
+                        const verificationMethod = verifiedOverride
+                            ? verifiedOverride.verificationMethod
+                            : (resolutionMethodsByKey.get(item.key) || 'exact_external_tmdb');
+                        const resolutionSource = verifiedOverride
+                            ? verifiedOverride.resolutionSource
+                            : (verificationMethod === 'exact_title_year_type' ? 'metadata_fallback' : 'automatic');
+                        const verificationSource = verifiedOverride ? verifiedOverride.verificationSource : 'automatic';
 
                         cache[item.key] = {
                             tmdbId: item.tmdbId,
@@ -1852,6 +2122,9 @@ class IdMappingService {
             const limit = Math.min(250, chunk.length * 2 + 10);
             params.append('limit', String(limit));
             params.append('selectFields', 'id');
+            params.append('selectFields', 'name');
+            params.append('selectFields', 'alternativeName');
+            params.append('selectFields', 'enName');
             params.append('selectFields', 'externalId');
             params.append('selectFields', 'type');
             params.append('selectFields', 'isSeries');
@@ -1928,7 +2201,10 @@ class IdMappingService {
             // Match Tier 1 exact TMDB matches
             for (const item of chunk) {
                 const candidateDocs = docsByTmdbId.get(item.tmdbId) || [];
-                const matched = candidateDocs.find(doc => this.isCompatibleType(item.mediaType, doc.type, doc));
+                const matched = candidateDocs.find(doc =>
+                    this.isCompatibleType(item.mediaType, doc.type, doc) &&
+                    this._isCandidatePlausibleForExternalId(item, doc)
+                );
 
                 if (matched) {
                     docsMap.set(item.key, matched);

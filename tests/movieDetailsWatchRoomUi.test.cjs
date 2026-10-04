@@ -14,7 +14,9 @@ function compileMethod(source, name, nextMethod) {
   return new Function(`return function(${params}) {${body}}`)();
 }
 
-const source = fs.readFileSync('src/pages/movie-details/movie-details.js', 'utf8');
+// Watch room UI methods are installed onto MovieDetails from WatchRoomPanel.js.
+const source = `${fs.readFileSync('src/pages/movie-details/movie-details.js', 'utf8')}
+${fs.readFileSync('src/pages/movie-details/WatchRoomPanel.js', 'utf8')}`;
 const markup = fs.readFileSync(path.join('src', 'pages', 'movie-details', 'movie-details.html'), 'utf8');
 assert.match(source, /onRoomUpdate:\s*\(room\)\s*=>\s*this\.renderWatchRoomMembers\(room\)/);
 const refreshWatchRoomControls = compileMethod(source, 'refreshWatchRoomControls', 'renderWatchRoomMembers');

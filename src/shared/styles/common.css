@@ -101,6 +101,17 @@ body {
     padding-top: 60px;
 }
 
+/* Keep text selection aligned with the active neutral theme. */
+::selection {
+    background: var(--ui-color-interactive);
+    color: var(--ui-color-page);
+}
+
+::-moz-selection {
+    background: var(--ui-color-interactive);
+    color: var(--ui-color-page);
+}
+
 /* Typography */
 h1, h2, h3, h4, h5, h6 {
     font-weight: 600;

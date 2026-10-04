@@ -7,7 +7,7 @@ const movieDetailsSource = fs.readFileSync(
     path.join(__dirname, '../src/pages/movie-details/movie-details.js'),
     'utf8'
 );
-const methodStart = movieDetailsSource.indexOf('    startProgressiveSourceDiscovery(movie) {');
+const methodStart = movieDetailsSource.indexOf('    startProgressiveSourceDiscovery(movie, ');
 assert.notEqual(methodStart, -1, 'progressive discovery method must exist');
 const methodEnd = movieDetailsSource.indexOf('\n    saveSourcesToCache(', methodStart);
 assert.notEqual(methodEnd, -1, 'progressive discovery method boundary must remain stable');
@@ -109,6 +109,55 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
     ].filter(id => parserById.get(id)?.result));
     assert.equal(saved.length, 1, 'final source set must be persisted once');
     assert.equal(selectorRefreshes, 1, 'finalization must refresh the selector once');
+
+    // A hanging higher-priority provider (e.g. an unresponsive mirror) must
+    // not hold the watch path past the priority deadline.
+    const timedContext = { setTimeout, clearTimeout };
+    vm.createContext(timedContext);
+    new vm.Script(`class MovieDetailsManager { ${methodSource} }\nthis.startProgressiveSourceDiscovery = MovieDetailsManager.prototype.startProgressiveSourceDiscovery;`)
+        .runInContext(timedContext);
+    const hangingParsers = [
+        { id: 'hanging-priority', searchDelay: 400, result: { url: 'https://provider.test/hang' } },
+        { id: 'fast-fallback', searchDelay: 5, result: { url: 'https://provider.test/fast' } }
+    ].map(parser => ({
+        ...parser,
+        name: parser.id,
+        getPlayerType: () => 'iframe',
+        supportsType: () => true,
+        cachedVideoSources: async () => [{ parserId: parser.id, url: `https://cdn.test/${parser.id}.m3u8` }]
+    }));
+    const deadlineManager = Object.create({
+        startProgressiveSourceDiscovery: timedContext.startProgressiveSourceDiscovery
+    });
+    deadlineManager.parserRegistry = {
+        getAll: () => hangingParsers,
+        async searchAll(_title, _year, options) {
+            await Promise.all(hangingParsers.map(async (parser) => {
+                await delay(parser.searchDelay);
+                const result = { ...parser.result, parserId: parser.id };
+                options.onResult(result, parser);
+                options.onSettled(result, parser);
+            }));
+        }
+    };
+    deadlineManager.normalizeVideoSources = (sources) => [...sources];
+    deadlineManager.saveSourcesToCache = () => {};
+    deadlineManager.populateSourceSelector = () => {};
+    deadlineManager.selectedMovie = { kinopoiskId: 'movie-2' };
+
+    const deadlineStartedAt = Date.now();
+    const deadlineDiscovery = deadlineManager.startProgressiveSourceDiscovery(
+        { name: 'Film', year: 2024, type: 'film', kinopoiskId: 'movie-2' },
+        { priorityDeadlineMs: 40 }
+    );
+    const deadlineSources = await deadlineDiscovery.firstSources;
+    const deadlineElapsed = Date.now() - deadlineStartedAt;
+    assert.deepEqual(deadlineSources.map(source => source.parserId), ['fast-fallback'],
+        'after the priority deadline the ready lower-priority provider must be released');
+    assert.ok(deadlineElapsed >= 35 && deadlineElapsed < 300,
+        `release must happen at the deadline, not after the hanging provider (elapsed ${deadlineElapsed}ms)`);
+    await deadlineDiscovery.finalize;
+
     console.log('✅ progressive watch path tests passed');
 })().catch(error => {
     console.error(error);

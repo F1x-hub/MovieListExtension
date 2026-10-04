@@ -19,6 +19,7 @@ class Navigation {
         this.watchingService = null;
         this.cachedUserDisplay = null;
         this._updateInProgress = false;
+        this._searchNavigationPending = false;
         if (typeof window !== 'undefined') {
             window.navigationInstance = this;
             window.navigation = this;
@@ -567,7 +568,6 @@ class Navigation {
                 if (query) {
                     searchInputWrapper.classList.remove('active');
                     this.navigateToSearchWithQuery(query);
-                    searchInput.value = '';
                 }
             } else {
                 searchInputWrapper.classList.add('active');
@@ -576,17 +576,15 @@ class Navigation {
         });
 
         // Handle Enter key to navigate to search page
-        searchInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                const query = searchInput.value.trim();
-                searchInputWrapper.classList.remove('active');
-                if (query) {
-                    this.navigateToSearchWithQuery(query);
-                    searchInput.value = '';
-                } else {
-                    this.navigateToPage('search');
-                }
-            }
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter') return;
+
+            e.preventDefault();
+            if (e.repeat || this._searchNavigationPending) return;
+
+            const query = searchInput.value.trim();
+            searchInputWrapper.classList.remove('active');
+            this.navigateToSearchWithQuery(query);
         });
 
         // Close search when clicking outside
@@ -605,7 +603,13 @@ class Navigation {
     }
 
     navigateToSearchWithQuery(query) {
-        const searchUrl = chrome.runtime.getURL(`src/pages/search/search.html?q=${encodeURIComponent(query)}`);
+        if (this._searchNavigationPending) return;
+
+        const normalizedQuery = String(query ?? '').trim();
+        const queryString = normalizedQuery ? `?q=${encodeURIComponent(normalizedQuery)}` : '';
+        const searchUrl = chrome.runtime.getURL(`src/pages/search/search.html${queryString}`);
+        this._searchNavigationPending = true;
+
         if (window.location.pathname.includes('popup.html')) {
             chrome.tabs.create({ url: searchUrl });
         } else {

@@ -107,6 +107,9 @@ class SeasonvarAdapter extends (typeof BasePlaybackAdapter !== 'undefined' ? Bas
                 if (video) {
                     parser._isEpisodeSwitch = true;
                     video.src = ep.url;
+                    if (typeof parser._updateVideoSubtitles === 'function') {
+                        parser._updateVideoSubtitles(video, ep.subtitle);
+                    }
                     currentState.activeEpisodeNumber = targetEpisode;
                     currentState.activeEpisodeUrl = ep.url;
                     try {
@@ -178,6 +181,7 @@ class SeasonvarAdapter extends (typeof BasePlaybackAdapter !== 'undefined' ? Bas
             resolvedSeasonNumber: selection.seasonNumber || null,
             resolvedEpisodeNumber: selection.episodeNumber || null,
             initialTimestamp: selection.initialTimestamp || 0,
+            translations: context.translations || sources?.translations || null,
             onReady: context.onReady,
             onError: context.onError
         };

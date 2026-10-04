@@ -10,6 +10,17 @@ const PRESENCE_STALE_CHECK_MS = 15_000;
 const RTDB_SERVER_TIMESTAMP = { '.sv': 'timestamp' };
 const PRESENCE_V2_NODE = 'presenceV2';
 
+function getWatchRoomFrameOrigin(iframe) {
+    try {
+        const base = typeof window !== 'undefined' ? window.location?.href : undefined;
+        const url = new URL(iframe?.src || iframe?.getAttribute?.('src') || '', base);
+        if (url.origin !== 'null') return url.origin;
+        return url.protocol === 'chrome-extension:' && url.host ? `${url.protocol}//${url.host}` : null;
+    } catch {
+        return null;
+    }
+}
+
 class WatchRoomApiError extends Error {
     constructor(message, { code = 'ROOM_API_ERROR', status = 0, cause } = {}) {
         super(message);
@@ -739,7 +750,9 @@ class WatchRoomStagingController {
         }
         const iframe = this.getIframe?.();
         if (iframe?.contentWindow) {
-            iframe.contentWindow.postMessage(message, '*');
+            const targetOrigin = getWatchRoomFrameOrigin(iframe);
+            if (!targetOrigin) throw new Error('Плеер ещё загружается');
+            iframe.contentWindow.postMessage(message, targetOrigin);
             return;
         }
         const video = this.getVideo?.();

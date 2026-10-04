@@ -25,7 +25,7 @@ class RutubeParser extends BaseParserService {
      */
     async search(title, year) {
         if (!title) return null;
-        console.log('[Rutube Search] query:', title, 'year:', year);
+        this.debugLog('[Rutube Search] query:', title, 'year:', year);
 
         const queries = this._buildSearchQueries(title, year);
         const searchYear = year || this._extractYear(title);
@@ -34,11 +34,11 @@ class RutubeParser extends BaseParserService {
         try {
             for (const query of queries) {
                 const searchUrl = `${this.baseUrl}/api/search/video/?query=${encodeURIComponent(query)}&page=1&per_page=25`;
-                console.log('[Rutube Search] request URL:', searchUrl);
+                this.debugLog('[Rutube Search] request URL:', searchUrl);
 
                 try {
                     const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
-                    const request = () => fetch(searchUrl, {
+                    const request = () => this.fetchWithTimeout(searchUrl, {
                         headers: {
                             'Accept': 'application/json'
                         }
@@ -72,13 +72,13 @@ class RutubeParser extends BaseParserService {
 
             const candidateList = Array.from(candidatesMap.values());
             if (candidateList.length === 0) {
-                console.log(`[DEBUG RutubeParser] No results found for "${title}"`);
+                this.debugLog(`[DEBUG RutubeParser] No results found for "${title}"`);
                 return null;
             }
 
             const bestResult = this._pickBestResult(candidateList, title, searchYear);
             if (!bestResult || bestResult.score <= 0) {
-                console.log(`[DEBUG RutubeParser] No confident result found for "${title}" (best score: ${bestResult?.score})`);
+                this.debugLog(`[DEBUG RutubeParser] No confident result found for "${title}" (best score: ${bestResult?.score})`);
                 return null;
             }
 
@@ -101,7 +101,7 @@ class RutubeParser extends BaseParserService {
                 thumbnailUrl: best.thumbnail_url || null
             };
 
-            console.log('[Rutube Search] final result:', JSON.stringify(result));
+            this.debugLog('[Rutube Search] final result:', JSON.stringify(result));
             return result;
 
         } catch (error) {
@@ -118,7 +118,7 @@ class RutubeParser extends BaseParserService {
      * @returns {Promise<Array<VideoSource>>}
      */
     async getVideoSources(searchResult) {
-        console.log(`[DEBUG RutubeParser] getVideoSources() called.`, searchResult?.url);
+        this.debugLog(`[DEBUG RutubeParser] getVideoSources() called.`, searchResult?.url);
         try {
             const url = typeof searchResult === 'string' ? searchResult : searchResult.url;
 
@@ -177,7 +177,7 @@ class RutubeParser extends BaseParserService {
                 metadata
             });
 
-            console.log(`[DEBUG RutubeParser] getVideoSources result: ${sources.length} sources (HLS: ${!!m3u8Url})`);
+            this.debugLog(`[DEBUG RutubeParser] getVideoSources result: ${sources.length} sources (HLS: ${!!m3u8Url})`);
             return sources;
 
         } catch (error) {
@@ -230,7 +230,7 @@ class RutubeParser extends BaseParserService {
         for (const url of candidateUrls) {
             try {
                 const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
-                const request = () => fetch(url, {
+                const request = () => this.fetchWithTimeout(url, {
                     headers: { 'Accept': 'application/json' }
                 });
                 const response = perf ? await perf.trackRequest('RUTUBE_SOURCE', { purpose: 'getVideoSources', url }, request) : await request();
@@ -598,7 +598,7 @@ class RutubeParser extends BaseParserService {
      */
     async _fetchVideoMetadata(videoId) {
         const apiUrl = `${this.baseUrl}/api/video/${videoId}/`;
-        const response = await fetch(apiUrl, {
+        const response = await this.fetchWithTimeout(apiUrl, {
             headers: { 'Accept': 'application/json' }
         });
         if (!response.ok) throw new Error(`API request failed: ${response.status}`);

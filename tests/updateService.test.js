@@ -9,6 +9,9 @@ const nativeHostSource = fs.readFileSync('native-host/Updater/Program.cs', 'utf8
 const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
 const settingsHtmlSource = fs.readFileSync('src/pages/settings/settings.html', 'utf8');
 const settingsJsSource = fs.readFileSync('src/pages/settings/settings.js', 'utf8');
+const optionsJsSource = fs.readFileSync('src/pages/options/options.js', 'utf8');
+const optionsHtmlSource = fs.readFileSync('src/pages/options/options.html', 'utf8');
+const i18nSource = fs.readFileSync('src/shared/i18n/I18n.js', 'utf8');
 const storage = {};
 const alarms = [];
 let nativeUpdaterVersion = '1.1.1';
@@ -93,6 +96,32 @@ assert.match(source, /\\d\+\(\?:\\\.\\d\+\)\{2,3\}/);
     assert.doesNotMatch(source, /test_apply/);
     assert.strictEqual(fetchCount, 2);
     assert.match(settingsHtmlSource, /id="extensionUpdateInstallBtn"/);
+    assert.match(settingsHtmlSource, /id="extensionCurrentVersion"/,
+        'settings must expose the installed extension version');
+    assert.match(settingsHtmlSource, /data-target="updates"/,
+        'settings must expose a dedicated updates pane');
+    assert.match(settingsHtmlSource, /id="pane-updates"/,
+        'settings must render the dedicated updates pane');
+    assert.doesNotMatch(settingsHtmlSource.slice(settingsHtmlSource.indexOf('id="pane-extras"'), settingsHtmlSource.indexOf('id="pane-updates"')), /id="extensionUpdateInstallBtn"/,
+        'update actions must not remain inside the extras pane');
+    assert.match(settingsJsSource, /getManifest\(\)\?\.version/,
+        'settings must read the version from the installed extension manifest');
+    assert.match(settingsJsSource, /ACTIVE_SETTINGS_PANE_STORAGE_KEY/,
+        'settings must keep the selected pane across page reloads');
+    assert.match(settingsJsSource, /localStorage\.getItem\(ACTIVE_SETTINGS_PANE_STORAGE_KEY\)/);
+    assert.match(settingsJsSource, /localStorage\.setItem\(ACTIVE_SETTINGS_PANE_STORAGE_KEY/);
+    assert.match(settingsJsSource, /const autoUpdateChanged/,
+        'saving unrelated settings must not send an automatic-update mutation');
+    assert.match(settingsJsSource, /i18n\.setLanguage\(lang, \{ persist: false \}\)/,
+        'language preview must remain a draft until settings are saved');
+    assert.match(i18nSource, /async setLanguage\(lang, \{ persist = true \} = \{\}\)/);
+    assert.match(settingsJsSource, /sidebarLinks\.forEach\(link => \{\s*link\.addEventListener\('click'/,
+        'settings navigation must work with keyboard and pointer activation');
+    assert.match(optionsJsSource, /src\/pages\/settings\/settings\.html/,
+        'legacy options entry must redirect to the unified settings page');
+    assert.match(optionsHtmlSource, /options\.js/);
+    assert.strictEqual(manifest.options_ui.page, 'src/pages/settings/settings.html',
+        'Chrome options must open the unified settings page');
     assert.match(settingsJsSource, /type: 'CHECK_FOR_UPDATES'/);
     assert.match(settingsJsSource, /type: 'APPLY_UPDATE'/);
     assert.match(popupSource, /type: 'CHECK_FOR_UPDATES'/,

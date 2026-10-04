@@ -144,6 +144,7 @@ const context = vm.createContext({
     Event: class {}
 });
 
+vm.runInContext(fs.readFileSync(new URL('../src/pages/movie-details/MetaRenderer.js', import.meta.url), 'utf8'), context);
 vm.runInContext(source, context);
 
 const MovieDetailsManager = context.window.MovieDetailsManager;
@@ -391,7 +392,7 @@ console.log('--- 13 & 14: Testing Rating Hierarchy & Isolation ---');
     assert(!html.includes('rating-item-large tmdb'), 'TMDB rating card removed from left rail');
     assert(html.includes('meta-item--tmdb'), 'TMDB rating row present in About tab');
     assert(html.includes('7.9'), 'TMDB score 7.9 present in About tab');
-    assert(html.includes('15k'), 'TMDB votes 15k formatted in About tab');
+    assert(/15\s*тыс\./.test(html), 'TMDB votes 15 тыс. formatted in About tab');
 
     const css = readText('src/pages/movie-details/movie-details.css');
     assert(css.includes('.rating-item-large.kp {\n    flex: 1 1 0;'), 'KP has equal 50% flex 1 1 0');

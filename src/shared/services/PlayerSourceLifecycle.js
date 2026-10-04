@@ -12,6 +12,9 @@
         CANCELLED: 'cancelled'
     });
     const DEFAULT_TIMEOUT_MS = 5000;
+    // Dispatched on the <video> by HlsPlaybackFactory.
+    const HLS_FATAL_EVENT = 'extension-hls-fatal';
+    const HLS_RETRY_EVENT = 'extension-hls-retry';
 
     function ensureStyles(doc) {
         if (!doc?.head || doc.getElementById?.('player-source-lifecycle-styles')) return;
@@ -149,6 +152,12 @@
             video?.removeEventListener?.('loadeddata', onReady);
             video?.removeEventListener?.('canplay', onReady);
             video?.removeEventListener?.('error', onError);
+            video?.removeEventListener?.(HLS_FATAL_EVENT, onHlsFatal);
+            video?.removeEventListener?.(HLS_RETRY_EVENT, onHlsRetry);
+        };
+        const armTimeout = (ms) => {
+            if (timer) clearTimeout(timer);
+            timer = setTimeout(() => finish(STATES.UNAVAILABLE, { reason: 'timeout' }), ms);
         };
         const finish = (state, detail) => {
             if (!active) return;
@@ -159,17 +168,26 @@
         };
         const onReady = () => finish(STATES.READY, { reason: 'ready' });
         const onError = () => finish(STATES.ERROR, { reason: 'media-error', error: video?.error || null });
+        // hls.js failures never set video.error; the factory reports them.
+        const onHlsFatal = (event) => finish(STATES.ERROR, { reason: 'hls-fatal', detail: event?.detail || null });
+        // A scheduled stream retry is progress, not a stalled source.
+        const onHlsRetry = (event) => {
+            if (!active) return;
+            armTimeout(timeoutMs + (Number(event?.detail?.delayMs) || 0));
+        };
 
         video?.addEventListener?.('loadeddata', onReady);
         video?.addEventListener?.('canplay', onReady);
         video?.addEventListener?.('error', onError);
+        video?.addEventListener?.(HLS_FATAL_EVENT, onHlsFatal);
+        video?.addEventListener?.(HLS_RETRY_EVENT, onHlsRetry);
         if (isCurrent()) options.onState?.(STATES.LOADING, { reason: 'start' });
         if (video?.error) {
             onError();
         } else if (video?.readyState >= 2) {
             onReady();
         } else {
-            timer = setTimeout(() => finish(STATES.UNAVAILABLE, { reason: 'timeout' }), timeoutMs);
+            armTimeout(timeoutMs);
         }
 
         return {

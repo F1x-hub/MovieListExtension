@@ -7,7 +7,7 @@ series, cartoons, and anime.
 
 <p>
   <img src="https://img.shields.io/badge/MANIFEST-V3-1687c9?style=flat-square&logo=googlechrome&logoColor=white" alt="Manifest V3">
-  <img src="https://img.shields.io/badge/VERSION-1.3.3-69b500?style=flat-square" alt="Version 1.3.3">
+  <img src="https://img.shields.io/badge/VERSION-1.3.4-69b500?style=flat-square" alt="Version 1.3.4">
   <img src="https://img.shields.io/badge/JAVASCRIPT-ES6%2B-f0d000?style=flat-square&logo=javascript&logoColor=111827" alt="JavaScript ES6+">
   <img src="https://img.shields.io/badge/VANILLA-ES6%2B-e2c400?style=flat-square" alt="Vanilla ES6+">
   <img src="https://img.shields.io/badge/AUTHOR-FIX-f47721?style=flat-square" alt="Author Fix">
@@ -34,6 +34,12 @@ lists, provider-aware playback, and Firebase synchronization in one interface.
   Jackett credentials or torrent locators to the extension.
 - Use HLS and direct-video playback, AniSkip integration, and the built-in anime
   radio.
+- Preview frames and their timestamps while hovering over the custom player's
+  timeline when a direct video or HLS preview source is available.
+  This includes native Rutube and torrent streams and supported Ex-FS/KinoGo
+  provider frames. Embedded Rutube/VidSrc players are supported when their
+  active HLS source is exposed; opaque, DRM, and DASH-only sources without an
+  HLS/file alternative cannot supply frames to the independent preview decoder.
 - Add watchlist and rating controls to supported external movie websites through
   content scripts.
 - Use light/dark themes, Popup or Side Panel mode, localized UI, and accessible
@@ -281,9 +287,82 @@ MIT
 
 ## Changelog
 
-Release entries are intentionally collapsed to keep this page readable. The
+Release entries are intentionally collapsed to keep this page readable.
 The extension manifest is the source of truth for the Chrome build version; `package.json`
 keeps npm-compatible three-component semver metadata.
+
+<details open>
+<summary><strong>Unreleased</strong></summary>
+
+### Features
+
+- Add "Refresh Data" ("Обновить данные") action to the movie details title menu (`⋮`), enabling users to immediately purge cached movie details, reverse identity mappings, and collection records to force a clean re-aggregation from upstream providers.
+- Replace the personal pool and shared marathon's horizontal roulette with a poster wheel, top pointer, and central spin control. A gear menu saves a shared spin duration from 2 seconds to 30 minutes, entered in seconds, with a fast start and gradual stop; pool weighting and the server-selected marathon result stay intact.
+- Share timeline frame previews across direct-video/HLS sources, native Rutube and torrent playback, and supported provider frames. Track the active Venom movie/episode and provider HLS media behind blob URLs, recognize extensionless manifests, and preserve the active stream's loader configuration. Keep the frame and timestamp inside the player so provider overlays cannot cover them; unavailable preview sources retain the timestamp without seeking the main video.
+
+### Fixes
+
+- Speed up player source discovery when a provider mirror stalls: every parser request now has a hard network deadline (KinoGo 7 s, other parsers 8 s), KinoGo starts the next mirror after 1.5 s or on failure and aborts the losers once one answers, and the Watch path releases the best ready lower-priority provider after 6 s instead of waiting indefinitely for a pending higher-priority one.
+- Recover HLS playback through one shared `HlsPlaybackFactory` for parser streams, direct/torrent streams in Movie Details, and the search video modal. Fatal decode errors are recovered in place (then one audio-codec swap); provider streams retry network failures with 1/2/4 s backoff, fail immediately on expired manifests (401/403/404/410), and then switch in place to the parser's next source (for example the Rutube embed after its direct HLS) or show the error state with Retry instead of waiting for the timeout. Torrent sessions keep retrying while the local service buffers.
+- Stop offering a YouTube trailer as the KinoGo player when a page has no film player, so discovery moves on to other providers. Ex-FS keeps "Плеер Full HD" first and now adds other tabs as fallbacks when they embed a provider the extension supports; trailers and unknown players are still skipped.
+- Show the playing rendition in automatic quality mode ("Авто · 720p") in the player settings menu.
+- Keep less in memory and storage: Seasonvar caches at most 10 raw pages as HTML only (parsed on use) instead of 50 pages with parsed documents, and saving a source list prunes expired or unreadable `movie_sources_*` entries and keeps the 30 newest. Seasonvar playback state is posted only to the page's own origin.
+- Make parser tracing opt-in: KinoGo, Seasonvar and Rutube debug logs (including KinoGo's per-candidate search trace) are silent unless `localStorage.setItem('movieExtension.debugParsers', '1')`; warnings and errors are unchanged.
+- Improve HLS startup quality and memory use: streams are capped to the player's on-screen size (device pixel ratio included; manual quality choices are not capped), the played-back buffer is bounded to 90 s, and provider streams start from the last measured bandwidth (kept for 7 days, never from local torrent throughput) instead of hls.js' 500 kbps default.
+- Stop restoring another title's playback position in Movie Details: the player's local resume key now includes the current movie instead of the shared page path, is disabled until a movie is known, ignores late saves after a title switch, and stays off for Seasonvar, whose position is restored by `ProgressService`. Resume inside provider frames is unchanged.
+- Start cached embed sources without the HEAD preflight that delayed every Watch click by up to 2.5 s and missed expired tokens returned as 200; stale embeds are still recovered through the player's error/re-search state. Seasonvar no longer caches an empty playlist or season list after a transient provider failure, so the next request retries instead of showing no episodes for the cache lifetime.
+- Escape and scheme-check scraped direct-video URLs and Seasonvar episode/translation markup so provider-supplied URLs or names cannot inject HTML into the player.
+- Fix false semantic incompatibility rejection in `MediaAggregatorService` by checking non-empty seasons and explicit TV show flags rather than evaluating empty season arrays as series, allowing TMDB movies to enrich Kinopoisk entities correctly.
+- Automatically heal warm franchise collection cache records and cached movie documents when verified mapping overrides conflict with stale cached IDs (e.g. Spider-Man 3 TMDB 559 mapped to Kinopoisk 840859 instead of 81692), purging poisoned warm cache entries and routing cards to the correct movie page.
+- Prevent hybrid "Frankenstein" movie details aggregation when navigating via franchise collection cards (such as Spider-Man 3 loading Russian short film "Отражения") by enforcing cross-provider semantic compatibility checks (titles, release years, runtime duration, and entity types) before synthesizing movie DTOs in `MediaAggregatorService`, guarding external ID mapping collisions and auto-healing stale/poisoned reverse mappings in `IdMappingService`, and resetting movie state and DOM containers upon in-page navigation in `movie-details.js`.
+- Fix movie wheel divider line geometry by replacing the conic-gradient overlay with an SVG vector overlay computed from unified sector boundary math, ensuring dividing lines run straight and radially exactly along sector seams from the outer wheel boundary to the central button with zero gaps, angle mismatches, or aliasing across any movie count.
+- Show immediate progress on marathon action buttons while the server confirms a change, and keep the indicator visible across live list updates.
+- Use rounded-square borders for the roulette gear and close buttons.
+- Keep the rotating wheel inside its circular frame so it does not expand the roulette dialog or create scrollbars while spinning.
+- Keep native Rutube and other direct-source timeline previews at the same 200 × 112 size as iframe previews; exclude preview videos from full-player layout styles so the frame and timestamp remain visible.
+- Restore custom controls for KinoGo's Nextembed provider (including Diler 3) with the existing embed context and ad isolation; defer initial mounting until the preview class is ready.
+- Render shared marathon titles as text; validate submitted posters on the server and load them only from supported HTTPS image hosts.
+- Keep marathon covers visible by upgrading trusted legacy HTTP URLs and falling back to the Kinopoisk poster URL for the movie ID when a saved URL is missing or unavailable.
+- Add keyboard controls and accessible selection state to the language picker; translate the subtitle appearance pane in English and Russian.
+- Handle roulette poster failures through JavaScript so extension CSP does not block the fallback.
+- Preserve the source site's HTTP Referer when opening supported Ex-FS/KinoGo provider frames, avoiding substituted Lift media and startup decode failures caused by missing embed context. Keep the provider's formats and timeline intact; isolate Venom advertising at its factory and preserve its original media element during source changes. Header rules apply only to marked frames initiated by this extension.
+- Restore Seasonvar voiceover and translation picker options by parsing default playlists declared via inline script objects, preserving studio labels in translation titles, and syncing subtitle tracks upon episode switch.
+- Keep the active season highlighted when opening the episode picker if season metadata stores its number as text.
+- Scroll the season list to the active season when the episode picker opens.
+- Restore the embedded player’s previous/next episode arrows when canonical episode navigation is enabled after the initial provider scan.
+- Make the currently selected movie title in the shared marathon clickable and open its Movie Details page.
+- Show the marathon roulette immediately while the server confirms the authoritative selected movie.
+- Match text selection to the active neutral dark or light theme across extension pages.
+- Prevent repeated navbar Enter events from replacing a query search with a blank search page.
+- Keep the next-episode countdown working after source switches by moving it out of the player container that provider renders reset.
+- Hide KinoGo/Ex-FS previous/next episode arrows for films; canonical episode navigation is now enabled only for series.
+- Make the player close button and Esc fully close playback and release the active provider frame so audio cannot continue in the background; clicking outside the player or the new header "Свернуть" button minimizes it instead.
+- Render the admin-only "Анонсировать" button from one shared template, fixing its misspelled label and colored emoji in the late admin-check path.
+- Harden player messaging: the player cleaner accepts host commands only from the embedding extension page and reports back only to the extension origin, while Movie Details and watch rooms address frame commands to the frame's origin instead of `*`; pause confirmations are bound to the paused frame.
+- Reject non-web provider, trailer, and Spotify embed URLs and escape frame attributes and player placeholders, so scraped URLs or titles cannot inject attributes into player markup.
+- Replace the watch room's native browser prompts with an in-player invite popover: "Войти" opens a code field with inline errors, "Код" shows the owner's invite code with a copy button and a manual-copy fallback when clipboard access is denied, and Esc closes it. Watch room button titles no longer call the rooms a test feature.
+- Show player source status on the source buttons: a spinning ring while loading, a filled dot while playing, and a "×" with a dashed border for unavailable providers, with the state also in the button title and screen-reader text. The unexplained icon before the source rail is replaced by an "Источник" label, and English player labels are localized.
+- Show the loader instead of an empty "0:00 / 0:00" timeline and play button while provider media is still fetching; the timecode appears once the media reports a duration, and idle sources that wait for a click keep their play button.
+- Style the provider episode arrows from the cleaner stylesheet instead of inline styles, removing their blue hover accent and adding permanent accessible names.
+- Tidy the Movie Details page: when title artwork is shown, the duplicate text title is kept only for screen readers; empty slogan and genre rows are omitted; metadata labels no longer mix trailing colons; English TMDB country names are shown in the page language; vote counts use locale formatting ("2,2 тыс." instead of "2.2k") and The Numbers amounts match Kinopoisk money formatting; small vote and finance figures use the UI font with tabular digits.
+- Make "Смотреть" the only primary action, with "Оценить" as a secondary button, give studio logos a neutral light plate in both themes so dark wordmarks stay readable, and replace the page's green/amber/red literals with semantic success/danger or neutral tokens.
+
+### Refactor
+
+- Route Movie Details keyboard handling through one `MovieDetailsModalStack` (`src/pages/movie-details/ModalStack.js`): Escape and Tab precedence for the announcement, review reader, torrent disclosure, watch room invite, episode picker, trailer, rating, player, and comment reaction picker is now declared as ordered layers instead of two document-level `keydown` chains, with the same closing order as before.
+- Make `MovieDetailsPlayerSurface` (`src/pages/movie-details/PlayerSurface.js`) the only Movie Details writer of `#videoContainer`: frames, native wrappers, placeholders, the poster fallback, and resets now share one owner with built-in URL validation and attribute escaping, instead of about ten direct `innerHTML`/`appendChild` writes.
+- Move the player dialog's visible state (open, minimized with the restore dock, picture-in-picture, hidden, scroll lock, focus hand-off) into `MovieDetailsPlayerModal` (`src/pages/movie-details/PlayerModalController.js`); Movie Details keeps only playback teardown.
+- Move the torrent workspace (MediaPlayer picker, source ranking and filters, saved downloads library, torrent playback status and session, about 1,600 lines) out of `movie-details.js` into `src/pages/movie-details/TorrentSourcePanel.js`. The methods are moved unchanged and installed onto `MovieDetailsManager`, which refuses to overwrite an existing page method.
+- Move the watch room header UI (create/join/invite controls, invite and members popovers, provider hand-off) into `src/pages/movie-details/WatchRoomPanel.js` and the About-tab metadata formatting (finance and The Numbers chart, status, studios, critic scores, vote counts, labels, localized countries) into `src/pages/movie-details/MetaRenderer.js`, using the same verbatim-move installer. `movie-details.js` shrinks from about 14,240 to 11,935 lines across the page modules.
+
+### Docs
+
+- Add root agent instructions requiring README changelog updates for meaningful changes, with pending entries kept separate from authorized releases.
+- Define proportionate verification and clarify that historical deployment notes require current evidence.
+- Correct the storage guidance to reflect the existing unlimitedStorage permission.
+- Align the README version badge with the current 1.3.4 manifest.
+
+</details>
 
 <details>
 <summary><strong>1.3.3</strong> — Firebase release pipeline recovery</summary>

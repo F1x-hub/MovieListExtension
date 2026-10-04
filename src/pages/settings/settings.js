@@ -3,6 +3,17 @@ import { i18n } from '../../shared/i18n/I18n.js';
 const SUBTITLE_APPEARANCE_STORAGE_KEY = 'movieExtensionSubtitleAppearanceV1';
 const EXTENSION_UPDATE_STATE_STORAGE_KEY = 'extension_update_state_v2';
 const MEDIA_PLAYER_SETUP_STORAGE_KEY = 'mediaplayer_setup_v1';
+const ACTIVE_SETTINGS_PANE_STORAGE_KEY = 'movieExtensionActiveSettingsPaneV1';
+const JACKETT_CATEGORY_FILTER_VALUES = Object.freeze([
+    'Audio',
+    'Books',
+    'Console',
+    'Movies',
+    'Other',
+    'PC',
+    'TV',
+    'XXX'
+]);
 const MEDIA_PLAYER_SETUP_DEFAULTS = Object.freeze({
     enabled: false,
     status: 'disabled',
@@ -139,6 +150,50 @@ let currentState = { ...initialState };
 let isDirty = false;
 
 document.addEventListener('DOMContentLoaded', async () => {
+    const sidebarLinks = document.querySelectorAll('.sidebar-link');
+    const settingsPanes = document.querySelectorAll('.settings-pane');
+    const paneTargets = new Set(Array.from(sidebarLinks)
+        .map((link) => link.dataset.target)
+        .filter(Boolean));
+    const defaultPaneTarget = sidebarLinks[0]?.dataset.target || 'appearance';
+
+    function readActivePane() {
+        try {
+            const savedPane = typeof localStorage !== 'undefined'
+                ? localStorage.getItem(ACTIVE_SETTINGS_PANE_STORAGE_KEY)
+                : null;
+            return paneTargets.has(savedPane) ? savedPane : defaultPaneTarget;
+        } catch {
+            return defaultPaneTarget;
+        }
+    }
+
+    function persistActivePane(target) {
+        try {
+            if (typeof localStorage !== 'undefined') {
+                localStorage.setItem(ACTIVE_SETTINGS_PANE_STORAGE_KEY, target);
+            }
+        } catch {
+            // Settings navigation still works when storage is unavailable.
+        }
+    }
+
+    function setActivePane(target, { persist = true } = {}) {
+        const activeTarget = paneTargets.has(target) ? target : defaultPaneTarget;
+        sidebarLinks.forEach((link) => {
+            const isActive = link.dataset.target === activeTarget;
+            link.classList.toggle('active', isActive);
+            if (isActive) link.setAttribute('aria-current', 'page');
+            else link.removeAttribute('aria-current');
+        });
+        settingsPanes.forEach((pane) => {
+            pane.classList.toggle('active', pane.id === `pane-${activeTarget}`);
+        });
+        if (persist) persistActivePane(activeTarget);
+    }
+
+    setActivePane(readActivePane(), { persist: false });
+
     // Initialize I18n
     await i18n.init();
     i18n.translatePage();
@@ -197,6 +252,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Mini Games Elements
     const gamesToggle = document.getElementById('gamesToggle');
+    const extensionCurrentVersion = document.getElementById('extensionCurrentVersion');
     const extensionAutoUpdateToggle = document.getElementById('extensionAutoUpdateToggle');
     const extensionUpdateStatus = document.getElementById('extensionUpdateStatus');
     const extensionUpdateSetupBtn = document.getElementById('extensionUpdateSetupBtn');
@@ -211,27 +267,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         setTimeout(() => URL.revokeObjectURL(url), 10000);
     });
     const extensionUpdateInstallStatus = document.getElementById('extensionUpdateInstallStatus');
-    
-    // Sidebar Navigation Elements
-    const sidebarLinks = document.querySelectorAll('.sidebar-link');
-    const settingsPanes = document.querySelectorAll('.settings-pane');
+
+    if (extensionCurrentVersion) {
+        let currentVersion = '';
+        try {
+            currentVersion = typeof chrome !== 'undefined' && chrome.runtime?.getManifest
+                ? chrome.runtime.getManifest()?.version
+                : '';
+        } catch (error) {
+            console.warn('Could not read extension manifest version:', error);
+        }
+        extensionCurrentVersion.textContent = currentVersion || '—';
+    }
 
     /**
      * Handle Sidebar Navigation
      */
     sidebarLinks.forEach(link => {
-        link.addEventListener('mousedown', () => {
-            // Remove active class from all links and panes
-            sidebarLinks.forEach(l => l.classList.remove('active'));
-            settingsPanes.forEach(p => p.classList.remove('active'));
-
-            // Add active class to clicked link and target pane
-            link.classList.add('active');
-            const targetId = 'pane-' + link.dataset.target;
-            const targetPane = document.getElementById(targetId);
-            if (targetPane) {
-                targetPane.classList.add('active');
-            }
+        link.addEventListener('click', () => {
+            setActivePane(link.dataset.target);
         });
     });
 
@@ -251,12 +305,36 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Update active state in list
         dropdownItems.forEach(item => {
-            if (item.dataset.value === lang) {
+            const isSelected = item.dataset.value === lang;
+            if (isSelected) {
                 item.classList.add('selected');
             } else {
                 item.classList.remove('selected');
             }
+            item.setAttribute('aria-selected', String(isSelected));
+            item.tabIndex = isSelected ? 0 : -1;
         });
+    }
+
+    function setLanguageDropdownOpen(open, { focusSelected = false, restoreFocus = false } = {}) {
+        languageDropdown.classList.toggle('active', open);
+        dropdownHeader.setAttribute('aria-expanded', String(open));
+
+        if (open && focusSelected) {
+            const selectedItem = Array.from(dropdownItems).find(item => item.getAttribute('aria-selected') === 'true');
+            (selectedItem || dropdownItems[0])?.focus();
+        } else if (!open && restoreFocus) {
+            dropdownHeader.focus();
+        }
+    }
+
+    function focusLanguageOption(currentItem, offset) {
+        const items = Array.from(dropdownItems);
+        const currentIndex = items.indexOf(currentItem);
+        const nextIndex = currentIndex < 0
+            ? 0
+            : (currentIndex + offset + items.length) % items.length;
+        items[nextIndex]?.focus();
     }
 
     /**
@@ -290,30 +368,57 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // Preview language temporarily
             try {
-                await i18n.setLanguage(lang);
+                await i18n.setLanguage(lang, { persist: false });
                 i18n.translatePage();
             } catch (error) {
                 console.error('Failed to preview language:', error);
             }
         }
-        languageDropdown.classList.remove('active');
+        setLanguageDropdownOpen(false, { restoreFocus: true });
     }
 
     // Dropdown Event Listeners
-    dropdownHeader.addEventListener('mousedown', (e) => {
-        e.stopPropagation();
-        languageDropdown.classList.toggle('active');
+    dropdownHeader.addEventListener('click', () => {
+        const open = !languageDropdown.classList.contains('active');
+        setLanguageDropdownOpen(open, { focusSelected: open });
     });
 
-    document.addEventListener('mousedown', () => {
-        languageDropdown.classList.remove('active');
+    dropdownHeader.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            setLanguageDropdownOpen(true, { focusSelected: true });
+        } else if (event.key === 'Escape' && languageDropdown.classList.contains('active')) {
+            event.preventDefault();
+            setLanguageDropdownOpen(false, { restoreFocus: true });
+        }
+    });
+
+    document.addEventListener('click', (event) => {
+        if (!languageDropdown.contains(event.target)) setLanguageDropdownOpen(false);
     });
 
     dropdownItems.forEach(item => {
-        item.addEventListener('mousedown', async (e) => {
-            e.stopPropagation();
+        item.addEventListener('click', async () => {
             const lang = item.dataset.value;
             await handleLanguageChange(lang);
+        });
+        item.addEventListener('keydown', (event) => {
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                focusLanguageOption(item, 1);
+            } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                focusLanguageOption(item, -1);
+            } else if (event.key === 'Home' || event.key === 'End') {
+                event.preventDefault();
+                const target = event.key === 'Home' ? dropdownItems[0] : dropdownItems[dropdownItems.length - 1];
+                target?.focus();
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
+                setLanguageDropdownOpen(false, { restoreFocus: true });
+            } else if (event.key === 'Tab') {
+                setLanguageDropdownOpen(false);
+            }
         });
     });
 
@@ -717,7 +822,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const categoryFilter = createFilter(
                 'Категория',
                 'Все категории',
-                collectFilterValues(indexer => indexer.categories),
+                JACKETT_CATEGORY_FILTER_VALUES,
                 'jackett-available-category-filter'
             );
             filters.append(languageFilter.parentElement, accessTypeFilter.parentElement, categoryFilter.parentElement);
@@ -1290,6 +1395,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             const retentionChanged = mediaPlayerRetentionLoaded
                 && currentState.torrentRetentionDays !== initialState.torrentRetentionDays;
+            const autoUpdateChanged = currentState.autoUpdateEnabled !== initialState.autoUpdateEnabled;
             if (retentionChanged) {
                 if (!mediaPlayerService) throw new Error('MediaPlayer недоступен.');
                 const settings = await mediaPlayerService.updateSettings({
@@ -1318,19 +1424,22 @@ document.addEventListener('DOMContentLoaded', async () => {
                 [MEDIA_PLAYER_SETUP_STORAGE_KEY]: currentState.mediaPlayerSetup,
                 [SUBTITLE_APPEARANCE_STORAGE_KEY]: subtitleAppearance
             });
+            await chrome.storage.sync.set({ language: currentState.language });
 
-            await new Promise((resolve, reject) => {
-                chrome.runtime.sendMessage({
-                    type: 'SET_AUTO_UPDATE',
-                    enabled: currentState.autoUpdateEnabled === true
-                }, (response) => {
-                    if (chrome.runtime.lastError || !response?.success) {
-                        reject(new Error(response?.error || chrome.runtime.lastError?.message || 'Не удалось сохранить обновления'));
-                        return;
-                    }
-                    resolve(response);
+            if (autoUpdateChanged) {
+                await new Promise((resolve, reject) => {
+                    chrome.runtime.sendMessage({
+                        type: 'SET_AUTO_UPDATE',
+                        enabled: currentState.autoUpdateEnabled === true
+                    }, (response) => {
+                        if (chrome.runtime.lastError || !response?.success) {
+                            reject(new Error(response?.error || chrome.runtime.lastError?.message || 'Не удалось сохранить обновления'));
+                            return;
+                        }
+                        resolve(response);
+                    });
                 });
-            });
+            }
 
             // If language changed, ensure i18n saves it globally depending on how it's structured, but i18n.setLanguage was already called on preview.
             // Notify background script
@@ -1380,6 +1489,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     [MEDIA_PLAYER_SETUP_STORAGE_KEY]: defaultMediaPlayerSetup,
                     [SUBTITLE_APPEARANCE_STORAGE_KEY]: defaultSubtitleAppearance
                 });
+                await chrome.storage.sync.set({ language: DEFAULT_SETTINGS.language });
                 await new Promise((resolve) => {
                     chrome.runtime.sendMessage({ type: 'SET_AUTO_UPDATE', enabled: true }, () => resolve());
                 });
@@ -1720,8 +1830,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Event Listeners for buttons
-    saveBtn.addEventListener('mousedown', saveSettings);
-    resetBtn.addEventListener('mousedown', resetSettings);
+    saveBtn.addEventListener('click', saveSettings);
+    resetBtn.addEventListener('click', resetSettings);
 
     // Initialize
     loadSettings();
@@ -1756,7 +1866,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const cancelBtn = document.createElement('button');
         cancelBtn.className = 'btn btn-secondary';
         cancelBtn.textContent = 'Отменить изменения';
-        cancelBtn.addEventListener('mousedown', async () => {
+        cancelBtn.addEventListener('click', async () => {
             overlay.classList.remove('active');
             setTimeout(() => document.body.removeChild(overlay), 200);
             
@@ -1776,7 +1886,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         confirmBtn.className = 'btn btn-primary';
         confirmBtn.style.backgroundColor = '#22c55e';
         confirmBtn.textContent = 'Сохранить';
-        confirmBtn.addEventListener('mousedown', async () => {
+        confirmBtn.addEventListener('click', async () => {
             overlay.classList.remove('active');
             setTimeout(() => document.body.removeChild(overlay), 200);
             

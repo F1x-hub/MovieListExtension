@@ -12,9 +12,27 @@
     const SETUP_STORAGE_KEY = 'mediaplayer_setup_v1';
     const SETUP_STATUSES = new Set(['disabled', 'path_required', 'verifying', 'ready', 'error']);
     const DEFAULT_TIMEOUT_MS = 12_000;
+    const JACKETT_CONFIG_TIMEOUT_MS = 30_000;
     const DEFAULT_SOURCE_SEARCH_TIMEOUT_MS = 70_000;
     const DEFAULT_NATIVE_MESSAGE_TIMEOUT_MS = 5_000;
     const FOLDER_SELECTION_TIMEOUT_MS = 120_000;
+    const JACKETT_CATEGORY_ALIASES = Object.freeze({
+        audio: 'Audio',
+        music: 'Audio',
+        books: 'Books',
+        ebook: 'Books',
+        ebooks: 'Books',
+        console: 'Console',
+        consoles: 'Console',
+        games: 'Console',
+        movie: 'Movies',
+        movies: 'Movies',
+        other: 'Other',
+        pc: 'PC',
+        tv: 'TV',
+        television: 'TV',
+        xxx: 'XXX'
+    });
 
     class MediaPlayerServiceError extends Error {
         constructor(code, message, status = 0) {
@@ -293,7 +311,8 @@
         async getJackettIndexerConfig(indexerId) {
             const id = this.normalizeJackettIndexerId(indexerId);
             const response = await this.requestJson(`/api/jackett/indexers/${encodeURIComponent(id)}/config`, {
-                scope: 'torrent:control'
+                scope: 'torrent:control',
+                timeoutMs: JACKETT_CONFIG_TIMEOUT_MS
             });
             return this.normalizeJackettIndexerConfig(response);
         }
@@ -897,9 +916,7 @@
                         site: String(indexer.site || ''),
                         language: String(indexer.language || ''),
                         type: String(indexer.type || ''),
-                        categories: Array.isArray(indexer.categories)
-                            ? indexer.categories.map(category => String(category || '').trim()).filter(Boolean).slice(0, 20)
-                            : [],
+                        categories: this.normalizeJackettCategories(indexer.categories),
                         enabled: indexer.enabled === true
                     }))
                     .filter(indexer => /^[a-z0-9][a-z0-9_-]{0,127}$/i.test(indexer.id))
@@ -930,9 +947,7 @@
                         site: String(indexer.site || ''),
                         language: String(indexer.language || ''),
                         type: String(indexer.type || ''),
-                        categories: Array.isArray(indexer.categories)
-                            ? indexer.categories.map(category => String(category || '').trim()).filter(Boolean).slice(0, 20)
-                            : []
+                        categories: this.normalizeJackettCategories(indexer.categories)
                     }))
                     .filter(indexer => /^[a-z0-9][a-z0-9_-]{0,127}$/i.test(indexer.id))
                 : null;
@@ -951,6 +966,17 @@
                 throw new MediaPlayerServiceError('invalid_indexer_selection', 'Выбран некорректный индексер.');
             }
             return id;
+        }
+
+        normalizeJackettCategories(value) {
+            if (!Array.isArray(value)) return [];
+            return [...new Set(value
+                .map(category => String(category || '').trim().split('/')[0].trim().toLocaleLowerCase())
+                .filter(Boolean)
+                .map(category => typeof JACKETT_CATEGORY_ALIASES[category] === 'string'
+                    ? JACKETT_CATEGORY_ALIASES[category]
+                    : 'Other'))]
+                .slice(0, 20);
         }
 
         normalizeJackettIndexerConfig(value) {
