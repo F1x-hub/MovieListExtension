@@ -162,6 +162,12 @@ assert.doesNotMatch(admin, /rgba\(\s*(?:34\s*,\s*211\s*,\s*238|167\s*,\s*139\s*,
 const movieCard = read(migrationGuardFiles.movieCard);
 assert.doesNotMatch(movieCard, /rgba\(\s*(?:147\s*,\s*51\s*,\s*234|192\s*,\s*132\s*,\s*252)/i);
 
+// Retired indigo palette must not return in rgba() form either (hex guards miss it).
+const retiredIndigoRgba = /rgba\(\s*(?:99\s*,\s*102\s*,\s*241|79\s*,\s*70\s*,\s*229)/i;
+for (const file of [migrationGuardFiles.player, migrationGuardFiles.movieDetails]) {
+    assert.doesNotMatch(read(file), retiredIndigoRgba, `${file} regressed with the retired indigo palette`);
+}
+
 const movieDetails = read(migrationGuardFiles.movieDetails);
 const settingsStyles = read('src/pages/settings/settings.css');
 const settingsScript = read('src/pages/settings/settings.js');

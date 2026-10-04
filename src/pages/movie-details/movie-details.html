@@ -155,13 +155,13 @@
                 <div class="video-header__actions">
                     <div class="watch-room-controls" id="watchRoomControls" role="group" aria-label="Совместный просмотр">
                         <button class="player-nav-btn watch-room-controls__button" id="createWatchRoomBtn" type="button" data-watch-room-action="create" title="Создать комнату совместного просмотра">
-                            <span aria-hidden="true">◉</span><span class="player-nav-btn__label">Создать</span>
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg><span class="player-nav-btn__label">Создать</span>
                         </button>
                         <button class="player-nav-btn watch-room-controls__button" id="joinWatchRoomBtn" type="button" data-watch-room-action="join" title="Войти в комнату по коду приглашения" aria-expanded="false" aria-controls="watchRoomInvitePopover" aria-haspopup="dialog">
-                            <span aria-hidden="true">↗</span><span class="player-nav-btn__label">Войти</span>
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg><span class="player-nav-btn__label">Войти</span>
                         </button>
                         <button class="player-nav-btn watch-room-controls__button" id="copyWatchRoomCodeBtn" type="button" data-watch-room-action="copy-code" title="Показать код приглашения" aria-expanded="false" aria-controls="watchRoomInvitePopover" aria-haspopup="dialog" hidden>
-                            <span aria-hidden="true">⧉</span><span class="player-nav-btn__label">Код</span>
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg><span class="player-nav-btn__label">Код</span>
                         </button>
                         <button class="player-nav-btn watch-room-controls__button" id="watchRoomMembersBtn" type="button" data-watch-room-action="toggle-members" title="Участники комнаты" aria-expanded="false" aria-controls="watchRoomMembersPopover" hidden>
                             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="3"></circle><circle cx="17" cy="9" r="2.25"></circle><path d="M2.8 19c.7-3.1 2.6-4.7 5.2-4.7s4.5 1.6 5.2 4.7"></path><path d="M14.2 15.1c1.9.2 3.3 1.5 3.8 3.9"></path></svg><span class="player-nav-btn__label" id="watchRoomParticipantCount">0</span>
@@ -206,7 +206,7 @@
                     <button class="modal-close player-minimize-btn" id="minimizeVideoBtn" type="button" aria-label="Свернуть плеер" title="Свернуть плеер">
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="18" x2="19" y2="18"></line></svg>
                     </button>
-                    <button class="modal-close" id="closeVideoBtn" type="button" aria-label="Закрыть плеер" title="Закрыть плеер (Esc)">
+                    <button class="modal-close" id="closeVideoBtn" type="button" data-dialog-initial-focus aria-label="Закрыть плеер" title="Закрыть плеер (Esc)">
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                     </button>
                 </div>
@@ -402,13 +402,15 @@
     </div>
 
     <!-- Restored Player Floating Button (Hidden by default) -->
-    <div id="restorePlayerBtn" class="restore-player-btn" style="display: none;">
-        <span class="restore-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></span>
-        <div class="restore-info">
-            <span class="restore-title" data-i18n="movie_details.watch_movie">Watch Movie</span>
-            <span class="restore-subtitle" data-i18n="movie_details.click_to_expand">Click to expand</span>
-        </div>
-        <button class="restore-close" id="closeRestoreBtn" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+    <div id="restorePlayerBtn" class="restore-player-btn" role="group" aria-label="Свёрнутый плеер" style="display: none;">
+        <button type="button" class="restore-player-btn__main" id="restorePlayerMainBtn">
+            <span class="restore-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></span>
+            <span class="restore-info">
+                <span class="restore-title" data-i18n="movie_details.watch_movie">Watch Movie</span>
+                <span class="restore-subtitle" data-i18n="movie_details.click_to_expand">Click to expand</span>
+            </span>
+        </button>
+        <button type="button" class="restore-close" id="closeRestoreBtn" aria-label="Закрыть плеер" title="Закрыть плеер"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
     </div>
 
     <!-- Scripts -->
