@@ -4,7 +4,10 @@
 
 :root {
     --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-    --transition: all 180ms var(--ease-out);
+    /* Explicit properties: "all" also animated layout and inherited values. */
+    --transition: color 180ms var(--ease-out), background-color 180ms var(--ease-out),
+        border-color 180ms var(--ease-out), box-shadow 180ms var(--ease-out),
+        opacity 180ms var(--ease-out), transform 180ms var(--ease-out);
     --theme-border-subtle: var(--theme-border, rgba(255, 255, 255, 0.12));
 }
 
@@ -48,7 +51,7 @@
 }
 
 .back-btn svg {
-    transition: transform var(--transition);
+    transition: transform 180ms var(--ease-out);
 }
 
 .back-btn:hover svg {
@@ -175,7 +178,6 @@
     filter: blur(24px) saturate(var(--movie-hero-image-saturation));
     opacity: var(--movie-hero-image-opacity);
     transform: translate3d(0, 0, 0) scale(1.12);
-    will-change: transform;
     user-select: none;
     -webkit-user-select: none;
     backface-visibility: hidden;
@@ -484,12 +486,12 @@
     align-items: baseline;
     gap: 16px;
     padding: 9px 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    border-bottom: 1px solid var(--theme-border);
     max-width: 100%;
 }
 
 .light-theme .meta-item {
-    border-bottom-color: rgba(9, 9, 11, 0.04);
+    border-bottom-color: var(--theme-border);
 }
 
 .meta-item:last-child {
@@ -598,11 +600,11 @@
     align-items: baseline;
     gap: 16px;
     padding: 8px 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .light-theme .meta-item--nested {
-    border-bottom-color: rgba(9, 9, 11, 0.02);
+    border-bottom-color: rgba(9, 9, 11, 0.05);
 }
 
 .meta-item--nested:last-child {
@@ -2241,6 +2243,30 @@
     -webkit-backdrop-filter: blur(15px);
     z-index: 500;
     display: flex; align-items: center; justify-content: center;
+    opacity: 1;
+    /* JS flips display synchronously; allow-discrete keeps the box rendered for the fade-out. */
+    transition: opacity 160ms ease, display 160ms allow-discrete;
+}
+
+.movie-details-modal-overlay > .modal {
+    transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.movie-details-modal-overlay[style*="display: none"],
+.movie-details-modal-overlay.minimized-overlay {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.movie-details-modal-overlay[style*="display: none"] > .modal,
+.movie-details-modal-overlay.minimized-overlay > .modal {
+    transform: translateY(6px) scale(0.985);
+}
+
+@starting-style {
+    .movie-details-modal-overlay {
+        opacity: 0;
+    }
 }
 
 .rating-modal-redesign {
@@ -3416,6 +3442,22 @@
     100% { background-position: -200% 0; }
 }
 
+/* White shimmer disappears on the light page; invert it like the rest of the chrome. */
+.light-theme .franchise-skeleton-poster,
+.light-theme .franchise-skeleton-title,
+.light-theme .franchise-skeleton-meta,
+.light-theme .movie-recommendations-skeleton-poster {
+    background-image: linear-gradient(90deg, rgba(9, 9, 11, 0.05) 25%, rgba(9, 9, 11, 0.1) 50%, rgba(9, 9, 11, 0.05) 75%);
+}
+
+.light-theme .movie-recommendations-skeleton-title {
+    background: rgba(9, 9, 11, 0.07);
+}
+
+.light-theme .movie-recommendations-skeleton-meta {
+    background: rgba(9, 9, 11, 0.05);
+}
+
 /* Light Theme */
 .light-theme .movie-franchise-label {
     color: #71717a;
@@ -3882,7 +3924,7 @@
     font-weight: 600;
     font-family: var(--font-family);
     cursor: pointer;
-    transition: all 150ms var(--ease-out, ease);
+    transition: color 150ms var(--ease-out, ease), background-color 150ms var(--ease-out, ease), border-color 150ms var(--ease-out, ease), box-shadow 150ms var(--ease-out, ease), opacity 150ms var(--ease-out, ease), transform 150ms var(--ease-out, ease);
     flex-shrink: 0;
     scroll-snap-align: start;
     outline: none;
@@ -4099,7 +4141,7 @@
     border: 1px solid var(--theme-border);
     border-radius: var(--radius-md, 8px);
     cursor: pointer;
-    transition: all 150ms var(--ease-out);
+    transition: color 150ms var(--ease-out), background-color 150ms var(--ease-out), border-color 150ms var(--ease-out), box-shadow 150ms var(--ease-out), opacity 150ms var(--ease-out), transform 150ms var(--ease-out);
     width: fit-content;
 }
 
@@ -4514,10 +4556,11 @@
     border-color: var(--ui-color-border-hover);
 }
 
+/* Now playing: neutral emphasis plus the pulse badge and button state as non-color cues. */
 .episode-card--playing {
-    border-color: rgba(99, 102, 241, 0.45) !important;
-    background: rgba(99, 102, 241, 0.05) !important;
-    box-shadow: 0 0 12px rgba(99, 102, 241, 0.15);
+    border-color: var(--ui-color-interactive) !important;
+    background: color-mix(in srgb, var(--ui-color-interactive) 5%, transparent) !important;
+    box-shadow: inset 3px 0 0 var(--ui-color-interactive);
 }
 
 .badge-playing-episode {
@@ -4583,7 +4626,7 @@
     border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
     color: var(--text-muted, #71717a);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease, transform 0.15s ease;
     flex-shrink: 0;
 }
 
@@ -4816,7 +4859,7 @@
     border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.12));
     border-radius: var(--radius-sm, 6px);
     cursor: pointer;
-    transition: all 150ms var(--ease-out, ease);
+    transition: color 150ms var(--ease-out, ease), background-color 150ms var(--ease-out, ease), border-color 150ms var(--ease-out, ease), box-shadow 150ms var(--ease-out, ease), opacity 150ms var(--ease-out, ease), transform 150ms var(--ease-out, ease);
     line-height: 1.2;
 }
 
@@ -6133,7 +6176,7 @@
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease, transform 0.2s ease;
     padding: 0;
 }
 
@@ -6327,4 +6370,30 @@
 
 .error-state .error-icon svg {
     color: var(--ui-color-status-danger);
+}
+
+/* Reduced motion: one page-wide guard instead of per-component opt-outs.
+   Loading indicators keep a slow spin so progress is still visible. */
+@media (prefers-reduced-motion: reduce) {
+    .movie-details-page-container *,
+    .movie-details-page-container *::before,
+    .movie-details-page-container *::after,
+    .movie-details-modal-overlay,
+    .movie-details-modal-overlay *,
+    .movie-details-modal-overlay *::before,
+    .movie-details-modal-overlay *::after,
+    .restore-player-btn,
+    .restore-player-btn * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+
+    .movie-details-page-container .app-loader__indicator,
+    .movie-details-modal-overlay .app-loader__indicator,
+    .movie-details-modal-overlay .player-source-lifecycle__indicator {
+        animation-duration: 1.8s !important;
+        animation-iteration-count: infinite !important;
+    }
 }

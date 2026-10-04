@@ -55,14 +55,12 @@ body.player-modal-open {
     background:
         linear-gradient(145deg, rgba(30, 30, 34, 0.94), rgba(9, 9, 11, 0.98) 48%),
         var(--theme-bg-secondary);
-    backdrop-filter: blur(28px) saturate(130%);
-    -webkit-backdrop-filter: blur(28px) saturate(130%);
+    /* The shell is ~opaque, so a backdrop blur only cost GPU time without a visible effect. */
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 22px !important;
     box-shadow: 0 32px 90px rgba(0, 0, 0, 0.62), 0 0 0 1px rgba(255, 255, 255, 0.025) inset;
     overflow: hidden !important;
     transform: translateZ(0);
-    will-change: transform;
 }
 
 .light-theme .video-modal {
@@ -405,10 +403,12 @@ body.player-modal-open {
     transform: scale(0.96);
 }
 
+/* Disabled keeps readable text and its tooltip; state is carried by the flat, dashed frame. */
 .player-nav-btn:disabled {
-    opacity: 0.3;
+    color: var(--theme-text-muted);
+    background: transparent;
+    border-style: dashed;
     cursor: not-allowed;
-    pointer-events: none;
 }
 
 .player-nav-btn svg {
@@ -815,13 +815,8 @@ body.player-modal-open {
     }
 
     .video-header {
-        padding-block: 12px;
-    }
-
-    .source-buttons-container {
-        min-height: 48px;
-        max-height: 48px;
-        padding-block: 8px;
+        min-height: 52px;
+        padding-block: 6px;
     }
 }
 
@@ -933,7 +928,6 @@ body.player-modal-open {
 .video-container .player-progress-fill {
     background-color: #f4f4f5 !important;
     border-radius: 999px !important;
-    box-shadow: 0 0 14px rgba(255, 255, 255, 0.2);
 }
 
 .video-container .player-progress-fill::after {
@@ -1122,9 +1116,10 @@ body.player-modal-open {
     height: 8px;
 }
 
+/* Controls always sit on black video, so they stay light in both themes. */
 .progress-bar {
     height: 100%;
-    background: var(--ui-color-interactive);
+    background: #f4f4f5;
     width: 0%;
     border-radius: 5px;
     position: relative;
@@ -1200,7 +1195,7 @@ body.player-modal-open {
     color: #fff;
     font-size: 13px;
     font-variant-numeric: tabular-nums;
-    font-family: monospace;
+    font-family: var(--font-family);
 }
 
 /* Volume Control */
@@ -1245,7 +1240,9 @@ body.player-modal-open {
 
 /* Animations & States */
 .control-btn.active {
-    color: var(--ui-color-interactive);
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.16);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28);
 }
 
 @media (max-width: 768px) {
@@ -1300,8 +1297,42 @@ body.player-modal-open {
     border-radius: 100px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
     cursor: pointer;
-    transition: var(--transition, all 180ms ease);
+    transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1), border-color 180ms ease, box-shadow 180ms ease;
     user-select: none;
+    animation: restoreDockIn 220ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+@keyframes restoreDockIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px) scale(0.97);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.restore-player-btn__main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    background: none;
+    border: 0;
+    border-radius: 999px;
+    cursor: pointer;
+}
+
+.restore-player-btn__main:focus-visible,
+.restore-close:focus-visible {
+    outline: 2px solid var(--ui-color-interactive);
+    outline-offset: 3px;
 }
 
 .light-theme .restore-player-btn {
@@ -1373,15 +1404,16 @@ body.player-modal-open {
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.08);
     color: var(--theme-text-muted);
-    width: 24px;
-    height: 24px;
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
     border-radius: 50%;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     font-size: 14px;
     cursor: pointer;
-    transition: var(--transition, all 180ms ease);
+    transition: background-color 160ms ease, color 160ms ease;
     margin-left: 4px;
     padding: 0;
     line-height: 1;
@@ -1410,6 +1442,10 @@ body.player-modal-open {
         max-width: calc(100vw - 28px);
         gap: 8px;
         padding-inline: 12px;
+    }
+
+    .restore-player-btn__main {
+        gap: 8px;
     }
 
     .restore-info,
@@ -1541,10 +1577,12 @@ body.player-modal-open {
     position: relative;
 }
 
-.player-nav-btn--episodes.active {
+.player-nav-btn--episodes.active,
+.player-nav-btn--episodes[aria-expanded="true"] {
     color: var(--theme-text-primary);
-    background: rgba(99, 102, 241, 0.16);
-    border-color: rgba(99, 102, 241, 0.4);
+    background: color-mix(in srgb, var(--ui-color-interactive) 12%, transparent);
+    border-color: var(--theme-border-hover);
+    box-shadow: inset 0 0 0 1px var(--theme-border-hover);
 }
 
 .player-episode-picker {
@@ -1605,11 +1643,12 @@ body.player-modal-open {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
+    width: 32px;
+    height: 32px;
+    margin: -4px -6px -4px 0;
     background: transparent;
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
     color: var(--theme-text-secondary);
     cursor: pointer;
     transition: color 140ms ease, background 140ms ease;
@@ -1686,7 +1725,7 @@ body.player-modal-open {
 }
 
 .player-episode-picker__seasons::-webkit-scrollbar-thumb:hover {
-    background: rgba(99, 102, 241, 0.65);
+    background: rgba(255, 255, 255, 0.36);
 }
 
 .light-theme .player-episode-picker__seasons::-webkit-scrollbar-thumb {
@@ -1694,7 +1733,7 @@ body.player-modal-open {
 }
 
 .light-theme .player-episode-picker__seasons::-webkit-scrollbar-thumb:hover {
-    background: rgba(79, 70, 229, 0.65);
+    background: rgba(0, 0, 0, 0.36);
 }
 
 .picker-season-btn {
@@ -1710,7 +1749,7 @@ body.player-modal-open {
     border: 1px solid rgba(255, 255, 255, 0.08);
     color: var(--theme-text-secondary);
     cursor: pointer;
-    transition: all 140ms ease;
+    transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease;
 }
 
 .light-theme .picker-season-btn {
@@ -1734,7 +1773,7 @@ body.player-modal-open {
     border-color: var(--ui-color-interactive-hover);
     color: var(--ui-color-page);
     font-weight: 600;
-    box-shadow: 0 0 12px color-mix(in srgb, var(--ui-color-interactive) 24%, transparent);
+    box-shadow: none;
 }
 
 .player-episode-picker__episodes {
@@ -1778,7 +1817,7 @@ body.player-modal-open {
 
 .player-episode-picker__body::-webkit-scrollbar-thumb:hover,
 .player-episode-picker__episodes::-webkit-scrollbar-thumb:hover {
-    background: rgba(99, 102, 241, 0.65);
+    background: rgba(255, 255, 255, 0.36);
 }
 
 .light-theme .player-episode-picker__body::-webkit-scrollbar-thumb,
@@ -1788,7 +1827,7 @@ body.player-modal-open {
 
 .light-theme .player-episode-picker__body::-webkit-scrollbar-thumb:hover,
 .light-theme .player-episode-picker__episodes::-webkit-scrollbar-thumb:hover {
-    background: rgba(79, 70, 229, 0.65);
+    background: rgba(0, 0, 0, 0.36);
 }
 
 .picker-episode-btn {
@@ -1803,7 +1842,7 @@ body.player-modal-open {
     border: 1px solid rgba(255, 255, 255, 0.08);
     color: var(--theme-text-primary);
     cursor: pointer;
-    transition: all 140ms ease;
+    transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .light-theme .picker-episode-btn {
@@ -1827,7 +1866,7 @@ body.player-modal-open {
     background: var(--ui-color-interactive) !important;
     border-color: var(--ui-color-interactive-hover) !important;
     color: var(--ui-color-page) !important;
-    box-shadow: 0 0 10px color-mix(in srgb, var(--ui-color-interactive) 26%, transparent);
+    box-shadow: none;
 }
 
 @media (max-width: 480px) {

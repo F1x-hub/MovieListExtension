@@ -71,12 +71,15 @@ class MovieDetailsPlayerModal {
                 console.warn('[PlayerModal] Pause failed before minimizing:', error);
             }
         }
+        // Keep keyboard focus reachable: it moves to the restore dock when it was inside the dialog.
+        const hadFocus = typeof document !== 'undefined' && Boolean(modal.contains?.(document.activeElement));
         modal.classList.add('minimized-overlay');
         this.setBodyLocked(false);
         // PiP keeps playing, so its dialog is hidden without the paused look.
         this.panel?.classList.toggle('minimized', pause);
         this.panel?.classList.toggle('pip-hidden', !pause);
         this.showRestoreDock();
+        if (hadFocus) this.getRestoreDock()?.querySelector?.('.restore-player-btn__main')?.focus?.();
     }
 
     restore() {

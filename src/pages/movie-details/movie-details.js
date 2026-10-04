@@ -430,20 +430,19 @@ class MovieDetailsManager {
         // Retry button
         if (this.elements.retryLoadBtn) {
             this.elements.retryLoadBtn.addEventListener('click', () => this.handleLoadRetry());
-            this.elements.retryLoadBtn.addEventListener('mousedown', () => this.handleLoadRetry());
         }
 
         // Back button
         if (this.elements.backToSearchBtn) {
-            this.elements.backToSearchBtn.addEventListener('mousedown', () => this.goBackToSearch());
+            this.elements.backToSearchBtn.addEventListener('click', () => this.goBackToSearch());
         }
         
         // Rating Modal
         if (this.elements.ratingModalClose) {
-            this.elements.ratingModalClose.addEventListener('mousedown', () => this.closeRatingModal());
+            this.elements.ratingModalClose.addEventListener('click', () => this.closeRatingModal());
         }
         if (this.elements.cancelRatingBtn) {
-            this.elements.cancelRatingBtn.addEventListener('mousedown', () => this.closeRatingModal());
+            this.elements.cancelRatingBtn.addEventListener('click', () => this.closeRatingModal());
         }
         if (this.elements.ratingModal) {
             this.elements.ratingModal.addEventListener('mousedown', (e) => {
@@ -521,7 +520,7 @@ class MovieDetailsManager {
         }
 
         if (this.elements.writeReviewBtn) {
-            this.elements.writeReviewBtn.addEventListener('mousedown', () => {
+            this.elements.writeReviewBtn.addEventListener('click', () => {
                 this.isReviewVisible = !this.isReviewVisible;
                 this.elements.reviewContainer.style.display = this.isReviewVisible ? 'block' : 'none';
                 if (this.isReviewVisible) {
@@ -544,7 +543,7 @@ class MovieDetailsManager {
         }
         
         if (this.elements.saveRatingBtn) {
-            this.elements.saveRatingBtn.addEventListener('mousedown', () => this.saveRating());
+            this.elements.saveRatingBtn.addEventListener('click', () => this.saveRating());
         }
 
         // Video Player Modal
@@ -693,7 +692,7 @@ class MovieDetailsManager {
 
         // Trailer Modal Listeners
         if (this.elements.closeTrailerBtn) {
-            this.elements.closeTrailerBtn.addEventListener('mousedown', () => this.closeTrailerModal());
+            this.elements.closeTrailerBtn.addEventListener('click', () => this.closeTrailerModal());
         }
         if (this.elements.trailerModal) {
             this.elements.trailerModal.addEventListener('mousedown', (e) => {
@@ -704,14 +703,14 @@ class MovieDetailsManager {
         // Restore Player Button
         const restoreBtn = document.getElementById('restorePlayerBtn');
         if (restoreBtn) {
-            restoreBtn.addEventListener('mousedown', (e) => {
+            restoreBtn.addEventListener('click', (e) => {
                 if (e.target.closest('.restore-close')) return; // Let the close handler handle it
                 this.restorePlayer();
             });
             
             const closeRestoreBtn = document.getElementById('closeRestoreBtn');
             if (closeRestoreBtn) {
-                closeRestoreBtn.addEventListener('mousedown', (e) => {
+                closeRestoreBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     this.closeVideoModal();
                 });
@@ -721,8 +720,8 @@ class MovieDetailsManager {
         // Tab navigation & Menu delegation
         Utils.bindTabsAndMenus(document);
 
-        // Action buttons delegation
-        document.addEventListener('mousedown', (e) => {
+        // Action buttons delegation (click keeps Enter/Space activation working)
+        document.addEventListener('click', (e) => {
             // If it's not a left click, let the browser handle it (e.g. middle click for new tab)
             if (e.button !== 0) return;
 
@@ -892,7 +891,7 @@ class MovieDetailsManager {
         }, true);
 
         // Rate and Watch button handlers
-        document.addEventListener('mousedown', (e) => {
+        document.addEventListener('click', (e) => {
             if (e.target.classList.contains('rate-movie-btn') || e.target.closest('.rate-movie-btn')) {
                 e.stopPropagation();
                 if (this.selectedMovie) {
@@ -1716,7 +1715,7 @@ class MovieDetailsManager {
         // Setup show all awards button event listener again since we replaced the HTML
         const showAllAwardsBtn = tabPane ? tabPane.querySelector('.btn-show-all-awards') : null;
         if (showAllAwardsBtn) {
-            showAllAwardsBtn.addEventListener('mousedown', function() {
+            showAllAwardsBtn.addEventListener('click', function() {
                 this.style.display = 'none';
                 const hiddenGrid = this.previousElementSibling;
                 if (hiddenGrid && hiddenGrid.classList.contains('awards-grid-hidden')) {
@@ -1787,9 +1786,9 @@ class MovieDetailsManager {
         if (!this._announceEventsSetup) {
             this._announceEventsSetup = true;
 
-            document.getElementById('closeAnnounceBtn')?.addEventListener('mousedown', () => this.closeAnnounceModal());
-            document.getElementById('cancelAnnounceBtn')?.addEventListener('mousedown', () => this.closeAnnounceModal());
-            document.getElementById('sendAnnounceBtn')?.addEventListener('mousedown', () => this.sendAnnounce());
+            document.getElementById('closeAnnounceBtn')?.addEventListener('click', () => this.closeAnnounceModal());
+            document.getElementById('cancelAnnounceBtn')?.addEventListener('click', () => this.closeAnnounceModal());
+            document.getElementById('sendAnnounceBtn')?.addEventListener('click', () => this.sendAnnounce());
             document.getElementById('announceModal')?.addEventListener('mousedown', (e) => {
                 if (e.target === document.getElementById('announceModal')) this.closeAnnounceModal();
             });
@@ -2078,7 +2077,7 @@ class MovieDetailsManager {
         // Setup show all awards button
         const showAllAwardsBtn = this.elements.movieDetailsContainer.querySelector('.btn-show-all-awards');
         if (showAllAwardsBtn) {
-            showAllAwardsBtn.addEventListener('mousedown', function() {
+            showAllAwardsBtn.addEventListener('click', function() {
                 this.style.display = 'none';
                 const hiddenGrid = this.previousElementSibling;
                 if (hiddenGrid && hiddenGrid.classList.contains('awards-grid-hidden')) {
@@ -3015,7 +3014,10 @@ class MovieDetailsManager {
         this._dialogTriggers ||= new WeakMap();
         this._dialogTriggers.set(dialog, trigger);
         dialog.style.display = 'flex';
-        const target = dialog.querySelector?.('[autofocus], .modal-close, button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])') || dialog;
+        // Priority order, not document order: a selector list would pick the first match in the DOM.
+        const target = ['[data-dialog-initial-focus]', '[autofocus]', '.modal-close', 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])']
+            .map(selector => dialog.querySelector?.(selector))
+            .find(Boolean) || dialog;
         target.focus?.();
     }
 
@@ -5366,7 +5368,7 @@ class MovieDetailsManager {
                 <img src="${userPhoto}" alt="${this.escapeHtml(userName)}" class="user-rating-avatar" data-fallback="avatar" loading="lazy" decoding="async">
                 <div class="user-rating-info">
                     <div class="user-rating-name-row">
-                        <span class="user-rating-name clickable-username" data-user-id="${rating.userId}">${this.escapeHtml(userName)}</span>
+                        <span class="user-rating-name clickable-username" role="link" tabindex="0" data-user-id="${rating.userId}">${this.escapeHtml(userName)}</span>
                         ${dateStr}
                     </div>
                     <div class="user-rating-score"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="color: #eab308; vertical-align: middle; margin-right: 4px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>${rating.rating}/10</div>
@@ -5420,7 +5422,10 @@ class MovieDetailsManager {
         this.hydrateCommentReactions([rating], this.currentUser);
 
         card.querySelectorAll('.clickable-username').forEach(el => {
-            el.addEventListener('mousedown', (e) => {
+            el.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') el.click();
+            });
+            el.addEventListener('click', (e) => {
                 if (e.button !== 0) return;
                 e.stopPropagation();
                 const userId = el.getAttribute('data-user-id');
@@ -5558,7 +5563,7 @@ class MovieDetailsManager {
                         <img src="${userPhoto}" alt="${this.escapeHtml(userName)}" class="user-rating-avatar" data-fallback="avatar" loading="lazy" decoding="async">
                         <div class="user-rating-info">
                             <div class="user-rating-name-row">
-                                <span class="user-rating-name clickable-username" data-user-id="${rating.userId}">${this.escapeHtml(userName)}</span>
+                                <span class="user-rating-name clickable-username" role="link" tabindex="0" data-user-id="${rating.userId}">${this.escapeHtml(userName)}</span>
                                 ${dateStr}
                             </div>
                             <div class="user-rating-score"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="color: #eab308; vertical-align: middle; margin-right: 4px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>${rating.rating}/10</div>
@@ -5639,7 +5644,10 @@ class MovieDetailsManager {
 
     setupUsernameClickListeners() {
         document.querySelectorAll('.clickable-username').forEach(el => {
-            el.addEventListener('mousedown', (e) => {
+            el.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') el.click();
+            });
+            el.addEventListener('click', (e) => {
                 if (e.button !== 0) return;
                 e.stopPropagation();
                 const userId = el.getAttribute('data-user-id');

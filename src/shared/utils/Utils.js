@@ -1042,7 +1042,8 @@ class Utils {
      * @param {HTMLElement} rootEl - Корень для делегации (обычно document)
      */
     static bindTabsAndMenus(rootEl) {
-        rootEl.addEventListener('mousedown', (e) => {
+        // click (not mousedown) so keyboard Enter/Space activates tabs and menus too.
+        rootEl.addEventListener('click', (e) => {
             // Табы
             const tabBtn = e.target.closest('.tab-btn');
             if (tabBtn) {
