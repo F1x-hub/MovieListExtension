@@ -191,6 +191,7 @@ const context = vm.createContext({
     Event: class {}
 });
 
+vm.runInContext(fs.readFileSync(new URL('../src/pages/movie-details/MetaRenderer.js', import.meta.url), 'utf8'), context);
 vm.runInContext(source, context);
 
 const MovieDetailsManager = context.window.MovieDetailsManager;
@@ -250,7 +251,7 @@ assert(htmlFull.includes('8.3'), '5. TMDB rating score 8.3 must be rendered in A
 console.log('  ✅ 5. TMDB About row rating correct (8.3)');
 
 // 6. TMDB votes correct
-assert(htmlFull.includes('1.4k оценок'), '6. TMDB votes must be formatted (1.4k оценок)');
+assert(htmlFull.includes('1,4 тыс. оценок') || htmlFull.includes('1,4 тыс. оценок'), '6. TMDB votes must use locale compact formatting (1,4 тыс. оценок)');
 console.log('  ✅ 6. TMDB votes correctly formatted and localized');
 
 // 7. null / 0 TMDB omitted

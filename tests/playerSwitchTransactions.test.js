@@ -20,6 +20,7 @@ const movieDetailsContext = vm.createContext({
     clearTimeout
 });
 
+vm.runInContext(fs.readFileSync(new URL('../src/pages/movie-details/PlayerSurface.js', import.meta.url), 'utf8'), movieDetailsContext);
 vm.runInContext(movieDetailsSource, movieDetailsContext);
 const MovieDetailsManager = movieDetailsContext.window.MovieDetailsManager;
 const manager = Object.create(MovieDetailsManager.prototype);

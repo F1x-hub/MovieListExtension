@@ -23,6 +23,7 @@ const context = vm.createContext({
     Event: class {}
 });
 
+vm.runInContext(fs.readFileSync('src/pages/movie-details/MetaRenderer.js', 'utf8'), context);
 vm.runInContext(source, context);
 
 const MovieDetailsManager = context.window.MovieDetailsManager;

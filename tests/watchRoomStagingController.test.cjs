@@ -433,8 +433,12 @@ global.document = {
 
   const iframeSubscriptions = [];
   let activeIframe = {
+    src: 'https://provider.example/embed',
     contentWindow: {
-      postMessage(message) { iframeSubscriptions.push({ iframe: 'first', message }); },
+      postMessage(message, targetOrigin) {
+        assert.equal(targetOrigin, 'https://provider.example', 'room commands must target the provider frame origin');
+        iframeSubscriptions.push({ iframe: 'first', message });
+      },
     },
   };
   const iframeController = new WatchRoomStagingController({
@@ -444,8 +448,12 @@ global.document = {
   iframeController.subscriptionId = 'room-sync-subscription-123456';
   iframeController.refreshPlayerBridge();
   activeIframe = {
+    src: 'https://provider.example/embed',
     contentWindow: {
-      postMessage(message) { iframeSubscriptions.push({ iframe: 'replacement', message }); },
+      postMessage(message, targetOrigin) {
+        assert.equal(targetOrigin, 'https://provider.example', 'room commands must target the provider frame origin');
+        iframeSubscriptions.push({ iframe: 'replacement', message });
+      },
     },
   };
   iframeController.refreshPlayerBridge();

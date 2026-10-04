@@ -24,6 +24,11 @@
         "id": "ruleset_1",
         "enabled": true,
         "path": "src/background/rules.json"
+      },
+      {
+        "id": "provider_embed_context",
+        "enabled": true,
+        "path": "src/background/provider-embed-rules.json"
       }
     ]
   },
@@ -52,6 +57,10 @@
     "https://release-assets.githubusercontent.com/*",
     "https://movielistdb-13208-updates.web.app/*",
     "https://api.namy.ws/*",
+    "https://*.namy.ws/*",
+    "https://*.variyt.ws/*",
+    "https://*.nextembed.ws/*",
+    "https://*.lumex.cloud/*",
     "https://myanimelist.net/*",
     "https://api.aniskip.com/*",
     "https://accounts.spotify.com/*",
@@ -74,6 +83,8 @@
     "https://anison.fm/*",
     "https://rutube.ru/*",
     "https://*.rutube.ru/*",
+    "https://vidsrc-embed.ru/*",
+    "https://*.vidsrc-embed.ru/*",
     "https://*.rtbcdn.ru/*",
     "http://localhost:3579/*",
     "http://127.0.0.1:3579/*",
@@ -104,7 +115,7 @@
     "default_path": "src/popup/popup.html"
   },
   "options_ui": {
-    "page": "src/pages/options/options.html",
+    "page": "src/pages/settings/settings.html",
     "open_in_tab": true
   },
   "icons": {
@@ -253,13 +264,44 @@
     {
       "matches": [
         "*://*.namy.ws/*",
+        "*://*.variyt.ws/*",
+        "*://*.nextembed.ws/*",
+        "*://*.ortified.ws/*",
+        "*://*.lumex.cloud/*",
+        "*://*.cinemar.cc/*",
+        "*://*.stravers.live/*",
+        "*://*.allarknow.online/*"
+      ],
+      "js": ["content-scripts/provider-preview-bridge.js", "content-scripts/provider-ad-guard.js"],
+      "world": "MAIN",
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://rutube.ru/play/embed/*",
+        "https://vidsrc-embed.ru/*",
+        "https://*.vidsrc-embed.ru/*"
+      ],
+      "js": ["content-scripts/provider-preview-bridge.js"],
+      "world": "MAIN",
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "*://*.namy.ws/*",
         "*://*.lumex.cloud/*",
         "*://*.variyt.ws/*",
+        "*://*.nextembed.ws/*",
         "*://*.ortified.ws/*",
         "*://*.cinemar.cc/*",
         "*://*.stravers.live/*",
         "*://*.allarknow.online/*",
-        "https://widgets.kinopoisk.ru/*"
+        "https://widgets.kinopoisk.ru/*",
+        "https://rutube.ru/play/embed/*",
+        "https://vidsrc-embed.ru/*",
+        "https://*.vidsrc-embed.ru/*"
       ],
       "js": [
         "src/shared/lib/hls.min.js",

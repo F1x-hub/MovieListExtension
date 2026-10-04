@@ -1,0 +1,266 @@
+[
+  {
+    "id": 100,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "referer",
+          "operation": "set",
+          "value": "https://ex-fs.net/"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "[?&]movieExtensionSite=ex-fs\\.net(&|$)",
+      "initiatorDomains": [
+        "dgdejomdgiabgcfijcdhjefijdfiemhd"
+      ],
+      "requestDomains": [
+        "namy.ws",
+        "variyt.ws",
+        "nextembed.ws",
+        "ortified.ws",
+        "lumex.cloud",
+        "cinemar.cc",
+        "stravers.live",
+        "allarknow.online"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ]
+    }
+  },
+  {
+    "id": 101,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "referer",
+          "operation": "set",
+          "value": "https://kinogo.la/"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "[?&]movieExtensionSite=kinogo\\.la(&|$)",
+      "initiatorDomains": [
+        "dgdejomdgiabgcfijcdhjefijdfiemhd"
+      ],
+      "requestDomains": [
+        "namy.ws",
+        "variyt.ws",
+        "nextembed.ws",
+        "ortified.ws",
+        "lumex.cloud",
+        "cinemar.cc",
+        "stravers.live",
+        "allarknow.online"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ]
+    }
+  },
+  {
+    "id": 102,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "referer",
+          "operation": "set",
+          "value": "https://kinogo.film/"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "[?&]movieExtensionSite=kinogo\\.film(&|$)",
+      "initiatorDomains": [
+        "dgdejomdgiabgcfijcdhjefijdfiemhd"
+      ],
+      "requestDomains": [
+        "namy.ws",
+        "variyt.ws",
+        "nextembed.ws",
+        "ortified.ws",
+        "lumex.cloud",
+        "cinemar.cc",
+        "stravers.live",
+        "allarknow.online"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ]
+    }
+  },
+  {
+    "id": 103,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "referer",
+          "operation": "set",
+          "value": "https://kinogo.is/"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "[?&]movieExtensionSite=kinogo\\.is(&|$)",
+      "initiatorDomains": [
+        "dgdejomdgiabgcfijcdhjefijdfiemhd"
+      ],
+      "requestDomains": [
+        "namy.ws",
+        "variyt.ws",
+        "nextembed.ws",
+        "ortified.ws",
+        "lumex.cloud",
+        "cinemar.cc",
+        "stravers.live",
+        "allarknow.online"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ]
+    }
+  },
+  {
+    "id": 104,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "referer",
+          "operation": "set",
+          "value": "https://kinogo.gg/"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "[?&]movieExtensionSite=kinogo\\.gg(&|$)",
+      "initiatorDomains": [
+        "dgdejomdgiabgcfijcdhjefijdfiemhd"
+      ],
+      "requestDomains": [
+        "namy.ws",
+        "variyt.ws",
+        "nextembed.ws",
+        "ortified.ws",
+        "lumex.cloud",
+        "cinemar.cc",
+        "stravers.live",
+        "allarknow.online"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ]
+    }
+  },
+  {
+    "id": 105,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "referer",
+          "operation": "set",
+          "value": "https://kinogo.my/"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "[?&]movieExtensionSite=kinogo\\.my(&|$)",
+      "initiatorDomains": [
+        "dgdejomdgiabgcfijcdhjefijdfiemhd"
+      ],
+      "requestDomains": [
+        "namy.ws",
+        "variyt.ws",
+        "nextembed.ws",
+        "ortified.ws",
+        "lumex.cloud",
+        "cinemar.cc",
+        "stravers.live",
+        "allarknow.online"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ]
+    }
+  },
+  {
+    "id": 106,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "referer",
+          "operation": "set",
+          "value": "https://kinogo.inc/"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "[?&]movieExtensionSite=kinogo\\.inc(&|$)",
+      "initiatorDomains": [
+        "dgdejomdgiabgcfijcdhjefijdfiemhd"
+      ],
+      "requestDomains": [
+        "namy.ws",
+        "variyt.ws",
+        "nextembed.ws",
+        "ortified.ws",
+        "lumex.cloud",
+        "cinemar.cc",
+        "stravers.live",
+        "allarknow.online"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ]
+    }
+  },
+  {
+    "id": 107,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "referer",
+          "operation": "set",
+          "value": "https://fix.kinogo.luxury/"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "[?&]movieExtensionSite=fix\\.kinogo\\.luxury(&|$)",
+      "initiatorDomains": [
+        "dgdejomdgiabgcfijcdhjefijdfiemhd"
+      ],
+      "requestDomains": [
+        "namy.ws",
+        "variyt.ws",
+        "nextembed.ws",
+        "ortified.ws",
+        "lumex.cloud",
+        "cinemar.cc",
+        "stravers.live",
+        "allarknow.online"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ]
+    }
+  }
+]

@@ -182,9 +182,12 @@ const context = vm.createContext({
     Number,
     Array,
     Object,
-    Event: class {}
+    Event: class {},
+    URL
 });
 
+vm.runInContext(fs.readFileSync(new URL('../src/pages/movie-details/PlayerSurface.js', import.meta.url), 'utf8'), context);
+vm.runInContext(fs.readFileSync(new URL('../src/pages/movie-details/MetaRenderer.js', import.meta.url), 'utf8'), context);
 vm.runInContext(source, context);
 
 const MovieDetailsManager = context.window.MovieDetailsManager;
@@ -401,7 +404,7 @@ const movieDistinctDigital = {
     }
 };
 const htmlDistinctDigitalRes = manager.createDetailedMovieCard(movieDistinctDigital);
-assert(htmlDistinctDigitalRes.includes('Цифровой релиз:'), 'Must show digital premiere row');
+assert(htmlDistinctDigitalRes.includes('>Цифровой релиз<'), 'Must show digital premiere row');
 assert(htmlDistinctDigitalRes.includes('01.09.2025'), 'Must format digital premiere date');
 console.log('  ✅ 4.1 Distinct digital premiere rendered');
 
@@ -415,8 +418,8 @@ const movieDupDigital = {
     }
 };
 const htmlDupDigital = manager.createDetailedMovieCard(movieDupDigital);
-assert(htmlDupDigital.includes('Премьера в мире:'), 'World premiere rendered');
-assert(!htmlDupDigital.includes('Цифровой релиз:'), 'Duplicate digital premiere row suppressed');
+assert(htmlDupDigital.includes('>Премьера в мире<'), 'World premiere rendered');
+assert(!htmlDupDigital.includes('>Цифровой релиз<'), 'Duplicate digital premiere row suppressed');
 console.log('  ✅ 4.2 Duplicate digital premiere suppressed by timestamp check');
 
 // =========================================================================
@@ -454,7 +457,7 @@ const movieNoAge = {
     ratingMpaa: null
 };
 const htmlNoAge = manager.createDetailedMovieCard(movieNoAge);
-assert(!htmlNoAge.includes('Возраст:'), 'Omit age row entirely');
+assert(!htmlNoAge.includes('>Возраст<'), 'Omit age row entirely');
 console.log('  ✅ 5.1 Age & MPAA safety formatting verified');
 
 // =========================================================================
@@ -491,7 +494,7 @@ assert(htmlLegacy.includes('rating-item-large imdb'), 'Legacy DTO renders IMDb r
 assert(!htmlLegacy.includes('rating-item-large tmdb'), 'Legacy DTO safely omits TMDB rating');
 assert(!htmlLegacy.includes('movie-detail-hero-backdrop'), 'Legacy DTO safely omits backdrop');
 assert(!htmlLegacy.includes('movie-detail-short-description'), 'Legacy DTO safely omits short description');
-assert(!htmlLegacy.includes('Цифровой релиз:'), 'Legacy DTO safely omits digital premiere');
+assert(!htmlLegacy.includes('>Цифровой релиз<'), 'Legacy DTO safely omits digital premiere');
 assert(htmlLegacy.includes('16+'), 'Legacy DTO renders 16+ age');
 console.log('  ✅ 6.1 Legacy cached DTO renders flawlessly with 0 errors');
 
@@ -557,7 +560,7 @@ assert(htmlBackrooms.includes('A young filmmaker enters an anomalous liminal spa
 assert(htmlBackrooms.includes('16+ • PG-13'), 'Backrooms must render combined 16+ • PG-13');
 
 // Digital release check
-assert(htmlBackrooms.includes('Цифровой релиз:'), 'Backrooms must render digital premiere');
+assert(htmlBackrooms.includes('>Цифровой релиз<'), 'Backrooms must render digital premiere');
 assert(htmlBackrooms.includes('01.08.2026'), 'Backrooms must format digital release date');
 
 // Data provenance safety check: _meta.fieldSources must never leak into HTML output

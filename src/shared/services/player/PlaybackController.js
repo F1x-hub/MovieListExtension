@@ -1238,10 +1238,21 @@ class PlaybackController {
         }
 
         const currentSelection = this.currentSelection;
+        const isProviderSelection = data.origin === 'USER_PROVIDER_SELECTION';
         const hasExplicitEpisode = Boolean(currentSelection && (
             currentSelection.seasonNumber != null || currentSelection.episodeNumber != null
         ));
-        if (hasExplicitEpisode && data.selectionVersion != null && data.origin !== 'USER_PROVIDER_SELECTION') {
+        // Periodic telemetry is allowed to update time only for the canonical
+        // episode. An unversioned event from a stale provider mount must not
+        // regress the selection (for example E9 -> E3). A provider-originated
+        // selection event is the explicit exception and is handled atomically
+        // by the EPISODE_CHANGED path.
+        const hasCanonicalSelectionContext = Boolean(
+            this.activeProviderId
+            || currentSelection?.providerId
+            || (currentSelection?.source && currentSelection.source !== 'HERO_WATCH')
+        );
+        if (hasExplicitEpisode && hasCanonicalSelectionContext && !isProviderSelection) {
             if (seasonNum != null && currentSelection.seasonNumber != null
                 && Number(seasonNum) !== Number(currentSelection.seasonNumber)) {
                 return;
@@ -1272,7 +1283,21 @@ class PlaybackController {
             const patch = { initialTimestamp: timestamp };
             if (seasonNum != null) patch.seasonNumber = seasonNum;
             if (episodeNum != null) patch.episodeNumber = episodeNum;
-            this.updateSelection(patch);
+            const identityChanged = (seasonNum != null
+                && (this.currentSelection.seasonNumber == null
+                    || Number(seasonNum) !== Number(this.currentSelection.seasonNumber)))
+                || (episodeNum != null
+                    && (this.currentSelection.episodeNumber == null
+                        || Number(episodeNum) !== Number(this.currentSelection.episodeNumber)));
+            if (identityChanged || isProviderSelection) {
+                this.updateSelection(patch);
+            } else {
+                // Timestamp telemetry belongs to runtime/progress state. Do
+                // not create a new selection revision for every timeupdate;
+                // async navigation and restore guards track user intent.
+                this.currentSelection.initialTimestamp = timestamp;
+                this.currentTimestamp = timestamp;
+            }
         }
 
         // Persist to ProgressService if available

@@ -12,21 +12,27 @@ assert.deepEqual(normalizeMovie({
   kpId: '123',
   title: '  Example  ',
   year: '2024',
-  poster: 'https://example.test/poster.jpg',
+  poster: 'https://image.openmoviedb.com/poster.jpg',
   rating: '8.2',
 }), {
   kpId: 123,
   title: 'Example',
   year: 2024,
-  poster: 'https://example.test/poster.jpg',
+  poster: 'https://image.openmoviedb.com/poster.jpg',
   rating: 8.2,
 });
+
+assert.equal(normalizeMovie({
+  kpId: 123,
+  poster: 'http://st.kp.yandex.net/images/film_iphone/iphone360_123.jpg?d=20240101',
+}).poster, 'https://st.kp.yandex.net/images/film_iphone/iphone360_123.jpg');
 
 assert.throws(() => normalizeMovie({ kpId: 0, title: 'bad' }), /Kinopoisk movie ID/);
 assert.throws(() => normalizeMovie({ kpId: 123, title: 'bad', year: '<img>' }), /year is invalid/);
 assert.throws(() => normalizeMovie({ kpId: 123, title: 'bad', rating: 11 }), /rating is invalid/);
 assert.throws(() => normalizeMovie({ kpId: 123, title: 'x'.repeat(301) }), /title is too long/);
 assert.throws(() => normalizeMovie({ kpId: 123, title: 'bad', poster: 'javascript:alert(1)' }), /poster is invalid/);
+assert.throws(() => normalizeMovie({ kpId: 123, title: 'bad', poster: 'http://example.test/poster.jpg' }), /poster is invalid/);
 
 assert.equal(isApprovedProfile({ approvalStatus: 'approved' }), true);
 assert.equal(isApprovedProfile({}), true);

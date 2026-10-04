@@ -265,6 +265,14 @@ function testControllerSelectionVersionAndProgressGuard() {
 
     controller.handleProgressUpdate({
         seasonNumber: 1,
+        episodeNumber: 3,
+        timestamp: 18,
+        movieId: 42
+    });
+    assert.strictEqual(controller.getSelection().episodeNumber, 8, 'unversioned stale telemetry must not regress explicit E8');
+
+    controller.handleProgressUpdate({
+        seasonNumber: 1,
         episodeNumber: 4,
         timestamp: 12,
         movieId: 42,
@@ -277,6 +285,121 @@ function testControllerSelectionVersionAndProgressGuard() {
     );
 }
 
+async function testNavigationDiscardedAfterSelectionChanges() {
+    const { Manager } = loadManager(movieDetailsPath, 'MovieDetailsManager');
+    const manager = Object.create(Manager.prototype);
+    let currentSelection = {
+        kinopoiskId: 42,
+        mediaType: 'tv-series',
+        seasonNumber: 1,
+        episodeNumber: 3,
+        providerId: 'exfs'
+    };
+    let selectionVersion = 1;
+    let releaseFlush;
+    let committed = false;
+    const flushBarrier = new Promise(resolve => { releaseFlush = resolve; });
+
+    manager.selectedMovie = {
+        kinopoiskId: 42,
+        nameRu: 'Series',
+        type: 'tv-series',
+        seasons: [{ season_number: 1, episode_count: 10 }]
+    };
+    manager.currentEpisodes = null;
+    manager.selectedSeasonNumber = null;
+    manager.isEpisodePlayableByDate = () => true;
+    manager.resolveAdjacentEpisode = (_movie, selection) => ({
+        seasonNumber: selection.seasonNumber,
+        episodeNumber: selection.episodeNumber + 1
+    });
+    manager.playbackController = {
+        getSelection: () => ({ ...currentSelection }),
+        getSelectionContext: () => ({
+            selection: { ...currentSelection },
+            selectionVersion
+        }),
+        getActiveProvider: () => 'exfs',
+        flushProgress: () => flushBarrier
+    };
+    manager.playSelection = async () => { committed = true; };
+
+    const navigation = manager.handlePlayerNavigate('next');
+    currentSelection = { ...currentSelection, episodeNumber: 9 };
+    selectionVersion = 2;
+    releaseFlush();
+
+    assert.strictEqual(await navigation, false, 'stale navigation must be cancelled after a newer selection');
+    assert.strictEqual(committed, false, 'stale navigation must not commit an older adjacent episode');
+}
+
+async function testLegacyNativeProgressCannotRegressCanonicalSelection() {
+    const harness = createMovieDetailsHarness();
+    let handledProgress = 0;
+    harness.manager.updatePlayerHeaderTitle = () => {};
+    harness.manager.playbackController.getActiveProvider = () => 'exfs';
+    harness.manager.playbackController.getAdapter = () => ({
+        getSelectionMode: () => 'NATIVE_BRIDGE',
+        supportsEpisodePicker: () => true
+    });
+    harness.manager.playbackController.handleProgressUpdate = () => {
+        handledProgress += 1;
+    };
+    harness.manager.playbackController.updateSelection = patch => {
+        harness.selection = { ...harness.selection, ...patch };
+        harness.selectionVersion += 1;
+    };
+    harness.selection = {
+        kinopoiskId: 42,
+        mediaType: 'tv-series',
+        seasonNumber: 1,
+        episodeNumber: 9,
+        providerId: 'exfs',
+        source: 'PLAYER_PROVIDER_PICKER'
+    };
+    harness.selectionVersion = 4;
+
+    const eventBase = {
+        source: harness.activeFrameWindow,
+        origin: harness.origin
+    };
+    await harness.listener({
+        ...eventBase,
+        data: {
+            type: 'UPDATE_WATCHING_PROGRESS',
+            seasonNumber: 1,
+            episodeNumber: 3,
+            timestamp: 20,
+            origin: 'USER_PROVIDER_SELECTION'
+        }
+    });
+    await harness.listener({
+        ...eventBase,
+        data: {
+            type: 'EPISODE_CHANGED',
+            seasonNumber: 1,
+            episode: 3,
+            origin: 'USER_PROVIDER_SELECTION'
+        }
+    });
+
+    assert.strictEqual(harness.selection.episodeNumber, 9, 'legacy provider events must not regress canonical E9');
+    assert.strictEqual(handledProgress, 0, 'legacy progress must not reach PlaybackController in native bridge mode');
+
+    await harness.listener({
+        ...eventBase,
+        data: {
+            type: 'EPISODE_CHANGED',
+            seasonNumber: 1,
+            episode: 10,
+            origin: 'USER_PROVIDER_SELECTION',
+            providerId: 'exfs',
+            providerState: 'NATIVE_DOM'
+        }
+    });
+    assert.strictEqual(harness.selection.episodeNumber, 10, 'native DOM confirmation must update canonical selection');
+}
+
 (async () => {
     console.log('🧪 Running player episode restore race tests...');
     await testMovieDetailsLateRestoreIsDiscarded();
@@ -287,6 +410,10 @@ function testControllerSelectionVersionAndProgressGuard() {
     console.log('  ✅ Search discards late restore after invalidation');
     testControllerSelectionVersionAndProgressGuard();
     console.log('  ✅ PlaybackController versions selection and rejects stale telemetry');
+    await testNavigationDiscardedAfterSelectionChanges();
+    console.log('  ✅ MovieDetails cancels navigation after a newer episode selection');
+    await testLegacyNativeProgressCannotRegressCanonicalSelection();
+    console.log('  ✅ Legacy native events cannot regress canonical Ex-FS selection');
     console.log('✅ Player episode restore race tests passed!');
 })().catch(error => {
     console.error(error);

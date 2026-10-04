@@ -10,7 +10,9 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 
 const manifest = JSON.parse(read('manifest.json'));
 const html = read('src/pages/movie-details/movie-details.html');
-const movieDetails = read('src/pages/movie-details/movie-details.js');
+// Torrent workspace methods are installed from TorrentSourcePanel.js.
+const movieDetails = `${read('src/pages/movie-details/movie-details.js')}
+${read('src/pages/movie-details/TorrentSourcePanel.js')}`;
 const serviceSource = read('src/shared/services/MediaPlayerService.js');
 
 assert.equal(
@@ -81,6 +83,11 @@ assert.match(settingsSource, /showJackettIndexerAddDialog/);
 assert.match(settingsSource, /jackett-available-language-filter/);
 assert.match(settingsSource, /jackett-available-category-filter/);
 assert.match(settingsSource, /jackett-available-type-filter/);
+assert.match(
+    settingsSource,
+    /const JACKETT_CATEGORY_FILTER_VALUES = Object\.freeze\(\[\s*'Audio',\s*'Books',\s*'Console',\s*'Movies',\s*'Other',\s*'PC',\s*'TV',\s*'XXX'\s*\]\);/
+);
+assert.doesNotMatch(settingsSource, /collectFilterValues\(indexer => indexer\.categories\)/);
 assert.match(settingsSource, /categories\.some/);
 assert.match(settingsSource, /Показано: \$\{filtered\.length\} из \$\{catalog\.length\}/);
 assert.match(
@@ -102,11 +109,19 @@ assert.match(serviceSource, /async testJackettIndexer\(indexerId\)/);
 assert.match(serviceSource, /async getJackettIndexerConfig\(indexerId\)/);
 assert.match(serviceSource, /async updateJackettIndexerConfig\(indexerId, fields = \[\]\)/);
 assert.match(serviceSource, /async deleteJackettIndexer\(indexerId\)/);
+assert.match(serviceSource, /JACKETT_CONFIG_TIMEOUT_MS = 30_000/);
+assert.match(serviceSource, /scope: 'torrent:control',\s*timeoutMs: JACKETT_CONFIG_TIMEOUT_MS/);
+assert.match(serviceSource, /normalizeJackettCategories\(value\)/);
+assert.match(serviceSource, /JACKETT_CATEGORY_ALIASES/);
 assert.match(movieDetails, /pauseSavedTorrent/);
 assert.match(movieDetails, /resumeSavedTorrent/);
 assert.match(movieDetails, /dataset\.downloadAction = isActiveDownload \? 'pause' : 'resume'/);
-assert.match(movieDetails, /Hls\.Events\.ERROR/);
-assert.match(movieDetails, /startLoad\(-1\)/);
+// Torrent HLS recovery is owned by the shared factory: 5xx while the torrent
+// buffers must keep retrying instead of failing the stream.
+const hlsFactory = read('src/shared/services/player/HlsPlaybackFactory.js');
+assert.match(hlsFactory, /Events\.ERROR/);
+assert.match(hlsFactory, /startLoad\(-1\)/);
+assert.match(movieDetails, /HlsPlaybackFactory\?\.create\(video, url, \{\s*policy: isTorrentStream \? 'persistent' : 'bounded'/);
 assert.match(movieDetails, /до полной загрузки/);
 const mountStart = movieDetails.indexOf('async mountTorrentPlaybackSession');
 const mountEnd = movieDetails.indexOf('\n    ensureTorrentPlaybackStatusMarkup', mountStart);
@@ -392,6 +407,10 @@ assert.deepEqual(JSON.parse(JSON.stringify(availableIndexers)), [{
     type: '',
     categories: ['Movies']
 }]);
+assert.deepEqual(
+    [...service.normalizeJackettCategories(['Movies/HD', 'TV/Anime', 'Music/FLAC', 'Games/PC', 'Custom', 'Custom'])],
+    ['Movies', 'TV', 'Audio', 'Console', 'Other']
+);
 const addedIndexerState = await service.addJackettIndexer('nyaa');
 assert.deepEqual([...addedIndexerState.enabledIds], ['rutor', 'rutracker']);
 const updatedIndexers = await service.updateJackettIndexers(['rutracker']);

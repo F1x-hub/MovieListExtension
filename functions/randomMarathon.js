@@ -2,6 +2,11 @@ const EXTENSION_ORIGIN = "chrome-extension://dgdejomdgiabgcfijcdhjefijdfiemhd";
 const MAX_MOVIES_PER_USER = 3;
 const ROUND_STATUSES = new Set(["collecting", "active", "completed", "cancelled"]);
 const ITEM_STATES = new Set(["queued", "selected", "watched", "removed"]);
+const SAFE_POSTER_HOSTS = new Set([
+  "image.tmdb.org",
+  "image.openmoviedb.com",
+  "st.kp.yandex.net",
+]);
 
 function createMarathonError(code, message, statusCode = 400) {
   const error = new Error(message);
@@ -73,9 +78,28 @@ function normalizeMovie(movie = {}) {
     rating = parsedRating;
   }
 
-  const poster = normalizeString(movie.posterUrl ?? movie.poster ?? movie.posterPath, "poster", 2048);
-  if (poster && !/^https?:\/\/[^\s]+$/i.test(poster)) {
-    throw createMarathonError("INVALID_MOVIE", "poster is invalid");
+  let poster = normalizeString(movie.posterUrl ?? movie.poster ?? movie.posterPath, "poster", 2048);
+  if (poster) {
+    let posterUrl;
+    try {
+      posterUrl = new URL(poster);
+    } catch {
+      throw createMarathonError("INVALID_MOVIE", "poster is invalid");
+    }
+
+    const host = posterUrl.hostname.toLowerCase();
+    if (posterUrl.protocol === "http:" && SAFE_POSTER_HOSTS.has(host)) posterUrl.protocol = "https:";
+    const isImagePath = /\.(?:jpe?g|png|webp)$/i.test(posterUrl.pathname);
+    const isKnownImagePath = (host !== "image.tmdb.org" || posterUrl.pathname.startsWith("/t/p/"))
+      && (host !== "st.kp.yandex.net" || posterUrl.pathname.startsWith("/images/"));
+    if (posterUrl.protocol !== "https:" || posterUrl.port || posterUrl.username || posterUrl.password
+      || !SAFE_POSTER_HOSTS.has(host) || !isImagePath || !isKnownImagePath) {
+      throw createMarathonError("INVALID_MOVIE", "poster is invalid");
+    }
+
+    posterUrl.search = "";
+    posterUrl.hash = "";
+    poster = posterUrl.href;
   }
 
   return {

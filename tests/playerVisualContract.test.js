@@ -53,10 +53,13 @@ assert.match(html, /id="closeVideoBtn"[\s\S]*?<svg[\s\S]*?<\/button>/, 'player c
 assert.match(movieDetails, /sourceButtonsContainer\.addEventListener\('click'/);
 assert.doesNotMatch(movieDetails, /sourceButtonsContainer\.addEventListener\('mousedown'/);
 assert.match(movieDetails, /closeVideoBtn\.addEventListener\('click'/);
-assert.match(movieDetails, /event\.key !== 'Escape'/, 'Escape must close the player modal');
+assert.match(movieDetails, /register\('video-player', \{[\s\S]*?close: \(\) => this\.closeVideoModal\(\)/, 'Escape must close the player modal');
 assert.match(movieDetails, /aria-pressed/);
-assert.match(movieDetails, /document\.body\.classList\.add\('player-modal-open'\)/);
-assert.match(movieDetails, /document\.body\.classList\.remove\('player-modal-open'\)/);
+// The player modal controller owns the page scroll lock (see PlayerModalController.js).
+const playerModalController = read('../src/pages/movie-details/PlayerModalController.js');
+assert.match(playerModalController, /classList\?\.\[locked \? 'add' : 'remove'\]\('player-modal-open'\)/);
+assert.match(playerModalController, /open\(\) \{[\s\S]*?this\.setBodyLocked\(true\);/, 'opening the player must lock page scrolling');
+assert.match(playerModalController, /hide\(\{ restoreFocus = false \} = \{\}\) \{[\s\S]*?this\.setBodyLocked\(false\);/, 'hiding the player must unlock page scrolling');
 
 assert.doesNotMatch(movieDetails, /<iframe[^>]*style="[^"]*(?:width|height|border)/);
 assert.doesNotMatch(baseParser, /<iframe[^>]*style="[^"]*(?:width|height|border)/);
@@ -99,5 +102,25 @@ assert.match(cleaner, /Настройки субтитров/, 'subtitle track m
 assert.match(cleaner, /player-subtitle-appearance__body/, 'in-player subtitle controls must have a scoped body');
 assert.match(cleaner, /persistSubtitleAppearance/, 'in-player subtitle controls must persist changes');
 assert.match(cleaner, /type: 'PLAYER_EPISODE_NAVIGATE'/, 'embedded arrows must request canonical host navigation');
+assert.match(
+    cleaner,
+    /canonicalPickerOnly = button\.dataset\.canonicalPickerOnly === 'true'/,
+    'bottom arrows must have an explicit hidden-until-canonical visibility mode'
+);
+assert.match(
+    cleaner,
+    /if \(!seriesData\.hasSeries\) btn\.style\.display = 'none'/,
+    'bottom arrows must be provisioned before a late canonical picker message without showing on movies'
+);
+assert.match(
+    cleaner,
+    /if \(seriesData\.hasSeries\) \{\s+\/\/ Episode Selector/,
+    'provider-local episode dropdown creation must remain gated by discovered series data'
+);
+assert.match(
+    cleaner,
+    /\/\/ --- Navigation Buttons \(Prev\/Next\) ---[\s\S]*?\/\/ Provision the arrows[\s\S]*?\{\s+const prevEpisodeBtn = document\.createElement\('button'\)/,
+    'embedded navigation buttons must not depend on the initial provider series scan'
+);
 
 console.log('✅ Player visual contract tests passed!');

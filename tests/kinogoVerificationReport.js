@@ -91,24 +91,6 @@ const movieDetailsCache = {
     },
     invalidateSourceCache: (movieId) => {
         mockLocalStorage.delete(`movie_sources_${movieId}`);
-    },
-    validateSourceUrl: async (url, customFetch) => {
-        if (!url || typeof url !== 'string') return false;
-        if (!url.startsWith('http://') && !url.startsWith('https://')) return true;
-        try {
-            const fetchFn = customFetch || fetch;
-            const res = await fetchFn(url, {
-                method: 'HEAD',
-                signal: AbortSignal.timeout(2500)
-            });
-            if (res.status === 404 || res.status === 410) {
-                return false;
-            }
-            return true;
-        } catch {
-            // Network or CORS error -> do not block iframe mounting
-            return true;
-        }
     }
 };
 
@@ -159,50 +141,6 @@ console.log(`        - Expired read returned: ${expiredRead}`);
 console.log(`        - Storage key purged: ${!mockLocalStorage.has(`movie_sources_${standardMovieId}`)}`);
 assert.strictEqual(expiredRead, null);
 assert.strictEqual(mockLocalStorage.has(`movie_sources_${standardMovieId}`), false);
-
-// 1.5 Measure preflight validation latency (simulating 25ms server RTT)
-const mockFastServer = async () => {
-    await new Promise(r => setTimeout(r, 22));
-    return { status: 200, ok: true };
-};
-const timings = [];
-for (let i = 0; i < 10; i++) {
-    const t0 = performance.now();
-    const isValid = await movieDetailsCache.validateSourceUrl('https://api.ortified.ws/embed/movie/2268', mockFastServer);
-    const dt = performance.now() - t0;
-    assert.strictEqual(isValid, true);
-    timings.push(dt);
-}
-const avgLatency = timings.reduce((a, b) => a + b, 0) / timings.length;
-console.log(`  [1.5] Preflight validation latency (HEAD request):`);
-console.log(`        - Average check time: ${avgLatency.toFixed(2)} ms`);
-console.log(`        - Max check time: ${Math.max(...timings).toFixed(2)} ms`);
-console.log(`        - Overhead in valid viewing path: negligible (~${avgLatency.toFixed(0)} ms)`);
-
-// 1.6 Test 404 / 410 dead token detection and invalidation
-const mock404Server = async () => {
-    await new Promise(r => setTimeout(r, 15));
-    return { status: 404, ok: false };
-};
-movieDetailsCache.saveSourcesToCache(1003, [{ url: 'https://cinemar.cc/embed/dead-token' }]);
-const isDeadValid = await movieDetailsCache.validateSourceUrl('https://cinemar.cc/embed/dead-token', mock404Server);
-if (!isDeadValid) {
-    movieDetailsCache.invalidateSourceCache(1003);
-}
-console.log(`  [1.6] Dead Token 404 preflight detection:`);
-console.log(`        - Preflight result for dead token: isValid = ${isDeadValid}`);
-console.log(`        - Cache invalidated immediately: ${!mockLocalStorage.has('movie_sources_1003')}`);
-assert.strictEqual(isDeadValid, false);
-assert.strictEqual(mockLocalStorage.has('movie_sources_1003'), false);
-
-// 1.7 Test CORS / Network failure handling (graceful non-blocking)
-const mockCorsFailServer = async () => {
-    throw new TypeError('Failed to fetch: CORS preflight blocked');
-};
-const isCorsValid = await movieDetailsCache.validateSourceUrl('https://api.variyt.ws/embed/movie/2268', mockCorsFailServer);
-console.log(`  [1.7] CORS / Network exception fallback:`);
-console.log(`        - Preflight result on CORS block: isValid = ${isCorsValid} (does NOT block iframe mounting)`);
-assert.strictEqual(isCorsValid, true);
 
 // 1.8 Test PlayerSourceLifecycle 5000ms timeout simulation
 class MockPlayerSourceLifecycle {

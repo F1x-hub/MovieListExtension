@@ -15,8 +15,6 @@
     const MAX_ATTEMPTS = 100; // Increased attempts
     let currentVoiceoverOptions = []; // Shared state for voiceovers
     let permanentVideo = null; // Our single persistent video element
-    let hlsInstance = null;
-    let lastRealSource = null;
     let activePlaybackRetry = null;
     let activeRequestGuard = () => true;
     let activeWrapperListenerScope = null;
@@ -31,6 +29,13 @@
     let canonicalPickerRequested = false;
     let providerContentErrorReported = false;
     let selectionOperationGeneration = 0;
+    let nativeSelectionReportTimer = null;
+    let nativeSelectionListenerInstalled = false;
+    let nativeSelectionOperation = null;
+    let canonicalSelectionContext = null;
+    let canonicalSelectionReady = false;
+    let canonicalSelectionStabilizingUntil = 0;
+    let lastNativeSelectionKey = null;
     let roomSyncSubscriptionId = null;
     let roomSyncTelemetryVideo = null;
     let roomSyncTelemetryDisposers = [];
@@ -38,6 +43,165 @@
     // The room bridge is deliberately timeline-only. Do not add player
     // preferences (audio, subtitles, quality, volume, speed) to this protocol.
     const ROOM_SYNC_TIMELINE_ACTIONS = new Set(['play', 'pause', 'seek']);
+
+    // Host commands come only from the extension page that embeds this
+    // player. Provider pages and their ad frames share this window and must
+    // not be able to drive the cleaner through postMessage.
+    function isExtensionPageContext() {
+        return window.location.protocol === 'chrome-extension:';
+    }
+
+    function getHostWindow() {
+        return isExtensionPageContext() || window.parent === window ? window : window.parent;
+    }
+
+    function getHostOrigin() {
+        if (isExtensionPageContext()) return window.location.origin;
+        try {
+            const id = typeof chrome !== 'undefined' ? chrome.runtime?.id : null;
+            return id ? `chrome-extension://${id}` : null;
+        } catch {
+            return null;
+        }
+    }
+
+    function isTrustedHostMessage(event) {
+        if (!event?.data || event.source !== getHostWindow()) return false;
+        const hostOrigin = getHostOrigin();
+        return !hostOrigin || event.origin === hostOrigin;
+    }
+
+    function postToHost(payload) {
+        const host = getHostWindow();
+        if (host === window && !isExtensionPageContext()) return;
+        try {
+            host.postMessage(payload, getHostOrigin() || '*');
+        } catch (error) {
+            console.warn('[PlayerCleaner] Could not notify host:', error.message);
+        }
+    }
+
+    const readNativeSelectionNumber = value => {
+        const match = String(value || '').match(/\d+/);
+        return match ? Number(match[0]) : null;
+    };
+
+    const readNativeProviderSelection = () => {
+        if (structuredPlaybackState) {
+            const seasonNumber = Number(structuredPlaybackState.activeSeasonNumber);
+            const episodeNumber = Number(structuredPlaybackState.activeEpisodeNumber);
+            return Number.isInteger(seasonNumber) && seasonNumber > 0
+                && Number.isInteger(episodeNumber) && episodeNumber > 0
+                ? { seasonNumber, episodeNumber }
+                : null;
+        }
+
+        const listContainer = document.querySelector('div[class*="list_"]');
+        const dropdowns = Array.from(
+            listContainer?.querySelectorAll?.('div[class*="dropdown_"]') || []
+        );
+        if (dropdowns.length < 2) return null;
+
+        const readDropdown = (dropdown, marker) => {
+            const items = Array.from(dropdown.querySelectorAll('div[class*="item_"]'));
+            const active = items.find(item => {
+                const className = String(item.className || '');
+                return className.includes('active')
+                    || item.classList?.contains?.('active')
+                    || item.getAttribute?.('aria-selected') === 'true';
+            });
+            const label = String(active?.textContent || '').trim();
+            return label.toLowerCase().includes(marker)
+                ? readNativeSelectionNumber(label)
+                : null;
+        };
+
+        const seasonNumber = readDropdown(dropdowns[0], 'сезон');
+        const episodeNumber = readDropdown(dropdowns[1], 'серия');
+        return Number.isInteger(seasonNumber) && seasonNumber > 0
+            && Number.isInteger(episodeNumber) && episodeNumber > 0
+            ? { seasonNumber, episodeNumber }
+            : null;
+    };
+
+    const selectionKey = selection => selection
+        ? `${selection.seasonNumber}:${selection.episodeNumber}`
+        : null;
+
+    const reportNativeProviderSelection = (reason = 'native-dom') => {
+        if (nativeSelectionOperation) return;
+        const selection = readNativeProviderSelection();
+        if (!selection) return;
+
+        const key = selectionKey(selection);
+        const expectedKey = selectionKey(canonicalSelectionContext);
+        if (canonicalPickerRequested && canonicalSelectionContext && !canonicalSelectionReady) {
+            if (key === expectedKey) {
+                canonicalSelectionReady = true;
+                canonicalSelectionStabilizingUntil = 0;
+                return;
+            }
+            // A SET_CANONICAL_PICKER_MODE message can carry stale host state
+            // after the provider has already moved on (for example host S4E18,
+            // provider DOM S6E2). Reconcile that initial mismatch from the
+            // provider DOM unless an explicit APPLY_PLAYBACK_SELECTION command
+            // is currently in flight. The active operation remains protected
+            // from transient DOM states while it is applying the requested S/E.
+            if (nativeSelectionOperation) return;
+        }
+        if (canonicalPickerRequested
+            && canonicalSelectionContext
+            && canonicalSelectionStabilizingUntil > Date.now()) {
+            if (key === expectedKey) canonicalSelectionStabilizingUntil = 0;
+            return;
+        }
+        if (key === lastNativeSelectionKey) return;
+        lastNativeSelectionKey = key;
+        if (canonicalPickerRequested) {
+            canonicalSelectionContext = {
+                ...canonicalSelectionContext,
+                ...selection
+            };
+            canonicalSelectionReady = true;
+        }
+
+        console.info('[ExFsBridgeTrace] native provider selection observed', {
+            seasonNumber: selection.seasonNumber,
+            episodeNumber: selection.episodeNumber,
+            reason
+        });
+        postToHost({
+            type: 'EPISODE_CHANGED',
+            seasonNumber: selection.seasonNumber,
+            episode: selection.episodeNumber,
+            episodeNumber: selection.episodeNumber,
+            season: `${selection.seasonNumber} сезон`,
+            origin: 'USER_PROVIDER_SELECTION',
+            providerId: canonicalSelectionContext?.providerId || null,
+            selectionVersion: canonicalSelectionContext?.selectionVersion ?? null,
+            providerState: 'NATIVE_DOM'
+        });
+    };
+
+    const scheduleNativeProviderSelectionReport = (reason = 'native-dom') => {
+        if (nativeSelectionReportTimer !== null) clearTimeout(nativeSelectionReportTimer);
+        nativeSelectionReportTimer = setTimeout(() => {
+            nativeSelectionReportTimer = null;
+            reportNativeProviderSelection(reason);
+        }, 0);
+    };
+
+    const installNativeSelectionObserver = () => {
+        if (nativeSelectionListenerInstalled) return;
+        nativeSelectionListenerInstalled = true;
+        document.addEventListener('click', event => {
+            const item = event.target?.closest?.('div[class*="item_"]');
+            const label = String(item?.textContent || '').trim().toLowerCase();
+            if (label.includes('сезон') || label.includes('серия')) {
+                scheduleNativeProviderSelectionReport('native-click');
+            }
+        }, true);
+    };
     
     let episodeDropdown = null;
 
@@ -65,13 +229,13 @@
             hostname: window.location.hostname,
             message: bodyText.slice(0, 240)
         });
-        window.parent?.postMessage({
+        postToHost({
             type: 'PLAYER_SOURCE_STATE',
             state: 'error',
             reason: 'provider-content-not-found',
             providerId: 'kinogo',
             url: window.location.href
-        }, '*');
+        });
         return true;
     };
 
@@ -98,7 +262,10 @@
             }
             // The host picker owns episode selection, but these arrows are still
             // useful controls: they now request navigation from that same owner.
-            button.style.display = button.dataset.canonicalPickerDisplay || 'flex';
+            const canonicalPickerOnly = button.dataset.canonicalPickerOnly === 'true';
+            button.style.display = canonicalPickerRequested
+                ? 'flex'
+                : (canonicalPickerOnly ? 'none' : (button.dataset.canonicalPickerDisplay || 'flex'));
         });
         return {
             legacyButtonCount: legacyButtons.length,
@@ -176,13 +343,13 @@
         if (kind !== 'timeupdate') {
             console.info('[RoomSyncTrace] telemetry-emitted', { kind, subscriptionActive: true });
         }
-        window.parent?.postMessage({
+        postToHost({
             type: 'ROOM_SYNC_TELEMETRY',
             subscriptionId: roomSyncSubscriptionId,
             kind,
             observedAtMs: now,
             ...roomSyncSnapshot(),
-        }, '*');
+        });
     }
 
     function attachRoomSyncTelemetry() {
@@ -222,20 +389,53 @@
     }
 
     window.addEventListener('message', (event) => {
+        if (!isTrustedHostMessage(event)) return;
         if (event.data?.type === 'RESET_PERMANENT_VIDEO') {
             selectionOperationGeneration += 1;
-            if (hlsInstance) {
-                try { hlsInstance.destroy?.(); } catch { /* ignore */ }
-                hlsInstance = null;
+            if (nativeSelectionReportTimer !== null) {
+                clearTimeout(nativeSelectionReportTimer);
+                nativeSelectionReportTimer = null;
             }
             setPermanentVideo(null);
             activeWrapper = null;
             pendingActiveEpisodeLabel = null;
             structuredPlaybackState = null;
+            canonicalPickerRequested = false;
+            nativeSelectionOperation = null;
+            canonicalSelectionContext = null;
+            canonicalSelectionReady = false;
+            canonicalSelectionStabilizingUntil = 0;
+            lastNativeSelectionKey = null;
         } else if (event.data?.type === 'SEASONVAR_PLAYBACK_STATE') {
             structuredPlaybackState = event.data;
         } else if (event.data?.type === 'SET_CANONICAL_PICKER_MODE') {
+            const activeStabilizationUntil = canonicalSelectionStabilizingUntil > Date.now()
+                ? canonicalSelectionStabilizingUntil
+                : 0;
             canonicalPickerRequested = Boolean(event.data.enabled);
+            canonicalSelectionContext = canonicalPickerRequested
+                && Number.isInteger(Number(event.data.seasonNumber))
+                && Number(event.data.seasonNumber) > 0
+                && Number.isInteger(Number(event.data.episodeNumber))
+                && Number(event.data.episodeNumber) > 0
+                ? {
+                    seasonNumber: Number(event.data.seasonNumber),
+                    episodeNumber: Number(event.data.episodeNumber),
+                    providerId: event.data.providerId || null,
+                    selectionVersion: Number.isInteger(event.data.selectionVersion)
+                        ? event.data.selectionVersion
+                        : null
+                }
+                : null;
+            canonicalSelectionReady = !canonicalPickerRequested || !canonicalSelectionContext;
+            // Initial canonical-mode messages describe host intent; they do
+            // not prove that the provider DOM has applied it yet. Only an
+            // acknowledged APPLY_PLAYBACK_SELECTION starts the short
+            // stabilization window below.
+            canonicalSelectionStabilizingUntil = activeStabilizationUntil;
+            if (canonicalSelectionContext) {
+                lastNativeSelectionKey = selectionKey(canonicalSelectionContext);
+            }
             const visibility = scheduleCanonicalPickerVisibility();
             console.info('[ExFsBridgeTrace] cleaner picker mode received', {
                 enabled: canonicalPickerRequested,
@@ -243,6 +443,9 @@
                 hostname: window.location.hostname,
                 ...visibility
             });
+            if (canonicalPickerRequested) {
+                scheduleNativeProviderSelectionReport('canonical-mode');
+            }
         } else if (event.data?.type === 'APPLY_PLAYBACK_SELECTION') {
             const request = event.data;
             const expectedParent = window.parent && window.parent !== window
@@ -267,6 +470,19 @@
             }
             const operationGeneration = ++selectionOperationGeneration;
             const isCurrentOperation = () => operationGeneration === selectionOperationGeneration;
+            nativeSelectionOperation = {
+                seasonNumber: requestedSeason,
+                episodeNumber: requestedEpisode,
+                requestId: request.requestId || null
+            };
+            canonicalSelectionContext = {
+                ...(canonicalSelectionContext || {}),
+                seasonNumber: requestedSeason,
+                episodeNumber: requestedEpisode,
+                providerId: request.providerId || canonicalSelectionContext?.providerId || null
+            };
+            canonicalSelectionReady = false;
+            canonicalSelectionStabilizingUntil = 0;
             console.info('[ExFsBridgeTrace] cleaner selection message received', {
                 requestId: request.requestId,
                 providerId: request.providerId || null,
@@ -298,6 +514,15 @@
                 }
             };
             const acknowledge = (status, reason) => {
+                const ownsOperation = nativeSelectionOperation?.requestId === (request.requestId || null);
+                if (ownsOperation && status === 'APPLIED') {
+                    lastNativeSelectionKey = selectionKey(nativeSelectionOperation);
+                    canonicalSelectionReady = true;
+                    canonicalSelectionStabilizingUntil = Date.now() + 2500;
+                }
+                if (ownsOperation) {
+                    nativeSelectionOperation = null;
+                }
                 const response = {
                     type: 'PLAYBACK_SELECTION_RESULT',
                     requestId: request.requestId,
@@ -805,6 +1030,18 @@
      * Проверяет, является ли src настоящим медиа-источником,
      * а не HTML-страницей или пустышкой.
      */
+    function findContentVideo() {
+        // Venom has separate content and VAST/VPAID video containers. DOM order
+        // is not media identity: a pre-roll can be inserted before the movie.
+        const venomPlayer = document.querySelector('.player_1JR');
+        const candidates = document.querySelectorAll(
+            'video:not(.native-player-wrapper video):not(.ghost-video):not([data-ghost="true"])'
+        );
+        return Array.from(candidates).find(video =>
+            !venomPlayer || (venomPlayer.contains(video) && video.closest('.video_9Xh'))
+        ) || null;
+    }
+
     function isValidMediaSrc(src) {
         if (!src || src === '' || src === 'about:blank') return false;
         
@@ -824,11 +1061,63 @@
         return false;
     }
 
+    function getPreviewMediaUrl(video, doc = document) {
+        const hlsUrl = video?._movieExtensionHls?.url;
+        if (hlsUrl && !hlsUrl.startsWith('blob:')) return hlsUrl;
+        const source = video?.currentSrc || video?.src || video?.querySelector?.('source')?.src;
+        if (source && !source.startsWith('blob:') && isValidMediaSrc(source)) return source;
+        const preview = video?.dataset;
+        if (preview?.playerPreviewUrl && preview.playerPreviewMedia === (source || '')) {
+            try {
+                const url = new URL(preview.playerPreviewUrl);
+                if (url.protocol === 'https:' || url.protocol === 'http:') return url.href;
+            } catch { /* Invalid provider metadata leaves the time label available. */ }
+        }
+
+        // Provider HLS/DASH instances live in MAIN, outside this content script's
+        // world. For Venom's blob-backed movie, read the literal HLS alternative
+        // from its own constructor config, without executing provider JavaScript.
+        if (doc.querySelector?.('.player_1JR')) {
+            for (const script of doc.querySelectorAll('script:not([src])')) {
+                const config = script.textContent || '';
+                if (!config.includes('makePlayer(')) continue;
+                // A literal source in a playlist can belong to another episode.
+                // The MAIN bridge tracks the active item instead.
+                if (/\bplaylist\s*:/.test(config)) continue;
+                const match = config.match(/\bsource\s*:\s*\{[\s\S]*?\bhls\s*:\s*(['"])(.*?)\1/);
+                if (!match) continue;
+                try {
+                    const url = new URL(match[2].replace(/\\\//g, '/'), window.location.href);
+                    if (url.protocol === 'https:' || url.protocol === 'http:') return url.href;
+                } catch {
+                    // Malformed or unavailable preview sources leave a time-only tooltip.
+                }
+            }
+        }
+        return null; // Never reuse an MSE blob or an unrelated/ad performance entry.
+    }
+
     function setCleanerSourceState(video, state, options = {}) {
         const lifecycle = window.PlayerSourceLifecycle;
         const container = video?.closest?.('.player-clean, .native-player-wrapper, .video-wrapper')
             || video?.parentElement;
         if (lifecycle && container) lifecycle.setState(container, state, options);
+    }
+
+    function playAdoptedVideo(video) {
+        activePlaybackRetry?.cancel?.();
+        activePlaybackRetry = tryPlayWithLimit(video, {
+            isRequestCurrent: () => activeRequestGuard(),
+            isSourceCurrent: () => permanentVideo === video && document.contains(video),
+            onState: state => {
+                if (!activeRequestGuard() || permanentVideo !== video) return;
+                setCleanerSourceState(video, state, {
+                    onRetry: state === 'error' || state === 'unavailable'
+                        ? () => playAdoptedVideo(video)
+                        : null
+                });
+            }
+        });
     }
 
     function tryPlayWithLimit(video, options = {}) {
@@ -911,121 +1200,11 @@
         };
     }
 
-    // Function to change video source while preserving state
-    function changeVideoSource(newSrc, autoPlay = true) {
-        if (!permanentVideo || !newSrc) return;
-        
-        lastRealSource = newSrc; // Update tracker
-        console.log('[MovieExtension] Changing video source to:', newSrc);
-        
-        // Save current state
-        const currentState = {
-            volume: permanentVideo.volume,
-            playbackRate: permanentVideo.playbackRate,
-            muted: permanentVideo.muted,
-            activeSubtitle: null
-        };
-        
-        // Stop previous loading if any
-        try {
-            permanentVideo.pause();
-        } catch {
-            // Ignore pause error
-        }
-        
-        // Find active subtitle track
-        const tracks = Array.from(permanentVideo.textTracks || []);
-        const activeTrack = tracks.find(t => t.mode === 'showing');
-        if (activeTrack) {
-            currentState.activeSubtitle = {
-                label: activeTrack.label,
-                language: activeTrack.language
-            };
-        }
-        
-        // Handle different source types
-        if (newSrc.includes('.m3u8')) {
-            // HLS stream
-            if (typeof Hls !== 'undefined' && Hls.isSupported()) {
-                if (!hlsInstance) {
-                    hlsInstance = new Hls();
-                    hlsInstance.attachMedia(permanentVideo);
-                }
-                hlsInstance.loadSource(newSrc);
-            } else if (permanentVideo.canPlayType('application/vnd.apple.mpegurl')) {
-                // Native HLS support (Safari)
-                permanentVideo.src = newSrc;
-                permanentVideo.load();
-            }
-        } else {
-            // Regular video file or blob URL
-            permanentVideo.src = newSrc;
-            // Catch load errors
-            try {
-                permanentVideo.load(); 
-            } catch {
-                console.log('[MovieExtension] Load interrupted (expected)');
-            }
-        }
-        
-        // Restore state after load
-        permanentVideo.volume = currentState.volume;
-        permanentVideo.playbackRate = currentState.playbackRate;
-        permanentVideo.muted = currentState.muted;
-        
-        // Auto-play if requested
-        if (autoPlay) {
-            activePlaybackRetry?.cancel?.();
-            const targetVideo = permanentVideo;
-            activePlaybackRetry = tryPlayWithLimit(targetVideo, {
-                maxAttempts: 40,
-                intervalMs: 100,
-                isRequestCurrent: () => activeRequestGuard(),
-                isSourceCurrent: () => permanentVideo === targetVideo && lastRealSource === newSrc,
-                onState: (state, detail) => {
-                    if (!activeRequestGuard() || permanentVideo !== targetVideo || lastRealSource !== newSrc) return;
-                    setCleanerSourceState(targetVideo, state, {
-                        onRetry: state === 'error' || state === 'unavailable'
-                            ? () => changeVideoSource(newSrc, true)
-                            : null
-                    });
-                    if (state === 'error' || state === 'unavailable') {
-                        const stateMessage = {
-                            type: 'PLAYER_SOURCE_STATE',
-                            state,
-                            url: newSrc,
-                            reason: detail.reason
-                        };
-                        window.postMessage(stateMessage, '*');
-                        if (window.parent && window.parent !== window) {
-                            window.parent.postMessage(stateMessage, '*');
-                        }
-                    }
-                }
-            });
-        }
-        
-        // Restore subtitles after metadata loads
-        if (currentState.activeSubtitle) {
-            permanentVideo.addEventListener('loadedmetadata', () => {
-                const newTracks = Array.from(permanentVideo.textTracks || []);
-                const matchingTrack = newTracks.find(t => 
-                    t.label === currentState.activeSubtitle.label ||
-                    t.language === currentState.activeSubtitle.language
-                );
-                if (matchingTrack) {
-                    newTracks.forEach(t => t.mode = 'disabled');
-                    matchingTrack.mode = 'showing';
-                }
-            }, { once: true });
-        }
-        
-        console.log('[MovieExtension] Video source changed, state preserved');
-    }
 
     // BUG 3 FIX: Listen for reset signal from extension page when switching sources
     window.addEventListener('message', (e) => {
-        if (e.data && e.data.type === 'RESET_PERMANENT_VIDEO') {
+        if (!isTrustedHostMessage(e)) return;
+        if (e.data.type === 'RESET_PERMANENT_VIDEO') {
             teardownActiveWrapper();
             setPermanentVideo(null);
         }
@@ -1039,6 +1218,10 @@
             if (!activeRequestGuard()) activePlaybackRetry?.cancel?.();
         },
         _test: {
+            getPreviewMediaUrl,
+            findContentVideo,
+            setPermanentVideo,
+            observePlayerContainer,
             replacePlayerForTest: () => replacePlayer({ allowTestContext: true }),
             tryPlayWithLimit,
             createListenerScope,
@@ -1054,6 +1237,7 @@
         if (typeof lifecycleOptions.isRequestCurrent === 'function') {
             activeRequestGuard = lifecycleOptions.isRequestCurrent;
         }
+        if (!activeRequestGuard()) return;
         // Isolation: Strict check to ensure we are running inside OUR Extension
         let isInsideExtension = false;
         
@@ -1090,7 +1274,7 @@
             && document.contains(permanentVideo) 
             && permanentVideo.closest('.native-player-wrapper')) {
             // Before exiting, check if the site spawned a NEW video outside our wrapper
-            const outsideVideo = document.querySelector('video:not(.native-player-wrapper video):not(.ghost-video)');
+            const outsideVideo = findContentVideo();
             if (!outsideVideo || (!outsideVideo.src && !outsideVideo.currentSrc)) {
                 return;
             }
@@ -1101,19 +1285,14 @@
                 return;
             }
             
-            // Don't downgrade from a working blob: src to a non-blob src
-            const currentPermanentSrc = permanentVideo.src || permanentVideo.currentSrc || '';
-            if (isValidMediaSrc(currentPermanentSrc) && currentPermanentSrc.startsWith('blob:') && !outsideSrc.startsWith('blob:')) {
-                return;
-            }
         }
 
         // Check if player already exists
         const existingWrapper = document.querySelector('.native-player-wrapper');
         if (existingWrapper && permanentVideo) {
             // Player already initialized, check for new video from site
-            const siteVideo = document.querySelector('video:not(.native-player-wrapper video)');
-            if (siteVideo && siteVideo.src) {
+            const siteVideo = findContentVideo();
+            if (siteVideo && (siteVideo.src || siteVideo.currentSrc)) {
                 const newSrc = siteVideo.src || siteVideo.currentSrc || '';
                 
                 // Validate: skip swap if new video has non-media src (e.g. embed page URL)
@@ -1121,11 +1300,6 @@
                     return;
                 }
                 
-                // Don't downgrade from a working blob: src to a non-blob src
-                const currentSrc = permanentVideo.src || permanentVideo.currentSrc || '';
-                if (isValidMediaSrc(currentSrc) && currentSrc.startsWith('blob:') && !newSrc.startsWith('blob:')) {
-                    return;
-                }
                 
                 // FIX: Verify and clear buffer visual state immediately to prevent "ghost" segments
                 const bufferContainer = existingWrapper.querySelector('.native-buffer-container');
@@ -1216,10 +1390,7 @@
                 // Auto-play if flag is set
                 if (localStorage.getItem('movieExtension_autoplay_next') === 'true') {
                     localStorage.removeItem('movieExtension_autoplay_next');
-                    localStorage.removeItem('movieExtension_autoplay_next');
-                    permanentVideo.play().catch(e => {
-                        if (e.name !== 'AbortError') console.log('[MovieExtension] Autoplay next failed:', e);
-                    });
+                    playAdoptedVideo(permanentVideo);
                 }
                 
                 // Re-scan for voiceovers/qualities (Site likely re-rendered them)
@@ -1256,7 +1427,7 @@
         }
         
         // Find site's video element to extract source
-        const siteVideo = document.querySelector('video');
+        const siteVideo = findContentVideo();
         
         // Scan for potential translator/season lists BEFORE we hide them
         // Common selectors in these players: .season-list, .episode-list, .translate-list, .box-list
@@ -1297,7 +1468,6 @@
         // IMPORTANT: Use site's original video element as our permanent element
         // This is critical for blob: URLs which are tied to the specific element
         setPermanentVideo(siteVideo);
-        lastRealSource = siteVideo.src || siteVideo.currentSrc; // Initial source track
         
         // Configure the existing video element
         permanentVideo.removeAttribute('controls'); // Remove native controls
@@ -2009,7 +2179,7 @@
                 /* Ghost Player Tooltip */
                 .ghost-tooltip {
                     display:         none;
-                    position:        fixed;
+                    position:        absolute;
                     z-index:         2147483642;
                     pointer-events:  none;
                     flex-direction:  column;
@@ -2024,15 +2194,70 @@
                     opacity:   1;
                     transform: translateY(0);
                 }
-                .ghost-video {
+                .native-player-wrapper .ghost-tooltip > .ghost-video {
+                    position:      static;
+                    inset:         auto;
+                    flex:          none;
+                    box-sizing:    border-box;
                     width:         200px;
                     height:        112px;
+                    min-width:     200px;
+                    min-height:    112px;
+                    max-width:     none;
+                    max-height:    none;
                     object-fit:    cover;
                     border-radius: 6px;
                     border:        1.5px solid rgba(255,255,255,.15);
                     background:    #111;
                     display:       block;
                 }
+                .native-player-wrapper .provider-native-episode-nav {
+                    position: relative;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 5px;
+                    color: #fafafa;
+                    background: none;
+                    border: none;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    transition: color .2s, background-color .2s;
+                }
+
+                .native-player-wrapper .provider-native-episode-nav:hover:not(:disabled) {
+                    background: rgba(255, 255, 255, .12);
+                }
+
+                .native-player-wrapper .provider-native-episode-nav:disabled {
+                    color: #8a8a93;
+                    cursor: default;
+                }
+
+                .native-player-wrapper .provider-native-episode-nav__tooltip {
+                    position: absolute;
+                    bottom: 100%;
+                    left: 50%;
+                    transform: translate(-50%, -10px);
+                    padding: 4px 8px;
+                    color: #fafafa;
+                    font-size: 12px;
+                    white-space: nowrap;
+                    background: rgba(9, 9, 11, .88);
+                    border-radius: 4px;
+                    pointer-events: none;
+                    opacity: 0;
+                    transition: opacity .2s;
+                }
+
+                .native-player-wrapper .provider-native-episode-nav__tooltip:empty {
+                    display: none;
+                }
+
+                .native-player-wrapper .provider-native-episode-nav:hover:not(:disabled) .provider-native-episode-nav__tooltip,
+                .native-player-wrapper .provider-native-episode-nav:focus-visible .provider-native-episode-nav__tooltip {
+                    opacity: 1;
+                }
+
                 .ghost-time-label {
                     font-size:      12px;
                     font-weight:    600;
@@ -2257,8 +2482,23 @@
                 return { season, episode };
             };
 
+            // Inside provider frames the embed path identifies the title. On the
+            // extension page every title shares movie-details.html, so the key
+            // uses the movie MovieDetails stamps on <html>; without it there is
+            // no safe key. Videos whose position the canonical ProgressService
+            // restores (Seasonvar) opt out so they are not seeked twice.
+            const isExtensionPage = window.location.protocol === 'chrome-extension:'
+                || document.documentElement?.dataset?.playerProgressScope !== undefined;
+            const readProgressScope = () => (isExtensionPage
+                ? String(document.documentElement?.dataset?.playerProgressScope || '')
+                : window.location.pathname);
+            const progressScope = readProgressScope();
+            const localProgressEnabled = Boolean(progressScope)
+                && video.dataset?.progressOwner !== 'canonical';
+            const isProgressScopeCurrent = () => localProgressEnabled && readProgressScope() === progressScope;
+
             const getProgressKey = () => {
-                let key = 'movieExtension_progress_' + window.location.pathname.replace(/\W/g, '_');
+                let key = 'movieExtension_progress_' + progressScope.replace(/\W/g, '_');
                 const info = getActiveSeriesInfo();
                 if (info.season) key += '_' + info.season.replace(/\s+/g, '');
                 if (info.episode) key += '_' + info.episode.replace(/\s+/g, '');
@@ -2266,6 +2506,7 @@
             };
             
             const saveProgress = () => {
+                if (!isProgressScopeCurrent()) return;
                 if (video.currentTime > 5 && video.duration > 0) {
                     const key = getProgressKey();
                     // Don't save if near the end (e.g. < 30s remaining) to avoid stuck at credits
@@ -2278,6 +2519,7 @@
             };
 
             const restoreProgress = () => {
+                if (!isProgressScopeCurrent()) return;
                 const key = getProgressKey();
                 const savedTime = parseFloat(localStorage.getItem(key));
                 // console.log('[MovieExtension] Restoring progress for key:', key, 'Time:', savedTime);
@@ -2290,20 +2532,22 @@
                 }
             };
 
-            // Save periodically
-            const progressInterval = setInterval(saveProgress, 5000);
-            listenerScope.addDisposer(() => clearInterval(progressInterval));
-            video.addEventListener('pause', saveProgress);
-            listenerScope.listen(window, 'beforeunload', saveProgress);
-            
-            // Restore
-            video.addEventListener('loadedmetadata', restoreProgress);
-            // Try immediately if ready
-            if (video.readyState >= 1) restoreProgress();
-            
-            video.addEventListener('ended', () => {
-                localStorage.removeItem(getProgressKey());
-            });
+            if (localProgressEnabled) {
+                // Save periodically
+                const progressInterval = setInterval(saveProgress, 5000);
+                listenerScope.addDisposer(() => clearInterval(progressInterval));
+                video.addEventListener('pause', saveProgress);
+                listenerScope.listen(window, 'beforeunload', saveProgress);
+
+                // Restore
+                video.addEventListener('loadedmetadata', restoreProgress);
+                // Try immediately if ready
+                if (video.readyState >= 1) restoreProgress();
+
+                video.addEventListener('ended', () => {
+                    if (isProgressScopeCurrent()) localStorage.removeItem(getProgressKey());
+                });
+            }
             // --- PERSISTENT PROGRESS END ---
 
             progressContainer.addEventListener('click', (e) => {
@@ -2641,23 +2885,24 @@
                         
                         console.log('[MovieExtension] Sending progress update:', currentSeasonLabel, epLabel, 'timestamp:', ts);
                         
-                        window.parent.postMessage({
+                        postToHost({
                             type: 'UPDATE_WATCHING_PROGRESS',
                             season: currentSeasonLabel,
                             seasonNumber: seasonNum,
                             episode: epLabel,
                             episodeNumber: epNum,
-                            timestamp: ts
-                        }, '*');
+                            timestamp: ts,
+                            origin: 'USER_PROVIDER_SELECTION'
+                        });
                         
-                        window.parent.postMessage({
+                        postToHost({
                             type: 'EPISODE_CHANGED',
                             episode: epNum || 1,
                             episodeLabel: epLabel,
                             season: currentSeasonLabel,
                             seasonNumber: seasonNum,
                             origin: 'USER_PROVIDER_SELECTION'
-                        }, '*');
+                        });
                         
                         animeSkipData = null;
                         if (skipButton) {
@@ -2700,6 +2945,13 @@
                         };
                     },
                     navigate: (direction) => {
+                        if (canonicalPickerRequested && window.parent && window.parent !== window) {
+                            postToHost({
+                                type: 'PLAYER_EPISODE_NAVIGATE',
+                                direction: direction < 0 ? 'previous' : 'next'
+                            });
+                            return true;
+                        }
                         const newIndex = activeIndex + direction;
                         if (newIndex >= 0 && newIndex < items.length) {
                             const targetItem = items[newIndex];
@@ -2801,6 +3053,9 @@
             timeDisplay.style.fontFamily = 'Arial, sans-serif';
             timeDisplay.style.fontSize = '14px';
             timeDisplay.textContent = '0:00 / 0:00';
+            // Hidden until the media reports a duration, so a loading source
+            // does not look like an empty 0:00 video.
+            timeDisplay.style.visibility = 'hidden';
             timeDisplay.style.zIndex = '2'; // Ensure visibility
             timeDisplay.style.position = 'relative';
 
@@ -2860,6 +3115,7 @@
                 const current = video.currentTime || 0;
                 const total = video.duration || 0;
                 timeDisplay.textContent = `${formatTime(current)} / ${formatTime(total)}`;
+                if (Number.isFinite(total) && total > 0) timeDisplay.style.visibility = 'visible';
             };
 
             // Video Events
@@ -2904,7 +3160,7 @@
                             episode: info.episode
                         };
                         
-                        window.parent.postMessage(progressData, '*');
+                        postToHost(progressData);
                     }
                 }
             });
@@ -2920,24 +3176,27 @@
             // --- Navigation Buttons (Prev/Next) ---
             let updateNavButtons = () => {}; // Default no-op
             
-            if (seriesData.hasSeries) {
+            // Provision the arrows even when the first provider DOM scan is
+            // empty. Ex-FS/KinoGo can enable canonical picker mode after this
+            // player has initialized, so waiting for seriesData.hasSeries
+            // would permanently lose the bottom navigation controls.
+            {
                 const prevEpisodeBtn = document.createElement('button');
                 const nextEpisodeBtn = document.createElement('button');
                 
                 // Common styles
+                // Visuals live in the injected cleaner stylesheet; only
+                // display stays inline because picker visibility owns it.
                 [prevEpisodeBtn, nextEpisodeBtn].forEach(btn => {
+                    btn.type = 'button';
                     btn.classList.add('provider-native-episode-nav');
-                    btn.style.background = 'none';
-                    btn.style.border = 'none';
-                    btn.style.cursor = 'pointer';
-                    btn.style.color = 'white';
-                    btn.style.padding = '5px';
-                    btn.style.display = 'flex'; 
-                    btn.style.alignItems = 'center';
-                    btn.style.justifyContent = 'center';
-                    btn.style.opacity = '1';
-                    btn.style.transition = 'opacity 0.2s, color 0.2s';
-                    btn.style.position = 'relative'; // For tooltip
+                    btn.style.display = 'flex';
+                });
+                prevEpisodeBtn.setAttribute('aria-label', 'Предыдущая серия');
+                nextEpisodeBtn.setAttribute('aria-label', 'Следующая серия');
+                [prevEpisodeBtn, nextEpisodeBtn].forEach(btn => {
+                    btn.dataset.canonicalPickerOnly = seriesData.hasSeries ? 'false' : 'true';
+                    if (!seriesData.hasSeries) btn.style.display = 'none';
                 });
     
                 // Icons
@@ -2947,20 +3206,9 @@
                 // Tooltips
                 const createTooltip = (text) => {
                     const el = document.createElement('div');
+                    el.className = 'provider-native-episode-nav__tooltip';
+                    el.setAttribute('aria-hidden', 'true');
                     el.textContent = text;
-                    el.style.position = 'absolute';
-                    el.style.bottom = '100%';
-                    el.style.left = '50%';
-                    el.style.transform = 'translate(-50%, -10px)';
-                    el.style.background = 'rgba(0,0,0,0.8)';
-                    el.style.color = 'white';
-                    el.style.padding = '4px 8px';
-                    el.style.borderRadius = '4px';
-                    el.style.fontSize = '12px';
-                    el.style.whiteSpace = 'nowrap';
-                    el.style.pointerEvents = 'none';
-                    el.style.opacity = '0';
-                    el.style.transition = 'opacity 0.2s';
                     return el;
                 };
     
@@ -2969,21 +3217,6 @@
                 prevEpisodeBtn.appendChild(prevTooltip);
                 nextEpisodeBtn.appendChild(nextTooltip);
     
-                // Hover effects
-                const setupHover = (btn, tooltip) => {
-                    btn.addEventListener('mouseenter', () => {
-                        if (!btn.disabled) {
-                            btn.style.color = '#4da6ff'; // Active color
-                            tooltip.style.opacity = '1';
-                        }
-                    });
-                    btn.addEventListener('mouseleave', () => {
-                        btn.style.color = 'white';
-                        tooltip.style.opacity = '0';
-                    });
-                };
-                setupHover(prevEpisodeBtn, prevTooltip);
-                setupHover(nextEpisodeBtn, nextTooltip);
     
                 // Logic to update buttons
                 updateNavButtons = () => {
@@ -2995,8 +3228,6 @@
                         // from a stale provider-local dropdown snapshot.
                         [prevEpisodeBtn, nextEpisodeBtn].forEach(button => {
                             button.disabled = false;
-                            button.style.opacity = '1';
-                            button.style.cursor = 'pointer';
                         });
                         prevTooltip.textContent = 'Предыдущая серия';
                         nextTooltip.textContent = 'Следующая серия';
@@ -3009,26 +3240,18 @@
                         // Prev Button State
                         if (state.hasPrev) {
                             prevEpisodeBtn.disabled = false;
-                            prevEpisodeBtn.style.opacity = '1';
-                            prevEpisodeBtn.style.cursor = 'pointer';
                             prevTooltip.textContent = `Назад: ${state.prevItem.label}`;
                         } else {
                             prevEpisodeBtn.disabled = true;
-                            prevEpisodeBtn.style.opacity = '0.3';
-                            prevEpisodeBtn.style.cursor = 'default';
                             prevTooltip.textContent = '';
                         }
     
                         // Next Button State
                         if (state.hasNext) {
                             nextEpisodeBtn.disabled = false;
-                            nextEpisodeBtn.style.opacity = '1';
-                            nextEpisodeBtn.style.cursor = 'pointer';
                             nextTooltip.textContent = `Вперед: ${state.nextItem.label}`;
                         } else {
                             nextEpisodeBtn.disabled = true;
-                            nextEpisodeBtn.style.opacity = '0.3';
-                            nextEpisodeBtn.style.cursor = 'default';
                             nextTooltip.textContent = '';
                         }
                     }
@@ -3038,10 +3261,10 @@
                 prevEpisodeBtn.onclick = (e) => {
                     e.stopPropagation();
                     if (canonicalPickerRequested && window.parent && window.parent !== window) {
-                        window.parent.postMessage({
+                        postToHost({
                             type: 'PLAYER_EPISODE_NAVIGATE',
                             direction: 'previous'
-                        }, '*');
+                        });
                         return;
                     }
                     if (permanentVideo) permanentVideo.focus(); // Fix focus
@@ -3053,10 +3276,10 @@
                 nextEpisodeBtn.onclick = (e) => {
                     e.stopPropagation();
                     if (canonicalPickerRequested && window.parent && window.parent !== window) {
-                        window.parent.postMessage({
+                        postToHost({
                             type: 'PLAYER_EPISODE_NAVIGATE',
                             direction: 'next'
-                        }, '*');
+                        });
                         return;
                     }
                     if (permanentVideo) permanentVideo.focus(); // Fix focus
@@ -3638,6 +3861,7 @@
                     const current = videoEl.currentTime || 0;
                     const total = Number.isFinite(videoEl.duration) ? videoEl.duration : 0;
                     timeDisplay.textContent = `${formatTime(current)} / ${formatTime(total)}`;
+                    timeDisplay.style.visibility = total > 0 ? 'visible' : 'hidden';
                     
                     // Update Progress Bar
                     if (progressFilled && total > 0) {
@@ -3737,11 +3961,35 @@
             // Update UI initially
             updateVolumeUI();
             
+            // A source that is still fetching shows the loader instead of an
+            // idle play button. Idle sources (preload=none, blocked autoplay)
+            // keep the play button so the user can start them.
+            let pendingMediaTimeoutId = null;
+            const syncPendingMediaState = (videoEl) => {
+                clearTimeout(pendingMediaTimeoutId);
+                if (!videoEl) return;
+                const duration = Number(videoEl.duration);
+                const hasMetadata = videoEl.readyState >= 1 && Number.isFinite(duration) && duration > 0;
+                timeDisplay.style.visibility = hasMetadata ? 'visible' : 'hidden';
+                const isFetching = !hasMetadata
+                    && !videoEl.error
+                    && (videoEl.networkState === 2 || (Boolean(videoEl.currentSrc) && !videoEl.paused));
+                if (!isFetching) return;
+                showLoader();
+                pendingMediaTimeoutId = setTimeout(() => {
+                    if (videoEl.readyState < 1) hideLoader();
+                }, 20000);
+            };
+
             // 2. Attach listeners to initial video
             setupVideoListeners(permanentVideo);
+            syncPendingMediaState(permanentVideo);
             
             // Expose for swap logic
-            window._movieExtension_setupListeners = setupVideoListeners;
+            window._movieExtension_setupListeners = (videoEl) => {
+                setupVideoListeners(videoEl);
+                syncPendingMediaState(videoEl);
+            };
 
             volumeBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -3957,12 +4205,12 @@
                         pipBtn.style.opacity = '1';
                         // Ensure button stays visible/highlighted
                         pipBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" x="0px" y="0px" viewBox="0 0 64 64" style="enable-background:new 0 0 64 64;" xml:space="preserve"><path fill="#ffffff" d="M55.156,30.219H33.781c-1.965,0-3.563,1.598-3.563,3.563v15.141c0,1.965,1.598,3.563,3.563,3.563h21.375  c1.965,0,3.563-1.598,3.563-3.563V33.781C58.719,31.817,57.121,30.219,55.156,30.219z M33.781,48.922V33.781h21.375l0.003,15.141  H33.781z"/><path fill="#ffffff" d="M27.851,17.139c-0.984,0-1.781,0.798-1.781,1.781v4.517l-5.776-5.776c-0.696-0.696-1.823-0.696-2.519,0  c-0.696,0.695-0.696,1.823,0,2.519l5.776,5.776h-4.517c-0.984,0-1.781,0.798-1.781,1.781c0,0.984,0.798,1.781,1.781,1.781h8.817  c0.117,0,0.234-0.012,0.349-0.035c0.053-0.01,0.102-0.03,0.153-0.045c0.06-0.018,0.121-0.032,0.18-0.056  c0.061-0.025,0.115-0.059,0.172-0.091c0.045-0.025,0.091-0.044,0.134-0.073c0.195-0.13,0.363-0.298,0.494-0.494  c0.03-0.044,0.05-0.093,0.075-0.139c0.03-0.055,0.064-0.109,0.088-0.167c0.025-0.06,0.039-0.122,0.057-0.183  c0.015-0.05,0.034-0.098,0.044-0.149c0.023-0.115,0.035-0.232,0.035-0.349V18.92C29.633,17.937,28.835,17.139,27.851,17.139z"/><path fill="#ffffff" d="M25.765,48.923H9.734c-0.491,0-0.891-0.399-0.891-0.891V15.969c0-0.491,0.399-0.891,0.891-0.891h44.531  c0.491,0,0.891,0.4,0.891,0.891v9.797c0,0.984,0.798,1.781,1.781,1.781c0.983,0,1.781-0.798,1.781-1.781v-9.797  c0.001-2.456-1.997-4.453-4.452-4.453H9.734c-2.455,0-4.453,1.998-4.453,4.453v32.063c0,2.455,1.998,4.453,4.453,4.453h16.031  c0.984,0,1.781-0.798,1.781-1.781C27.546,49.721,26.748,48.923,25.765,48.923z"/></svg>`;
-                        window.parent.postMessage({ type: 'PIP_ENTER' }, '*');
+                        postToHost({ type: 'PIP_ENTER' });
                     } else {
                         pipBtn.style.color = 'white';
                         pipBtn.style.opacity = '0.7';
                         pipBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" x="0px" y="0px" viewBox="0 0 64 64" style="enable-background:new 0 0 64 64;" xml:space="preserve"><path fill="#ffffff" d="M55.156,30.219H33.781c-1.965,0-3.563,1.598-3.563,3.563v15.141c0,1.965,1.598,3.563,3.563,3.563h21.375  c1.965,0,3.563-1.598,3.563-3.563V33.781C58.719,31.817,57.121,30.219,55.156,30.219z M33.781,48.922V33.781h21.375l0.003,15.141  H33.781z"/><path fill="#ffffff" d="M27.851,17.139c-0.984,0-1.781,0.798-1.781,1.781v4.517l-5.776-5.776c-0.696-0.696-1.823-0.696-2.519,0  c-0.696,0.695-0.696,1.823,0,2.519l5.776,5.776h-4.517c-0.984,0-1.781,0.798-1.781,1.781c0,0.984,0.798,1.781,1.781,1.781h8.817  c0.117,0,0.234-0.012,0.349-0.035c0.053-0.01,0.102-0.03,0.153-0.045c0.06-0.018,0.121-0.032,0.18-0.056  c0.061-0.025,0.115-0.059,0.172-0.091c0.045-0.025,0.091-0.044,0.134-0.073c0.195-0.13,0.363-0.298,0.494-0.494  c0.03-0.044,0.05-0.093,0.075-0.139c0.03-0.055,0.064-0.109,0.088-0.167c0.025-0.06,0.039-0.122,0.057-0.183  c0.015-0.05,0.034-0.098,0.044-0.149c0.023-0.115,0.035-0.232,0.035-0.349V18.92C29.633,17.937,28.835,17.139,27.851,17.139z"/><path fill="#ffffff" d="M25.765,48.923H9.734c-0.491,0-0.891-0.399-0.891-0.891V15.969c0-0.491,0.399-0.891,0.891-0.891h44.531  c0.491,0,0.891,0.4,0.891,0.891v9.797c0,0.984,0.798,1.781,1.781,1.781c0.983,0,1.781-0.798,1.781-1.781v-9.797  c0.001-2.456-1.997-4.453-4.452-4.453H9.734c-2.455,0-4.453,1.998-4.453,4.453v32.063c0,2.455,1.998,4.453,4.453,4.453h16.031  c0.984,0,1.781-0.798,1.781-1.781C27.546,49.721,26.748,48.923,25.765,48.923z"/></svg>`;
-                        window.parent.postMessage({ type: 'PIP_EXIT' }, '*');
+                        postToHost({ type: 'PIP_EXIT' });
                     }
                 };
 
@@ -4431,9 +4679,16 @@
                     hls.nextLevel = levelIndex;
                 };
 
+                // In auto mode, name the rendition currently playing (from the
+                // manifest height, like the manual entries).
+                const playingHeight = Math.round(Number(levels[hls.currentLevel]?.height));
+                const autoLabel = hls.autoLevelEnabled && Number.isFinite(playingHeight) && playingHeight > 0
+                    ? `Авто · ${playingHeight}p`
+                    : 'Автоматически';
+
                 return [
                     {
-                        label: 'Автоматически',
+                        label: autoLabel,
                         isActive: hls.autoLevelEnabled,
                         action: () => { hls.currentLevel = -1; }
                     },
@@ -4851,45 +5106,21 @@
                 window._iframeGhostPlayer = new GhostPlayer({
                     progressContainer: progressContainer,
                     getActiveVideo: () => permanentVideo || document.querySelector('video'),
-                    getCurrentUrl: () => {
-                        const activeHls = permanentVideo?._movieExtensionHls;
-                        if (activeHls?.url) return activeHls.url;
-                        if (lastRealSource && !lastRealSource.startsWith('blob:')) return lastRealSource;
-                        
-                        // 1. Try our own hlsInstance
-                        if (hlsInstance && hlsInstance.url && !hlsInstance.url.startsWith('blob:')) {
-                            return hlsInstance.url;
-                        }
-
-                        // 2. Try window.hls (site's own instance)
-                        if (window.hls && window.hls.url && !window.hls.url.startsWith('blob:')) {
-                            return window.hls.url;
-                        }
-
-                        // 3. Scan performance entries for .m3u8
-                        try {
-                            const entries = performance.getEntriesByType('resource');
-                            const hlsEntry = entries.find(e => e.name.includes('.m3u8') && !e.name.includes('ghost-preview'));
-                            if (hlsEntry) return hlsEntry.name;
-                        } catch {
-                            // Ignore error
-                        }
-
-                        // 4. Fallback to current video source
-                        const vid = permanentVideo || document.querySelector('video');
-                        return vid ? (vid.src || vid.currentSrc) : null;
-                    },
-                    getCurrentHls: () => permanentVideo?._movieExtensionHls || hlsInstance || window.hls || null,
+                    getCurrentUrl: () => getPreviewMediaUrl(permanentVideo),
+                    getCurrentType: () => permanentVideo?._movieExtensionHls ? 'hls'
+                        : permanentVideo?.dataset?.playerPreviewType,
+                    getCurrentHls: () => permanentVideo?._movieExtensionHls || window.hls || null,
                     HlsClass: (typeof Hls !== 'undefined') ? Hls : null,
                 });
             }
 
             // Communication with parent (Extension)
             // Notify parent that player is ready
-            window.parent.postMessage({ type: 'PLAYER_READY' }, '*');
+            postToHost({ type: 'PLAYER_READY' });
 
             // Listen for messages from parent
             listenerScope.listen(window, 'message', (event) => {
+                if (!isTrustedHostMessage(event)) return;
                 if (event.data.type === 'SET_SOURCES') {
                     // Sources received, no action needed here currently
                 } else if (event.data.type === 'ANIME_SKIP_DATA') {
@@ -5074,11 +5305,17 @@
         if (observerRoot === nextRoot) return true;
         observer?.disconnect?.();
         observerRoot = nextRoot;
-        observer.observe(observerRoot, { childList: true, subtree: true });
+        observer.observe(observerRoot, {
+            attributes: true,
+            attributeFilter: ['class', 'aria-selected', 'src'],
+            childList: true,
+            subtree: true
+        });
         return true;
     }
 
     function startPlayerObservation(attempt = 0) {
+        installNativeSelectionObserver();
         reportProviderContentError();
         if (observePlayerContainer()) {
             replacePlayer();
@@ -5093,6 +5330,13 @@
     // cannot trigger a player replacement.
     observer = new MutationObserver((mutations) => {
         if (!mutationsWithinRoot(mutations, observerRoot)) return;
+        const nativePickerMutation = mutations.some(mutation => {
+            const target = mutation.target?.closest?.('div[class*="dropdown_"], div[class*="list_"]');
+            return Boolean(target);
+        });
+        if (nativePickerMutation) {
+            scheduleNativeProviderSelectionReport('native-mutation');
+        }
         if (activeWrapper && !document.contains(activeWrapper)) {
             teardownActiveWrapper();
         }
@@ -5100,69 +5344,9 @@
             setPermanentVideo(null);
             activeWrapper = null;
         }
-        // First check if we need to intercept new video elements
-        if (permanentVideo) {
-            for (const mutation of mutations) {
-                if (mutation.type === 'childList') {
-                    // Check for new video elements added by the site
-                    const addedVideos = Array.from(mutation.addedNodes)
-                        .filter(node => node.tagName === 'VIDEO' && node.dataset.ghost !== 'true' && !node.classList.contains('ghost-video'));
-                    
-                    for (const newVideo of addedVideos) {
-                        // Skip if it's our own video or extension native player
-                        if (newVideo === permanentVideo) continue;
-                        if (newVideo.closest('.native-player-wrapper')) continue;
-                        if (isExtensionNativeVideo(newVideo)) continue;
-                        
-                        // Extract source from new video
-                        const newSrc = newVideo.src || newVideo.currentSrc;
-                        
-                        if (newSrc) {
-                            console.log('[MovieExtension] Detected new video element with src:', newSrc);
-                            
-                            // Update our permanent video
-                            const shouldAutoPlay = localStorage.getItem('movieExtension_autoplay_next') === 'true';
-                            changeVideoSource(newSrc, shouldAutoPlay);
-                            
-                            // Remove the site's video element
-                            newVideo.remove();
-                            
-                            console.log('[MovieExtension] Removed site video, updated permanent video');
-                            
-                            // Don't initialize new player
-                            return;
-                        } else {
-                            // Blob URL may be assigned after insertion — watch for it
-                            console.log('[MovieExtension] New video without src detected, watching for source assignment...');
-                            const srcWatcher = new MutationObserver((muts, obs) => {
-                                const src = newVideo.src || newVideo.currentSrc;
-                                if (src) {
-                                    obs.disconnect();
-                                    if (newVideo.closest('.native-player-wrapper') || isExtensionNativeVideo(newVideo)) return;
-                                    console.log('[MovieExtension] Deferred src detected:', src);
-                                    changeVideoSource(src, true);
-                                    newVideo.remove();
-                                }
-                            });
-                            srcWatcher.observe(newVideo, { attributes: true, attributeFilter: ['src'] });
-                            // Fallback for blob URLs set via JS property (not attribute)
-                            newVideo.addEventListener('loadedmetadata', function handler() {
-                                const src = newVideo.src || newVideo.currentSrc;
-                                if (src && !newVideo.closest('.native-player-wrapper') && !isExtensionNativeVideo(newVideo)) {
-                                    srcWatcher.disconnect();
-                                    console.log('[MovieExtension] Deferred src via loadedmetadata:', src);
-                                    changeVideoSource(src, true);
-                                    newVideo.remove();
-                                }
-                                newVideo.removeEventListener('loadedmetadata', handler);
-                            }, { once: true });
-                        }
-                    }
-                }
-            }
-        }
-        
-        // Call replacePlayer for initial setup
+        // One adoption path owns initial mounts and provider source changes.
+        // Never copy an arbitrary added video's URL into the current movie:
+        // it may be an advert, and a blob's MSE owner must stay with its element.
         replacePlayer();
     });
 
@@ -5170,7 +5354,7 @@
     // later unrelated DOM mutation; retain the same video/primary HLS owner.
     const mountReadyVideo = event => {
         if (event.target?.tagName !== 'VIDEO' || event.target.dataset.ghost === 'true') return;
-        if (!isExtensionNativeVideo(event.target)) return;
+        if (!isExtensionNativeVideo(event.target) && event.target !== findContentVideo()) return;
         replacePlayer();
     };
     document.addEventListener('extension-player-source-ready', mountReadyVideo);
@@ -5183,14 +5367,16 @@
         }, { once: true });
     } else {
         scheduleProviderContentErrorCheck();
-        startPlayerObservation();
+        // GhostPlayer is declared below. A document_end injection may already
+        // have a sourced video; wait until this script has initialized the class.
+        Promise.resolve().then(() => startPlayerObservation());
     }
 
 
 
     // Listen for messages from parent extension
     window.addEventListener('message', (event) => {
-        if (!event.data) return;
+        if (!isTrustedHostMessage(event)) return;
         
         if (event.data.type === 'PAUSE') {
             console.log('[MovieExtension] Received PAUSE command from parent');
@@ -5218,10 +5404,11 @@
 
 // ─── GHOST PLAYER CLASS ───
 class GhostPlayer {
-    constructor({ progressContainer, getActiveVideo, getCurrentUrl, getCurrentHls, HlsClass }) {
+    constructor({ progressContainer, getActiveVideo, getCurrentUrl, getCurrentType, getCurrentHls, HlsClass }) {
         this._progressContainer = progressContainer;
         this._getActiveVideo   = getActiveVideo;   // () => video element
         this._getCurrentUrl    = getCurrentUrl;    // () => string | null
+        this._getCurrentType   = getCurrentType || (() => null);
         this._getCurrentHls    = getCurrentHls;    // () => Hls instance | null
         this._Hls              = HlsClass;         // Hls constructor (lazy-loaded)
 
@@ -5234,6 +5421,9 @@ class GhostPlayer {
         this._timeLabel  = null;
         this._targetTime = null;
         this._destroyed = false;
+        this._hovering = false;
+        this._hideTimer = null;
+        this._showFrame = null;
 
         this._build();
         this._bind();
@@ -5259,15 +5449,12 @@ class GhostPlayer {
 
         this._tooltip.appendChild(this._ghostVideo);
         this._tooltip.appendChild(this._timeLabel);
-        document.body.appendChild(this._tooltip);
+        this._getTooltipHost().appendChild(this._tooltip);
         this._onMetadata = () => this._applyTarget();
-        this._onSeeked = () => {
-            if (this._targetTime !== null && Math.abs(this._ghostVideo.currentTime - this._targetTime) < 0.5) {
-                this._ghostVideo.style.visibility = 'visible';
-            }
-        };
+        this._onSeeked = () => this._revealFrame();
         this._ghostVideo.addEventListener('loadedmetadata', this._onMetadata);
         this._ghostVideo.addEventListener('seeked', this._onSeeked);
+        this._ghostVideo.addEventListener('loadeddata', this._onSeeked);
     }
 
     // ─── Events ───────────────────────────────────────────────────────────────
@@ -5281,6 +5468,7 @@ class GhostPlayer {
     }
 
     _handleMove(e) {
+        if (this._destroyed) return;
         const video = this._getActiveVideo();
 
         if (!video) {
@@ -5291,9 +5479,12 @@ class GhostPlayer {
         }
 
         const rect     = this._progressContainer.getBoundingClientRect();
+        if (rect.width <= 0) return;
         const ratio    = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-        const seekTime = ratio * video.duration;
+        const seekTime = Math.min(ratio * video.duration, Math.max(0, video.duration - 0.05));
 
+        this._hovering = true;
+        clearTimeout(this._hideTimer);
         this._targetTime = null;
         this._ghostVideo.style.visibility = 'hidden';
 
@@ -5304,6 +5495,8 @@ class GhostPlayer {
     }
 
     _handleLeave() {
+        this._hovering = false;
+        cancelAnimationFrame(this._showFrame);
         clearTimeout(this._debounce);
         this._targetTime = null;
         this._ghostHls?.stopLoad();
@@ -5311,7 +5504,7 @@ class GhostPlayer {
         this._tooltip.classList.remove('ghost-tooltip--visible');
 
         // Небольшая задержка перед реальным hide — плавный fade-out
-        setTimeout(() => {
+        this._hideTimer = setTimeout(() => {
             if (!this._tooltip.classList.contains('ghost-tooltip--visible')) {
                 this._tooltip.style.display = 'none';
             }
@@ -5324,27 +5517,37 @@ class GhostPlayer {
         if (this._destroyed) return;
         const url = this._getCurrentUrl();
 
-        if (!url) {
+        if (!url || url.startsWith('blob:')) {
             return;
         }
 
+        this._targetTime = time;
         if (url !== this._lastUrl) {
             this._initSource(url);
             this._lastUrl = url;
+        } else {
+            this._ghostHls?.startLoad(time);
         }
 
-        this._targetTime = time;
-        this._ghostHls?.startLoad(time);
         this._applyTarget();
     }
 
     _applyTarget() {
         if (this._destroyed || this._targetTime === null || this._ghostVideo.readyState < 1) return;
-        const ranges = this._getActiveVideo()?.seekable;
-        if (ranges?.length && !Array.from({ length: ranges.length }, (_, i) => i)
-            .some(i => this._targetTime >= ranges.start(i) && this._targetTime < ranges.end(i))) return;
+        // The preview has its own source and buffers. The primary video's MSE
+        // range can cover only the current fragment, not the requested frame.
         this._ghostVideo.currentTime = this._targetTime;
         this._ghostVideo.pause();
+        this._revealFrame();
+    }
+
+    _revealFrame() {
+        if (this._destroyed || !this._hovering || this._targetTime === null
+            || this._ghostVideo.readyState < 2 || this._ghostVideo.seeking) return;
+        if (Math.abs(this._ghostVideo.currentTime - this._targetTime) < 0.5) {
+            this._ghostVideo.style.visibility = 'visible';
+            this._ghostHls?.stopLoad();
+        }
     }
 
     _initSource(url) {
@@ -5355,10 +5558,15 @@ class GhostPlayer {
         }
         this._ghostVideo.removeAttribute('src');
 
-        const isHlsUrl = !!(url && (url.includes('.m3u8') || (url.startsWith('blob:') && this._getCurrentHls())));
+        const isHlsUrl = this._getCurrentType() === 'hls' || /\.m3u8(?:[?#]|$)/i.test(url);
+        this._Hls ||= typeof Hls !== 'undefined' ? Hls : null;
 
         if (isHlsUrl && this._Hls && this._Hls.isSupported()) {
+            const activeConfig = this._getCurrentHls?.()?.config || {};
             this._ghostHls = new this._Hls({
+                // Keep source-specific loaders/authentication from the active
+                // extension stream (including signed local torrent sessions).
+                ...activeConfig,
                 autoStartLoad: false,
                 maxBufferLength:    8,
                 maxMaxBufferLength: 16,
@@ -5366,7 +5574,19 @@ class GhostPlayer {
                 startFragPrefetch: false,
             });
             this._ghostHls.on(this._Hls.Events.ERROR, (event, data) => {
-                console.error('[GhostPlayer] ghostHls ERROR —', data.type, data.details);
+                if (data.fatal) this._ghostVideo.style.visibility = 'hidden';
+                console.debug('[GhostPlayer] Preview unavailable:', data.type, data.details);
+            });
+            this._ghostHls.on(this._Hls.Events.MANIFEST_PARSED, () => {
+                if (this._destroyed || this._targetTime === null) return;
+                const levels = this._ghostHls.levels || [];
+                const lowest = levels.reduce((best, level, index) =>
+                    level.bitrate < levels[best].bitrate ? index : best, 0);
+                if (levels.length) {
+                    this._ghostHls.startLevel = lowest;
+                    this._ghostHls.loadLevel = lowest;
+                }
+                this._ghostHls.startLoad(this._targetTime);
             });
             this._ghostHls.loadSource(url);
             this._ghostHls.attachMedia(this._ghostVideo);
@@ -5376,11 +5596,6 @@ class GhostPlayer {
             this._ghostVideo.load();
         } else {
             // MP4 или прямая ссылка
-            // NEW: Ignore blob URLs if we don't have HLS.js (likely they are MediaSource blobs that can't be reused)
-            if (url.startsWith('blob:') && !this._Hls) {
-                console.warn('[GhostPlayer] _initSource — skipping blob URL because HlsClass is unavailable');
-                return;
-            }
             this._ghostVideo.src = url;
             this._ghostVideo.load();
         }
@@ -5392,18 +5607,30 @@ class GhostPlayer {
 
     // ─── UI ───────────────────────────────────────────────────────────────────
 
+    _getTooltipHost() {
+        // Provider frames mount a fixed wrapper at the maximum z-index. A body
+        // sibling is painted beneath that wrapper even when its own z-index is
+        // very large. Keep the preview in the same player stacking context.
+        return this._progressContainer.closest('.native-player-wrapper')
+            || document.fullscreenElement || document.body;
+    }
+
     _showTooltip(clientX, barTop, time) {
-        const host = document.fullscreenElement || document.body;
+        const host = this._getTooltipHost();
         if (this._tooltip.parentElement !== host) host.appendChild(this._tooltip);
         this._tooltip.style.display = 'flex';
         // Принудительный reflow, чтобы offsetWidth был актуален
         const w = this._tooltip.offsetWidth || 180;
         const h = this._tooltip.offsetHeight || 116;
 
-        let left = clientX - w / 2;
-        left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+        const hostRect = host.getBoundingClientRect();
+        const hostWidth = host.clientWidth || window.innerWidth;
+        const scaleX = hostRect.width > 0 ? host.offsetWidth / hostRect.width : 1;
+        const scaleY = hostRect.height > 0 ? host.offsetHeight / hostRect.height : 1;
+        let left = (clientX - hostRect.left) * scaleX - w / 2;
+        left = Math.max(8, Math.min(left, hostWidth - w - 8));
 
-        const top = Math.max(8, barTop - h - 14);
+        const top = Math.max(8, (barTop - hostRect.top) * scaleY - h - 14);
 
         this._tooltip.style.left = `${left}px`;
         this._tooltip.style.top  = `${top}px`;
@@ -5411,8 +5638,9 @@ class GhostPlayer {
         this._timeLabel.textContent = this._formatTime(time);
         
         // Use requestAnimationFrame to ensure display: flex is applied before adding visibility class
-        requestAnimationFrame(() => {
-            if (!this._destroyed) this._tooltip.classList.add('ghost-tooltip--visible');
+        cancelAnimationFrame(this._showFrame);
+        this._showFrame = requestAnimationFrame(() => {
+            if (!this._destroyed && this._hovering) this._tooltip.classList.add('ghost-tooltip--visible');
         });
 
     }
@@ -5432,6 +5660,8 @@ class GhostPlayer {
         if (this._destroyed) return;
         this._destroyed = true;
         clearTimeout(this._debounce);
+        clearTimeout(this._hideTimer);
+        cancelAnimationFrame(this._showFrame);
         this._progressContainer.removeEventListener('mousemove',  this._onMove);
         this._progressContainer.removeEventListener('mouseleave', this._onLeave);
         if (this._ghostHls) {
@@ -5440,6 +5670,7 @@ class GhostPlayer {
         }
         this._ghostVideo.removeEventListener('loadedmetadata', this._onMetadata);
         this._ghostVideo.removeEventListener('seeked', this._onSeeked);
+        this._ghostVideo.removeEventListener('loadeddata', this._onSeeked);
         this._ghostVideo.pause();
         this._ghostVideo.removeAttribute('src');
         this._ghostVideo.load();

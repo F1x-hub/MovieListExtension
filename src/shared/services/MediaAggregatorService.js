@@ -157,6 +157,146 @@ class MediaAggregatorService {
     }
 
     /**
+     * Normalize a title string for semantic cross-provider compatibility comparison.
+     * @param {string} value
+     * @returns {string}
+     */
+    static normalizeTitleForCompatibility(value) {
+        return String(value || '')
+            .normalize('NFKC')
+            .toLocaleLowerCase('ru-RU')
+            .replace(/ё/g, 'е')
+            .replace(/[\u2010-\u2015\u2212]/g, '-')
+            .replace(/[\u2018\u2019\u201B\u201C\u201D\u201E\u00AB\u00BB]/g, ' ')
+            .replace(/[^\p{L}\p{N}]+/gu, ' ')
+            .trim()
+            .replace(/\s+/g, ' ');
+    }
+
+    /**
+     * Verify whether a TMDB entity is semantically compatible with a Kinopoisk entity.
+     * Guards against Frankenstein movie aggregation when upstream ID mapping contains
+     * errors or collisions (e.g. Spider-Man 3 TMDB 559 vs short film "Отражения" KP 840859).
+     * @param {Object} kpMovie
+     * @param {Object} tmdbData
+     * @returns {boolean}
+     */
+    static isTmdbCompatibleWithKinopoisk(kpMovie, tmdbData) {
+        if (!kpMovie || !tmdbData) return false;
+
+        // 1. Series vs Movie Type Discrepancy
+        const kpIsSeries = Boolean(kpMovie.isSeries || ['tv-series', 'mini-series', 'animated-series', 'tv'].includes(kpMovie.type));
+        const tmdbIsSeries = Boolean(
+            tmdbData.isSeries ||
+            tmdbData.media_type === 'tv' ||
+            tmdbData.mediaType === 'tv' ||
+            ['tv-series', 'mini-series', 'animated-series', 'tv'].includes(tmdbData.type) ||
+            Number(tmdbData.number_of_seasons) > 0 ||
+            Number(tmdbData.totalSeasons) > 0 ||
+            (Array.isArray(tmdbData.seasons) && tmdbData.seasons.length > 0)
+        );
+        if (kpIsSeries !== tmdbIsSeries) {
+            return false;
+        }
+
+        // 2. Titles comparison
+        const kpTitles = [
+            kpMovie.name,
+            kpMovie.alternativeName,
+            kpMovie.enName,
+            kpMovie.title
+        ].map(t => this.normalizeTitleForCompatibility(t)).filter(Boolean);
+
+        const tmdbTitles = [
+            tmdbData.title,
+            tmdbData.name,
+            tmdbData.alternativeName,
+            tmdbData.original_title,
+            tmdbData.originalTitle,
+            tmdbData.original_name,
+            tmdbData.originalName
+        ].map(t => this.normalizeTitleForCompatibility(t)).filter(Boolean);
+
+        const hasExactTitle = kpTitles.some(k => tmdbTitles.includes(k));
+
+        // 3. Release Year Comparison (if both have year)
+        const kpYear = Number(kpMovie.year) || 0;
+        const tmdbReleaseDate = tmdbData.release_date || tmdbData.first_air_date || '';
+        const tmdbYear = Number(tmdbData.year) || Number(String(tmdbReleaseDate).slice(0, 4)) || 0;
+        if (kpYear > 0 && tmdbYear > 0 && Math.abs(kpYear - tmdbYear) > 2) {
+            if (!hasExactTitle) {
+                return false;
+            }
+        }
+
+        // 4. Runtime / Duration discrepancy (e.g. short film <= 40 min vs feature >= 60 min)
+        const kpDuration = Number(kpMovie.movieLength || kpMovie.duration) || 0;
+        const tmdbDuration = Number(tmdbData.runtime || tmdbData.movieLength || tmdbData.duration) || 0;
+        if (kpDuration > 0 && tmdbDuration > 0) {
+            if ((kpDuration <= 40 && tmdbDuration >= 60) || (kpDuration >= 60 && tmdbDuration <= 40)) {
+                if (!hasExactTitle) {
+                    return false;
+                }
+            }
+        }
+
+        // 5. Title plausibility
+        if (kpTitles.length > 0 && tmdbTitles.length > 0) {
+            if (hasExactTitle) return true;
+
+            // Substring check (min length 3 to avoid noise)
+            for (const k of kpTitles) {
+                for (const t of tmdbTitles) {
+                    if (k.includes(t) || t.includes(k)) {
+                        if (Math.min(k.length, t.length) >= 3) return true;
+                    }
+                }
+            }
+
+            // Token overlap
+            const extractTokens = (titles) => {
+                const tokens = new Set();
+                for (const item of titles) {
+                    item.split(' ').forEach(w => {
+                        const word = w.trim();
+                        if (word.length >= 2 || /^\d+$/.test(word)) {
+                            tokens.add(word);
+                        }
+                    });
+                }
+                return tokens;
+            };
+
+            const kpTokens = extractTokens(kpTitles);
+            const tmdbTokens = extractTokens(tmdbTitles);
+            for (const tok of kpTokens) {
+                if (tmdbTokens.has(tok)) return true;
+            }
+
+            // Script check: if both have Cyrillic (or both have Latin) and 0 token overlap -> incompatible!
+            const hasCyrillic = str => /[\u0400-\u04FF]/u.test(str);
+            const hasLatin = str => /[a-zA-Z]/u.test(str);
+
+            const kpHasCyrillic = kpTitles.some(hasCyrillic);
+            const tmdbHasCyrillic = tmdbTitles.some(hasCyrillic);
+            if (kpHasCyrillic && tmdbHasCyrillic) {
+                return false;
+            }
+
+            const kpHasLatin = kpTitles.some(hasLatin);
+            const tmdbHasLatin = tmdbTitles.some(hasLatin);
+            if (kpHasLatin && tmdbHasLatin) {
+                return false;
+            }
+
+            // If scripts are disjoint and no other contradictions (duration, year, type) exist, allow cross-language translation
+            return true;
+        }
+
+        return true;
+    }
+
+    /**
      * Resolve strict media identity.
      * Decouples verification method/source from confidence.
      * Detects external ID contradictions.
@@ -1202,17 +1342,57 @@ class MediaAggregatorService {
                                 numKpId,
                                 cachedMediaType,
                                 {
-                                    kinopoiskMovie: cachedTmdbId ? null : cached,
+                                    kinopoiskMovie: cached,
                                     tmdbService: this.tmdbService
                                 }
                             );
                         }
+                        // Check if cached TMDB ID contradicts verified overrides
+                        const verifiedOverride = cachedTmdbId
+                            ? this.idMappingService?.VERIFIED_MAPPING_OVERRIDES?.[`${cachedMediaType}:${cachedTmdbId}`]
+                            : null;
+                        const isContradictedByOverride = Boolean(
+                            verifiedOverride && Number(verifiedOverride.kpId) !== numKpId
+                        );
+
+                        // Semantic compatibility check between cached KP movie and cached TMDB ID
+                        let isSemanticTmdbIncompatible = false;
+                        if (cachedTmdbId && typeof this.isTmdbCompatibleWithKinopoisk === 'function') {
+                            const tmdbStub = {
+                                id: cachedTmdbId,
+                                title: cached.originalName || cached.originalTitle || cached.englishTitle || '',
+                                original_title: cached.originalName || cached.originalTitle || '',
+                                name: cached.name || '',
+                                year: cached.year,
+                                mediaType: cachedMediaType
+                            };
+                            if (cached.originalName && !this.isTmdbCompatibleWithKinopoisk(cached, tmdbStub)) {
+                                isSemanticTmdbIncompatible = true;
+                            }
+                        }
+
+                        const isCorruptedCachedMovie = Boolean(
+                            isContradictedByOverride ||
+                            isSemanticTmdbIncompatible
+                        );
+
+                        if (isCorruptedCachedMovie) {
+                            console.warn(`[MediaAggregator] Cached movie KP ${numKpId} has corrupted/incompatible TMDB identity (${cachedTmdbId}). Purging.`);
+                            if (this.movieCacheService?.removeLocalMovieCache) {
+                                await this.movieCacheService.removeLocalMovieCache(numKpId).catch(() => {});
+                            }
+                            if (this.idMappingService?.clearMappingForKinopoiskId) {
+                                await this.idMappingService.clearMappingForKinopoiskId(numKpId, cachedMediaType).catch(() => {});
+                            }
+                        }
+
                         const needsIdentityMappingHeal = Boolean(
                             canHealFromTmdb &&
-                            (!cachedTmdbId || (reverseMapping && Number(reverseMapping.tmdbId) !== cachedTmdbId))
+                            (!cachedTmdbId || isCorruptedCachedMovie || (reverseMapping && Number(reverseMapping.tmdbId) !== cachedTmdbId))
                         );
 
                         cacheRefreshRequired = Boolean(
+                            isCorruptedCachedMovie ||
                             needsIdentityMappingHeal ||
                             needsLogoSchemaHeal ||
                             needsCollectionSchemaHeal
@@ -1304,7 +1484,7 @@ class MediaAggregatorService {
                 id: numKpId,
                 kinopoiskId: numKpId,
                 name: options.title || tmdbData?.name || tmdbData?.title || '',
-                alternativeName: tmdbData?.originalName || tmdbData?.original_title || '',
+                alternativeName: tmdbData?.originalName || tmdbData?.original_title || tmdbData?.alternativeName || '',
                 year: Number(options.year || tmdbData?.year || String(tmdbData?.release_date || '').slice(0, 4)) || null,
                 type: options.mediaType === 'tv' ? 'tv-series' : 'movie',
                 externalId: { tmdb: candidateTmdbId },
@@ -1430,6 +1610,28 @@ class MediaAggregatorService {
             } catch (tmdbErr) {
                 console.warn(`[MediaAggregator] Optional TMDB enrichment failed for KP ${numKpId}:`, tmdbErr);
                 tmdbData = null;
+            }
+        }
+
+        // Validate TMDB enrichment compatibility against the Kinopoisk entity
+        // to prevent Frankenstein DTOs from corrupt/colliding mappings.
+        if (tmdbData && !MediaAggregatorService.isTmdbCompatibleWithKinopoisk(kpMovie, tmdbData)) {
+            console.warn(`[MediaAggregator] Rejecting incompatible TMDB metadata (${tmdbId}) for Kinopoisk movie (${numKpId}) to prevent Frankenstein aggregation:`, {
+                kpTitle: kpMovie?.name || kpMovie?.alternativeName,
+                kpYear: kpMovie?.year,
+                tmdbTitle: tmdbData?.name || tmdbData?.title,
+                tmdbYear: tmdbData?.year || tmdbData?.release_date
+            });
+            tmdbData = null;
+            tmdbId = null;
+            reverseMapping = null;
+            isManual = false;
+            if (this.idMappingService && typeof this.idMappingService.clearMappingForKinopoiskId === 'function') {
+                try {
+                    await this.idMappingService.clearMappingForKinopoiskId(numKpId, mediaType);
+                } catch (clearErr) {
+                    console.warn(`[MediaAggregator] Failed clearing incompatible mapping for KP ${numKpId}:`, clearErr);
+                }
             }
         }
 

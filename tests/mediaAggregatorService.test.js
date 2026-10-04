@@ -1275,6 +1275,173 @@ console.log('\n--- 6. Testing MediaAggregatorService async getMovieDetails flow 
 
     console.log('  ✅ Phase 1F Lazy Season Details & Cache Sizing passed');
 
+    // =========================================================================
+    // 10. Testing Cross-Provider Compatibility & Frankenstein Rejection Contract
+    // =========================================================================
+    console.log('--- 10. Testing Cross-Provider Compatibility & Frankenstein Rejection Contract ---');
+
+    const kpShortFilm = {
+        id: 840859,
+        kinopoiskId: 840859,
+        name: 'Отражения',
+        year: 2007,
+        type: 'movie',
+        movieLength: 18,
+        description: 'Короткометражный фильм',
+        posterUrl: 'https://avatars.mds.yandex.net/get-kinopoisk-image/123/otrazheniya.jpg'
+    };
+
+    const tmdbSpiderman3 = {
+        id: 559,
+        tmdbId: 559,
+        title: 'Человек-паук 3: Враг в отражении',
+        original_title: 'Spider-Man 3',
+        year: 2007,
+        release_date: '2007-05-01',
+        runtime: 139,
+        logoUrl: 'https://image.tmdb.org/t/p/original/spiderman3_logo.png',
+        collection: { tmdbId: 556, name: 'Человек-паук (Трилогия)' }
+    };
+
+    const kpSpiderman3 = {
+        id: 81692,
+        kinopoiskId: 81692,
+        name: 'Человек-паук 3: Враг в отражении',
+        alternativeName: 'Spider-Man 3',
+        year: 2007,
+        type: 'movie',
+        movieLength: 139,
+        description: 'Питер Паркер сталкивается с новыми врагами...',
+        posterUrl: 'https://avatars.mds.yandex.net/get-kinopoisk-image/123/spiderman3.jpg'
+    };
+
+    // 10.1 isTmdbCompatibleWithKinopoisk must reject short film vs feature film mismatch with zero title match
+    const isMismatched = MediaAggregatorService.isTmdbCompatibleWithKinopoisk(kpShortFilm, tmdbSpiderman3);
+    assert.strictEqual(isMismatched, false, 'Short film "Отражения" (18m) must be rejected for Spider-Man 3 (139m)');
+
+    // 10.2 isTmdbCompatibleWithKinopoisk must accept true Spider-Man 3 matching both name and alternativeName
+    const isMatched = MediaAggregatorService.isTmdbCompatibleWithKinopoisk(kpSpiderman3, tmdbSpiderman3);
+    assert.strictEqual(isMatched, true, 'True Spider-Man 3 (KP 81692) must be compatible with TMDB 559');
+
+    // 10.3 isTmdbCompatibleWithKinopoisk must reject series vs movie
+    const seriesKp = { name: 'Во все тяжкие', type: 'tv-series', isSeries: true, year: 2008 };
+    const movieTmdb = { title: 'Во все тяжкие', media_type: 'movie', year: 2008 };
+    assert.strictEqual(MediaAggregatorService.isTmdbCompatibleWithKinopoisk(seriesKp, movieTmdb), false, 'Series vs Movie must be incompatible');
+
+    // 10.3b isTmdbCompatibleWithKinopoisk must accept TMDB normalized movie with empty seasons array (seasons: [])
+    const normalizedMovieWithEmptySeasons = {
+        name: 'Курьер',
+        alternativeName: 'Runner',
+        type: 'movie',
+        year: 2026,
+        seasons: [],
+        seasonsInfo: []
+    };
+    const kpRunner2026 = {
+        name: 'Курьер',
+        alternativeName: 'Runner',
+        type: 'movie',
+        year: 2026
+    };
+    assert.strictEqual(
+        MediaAggregatorService.isTmdbCompatibleWithKinopoisk(kpRunner2026, normalizedMovieWithEmptySeasons),
+        true,
+        'Normalized TMDB movie with seasons: [] must be recognized as compatible movie, not series'
+    );
+
+    // 10.4 getMovieDetails must discard incompatible TMDB metadata and clear corrupt mapping
+    let clearedKpId = null;
+    const mockIdMapper = {
+        async resolveTmdbIdByKinopoiskId() {
+            // Simulate stale reverse index returning TMDB 559 for KP 840859
+            return { tmdbId: 559, mediaType: 'movie' };
+        },
+        async clearMappingForKinopoiskId(kpId) {
+            clearedKpId = kpId;
+            return 1;
+        }
+    };
+    const mockTmdb = {
+        isConfigured: () => true,
+        async getMovieDetails(tmdbId) {
+            if (tmdbId === 559) return tmdbSpiderman3;
+            return null;
+        }
+    };
+    const mockKpService = {
+        async getMovieById(kpId) {
+            if (kpId === 840859) return kpShortFilm;
+            return null;
+        }
+    };
+
+    const aggregatorInstance = new MediaAggregatorService({
+        kinopoiskService: mockKpService,
+        tmdbService: mockTmdb,
+        idMappingService: mockIdMapper,
+        movieCacheService: null
+    });
+
+    const sanitizedDto = await aggregatorInstance.getMovieDetails(840859, { forceRefresh: true });
+    assert.strictEqual(sanitizedDto.kinopoiskId, 840859, 'Kinopoisk ID must be 840859');
+    assert.strictEqual(sanitizedDto.name, 'Отражения', 'Display title must remain Отражения');
+    assert.strictEqual(sanitizedDto.tmdbId, null, 'Incompatible TMDB ID must be stripped to prevent Frankenstein DTO');
+    assert.strictEqual(sanitizedDto.logoUrl, null, 'Spider-Man logo must NOT bleed into Отражения');
+    assert.strictEqual(sanitizedDto.collection, null, 'Spider-Man collection must NOT bleed into Отражения');
+    assert.strictEqual(clearedKpId, 840859, 'Incompatible mapping must be purged via clearMappingForKinopoiskId');
+    console.log('  ✅ 10.1-10.4 TMDB compatibility & Frankenstein rejection contract verified');
+
+    // 10.5 Warm cache corruption purge contract:
+    // If a cached movie DTO in MovieCacheService already has an incompatible TMDB ID
+    // (e.g. KP 840859 cached with TMDB 559 that contradicts VERIFIED_MAPPING_OVERRIDES),
+    // getMovieDetails must detect the contradiction, purge local movie cache, and re-aggregate.
+    let localCacheRemoved = false;
+    let reverseMappingCleared = false;
+    const mockCorruptedMovieCache = {
+        async getCachedMovie(kpId) {
+            if (kpId === 840859) {
+                return {
+                    kinopoiskId: 840859,
+                    name: 'Отражения',
+                    tmdbId: 559,
+                    originalName: 'Spider-Man 3',
+                    year: 2007,
+                    _meta: { schemaVersion: 1, providers: { tmdb: { logoSelectionVersion: 2, logoChecked: true, collectionChecked: true } } },
+                    identity: { status: 'VERIFIED', tmdbId: 559 }
+                };
+            }
+            return null;
+        },
+        async removeLocalMovieCache(kpId) {
+            if (kpId === 840859) localCacheRemoved = true;
+        }
+    };
+
+    const mockIdMapperWithOverrides = {
+        VERIFIED_MAPPING_OVERRIDES: {
+            'movie:559': { tmdbId: 559, mediaType: 'movie', kpId: 81692 }
+        },
+        async resolveTmdbIdByKinopoiskId() { return null; },
+        async clearMappingForKinopoiskId(kpId) {
+            if (kpId === 840859) reverseMappingCleared = true;
+        }
+    };
+
+    const aggregatorWithCache = new MediaAggregatorService({
+        kinopoiskService: mockKpService,
+        tmdbService: mockTmdb,
+        idMappingService: mockIdMapperWithOverrides,
+        movieCacheService: mockCorruptedMovieCache
+    });
+
+    const healedWarmDto = await aggregatorWithCache.getMovieDetails(840859);
+    assert.strictEqual(localCacheRemoved, true, 'Corrupted local movie cache must be purged on read');
+    assert.strictEqual(reverseMappingCleared, true, 'Corrupted mapping must be purged from IdMappingService');
+    assert.strictEqual(healedWarmDto.kinopoiskId, 840859, 'Healed DTO has valid KP ID');
+    assert.strictEqual(healedWarmDto.name, 'Отражения', 'Healed DTO has valid title');
+    assert.strictEqual(healedWarmDto.tmdbId, null, 'Incompatible TMDB ID was purged from DTO');
+    console.log('  ✅ 10.5 Warm cache corruption purge contract verified');
+
     console.log('\n🎉 ALL MediaAggregatorService V1 Tests Passed Successfully!\n');
 })().catch(err => {
     console.error('❌ MediaAggregatorService Test Failed:', err);

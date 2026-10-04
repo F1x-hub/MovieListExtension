@@ -8,7 +8,7 @@ const baseParserSource = fs.readFileSync(
     new URL('../src/shared/services/parsers/BaseParserService.js', import.meta.url),
     'utf8'
 );
-const parserContext = vm.createContext({ console, window: {} });
+const parserContext = vm.createContext({ console, window: {}, URL });
 vm.runInContext(baseParserSource, parserContext);
 const BaseParserService = parserContext.window.BaseParserService;
 assert.doesNotMatch(baseParserSource, /mountHlsQualitySelector/,
@@ -93,6 +93,77 @@ new IframeParser().renderPlayer(iframeContainer, mixedSources);
 assert.match(iframeContainer.innerHTML, /^<iframe/);
 assert.match(iframeContainer.innerHTML, /https:\/\/embed\.test\/movie/);
 assert.doesNotMatch(iframeContainer.innerHTML, /movie\.mp4/);
+
+const venomIframeContainer = { children: [], innerHTML: '', tagName: 'DIV', className: '' };
+new IframeParser().renderPlayer(venomIframeContainer, [{
+    name: 'Ex-FS embed',
+    url: 'https://api.variyt.ws/embed/kp/472329?season=6',
+    type: 'iframe'
+}]);
+assert.match(
+    venomIframeContainer.innerHTML,
+    /santabarbaranoads=1/,
+    'Venom provider iframes must be created in the provider-supported no-ad mode'
+);
+assert.match(
+    venomIframeContainer.innerHTML,
+    /referrerpolicy="no-referrer"/,
+    'Venom provider iframes must hide the extension referrer so the provider reads its own query'
+);
+assert.match(venomIframeContainer.innerHTML, /season=6/);
+assert.match(venomIframeContainer.innerHTML, /movieExtensionSite=example.test/);
+const exfsEmbedContainer = { children: [], innerHTML: '', tagName: 'DIV', className: '' };
+new ExFsParser().renderPlayer(exfsEmbedContainer, [{
+    name: 'Ex-FS', url: 'https://api.variyt.ws/embed/kp/88124', type: 'iframe'
+}]);
+assert.match(exfsEmbedContainer.innerHTML, /movieExtensionSite=ex-fs.net/,
+    'embed navigation must carry its real source site for the HTTP Referer rule');
+const nextembedContainer = { children: [], innerHTML: '', tagName: 'DIV', className: '' };
+new IframeParser().renderPlayer(nextembedContainer, [{
+    name: 'KinoGo', url: 'https://api.nextembed.ws/embed/movie/31631', type: 'iframe'
+}]);
+assert.match(nextembedContainer.innerHTML, /santabarbaranoads=1/);
+assert.match(nextembedContainer.innerHTML, /movieExtensionSite=example.test/);
+assert.match(nextembedContainer.innerHTML, /referrerpolicy="no-referrer"/);
+const embedRules = JSON.parse(fs.readFileSync(new URL('../src/background/provider-embed-rules.json', import.meta.url), 'utf8'));
+const extensionManifest = JSON.parse(fs.readFileSync(new URL('../manifest.json', import.meta.url), 'utf8'));
+assert.ok(extensionManifest.declarative_net_request.rule_resources.some(rule =>
+    rule.enabled && rule.path === 'src/background/provider-embed-rules.json'));
+for (const rule of embedRules) {
+    assert.ok(rule.condition.requestDomains.includes('nextembed.ws'),
+        'the current KinoGo provider must receive the same source-site embed context');
+    const referer = rule.action.requestHeaders[0];
+    const host = new URL(referer.value).hostname;
+    assert.equal(referer.header, 'referer');
+    assert.equal(referer.operation, 'set');
+    assert.deepEqual(rule.condition.resourceTypes, ['sub_frame']);
+    assert.deepEqual(rule.condition.initiatorDomains, ['dgdejomdgiabgcfijcdhjefijdfiemhd']);
+    const pattern = new RegExp(rule.condition.regexFilter);
+    assert.ok(pattern.test(`https://api.variyt.ws/embed/kp/9617?movieExtensionSite=${host}&season=1`));
+    assert.ok(!pattern.test(`https://api.variyt.ws/embed/kp/9617?movieExtensionSite=${host}.evil.test`));
+    assert.ok(!pattern.test('https://api.variyt.ws/embed/kp/9617'));
+    for (const domain of rule.condition.requestDomains) {
+        assert.ok(extensionManifest.host_permissions.includes(`https://*.${domain}/*`),
+            `header modification requires host permission for ${domain}`);
+    }
+}
+
+const ordinaryIframeContainer = { children: [], innerHTML: '', tagName: 'DIV', className: '' };
+new IframeParser().renderPlayer(ordinaryIframeContainer, [{
+    name: 'Ordinary embed',
+    url: 'https://embed.test/movie?season=6',
+    type: 'iframe'
+}]);
+assert.doesNotMatch(
+    ordinaryIframeContainer.innerHTML,
+    /santabarbaranoads/,
+    'ordinary website embeds must keep their original URL'
+);
+assert.doesNotMatch(
+    ordinaryIframeContainer.innerHTML,
+    /referrerpolicy="no-referrer"/,
+    'ordinary website embeds must keep their original referrer behavior'
+);
 
 const videoContainer = { children: [], innerHTML: '', tagName: 'DIV', className: '' };
 new VideoParser().renderPlayer(videoContainer, mixedSources);

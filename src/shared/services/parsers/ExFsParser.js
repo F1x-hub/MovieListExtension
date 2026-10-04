@@ -37,7 +37,7 @@ class ExFsParser extends BaseParserService {
 
             const searchUrl = `${this.baseUrl}/index.php?do=search`;
             const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
-            const request = () => fetch(searchUrl, {
+            const request = () => this.fetchWithTimeout(searchUrl, {
                 method: 'POST',
                 body: formData
             });
@@ -70,7 +70,7 @@ class ExFsParser extends BaseParserService {
         try {
             const url = typeof searchResult === 'string' ? searchResult : searchResult.url;
             const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
-            const request = () => fetch(url);
+            const request = () => this.fetchWithTimeout(url);
             const response = perf ? await perf.trackRequest('EXFS_SOURCE', { purpose: 'getVideoSources', url }, request) : await request();
             if (!response.ok) {
                 throw new Error(`Failed to load movie page: ${response.status}`);
@@ -210,7 +210,11 @@ class ExFsParser extends BaseParserService {
             }
         });
 
-        // Check for iframes
+        // Check for iframes. The 'Плеер Full HD' tab stays the primary source.
+        // Other tabs are kept only as lower-priority fallbacks when they embed
+        // a provider the extension supports in-frame; trailers and unknown
+        // players are skipped.
+        const fallbackPlayers = [];
         panes.forEach((pane) => {
             const iframe = pane.querySelector('iframe');
             if (iframe && iframe.src) {
@@ -219,12 +223,20 @@ class ExFsParser extends BaseParserService {
                 const tabLink = doc.querySelector(`.nav-tabs a[href="#${id}"]`);
                 if (tabLink) name = tabLink.textContent.trim();
 
-                // Filter: Only allow 'Плеер Full HD'
                 if (name === 'Плеер Full HD') {
-                    name = 'Ex-FS';
-                    players.push({ name, url: iframe.src, type: 'iframe' });
+                    players.push({ name: 'Ex-FS', url: iframe.src, type: 'iframe' });
+                } else if (!/трейлер|тизер|trailer/i.test(name)
+                    && ExFsParser.isSupportedProviderFrameUrl(iframe.src)) {
+                    fallbackPlayers.push({ name: 'Ex-FS', url: iframe.src, type: 'iframe' });
                 }
             }
+        });
+
+        const knownUrls = new Set(players.map(player => player.url));
+        fallbackPlayers.forEach(player => {
+            if (knownUrls.has(player.url)) return;
+            knownUrls.add(player.url);
+            players.push(player);
         });
 
         return players;
@@ -240,7 +252,7 @@ class ExFsParser extends BaseParserService {
      */
     async getMovieDetails(url) {
         try {
-            const response = await fetch(url);
+            const response = await this.fetchWithTimeout(url);
             if (!response.ok) throw new Error('Failed to load page');
             const html = await response.text();
             

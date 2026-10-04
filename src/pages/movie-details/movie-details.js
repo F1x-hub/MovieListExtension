@@ -85,8 +85,6 @@ class MovieDetailsManager {
         this.currentVideoUrl = '';
         this.currentSources = [];
         this.currentHls = null;
-        this.hlsRecoveryTimer = null;
-        this.hlsRecoveryAttempt = 0;
         this.hlsPlaybackState = '';
         this.mediaPlayerService = typeof MediaPlayerService !== 'undefined' ? new MediaPlayerService() : null;
         this.mediaPlayerReady = false;
@@ -368,6 +366,7 @@ class MovieDetailsManager {
             pickerEpisodesList: document.getElementById('pickerEpisodesList'),
             videoContainer: document.getElementById('videoContainer'),
             closeVideoBtn: document.getElementById('closeVideoBtn'),
+            minimizeVideoBtn: document.getElementById('minimizeVideoBtn'),
             sourceButtonsContainer: document.getElementById('sourceButtonsContainer'),
             torrentSourcePanel: document.getElementById('torrentSourcePanel'),
             torrentSourceStatus: document.getElementById('torrentSourceStatus'),
@@ -389,6 +388,13 @@ class MovieDetailsManager {
             watchRoomParticipantCount: document.getElementById('watchRoomParticipantCount'),
             watchRoomMembersPopover: document.getElementById('watchRoomMembersPopover'),
             watchRoomMembersList: document.getElementById('watchRoomMembersList'),
+            watchRoomInvitePopover: document.getElementById('watchRoomInvitePopover'),
+            watchRoomInviteTitle: document.getElementById('watchRoomInviteTitle'),
+            watchRoomInviteHint: document.getElementById('watchRoomInviteHint'),
+            watchRoomInviteInput: document.getElementById('watchRoomInviteInput'),
+            watchRoomInviteError: document.getElementById('watchRoomInviteError'),
+            watchRoomInviteCancelBtn: document.getElementById('watchRoomInviteCancelBtn'),
+            watchRoomInviteSubmitBtn: document.getElementById('watchRoomInviteSubmitBtn'),
             watchRoomControls: document.getElementById('watchRoomControls'),
             watchRoomStatus: document.getElementById('watchRoomStatus'),
 
@@ -545,14 +551,29 @@ class MovieDetailsManager {
         if (this.elements.closeVideoBtn) {
             this.elements.closeVideoBtn.addEventListener('click', () => this.closeVideoModal());
         }
+        if (this.elements.minimizeVideoBtn) {
+            this.elements.minimizeVideoBtn.addEventListener('click', () => this.minimizePlayer());
+        }
         if (this.elements.watchRoomControls) {
             // Capture the action before a stale page-level listener can handle
             // the same click as a different room action after an extension reload.
             this.elements.watchRoomControls.addEventListener('click', (event) => this.handleWatchRoomAction(event), true);
         }
+        if (this.elements.watchRoomInvitePopover) {
+            this.elements.watchRoomInvitePopover.addEventListener('submit', (event) => {
+                event.preventDefault();
+                void this.submitWatchRoomInvite();
+            });
+        }
+        if (this.elements.videoContainer && typeof MutationObserver !== 'undefined') {
+            // PlayerSourceLifecycle writes data-source-state for every source
+            // path; mirror it onto the active source button.
+            new MutationObserver(() => this.refreshSourceButtonStates())
+                .observe(this.elements.videoContainer, { attributes: true, attributeFilter: ['data-source-state'] });
+        }
         if (this.elements.videoPlayerModal) {
             this.elements.videoPlayerModal.addEventListener('mousedown', (e) => {
-                if (e.target === this.elements.videoPlayerModal) this.closeVideoModal();
+                if (e.target === this.elements.videoPlayerModal) this.minimizePlayer();
             });
         }
         if (this.elements.playerEpisodesListBtn) {
@@ -668,54 +689,7 @@ class MovieDetailsManager {
         window.addEventListener('focus', () => {
             if (!this.elements?.torrentSourcePanel?.hidden) void this.refreshTorrentDownloads();
         });
-        document.addEventListener('keydown', (event) => {
-            const playerOpen = this.elements.videoPlayerModal?.style.display !== 'none' && !this.elements.videoPlayerModal?.classList.contains('minimized-overlay');
-            const trailerOpen = this.elements.trailerModal?.style.display !== 'none';
-            const ratingOpen = this.elements.ratingModal?.style.display !== 'none';
-            const reviewReaderOpen = this.elements.reviewReaderModal?.style.display !== 'none';
-            const announceModal = document.getElementById('announceModal');
-            const announceOpen = announceModal?.style.display !== 'none';
-            if (event.key === 'Tab') {
-                this.trapDialogFocus(event, announceOpen ? announceModal : (reviewReaderOpen ? this.elements.reviewReaderModal : (trailerOpen ? this.elements.trailerModal : (ratingOpen ? this.elements.ratingModal : (playerOpen ? this.elements.videoPlayerModal : null)))));
-                return;
-            }
-            if (event.key !== 'Escape') return;
-            if (announceOpen) {
-                event.preventDefault();
-                this.closeAnnounceModal();
-                return;
-            }
-            if (reviewReaderOpen) {
-                event.preventDefault();
-                this.closeReviewReader();
-                return;
-            }
-            if (playerOpen && !this.elements.torrentSourcePanel?.hidden && this.elements.torrentSourceDisclosure?.open) {
-                event.preventDefault();
-                this.elements.torrentSourceDisclosure.open = false;
-                this.elements.torrentSourceDisclosure.querySelector('summary')?.focus();
-                return;
-            }
-            if (this.isEpisodePickerOpen && playerOpen) {
-                event.preventDefault();
-                event.stopPropagation();
-                this.closeEpisodePicker();
-                return;
-            }
-            if (trailerOpen) {
-                event.preventDefault();
-                this.closeTrailerModal();
-                return;
-            }
-            if (ratingOpen) {
-                event.preventDefault();
-                this.closeRatingModal();
-                return;
-            }
-            if (!playerOpen) return;
-            event.preventDefault();
-            this.closeVideoModal();
-        });
+        this.registerModalLayers();
 
         // Trailer Modal Listeners
         if (this.elements.closeTrailerBtn) {
@@ -739,7 +713,7 @@ class MovieDetailsManager {
             if (closeRestoreBtn) {
                 closeRestoreBtn.addEventListener('mousedown', (e) => {
                     e.stopPropagation();
-                    this.destroyPlayer();
+                    this.closeVideoModal();
                 });
             }
         }
@@ -770,6 +744,9 @@ class MovieDetailsManager {
                 this.handleWatchlistToggle(movieId, actionBtn);
             } else if (action === 'add-to-random-pool' && movieId) {
                 this.handleAddToRandomPool(movieId, actionBtn);
+            } else if (action === 'force-refresh-movie' && movieId) {
+                document.querySelectorAll('.mc-menu-dropdown.active').forEach(m => m.classList.remove('active'));
+                this.handleForceRefreshMovie(movieId);
             } else if (action === 'toggle-collection' && movieId) {
                 const collectionId = actionBtn.getAttribute('data-collection-id');
                 if (collectionId) this.handleToggleCollection(movieId, collectionId, actionBtn);
@@ -1485,7 +1462,7 @@ class MovieDetailsManager {
     goBackToSearch() {
         // If embedded, signal parent to close and restore native player
         if (this.isEmbedded && window.parent !== window) {
-            window.parent.postMessage({ type: 'CLOSE_EXTENSION_PLAYER' }, '*');
+            this.postToEmbeddingParent({ type: 'CLOSE_EXTENSION_PLAYER' });
             return;
         }
         // Try to go back in history, otherwise go to search page
@@ -1502,6 +1479,9 @@ class MovieDetailsManager {
         try {
             if (shouldShowLoading) {
                 this.page.showLoader();
+                if (this.elements.movieDetailsContainer) {
+                    this.elements.movieDetailsContainer.innerHTML = '';
+                }
             }
             
             const mediaAggregator = (typeof firebaseManager !== 'undefined' && firebaseManager.getMediaAggregatorService)
@@ -2003,13 +1983,18 @@ class MovieDetailsManager {
         }
     }
 
+    renderAnnounceButton(movieId) {
+        const id = this.escapeHtml ? this.escapeHtml(String(movieId ?? '')) : String(movieId ?? '');
+        return `<button class="btn btn-lg announce-movie-btn" type="button" data-movie-id="${id}"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248l-2.04 9.613c-.147.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.566-4.46c.537-.194 1.006.131.907.607z"/></svg> Анонсировать</button>`;
+    }
+
     patchAdminControl(isAdmin, pageContext) {
         if (!this.isPageContextCurrent(pageContext) || !this.authVerified) return;
         const actions = this.elements.movieDetailsContainer?.querySelector('.movie-actions-container');
         if (!actions) return;
         const existing = actions.querySelector('.announce-movie-btn');
         if (isAdmin && !existing) {
-            actions.insertAdjacentHTML('beforeend', `<button class="btn btn-lg announce-movie-btn" data-movie-id="${this.selectedMovie.kinopoiskId}"><span aria-hidden="true">📣</span> Аннонсировать</button>`);
+            actions.insertAdjacentHTML('beforeend', this.renderAnnounceButton(this.selectedMovie.kinopoiskId));
         } else if (!isAdmin && existing) existing.remove();
     }
 
@@ -2173,239 +2158,6 @@ class MovieDetailsManager {
                 this.revalidateDynamicData(movie);
             }
         }
-    }
-
-    formatTheNumbersAmount(value) {
-        const amount = Number(value);
-        if (!Number.isFinite(amount)) return '';
-        return `$${Math.round(amount).toLocaleString('en-US')}`;
-    }
-
-    formatTheNumbersUpdatedAt(value) {
-        const timestamp = Number(value);
-        if (!Number.isFinite(timestamp) || timestamp <= 0) return '';
-        try {
-            return new Intl.DateTimeFormat('ru-RU', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-            }).format(new Date(timestamp));
-        } catch {
-            return '';
-        }
-    }
-
-    renderTheNumbersChart(movie, { inline = false } = {}) {
-        const points = movie?.boxOffice?.chart?.points;
-        if (!Array.isArray(points) || points.length < 2) return '';
-
-        const width = 720;
-        const height = 320;
-        const padding = { top: 24, right: 18, bottom: 44, left: 120 };
-        const plotWidth = width - padding.left - padding.right;
-        const plotHeight = height - padding.top - padding.bottom;
-        const numericValues = points.flatMap(point => [
-            point.cumulative,
-            point.band?.bottom10,
-            point.band?.median,
-            point.band?.top10
-        ].filter(value => Number.isFinite(Number(value)) && Number(value) >= 0));
-        const maxValue = Math.max(...numericValues, 0);
-        if (!Number.isFinite(maxValue) || maxValue <= 0) return '';
-
-        const hasAmount = value => Number.isFinite(Number(value)) && Number(value) >= 0;
-        const xAt = index => padding.left + (index / Math.max(points.length - 1, 1)) * plotWidth;
-        const yAt = value => padding.top + plotHeight - (Number(value) / maxValue) * plotHeight;
-        const pathFor = getter => {
-            let path = '';
-            let open = false;
-            points.forEach((point, index) => {
-                const value = getter(point);
-                if (!hasAmount(value)) {
-                    open = false;
-                    return;
-                }
-                path += `${open ? 'L' : 'M'}${xAt(index).toFixed(2)},${yAt(value).toFixed(2)} `;
-                open = true;
-            });
-            return path.trim();
-        };
-        const bandPaths = [];
-        let bandSegment = [];
-        const flushBand = () => {
-            if (bandSegment.length >= 2) {
-                const upper = bandSegment.map(point => `${xAt(point.index).toFixed(2)},${yAt(point.top).toFixed(2)}`);
-                const lower = bandSegment.slice().reverse().map(point => `${xAt(point.index).toFixed(2)},${yAt(point.bottom).toFixed(2)}`);
-                bandPaths.push(`M${upper.join(' L')} L${lower.join(' L')} Z`);
-            }
-            bandSegment = [];
-        };
-        points.forEach((point, index) => {
-            if (hasAmount(point.band?.top10) && hasAmount(point.band?.bottom10)) {
-                bandSegment.push({ index, top: point.band.top10, bottom: point.band.bottom10 });
-            } else {
-                flushBand();
-            }
-        });
-        flushBand();
-
-        const tickCount = 4;
-        const yTicks = Array.from({ length: tickCount + 1 }, (_, index) => {
-            const value = maxValue * (index / tickCount);
-            const y = yAt(value);
-            return `
-                <line class="the-numbers-chart__gridline" x1="${padding.left}" y1="${y.toFixed(2)}" x2="${(width - padding.right).toFixed(2)}" y2="${y.toFixed(2)}"></line>
-                <text class="the-numbers-chart__axis-label" x="${padding.left - 12}" y="${(y + 4.5).toFixed(2)}" text-anchor="end">${this.escapeHtml(this.formatTheNumbersAmount(value))}</text>`;
-        }).join('');
-
-        const tickIndexes = [...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])];
-        const xTicks = tickIndexes.map(index => {
-            const date = points[index]?.date || '';
-            const label = /^\d{4}-\d{2}-\d{2}$/.test(date)
-                ? `${date.slice(8, 10)}.${date.slice(5, 7)}.${date.slice(0, 4)}`
-                : date;
-            return `<text class="the-numbers-chart__axis-label" x="${xAt(index).toFixed(2)}" y="${height - 14}" text-anchor="middle">${this.escapeHtml(label)}</text>`;
-        }).join('');
-
-        const pointTooltips = points.map((point, index) => hasAmount(point.cumulative) ? `
-            <circle class="the-numbers-chart__point-hit-area" cx="${xAt(index).toFixed(2)}" cy="${yAt(point.cumulative).toFixed(2)}" r="8" tabindex="0"
-                data-chart-index="${index}"
-                data-chart-date="${this.escapeHtml(point.date)}"
-                data-chart-cume="${point.cumulative}"
-                data-chart-median="${hasAmount(point.band?.median) ? point.band.median : ''}"
-                data-chart-bottom10="${hasAmount(point.band?.bottom10) ? point.band.bottom10 : ''}"
-                data-chart-top10="${hasAmount(point.band?.top10) ? point.band.top10 : ''}"
-                aria-label="${this.escapeHtml(point.date)} — ${this.escapeHtml(this.formatTheNumbersAmount(point.cumulative))}">
-                <title>${this.escapeHtml(point.date)} · ${this.escapeHtml(this.formatTheNumbersAmount(point.cumulative))}</title>
-            </circle>
-            <circle class="the-numbers-chart__data-point${index === points.length - 1 ? ' the-numbers-chart__data-point--current' : ''}" cx="${xAt(index).toFixed(2)}" cy="${yAt(point.cumulative).toFixed(2)}" r="${index === points.length - 1 ? '4' : '3'}"></circle>` : '').join('');
-        const medianPointMarkup = points.map((point, index) => hasAmount(point.band?.median)
-            ? `<circle class="the-numbers-chart__median-point" data-chart-index="${index}" cx="${xAt(index).toFixed(2)}" cy="${yAt(point.band.median).toFixed(2)}" r="2.5"></circle>`
-            : '').join('');
-        const activePointMarkup = `
-                            <g class="the-numbers-chart__active-points" aria-hidden="true" style="display:none">
-                                <line class="the-numbers-chart__crosshair" x1="0" y1="${padding.top}" x2="0" y2="${padding.top + plotHeight}"></line>
-                                <circle class="the-numbers-chart__active-point the-numbers-chart__active-point--cume" cx="0" cy="0" r="5"></circle>
-                                <circle class="the-numbers-chart__active-point the-numbers-chart__active-point--median" cx="0" cy="0" r="4"></circle>
-                            </g>`;
-        const sourceUrl = this.escapeHtml(movie?.boxOffice?.sourceUrl || '');
-        const chartClass = inline ? 'the-numbers-chart the-numbers-chart--inline' : 'the-numbers-chart';
-
-        return `
-            <details class="${chartClass}">
-                <summary class="the-numbers-chart__summary">
-                    <span class="the-numbers-chart__title">Динамика сборов</span>
-                    <span class="the-numbers-chart__summary-meta">Domestic · накопительный итог</span>
-                    <span class="the-numbers-chart__chevron" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
-                </summary>
-                <div class="the-numbers-chart__content">
-                    <div class="the-numbers-chart__legend" aria-label="Легенда графика">
-                        <span><i class="the-numbers-chart__legend-line the-numbers-chart__legend-line--cume"></i>Сборы</span>
-                        <span><i class="the-numbers-chart__legend-line the-numbers-chart__legend-line--median"></i>Median</span>
-                        <span><i class="the-numbers-chart__legend-band"></i>Bottom 10% — Top 10%</span>
-                    </div>
-                    <div class="the-numbers-chart__viewport" data-chart-view-width="${width}" data-chart-plot-left="${padding.left}" data-chart-plot-width="${plotWidth}" data-chart-point-count="${points.length}">
-                        <svg class="the-numbers-chart__svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="График накопительных domestic-сборов The Numbers">
-                            ${yTicks}
-                            <path class="the-numbers-chart__band" d="${bandPaths.join(' ')}"></path>
-                            <path class="the-numbers-chart__median" d="${pathFor(point => point.band?.median)}"></path>
-                            <path class="the-numbers-chart__cume" d="${pathFor(point => point.cumulative)}"></path>
-                            ${medianPointMarkup}
-                            ${pointTooltips}
-                            ${activePointMarkup}
-                            ${xTicks}
-                            <text class="the-numbers-chart__axis-title" x="16" y="${padding.top + plotHeight / 2}" text-anchor="middle" transform="rotate(-90 16 ${padding.top + plotHeight / 2})">USD</text>
-                        </svg>
-                        <div class="the-numbers-chart__tooltip" role="tooltip" hidden></div>
-                    </div>
-                    <div class="the-numbers-chart__footer">
-                        <span>${points.length} точек · данные The Numbers</span>
-                        ${sourceUrl ? `<a href="${sourceUrl}" target="_blank" rel="noopener noreferrer">Источник</a>` : ''}
-                    </div>
-                </div>
-            </details>`;
-    }
-
-    renderFinanceMetaItem(movie, kinopoiskService = null) {
-        const service = kinopoiskService || new KinopoiskService();
-        const budgetStr = service.formatCurrency(movie?.budget);
-        const feesUsaStr = service.formatCurrency(movie?.fees?.usa);
-        const feesWorldStr = service.formatCurrency(movie?.fees?.world);
-        const feesRussiaStr = service.formatCurrency(movie?.fees?.russia);
-        const boxOffice = movie?.boxOffice;
-        const theatrical = boxOffice?.theatrical || {};
-        const physicalMedia = boxOffice?.physicalMedia || {};
-        const hasAmount = amount => amount !== null
-            && amount !== undefined
-            && Number.isFinite(Number(amount))
-            && Number(amount) > 0;
-        const boxOfficeRows = [
-            ['США:', theatrical.domestic],
-            ['Международные:', theatrical.international],
-            ['Мировые:', theatrical.worldwide]
-        ].filter(([, amount]) => hasAmount(amount))
-            .map(([label, amount]) => [label, this.formatTheNumbersAmount(amount)]);
-        const physicalRows = [
-            ['DVD:', physicalMedia.dvdSales],
-            ['Blu-ray:', physicalMedia.bluRaySales],
-            ['Всего:', physicalMedia.total]
-        ].filter(([, item]) => hasAmount(item?.amount))
-            .map(([label, item]) => [
-                label,
-                `${this.formatTheNumbersAmount(item.amount)}${item.estimated ? ' <span class="meta-finance-estimated">оценка</span>' : ''}`
-            ]);
-        const chartHtml = this.renderTheNumbersChart(movie, { inline: true });
-        const hasTheNumbersBoxOffice = boxOfficeRows.length > 0;
-        const hasKinopoiskFinance = Boolean(
-            budgetStr
-            || feesRussiaStr
-            || (!hasAmount(theatrical.domestic) && feesUsaStr)
-            || (!hasAmount(theatrical.worldwide) && feesWorldStr)
-        );
-        const hasTheNumbers = hasTheNumbersBoxOffice || physicalRows.length > 0 || Boolean(chartHtml);
-        if (!hasKinopoiskFinance && !hasTheNumbers) return '';
-
-        const sourceUrl = this.escapeHtml(boxOffice?.sourceUrl || '');
-        const updatedAt = this.formatTheNumbersUpdatedAt(boxOffice?.fetchedAt);
-        const isStale = boxOffice?.status === 'stale';
-        const renderRows = rows => rows.map(([label, value]) => `
-            <div class="meta-finance-row"><span class="meta-finance-tag">${label}</span><span class="meta-finance-val">${value}</span></div>
-        `).join('');
-
-        return `
-            <div class="meta-item meta-item--finance">
-                <span class="meta-label">Финансы</span>
-                <div class="meta-value meta-finance-group">
-                    ${hasKinopoiskFinance ? `
-                    <div class="meta-finance-subgroup">
-                        <span class="meta-finance-heading">Kinopoisk</span>
-                        ${renderRows([
-                            ['Бюджет:', budgetStr],
-                            ...(!hasAmount(theatrical.worldwide) ? [['В мире:', feesWorldStr]] : []),
-                            ...(!hasAmount(theatrical.domestic) ? [['В США:', feesUsaStr]] : []),
-                            ['В России:', feesRussiaStr]
-                        ].filter(([, value]) => value))}
-                    </div>` : ''}
-                    ${boxOfficeRows.length > 0 ? `
-                    <div class="meta-finance-subgroup meta-finance-subgroup--the-numbers">
-                        <span class="meta-finance-heading">Кассовые сборы · The Numbers</span>
-                        ${renderRows(boxOfficeRows)}
-                    </div>` : ''}
-                    ${physicalRows.length > 0 ? `
-                    <div class="meta-finance-subgroup meta-finance-subgroup--physical">
-                        <span class="meta-finance-heading">Продажи физических носителей</span>
-                        ${renderRows(physicalRows)}
-                    </div>` : ''}
-                    ${hasTheNumbers ? `
-                    <div class="meta-finance-source ${isStale ? 'meta-finance-source--stale' : ''}">
-                        ${isStale ? 'Данные устарели' : (updatedAt ? `Обновлено: ${this.escapeHtml(updatedAt)}` : 'Данные загружены')}
-                        ${sourceUrl ? ` · <a href="${sourceUrl}" target="_blank" rel="noopener noreferrer">Источник</a>` : ''}
-                    </div>` : ''}
-                    ${chartHtml}
-                </div>
-            </div>`;
     }
 
     updateFinanceSection(movie, pageContext = this.capturePageContext(movie)) {
@@ -2780,7 +2532,7 @@ class MovieDetailsManager {
             const countryName = typeof country === 'string' ? country : (country?.name || country?.country || '');
             if (!countryName || typeof countryName !== 'string') return '';
             const entry = Object.entries(i18n.locales.ru.random.countries).find(([k, v]) => v.toLowerCase() === countryName.toLowerCase());
-            return entry ? i18n.get(`random.countries.${entry[0]}`) : countryName;
+            return entry ? i18n.get(`random.countries.${entry[0]}`) : this.localizeCountryName(countryName);
         }).filter(Boolean).join(', ') : '';
 
         const logoUrl = movie.logoUrl || '';
@@ -2832,15 +2584,11 @@ class MovieDetailsManager {
                                 <span class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
                                 ${i18n.get('movie_details.watch_movie')}
                             </button>
-                            <button class="btn btn-accent btn-lg rate-movie-btn" data-movie-id="${movie.kinopoiskId}">
+                            <button class="btn btn-secondary btn-lg rate-movie-btn" data-movie-id="${movie.kinopoiskId}">
                                 <span class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></span>
                                 ${i18n.get('movie_details.rate_title')}
                             </button>
-                            ${this.isAdmin && this.authVerified ? `
-                            <button class="btn btn-lg announce-movie-btn" data-movie-id="${movie.kinopoiskId}">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248l-2.04 9.613c-.147.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.566-4.46c.537-.194 1.006.131.907.607z"/></svg>
-                                Анонсировать
-                            </button>` : ''}
+                            ${this.isAdmin && this.authVerified ? this.renderAnnounceButton(movie.kinopoiskId) : ''}
                         </div>
                     </div>
                     
@@ -2895,6 +2643,14 @@ class MovieDetailsManager {
                                     </button>
                                     
                                     <div class="mc-menu-collections-slot">${this.renderCollectionsMenu(movie)}</div>
+
+                                    <div class="mc-menu-divider"></div>
+                                    <button class="mc-menu-item" data-action="force-refresh-movie"
+                                            data-movie-id="${movie.kinopoiskId}"
+                                            title="${this.escapeHtml(i18n.get('movie_details.refresh_data') || 'Обновить данные')}">
+                                        <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg></span>
+                                        <span class="mc-menu-item-text">${i18n.get('movie_details.refresh_data') || 'Обновить данные'}</span>
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -2915,7 +2671,7 @@ class MovieDetailsManager {
                             <div class="tab-content">
                                 <div class="tab-pane active" id="tab-about">
                                     <div class="movie-detail-meta-grid">
-                                        <div class="meta-item"><span class="meta-label">${i18n.get('movie_details.meta.year')}</span><span class="meta-value">${year}</span></div>
+                                        <div class="meta-item"><span class="meta-label">${this.metaLabel('movie_details.meta.year')}</span><span class="meta-value">${year}</span></div>
                                         ${statusLabel ? `<div class="meta-item meta-item-status"><span class="meta-label">Статус</span><span class="meta-value status-badge status-badge--${statusBadgeClass}">${this.escapeHtml(statusLabel)}</span></div>` : ''}
                                         ${tmdbRating > 0 ? `
                                         <div class="meta-item meta-item--tmdb">
@@ -2925,13 +2681,13 @@ class MovieDetailsManager {
                                                 ${tmdbVotes > 0 ? `<span class="meta-tmdb-separator">·</span><span class="meta-tmdb-votes">${i18n.get('movie_details.votes_count').replace('{count}', this.formatVotes(tmdbVotes))}</span>` : ''}
                                             </span>
                                         </div>` : ''}
-                                        ${localizedCountries ? `<div class="meta-item"><span class="meta-label">${i18n.get('movie_details.meta.country')}</span><span class="meta-value">${localizedCountries}</span></div>` : ''}
+                                        ${localizedCountries ? `<div class="meta-item"><span class="meta-label">${this.metaLabel('movie_details.meta.country')}</span><span class="meta-value">${localizedCountries}</span></div>` : ''}
                                         ${productionCompaniesHtml ? `<div class="meta-item meta-item--companies"><span class="meta-label">Студии</span><span class="meta-value">${productionCompaniesHtml}</span></div>` : ''}
-                                        <div class="meta-item"><span class="meta-label">${i18n.get('movie_details.meta.genre')}</span><span class="meta-value">${localizedGenres}</span></div>
-                                        <div class="meta-item"><span class="meta-label">${i18n.get('movie_details.meta.slogan')}</span><span class="meta-value">${movie.slogan ? `«${this.escapeHtml(movie.slogan)}»` : '—'}</span></div>
-                                        ${directorsStr ? `<div class="meta-item"><span class="meta-label">${i18n.get('movie_details.meta.director')}</span><span class="meta-value">${directorsStr}</span></div>` : ''}
-                                        ${writersStr ? `<div class="meta-item"><span class="meta-label">${i18n.get('movie_details.meta.writer')}</span><span class="meta-value">${writersStr}</span></div>` : ''}
-                                        ${producersStr ? `<div class="meta-item"><span class="meta-label">${i18n.get('movie_details.meta.producer')}</span><span class="meta-value">${producersStr}</span></div>` : ''}
+                                        ${localizedGenres ? `<div class="meta-item"><span class="meta-label">${this.metaLabel('movie_details.meta.genre')}</span><span class="meta-value">${localizedGenres}</span></div>` : ''}
+                                        ${movie.slogan ? `<div class="meta-item"><span class="meta-label">${this.metaLabel('movie_details.meta.slogan')}</span><span class="meta-value">«${this.escapeHtml(movie.slogan)}»</span></div>` : ''}
+                                        ${directorsStr ? `<div class="meta-item"><span class="meta-label">${this.metaLabel('movie_details.meta.director')}</span><span class="meta-value">${directorsStr}</span></div>` : ''}
+                                        ${writersStr ? `<div class="meta-item"><span class="meta-label">${this.metaLabel('movie_details.meta.writer')}</span><span class="meta-value">${writersStr}</span></div>` : ''}
+                                        ${producersStr ? `<div class="meta-item"><span class="meta-label">${this.metaLabel('movie_details.meta.producer')}</span><span class="meta-value">${producersStr}</span></div>` : ''}
                                         ${hasSecondaryCrew ? `
                                         <div class="meta-item meta-item--secondary-crew">
                                             <button type="button" class="meta-toggle-btn meta-crew-toggle" data-action="toggle-crew" aria-expanded="${isCrewExpanded}" aria-controls="metaSecondaryCrew">
@@ -2941,19 +2697,19 @@ class MovieDetailsManager {
                                                 </svg>
                                             </button>
                                             <div class="meta-secondary-crew" id="metaSecondaryCrew" ${isCrewExpanded ? '' : 'hidden'}>
-                                                ${operatorsStr ? `<div class="meta-item meta-item--nested"><span class="meta-label">${i18n.get('movie_details.meta.operator')}</span><span class="meta-value">${operatorsStr}</span></div>` : ''}
-                                                ${composersStr ? `<div class="meta-item meta-item--nested"><span class="meta-label">${i18n.get('movie_details.meta.composer')}</span><span class="meta-value">${composersStr}</span></div>` : ''}
-                                                ${designersStr ? `<div class="meta-item meta-item--nested"><span class="meta-label">${i18n.get('movie_details.meta.designer')}</span><span class="meta-value">${designersStr}</span></div>` : ''}
-                                                ${editorsStr ? `<div class="meta-item meta-item--nested"><span class="meta-label">${i18n.get('movie_details.meta.editor')}</span><span class="meta-value">${editorsStr}</span></div>` : ''}
+                                                ${operatorsStr ? `<div class="meta-item meta-item--nested"><span class="meta-label">${this.metaLabel('movie_details.meta.operator')}</span><span class="meta-value">${operatorsStr}</span></div>` : ''}
+                                                ${composersStr ? `<div class="meta-item meta-item--nested"><span class="meta-label">${this.metaLabel('movie_details.meta.composer')}</span><span class="meta-value">${composersStr}</span></div>` : ''}
+                                                ${designersStr ? `<div class="meta-item meta-item--nested"><span class="meta-label">${this.metaLabel('movie_details.meta.designer')}</span><span class="meta-value">${designersStr}</span></div>` : ''}
+                                                ${editorsStr ? `<div class="meta-item meta-item--nested"><span class="meta-label">${this.metaLabel('movie_details.meta.editor')}</span><span class="meta-value">${editorsStr}</span></div>` : ''}
                                             </div>
                                         </div>` : ''}
                                         ${this.renderFinanceMetaItem(movie, kinopoiskService)}
-                                        ${premiereRussiaStr ? `<div class="meta-item"><span class="meta-label">${i18n.get('movie_details.meta.premiere_russia')}</span><span class="meta-value">${premiereRussiaStr}</span></div>` : ''}
-                                        ${premiereWorldStr ? `<div class="meta-item"><span class="meta-label">${i18n.get('movie_details.meta.premiere_world')}</span><span class="meta-value">${premiereWorldStr}</span></div>` : ''}
-                                        ${premiereDigitalStr ? `<div class="meta-item"><span class="meta-label">${i18n.get('movie_details.meta.premiere_digital')}</span><span class="meta-value">${this.escapeHtml(premiereDigitalStr)}</span></div>` : ''}
+                                        ${premiereRussiaStr ? `<div class="meta-item"><span class="meta-label">${this.metaLabel('movie_details.meta.premiere_russia')}</span><span class="meta-value">${premiereRussiaStr}</span></div>` : ''}
+                                        ${premiereWorldStr ? `<div class="meta-item"><span class="meta-label">${this.metaLabel('movie_details.meta.premiere_world')}</span><span class="meta-value">${premiereWorldStr}</span></div>` : ''}
+                                        ${premiereDigitalStr ? `<div class="meta-item"><span class="meta-label">${this.metaLabel('movie_details.meta.premiere_digital')}</span><span class="meta-value">${this.escapeHtml(premiereDigitalStr)}</span></div>` : ''}
                                         ${criticRatingsHtml ? `<div class="meta-item meta-item--critics"><span class="meta-label">Критики</span><span class="meta-value">${criticRatingsHtml}</span></div>` : ''}
-                                        ${ageDisplayStr ? `<div class="meta-item"><span class="meta-label">${i18n.get('movie_details.meta.age_rating')}</span><span class="meta-value">${this.escapeHtml(ageDisplayStr)}</span></div>` : ''}
-                                        ${duration ? `<div class="meta-item"><span class="meta-label">${i18n.get('movie_details.meta.duration')}</span><span class="meta-value">${Math.floor(duration / 60)} ${i18n.get('movie_details.meta.hours')} ${duration % 60} ${i18n.get('movie_details.meta.minutes')}</span></div>` : ''}
+                                        ${ageDisplayStr ? `<div class="meta-item"><span class="meta-label">${this.metaLabel('movie_details.meta.age_rating')}</span><span class="meta-value">${this.escapeHtml(ageDisplayStr)}</span></div>` : ''}
+                                        ${duration ? `<div class="meta-item"><span class="meta-label">${this.metaLabel('movie_details.meta.duration')}</span><span class="meta-value">${Math.floor(duration / 60)} ${i18n.get('movie_details.meta.hours')} ${duration % 60} ${i18n.get('movie_details.meta.minutes')}</span></div>` : ''}
                                     </div>
                                 </div>
                                 
@@ -3033,16 +2789,17 @@ class MovieDetailsManager {
             const uri = await this.spotifyService.searchSoundtrack(searchTitle, year);
             
             if (uri) {
-                const embedUrl = this.spotifyService.getEmbedUrl(uri);
-                container.innerHTML = `
-                    <iframe src="${embedUrl}" 
-                            width="100%" 
-                            height="380" 
-                            frameBorder="0" 
-                            allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" 
-                            allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" 
-                            loading="lazy">
-                    </iframe>`;
+                const embedUrl = this.getSafeWebUrl(this.spotifyService.getEmbedUrl(uri));
+                if (!embedUrl) throw new Error('Spotify returned an unsupported embed URL');
+                const frame = document.createElement('iframe');
+                frame.src = embedUrl;
+                frame.width = '100%';
+                frame.height = '380';
+                frame.setAttribute('frameborder', '0');
+                frame.setAttribute('allow', 'autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture');
+                frame.loading = 'lazy';
+                frame.title = 'Spotify';
+                container.replaceChildren(frame);
             } else {
                 container.innerHTML = `<span class="soundtrack-placeholder">Саундтрек не найден</span>`;
             }
@@ -3105,9 +2862,29 @@ class MovieDetailsManager {
                 generation: this.pageGeneration,
                 kinopoiskId
             };
+            this.resetMovieStateForNavigation(kinopoiskId);
         }
 
         return this.capturePageContext();
+    }
+
+    resetMovieStateForNavigation(kinopoiskId = null) {
+        this.selectedMovie = null;
+        this.postRenderEnrichmentMovieId = null;
+        this.franchiseState = null;
+        if (this.franchiseObserver) {
+            try { this.franchiseObserver.disconnect(); } catch { /* ignore */ }
+            this.franchiseObserver = null;
+        }
+        if (this.preloadTimeout) {
+            clearTimeout(this.preloadTimeout);
+            this.preloadTimeout = null;
+        }
+        if (this.isVideoModalOpen) {
+            try { this.closeVideoModal(); } catch { /* ignore */ }
+        }
+        this.ratingReviewTouched = false;
+        this.currentRating = 0;
     }
 
     capturePageContext(movie = this.selectedMovie) {
@@ -3134,6 +2911,103 @@ class MovieDetailsManager {
     invalidatePageGeneration() {
         this.pageGeneration += 1;
         this.activePageContext = null;
+    }
+
+    getModalStack() {
+        if (!this.modalStack) {
+            this.modalStack = new MovieDetailsModalStack({
+                trapFocus: (event, dialog) => this.trapDialogFocus(event, dialog)
+            });
+            this.modalStack.attach(document);
+        }
+        return this.modalStack;
+    }
+
+    isDialogShown(dialog) {
+        return Boolean(dialog) && dialog.style.display !== 'none';
+    }
+
+    getPlayerModal() {
+        if (!this.playerModal) {
+            this.playerModal = new MovieDetailsPlayerModal({
+                getModal: () => this.elements?.videoPlayerModal,
+                getRestoreDock: () => document.getElementById('restorePlayerBtn'),
+                getCloseButton: () => this.elements?.closeVideoBtn,
+                getRestoreTitle: () => {
+                    if (!this.selectedMovie) return '';
+                    const isEnglish = i18n.currentLocale === 'en';
+                    return (isEnglish && this.selectedMovie.alternativeName)
+                        ? this.selectedMovie.alternativeName
+                        : (this.selectedMovie.name || 'Movie');
+                },
+                openDialog: (dialog) => this.openAccessibleDialog(dialog),
+                closeDialog: (dialog) => this.closeAccessibleDialog(dialog),
+                pausePlayback: () => this.tryPauseVideo()
+            });
+        }
+        return this.playerModal;
+    }
+
+    isVideoPlayerShown() {
+        return this.getPlayerModal().isShown();
+    }
+
+    // Escape/Tab precedence, topmost first. Player popovers sit above the
+    // player dialog; trailer and rating dialogs open above the player.
+    registerModalLayers() {
+        const stack = this.getModalStack();
+        const announceModal = () => document.getElementById('announceModal');
+        stack.register('announce', {
+            order: 10,
+            isOpen: () => this.isDialogShown(announceModal()),
+            close: () => this.closeAnnounceModal(),
+            getFocusContainer: announceModal
+        });
+        stack.register('review-reader', {
+            order: 20,
+            isOpen: () => this.isDialogShown(this.elements.reviewReaderModal),
+            close: () => this.closeReviewReader(),
+            getFocusContainer: () => this.elements.reviewReaderModal
+        });
+        stack.register('torrent-source-disclosure', {
+            order: 30,
+            isOpen: () => this.isVideoPlayerShown()
+                && !this.elements.torrentSourcePanel?.hidden
+                && Boolean(this.elements.torrentSourceDisclosure?.open),
+            close: () => {
+                this.elements.torrentSourceDisclosure.open = false;
+                this.elements.torrentSourceDisclosure.querySelector('summary')?.focus();
+            }
+        });
+        stack.register('watch-room-invite', {
+            order: 40,
+            isOpen: () => this.isVideoPlayerShown() && this.elements.watchRoomInvitePopover?.hidden === false,
+            close: () => this.closeWatchRoomInvite({ restoreFocus: true })
+        });
+        stack.register('episode-picker', {
+            order: 50,
+            stopPropagation: true,
+            isOpen: () => this.isVideoPlayerShown() && Boolean(this.isEpisodePickerOpen),
+            close: () => this.closeEpisodePicker()
+        });
+        stack.register('trailer', {
+            order: 60,
+            isOpen: () => this.isDialogShown(this.elements.trailerModal),
+            close: () => this.closeTrailerModal(),
+            getFocusContainer: () => this.elements.trailerModal
+        });
+        stack.register('rating', {
+            order: 70,
+            isOpen: () => this.isDialogShown(this.elements.ratingModal),
+            close: () => this.closeRatingModal(),
+            getFocusContainer: () => this.elements.ratingModal
+        });
+        stack.register('video-player', {
+            order: 80,
+            isOpen: () => this.isVideoPlayerShown(),
+            close: () => this.closeVideoModal(),
+            getFocusContainer: () => this.elements.videoPlayerModal
+        });
     }
 
     openAccessibleDialog(dialog, trigger = document.activeElement) {
@@ -4144,33 +4018,6 @@ class MovieDetailsManager {
         return framesHTML ? `<div class="movie-frames-section"><h4>${i18n.get('movie_details.frames')}</h4><div class="movie-frames-grid">${framesHTML}</div></div>` : '';
     }
 
-    translateStatus(status) {
-        if (!status || typeof status !== 'string') return null;
-        const s = status.trim();
-        const map = {
-            'released': 'Выпущен',
-            'post production': 'Постпродакшн',
-            'in production': 'В производстве',
-            'planned': 'Запланирован',
-            'returning series': 'Онгоинг',
-            'ended': 'Завершён',
-            'canceled': 'Отменён',
-            'cancelled': 'Отменён',
-            'pilot': 'Пилот'
-        };
-        return map[s.toLowerCase()] || s;
-    }
-
-    getStatusBadgeClass(status) {
-        if (!status || typeof status !== 'string') return 'default';
-        const s = status.trim().toLowerCase();
-        if (s === 'released') return 'released';
-        if (s === 'in production' || s === 'post production' || s === 'planned') return 'upcoming';
-        if (s === 'returning series') return 'ongoing';
-        if (s === 'ended' || s === 'canceled' || s === 'cancelled') return 'ended';
-        return 'default';
-    }
-
     translateVideoType(type) {
         if (!type || typeof type !== 'string') return 'Видео';
         const map = {
@@ -4381,44 +4228,6 @@ class MovieDetailsManager {
                 </div>
             </div>
         `;
-    }
-
-    renderProductionCompanies(companies) {
-        if (!Array.isArray(companies) || companies.length === 0) return '';
-        const valid = companies.filter(c => c && c.name && typeof c.name === 'string' && c.name.trim().length > 0);
-        if (valid.length === 0) return '';
-        
-        const visible = valid.slice(0, 6);
-        const remaining = valid.length - 6;
-
-        return `
-            <div class="production-companies-list">
-                ${visible.map(c => `
-                    <span class="production-company-pill" title="${this.escapeHtml(c.name)}${c.originCountry ? ` (${this.escapeHtml(c.originCountry)})` : ''}">
-                        ${c.logoUrl ? `<img src="${this.escapeHtml(c.logoUrl)}" alt="${this.escapeHtml(c.name)}" class="production-company-logo" data-fallback="company-logo" loading="lazy" decoding="async">` : ''}
-                        <span class="production-company-name">${this.escapeHtml(c.name)}</span>
-                    </span>
-                `).join('')}
-                ${remaining > 0 ? `<span class="production-company-more">+${remaining}</span>` : ''}
-            </div>
-        `;
-    }
-
-    renderCriticRatings(criticRatings) {
-        if (!criticRatings || typeof criticRatings !== 'object') return '';
-        const items = [];
-        if (criticRatings.international && Number(criticRatings.international.rating) > 0) {
-            const r = parseFloat(Number(criticRatings.international.rating).toFixed(1));
-            const v = Number(criticRatings.international.votes) || 0;
-            items.push(`Мировые: <strong class="critic-score">${r}%</strong>${v > 0 ? ` <span class="critic-votes">(${v})</span>` : ''}`);
-        }
-        if (criticRatings.russian && Number(criticRatings.russian.rating) > 0) {
-            const r = parseFloat(Number(criticRatings.russian.rating).toFixed(1));
-            const v = Number(criticRatings.russian.votes) || 0;
-            items.push(`Российские: <strong class="critic-score">${r}%</strong>${v > 0 ? ` <span class="critic-votes">(${v})</span>` : ''}`);
-        }
-        if (items.length === 0) return '';
-        return items.join(' • ');
     }
 
     /**
@@ -5102,15 +4911,19 @@ class MovieDetailsManager {
             await this.toggleCommentReaction(button);
         });
 
-        document.addEventListener('keydown', (event) => {
-            if (event.key !== 'Escape') return;
-            const picker = document.querySelector('[data-comment-reaction-picker]:not([hidden])');
-            const reactionBar = picker?.closest('[data-comment-reactions]');
-            const trigger = reactionBar?.querySelector('[data-action="toggle-comment-reaction-picker"]');
-            if (!picker || !reactionBar || typeof CommentReactionBar === 'undefined') return;
-            event.preventDefault();
-            CommentReactionBar.setPickerOpen(reactionBar, false);
-            trigger?.focus();
+        this.getModalStack().register('comment-reaction-picker', {
+            order: 100,
+            isOpen: () => Boolean(
+                typeof CommentReactionBar !== 'undefined'
+                && document.querySelector('[data-comment-reaction-picker]:not([hidden])')?.closest('[data-comment-reactions]')
+            ),
+            close: () => {
+                const picker = document.querySelector('[data-comment-reaction-picker]:not([hidden])');
+                const reactionBar = picker?.closest('[data-comment-reactions]');
+                const trigger = reactionBar?.querySelector('[data-action="toggle-comment-reaction-picker"]');
+                CommentReactionBar.setPickerOpen(reactionBar, false);
+                trigger?.focus();
+            }
         });
     }
 
@@ -6071,29 +5884,6 @@ class MovieDetailsManager {
         } catch { return null; }
     }
 
-    async validateSourceUrl(url) {
-        if (!url || typeof url !== 'string') return false;
-        // Pseudo-protocols (parser:*, vidsrc:*) are handled internally and do not need HTTP preflight
-        if (!url.startsWith('http://') && !url.startsWith('https://')) return true;
-        try {
-            const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-            const timeoutId = controller ? setTimeout(() => controller.abort(), 2500) : null;
-            const res = await fetch(url, {
-                method: 'HEAD',
-                signal: controller?.signal
-            });
-            if (timeoutId) clearTimeout(timeoutId);
-            // 404 Not Found or 410 Gone indicates expired or dead signed balancer URL
-            if (res.status === 404 || res.status === 410) {
-                return false;
-            }
-            return true;
-        } catch {
-            // Network timeouts or method-not-allowed responses on HEAD are treated as unconfirmed (allow normal load)
-            return true;
-        }
-    }
-
     async preloadSources(movie) {
         if (!movie) return;
         const requestedMediaType = movie.type || (movie.isSeries ? 'tv-series' : null);
@@ -6156,9 +5946,11 @@ class MovieDetailsManager {
      * Start source extraction as parser results arrive, but release the watch
      * path only when the highest-priority settled parser with usable sources
      * is known. This keeps provider priority deterministic without waiting for
-     * unrelated slow parsers to finish their searches.
+     * unrelated slow parsers to finish their searches. After
+     * `priorityDeadlineMs` a still-pending higher-priority parser no longer
+     * blocks the watch path: the best already-ready parser is released instead.
      */
-    startProgressiveSourceDiscovery(movie) {
+    startProgressiveSourceDiscovery(movie, { priorityDeadlineMs = 6000 } = {}) {
         const movieType = movie?.type || (movie?.isSeries ? 'tv-series' : null);
         const parsers = (this.parserRegistry?.getAll?.() || [])
             .filter(parser => parser?.getPlayerType?.() !== 'custom')
@@ -6172,19 +5964,30 @@ class MovieDetailsManager {
         const allSources = [];
         const sourceTasks = [];
         let firstResolved = false;
+        let priorityDeadlinePassed = false;
+        let priorityDeadlineTimer = null;
         let resolveFirstSources;
         const firstSources = new Promise(resolve => {
             resolveFirstSources = resolve;
         });
+        const releaseFirstSources = (sources) => {
+            firstResolved = true;
+            if (priorityDeadlineTimer !== null) clearTimeout(priorityDeadlineTimer);
+            priorityDeadlineTimer = null;
+            resolveFirstSources(sources);
+        };
 
         const resolveFirstIfReady = () => {
             if (firstResolved) return;
             for (const parser of parsers) {
                 const state = states.get(parser.id);
-                if (!state.searchSettled || !state.sourceSettled) return;
+                if (!state.searchSettled || !state.sourceSettled) {
+                    // A slow mirror must not hold the watch path indefinitely.
+                    if (!priorityDeadlinePassed) return;
+                    continue;
+                }
                 if (state.sources.length > 0) {
-                    firstResolved = true;
-                    resolveFirstSources(this.normalizeVideoSources(state.sources));
+                    releaseFirstSources(this.normalizeVideoSources(state.sources));
                     return;
                 }
             }
@@ -6192,10 +5995,16 @@ class MovieDetailsManager {
                 const state = states.get(stateParser.id);
                 return state.searchSettled && state.sourceSettled;
             })) {
-                firstResolved = true;
-                resolveFirstSources([]);
+                releaseFirstSources([]);
             }
         };
+        if (typeof setTimeout === 'function' && priorityDeadlineMs > 0) {
+            priorityDeadlineTimer = setTimeout(() => {
+                priorityDeadlineTimer = null;
+                priorityDeadlinePassed = true;
+                resolveFirstIfReady();
+            }, priorityDeadlineMs);
+        }
 
         const collectSources = async (result, parser) => {
             const state = states.get(parser.id);
@@ -6261,6 +6070,34 @@ class MovieDetailsManager {
         return { firstSources, finalize };
     }
 
+    /**
+     * Source lists expire after minutes but were only removed when the same
+     * movie was opened again, so every visited title left a key behind. Drop
+     * expired or unreadable entries and keep at most `maxEntries` newest ones.
+     */
+    pruneSourceCache({ maxEntries = 30, now = Date.now() } = {}) {
+        try {
+            const prefix = 'movie_sources_';
+            const live = [];
+            for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+                const key = localStorage.key(index);
+                if (!key?.startsWith(prefix)) continue;
+                let cached = null;
+                try { cached = JSON.parse(localStorage.getItem(key)); } catch { /* unreadable */ }
+                const timestamp = Number(cached?.timestamp);
+                const ttl = typeof cached?.ttl === 'number' ? cached.ttl : 15 * 60 * 1000;
+                if (!Number.isFinite(timestamp) || now - timestamp > ttl) {
+                    localStorage.removeItem(key);
+                } else {
+                    live.push({ key, timestamp });
+                }
+            }
+            live.sort((left, right) => right.timestamp - left.timestamp)
+                .slice(maxEntries)
+                .forEach(({ key }) => localStorage.removeItem(key));
+        } catch { /* storage unavailable */ }
+    }
+
     saveSourcesToCache(movieId, sources, mediaType = null) {
         try {
             const hasShortLivedTokens = Array.isArray(sources) && sources.some(s => {
@@ -6268,6 +6105,7 @@ class MovieDetailsManager {
                 return u.includes('cinemar.cc') || u.includes('stravers.live') || u.includes('allarknow.online');
             });
             const ttl = hasShortLivedTokens ? (5 * 60 * 1000) : (15 * 60 * 1000);
+            this.pruneSourceCache();
             localStorage.setItem(`movie_sources_${movieId}`, JSON.stringify({
                 timestamp: Date.now(),
                 ttl,
@@ -6579,10 +6417,16 @@ class MovieDetailsManager {
         });
         this._canonicalPickerSyncTimers?.forEach(timer => clearTimeout(timer));
         this._canonicalPickerSyncTimers = [];
-        if (activeAdapter && ['exfs', 'kinogo'].includes(activeProviderId) && nativeBridgeSourceAvailable && !providerMarkedUnavailable) {
+        // Canonical picker mode forces the provider's episode arrows on, so it
+        // must stay off for films.
+        if (isSeries && activeAdapter && ['exfs', 'kinogo'].includes(activeProviderId) && nativeBridgeSourceAvailable && !providerMarkedUnavailable) {
 
             const dispatchCanonicalPickerMode = () => {
                 const iframes = Array.from(this.elements.videoContainer?.querySelectorAll?.('iframe') || []);
+                const selectionContext = this.playbackController?.getSelectionContext?.() || {
+                    selection,
+                    selectionVersion: null
+                };
                 console.info('[ExFsBridgeTrace] canonical picker dispatch', {
                     provider: activeProviderId,
                     iframeCount: iframes.length,
@@ -6596,10 +6440,14 @@ class MovieDetailsManager {
                 iframes.forEach((iframe, index) => {
                     const enableCanonicalPicker = () => {
                         try {
-                            iframe.contentWindow?.postMessage({
+                            this.postToPlayerFrame(iframe, {
                                 type: 'SET_CANONICAL_PICKER_MODE',
-                                enabled: true
-                            }, '*');
+                                enabled: true,
+                                providerId: activeProviderId,
+                                seasonNumber: selectionContext.selection?.seasonNumber ?? null,
+                                episodeNumber: selectionContext.selection?.episodeNumber ?? null,
+                                selectionVersion: selectionContext.selectionVersion ?? null
+                            });
                             console.info('[ExFsBridgeTrace] canonical picker message sent', {
                                 provider: activeProviderId,
                                 iframeIndex: index,
@@ -6849,9 +6697,20 @@ class MovieDetailsManager {
             if (seasons.length > 1) {
                 seasonsSection.style.display = 'flex';
                 seasonsList.innerHTML = seasons.map(s => {
-                    const isSelected = s.seasonNumber === browsingSeason;
+                    const isSelected = Number(s.seasonNumber) === browsingSeason;
                     return `<button type="button" class="picker-season-btn ${isSelected ? 'active' : ''}" data-season-number="${s.seasonNumber}" data-season-url="${s.url || ''}" aria-pressed="${isSelected}">${s.name || `${s.seasonNumber} сезон`}</button>`;
                 }).join('');
+
+                const activeSeasonButton = seasonsList.querySelector('.picker-season-btn.active');
+                if (activeSeasonButton) {
+                    const listBounds = seasonsList.getBoundingClientRect();
+                    const buttonBounds = activeSeasonButton.getBoundingClientRect();
+                    if (buttonBounds.left < listBounds.left) {
+                        seasonsList.scrollLeft -= listBounds.left - buttonBounds.left;
+                    } else if (buttonBounds.right > listBounds.right) {
+                        seasonsList.scrollLeft += buttonBounds.right - listBounds.right;
+                    }
+                }
 
                 seasonsList.querySelectorAll('.picker-season-btn').forEach(btn => {
                     btn.addEventListener('click', async (e) => {
@@ -7078,6 +6937,13 @@ class MovieDetailsManager {
         const movie = this.selectedMovie;
         const selection = this.playbackController?.getSelection();
         if (!selection || selection.seasonNumber == null || selection.episodeNumber == null) return false;
+        const selectionContext = typeof this.playbackController?.getSelectionContext === 'function'
+            ? this.playbackController.getSelectionContext()
+            : { selection, selectionVersion: null };
+        const selectionVersion = selectionContext.selectionVersion;
+        const selectionIdentity = `${selection.kinopoiskId || movie.kinopoiskId || ''}:`
+            + `${selection.seasonNumber}:${selection.episodeNumber}:`
+            + `${selection.providerId || this.playbackController?.getActiveProvider?.() || ''}`;
 
         const loadedEpisodes = this.currentEpisodes || null;
         const loadedSeasonNumber = this.selectedSeasonNumber || null;
@@ -7106,6 +6972,30 @@ class MovieDetailsManager {
         // Flush departing episode's progress before switching to adjacent episode (Phase 3E Part 13)
         if (this.playbackController) {
             await this.playbackController.flushProgress({ force: true });
+        }
+
+        // The flush above is asynchronous. A user can select another episode
+        // while it is pending; never let this older navigation request commit
+        // its adjacent episode after that newer intent.
+        const latestSelectionContext = typeof this.playbackController?.getSelectionContext === 'function'
+            ? this.playbackController.getSelectionContext()
+            : { selection: this.playbackController?.getSelection?.(), selectionVersion: null };
+        const latestSelection = latestSelectionContext.selection;
+        const latestIdentity = latestSelection
+            ? `${latestSelection.kinopoiskId || movie.kinopoiskId || ''}:`
+                + `${latestSelection.seasonNumber}:${latestSelection.episodeNumber}:`
+                + `${latestSelection.providerId || this.playbackController?.getActiveProvider?.() || ''}`
+            : null;
+        if ((selectionVersion != null && latestSelectionContext.selectionVersion !== selectionVersion)
+            || latestIdentity !== selectionIdentity) {
+            console.info('[MovieDetails] Discarded stale episode navigation request', {
+                direction,
+                selectionVersion,
+                latestSelectionVersion: latestSelectionContext.selectionVersion,
+                selectionIdentity,
+                latestIdentity
+            });
+            return false;
         }
 
         await this.playSelection(selectionPayload);
@@ -7235,7 +7125,7 @@ class MovieDetailsManager {
         this.updatePlayerNavigationControls();
 
         // 3. Open or restore modal
-        const isMinimized = this.elements.videoPlayerModal.classList.contains('minimized-overlay');
+        const isMinimized = this.getPlayerModal().isMinimized();
         if (isMinimized) {
             this.restorePlayer();
         } else if (this.elements.videoPlayerModal.style.display === 'none' || !this.elements.videoPlayerModal.style.display) {
@@ -7392,7 +7282,7 @@ class MovieDetailsManager {
 
         // Check if player is already active for this movie (minimized)
         if (this.videoModalMovie && this.videoModalMovie.kinopoiskId === this.selectedMovie.kinopoiskId) {
-            const isMinimized = this.elements.videoPlayerModal.classList.contains('minimized-overlay');
+            const isMinimized = this.getPlayerModal().isMinimized();
             const hasContent = this.elements.videoContainer.innerHTML && !this.elements.videoContainer.innerHTML.includes('video-placeholder');
             
             if (isMinimized && hasContent) {
@@ -7519,16 +7409,10 @@ class MovieDetailsManager {
                     }
                 }
                 
-                // Preflight check for cached HTTP embed URLs before mounting
-                if (targetSource && (targetSource.startsWith('http://') || targetSource.startsWith('https://'))) {
-                    const isFresh = await this.validateSourceUrl(targetSource);
-                    if (!isFresh) {
-                        console.warn('[MovieDetails] Cached source returned 404/410, forcing re-search:', targetSource);
-                        await this.forceResearchSources(targetSource);
-                        return;
-                    }
-                }
-
+                // Mount immediately. A stale cached embed is reported by the
+                // player lifecycle (and KinoGo's balancer 404 state), which
+                // offers or triggers forceResearchSources(); a HEAD preflight
+                // only delayed every start and missed expired tokens served as 200.
                 const sourceChanged = await this.changeVideoSource(targetSource);
                 if (sourceChanged) this.togglePlayPause(targetSource);
             } else {
@@ -7571,212 +7455,7 @@ class MovieDetailsManager {
                 cause: error
             });
             const presentation = window.ErrorPresentation?.getPresentation?.(playbackError);
-            const placeholder = document.createElement('div');
-            placeholder.className = 'video-placeholder';
-            const message = document.createElement('span');
-            message.textContent = presentation?.message || 'Playback unavailable';
-            placeholder.appendChild(message);
-            this.elements.videoContainer.replaceChildren(placeholder);
-        }
-    }
-
-    setWatchRoomStatus(message, { timeoutMs = 0 } = {}) {
-        clearTimeout(this.watchRoomStatusTimer);
-        this.watchRoomStatusTimer = null;
-        if (this.elements?.watchRoomStatus) this.elements.watchRoomStatus.textContent = message || '';
-        this.elements?.watchRoomControls?.classList.toggle('is-connected', Boolean(message));
-        if (message && timeoutMs > 0) {
-            this.watchRoomStatusTimer = setTimeout(() => {
-                if (this.elements?.watchRoomStatus?.textContent === message) this.setWatchRoomStatus('');
-            }, timeoutMs);
-        }
-    }
-
-    handleWatchRoomAction(event) {
-        const action = event.target?.closest?.('[data-watch-room-action]')?.dataset?.watchRoomAction;
-        if (!action) return;
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        console.info('[WatchRoomUITrace] action-dispatched', { action });
-        if (action === 'create') {
-            void this.createWatchRoom();
-        } else if (action === 'join') {
-            void this.joinWatchRoom();
-        } else if (action === 'copy-code') {
-            void this.copyWatchRoomCode();
-        } else if (action === 'toggle-members') {
-            this.toggleWatchRoomMembers();
-        }
-    }
-
-    refreshWatchRoomControls() {
-        const connected = Boolean(this.watchRoomController?.room);
-        const isOwner = this.watchRoomController?.role === 'owner';
-        if (!connected) this.watchRoomJoinCode = null;
-        if (this.elements.createWatchRoomBtn) {
-            this.elements.createWatchRoomBtn.hidden = connected;
-            if (!connected) this.elements.createWatchRoomBtn.disabled = false;
-        }
-        if (this.elements.joinWatchRoomBtn) {
-            this.elements.joinWatchRoomBtn.hidden = connected;
-            if (!connected) this.elements.joinWatchRoomBtn.disabled = false;
-        }
-        if (this.elements.copyWatchRoomCodeBtn) {
-            this.elements.copyWatchRoomCodeBtn.hidden = !connected || !isOwner || !this.watchRoomJoinCode;
-        }
-        if (this.elements.watchRoomMembersBtn) this.elements.watchRoomMembersBtn.hidden = !connected;
-        if (!connected && this.elements.watchRoomMembersPopover) {
-            this.elements.watchRoomMembersPopover.hidden = true;
-            this.elements.watchRoomMembersBtn?.setAttribute('aria-expanded', 'false');
-        }
-    }
-
-    renderWatchRoomMembers({ members = [] } = {}) {
-        const safeMembers = Array.isArray(members) ? members : [];
-        const canManageRoles = this.watchRoomController?.role === 'owner';
-        const roleLabels = {
-            owner: 'создатель',
-            controller: 'управляющий',
-            viewer: 'зритель',
-        };
-        if (this.elements.watchRoomParticipantCount) {
-            this.elements.watchRoomParticipantCount.textContent = String(safeMembers.length);
-        }
-        if (this.elements.watchRoomMembersList) {
-            this.elements.watchRoomMembersList.replaceChildren(...safeMembers.map((member) => {
-                const item = document.createElement('li');
-                item.className = `watch-room-member${member.online ? ' watch-room-member--online' : ''}`;
-                const presence = document.createElement('span');
-                presence.className = 'watch-room-member__presence';
-                presence.setAttribute('aria-hidden', 'true');
-                const name = document.createElement('span');
-                name.className = 'watch-room-member__name';
-                name.textContent = `${member.displayName}${member.isCurrentUser ? ' (вы)' : ''}`;
-                const role = document.createElement('span');
-                role.className = 'watch-room-member__role';
-                role.textContent = roleLabels[member.role] || roleLabels.viewer;
-                item.append(presence, name, role);
-                if (canManageRoles && !member.isCurrentUser && member.role !== 'owner') {
-                    const roleAction = document.createElement('button');
-                    const nextRole = member.role === 'controller' ? 'viewer' : 'controller';
-                    roleAction.type = 'button';
-                    roleAction.className = 'watch-room-member__role-action';
-                    roleAction.textContent = nextRole === 'controller' ? 'Разрешить управление' : 'Сделать зрителем';
-                    roleAction.addEventListener('click', async () => {
-                        roleAction.disabled = true;
-                        this.setWatchRoomStatus('Меняю роль…');
-                        try {
-                            await this.setWatchRoomMemberRole(member.uid, nextRole);
-                            this.setWatchRoomStatus('');
-                        } catch (error) {
-                            this.setWatchRoomStatus(error.message || 'Не удалось изменить роль');
-                        } finally {
-                            roleAction.disabled = false;
-                        }
-                    });
-                    item.append(roleAction);
-                }
-                return item;
-            }));
-        }
-        this.refreshWatchRoomControls();
-    }
-
-    async setWatchRoomMemberRole(targetUid, role) {
-        if (!this.watchRoomController) throw new Error('Комната недоступна');
-        await this.watchRoomController.setMemberRole(targetUid, role);
-    }
-
-    toggleWatchRoomMembers() {
-        const popover = this.elements?.watchRoomMembersPopover;
-        const button = this.elements?.watchRoomMembersBtn;
-        if (!popover || !button || button.hidden) return;
-        popover.hidden = !popover.hidden;
-        button.setAttribute('aria-expanded', String(!popover.hidden));
-    }
-
-    async copyWatchRoomCode() {
-        if (!this.watchRoomJoinCode) return;
-        try {
-            await navigator.clipboard.writeText(this.watchRoomJoinCode);
-            this.setWatchRoomStatus('Код приглашения скопирован', { timeoutMs: 2500 });
-        } catch {
-            window.prompt('Передайте этот код второму пользователю:', this.watchRoomJoinCode);
-        }
-    }
-
-    getWatchRoomProviderId() {
-        const selected = this.activeSourceValue
-            || this.elements?.sourceButtonsContainer?.querySelector('.source-btn.active')?.getAttribute('data-value');
-        if (selected === MEDIA_PLAYER_TORRENT_SOURCE) return 'kinogo';
-        return selected?.startsWith('parser:') ? selected.slice('parser:'.length) : 'kinogo';
-    }
-
-    getWatchRoomPlayerBridge() {
-        return this.getWatchRoomProviderId() === 'rutube' ? this.rutubeWatchRoomBridge : null;
-    }
-
-    getWatchRoomProviderSource() {
-        if (this.getWatchRoomProviderId() !== 'rutube') return null;
-        const sources = this.playerRegistry?.rutube?.sources || this.currentEpisodes || this.currentSources || [];
-        const source = sources.find((candidate) => {
-            const videoId = candidate?.metadata?.rutubeVideoId;
-            return typeof videoId === 'string' && /^[a-z0-9_-]{8,80}$/i.test(videoId);
-        });
-        const videoId = source?.metadata?.rutubeVideoId;
-        return videoId ? { version: 1, providerId: 'rutube', videoId } : null;
-    }
-
-    async changeWatchRoomProvider(providerId, providerSource = null) {
-        const normalized = String(providerId || '').trim().toLowerCase();
-        if (!/^[a-z0-9_-]{1,40}$/.test(normalized)) return false;
-        if (normalized === 'rutube' && !/^[a-z0-9_-]{8,80}$/i.test(String(providerSource?.videoId || ''))) {
-            this.setWatchRoomStatus('Создатель не передал корректный ролик Rutube');
-            return false;
-        }
-        const sourceValue = `parser:${normalized}`;
-        const sourceButton = this.elements?.sourceButtonsContainer?.querySelector(`[data-value="${sourceValue}"]`);
-        if (!sourceButton || !this.parserRegistry?.get(normalized)) {
-            this.setWatchRoomStatus('Источник создателя недоступен в вашем регионе');
-            return false;
-        }
-        return this.changeVideoSource(sourceValue, { fromWatchRoom: true, providerSource });
-    }
-
-    async createWatchRoom() {
-        if (!this.watchRoomController) {
-            this.setWatchRoomStatus('Комнаты недоступны в этой сборке');
-            return;
-        }
-        try {
-            this.elements.createWatchRoomBtn.disabled = true;
-            const joinCode = await this.watchRoomController.create();
-            this.watchRoomJoinCode = joinCode;
-            this.refreshWatchRoomControls();
-            await this.copyWatchRoomCode();
-        } catch (error) {
-            this.setWatchRoomStatus(error.message || 'Не удалось создать комнату');
-        } finally {
-            this.elements.createWatchRoomBtn.disabled = false;
-        }
-    }
-
-    async joinWatchRoom() {
-        if (!this.watchRoomController) {
-            this.setWatchRoomStatus('Комнаты недоступны в этой сборке');
-            return;
-        }
-        const joinCode = window.prompt('Вставьте код приглашения из первого браузера:');
-        if (!joinCode) return;
-        try {
-            this.elements.joinWatchRoomBtn.disabled = true;
-            await this.watchRoomController.join(joinCode.trim());
-            this.watchRoomJoinCode = null;
-            this.refreshWatchRoomControls();
-        } catch (error) {
-            this.setWatchRoomStatus(error.message || 'Не удалось войти в комнату');
-        } finally {
-            this.elements.joinWatchRoomBtn.disabled = false;
+            this.renderPlayerPlaceholder(presentation?.message || 'Playback unavailable');
         }
     }
 
@@ -7862,11 +7541,11 @@ class MovieDetailsManager {
                 && !this.isExplicitPlaybackSelection(currentSelectionContext.selection);
             if (!isCurrent || !progress?.season || !progress?.episode) return;
 
-            restoreContext.iframe.contentWindow.postMessage({
+            this.postToPlayerFrame(restoreContext.iframe, {
                 type: 'RESTORE_PROGRESS',
                 season: progress.season,
                 episode: progress.episode
-            }, '*');
+            });
 
             const episodeNumber = this.parsePlaybackNumber(progress.episodeNumber ?? progress.episode);
             if (episodeNumber != null && episodeNumber > 0) {
@@ -7898,11 +7577,11 @@ class MovieDetailsManager {
                  const iframe = this.elements.videoContainer.querySelector('iframe');
                  if (iframe && iframe.contentWindow) {
                      
-                     iframe.contentWindow.postMessage({
+                     this.postToPlayerFrame(iframe, {
                          type: 'SET_SOURCES',
                          sources: this.currentSources,
                          currentUrl: this.currentVideoUrl
-                     }, '*');
+                     });
                      
                      this.restoreProgressForReadyIframe(iframe);
                      this.sendAnimeSkipTimes(iframe);
@@ -7958,6 +7637,17 @@ class MovieDetailsManager {
                     origin
                 } = event.data;
                 const currentSelection = this.playbackController?.getSelection?.();
+                const activeAdapter = this.playbackController?.getAdapter?.(
+                    this.playbackController?.getActiveProvider?.()
+                );
+                const canonicalNativeBridge = activeAdapter?.getSelectionMode?.() === 'NATIVE_BRIDGE'
+                    && activeAdapter?.supportsEpisodePicker?.();
+                if (canonicalNativeBridge
+                    && origin === 'USER_PROVIDER_SELECTION'
+                    && event.data.providerState !== 'NATIVE_DOM') {
+                    console.info('[MovieDetails] Ignored legacy provider progress in canonical native bridge mode:', event.data);
+                    return;
+                }
                 const incomingSeasonNumber = this.parsePlaybackNumber(seasonNumber ?? season);
                 const incomingEpisodeNumber = this.parsePlaybackNumber(episodeNumber ?? episode);
                 if (this.isExplicitPlaybackSelection(currentSelection)
@@ -7984,8 +7674,26 @@ class MovieDetailsManager {
                     });
                 }
             } else if (event.data.type === 'EPISODE_CHANGED') {
-                const { episode, season, seasonNumber, origin } = event.data;
+                const {
+                    episode,
+                    season,
+                    seasonNumber,
+                    origin,
+                    providerId,
+                    providerState
+                } = event.data;
                 const currentSel = this.playbackController?.getSelection();
+                const activeAdapter = this.playbackController?.getAdapter?.(
+                    this.playbackController?.getActiveProvider?.()
+                );
+                const canonicalNativeBridge = activeAdapter?.getSelectionMode?.() === 'NATIVE_BRIDGE'
+                    && activeAdapter?.supportsEpisodePicker?.();
+                if (canonicalNativeBridge
+                    && origin === 'USER_PROVIDER_SELECTION'
+                    && providerState !== 'NATIVE_DOM') {
+                    console.info('[MovieDetails] Ignored legacy provider episode event in canonical native bridge mode:', event.data);
+                    return;
+                }
                 const isExplicitSelection = currentSel && [
                     'SEASONS_TAB',
                     'PLAYER_NAVIGATION',
@@ -8011,6 +7719,9 @@ class MovieDetailsManager {
                             if (!Number.isNaN(sNum) && sNum > 0) {
                                 updatePayload.seasonNumber = sNum;
                             }
+                            if (providerId && providerState === 'NATIVE_DOM') {
+                                updatePayload.providerId = providerId;
+                            }
                             this.playbackController.updateSelection(updatePayload);
                             this.updatePlayerHeaderTitle();
                         }
@@ -8031,6 +7742,57 @@ class MovieDetailsManager {
             }
         });
         this.messageListenerSetup = true;
+    }
+
+    getPlayerSurface() {
+        if (!this.playerSurface) {
+            this.playerSurface = new MovieDetailsPlayerSurface({
+                getContainer: () => this.elements?.videoContainer
+            });
+        }
+        return this.playerSurface;
+    }
+
+    getSafeWebUrl(url) {
+        return MovieDetailsPlayerSurface.getSafeWebUrl(url);
+    }
+
+    renderFrameInto(container, url, options = {}) {
+        return MovieDetailsPlayerSurface.renderFrameInto(container, url, options);
+    }
+
+    renderPlayerPlaceholder(message) {
+        this.getPlayerSurface().showPlaceholder(message);
+    }
+
+    getPlayerFrameOrigin(iframe) {
+        try {
+            const url = new URL(iframe?.src || iframe?.getAttribute?.('src') || '', window.location?.href);
+            if (url.origin !== 'null') return url.origin;
+            return url.protocol === 'chrome-extension:' && url.host ? `${url.protocol}//${url.host}` : null;
+        } catch {
+            return null;
+        }
+    }
+
+    // Commands are addressed to the frame's expected origin. If a provider
+    // frame navigates elsewhere, the browser drops them instead of leaking
+    // playback state to the new document.
+    postToPlayerFrame(iframe, message) {
+        const targetOrigin = this.getPlayerFrameOrigin(iframe);
+        if (!targetOrigin || !iframe?.contentWindow) return false;
+        try {
+            iframe.contentWindow.postMessage(message, targetOrigin);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    postToEmbeddingParent(message) {
+        if (window.parent === window) return;
+        const parentOrigin = window.location.ancestorOrigins?.[0];
+        window.parent.postMessage(message, parentOrigin && parentOrigin !== 'null' ? parentOrigin : '*');
     }
 
     isTrustedPlayerMessage(event) {
@@ -8078,10 +7840,9 @@ class MovieDetailsManager {
             && event.origin === window.location.origin;
     }
 
-    showVideoModal(movie) {
+    showVideoModal() {
         this.updatePlayerHeaderTitle();
-        this.openAccessibleDialog(this.elements.videoPlayerModal);
-        document.body.classList.add('player-modal-open');
+        this.getPlayerModal().open();
     }
 
     /**
@@ -8145,7 +7906,7 @@ class MovieDetailsManager {
                 
                 if (iframe?.contentWindow) {
                     console.log(`[SkipError] Delivering skip data via iframe.postMessage (parser: ${activeParser}, ep: ${this.currentEpisode}, range: ${skipTimes.startTime}-${skipTimes.endTime}s)`);
-                    iframe.contentWindow.postMessage(skipMessage, '*');
+                    this.postToPlayerFrame(iframe, skipMessage);
                 } else {
                     console.log(`[SkipError] Delivering skip data via window.postMessage (parser: ${activeParser}, ep: ${this.currentEpisode}, range: ${skipTimes.startTime}-${skipTimes.endTime}s)`);
                     // Check if a <video> element exists in current DOM for Seasonvar first-load diagnostic
@@ -8174,7 +7935,7 @@ class MovieDetailsManager {
                 };
                 
                 if (iframe?.contentWindow) {
-                    iframe.contentWindow.postMessage(nullMessage, '*');
+                    this.postToPlayerFrame(iframe, nullMessage);
                 } else {
                     window.postMessage(nullMessage, '*');
                 }
@@ -8191,65 +7952,32 @@ class MovieDetailsManager {
         if (this.isEmbedded && window.parent !== window) {
             this.unmountActivePlayer();
             this.destroyPlayer();
-            window.parent.postMessage({ type: 'CLOSE_EXTENSION_PLAYER' }, '*');
+            this.postToEmbeddingParent({ type: 'CLOSE_EXTENSION_PLAYER' });
             return;
         }
-        // Instead of closing and destroying, we minimize
-        this.minimizePlayer();
+        // Closing must stop playback. A provider frame cannot confirm a pause
+        // reliably, so its cached frame is released instead of kept hidden.
+        const activePlayerId = this.activePlayerId;
+        this.destroyPlayer();
+        if (activePlayerId) this.releasePlayerRegistryEntry(activePlayerId);
+        this.closeAccessibleDialog?.(this.elements?.videoPlayerModal);
+    }
+
+    releasePlayerRegistryEntry(parserId) {
+        const entry = this.playerRegistry?.[parserId];
+        if (!entry || entry.dataOnly) return false;
+        const iframes = entry.container?.querySelectorAll?.('iframe') || [];
+        if (iframes.length === 0) return false;
+
+        iframes.forEach(iframe => { iframe.src = 'about:blank'; });
+        entry.container?.remove?.();
+        delete this.playerRegistry[parserId];
+        this.initPlayerRegistry(entry.movieId);
+        return true;
     }
 
     async minimizePlayer(shouldPause = true) {
-        if (!this.elements.videoPlayerModal) return;
-        
-        // console.log(`[INFO] Инициировано сворачивание плеера (пауза: ${shouldPause})`);
-        
-        try {
-            if (shouldPause) {
-                // Attempt to pause video before minimizing
-                const pauseResult = await this.tryPauseVideo();
-                
-                if (pauseResult.success) {
-                    // console.log(`[SUCCESS] Видео поставлено на паузу за ${pauseResult.duration}мс (позиция: ${this.formatTime(pauseResult.currentTime)})`);
-                } else if (pauseResult.reason === 'already_paused') {
-                    // console.log('[INFO] Видео уже было на паузе');
-                } else if (pauseResult.reason === 'iframe_blind_pause') {
-                    // console.log('[INFO] Отправлена команда паузы iframe (без подтверждения)');
-                } else {
-                    console.warn(`[WARNING] Не удалось подтвердить паузу: ${pauseResult.reason}`);
-                    console.warn(`[ERROR] Причина: readyState=${pauseResult.readyState}, paused=${pauseResult.paused}, error=${pauseResult.error}`);
-                }
-            }
-
-            // Add minimized class/state
-            this.elements.videoPlayerModal.classList.add('minimized-overlay');
-            document.body.classList.remove('player-modal-open');
-            
-            if (shouldPause) {
-                // Normal minimize
-                this.elements.videoPlayerModal.querySelector('.modal').classList.add('minimized');
-                this.elements.videoPlayerModal.querySelector('.modal').classList.remove('pip-hidden');
-            } else {
-                // PiP minimize (invisible but active)
-                this.elements.videoPlayerModal.querySelector('.modal').classList.add('pip-hidden');
-                this.elements.videoPlayerModal.querySelector('.modal').classList.remove('minimized');
-            }
-            
-            // Show restore button
-            this.showRestoreButton();
-            
-            // console.log('[INFO] Плеер свернут успешно');
-            
-        } catch (error) {
-            console.error('[ERROR] Ошибка при сворачивании плеера:', error);
-            // Force minimize on error to not block UI
-            this.elements.videoPlayerModal.classList.add('minimized-overlay');
-            if (shouldPause) {
-                this.elements.videoPlayerModal.querySelector('.modal').classList.add('minimized');
-            } else {
-                this.elements.videoPlayerModal.querySelector('.modal').classList.add('pip-hidden');
-            }
-            this.showRestoreButton();
-        }
+        await this.getPlayerModal().minimize({ pause: shouldPause });
     }
 
     async tryPauseVideo() {
@@ -8301,7 +8029,7 @@ class MovieDetailsManager {
                     const startTime = performance.now();
                     
                     const msgHandler = (e) => {
-                        if (e.data && e.data.type === 'PAUSED_CONFIRMATION') {
+                        if (e.source === iframe.contentWindow && e.data?.type === 'PAUSED_CONFIRMATION') {
                             window.removeEventListener('message', msgHandler);
                             if (!resolved) {
                                 resolved = true;
@@ -8311,7 +8039,7 @@ class MovieDetailsManager {
                     };
                     
                     window.addEventListener('message', msgHandler);
-                    iframe.contentWindow.postMessage({ type: 'PAUSE' }, '*');
+                    this.postToPlayerFrame(iframe, { type: 'PAUSE' });
                     
                     // Timeout after 800ms
                     setTimeout(() => {
@@ -8340,38 +8068,9 @@ class MovieDetailsManager {
     }
 
     restorePlayer() {
-        if (!this.elements.videoPlayerModal) return;
-        
-        // Remove minimized class/state
-        this.elements.videoPlayerModal.classList.remove('minimized-overlay');
-        const modal = this.elements.videoPlayerModal.querySelector('.modal');
-        modal.classList.remove('minimized');
-        modal.classList.remove('pip-hidden');
-        document.body.classList.add('player-modal-open');
-        this.elements.closeVideoBtn?.focus?.();
-        
-        // Hide restore button
-        this.hideRestoreButton();
+        this.getPlayerModal().restore();
     }
 
-    showRestoreButton() {
-        const btn = document.getElementById('restorePlayerBtn');
-        if (btn) {
-            btn.style.display = 'flex';
-            // Update title if possible
-            const titleEl = btn.querySelector('.restore-title');
-            if (titleEl && this.selectedMovie) {
-                const isEnglish = i18n.currentLocale === 'en';
-                titleEl.textContent = (isEnglish && this.selectedMovie.alternativeName) ? this.selectedMovie.alternativeName : (this.selectedMovie.name || 'Movie');
-            }
-        }
-    }
-
-    // Completely close the player (e.g. from restore button 'X')
-    hideRestoreButton() {
-        const btn = document.getElementById('restorePlayerBtn');
-        if (btn) btn.style.display = 'none';
-    }
 
     async reuseCachedPlayer(movieId) {
         const registryMovieId = String(movieId);
@@ -8405,12 +8104,7 @@ class MovieDetailsManager {
         // unmountActivePlayer pauses and returns player DOM to its hidden registry container
         this.unmountActivePlayer();
 
-        this.elements.videoPlayerModal.style.display = 'none';
-        document.body.classList.remove('player-modal-open');
-        this.elements.videoPlayerModal.classList.remove('minimized-overlay');
-        this.elements.videoPlayerModal.querySelector('.modal').classList.remove('minimized');
-        this.elements.videoPlayerModal.querySelector('.modal').classList.remove('pip-hidden');
-        this.hideRestoreButton();
+        this.getPlayerModal().hide();
 
         if (this.isPlaying) {
             this.isPlaying = false;
@@ -8424,22 +8118,25 @@ class MovieDetailsManager {
 
 
         // Clear any remaining content that wasn't part of the registry (e.g. error placeholders)
-        if (this.elements.videoContainer.innerHTML) {
-            this.elements.videoContainer.innerHTML = '';
-        }
+        this.getPlayerSurface().clear();
 
         if (this.playbackController) {
             this.playbackController.cleanupOrphanPreloadContainers(this.selectedMovie?.kinopoiskId);
         }
         
         if (this.isEmbedded && window.parent !== window) {
-            window.parent.postMessage({ type: 'CLOSE_EXTENSION_PLAYER' }, '*');
+            this.postToEmbeddingParent({ type: 'CLOSE_EXTENSION_PLAYER' });
         }
     }
 
     initPlayerRegistry(movieId = this.selectedMovie?.kinopoiskId) {
         if (!movieId) return;
         const registryMovieId = String(movieId);
+        // player-cleaner scopes its local resume position to this title; the
+        // page URL can lag behind in-page navigation.
+        if (document.documentElement?.dataset) {
+            document.documentElement.dataset.playerProgressScope = `movie-${registryMovieId}`;
+        }
 
         const entries = Object.values(this.playerRegistry);
         if (entries.some(entry => entry.movieId !== registryMovieId)) {
@@ -8676,7 +8373,7 @@ class MovieDetailsManager {
         
         // Data-only entries: render fresh DOM now
         if (entry.dataOnly) {
-            this.elements.videoContainer.innerHTML = '';
+            this.getPlayerSurface().clear();
             
             // Pass the pre-resolved auto-select data to renderPlayer, ground-truthed against current selection
             const renderOptions = {
@@ -8782,14 +8479,14 @@ class MovieDetailsManager {
                 // but kept for compatibility if needed. (Seasonvar's renderPlayer calls it internally).
             }
         } else {
-            this.elements.videoContainer.innerHTML = '';
+            this.getPlayerSurface().clear();
             const playerElement = entry.container.querySelector('.player-clean') 
                 || entry.container.querySelector('.video-wrapper')
                 || entry.container.firstElementChild;
             
             if (!playerElement) return false;
             
-            this.elements.videoContainer.appendChild(playerElement);
+            this.getPlayerSurface().mountElement(playerElement);
             this.activePlayerId = parserId;
             window._playerMounted = true;
 
@@ -8855,7 +8552,7 @@ class MovieDetailsManager {
         const iframe = this.elements.videoContainer.querySelector('iframe');
         if (iframe?.contentWindow) {
             try { 
-                iframe.contentWindow.postMessage({ type: 'PAUSE' }, '*'); 
+                this.postToPlayerFrame(iframe, { type: 'PAUSE' });
             } catch { /* Ignore */ }
         }
         
@@ -8868,7 +8565,7 @@ class MovieDetailsManager {
         } else if (entry.dataOnly) {
             // BUG 1 FIX: Clear the entire container so Seasonvar DOM
             // (horizontal-episodes, episode labels) doesn't bleed through
-            this.elements.videoContainer.innerHTML = '';
+            this.getPlayerSurface().clear();
         }
         
         // BUG 3 FIX: Reset permanentVideo so PlayerCleaner starts fresh
@@ -8882,7 +8579,7 @@ class MovieDetailsManager {
             iframes.forEach(f => {
                 try {
                     if (f.contentWindow) {
-                        f.contentWindow.postMessage({ type: 'RESET_PERMANENT_VIDEO' }, '*');
+                        this.postToPlayerFrame(f, { type: 'RESET_PERMANENT_VIDEO' });
                     }
                 } catch { /* Ignore */ }
             });
@@ -9103,6 +8800,50 @@ class MovieDetailsManager {
         if (hasSavedValue) {
             this.updateActiveSourceButton(savedValue);
         }
+        this.refreshSourceButtonStates();
+    }
+
+    getSourceButtonProviderKey(value) {
+        const sourceValue = String(value || '');
+        if (sourceValue.startsWith('parser:')) return sourceValue.slice('parser:'.length);
+        if (sourceValue.startsWith('vidsrc:')) return 'vidsrc';
+        return null;
+    }
+
+    // Status is carried by text (title + hidden label) and dot shape, not only color.
+    refreshSourceButtonStates() {
+        const container = this.elements?.sourceButtonsContainer;
+        if (!container?.querySelectorAll) return;
+        const lifecycleState = this.elements.videoContainer?.dataset?.sourceState || '';
+        const labels = {
+            loading: 'загружается',
+            ready: 'воспроизводится',
+            unavailable: 'недоступен — нажмите, чтобы повторить'
+        };
+        container.querySelectorAll('.source-btn').forEach(btn => {
+            const providerKey = this.getSourceButtonProviderKey(btn.getAttribute('data-value'));
+            let state = '';
+            if (btn.classList.contains('active')) {
+                if (lifecycleState === 'loading') state = 'loading';
+                else if (lifecycleState === 'ready') state = 'ready';
+                else if (lifecycleState === 'error' || lifecycleState === 'unavailable') state = 'unavailable';
+            } else if (providerKey && this.unavailableProviderIds?.has(providerKey)) {
+                state = 'unavailable';
+            }
+
+            if (state) btn.dataset.sourceState = state;
+            else delete btn.dataset.sourceState;
+
+            let stateLabel = btn.querySelector('.source-btn__state');
+            if (state && !stateLabel) {
+                stateLabel = document.createElement('span');
+                stateLabel.className = 'source-btn__state';
+                btn.appendChild(stateLabel);
+            }
+            if (stateLabel) stateLabel.textContent = state ? `, ${labels[state]}` : '';
+            const name = btn.firstChild?.nodeType === 3 ? btn.firstChild.textContent.trim() : btn.textContent.trim();
+            btn.title = state ? `${name}: ${labels[state]}` : name;
+        });
     }
 
     updateActiveSourceButton(value) {
@@ -9120,1614 +8861,12 @@ class MovieDetailsManager {
                 btn.setAttribute('aria-pressed', 'false');
             }
         });
+        this.refreshSourceButtonStates();
         return found;
     }
 
-    setTorrentSourceStatus(message, state = '') {
-        const status = this.elements?.torrentSourceStatus;
-        if (!status) return;
-        status.textContent = message || '';
-        if (state) status.setAttribute('data-state', state);
-        else status.removeAttribute('data-state');
-    }
-
-    formatTorrentBytes(value) {
-        const bytes = Number(value);
-        if (!Number.isFinite(bytes) || bytes < 0) return '—';
-        if (bytes < 1024) return `${Math.round(bytes)} Б`;
-        const units = ['КБ', 'МБ', 'ГБ', 'ТБ'];
-        let amount = bytes;
-        let unitIndex = -1;
-        do {
-            amount /= 1024;
-            unitIndex += 1;
-        } while (amount >= 1024 && unitIndex < units.length - 1);
-        return `${amount.toFixed(amount >= 10 ? 0 : 1)} ${units[unitIndex]}`;
-    }
-
-    formatTorrentRate(value) {
-        const rate = Number(value);
-        return Number.isFinite(rate) && rate > 0 ? `${this.formatTorrentBytes(rate)}/с` : '0 Б/с';
-    }
-
-    getTorrentServiceUnavailableMessage() {
-        return 'MediaPlayer недоступен. Перезапустите службу и повторите проверку.';
-    }
-
-    formatTorrentError(error) {
-        if (error?.code === 'tmdb_id_missing') return 'Для этого фильма не найден TMDB ID.';
-        if (error?.code === 'torrent_not_configured') return 'Торрент-провайдеры MediaPlayer ещё не настроены.';
-        if (error?.code === 'native_host_unavailable') return 'MediaPlayer не подключён. Проверьте установку Native Host.';
-        if (error?.code === 'native_host_timeout') return 'Native Host MediaPlayer не ответил. Перезапустите MediaPlayer и обновите страницу.';
-        if (error?.code === 'sources_unavailable') return 'Индексеры MediaPlayer временно недоступны.';
-        if (error?.code === 'source_search_limit') return 'Слишком много одновременных поисков раздач.';
-        if (error?.code === 'source_search_not_found') return 'Задание поиска устарело. Повторите поиск.';
-        if (error?.code === 'connection_failed' || error?.code === 'timeout') {
-            return this.getTorrentServiceUnavailableMessage();
-        }
-        return error?.message || 'Не удалось получить торрент-раздачи.';
-    }
-
-    isTorrentRequestCurrent(requestId, movie) {
-        return requestId === this.torrentRequestId && this.selectedMovie === movie;
-    }
-
-    focusTorrentRegion(target) {
-        const body = target?.closest?.('.video-body');
-        if (!body || target.hidden) return;
-        target.focus?.({ preventScroll: true });
-        const bounds = target.getBoundingClientRect();
-        const viewport = body.getBoundingClientRect();
-        body.scrollTop += bounds.top - viewport.top - 10;
-    }
-
-    async openTorrentPicker() {
-        const panel = this.elements?.torrentSourcePanel;
-        const movie = this.selectedMovie;
-        if (!panel || !movie) return false;
-
-        if (!(await this.refreshMediaPlayerReadiness())) {
-            panel.hidden = true;
-            this.setTorrentSourceStatus('Включите и проверьте MediaPlayer в настройках расширения.', 'error');
-            return false;
-        }
-
-        const movieKey = this.getTorrentMovieKey(movie);
-        if (this.torrentActiveContext && this.torrentActiveContext.movieKey !== movieKey) {
-            this.torrentActiveContext = null;
-            this.torrentHasPlaybackSnapshot = false;
-            this.latestTorrentPlaybackProgress = { state: 'starting' };
-        }
-        panel.hidden = false;
-        const workspaceButton = document.getElementById('torrentWorkspaceBtn');
-        if (workspaceButton) workspaceButton.hidden = false;
-        this.focusTorrentRegion(panel);
-        this.updateActiveSourceButton(MEDIA_PLAYER_TORRENT_SOURCE);
-        const requestId = ++this.torrentRequestId;
-        this.stopTorrentDownloadMonitoring();
-        this.torrentSources = [];
-        this.torrentDownloads = [];
-        this.torrentVisibleSourceLimit = 10;
-        this.torrentSearchState = { status: 'idle', found: 0 };
-        this.torrentSort = 'recommended';
-        this.torrentQualityFilter = 'all';
-        this.torrentLanguageFilter = 'all';
-        this.elements.torrentSourceControls?.querySelectorAll('[data-quality-filter]').forEach((item) => {
-            item.classList.toggle('is-active', item.getAttribute('data-quality-filter') === 'all');
-        });
-        if (this.elements.torrentSourceSort) this.elements.torrentSourceSort.value = 'recommended';
-        if (this.elements.torrentSourceLanguageFilter) this.elements.torrentSourceLanguageFilter.value = 'all';
-        this.elements.torrentSourceList?.replaceChildren();
-        this.elements.torrentDownloadList?.replaceChildren();
-        this.elements.torrentDownloadLibrary?.setAttribute('hidden', '');
-        if (this.elements.torrentSourceDisclosure) {
-            this.elements.torrentSourceDisclosure.hidden = true;
-            this.elements.torrentSourceDisclosure.open = false;
-        }
-        this.setTorrentSourceControlsVisible(false);
-        this.cancelActiveTorrentSearch();
-        this.setTorrentSourceStatus('Проверяем локальный MediaPlayer…');
-
-        if (!this.isTorrentMovie(movie)) {
-            this.setTorrentSourceStatus('Торрент-источник доступен только для фильмов.', 'error');
-            return false;
-        }
-        if (!this.mediaPlayerService) {
-            this.setTorrentSourceStatus('Клиент MediaPlayer не загружен. Обновите страницу расширения.', 'error');
-            return false;
-        }
-
-        try {
-            const capabilities = await this.mediaPlayerService.getCapabilities();
-            if (!this.isTorrentRequestCurrent(requestId, movie)) return false;
-            const moviesCapability = capabilities?.torrents?.movies;
-            if (moviesCapability?.supported === false || moviesCapability?.status !== 'ready') {
-                throw new MediaPlayerServiceError(
-                    'torrent_not_configured',
-                    'Торрент-провайдеры MediaPlayer ещё не настроены.'
-                );
-            }
-
-            await this.refreshTorrentDownloads(movie, requestId);
-            if (!this.isTorrentRequestCurrent(requestId, movie)) return false;
-            this.ensureTorrentActiveContextFromDownloads(movie);
-            this.startTorrentDownloadMonitoring(movie, requestId);
-            this.setTorrentSourceControlsVisible(true);
-
-            if (this.torrentActiveContext && !this.torrentPlaybackSession) {
-                this.renderTorrentPlaybackStatus(this.getTorrentProgressFromDownload(this.getTorrentActiveDownload()));
-            } else if (this.torrentPlaybackSession) {
-                this.renderTorrentPlaybackStatus();
-            }
-
-            if (this.torrentDownloads.length > 0) {
-                this.setTorrentSourceStatus(this.getTorrentDownloadSummary());
-                return true;
-            }
-            return await this.searchTorrentSources(requestId);
-        } catch (error) {
-            if (!this.isTorrentRequestCurrent(requestId, movie)) return false;
-            this.setTorrentSourceStatus(this.formatTorrentError(error), 'error');
-            return false;
-        }
-    }
-
-    setTorrentSourceControlsVisible(visible) {
-        const controls = this.elements?.torrentSourceControls;
-        if (controls) controls.hidden = !visible;
-        if (this.elements?.torrentSourceSearchBtn) this.elements.torrentSourceSearchBtn.hidden = !visible;
-    }
-
-    cancelActiveTorrentSearch() {
-        const jobId = this.torrentSearchJobId;
-        const tmdbId = this.torrentSearchTmdbId;
-        this.torrentSearchJobId = null;
-        this.torrentSearchTmdbId = null;
-        if (jobId) void this.mediaPlayerService?.cancelMovieSourceSearch(jobId, tmdbId).catch(() => undefined);
-    }
-
-    async searchTorrentSources(requestId = null) {
-        const movie = this.selectedMovie;
-        if (!movie || !this.mediaPlayerService) return false;
-        const activeRequestId = requestId === null ? ++this.torrentRequestId : requestId;
-        if (!this.isTorrentRequestCurrent(activeRequestId, movie)) return false;
-        this.startTorrentDownloadMonitoring(movie, activeRequestId);
-        this.cancelActiveTorrentSearch();
-        this.torrentSources = [];
-        this.torrentVisibleSourceLimit = 10;
-        this.torrentSearchState = { status: 'running', found: 0 };
-        if (this.elements.torrentSourceDisclosure) this.elements.torrentSourceDisclosure.open = true;
-        this.elements.torrentSourceList?.replaceChildren();
-        if (this.elements.torrentSourceDisclosure) this.elements.torrentSourceDisclosure.hidden = true;
-        if (this.elements?.torrentSourceSearchBtn) this.elements.torrentSourceSearchBtn.disabled = true;
-        this.setTorrentSourceStatus('Ищем раздачи…');
-
-        const searchArgs = {
-            tmdbId: this.getMediaPlayerTmdbId(movie),
-            title: movie.name || movie.nameRu || movie.alternativeName,
-            originalTitle: movie.nameEn || movie.originalTitle || movie.alternativeName,
-            year: movie.year
-        };
-
-        try {
-            const searchResult = await this.mediaPlayerService.searchMovieSourcesIncrementally(searchArgs, {
-                pollIntervalMs: 350,
-                onStart: (job) => {
-                    if (!this.isTorrentRequestCurrent(activeRequestId, movie)) {
-                        void this.mediaPlayerService.cancelMovieSourceSearch(job.jobId, searchArgs.tmdbId).catch(() => undefined);
-                        return;
-                    }
-                    this.torrentSearchJobId = job.jobId;
-                    this.torrentSearchTmdbId = searchArgs.tmdbId;
-                },
-                onBatch: (_batch, state) => {
-                    if (!this.isTorrentRequestCurrent(activeRequestId, movie)) return;
-                    const sources = this.deduplicateTorrentSources(
-                        Array.isArray(state?.sources) ? state.sources : [],
-                    );
-                    this.torrentSources = sources;
-                    this.torrentSearchState = {
-                        status: state?.status === 'running' ? 'running' : 'completed',
-                        found: sources.length
-                    };
-                    this.renderTorrentSources(sources);
-                }
-            });
-            if (!this.isTorrentRequestCurrent(activeRequestId, movie)) return false;
-            this.torrentSources = this.deduplicateTorrentSources(
-                Array.isArray(searchResult?.sources) ? searchResult.sources : [],
-            );
-            this.torrentSearchState = {
-                status: 'completed',
-                found: this.torrentSources.length
-            };
-            this.renderTorrentSources(this.torrentSources);
-            return true;
-        } catch (error) {
-            if (!this.isTorrentRequestCurrent(activeRequestId, movie)) return false;
-            this.torrentSources = [];
-            this.torrentSearchState = { status: 'error', found: 0 };
-            this.renderTorrentSources([]);
-            this.setTorrentSourceStatus(this.formatTorrentError(error), 'error');
-            return false;
-        } finally {
-            if (this.isTorrentRequestCurrent(activeRequestId, movie)) {
-                this.torrentSearchJobId = null;
-                this.torrentSearchTmdbId = null;
-                if (this.elements?.torrentSourceSearchBtn) this.elements.torrentSourceSearchBtn.disabled = false;
-            }
-        }
-    }
-
-    closeTorrentPicker() {
-        if (this.elements?.torrentSourcePanel) this.elements.torrentSourcePanel.hidden = true;
-        const workspaceButton = document.getElementById('torrentWorkspaceBtn');
-        if (workspaceButton) workspaceButton.hidden = true;
-        this.focusTorrentRegion(this.elements?.videoContainer);
-        this.stopTorrentDownloadMonitoring();
-        this.cancelActiveTorrentSearch();
-        this.torrentRequestId += 1;
-    }
-
-    normalizeTorrentLanguage(value) {
-        const text = String(
-            value && typeof value === 'object'
-                ? (value.code || value.language || value.name || value.label || '')
-                : value || '',
-        ).trim().toLowerCase();
-        if (!text) return null;
-        if (/^(?:ru|rus|russian|рус|русс|русский|русская|русское)/i.test(text)) return 'ru';
-        if (/^(?:en|eng|english|англ|английский|английская)/i.test(text)) return 'en';
-        return null;
-    }
-
-    getTorrentLanguageValues(value) {
-        const values = Array.isArray(value)
-            ? value
-            : typeof value === 'string'
-                ? value.split(/[,;/|]+/)
-                : value
-                    ? [value]
-                    : [];
-        return [...new Set(values.map(item => this.normalizeTorrentLanguage(item)).filter(Boolean))];
-    }
-
-    hasTorrentToken(value, tokens = []) {
-        const normalized = this.normalizeTorrentText(value);
-        return tokens.some(token => new RegExp(`(^|[^A-ZА-ЯЁ0-9])${token}(?=$|[^A-ZА-ЯЁ0-9])`, 'i').test(normalized));
-    }
-
-    normalizeTorrentText(value) {
-        return String(value || '')
-            .normalize('NFKD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .toUpperCase()
-            .replace(/\[/g, ' ')
-            .replace(/\]/g, ' ')
-            .replace(/[(){},]/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
-    }
-
-    hasTorrentSubtitleContext(value, start, end) {
-        const before = value.slice(Math.max(0, start - 18), start);
-        if (this.hasTorrentToken(before, ['SUB', 'SUBS', 'SUBBED', 'SUBTITLE', 'SUBTITLES', 'СУБТИТР'])) {
-            return true;
-        }
-        const after = value.slice(end, Math.min(value.length, end + 16));
-        return /^\s*[._-]\s*(?:SUB|SUBS|SUBBED|SUBTITLE|SUBTITLES)(?:\b|[._-])/.test(after);
-    }
-
-    hasTorrentAudioToken(value, tokens = []) {
-        const normalized = this.normalizeTorrentText(value);
-        return tokens.some(token => {
-            const escaped = String(token).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const pattern = new RegExp(`(^|[^A-ZА-ЯЁ0-9])${escaped}(?=$|[^A-ZА-ЯЁ0-9])`, 'gi');
-            for (const match of normalized.matchAll(pattern)) {
-                const start = (match.index || 0) + match[1].length;
-                const end = start + String(token).length;
-                if (!this.hasTorrentSubtitleContext(normalized, start, end)) return true;
-            }
-            return false;
-        });
-    }
-
-    getTorrentSourceLanguages(source = {}) {
-        const declaredAudio = this.getTorrentLanguageValues(source.audioLanguages);
-        const declaredLanguage = this.normalizeTorrentLanguage(source.language);
-        if (declaredLanguage && !declaredAudio.includes(declaredLanguage)) declaredAudio.push(declaredLanguage);
-
-        const text = `${source.quality || ''} ${source.title || ''}`;
-        const inferredAudio = [];
-        if (this.hasTorrentAudioToken(text, ['RUS', 'RUSSIAN', 'РУС', 'РУССК', 'РУССИЙ', 'РУССКАЯ'])) inferredAudio.push('ru');
-        if (this.hasTorrentAudioToken(text, ['ENG', 'ENGLISH', 'АНГЛ', 'АНГЛИЙСК'])) inferredAudio.push('en');
-        if (this.hasTorrentToken(text, [
-            'DUB',
-            'DUBBED',
-            'MVO',
-            'HDREZKA',
-            'PARAGRAPH MEDIA',
-            'LOSTFILM',
-            'NEWSTUDIO',
-            'TVSHOW',
-            'JASKIER',
-            'КУБИК В КУБЕ',
-            'ДВОЙНАЯ ОЗВУЧКА',
-            'МНОГОГОЛОСАЯ'
-        ])) inferredAudio.push('ru');
-
-        const audioLanguages = [...new Set([...declaredAudio, ...inferredAudio])];
-        const subtitleLanguages = this.getTorrentLanguageValues(source.subtitleLanguages);
-        const confidence = source.languageConfidence === 'declared' || declaredAudio.length
-            ? 'declared'
-            : audioLanguages.length
-                ? 'title'
-                : 'unknown';
-        return { audioLanguages, subtitleLanguages, confidence };
-    }
-
-    getTorrentQualityDetails(source = {}) {
-        const supplied = source.qualityDetails;
-        if (supplied && typeof supplied === 'object') {
-            const score = Number(supplied.score);
-            const resolution = supplied.resolution === null || supplied.resolution === undefined || supplied.resolution === ''
-                ? NaN
-                : Number(supplied.resolution);
-            if (Number.isFinite(score) || (Number.isFinite(resolution) && resolution > 0)) {
-                return {
-                    ...supplied,
-                    score: Number.isFinite(score) ? score : 0,
-                    resolution: Number.isFinite(resolution) && resolution > 0 ? resolution : null,
-                    label: String(supplied.label || source.quality || 'Качество не указано')
-                };
-            }
-        }
-
-        const text = `${source.quality || ''} ${source.title || ''}`
-            .normalize('NFKD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .toUpperCase();
-        const resolution = this.hasTorrentToken(text, ['2160P', '4K', 'UHD']) ? 2160
-            : this.hasTorrentToken(text, ['1440P', '2K', 'QHD']) ? 1440
-                : this.hasTorrentToken(text, ['1080P', 'FHD']) ? 1080
-                    : this.hasTorrentToken(text, ['720P', 'HD']) ? 720
-                        : this.hasTorrentToken(text, ['576P', '576']) ? 576
-                            : this.hasTorrentToken(text, ['480P', '480', 'SD']) ? 480
-                                : null;
-        const releaseSource = this.hasTorrentToken(text, ['REMUX']) ? 'remux'
-            : this.hasTorrentToken(text, ['BLURAY', 'BLU-RAY']) ? 'bluray'
-                : this.hasTorrentToken(text, ['WEB-DL', 'WEBDL']) ? 'web-dl'
-                    : this.hasTorrentToken(text, ['WEBRIP', 'WEB-RIP']) ? 'webrip'
-                        : this.hasTorrentToken(text, ['BDRIP', 'BD-RIP']) ? 'bdrip'
-                            : this.hasTorrentToken(text, ['HDRIP', 'HD-RIP']) ? 'hdrip'
-                                : this.hasTorrentToken(text, ['DVDRIP', 'DVD-RIP']) ? 'dvdrip'
-                                    : this.hasTorrentToken(text, ['CAM', 'CAMRIP', 'TS', 'TELESYNC', 'TC']) ? 'cam'
-                                        : 'unknown';
-        const codec = this.hasTorrentToken(text, ['HEVC', 'H265', 'X265']) ? 'hevc'
-            : this.hasTorrentToken(text, ['AV1']) ? 'av1'
-                : this.hasTorrentToken(text, ['VP9']) ? 'vp9'
-                    : this.hasTorrentToken(text, ['H264', 'H.264', 'AVC', 'X264']) ? 'h264'
-                        : 'unknown';
-        const resolutionScore = { 2160: 40, 1440: 32, 1080: 28, 720: 18, 576: 10, 480: 8 };
-        const sourceScore = { remux: 30, bluray: 27, 'web-dl': 25, webrip: 20, bdrip: 19, hdrip: 14, dvdrip: 8, cam: 0, unknown: 4 };
-        const codecScore = { hevc: 4, av1: 4, vp9: 3, h264: 2, unknown: 0 };
-        const labelSource = { remux: 'Remux', bluray: 'BluRay', 'web-dl': 'WEB-DL', webrip: 'WEBRip', bdrip: 'BDRip', hdrip: 'HDRip', dvdrip: 'DVDRip', cam: 'CAM/TS', unknown: '' };
-        const label = [resolution ? `${resolution}p` : null, labelSource[releaseSource] || null, codec === 'unknown' ? null : codec.toUpperCase()]
-            .filter(Boolean)
-            .join(' · ');
-        return {
-            resolution,
-            source: releaseSource,
-            codec,
-            score: (resolution ? resolutionScore[resolution] : 0) + sourceScore[releaseSource] + codecScore[codec],
-            label: label || String(source.quality || 'Качество не указано')
-        };
-    }
-
-    getTorrentQualityRank(source = {}) {
-        const resolution = this.getTorrentQualityDetails(source).resolution;
-        if (resolution >= 2160) return 4;
-        if (resolution >= 1440) return 3;
-        if (resolution >= 1080) return 2;
-        if (resolution >= 720) return 1;
-        if (resolution >= 480) return 0;
-        return -1;
-    }
-
-    getTorrentQualityBucket(source = {}) {
-        const rank = this.getTorrentQualityRank(source);
-        return rank === 4 ? '4k' : rank === 3 ? '2k' : rank === 2 ? '1080p' : rank === 1 ? '720p' : rank === 0 ? 'sd' : 'unknown';
-    }
-
-    getTorrentNumber(value, fallback = -1) {
-        const number = Number(value);
-        return Number.isFinite(number) && number >= 0 ? number : fallback;
-    }
-
-    getTorrentSourceIdentity(source = {}) {
-        const normalize = (value) => String(value ?? '')
-            .normalize('NFKD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .toLowerCase()
-            .replace(/ё/g, 'е')
-            .replace(/[^\p{L}\p{N}]+/gu, ' ')
-            .trim()
-            .replace(/\s+/g, ' ');
-
-        return [
-            normalize(source.title),
-            normalize(source.quality),
-            this.formatTorrentBytes(source.sizeBytes),
-        ].join('\u0000');
-    }
-
-    deduplicateTorrentSources(sources = []) {
-        const input = Array.isArray(sources) ? sources : [];
-        const unique = input.slice(0, 0);
-        const byIdentity = new Map();
-        for (const source of input) {
-            if (!source || this.getTorrentNumber(source.seeders, 0) <= 0) continue;
-            const identity = this.getTorrentSourceIdentity(source);
-            const existing = byIdentity.get(identity);
-            if (!existing || this.compareTorrentSources(source, existing) < 0) {
-                byIdentity.set(identity, source);
-            }
-        }
-        unique.push(...byIdentity.values());
-        return unique;
-    }
-
-    compareTorrentSources(first = {}, second = {}) {
-        const firstSeeders = this.getTorrentNumber(first.seeders);
-        const secondSeeders = this.getTorrentNumber(second.seeders);
-        const firstQualityScore = this.getTorrentQualityDetails(first).score;
-        const secondQualityScore = this.getTorrentQualityDetails(second).score;
-        const firstSize = this.getTorrentNumber(first.sizeBytes, Number.MAX_SAFE_INTEGER);
-        const secondSize = this.getTorrentNumber(second.sizeBytes, Number.MAX_SAFE_INTEGER);
-        const sort = this.torrentSort;
-        let difference;
-
-        if (sort === 'quality') difference = secondQualityScore - firstQualityScore;
-        else if (sort === 'size-asc') difference = firstSize - secondSize;
-        else if (sort === 'size-desc') difference = secondSize - firstSize;
-        else if (sort === 'recommended') {
-            const firstLanguages = this.getTorrentSourceLanguages(first);
-            const secondLanguages = this.getTorrentSourceLanguages(second);
-            const firstRecommended = firstQualityScore * 100
-                + (firstLanguages.audioLanguages.length ? 3 : 0)
-                + (firstLanguages.confidence === 'declared' ? 2 : 0)
-                + Math.min(firstSeeders, 100);
-            const secondRecommended = secondQualityScore * 100
-                + (secondLanguages.audioLanguages.length ? 3 : 0)
-                + (secondLanguages.confidence === 'declared' ? 2 : 0)
-                + Math.min(secondSeeders, 100);
-            difference = secondRecommended - firstRecommended;
-        } else difference = secondSeeders - firstSeeders;
-        if (difference) return difference;
-
-        difference = secondSeeders - firstSeeders;
-        if (difference) return difference;
-        difference = secondQualityScore - firstQualityScore;
-        if (difference) return difference;
-        difference = firstSize - secondSize;
-        if (difference) return difference;
-        difference = String(first.provider || '').localeCompare(String(second.provider || ''), 'ru', { sensitivity: 'base' });
-        if (difference) return difference;
-        difference = String(first.title || '').localeCompare(String(second.title || ''), 'ru', { sensitivity: 'base' });
-        return difference || String(first.sourceId || '').localeCompare(String(second.sourceId || ''));
-    }
-
-    getVisibleTorrentSources(sources = this.torrentSources) {
-        const qualityFilter = this.torrentQualityFilter || 'all';
-        const languageFilter = this.torrentLanguageFilter || 'all';
-        return this.deduplicateTorrentSources(sources)
-            .filter(source => qualityFilter === 'all' || this.getTorrentQualityBucket(source) === qualityFilter)
-            .filter(source => this.hasRequestedTorrentLanguage(source, languageFilter))
-            .slice()
-            .sort((first, second) => this.compareTorrentSources(first, second));
-    }
-
-    hasRequestedTorrentLanguage(source = {}, filter = 'all') {
-        if (filter === 'all') return true;
-        const languages = new Set(this.getTorrentSourceLanguages(source).audioLanguages);
-        if (filter === 'unknown') return languages.size === 0;
-        if (filter === 'bilingual') return languages.has('ru') && languages.has('en');
-        return languages.has(filter);
-    }
-
-    getTorrentSourceLanguageLabel(source = {}) {
-        const metadata = this.getTorrentSourceLanguages(source);
-        const languages = new Set(metadata.audioLanguages);
-        if (languages.has('ru') && languages.has('en')) return 'RU + EN';
-        if (languages.has('ru')) return 'RU';
-        if (languages.has('en')) return 'EN';
-        if (metadata.subtitleLanguages.length) return 'Субтитры';
-        return 'Язык не указан';
-    }
-
-    getTorrentMovieKey(movie = this.selectedMovie) {
-        if (!movie) return '';
-        return String(this.getMediaPlayerTmdbId(movie) || movie.kinopoiskId || movie.id || '');
-    }
-
-    getTorrentActiveDownload() {
-        const downloadId = this.torrentActiveContext?.downloadId;
-        if (!downloadId) return null;
-        return this.torrentDownloads.find(download => String(download.id) === String(downloadId)) || null;
-    }
-
-    setTorrentActiveContext(context = null) {
-        if (!context) {
-            this.torrentActiveContext = null;
-            return;
-        }
-        this.torrentActiveContext = {
-            movieKey: context.movieKey || this.getTorrentMovieKey(),
-            sourceId: context.sourceId || null,
-            downloadId: context.downloadId || null,
-            title: context.title || 'Без названия',
-            provider: context.provider || 'MediaPlayer',
-            quality: context.quality || 'Качество не указано',
-            sizeBytes: Number.isFinite(Number(context.sizeBytes)) ? Number(context.sizeBytes) : null
-        };
-    }
-
-    ensureTorrentActiveContextFromDownloads(movie = this.selectedMovie) {
-        if (!movie) return null;
-        const movieKey = this.getTorrentMovieKey(movie);
-        if (this.torrentActiveContext?.movieKey === movieKey && this.torrentActiveContext?.downloadId) {
-            return this.getTorrentActiveDownload();
-        }
-
-        const active = this.getMatchingTorrentDownloads(this.torrentDownloads, movie)
-            .filter(download => ['starting', 'downloading', 'paused', 'error'].includes(download.status));
-        if (active.length !== 1) return null;
-
-        const download = active[0];
-        this.setTorrentActiveContext({
-            movieKey,
-            downloadId: download.id,
-            title: download.title,
-            provider: download.provider,
-            quality: download.quality,
-            sizeBytes: download.sizeBytes || download.totalBytes
-        });
-        return download;
-    }
-
-    resolveTorrentActiveDownload() {
-        const context = this.torrentActiveContext;
-        if (!context || context.downloadId) return this.getTorrentActiveDownload();
-
-        const candidates = this.getMatchingTorrentDownloads()
-            .filter(download => ['starting', 'downloading', 'paused', 'error', 'complete'].includes(download.status))
-            .filter(download => String(download.title || '') === String(context.title || ''))
-            .filter(download => String(download.provider || '') === String(context.provider || ''))
-            .filter(download => String(download.quality || '') === String(context.quality || ''))
-            .filter(download => {
-                const contextSize = Number(context.sizeBytes);
-                const downloadSize = Number(download.sizeBytes || download.totalBytes);
-                return Number.isFinite(contextSize) && Number.isFinite(downloadSize)
-                    ? contextSize === downloadSize
-                    : !Number.isFinite(contextSize) && !Number.isFinite(downloadSize);
-            });
-
-        if (candidates.length !== 1) return null;
-        context.downloadId = candidates[0].id;
-        return candidates[0];
-    }
-
-    getTorrentProgressFromDownload(download = this.getTorrentActiveDownload()) {
-        if (!download) return { state: 'starting' };
-        return {
-            state: download.status || 'starting',
-            progress: download.progress,
-            downloadSpeedBytesPerSecond: download.downloadSpeedBytesPerSecond,
-            peers: download.peers,
-            timeRemainingSeconds: download.timeRemainingSeconds,
-            playable: download.playable === true,
-            errorMessage: download.errorMessage
-        };
-    }
-
-    updateTorrentSourceSummary() {
-        if (this.torrentSearchState.status === 'error') return;
-        const found = this.torrentSearchState.found || this.torrentSources.length;
-        const visible = this.getVisibleTorrentSources().length;
-        if (!found) {
-            this.setTorrentSourceStatus(
-                this.torrentSearchState.status === 'running'
-                    ? 'Ищем раздачи…'
-                    : 'Для этого фильма раздачи не найдены.'
-            );
-            return;
-        }
-        const limit = Math.max(1, Number(this.torrentVisibleSourceLimit) || 10);
-        const shown = Math.min(visible, limit);
-        const filtered = visible !== this.torrentSources.length ? ` · подходит: ${visible}` : '';
-        const paged = shown < visible ? ` · показано: ${shown}` : '';
-        const running = this.torrentSearchState.status === 'running' ? ' · поиск продолжается' : '';
-        this.setTorrentSourceStatus(`Найдено раздач: ${found}${filtered}${paged}${running}`);
-    }
-
-    renderTorrentSources(sources = []) {
-        const list = this.elements?.torrentSourceList;
-        if (!list) return;
-        list.replaceChildren();
-        const availableSources = this.deduplicateTorrentSources(sources);
-        const filteredSources = this.getVisibleTorrentSources(availableSources);
-        const limit = Math.max(1, Number(this.torrentVisibleSourceLimit) || 10);
-        const visibleSources = filteredSources.slice(0, limit);
-        visibleSources.forEach((source) => {
-            const sourceId = typeof source?.sourceId === 'string' ? source.sourceId : '';
-            if (!sourceId) return;
-
-            const item = document.createElement('article');
-            item.className = 'torrent-source-card-item';
-            item.setAttribute('role', 'listitem');
-
-            const card = document.createElement('button');
-            card.type = 'button';
-            card.className = 'torrent-source-card';
-            card.classList.add('torrent-source-card__select');
-            card.setAttribute('data-source-id', sourceId);
-            card.setAttribute('aria-label', `Открыть раздачу: ${String(source.title || 'Без названия')}`);
-
-            const title = document.createElement('span');
-            title.className = 'torrent-source-card__title';
-            title.textContent = String(source.title || 'Без названия');
-
-            const quality = document.createElement('span');
-            quality.className = 'torrent-source-card__quality';
-            quality.textContent = this.getTorrentQualityDetails(source).label;
-
-            const language = document.createElement('span');
-            language.className = 'torrent-source-card__language';
-            language.textContent = this.getTorrentSourceLanguageLabel(source);
-
-            const provider = document.createElement('span');
-            provider.className = 'torrent-source-card__provider';
-            provider.textContent = String(source.provider || 'Неизвестный индексер');
-
-            const meta = document.createElement('span');
-            meta.className = 'torrent-source-card__meta';
-            const releaseYear = Number(source.year);
-            if (Number.isInteger(releaseYear) && releaseYear > 0) {
-                const year = document.createElement('span');
-                year.textContent = `Год: ${releaseYear}`;
-                meta.appendChild(year);
-            }
-            const size = document.createElement('span');
-            size.textContent = `Размер: ${this.formatTorrentBytes(source.sizeBytes)}`;
-            const peers = document.createElement('span');
-            peers.textContent = `Сиды: ${this.getTorrentNumber(source.seeders, '—')}`;
-            const leechers = document.createElement('span');
-            leechers.textContent = `Личеры: ${this.getTorrentNumber(source.leechers, '—')}`;
-            meta.append(size, peers, leechers);
-
-            card.append(title, quality, language, provider, meta);
-            item.appendChild(card);
-            list.appendChild(item);
-        });
-        if (!visibleSources.length && availableSources.length) {
-            const empty = document.createElement('div');
-            empty.className = 'torrent-source-empty';
-            empty.setAttribute('role', 'status');
-            empty.textContent = this.torrentQualityFilter === 'all' && (this.torrentLanguageFilter || 'all') === 'all'
-                ? 'Подходящих раздач нет.'
-                : 'По выбранным фильтрам раздач нет. Выберите «Все» или другой язык/формат.';
-            list.appendChild(empty);
-        }
-        if (this.elements.torrentSourceDisclosure) {
-            this.elements.torrentSourceDisclosure.hidden = availableSources.length === 0;
-        }
-        if (this.elements.torrentSourceShowMoreBtn) {
-            const hasMore = visibleSources.length < filteredSources.length;
-            this.elements.torrentSourceShowMoreBtn.hidden = !hasMore;
-            this.elements.torrentSourceShowMoreBtn.textContent = hasMore
-                ? `Показать ещё (${Math.min(10, filteredSources.length - visibleSources.length)})`
-                : 'Показать ещё';
-        }
-        const count = this.elements.torrentSourceDisclosure?.querySelector('[data-torrent-disclosure-count]');
-        if (count) count.textContent = availableSources.length ? `${filteredSources.length}` : '';
-        this.updateTorrentSourceSummary();
-    }
-
-    getMatchingTorrentDownloads(downloads = this.torrentDownloads, movie = this.selectedMovie) {
-        const tmdbId = this.getMediaPlayerTmdbId(movie);
-        return (Array.isArray(downloads) ? downloads : [])
-            .filter(download => String(download?.mediaType || 'movie') === 'movie')
-            .filter(download => Number(download?.tmdbId) === tmdbId)
-            .sort((first, second) => {
-                const order = { downloading: 0, starting: 1, paused: 2, error: 3, complete: 4 };
-                const statusDifference = (order[first.status] ?? 5) - (order[second.status] ?? 5);
-                if (statusDifference) return statusDifference;
-                return String(second.updatedAt || '').localeCompare(String(first.updatedAt || ''));
-            });
-    }
-
-    formatTorrentTime(value) {
-        const seconds = Number(value);
-        if (!Number.isFinite(seconds) || seconds <= 0) return '';
-        if (seconds >= 86400) return `${Math.ceil(seconds / 86400)} д`;
-        if (seconds >= 3600) return `${Math.ceil(seconds / 3600)} ч`;
-        if (seconds >= 60) return `${Math.ceil(seconds / 60)} мин`;
-        return `${Math.ceil(seconds)} с`;
-    }
-
-    getTorrentDownloadStatus(download = {}) {
-        const labels = {
-            starting: 'Подготавливается',
-            downloading: 'Скачивается',
-            paused: 'Приостановлено',
-            error: 'Нужно повторить',
-            complete: 'Файл готов'
-        };
-        return labels[download.status] || 'Состояние неизвестно';
-    }
-
-    getTorrentDownloadSummary() {
-        const count = this.torrentDownloads.length;
-        if (!count) return 'Сохранённых загрузок для этого фильма нет.';
-        const active = this.torrentDownloads.filter(download => ['starting', 'downloading'].includes(download.status)).length;
-        if (active) return `В библиотеке: ${count} · ${active} продолжается автоматически`;
-        return `В библиотеке: ${count} · загрузка сохранена`;
-    }
-
-    getTorrentPlaybackSummary(progress = this.latestTorrentPlaybackProgress || {}) {
-        const playback = progress.playback && typeof progress.playback === 'object'
-            ? progress.playback
-            : null;
-        if (!this.torrentPlaybackSession && !playback) return '';
-
-        const state = this.getTorrentWorkspaceState(progress);
-        if (state === 'playback-error') {
-            const message = playback?.message ? ` · ${String(playback.message)}` : '';
-            return `Просмотр: ошибка${message} · загрузка продолжается`;
-        }
-        if (state === 'probing') return 'Просмотр: определяем формат…';
-        if (state === 'remuxing') return 'Просмотр: готовим быстрый поток…';
-        if (state === 'transcoding') return 'Просмотр: подготавливаем совместимый поток…';
-
-        const availableSeconds = Number(playback?.availableDurationSeconds);
-        if (Number.isFinite(availableSeconds) && availableSeconds > 0) {
-            return `Просмотр доступен: ${this.formatTorrentPlaybackDuration(availableSeconds)}`;
-        }
-        if (state === 'complete') return 'Просмотр: файл готов';
-        return 'Просмотр: подключаемся…';
-    }
-
-    renderTorrentDownloads(downloads = this.torrentDownloads) {
-        const library = this.elements?.torrentDownloadLibrary;
-        const list = this.elements?.torrentDownloadList;
-        if (!library || !list) return;
-        list.replaceChildren();
-        const matching = this.getMatchingTorrentDownloads(downloads);
-        library.hidden = matching.length === 0;
-        if (!matching.length) return;
-
-        matching.forEach((download) => {
-            const card = document.createElement('article');
-            const isCurrent = String(this.torrentActiveContext?.downloadId || '') === String(download.id);
-            const serviceUnavailable = this.torrentServiceHealth === 'unavailable';
-            card.className = `torrent-download-card${isCurrent ? ' torrent-download-card--current' : ''}`;
-            card.dataset.state = String(download.status || 'unknown');
-            card.dataset.current = isCurrent ? 'true' : 'false';
-            card.dataset.serviceHealth = serviceUnavailable ? 'unavailable' : this.torrentServiceHealth;
-            card.setAttribute('role', 'listitem');
-
-            const header = document.createElement('div');
-            header.className = 'torrent-download-card__header';
-            const state = document.createElement('strong');
-            state.className = 'torrent-download-card__state';
-            state.textContent = this.getTorrentDownloadStatus(download);
-            const quality = document.createElement('span');
-            quality.className = 'torrent-download-card__quality';
-            quality.textContent = String(download.quality || 'Качество не указано');
-            header.append(state, quality);
-
-            const title = document.createElement('div');
-            title.className = 'torrent-download-card__title';
-            title.textContent = String(download.title || this.selectedMovie?.name || 'Без названия');
-            if (isCurrent) {
-                const current = document.createElement('span');
-                current.className = 'torrent-download-card__current';
-                current.textContent = 'Текущий файл';
-                title.appendChild(current);
-            }
-
-            const progress = document.createElement('div');
-            progress.className = 'torrent-download-card__progress';
-            progress.setAttribute('role', 'progressbar');
-            const progressValue = Number(download.progress);
-            const percent = Number.isFinite(progressValue)
-                ? Math.max(0, Math.min(100, progressValue <= 1 ? progressValue * 100 : progressValue))
-                : 0;
-            progress.setAttribute('aria-valuenow', String(Math.round(percent)));
-            progress.setAttribute('aria-valuemin', '0');
-            progress.setAttribute('aria-valuemax', '100');
-            const progressFill = document.createElement('span');
-            progressFill.className = 'torrent-download-card__progress-fill';
-            progressFill.style.width = `${percent.toFixed(2)}%`;
-            progress.appendChild(progressFill);
-
-            const meta = document.createElement('div');
-            meta.className = 'torrent-download-card__meta';
-            const downloaded = this.formatTorrentBytes(download.downloadedBytes);
-            const total = this.formatTorrentBytes(download.totalBytes || download.sizeBytes);
-            const progressText = total === '—' ? downloaded : `${downloaded} из ${total}`;
-            const details = serviceUnavailable
-                ? [progressText, 'данные устарели']
-                : [progressText, this.formatTorrentRate(download.downloadSpeedBytesPerSecond)];
-            if (!serviceUnavailable && download.status !== 'complete') {
-                details.push(`пиры: ${this.getTorrentNumber(download.peers, 0)}`);
-            }
-            const remaining = serviceUnavailable ? '' : this.formatTorrentTime(download.timeRemainingSeconds);
-            if (remaining) details.push(`осталось: ${remaining}`);
-            meta.textContent = details.join(' · ');
-
-            const provider = document.createElement('div');
-            provider.className = 'torrent-download-card__provider';
-            provider.textContent = String(download.provider || 'MediaPlayer');
-
-            const playbackSummary = this.getTorrentPlaybackSummary();
-            const playbackElement = isCurrent && playbackSummary
-                ? document.createElement('div')
-                : null;
-            if (playbackElement) {
-                playbackElement.className = 'torrent-download-card__playback';
-                playbackElement.dataset.playbackState = this.getTorrentWorkspaceState(
-                    this.latestTorrentPlaybackProgress || {}
-                );
-                playbackElement.textContent = playbackSummary;
-                playbackElement.setAttribute('role', 'status');
-                playbackElement.setAttribute('aria-live', 'polite');
-            }
-
-            const actions = document.createElement('div');
-            actions.className = 'torrent-download-card__actions';
-            const isActiveDownload = ['starting', 'downloading'].includes(download.status);
-            if (download.status === 'complete' || isActiveDownload) {
-                const playButton = document.createElement('button');
-                playButton.type = 'button';
-                playButton.className = 'torrent-download-card__action torrent-download-card__action--primary';
-                playButton.dataset.downloadAction = 'play';
-                playButton.dataset.downloadId = download.id;
-                playButton.textContent = download.status === 'complete' ? 'Смотреть' : 'Открыть просмотр';
-                playButton.setAttribute('aria-label', `${playButton.textContent}: ${download.title || 'фильм'}`);
-                actions.appendChild(playButton);
-            }
-            if (isActiveDownload || download.status === 'paused' || download.status === 'error') {
-                const controlButton = document.createElement('button');
-                controlButton.type = 'button';
-                controlButton.className = 'torrent-download-card__action torrent-download-card__action--control';
-                controlButton.dataset.downloadAction = isActiveDownload ? 'pause' : 'resume';
-                controlButton.dataset.downloadId = download.id;
-                controlButton.textContent = isActiveDownload
-                    ? 'Пауза'
-                    : download.status === 'error' ? 'Повторить' : 'Продолжить';
-                controlButton.setAttribute('aria-label', `${controlButton.textContent}: ${download.title || 'фильм'}`);
-                actions.appendChild(controlButton);
-            }
-            const deleteButton = document.createElement('button');
-            deleteButton.type = 'button';
-            deleteButton.className = 'torrent-download-card__action';
-            deleteButton.dataset.downloadAction = 'delete';
-            deleteButton.dataset.downloadId = download.id;
-            deleteButton.textContent = 'Удалить';
-            actions.appendChild(deleteButton);
-
-            card.append(header, title, progress, meta, provider);
-            if (playbackElement) card.appendChild(playbackElement);
-            card.appendChild(actions);
-            list.appendChild(card);
-        });
-    }
-
-    async refreshTorrentDownloads(movie = this.selectedMovie, requestId = this.torrentRequestId, options = {}) {
-        if (!this.mediaPlayerService || !movie || this.torrentDownloadRequestActive) return false;
-        const requestToken = ++this.torrentDownloadRequestToken;
-        this.torrentDownloadRequestActive = true;
-        try {
-            const downloads = await this.mediaPlayerService.listDownloads({ signal: options.signal });
-            if (!this.isTorrentRequestCurrent(requestId, movie)) return false;
-            this.torrentServiceHealth = 'healthy';
-            this.torrentDownloads = this.getMatchingTorrentDownloads(downloads, movie);
-            this.resolveTorrentActiveDownload();
-            this.renderTorrentDownloads(this.torrentDownloads);
-            if (this.torrentActiveContext && !this.torrentPlaybackSession) {
-                this.renderTorrentPlaybackStatus(this.getTorrentProgressFromDownload(this.getTorrentActiveDownload()));
-            }
-            if (!this.torrentSearchJobId && this.torrentSources.length === 0) {
-                this.setTorrentSourceStatus(this.getTorrentDownloadSummary());
-            }
-            return true;
-        } catch (error) {
-            const requestAborted = this.mediaPlayerService?.isRequestAbortedError?.(error) === true
-                || error?.code === 'request_aborted';
-            if (requestAborted) return false;
-            if (this.isTorrentRequestCurrent(requestId, movie)) {
-                const serviceUnavailable = this.mediaPlayerService?.isServiceUnavailableError?.(error) === true;
-                this.torrentServiceHealth = serviceUnavailable ? 'unavailable' : this.torrentServiceHealth;
-                if (serviceUnavailable) {
-                    this.renderTorrentDownloads(this.torrentDownloads);
-                }
-                if (serviceUnavailable || this.torrentDownloads.length === 0) {
-                    this.setTorrentSourceStatus(this.formatTorrentError(error), 'error');
-                }
-            }
-            return false;
-        } finally {
-            if (this.torrentDownloadRequestToken === requestToken) {
-                this.torrentDownloadRequestActive = false;
-            }
-        }
-    }
-
-    startTorrentDownloadMonitoring(movie = this.selectedMovie, requestId = this.torrentRequestId) {
-        this.stopTorrentDownloadMonitoring();
-        if (!this.mediaPlayerService || !movie) return;
-        const monitorToken = ++this.torrentDownloadMonitorToken;
-        const abortController = new AbortController();
-        this.torrentDownloadAbortController = abortController;
-        this.torrentDownloadPollDelayMs = 2500;
-        const poll = async () => {
-            if (monitorToken !== this.torrentDownloadMonitorToken) return;
-            if (!this.elements?.torrentSourcePanel || this.elements.torrentSourcePanel.hidden) {
-                this.torrentDownloadTimer = setTimeout(() => void poll(), 2500);
-                return;
-            }
-
-            const refreshed = await this.refreshTorrentDownloads(movie, requestId, {
-                signal: abortController.signal
-            });
-            if (monitorToken !== this.torrentDownloadMonitorToken) return;
-            if (refreshed) {
-                this.torrentDownloadPollDelayMs = 2500;
-            } else if (this.torrentServiceHealth === 'unavailable') {
-                this.torrentDownloadPollDelayMs = Math.min(
-                    30_000,
-                    Math.max(5_000, this.torrentDownloadPollDelayMs * 2)
-                );
-            } else {
-                this.torrentDownloadPollDelayMs = 2500;
-            }
-            this.torrentDownloadTimer = setTimeout(() => void poll(), this.torrentDownloadPollDelayMs);
-        };
-        void poll();
-    }
-
-    stopTorrentDownloadMonitoring() {
-        this.torrentDownloadMonitorToken += 1;
-        this.torrentDownloadRequestToken += 1;
-        this.torrentDownloadAbortController?.abort();
-        this.torrentDownloadAbortController = null;
-        if (this.torrentDownloadTimer) clearTimeout(this.torrentDownloadTimer);
-        this.torrentDownloadTimer = null;
-        this.torrentDownloadPollDelayMs = 2500;
-        this.torrentDownloadRequestActive = false;
-    }
-
-    async playSavedTorrent(downloadId) {
-        const movie = this.selectedMovie;
-        if (!movie || !this.mediaPlayerService) return false;
-        const record = this.torrentDownloads.find(download => String(download.id) === String(downloadId));
-        if (!record) return false;
-        this.setTorrentActiveContext({
-            movieKey: this.getTorrentMovieKey(movie),
-            downloadId: record.id,
-            title: record.title,
-            provider: record.provider,
-            quality: record.quality,
-            sizeBytes: record.sizeBytes || record.totalBytes
-        });
-        const requestId = this.torrentRequestId;
-        const action = Array.from(
-            this.elements.torrentDownloadList?.querySelectorAll('[data-download-action="play"]') || []
-        ).find(item => item.dataset.downloadId === downloadId);
-        if (action) action.disabled = true;
-        try {
-            const session = await this.mediaPlayerService.playDownload(downloadId);
-            if (!this.isTorrentRequestCurrent(requestId, movie)) {
-                void this.mediaPlayerService.revokePlaybackSession(session.sessionId).catch(() => undefined);
-                return false;
-            }
-            return await this.mountTorrentPlaybackSession(session, requestId, movie);
-        } catch (error) {
-            this.setTorrentSourceStatus(this.formatTorrentError(error), 'error');
-            if (action) action.disabled = false;
-            return false;
-        }
-    }
-
-    updateTorrentDownloadRecord(download) {
-        if (!download?.id) return;
-        const index = this.torrentDownloads.findIndex(item => item.id === download.id);
-        if (index < 0) return;
-        this.torrentDownloads[index] = { ...this.torrentDownloads[index], ...download };
-        this.renderTorrentDownloads(this.torrentDownloads);
-    }
-
-    async pauseSavedTorrent(downloadId) {
-        const movie = this.selectedMovie;
-        if (!movie || !this.mediaPlayerService) return false;
-        const requestId = this.torrentRequestId;
-        const action = Array.from(
-            this.elements.torrentDownloadList?.querySelectorAll('[data-download-action="pause"]') || []
-        ).find(item => item.dataset.downloadId === downloadId);
-        if (action) action.disabled = true;
-        try {
-            const download = await this.mediaPlayerService.pauseDownload(downloadId);
-            if (!this.isTorrentRequestCurrent(requestId, movie)) return false;
-            this.updateTorrentDownloadRecord(download);
-            this.renderTorrentPlaybackStatus(this.getTorrentProgressFromDownload(this.getTorrentActiveDownload()));
-            void this.refreshTorrentDownloads(movie, requestId);
-            this.setTorrentSourceStatus('Загрузка приостановлена. Файл и скачанные части сохранены.');
-            return true;
-        } catch (error) {
-            this.setTorrentSourceStatus(this.formatTorrentError(error), 'error');
-            return false;
-        } finally {
-            if (action?.isConnected) action.disabled = false;
-        }
-    }
-
-    async resumeSavedTorrent(downloadId) {
-        const movie = this.selectedMovie;
-        if (!movie || !this.mediaPlayerService) return false;
-        const requestId = this.torrentRequestId;
-        const action = Array.from(
-            this.elements.torrentDownloadList?.querySelectorAll('[data-download-action="resume"]') || []
-        ).find(item => item.dataset.downloadId === downloadId);
-        if (action) action.disabled = true;
-        try {
-            const download = await this.mediaPlayerService.resumeDownload(downloadId);
-            if (!this.isTorrentRequestCurrent(requestId, movie)) return false;
-            this.updateTorrentDownloadRecord(download);
-            this.renderTorrentPlaybackStatus(this.getTorrentProgressFromDownload(this.getTorrentActiveDownload()));
-            void this.refreshTorrentDownloads(movie, requestId);
-            this.setTorrentSourceStatus('Загрузка продолжена.');
-            return true;
-        } catch (error) {
-            this.setTorrentSourceStatus(this.formatTorrentError(error), 'error');
-            return false;
-        } finally {
-            if (action?.isConnected) action.disabled = false;
-        }
-    }
-
-    async deleteSavedTorrent(downloadId) {
-        const record = this.torrentDownloads.find(download => download.id === downloadId);
-        if (!record || !this.mediaPlayerService) return false;
-        if (typeof window !== 'undefined' && typeof window.confirm === 'function'
-            && !window.confirm(`Удалить загрузку «${record.title || 'фильм'}»?`)) return false;
-        try {
-            await this.mediaPlayerService.deleteDownload(downloadId);
-            this.torrentDownloads = this.torrentDownloads.filter(download => download.id !== downloadId);
-            if (String(this.torrentActiveContext?.downloadId || '') === String(downloadId)) {
-                this.torrentActiveContext = null;
-                if (!this.torrentPlaybackSession && this.elements?.torrentPlaybackStatus) {
-                    this.elements.torrentPlaybackStatus.hidden = true;
-                }
-            }
-            this.renderTorrentDownloads(this.torrentDownloads);
-            this.setTorrentSourceStatus(this.getTorrentDownloadSummary());
-            return true;
-        } catch (error) {
-            this.setTorrentSourceStatus(this.formatTorrentError(error), 'error');
-            return false;
-        }
-    }
-
-    async startTorrentPlayback(sourceId) {
-        const source = this.torrentSources.find(candidate => candidate?.sourceId === sourceId);
-        const movie = this.selectedMovie;
-        if (!source || !movie || !this.mediaPlayerService) return false;
-        const requestId = this.torrentRequestId;
-        this.setTorrentActiveContext({
-            movieKey: this.getTorrentMovieKey(movie),
-            sourceId: source.sourceId,
-            title: source.title,
-            provider: source.provider,
-            quality: source.quality,
-            sizeBytes: source.sizeBytes
-        });
-        this.cancelActiveTorrentSearch();
-        this.elements.torrentSourceList?.querySelectorAll('.torrent-source-card').forEach(card => {
-            card.disabled = true;
-        });
-        this.setTorrentSourceStatus('Подготавливаем просмотр…');
-
-        try {
-            await this.revokeTorrentPlaybackSession();
-            const session = await this.mediaPlayerService.createPlaybackSession({
-                sourceId: source.sourceId,
-                tmdbId: this.getMediaPlayerTmdbId(movie),
-                title: movie.name || movie.nameRu || movie.alternativeName,
-                year: movie.year
-            });
-            return await this.mountTorrentPlaybackSession(session, requestId, movie);
-        } catch (error) {
-            this.setTorrentSourceStatus(this.formatTorrentError(error), 'error');
-            this.elements.torrentSourceList?.querySelectorAll('.torrent-source-card').forEach(card => {
-                card.disabled = false;
-            });
-            return false;
-        }
-    }
-
-    async mountTorrentPlaybackSession(session, requestId, movie) {
-        if (!session || !this.isTorrentRequestCurrent(requestId, movie)) {
-            if (session?.sessionId) void this.mediaPlayerService?.revokePlaybackSession(session.sessionId).catch(() => undefined);
-            return false;
-        }
-
-        this.beginSourceSwitchRequest();
-        this.unmountActivePlayer();
-        this.resetHlsRecoveryState();
-        if (this.currentHls) {
-            this.currentHls.destroy();
-            this.currentHls = null;
-        }
-        this.torrentPlaybackSession = session;
-        if (session.downloadId) {
-            this.setTorrentActiveContext({
-                ...(this.torrentActiveContext || {}),
-                movieKey: this.getTorrentMovieKey(movie),
-                downloadId: session.downloadId
-            });
-        }
-        this.latestTorrentPlaybackProgress = { state: 'starting' };
-        this.torrentHasPlaybackSnapshot = false;
-        this.torrentPlaybackAvailableDurationSeconds = null;
-        this.currentVideoUrl = session.preferHls ? session.hlsUrl : session.streamUrl;
-        this.activePlayerId = null;
-        this.isPlaying = true;
-        await this.renderCustomPlayer(this.currentVideoUrl, Boolean(session.preferHls));
-        this.renderTorrentPlaybackStatus({ state: 'starting' });
-        if (session.downloadId) void this.refreshTorrentDownloads(movie, requestId);
-        this.startTorrentProgressMonitoring(session);
-        if (this.elements.torrentSourceDisclosure) this.elements.torrentSourceDisclosure.open = false;
-        this.elements.torrentSourceList?.querySelectorAll('.torrent-source-card').forEach(card => {
-            card.disabled = false;
-        });
-        this.focusTorrentRegion(this.elements.videoContainer);
-        return true;
-    }
-
-    ensureTorrentPlaybackStatusMarkup(status) {
-        if (status.dataset.view === 'active') return;
-
-        status.dataset.view = 'active';
-        status.setAttribute('aria-atomic', 'false');
-        status.innerHTML = `
-            <div class="torrent-playback-status__header">
-                <div>
-                    <span class="torrent-playback-status__eyebrow">ТОРРЕНТ-ПРОСМОТР</span>
-                    <h4 class="torrent-playback-status__title" id="torrentPlaybackTitle" data-status-title>Поток готовится</h4>
-                    <div class="torrent-playback-status__context">
-                        <span data-status-quality>Качество не указано</span>
-                        <span data-status-provider>MediaPlayer</span>
-                    </div>
-                </div>
-                <span class="torrent-playback-status__state" data-status-state>Запуск загрузки</span>
-            </div>
-            <div class="torrent-playback-status__metrics" aria-label="Состояние торрент-просмотра">
-                <div class="torrent-playback-status__metric">
-                    <span class="torrent-playback-status__metric-label">Скачано</span>
-                    <strong class="torrent-playback-status__metric-value" data-status-download>—</strong>
-                </div>
-                <div class="torrent-playback-status__metric">
-                    <span class="torrent-playback-status__metric-label">Скорость</span>
-                    <strong class="torrent-playback-status__metric-value" data-status-speed>0 Б/с</strong>
-                </div>
-                <div class="torrent-playback-status__metric">
-                    <span class="torrent-playback-status__metric-label">Пиры</span>
-                    <strong class="torrent-playback-status__metric-value" data-status-peers>—</strong>
-                </div>
-                <div class="torrent-playback-status__metric torrent-playback-status__metric--available">
-                    <span class="torrent-playback-status__metric-label">Доступно для просмотра</span>
-                    <strong class="torrent-playback-status__metric-value" data-status-available>Пока нет</strong>
-                </div>
-                <div class="torrent-playback-status__metric">
-                    <span class="torrent-playback-status__metric-label">Размер</span>
-                    <strong class="torrent-playback-status__metric-value" data-status-size>—</strong>
-                </div>
-            </div>
-            <div class="torrent-playback-status__download-track" data-status-download-bar role="progressbar"
-                aria-label="Прогресс скачивания" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-                <span class="torrent-playback-status__download-fill" data-status-download-fill></span>
-            </div>
-            <div class="torrent-playback-status__actions" data-status-actions></div>
-            <div class="torrent-playback-status__footer">
-                <span class="torrent-playback-status__note" data-status-note aria-live="polite" aria-atomic="false">Подключаемся к раздаче…</span>
-                <span class="torrent-playback-status__remaining" data-status-remaining></span>
-            </div>
-        `;
-    }
-
-    getTorrentWorkspaceState(progress = {}) {
-        const playback = progress.playback && typeof progress.playback === 'object'
-            ? progress.playback
-            : null;
-        const downloadState = String(progress.state || 'starting');
-        const playbackState = String(playback?.state || 'idle');
-
-        if (downloadState === 'error' || progress.errorMessage || progress.error) {
-            return 'error';
-        }
-        if (playbackState === 'failed') return 'playback-error';
-        if (downloadState === 'paused' || playbackState === 'paused') return 'paused';
-        if (['probing', 'remuxing', 'transcoding'].includes(playbackState)) return playbackState;
-        if (downloadState === 'metadata') return 'metadata';
-        if (downloadState === 'complete') {
-            return playback?.isComplete || playback?.isReady || progress.playable === true
-                ? 'complete'
-                : 'preparing';
-        }
-        if (downloadState === 'downloading') return 'downloading';
-        if (playbackState === 'complete' && (playback?.isComplete || playback?.isReady)) return 'complete';
-        if (downloadState === 'starting') return 'starting';
-        return 'starting';
-    }
-
-    formatTorrentPlaybackDuration(value) {
-        const seconds = Number(value);
-        if (!Number.isFinite(seconds) || seconds <= 0) return '—';
-
-        const totalSeconds = Math.floor(seconds);
-        const hours = Math.floor(totalSeconds / 3600);
-        const minutes = Math.floor((totalSeconds % 3600) / 60);
-        const remainingSeconds = totalSeconds % 60;
-        const paddedMinutes = String(minutes).padStart(2, '0');
-        const paddedSeconds = String(remainingSeconds).padStart(2, '0');
-
-        return hours > 0
-            ? `${hours}:${paddedMinutes}:${paddedSeconds}`
-            : `${paddedMinutes}:${paddedSeconds}`;
-    }
-
-    renderTorrentPlaybackStatus(progress = {}) {
-        const status = this.elements?.torrentPlaybackStatus;
-        if (!status) return;
-        if (Object.keys(progress).length) this.latestTorrentPlaybackProgress = progress;
-        else progress = this.latestTorrentPlaybackProgress || {};
-        const activeDownload = this.getTorrentActiveDownload();
-        if (activeDownload) {
-            this.renderTorrentDownloads(this.torrentDownloads);
-            status.hidden = true;
-            return;
-        }
-        this.ensureTorrentPlaybackStatusMarkup(status);
-
-        const playback = progress.playback && typeof progress.playback === 'object'
-            ? progress.playback
-            : null;
-        const videoMode = String(playback?.videoMode || 'unknown');
-        const audioMode = String(playback?.audioMode || 'unknown');
-        const trackAwareFallback = videoMode === 'copy' && audioMode === 'transcode'
-            ? 'audio'
-            : videoMode === 'transcode' && audioMode === 'copy'
-                ? 'video'
-                : null;
-        const stateLabels = {
-            starting: 'Запуск загрузки',
-            metadata: 'Получение метаданных',
-            downloading: 'Загрузка',
-            paused: 'Пауза',
-            complete: 'Файл готов',
-            preparing: 'Готовим просмотр',
-            error: 'Ошибка загрузки',
-            'playback-error': 'Ошибка просмотра',
-            probing: 'Определяем формат',
-            remuxing: 'Быстрый remux',
-            transcoding: trackAwareFallback === 'audio' ? 'Подготовка аудио' : 'Подготовка видео'
-        };
-        const state = this.getTorrentWorkspaceState(progress);
-        const percent = Number(progress.progress);
-        const downloadPercent = Number.isFinite(percent)
-            ? Math.max(0, Math.min(100, percent <= 1 ? percent * 100 : percent))
-            : null;
-        const hasDownloadSnapshot = this.torrentHasPlaybackSnapshot || !this.torrentPlaybackSession;
-        const speed = hasDownloadSnapshot
-            ? this.formatTorrentRate(progress.downloadSpeedBytesPerSecond)
-            : 'Получаем данные…';
-        const peers = hasDownloadSnapshot && Number.isFinite(Number(progress.peers))
-            ? Number(progress.peers)
-            : '—';
-        const remaining = this.formatTorrentTime(progress.timeRemainingSeconds);
-
-        const hasOfficialPlayback = Boolean(playback);
-        const availableDuration = hasOfficialPlayback
-            ? Number(playback.availableDurationSeconds)
-            : null;
-        const hasAvailableDuration = Number.isFinite(availableDuration) && availableDuration > 0;
-        const normalizedState = stateLabels[state] ? state : 'starting';
-        const activeContext = this.torrentActiveContext || {};
-        const title = activeDownload?.title || activeContext.title || this.selectedMovie?.name || 'Торрент-файл';
-        const quality = activeDownload?.quality || activeContext.quality || 'Качество не указано';
-        const provider = activeDownload?.provider || activeContext.provider || 'MediaPlayer';
-        const sizeBytes = activeDownload?.sizeBytes || activeDownload?.totalBytes || activeContext.sizeBytes;
-        const titles = {
-            starting: 'Поток готовится',
-            metadata: 'Получаем данные раздачи',
-            downloading: 'Фильм скачивается',
-            paused: 'Загрузка на паузе',
-            complete: 'Файл готов к просмотру',
-            preparing: 'Файл скачан, готовим просмотр',
-            error: 'Не удалось продолжить загрузку',
-            'playback-error': 'Поток не запустился',
-            probing: 'Проверяем кодеки',
-            remuxing: 'Запускаем быстрый поток',
-            transcoding: trackAwareFallback === 'audio'
-                ? 'Подготавливаем только звук, видео копируется без перекодирования.'
-                : trackAwareFallback === 'video'
-                    ? 'Подготавливаем только видео, аудиодорожка копируется без изменений.'
-                    : 'Подготавливаем совместимый поток'
-        };
-        const notes = {
-            starting: 'Подключаемся к раздаче…',
-            metadata: 'Получаем метаданные и готовим первый фрагмент видео…',
-            downloading: hasAvailableDuration
-                ? 'Плеер показывает доступный фрагмент. Длина растёт по мере обработки файла.'
-                : 'Готовим первый фрагмент видео…',
-            paused: 'Скачивание приостановлено. Нажмите «Продолжить», чтобы возобновить его.',
-            complete: hasAvailableDuration
-                ? 'Торрент скачан. Доступная длительность подтверждена HLS-плейлистом.'
-                : progress.playable === true
-                    ? 'Файл скачан полностью и отмечен как доступный для просмотра.'
-                    : 'Торрент скачан. Ждём подтверждение готовности playback.',
-            preparing: 'Торрент скачан, но playback ещё не подтвердил доступный поток.',
-            error: playback?.message || progress.errorMessage || 'Проверьте состояние MediaPlayer и повторите запуск загрузки.',
-            'playback-error': playback?.message
-                ? `Просмотр временно недоступен: ${String(playback.message)}`
-                : 'Просмотр временно недоступен. Загрузка торрента продолжается.',
-            probing: 'Проверяем заголовок файла и выбираем remux или перекодирование…',
-            remuxing: playback?.isReady
-                ? 'Поток готов к просмотру и продолжает наполняться по мере загрузки.'
-                : 'Собираем первые сегменты без перекодирования…',
-            transcoding: playback?.isReady
-                ? 'Идёт подготовка потока. Плеер запущен после безопасного буфера.'
-                : trackAwareFallback === 'audio'
-                    ? 'Видео копируется без перекодирования. Ждём первые 2 секунды звука…'
-                    : 'Кодек требует подготовки. Ждём минимум 15 секунд буфера…'
-        };
-
-        const titleElement = status.querySelector('[data-status-title]');
-        const stateElement = status.querySelector('[data-status-state]');
-        const qualityElement = status.querySelector('[data-status-quality]');
-        const providerElement = status.querySelector('[data-status-provider]');
-        const downloadElement = status.querySelector('[data-status-download]');
-        const speedElement = status.querySelector('[data-status-speed]');
-        const peersElement = status.querySelector('[data-status-peers]');
-        const availableElement = status.querySelector('[data-status-available]');
-        const sizeElement = status.querySelector('[data-status-size]');
-        const downloadBar = status.querySelector('[data-status-download-bar]');
-        const downloadFill = status.querySelector('[data-status-download-fill]');
-        const noteElement = status.querySelector('[data-status-note]');
-        const remainingElement = status.querySelector('[data-status-remaining]');
-        const actionsElement = status.querySelector('[data-status-actions]');
-
-        status.dataset.state = normalizedState;
-        titleElement.textContent = title;
-        titleElement.setAttribute('data-status-heading', titles[normalizedState]);
-        qualityElement.textContent = quality;
-        providerElement.textContent = provider;
-        stateElement.textContent = stateLabels[normalizedState];
-        downloadElement.textContent = downloadPercent === null ? '—' : `${downloadPercent.toFixed(0)}%`;
-        speedElement.textContent = speed;
-        peersElement.textContent = String(peers);
-        availableElement.textContent = hasAvailableDuration
-            ? this.formatTorrentPlaybackDuration(availableDuration)
-            : progress.playable === true ? 'Весь файл' : 'Пока нет';
-        sizeElement.textContent = this.formatTorrentBytes(sizeBytes);
-        downloadFill.style.width = `${downloadPercent === null ? 0 : downloadPercent}%`;
-        if (downloadPercent === null) {
-            downloadBar.removeAttribute('aria-valuenow');
-            downloadBar.removeAttribute('aria-valuetext');
-        } else {
-            downloadBar.setAttribute('aria-valuenow', String(Math.round(downloadPercent)));
-            downloadBar.setAttribute('aria-valuetext', `${downloadPercent.toFixed(0)}% скачано`);
-        }
-        noteElement.textContent = this.hlsPlaybackState || notes[normalizedState] || notes.starting;
-        remainingElement.textContent = remaining
-            ? `до полной загрузки: ${remaining}`
-            : normalizedState === 'complete' ? 'файл скачан целиком' : '';
-        actionsElement.replaceChildren();
-        if (activeDownload) {
-            const addAction = (action, label, primary = false) => {
-                const button = document.createElement('button');
-                button.type = 'button';
-                button.className = `torrent-playback-status__action${primary ? ' torrent-playback-status__action--primary' : ''}`;
-                button.dataset.downloadAction = action;
-                button.dataset.downloadId = activeDownload.id;
-                button.textContent = label;
-                button.setAttribute('aria-label', `${label}: ${title}`);
-                actionsElement.appendChild(button);
-            };
-            if (activeDownload.status === 'complete' && activeDownload.playable === true) {
-                addAction('play', 'Смотреть', true);
-            } else if (['starting', 'downloading'].includes(activeDownload.status)) {
-                addAction('pause', 'Пауза');
-            } else if (['paused', 'error'].includes(activeDownload.status)) {
-                addAction('resume', activeDownload.status === 'error' ? 'Повторить' : 'Продолжить');
-            }
-            addAction('delete', 'Удалить');
-        } else if (this.torrentPlaybackSession) {
-            const hint = document.createElement('span');
-            hint.className = 'torrent-playback-status__actions-hint';
-            hint.textContent = 'Управление загрузкой появится после сохранения её записи.';
-            actionsElement.appendChild(hint);
-        }
-        status.hidden = false;
-    }
-
-    updateTorrentPlaybackAvailability(video = this.torrentPlaybackVideo) {
-        // Torrent availability is owned by the MediaPlayer playback snapshot.
-        // video.duration describes the current media element, not HLS readiness,
-        // and must never replace an authoritative zero from the API.
-        if (!video || !this.torrentPlaybackSession) return;
-        if (this.latestTorrentPlaybackProgress?.playback) return;
-    }
-
-    attachTorrentPlaybackVideo(video) {
-        this.detachTorrentPlaybackVideo();
-        if (!video) return;
-
-        this.torrentPlaybackVideo = video;
-        const updateAvailability = () => this.updateTorrentPlaybackAvailability(video);
-        const events = ['loadedmetadata', 'durationchange', 'progress', 'canplay'];
-        events.forEach(eventName => video.addEventListener(eventName, updateAvailability));
-        this.torrentPlaybackVideoCleanup = () => {
-            events.forEach(eventName => video.removeEventListener(eventName, updateAvailability));
-            this.torrentPlaybackVideoCleanup = null;
-            this.torrentPlaybackVideo = null;
-            this.torrentPlaybackAvailableDurationSeconds = null;
-        };
-        updateAvailability();
-    }
-
-    detachTorrentPlaybackVideo() {
-        if (this.torrentPlaybackStartTimer) clearTimeout(this.torrentPlaybackStartTimer);
-        this.torrentPlaybackStartTimer = null;
-        if (this.torrentPlaybackVideoCleanup) {
-            this.torrentPlaybackVideoCleanup();
-            return;
-        }
-        this.torrentPlaybackVideo = null;
-        this.torrentPlaybackAvailableDurationSeconds = null;
-    }
-
     resetHlsRecoveryState() {
-        if (this.hlsRecoveryTimer) clearTimeout(this.hlsRecoveryTimer);
-        this.hlsRecoveryTimer = null;
-        this.hlsRecoveryAttempt = 0;
         this.hlsPlaybackState = '';
-    }
-
-    waitForTorrentPlaybackStart(video, isCurrentPlayer) {
-        if (this.torrentPlaybackStartTimer) clearTimeout(this.torrentPlaybackStartTimer);
-        this.torrentPlaybackStartTimer = null;
-
-        const attempt = () => {
-            if (!isCurrentPlayer()) return;
-
-            const playback = this.latestTorrentPlaybackProgress?.playback || null;
-            const requiredSeconds = Number(playback?.startupBufferSeconds)
-                || (playback?.mode === 'transcode' ? 15 : 2);
-            const availableSeconds = Number(playback?.availableDurationSeconds);
-            const bufferedSeconds = video.buffered?.length
-                ? Math.max(0, video.buffered.end(video.buffered.length - 1) - video.currentTime)
-                : 0;
-            const enoughBuffered = bufferedSeconds >= Math.min(
-                requiredSeconds,
-                Number.isFinite(availableSeconds) && availableSeconds > 0
-                    ? availableSeconds
-                    : requiredSeconds
-            );
-            const ready = video.readyState >= 2
-                && (playback?.isComplete || enoughBuffered || (playback?.isReady && video.readyState >= 3));
-
-            if (ready) {
-                this.torrentPlaybackStartTimer = null;
-                this.hlsPlaybackState = '';
-                this.renderTorrentPlaybackStatus();
-                video.play().catch(error => console.log('Autoplay blocked', error));
-                return;
-            }
-
-            if (playback?.state === 'transcoding' && !playback?.isReady) {
-                this.hlsPlaybackState = `Буферизация перед запуском · нужно ${requiredSeconds} с`;
-            } else if (playback?.state === 'probing') {
-                this.hlsPlaybackState = 'Определяем формат видео…';
-            }
-            this.renderTorrentPlaybackStatus();
-            this.torrentPlaybackStartTimer = setTimeout(attempt, 400);
-        };
-
-        attempt();
-    }
-
-    startTorrentProgressMonitoring(session) {
-        this.stopTorrentProgressMonitoring();
-        if (!session?.progressUrl || !this.mediaPlayerService) return;
-        const monitorToken = ++this.torrentProgressMonitorToken;
-        const abortController = new AbortController();
-        this.torrentProgressAbortController = abortController;
-        this.torrentProgressPollDelayMs = 2500;
-        const schedulePoll = () => {
-            if (monitorToken !== this.torrentProgressMonitorToken) return;
-            this.torrentProgressTimer = setTimeout(() => void poll(), this.torrentProgressPollDelayMs);
-        };
-        const poll = async () => {
-            if (monitorToken !== this.torrentProgressMonitorToken) return;
-            if (this.torrentProgressRequestActive || this.torrentPlaybackSession?.sessionId !== session.sessionId) return;
-            this.torrentProgressRequestActive = true;
-            try {
-                const progress = await this.mediaPlayerService.getPlaybackProgress(session.progressUrl, {
-                    signal: abortController.signal
-                });
-                if (this.torrentPlaybackSession?.sessionId === session.sessionId) {
-                    this.torrentServiceHealth = 'healthy';
-                    this.torrentProgressPollDelayMs = 2500;
-                    this.torrentHasPlaybackSnapshot = true;
-                    this.renderTorrentPlaybackStatus(progress || {});
-                }
-            } catch (error) {
-                if (monitorToken !== this.torrentProgressMonitorToken) return;
-                const requestAborted = this.mediaPlayerService.isRequestAbortedError?.(error) === true
-                    || error?.code === 'request_aborted';
-                if (requestAborted) return;
-                if (this.torrentPlaybackSession?.sessionId === session.sessionId) {
-                    const serviceUnavailable = this.mediaPlayerService.isServiceUnavailableError?.(error) === true;
-                    if (serviceUnavailable) {
-                        this.torrentServiceHealth = 'unavailable';
-                        this.torrentProgressPollDelayMs = Math.min(
-                            30_000,
-                            Math.max(5_000, this.torrentProgressPollDelayMs * 2)
-                        );
-                        this.hlsPlaybackState = `${this.getTorrentServiceUnavailableMessage()} · повторяем проверку…`;
-                        this.renderTorrentPlaybackStatus();
-                    } else {
-                        this.torrentProgressPollDelayMs = 2500;
-                        this.renderTorrentPlaybackStatus({
-                            ...this.latestTorrentPlaybackProgress,
-                            state: 'error',
-                            errorMessage: error?.message
-                        });
-                    }
-                }
-            } finally {
-                if (monitorToken === this.torrentProgressMonitorToken) {
-                    this.torrentProgressRequestActive = false;
-                    if (this.torrentPlaybackSession?.sessionId === session.sessionId) schedulePoll();
-                }
-            }
-        };
-        void poll();
-    }
-
-    stopTorrentProgressMonitoring() {
-        this.torrentProgressMonitorToken += 1;
-        this.torrentProgressAbortController?.abort();
-        this.torrentProgressAbortController = null;
-        if (this.torrentProgressTimer) clearTimeout(this.torrentProgressTimer);
-        this.torrentProgressTimer = null;
-        this.torrentProgressPollDelayMs = 2500;
-        this.torrentProgressRequestActive = false;
-    }
-
-    async revokeTorrentPlaybackSession() {
-        const session = this.torrentPlaybackSession;
-        this.torrentPlaybackSession = null;
-        this.stopTorrentProgressMonitoring();
-        this.detachTorrentPlaybackVideo();
-        if (!session?.sessionId || !this.mediaPlayerService) return;
-        try {
-            await this.mediaPlayerService.revokePlaybackSession(session.sessionId);
-        } catch (error) {
-            console.warn('[MovieDetails] Failed to revoke MediaPlayer playback session:', error?.code || error);
-        }
     }
 
     beginSourceSwitchRequest() {
@@ -10969,7 +9108,7 @@ class MovieDetailsManager {
         const parser = this.parserRegistry.get(parserId);
         if (!parser) {
             console.error(`[Player] Parser "${parserId}" was not found`, { available: this.parserRegistry.getIds() });
-            this.elements.videoContainer.innerHTML = `<div class="video-placeholder"><span>Парсер "${parserId}" не найден</span></div>`;
+            this.renderPlayerPlaceholder(`Парсер "${parserId}" не найден`);
             return false;
         }
 
@@ -11287,7 +9426,7 @@ class MovieDetailsManager {
     }
 
     renderDefaultPlayer(url, { requestId = null, movieId = this.selectedMovie?.kinopoiskId } = {}) {
-        this.elements.videoContainer.innerHTML = `<iframe class="player-surface__media" src="${url}" allowfullscreen allow="autoplay; fullscreen" title="Video player"></iframe>`;
+        if (!this.getPlayerSurface().mountFrame(url, { allow: 'autoplay; fullscreen' })) return;
         const iframe = this.elements.videoContainer.querySelector('iframe');
         if (iframe) {
             iframe.dataset.playerSourceActive = 'true';
@@ -11337,8 +9476,7 @@ class MovieDetailsManager {
      */
     loadVidSrcSource(imdbId, lifecycleContext = {}) {
         if (!imdbId) {
-            this.elements.videoContainer.innerHTML =
-                `<div class="video-placeholder"><span>IMDb ID не найден для этого фильма</span></div>`;
+            this.renderPlayerPlaceholder('IMDb ID не найден для этого фильма');
             return;
         }
 
@@ -11427,7 +9565,7 @@ class MovieDetailsManager {
             } else {
                 let url = this.currentVideoUrl;
                 try { const u = new URL(url); u.searchParams.set('autoplay', '1'); url = u.toString(); } catch { url += url.includes('?') ? '&autoplay=1' : '?autoplay=1'; }
-                this.elements.videoContainer.innerHTML = `<iframe class="player-surface__media" src="${url}" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture" title="Video player"></iframe>`;
+                this.getPlayerSurface().mountFrame(url, { allow: 'autoplay; encrypted-media; picture-in-picture' });
             }
         } else {
             if (this.currentHls) { 
@@ -11461,8 +9599,7 @@ class MovieDetailsManager {
 
         wrapper.appendChild(video);
         
-        this.elements.videoContainer.innerHTML = '';
-        this.elements.videoContainer.appendChild(wrapper);
+        this.getPlayerSurface().mountElement(wrapper);
         if (this.torrentPlaybackSession) {
             this.attachTorrentPlaybackVideo(video);
         }
@@ -11472,67 +9609,49 @@ class MovieDetailsManager {
             try {
                 await LazyLoader.loadScript('../../shared/lib/hls.min.js');
                 if (!wrapper.isConnected || this.currentVideoUrl !== url) return;
-                if (typeof Hls !== 'undefined' && Hls.isSupported()) {
-                    const hls = new Hls();
-                    const isCurrentPlayer = () => this.currentHls === hls
-                        && wrapper.isConnected
-                        && this.currentVideoUrl === url;
-                    const clearHlsRecovery = () => {
-                        if (this.hlsRecoveryTimer) clearTimeout(this.hlsRecoveryTimer);
-                        this.hlsRecoveryTimer = null;
-                        this.hlsRecoveryAttempt = 0;
-                        this.hlsPlaybackState = '';
-                    };
-                    const scheduleHlsRecovery = () => {
-                        if (!isCurrentPlayer() || this.hlsRecoveryTimer) return;
-                        const delaySeconds = Math.min(8, 2 ** Math.min(this.hlsRecoveryAttempt, 3));
-                        this.hlsRecoveryAttempt += 1;
+                const isTorrentStream = Boolean(this.torrentPlaybackSession);
+                let hls = null;
+                const isCurrentPlayer = () => Boolean(hls)
+                    && this.currentHls === hls
+                    && wrapper.isConnected
+                    && this.currentVideoUrl === url;
+                // Torrent sessions answer 5xx while buffering, so they retry
+                // indefinitely; other direct streams use bounded recovery.
+                hls = window.HlsPlaybackFactory?.create(video, url, {
+                    policy: isTorrentStream ? 'persistent' : 'bounded',
+                    attachFirst: true,
+                    isCurrent: isCurrentPlayer,
+                    beforeLoad: (instance) => {
+                        hls = instance;
+                        this.currentHls = instance;
+                        video._movieExtensionHls = instance;
+                        instance.on(Hls.Events.MANIFEST_PARSED, () => {
+                            if (!isCurrentPlayer()) return;
+                            this.hlsPlaybackState = '';
+                            this.renderTorrentPlaybackStatus();
+                            this.waitForTorrentPlaybackStart(video, isCurrentPlayer);
+                        });
+                        instance.on(Hls.Events.MEDIA_ATTACHED, () => {
+                            if (isCurrentPlayer()) video.dispatchEvent(new Event('extension-player-source-ready', { bubbles: true }));
+                        });
+                    },
+                    onRetryScheduled: ({ delaySeconds }) => {
+                        if (!isCurrentPlayer()) return;
                         this.hlsPlaybackState = `Поток ждёт данные · повтор через ${delaySeconds} с`;
                         this.renderTorrentPlaybackStatus();
-                        this.hlsRecoveryTimer = setTimeout(() => {
-                            this.hlsRecoveryTimer = null;
-                            if (!isCurrentPlayer()) return;
-                            try {
-                                hls.stopLoad();
-                                hls.startLoad(-1);
-                            } catch (error) {
-                                console.warn('[MovieDetails] HLS recovery retry failed:', error);
-                                scheduleHlsRecovery();
-                            }
-                        }, delaySeconds * 1000);
-                    };
-                    hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                        if (!isCurrentPlayer()) return;
-                        clearHlsRecovery();
+                    },
+                    onRecovered: () => {
+                        this.hlsPlaybackState = '';
                         this.renderTorrentPlaybackStatus();
-                        this.waitForTorrentPlaybackStart(video, isCurrentPlayer);
-                    });
-                    hls.on(Hls.Events.ERROR, (_event, data) => {
-                        if (!isCurrentPlayer()) return;
-                        const networkErrorType = Hls.ErrorTypes?.NETWORK_ERROR || 'networkError';
-                        const mediaErrorType = Hls.ErrorTypes?.MEDIA_ERROR || 'mediaError';
-                        const responseCode = Number(data?.response?.code);
-                        if (data?.type === mediaErrorType && data?.fatal && typeof hls.recoverMediaError === 'function') {
-                            hls.recoverMediaError();
-                            return;
-                        }
-                        if (data?.type === networkErrorType || responseCode >= 500 || data?.fatal) {
-                            scheduleHlsRecovery();
-                            return;
-                        }
-                        if (data?.fatal) {
-                            this.hlsPlaybackState = 'Поток не удалось запустить';
-                            this.renderTorrentPlaybackStatus();
-                        }
-                    });
-                    video.addEventListener('playing', clearHlsRecovery);
-                    this.currentHls = hls;
-                    video._movieExtensionHls = hls;
-                    hls.on(Hls.Events.MEDIA_ATTACHED, () => {
-                        if (isCurrentPlayer()) video.dispatchEvent(new Event('extension-player-source-ready', { bubbles: true }));
-                    });
-                    hls.attachMedia(video);
-                    hls.loadSource(url);
+                    },
+                    onFatal: () => {
+                        this.hlsPlaybackState = 'Поток не удалось запустить';
+                        this.renderTorrentPlaybackStatus();
+                    }
+                }) || null;
+                if (hls) {
+                    // Retry timers live in the factory; only the status text is ours.
+                    video.addEventListener('playing', () => this.resetHlsRecoveryState());
                 } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
                     video.src = url;
                     this.waitForTorrentPlaybackStart(video, () => video.isConnected && this.currentVideoUrl === url);
@@ -11714,9 +9833,8 @@ class MovieDetailsManager {
 
 
     renderSimplePlayer() {
-        const posterUrl = this.selectedMovie?.posterUrl || '';
-        this.elements.videoContainer.innerHTML = `<div class="player-surface__poster" style="background-image: url('${posterUrl}')"><button class="player-surface__primary-action" id="mainPlayBtn" type="button" aria-label="Play"><svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></button></div>`;
-        document.getElementById('mainPlayBtn')?.addEventListener('click', () => this.togglePlayPause());
+        this.getPlayerSurface().showPoster(this.selectedMovie?.posterUrl)
+            ?.addEventListener('click', () => this.togglePlayPause());
     }
 
     // Button State Methods
@@ -11963,16 +10081,38 @@ class MovieDetailsManager {
         } catch (error) { console.error('Error toggling collection:', error); }
     }
 
-    // updateButtonState removed in favor of Utils.toggleActionButton
+    async handleForceRefreshMovie(movieId) {
+        const numId = Number(movieId);
+        if (!numId || isNaN(numId)) return;
+        try {
+            this.page?.showLoader?.();
+            await this.clearMovieCacheForMovie(numId);
 
-    // Utility Methods
-    formatVotes(num) {
-        if (!num) return '0';
-        if (num >= 1000000) return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'm';
-        if (num >= 100000) return Math.floor(num / 1000) + 'k';
-        if (num >= 1000) return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
-        return num.toString();
+            // Also clear collection cache if collection exists
+            const collectionId = this.selectedMovie?.collection?.tmdbId;
+            if (collectionId && typeof chrome !== 'undefined' && chrome.storage?.local) {
+                try {
+                    await new Promise(resolve => chrome.storage.local.remove([`tmdb_collection_cache_v2_${collectionId}`], resolve));
+                } catch (e) {
+                    console.debug('[MovieDetails] Could not remove collection cache:', e);
+                }
+            }
+
+            await this.loadMovieById(numId, true, false, { forceRefresh: true });
+            if (typeof Utils !== 'undefined' && Utils.showToast) {
+                Utils.showToast(i18n.get('movie_details.data_refreshed') || 'Данные фильма обновлены', 'success');
+            }
+        } catch (error) {
+            console.error('[MovieDetails] Failed to force refresh movie:', error);
+            if (typeof Utils !== 'undefined' && Utils.showToast) {
+                Utils.showToast(i18n.get('movie_details.error_loading_movie') || 'Ошибка обновления данных', 'error');
+            }
+        } finally {
+            this.page?.hideLoader?.();
+        }
     }
+
+    // updateButtonState removed in favor of Utils.toggleActionButton
 
     escapeHtml(text) {
         if (!text) return '';
@@ -12297,14 +10437,14 @@ class MovieDetailsManager {
             return;
         }
         
-        container.innerHTML = `
-            <iframe class="player-surface__media" src="${this.escapeHtml(embedUrl)}"
-                    frameborder="0" 
-                    allowfullscreen="true" 
-                    allow="autoplay; encrypted-media; picture-in-picture"
-                    title="${this.escapeHtml(title || 'Video player')}">
-            </iframe>
-        `;
+        if (!this.renderFrameInto(container, embedUrl, {
+            allow: 'autoplay; encrypted-media; picture-in-picture',
+            title: title || 'Video player'
+        })) {
+            console.error('[MovieDetails] Rejected trailer URL with an unsupported scheme');
+            if (typeof Utils !== 'undefined') Utils.showToast('Ссылка на видео не найдена', 'error');
+            return;
+        }
         
         this.openAccessibleDialog(modal, trigger);
     }
@@ -12398,7 +10538,7 @@ class MovieDetailsManager {
                 const iframe = this.elements.trailerContainer.querySelector('iframe');
                 if (iframe && iframe.contentWindow) {
                     try {
-                        iframe.contentWindow.postMessage({ action: 'DESTROY' }, '*');
+                        this.postToPlayerFrame(iframe, { action: 'DESTROY' });
                     } catch {
                         // Ignore cross-origin destroy error on unmount
                     }
@@ -13761,6 +11901,24 @@ class MovieDetailsManager {
         return true;
     }
 
+}
+
+// Torrent workspace methods live in TorrentSourcePanel.js (loaded before
+// this module); see that file for the ownership note.
+if (typeof installMovieDetailsTorrentPanel === 'function') {
+    installMovieDetailsTorrentPanel(MovieDetailsManager);
+} else if (typeof window !== 'undefined' && window.document) {
+    console.error('[MovieDetails] TorrentSourcePanel.js is not loaded; torrent sources are unavailable');
+}
+if (typeof installMovieDetailsWatchRoomPanel === 'function') {
+    installMovieDetailsWatchRoomPanel(MovieDetailsManager);
+} else if (typeof window !== 'undefined' && window.document) {
+    console.error('[MovieDetails] WatchRoomPanel.js is not loaded; watch rooms are unavailable');
+}
+if (typeof installMovieDetailsMetaRenderer === 'function') {
+    installMovieDetailsMetaRenderer(MovieDetailsManager);
+} else if (typeof window !== 'undefined' && window.document) {
+    console.error('[MovieDetails] MetaRenderer.js is not loaded; movie metadata cannot render');
 }
 
 

@@ -227,6 +227,16 @@ assert(sources[0].url.startsWith('https://api.ortified.ws/embed/movie/2268'), 'O
 assert(sources[1].url.startsWith('https://api.variyt.ws/embed/movie/2268'), 'Variyt must be secondary');
 assert(sources[2].url.startsWith('https://cinemar.cc/embed/1692/'), 'Cinemar must be included as fallback');
 
+const nextembedSources = parser.extractKinogoDirectSources(
+    '<iframe data-src="https://api.nextembed.ws/embed/movie/31631"></iframe>'
+);
+assert.strictEqual(nextembedSources[0]?.url, 'https://api.nextembed.ws/embed/movie/31631',
+    'extract the current lazy-loaded KinoGo provider for Diler 3');
+assert.strictEqual(parser.extractKinogoDirectSources(
+    'var player = "//api.nextembed.ws/embed/movie/31631";'
+)[0]?.url, 'https://api.nextembed.ws/embed/movie/31631',
+    'the new provider also works without DOMParser');
+
 // 5b. Movie page with ONLY cinemar.cc (Cause 3 edge case)
 console.log('  5b. Testing title with ONLY cinemar.cc balancer (Cause 3)...');
 const mockCinemarOnlyPage = `
@@ -296,7 +306,7 @@ assert(fetchedUrls.some(u => u.includes('kinogo.la')), 'Must have attempted init
 assert(fetchedUrls.some(u => u.includes('kinogo.film')), 'Must have failed over to next mirror');
 assert.strictEqual(parser.getMirrors()[0], 'https://kinogo.film', 'Active mirror should switch to successful mirror');
 
-// 8. Preflight validation & Cache TTL expiry simulation (Cause 1)
+// 8. Cache TTL expiry simulation (Cause 1)
 console.log('  8. Testing cache TTL & validation contracts (Cause 1)...');
 const mockLocalStorage = new Map();
 const mockMovieCache = {
@@ -323,17 +333,6 @@ const mockMovieCache = {
             ttl,
             sources
         }));
-    },
-    validateSourceUrl: async (url, fetchMock) => {
-        if (!url || typeof url !== 'string') return false;
-        if (!url.startsWith('http://') && !url.startsWith('https://')) return true;
-        try {
-            const res = await fetchMock(url, { method: 'HEAD' });
-            if (res.status === 404 || res.status === 410) return false;
-            return true;
-        } catch {
-            return true;
-        }
     }
 };
 
@@ -354,12 +353,5 @@ mockLocalStorage.set('movie_sources_300', JSON.stringify({
 }));
 assert.strictEqual(mockMovieCache.getCachedSources(300), null, 'Expired cache (20m > 15m) must return null and be purged');
 assert.strictEqual(mockLocalStorage.has('movie_sources_300'), false, 'Expired entry must be deleted');
-
-// 8c. Test validateSourceUrl detecting 404 signed token
-const isDeadUrlValid = await mockMovieCache.validateSourceUrl('https://cinemar.cc/embed/dead', async () => ({ status: 404 }));
-assert.strictEqual(isDeadUrlValid, false, 'Preflight 404 response must invalidate cached source');
-
-const isAliveUrlValid = await mockMovieCache.validateSourceUrl('https://api.ortified.ws/embed/alive', async () => ({ status: 200 }));
-assert.strictEqual(isAliveUrlValid, true, 'Preflight 200 response must validate cached source');
 
 console.log('✅ ALL KinogoParser & 404 Intermittent Fixes tests passed successfully!');

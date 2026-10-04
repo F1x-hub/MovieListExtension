@@ -364,7 +364,7 @@ async function runAllTests() {
 
     // 12. Provider selector active state
     await test('12. Provider selector uses aria-controls and toolbar accessibility roles', () => {
-        assert.ok(htmlContent.includes('role="toolbar" aria-label="Player sources"'), 'Toolbar role present');
+        assert.ok(htmlContent.includes('role="toolbar" aria-label="Источники видео"'), 'Toolbar role present');
         assert.ok(htmlContent.includes('aria-controls="videoContainer"'), 'aria-controls present');
     });
 

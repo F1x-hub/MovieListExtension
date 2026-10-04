@@ -105,12 +105,17 @@ await parser.getSeasonvarPage('http://seasonvar.ru/show/retry');
 assert.equal(retryAttempts, 2, 'a failed request must be retryable after its in-flight entry clears');
 
 // Parsed-page discovery data is bounded rather than retained for the lifetime of the tab.
-parser.maxDiscoveryCacheEntries = 2;
+parser.maxPageCacheEntries = 2;
 parserContext.fetch = async url => ({ ok: true, text: async () => `<html data-url="${url}"></html>` });
 await parser.getSeasonvarPage('http://seasonvar.ru/show/bounded-a');
 await parser.getSeasonvarPage('http://seasonvar.ru/show/bounded-b');
-await parser.getSeasonvarPage('http://seasonvar.ru/show/bounded-c');
-assert.equal(parser.pageCache.size, 2, 'parsed-page cache must enforce its maximum entry count');
+const boundedPage = await parser.getSeasonvarPage('http://seasonvar.ru/show/bounded-c');
+assert.equal(parser.pageCache.size, 2, 'page cache must enforce its maximum entry count');
+assert.ok(boundedPage.doc?.documentElement, 'callers still receive a parsed document');
+assert.equal([...parser.pageCache.values()].some(entry => 'doc' in entry.value), false,
+    'cached pages keep raw HTML only, not a parsed Document');
+const reparsed = await parser.getSeasonvarPage('http://seasonvar.ru/show/bounded-c');
+assert.notEqual(reparsed.doc, boundedPage.doc, 'a cache hit is parsed on demand');
 
 // Base cachedSearch remains the canonical shared search path used by both preload stages.
 let searchCalls = 0;
