@@ -1267,6 +1267,26 @@ class Navigation {
         }
     }
 
+    /**
+     * Show unread reactions on the user's ratings once per page. The module
+     * reads one Firestore document at most every 10 minutes across pages.
+     * @param {Object} user - Firebase user
+     */
+    async checkReactionNotifications(user) {
+        const uid = user?.uid;
+        const db = typeof firebaseManager !== 'undefined' ? firebaseManager?.db : null;
+        if (!uid || !db || this._reactionNotificationsUid === uid) return;
+        this._reactionNotificationsUid = uid;
+        try {
+            const { ReactionNotificationCenter } = await import('./ReactionNotifications.js');
+            this.reactionNotifications = this.reactionNotifications
+                || new ReactionNotificationCenter({ db, i18n: this.i18n });
+            await this.reactionNotifications.checkOnOpen(uid);
+        } catch (error) {
+            console.warn('Navigation: reaction notifications unavailable', error);
+        }
+    }
+
     async updateUserDisplay(user) {
         // Prevent multiple simultaneous updates (race condition protection)
         if (this._updateInProgress) {
@@ -1288,6 +1308,9 @@ class Navigation {
                 // Show user profile dropdown
                 userProfile.style.display = 'block';
                 if (signInBtn) signInBtn.style.display = 'none';
+
+                // Non-blocking: unread reactions on the user's ratings.
+                this.checkReactionNotifications(user);
 
                 // Get display name based on user preference
                 let displayText = user.displayName || user.email || 'User';

@@ -280,6 +280,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // One server-written notification inbox per user (newest reactions on the
+    // user's ratings). The owner may only read it with a single document get
+    // and stamp it as read; entries are written by Cloud Functions only.
+    match /userNotifications/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+      allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactionsReadAt'])
+        && request.resource.data.reactionsReadAt == request.time;
+      allow create, delete: if false;
+    }
+
     // The catalog is public read-only configuration. Only admins can publish
     // the allowlisted IDs consumed by reaction writes and client pickers.
     match /settings/{settingId} {

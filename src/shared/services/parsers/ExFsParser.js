@@ -104,7 +104,8 @@ class ExFsParser extends BaseParserService {
                 if (!titleLink) continue;
                 
                 const titleText = titleLink.textContent.trim();
-                const url = titleLink.href;
+                const url = this.resolveProviderUrl(titleLink.getAttribute('href'));
+                if (!url) continue;
                 
                 if (this.isTitleMatch(titleText, targetTitle)) {
                     let foundYear = null;
@@ -125,9 +126,10 @@ class ExFsParser extends BaseParserService {
             }
         } else {
             const links = Array.from(contentArea.querySelectorAll('a'));
-            const movieLinks = links.filter(link =>
-                link.href.includes('/film/') || link.href.includes('/serials/') || link.href.includes('/multfilm/')
-            );
+            const movieLinks = links.filter(link => {
+                const href = link.getAttribute('href') || '';
+                return href.includes('/film/') || href.includes('/serials/') || href.includes('/multfilm/');
+            });
             
             for (const link of movieLinks) {
                 const titleElement = link.querySelector('h2, h3, .title') || link;
@@ -149,9 +151,11 @@ class ExFsParser extends BaseParserService {
 
                     const foundYear = yearMatch ? yearMatch[0] : null;
 
+                    const url = this.resolveProviderUrl(link.getAttribute('href'));
+                    if (!url) continue;
                     matches.push({
                         title: titleText,
-                        url: link.href,
+                        url,
                         year: foundYear,
                         parserId: this.id,
                         source: this.id
@@ -160,21 +164,33 @@ class ExFsParser extends BaseParserService {
             }
         }
 
-        if (targetYear) {
-            const yearMatch = matches.find(m => m.year === targetYear);
-            if (yearMatch) return yearMatch;
+        // Whole-word title matching (shared isTitleMatch) plus year ranking;
+        // a wrong-year best match is rejected unless its title is exact.
+        const best = this.rankTitleMatches(matches, targetTitle, targetYear);
+        if (!best) return null;
+        if (BaseParserService.hasYearDivergence(best, targetYear)
+            && BaseParserService.compactTitle(best.title) !== BaseParserService.compactTitle(targetTitle)) {
+            return null;
         }
-
-        if (matches.length > 0) return matches[0];
-        return null;
+        return best;
     }
 
-    isTitleMatch(foundTitle, targetTitle) {
-        if (!foundTitle || !targetTitle) return false;
-        const normalize = str => str.toLowerCase().replace(/[^a-zа-я0-9]/g, '');
-        const normalizedFound = normalize(foundTitle);
-        const normalizedTarget = normalize(targetTitle);
-        return normalizedFound.includes(normalizedTarget) || normalizedTarget.includes(normalizedFound);
+    /**
+     * Resolve a scraped href against the provider site. Reading `a.href` from a
+     * DOMParser document would resolve a relative link against the extension
+     * page (chrome-extension://…) instead.
+     * @param {string|null} href
+     * @returns {string|null}
+     */
+    resolveProviderUrl(href) {
+        const value = String(href || '').trim();
+        if (!value || value.startsWith('#') || /^javascript:/i.test(value)) return null;
+        try {
+            const resolved = new URL(value, this.baseUrl);
+            return ['http:', 'https:'].includes(resolved.protocol) ? resolved.href : null;
+        } catch {
+            return null;
+        }
     }
 
     /**

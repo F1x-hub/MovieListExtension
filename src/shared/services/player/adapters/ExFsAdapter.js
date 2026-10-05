@@ -98,9 +98,16 @@ class ExFsAdapter extends (typeof BasePlaybackAdapter !== 'undefined' ? BasePlay
                 const searchTitle = selection.title || '';
                 if (searchTitle && typeof parser.search === 'function') {
                     try {
-                        const searchResults = await parser.search(searchTitle, selection.kinopoiskId);
-                        if (searchResults && searchResults.length > 0 && searchResults[0].url) {
-                            targetUrl = searchResults[0].url;
+                        // search() resolves one SearchResult (or null); the
+                        // selection carries no release year, and a Kinopoisk ID
+                        // must never be passed in its place.
+                        const searchResult = await parser.search(searchTitle, null, {
+                            mediaType: selection.mediaType || null,
+                            seasonNumber: selection.seasonNumber ?? null
+                        });
+                        const normalizedResult = Array.isArray(searchResult) ? searchResult[0] : searchResult;
+                        if (normalizedResult?.url) {
+                            targetUrl = normalizedResult.url;
                         }
                     } catch (err) {
                         console.warn('[ExFsAdapter] Search failed during mount:', err);

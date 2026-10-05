@@ -845,6 +845,8 @@ const movieWithoutLogo = {
 const htmlWithoutLogo = manager.createDetailedMovieCard(movieWithoutLogo);
 assert(!htmlWithoutLogo.includes('movie-detail-logo-container'), 'Must NOT render logo container when logoUrl is missing');
 assert(htmlWithoutLogo.includes('class="movie-detail-page-title') && htmlWithoutLogo.includes('>Фильм без лого</h1>'), 'Title text H1 must render normally');
+assert(htmlWithLogo.includes('<h1 class="movie-detail-page-title">Интерстеллар</h1>'),
+    'The text title stays visible next to title artwork (a logo may be in another language)');
 console.log('  ✅ 15.1 Logo rendered cleanly above title with 100% title DOM and accessibility preservation');
 
 // =========================================================================

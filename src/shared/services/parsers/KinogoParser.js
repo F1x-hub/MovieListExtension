@@ -37,8 +37,16 @@ class KinogoParser extends BaseParserService {
             : [...KinogoParser.DEFAULT_MIRRORS];
 
         /** @type {string} */
+        /**
+         * Grace period for a weak (non-exact) match: other mirrors still
+         * running may return a confident match within it.
+         * @type {number}
+         */
+        this.mirrorFallbackGraceMs = options.mirrorFallbackGraceMs ?? 2500;
+
         this._activeMirror = this.baseUrl;
-        this._loadActiveMirrorFromStorage();
+        /** @private @type {Promise<void>} Resolves once the saved mirror is read. */
+        this._activeMirrorReady = this._loadActiveMirrorFromStorage();
     }
 
     /**
@@ -46,21 +54,42 @@ class KinogoParser extends BaseParserService {
      * @private
      */
     _loadActiveMirrorFromStorage() {
-        if (typeof chrome !== 'undefined' && chrome?.storage?.local?.get) {
+        if (typeof chrome === 'undefined' || !chrome?.storage?.local?.get) return Promise.resolve();
+        return new Promise(resolve => {
             try {
                 chrome.storage.local.get([KinogoParser.STORAGE_KEY], (res) => {
-                    if (res && res[KinogoParser.STORAGE_KEY]) {
-                        const saved = res[KinogoParser.STORAGE_KEY];
-                        if (typeof saved === 'string' && saved.startsWith('http')) {
-                            this._activeMirror = saved;
-                            this.baseUrl = saved;
-                        }
+                    const saved = res?.[KinogoParser.STORAGE_KEY];
+                    // A mirror chosen during this session wins over the stored one.
+                    if (typeof saved === 'string' && saved.startsWith('http') && !this._mirrorChosenThisSession) {
+                        this._activeMirror = saved;
+                        this.baseUrl = saved;
                     }
+                    resolve();
                 });
             } catch {
                 // Ignore storage read failures in isolated contexts
+                resolve();
             }
+        });
+    }
+
+    /**
+     * Wait briefly for the saved mirror so the first search of a page starts
+     * on the last working mirror instead of the default one.
+     * @private
+     */
+    async _waitForActiveMirror(timeoutMs = 300) {
+        if (!this._activeMirrorReady) return;
+        if (typeof setTimeout !== 'function') {
+            await this._activeMirrorReady;
+            return;
         }
+        let timer = null;
+        await Promise.race([
+            this._activeMirrorReady,
+            new Promise(resolve => { timer = setTimeout(resolve, timeoutMs); })
+        ]);
+        if (timer !== null) clearTimeout(timer);
     }
 
     /**
@@ -69,6 +98,7 @@ class KinogoParser extends BaseParserService {
      * @private
      */
     _saveActiveMirror(mirror) {
+        this._mirrorChosenThisSession = true;
         this._activeMirror = mirror;
         this.baseUrl = mirror;
         if (typeof chrome !== 'undefined' && chrome?.storage?.local?.set) {
@@ -181,6 +211,50 @@ class KinogoParser extends BaseParserService {
             .includes(normalizedMovieType);
     }
 
+    /**
+     * A search result that no other mirror can improve on: the exact title
+     * (season suffix allowed for series), a year within one of the target
+     * when both are known, and the requested season when one is requested.
+     * @param {SearchResult|null} candidate
+     * @param {string} targetTitle
+     * @param {string|null} targetYear
+     * @param {{mediaType?: string|null, seasonNumber?: number|null}} [options]
+     * @returns {boolean}
+     */
+    isConfidentSearchMatch(candidate, targetTitle, targetYear, { mediaType = null, seasonNumber = null } = {}) {
+        if (!candidate?.title) return false;
+        const isSeries = this.isSeriesMediaType(mediaType);
+        let found = BaseParserService.normalizeTitle(candidate.title);
+        if (isSeries) {
+            found = found.replace(
+                /\s+(?:(?:\d+|i|ii|iii|iv|v|vi|vii|viii|ix|x)\s+)?(?:сезон(?:а|ов)?|season|series)(?:\s.*)?$/i,
+                ''
+            ).trim();
+        }
+        if (found !== BaseParserService.normalizeTitle(targetTitle)) return false;
+
+        const year = Number.parseInt(targetYear, 10);
+        const candidateYear = Number.parseInt(candidate.year, 10);
+        if (Number.isFinite(year)) {
+            if (!Number.isFinite(candidateYear) || Math.abs(candidateYear - year) > 1) return false;
+        }
+        if (isSeries && seasonNumber != null) {
+            return this.extractSearchSeasonNumber(candidate) === seasonNumber;
+        }
+        return true;
+    }
+
+    /**
+     * A release year from free card text only when exactly one distinct year
+     * appears; counters, prices or "updated" dates make the text ambiguous.
+     * @param {string} text
+     * @returns {string|null}
+     */
+    extractUnambiguousYear(text) {
+        const years = new Set(String(text || '').match(/(?<!\d)(?:19|20)\d{2}(?!\d)/g) || []);
+        return years.size === 1 ? [...years][0] : null;
+    }
+
     extractSearchSeasonNumber(candidate) {
         const haystack = `${candidate?.title || ''} ${candidate?.url || ''}`;
         const match = haystack.match(/(?:^|[^0-9])([0-9]{1,2})[\s_-]*(?:сезон|season|sezon)(?:[^0-9]|$)/i)
@@ -197,6 +271,7 @@ class KinogoParser extends BaseParserService {
      * @returns {Promise<SearchResult|null>}
      */
     async search(title, year, options = {}) {
+        await this._waitForActiveMirror();
         const targetYear = year && Number(year) >= 1900 && Number(year) <= 2100
             ? String(year)
             : null;
@@ -230,6 +305,16 @@ class KinogoParser extends BaseParserService {
                 console.warn(`[KinogoParser] Mirror ${mirror} search failed:`, error.message);
                 throw error;
             }
+        }, {
+            // Mirrors list different catalogs. Only a confident match ends the
+            // race at once; a weak one waits for the other mirrors (bounded by
+            // mirrorFallbackGraceMs) and the highest-priority mirror's weak
+            // match is used, so the result no longer depends on response order.
+            isDecisive: candidate => this.isConfidentSearchMatch(candidate, title, targetYear, {
+                mediaType,
+                seasonNumber
+            }),
+            fallbackGraceMs: this.mirrorFallbackGraceMs
         });
 
         if (result) {
@@ -349,6 +434,7 @@ class KinogoParser extends BaseParserService {
         const rawUrl = typeof searchResult === 'string' ? searchResult : searchResult?.url;
         this.debugLog(`[DEBUG KinogoParser] getVideoSources() called. url:`, rawUrl?.substring(0, 80));
         if (!rawUrl) return [];
+        await this._waitForActiveMirror();
 
         let pathname = rawUrl;
         let initialMirror = this._activeMirror || this.baseUrl;
@@ -425,14 +511,18 @@ class KinogoParser extends BaseParserService {
      * Run one task per mirror in priority order with hedging: the next mirror
      * starts when the previous one fails or returns nothing, or after
      * `mirrorHedgeDelayMs` while it is still pending. The first non-empty value
-     * wins and aborts the remaining requests. Without timers (headless tests)
-     * this degrades to the strict sequential order.
+     * accepted by `isDecisive` (any non-empty value without it) wins and aborts
+     * the remaining requests. A non-decisive value is kept as a fallback; the
+     * race then ends after `fallbackGraceMs` or when every mirror has answered,
+     * returning the fallback of the highest-priority mirror. Without timers
+     * (headless tests) this degrades to the strict sequential order.
      * @param {Array<string>} mirrors
      * @param {(mirror: string, signal: AbortSignal|undefined) => Promise<any>} task
+     * @param {{isDecisive?: (value: any) => boolean, fallbackGraceMs?: number}} [options]
      * @returns {Promise<{value: any, mirror: string|null, lastError: Error|null}>}
      * @private
      */
-    _raceMirrors(mirrors, task) {
+    _raceMirrors(mirrors, task, { isDecisive = null, fallbackGraceMs = 0 } = {}) {
         const canHedge = typeof setTimeout === 'function' && this.mirrorHedgeDelayMs > 0;
         const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
 
@@ -442,6 +532,9 @@ class KinogoParser extends BaseParserService {
             let settled = false;
             let lastError = null;
             let hedgeTimer = null;
+            let graceTimer = null;
+            /** @type {{value: any, mirror: string, index: number}|null} */
+            let fallback = null;
 
             const clearHedge = () => {
                 if (hedgeTimer !== null) clearTimeout(hedgeTimer);
@@ -451,24 +544,38 @@ class KinogoParser extends BaseParserService {
                 if (settled) return;
                 settled = true;
                 clearHedge();
+                if (graceTimer !== null) clearTimeout(graceTimer);
+                graceTimer = null;
                 controller?.abort(new Error('KinoGo mirror race already decided'));
                 resolve({ value, mirror, lastError });
             };
+            const finishWithFallback = () => finish(fallback?.value ?? null, fallback?.mirror ?? null);
             const launchNext = () => {
                 if (settled) return;
                 clearHedge();
                 if (nextIndex >= mirrors.length) {
-                    if (pending === 0) finish(null, null);
+                    if (pending === 0) finishWithFallback();
                     return;
                 }
-                const mirror = mirrors[nextIndex++];
+                const index = nextIndex++;
+                const mirror = mirrors[index];
                 pending += 1;
                 Promise.resolve()
                     .then(() => task(mirror, controller?.signal))
                     .then(value => {
                         pending -= 1;
-                        if (value && (!Array.isArray(value) || value.length > 0)) finish(value, mirror);
-                        else launchNext();
+                        const hasValue = value && (!Array.isArray(value) || value.length > 0);
+                        if (hasValue && (typeof isDecisive !== 'function' || isDecisive(value))) {
+                            finish(value, mirror);
+                            return;
+                        }
+                        if (hasValue && (!fallback || index < fallback.index)) {
+                            fallback = { value, mirror, index };
+                            if (graceTimer === null && typeof setTimeout === 'function' && fallbackGraceMs > 0) {
+                                graceTimer = setTimeout(finishWithFallback, fallbackGraceMs);
+                            }
+                        }
+                        launchNext();
                     }, error => {
                         pending -= 1;
                         lastError = error;
@@ -552,9 +659,7 @@ class KinogoParser extends BaseParserService {
                             if (yearLabelMatch) {
                                 foundYear = yearLabelMatch[1];
                             } else {
-                                const cardText = card.textContent || '';
-                                const yearMatch = cardText.match(/\b(19|20)\d{2}\b/);
-                                foundYear = yearMatch ? yearMatch[0] : null;
+                                foundYear = this.extractUnambiguousYear(card.textContent || '');
                             }
                         }
 
@@ -630,15 +735,16 @@ class KinogoParser extends BaseParserService {
                     let rawText = linkMatch[2].replace(/<[^>]+>/g, '').trim();
                     if (!rawText || href.includes('copyright') || href.includes('contacts')) continue;
 
-                    let year = null;
+                    let year;
                     const ym = rawText.match(/\((\d{4})\)/);
                     if (ym) {
                         year = ym[1];
                         rawText = rawText.replace(/\(\d{4}\)/, '').trim();
                     } else {
-                        const yearMatch = block.match(/Год\s*(?:выпуска)?\s*:?\s*(?:<[^>]+>)*\s*(\d{4})/i)
-                            || block.match(/\b(?:19|20)\d{2}\b/);
-                        if (yearMatch) year = yearMatch[1] || yearMatch[0];
+                        const yearMatch = block.match(/Год\s*(?:выпуска)?\s*:?\s*(?:<[^>]+>)*\s*(\d{4})/i);
+                        year = yearMatch
+                            ? yearMatch[1]
+                            : this.extractUnambiguousYear(block.replace(/<[^>]+>/g, ' '));
                     }
 
                     if (this.isTitleMatch(rawText, targetTitle, {
@@ -706,52 +812,19 @@ class KinogoParser extends BaseParserService {
                     detectedType: match.type || 'unknown'
                 }))
             });
-            matches.sort((a, b) => {
-                let scoreA = 0;
-                let scoreB = 0;
-
-                if (targetYear) {
-                    const ty = parseInt(targetYear, 10);
-                    if (a.year) {
-                        const ya = parseInt(a.year, 10);
-                        if (ya === ty) scoreA += 100;
-                        else if (Math.abs(ya - ty) <= 1) scoreA += 50;
-                        else scoreA -= Math.min(100, Math.abs(ya - ty) * 10);
-                    }
-                    if (b.year) {
-                        const yb = parseInt(b.year, 10);
-                        if (yb === ty) scoreB += 100;
-                        else if (Math.abs(yb - ty) <= 1) scoreB += 50;
-                        else scoreB -= Math.min(100, Math.abs(yb - ty) * 10);
-                    }
-                }
-
-                if (requestedSeasonNumber != null) {
-                    const seasonA = this.extractSearchSeasonNumber(a);
-                    const seasonB = this.extractSearchSeasonNumber(b);
-                    if (seasonA === requestedSeasonNumber) scoreA += 1000;
-                    else if (seasonA != null) scoreA -= 100;
-                    if (seasonB === requestedSeasonNumber) scoreB += 1000;
-                    else if (seasonB != null) scoreB -= 100;
-                }
-
-                const normTarget = targetTitle.toLowerCase().replace(/[^a-zа-я0-9]/g, '');
-                const normA = (a.title || '').toLowerCase().replace(/[^a-zа-я0-9]/g, '');
-                const normB = (b.title || '').toLowerCase().replace(/[^a-zа-я0-9]/g, '');
-
-                if (normA === normTarget) scoreA += 50;
-                if (normB === normTarget) scoreB += 50;
-
-                return scoreB - scoreA;
+            const best = this.rankTitleMatches(matches, targetTitle, targetYear, candidate => {
+                if (requestedSeasonNumber == null) return 0;
+                const candidateSeason = this.extractSearchSeasonNumber(candidate);
+                if (candidateSeason === requestedSeasonNumber) return 1000;
+                return candidateSeason != null ? -100 : 0;
             });
-
-            const best = matches[0];
+            const ranked = [best, ...matches.filter(match => match !== best)];
             this._logSearchTrace('ranking result', {
                 mirror,
                 parserPath,
                 requestedMediaType: movieType || null,
                 requestedSeasonNumber,
-                ranked: matches.map((match, index) => ({
+                ranked: ranked.map((match, index) => ({
                     rank: index + 1,
                     title: match.title,
                     url: match.url,
@@ -767,13 +840,13 @@ class KinogoParser extends BaseParserService {
                     detectedSeasonNumber: this.extractSearchSeasonNumber(best)
                 }
             });
-            if (targetYear && best.year) {
+            if (BaseParserService.hasYearDivergence(best, targetYear)) {
                 const diff = Math.abs(parseInt(best.year, 10) - parseInt(targetYear, 10));
-                const normTarget = targetTitle.toLowerCase().replace(/[^a-zа-я0-9]/g, '');
-                const normBest = (best.title || '').toLowerCase().replace(/[^a-zа-я0-9]/g, '');
+                const exactTitle = BaseParserService.compactTitle(best.title)
+                    === BaseParserService.compactTitle(targetTitle);
                 const bestMatchesRequestedSeason = requestedSeasonNumber != null
                     && this.extractSearchSeasonNumber(best) === requestedSeasonNumber;
-                if (diff > 2 && normTarget !== normBest && !bestMatchesRequestedSeason) {
+                if (!exactTitle && !bestMatchesRequestedSeason) {
                     this.debugLog(`[DEBUG KinogoParser] Rejecting match "${best.title}" (${best.year}) for "${targetTitle}" (${targetYear}) due to year divergence (${diff} yrs)`);
                     return null;
                 }
@@ -790,71 +863,6 @@ class KinogoParser extends BaseParserService {
             requestedSeasonNumber
         });
         return null;
-    }
-
-    /**
-     * Normalized title comparison (ignores punctuation, case, ё->е).
-     * Strictly verifies sequel and part numbers to prevent matching Part 1 when searching Part 2.
-     * @param {string} foundTitle
-     * @param {string} targetTitle
-     * @returns {boolean}
-     */
-    isTitleMatch(foundTitle, targetTitle, options = {}) {
-        if (!foundTitle || !targetTitle) return false;
-        const normalize = str => str.toLowerCase()
-            .replace(/[ё]/g, 'е')
-            .replace(/[^a-zа-я0-9\s]/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
-        let cleanFound = normalize(foundTitle);
-        const cleanTarget = normalize(targetTitle);
-        if (!cleanFound || !cleanTarget) return false;
-        if (cleanFound === cleanTarget) return true;
-
-        // KinoGo often puts the season in the result title, while the app searches
-        // by the canonical series title (for example, "Джек Ричер 4 сезон").
-        // Strip only an explicit season/series suffix and only for a series query;
-        // standalone film parts such as "Джон Уик 2" remain strict matches.
-        if (options.allowSeriesSuffix) {
-            cleanFound = cleanFound.replace(
-                /\s+(?:(?:\d+|i|ii|iii|iv|v|vi|vii|viii|ix|x)\s+)?(?:сезон(?:а|ов)?|season|series)(?:\s.*)?$/i,
-                ''
-            ).trim();
-            if (cleanFound === cleanTarget) return true;
-        }
-
-        const extractNumbers = str => {
-            const matches = str.match(/\b(?:\d+|i|ii|iii|iv|v|vi|vii|viii|ix|x)\b/gi) || [];
-            return matches.map(m => {
-                const romanMap = { i: '1', ii: '2', iii: '3', iv: '4', v: '5', vi: '6', vii: '7', viii: '8', ix: '9', x: '10' };
-                const lower = m.toLowerCase();
-                return romanMap[lower] || lower;
-            });
-        };
-
-        const targetNumbers = extractNumbers(cleanTarget);
-        const foundNumbers = extractNumbers(cleanFound);
-
-        if (targetNumbers.length > 0) {
-            for (const num of targetNumbers) {
-                if (!foundNumbers.includes(num)) {
-                    return false;
-                }
-            }
-        } else if (foundNumbers.length > 0) {
-            const nonOneNumbers = foundNumbers.filter(n => n !== '1' && n !== '01');
-            if (nonOneNumbers.length > 0) {
-                return false;
-            }
-        }
-
-        const targetWords = cleanTarget.split(' ').filter(w => w.length > 1);
-        const foundWords = cleanFound.split(' ').filter(w => w.length > 1);
-        if (targetWords.length === 0) return false;
-
-        const targetInFound = targetWords.every(w => cleanFound.includes(w));
-        const foundInTarget = foundWords.length >= 2 && foundWords.every(w => cleanTarget.includes(w));
-        return targetInFound || foundInTarget;
     }
 
     // ─── Direct Source Extraction ────────────────────────────────────

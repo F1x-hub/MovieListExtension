@@ -887,3 +887,146 @@
     outline: 2px solid var(--theme-text-primary, currentColor);
     outline-offset: 2px;
 }
+
+/* Reaction notifications: one card under the header on extension open. */
+.reaction-inbox {
+    position: fixed;
+    top: 76px;
+    right: 16px;
+    z-index: 1002;
+    width: min(360px, calc(100vw - 32px));
+    padding: 12px;
+    border: 1px solid var(--ui-color-border);
+    border-radius: var(--ui-control-radius);
+    background: var(--ui-color-surface-card);
+    color: var(--ui-color-content);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+    animation: reaction-inbox-in 180ms ease-out;
+}
+
+.reaction-inbox__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.reaction-inbox__title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.reaction-inbox__close {
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: var(--ui-control-radius);
+    background: transparent;
+    color: var(--ui-color-content-muted);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.reaction-inbox__close:hover {
+    background: var(--ui-color-surface-muted);
+    color: var(--ui-color-content);
+}
+
+.reaction-inbox__list {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.reaction-inbox__item {
+    display: grid;
+    grid-template-columns: 32px 1fr auto;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 8px;
+    border: 1px solid transparent;
+    border-radius: var(--ui-control-radius);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.reaction-inbox__item:hover:not(:disabled) {
+    border-color: var(--ui-color-border);
+    background: var(--ui-color-surface-muted);
+}
+
+.reaction-inbox__item:disabled {
+    cursor: default;
+}
+
+.reaction-inbox__close:focus-visible,
+.reaction-inbox__item:focus-visible {
+    outline: 2px solid var(--ui-color-content);
+    outline-offset: 2px;
+}
+
+.reaction-inbox__avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    overflow: hidden;
+    border-radius: 50%;
+    background: var(--ui-color-surface-muted);
+    color: var(--ui-color-content-muted);
+    font-weight: 600;
+}
+
+.reaction-inbox__avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.reaction-inbox__text {
+    min-width: 0;
+    line-height: 1.35;
+}
+
+.reaction-inbox__movie {
+    color: var(--ui-color-content-muted);
+}
+
+.reaction-inbox__reactions {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 16px;
+}
+
+.reaction-inbox__reactions img {
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+}
+
+.reaction-inbox__more {
+    margin: 8px 0 0;
+    color: var(--ui-color-content-muted);
+    font-size: 12px;
+}
+
+@keyframes reaction-inbox-in {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .reaction-inbox { animation: none; }
+}

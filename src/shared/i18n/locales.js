@@ -1,5 +1,13 @@
 export const locales = {
     en: {
+        reaction_notifications: {
+            title: "New reactions",
+            reacted: "reacted to your rating",
+            unknown_user: "Someone",
+            unknown_movie: "a movie",
+            more: "+{count} more",
+            close: "Close"
+        },
         errors: {
             actions: {
                 retry: "Try again",
@@ -693,6 +701,14 @@ export const locales = {
         }
     },
     ru: {
+        reaction_notifications: {
+            title: "Новые реакции",
+            reacted: "отреагировал(а) на вашу оценку",
+            unknown_user: "Кто-то",
+            unknown_movie: "фильма",
+            more: "Ещё {count}",
+            close: "Закрыть"
+        },
         errors: {
             actions: {
                 retry: "Повторить",
