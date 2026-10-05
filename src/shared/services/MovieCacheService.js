@@ -168,101 +168,104 @@ class MovieCacheService {
     }
 
     /**
-     * Get multiple cached movies by Kinopoisk IDs (batch operation)
-     * @param {Array<number>} kinopoiskIds - Array of Kinopoisk movie IDs
+     * Look up movies in this browser's caches only (chrome.storage.local, then the
+     * legacy localStorage entries) without any Firestore read.
+     * @param {Array<number|string>} kinopoiskIds - Kinopoisk movie IDs
+     * @param {Object} target - Map to fill (existing entries are kept)
      * @returns {Promise<Object>} - Map of movieId to cached movie data
      */
-    async getBatchCachedMovies(kinopoiskIds) {
-        const startTime = performance.now();
-        console.group('[MovieCache] getBatchCachedMovies');
-        const uniqueIds = Array.from(new Set(kinopoiskIds.map(id => id?.toString()).filter(Boolean)));
-        console.log(`Checking cache for ${uniqueIds.length} movies...`);
-        try {
-            const cachedMovies = {};
-            const docIds = uniqueIds.map(id => id.toString());
-            
-            // Chunk requests if too many
-            const chunks = [];
-            const CHUNK_SIZE = 10;
-            for (let i = 0; i < docIds.length; i += CHUNK_SIZE) {
-                chunks.push(docIds.slice(i, i + CHUNK_SIZE));
-            }
+    async getLocalCachedMovies(kinopoiskIds, target = {}) {
+        const cachedMovies = target;
+        const uniqueIds = Array.from(new Set((kinopoiskIds || []).map(id => id?.toString()).filter(Boolean)))
+            .filter(id => !cachedMovies[id]);
+        if (uniqueIds.length === 0) return cachedMovies;
 
-            console.log(`[MovieCache] Checking ${uniqueIds.length} movies in Firestore in ${chunks.length} chunks...`);
-
-            for (const chunk of chunks) {
-                const query = this.db.collection(this.collection)
-                    .where(firebase.firestore.FieldPath.documentId(), 'in', chunk);
-                
-                const querySnapshot = await query.get();
-                
-                querySnapshot.forEach(doc => {
-                    const kinopoiskId = parseInt(doc.id);
-                    const data = doc.data();
-                    
-                    if (data.hasCommunityRating === true && this.isMetadataCacheValid(data)) {
-                        const movieData = { id: doc.id, ...data };
-                        cachedMovies[kinopoiskId] = movieData;
-                        this.saveToLocalStorage(kinopoiskId, movieData);
-                    } else if (data.hasCommunityRating === true) {
-                        cachedMovies[kinopoiskId] = { id: doc.id, ...data, _cacheExpired: true };
-                    }
-                });
-            }
-
-            const localKeys = uniqueIds
-                .filter(id => !cachedMovies[id])
-                .map(id => this.getLocalMovieCacheKey(id));
-            if (localKeys.length > 0 && typeof chrome !== 'undefined' && chrome.storage?.local) {
-                const localMovies = await chrome.storage.local.get(localKeys);
+        if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+            try {
+                const localMovies = await chrome.storage.local.get(uniqueIds.map(id => this.getLocalMovieCacheKey(id)));
                 uniqueIds.forEach(id => {
-                    if (cachedMovies[id]) return;
-                    const localMovie = localMovies[this.getLocalMovieCacheKey(id)];
+                    const localMovie = localMovies?.[this.getLocalMovieCacheKey(id)];
                     if (localMovie) {
                         cachedMovies[id] = this.isMetadataCacheValid(localMovie)
                             ? localMovie
                             : { ...localMovie, _cacheExpired: true };
                     }
                 });
+            } catch (error) {
+                console.warn('[MovieCacheService] Failed to read chrome.storage movie cache:', error);
+            }
+        }
+
+        // Preserve compatibility with the older localStorage cache used by
+        // rated movie metadata. This is especially important when the
+        // Kinopoisk API is temporarily unavailable: the popup can still
+        // render a real title and poster instead of "Unknown Movie".
+        if (typeof localStorage !== 'undefined') {
+            uniqueIds.forEach(id => {
+                if (cachedMovies[id]) return;
+
+                try {
+                    const rawMovie = localStorage.getItem(`kp_movie_${id}`);
+                    if (!rawMovie) return;
+
+                    const localMovie = JSON.parse(rawMovie);
+                    if (!localMovie || typeof localMovie !== 'object') return;
+
+                    const normalizedMovie = {
+                        ...localMovie,
+                        kinopoiskId: localMovie.kinopoiskId || Number(id),
+                        id: localMovie.id || id
+                    };
+                    cachedMovies[id] = this.isMetadataCacheValid(normalizedMovie)
+                        ? normalizedMovie
+                        : { ...normalizedMovie, _cacheExpired: true };
+                } catch (error) {
+                    console.warn(`[MovieCacheService] Failed to read legacy localStorage cache for ${id}:`, error);
+                }
+            });
+        }
+
+        return cachedMovies;
+    }
+
+    /**
+     * Get multiple cached movies by Kinopoisk IDs (batch operation)
+     * @param {Array<number>} kinopoiskIds - Array of Kinopoisk movie IDs
+     * @returns {Promise<Object>} - Map of movieId to cached movie data
+     */
+    async getBatchCachedMovies(kinopoiskIds) {
+        const uniqueIds = Array.from(new Set(kinopoiskIds.map(id => id?.toString()).filter(Boolean)));
+        try {
+            const cachedMovies = {};
+
+            // Firestore 'in' queries take at most 10 document IDs; chunks run in parallel
+            const CHUNK_SIZE = 10;
+            const chunks = [];
+            for (let i = 0; i < uniqueIds.length; i += CHUNK_SIZE) {
+                chunks.push(uniqueIds.slice(i, i + CHUNK_SIZE));
             }
 
-            // Preserve compatibility with the older localStorage cache used by
-            // rated movie metadata. This is especially important when the
-            // Kinopoisk API is temporarily unavailable: the popup can still
-            // render a real title and poster instead of "Unknown Movie".
-            if (typeof localStorage !== 'undefined') {
-                uniqueIds.forEach(id => {
-                    if (cachedMovies[id]) return;
+            const snapshots = await Promise.all(chunks.map(chunk => this.db.collection(this.collection)
+                .where(firebase.firestore.FieldPath.documentId(), 'in', chunk)
+                .get()));
 
-                    try {
-                        const rawMovie = localStorage.getItem(`kp_movie_${id}`);
-                        if (!rawMovie) return;
+            snapshots.forEach(querySnapshot => querySnapshot.forEach(doc => {
+                const kinopoiskId = parseInt(doc.id);
+                const data = doc.data();
 
-                        const localMovie = JSON.parse(rawMovie);
-                        if (!localMovie || typeof localMovie !== 'object') return;
+                if (data.hasCommunityRating === true && this.isMetadataCacheValid(data)) {
+                    const movieData = { id: doc.id, ...data };
+                    cachedMovies[kinopoiskId] = movieData;
+                    this.saveToLocalStorage(kinopoiskId, movieData);
+                } else if (data.hasCommunityRating === true) {
+                    cachedMovies[kinopoiskId] = { id: doc.id, ...data, _cacheExpired: true };
+                }
+            }));
 
-                        const normalizedMovie = {
-                            ...localMovie,
-                            kinopoiskId: localMovie.kinopoiskId || Number(id),
-                            id: localMovie.id || id
-                        };
-                        cachedMovies[id] = this.isMetadataCacheValid(normalizedMovie)
-                            ? normalizedMovie
-                            : { ...normalizedMovie, _cacheExpired: true };
-                    } catch (error) {
-                        console.warn(`[MovieCacheService] Failed to read legacy localStorage cache for ${id}:`, error);
-                    }
-                });
-            }
-            
-            const totalFound = Object.keys(cachedMovies).length;
-            console.log(`[MovieCache] Total found: ${totalFound}/${uniqueIds.length}. Time: ${(performance.now() - startTime).toFixed(2)}ms`);
-            console.groupEnd();
+            await this.getLocalCachedMovies(uniqueIds.filter(id => !cachedMovies[id]), cachedMovies);
             return cachedMovies;
-            
         } catch (error) {
             console.error('[MovieCache] Error batch checking cache:', error);
-            console.groupEnd();
             return {};
         }
     }
@@ -528,14 +531,14 @@ class MovieCacheService {
     /**
      * Return rated movies that lack `lastRatingUpdatedAt` (legacy aggregates that the
      * ordered ratings query cannot see). The full-collection scan is expensive, so its
-     * result (the list of missing IDs) is cached in chrome.storage.local for
-     * MISSING_SORT_FIELD_SCAN_TTL; within that window only the known IDs are re-read.
+     * result (the list of missing IDs) is cached in chrome.storage.local and only the
+     * known IDs are re-read. An expired result is still used (stale-while-revalidate)
+     * while one background scan refreshes it, so the scan never delays a page load;
+     * only the very first call without any cached result waits for it.
      * @returns {Promise<Array<Object>>} - Movie documents still missing the field
      */
     async getMissingSortFieldMovies() {
         const cacheKey = MovieCacheService.MISSING_SORT_FIELD_CACHE_KEY;
-        const isMissing = data => data?.hasCommunityRating === true
-            && (data.lastRatingUpdatedAt === undefined || data.lastRatingUpdatedAt === null);
         const hasStorage = typeof chrome !== 'undefined' && chrome.storage?.local;
 
         let cached = null;
@@ -545,47 +548,70 @@ class MovieCacheService {
             console.warn('[MovieCache] Failed to read missing sort field cache:', error);
         }
 
-        const isFresh = cached
-            && Array.isArray(cached.ids)
-            && Number.isFinite(cached.scannedAt)
-            && Date.now() - cached.scannedAt < MovieCacheService.MISSING_SORT_FIELD_SCAN_TTL;
+        const hasResult = cached && Array.isArray(cached.ids) && Number.isFinite(cached.scannedAt);
+        if (!hasResult) return this.scanMissingSortFieldMovies();
 
-        if (isFresh) {
-            if (cached.ids.length === 0) return [];
-            const CHUNK_SIZE = 10;
-            const chunks = [];
-            for (let i = 0; i < cached.ids.length; i += CHUNK_SIZE) {
-                chunks.push(cached.ids.slice(i, i + CHUNK_SIZE));
-            }
-            const snapshots = await Promise.all(chunks.map(chunk => this.db.collection(this.collection)
-                .where(firebase.firestore.FieldPath.documentId(), 'in', chunk)
-                .get()));
-            const movies = [];
-            snapshots.forEach(snapshot => snapshot.docs.forEach(doc => {
-                const data = doc.data();
-                if (isMissing(data)) movies.push({ id: doc.id, ...data });
-            }));
-            return movies;
+        const isFresh = Date.now() - cached.scannedAt < MovieCacheService.MISSING_SORT_FIELD_SCAN_TTL;
+        if (!isFresh) {
+            this.scanMissingSortFieldMovies().catch(error => {
+                console.warn('[MovieCache] Background missing sort field scan failed:', error);
+            });
         }
 
-        const snapshot = await this.db.collection(this.collection)
+        if (cached.ids.length === 0) return [];
+        const CHUNK_SIZE = 10;
+        const chunks = [];
+        for (let i = 0; i < cached.ids.length; i += CHUNK_SIZE) {
+            chunks.push(cached.ids.slice(i, i + CHUNK_SIZE));
+        }
+        const snapshots = await Promise.all(chunks.map(chunk => this.db.collection(this.collection)
+            .where(firebase.firestore.FieldPath.documentId(), 'in', chunk)
+            .get()));
+        const movies = [];
+        snapshots.forEach(snapshot => snapshot.docs.forEach(doc => {
+            const data = doc.data();
+            if (MovieCacheService.isMissingSortField(data)) movies.push({ id: doc.id, ...data });
+        }));
+        return movies;
+    }
+
+    static isMissingSortField(data) {
+        return data?.hasCommunityRating === true
+            && (data.lastRatingUpdatedAt === undefined || data.lastRatingUpdatedAt === null);
+    }
+
+    /** Full scan for legacy aggregates without `lastRatingUpdatedAt`; one at a time. */
+    scanMissingSortFieldMovies() {
+        if (this.missingSortFieldScanPromise) return this.missingSortFieldScanPromise;
+
+        const cacheKey = MovieCacheService.MISSING_SORT_FIELD_CACHE_KEY;
+        const hasStorage = typeof chrome !== 'undefined' && chrome.storage?.local;
+        const query = this.db.collection(this.collection)
             .where('hasCommunityRating', '==', true)
             .get();
-        const movies = snapshot.docs
-            .filter(doc => isMissing(doc.data()))
-            .map(doc => ({ id: doc.id, ...doc.data() }));
 
-        try {
-            if (hasStorage) {
-                await chrome.storage.local.set({
-                    [cacheKey]: { ids: movies.map(movie => movie.id), scannedAt: Date.now() }
-                });
+        this.missingSortFieldScanPromise = (async () => {
+            const snapshot = await query;
+            const movies = snapshot.docs
+                .filter(doc => MovieCacheService.isMissingSortField(doc.data()))
+                .map(doc => ({ id: doc.id, ...doc.data() }));
+
+            try {
+                if (hasStorage) {
+                    await chrome.storage.local.set({
+                        [cacheKey]: { ids: movies.map(movie => movie.id), scannedAt: Date.now() }
+                    });
+                }
+            } catch (error) {
+                console.warn('[MovieCache] Failed to save missing sort field cache:', error);
             }
-        } catch (error) {
-            console.warn('[MovieCache] Failed to save missing sort field cache:', error);
-        }
 
-        return movies;
+            return movies;
+        })().finally(() => {
+            this.missingSortFieldScanPromise = null;
+        });
+
+        return this.missingSortFieldScanPromise;
     }
 
     /**
@@ -690,7 +716,8 @@ class MovieCacheService {
                     });
 
                     const getFallbackTimestamp = movie => {
-                        const value = movie.updatedAt || movie.lastUpdated || 0;
+                        // Healthy documents sort by the same field the ordered query uses
+                        const value = movie.lastRatingUpdatedAt || movie.updatedAt || movie.lastUpdated || 0;
                         if (typeof value?.toMillis === 'function') return value.toMillis();
                         if (typeof value?.toDate === 'function') return value.toDate().getTime();
                         if (typeof value?.seconds === 'number') return value.seconds * 1000;
@@ -707,8 +734,6 @@ class MovieCacheService {
             }
 
             const nextLastDoc = pageDocs.length > 0 ? pageDocs[pageDocs.length - 1] : null;
-
-            console.log(`[MovieCache] getMoviesByAvgRating: returned ${movies.length} movies, hasMore=${hasMore}`);
 
             return {
                 movies,

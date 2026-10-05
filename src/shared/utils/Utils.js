@@ -187,13 +187,9 @@ class Utils {
      */
     static escapeHtml(text) {
         if (text === null || text === undefined) return '';
-        const str = String(text);
-        if (typeof document !== 'undefined' && document.createElement) {
-            const div = document.createElement('div');
-            div.textContent = str;
-            return div.innerHTML;
-        }
-        return str
+        // String replacement in every environment: the textContent/innerHTML trick
+        // leaves quotes unescaped, which broke out of attribute values.
+        return String(text)
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')

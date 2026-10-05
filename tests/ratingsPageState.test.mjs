@@ -30,7 +30,8 @@ globalThis.document = {
     getElementById: () => null,
     querySelector: () => null,
     querySelectorAll: () => [],
-    createElement: () => makeElement()
+    createElement: () => makeElement(),
+    createDocumentFragment: () => makeElement()
 };
 const storage = new Map();
 globalThis.localStorage = {
@@ -461,7 +462,11 @@ const doc = (id, seconds, extra = {}) => ({ id: String(id), kinopoiskId: id, las
     const apiCalls = [];
     let repaints = 0;
     globalThis.firebaseManager.getMovieCacheService = () => ({
-        getBatchCachedMovies: async ids => {
+        // The Firestore documents are the incomplete ones: only local caches are read
+        getBatchCachedMovies: async () => {
+            throw new Error('Hydration must not re-read the incomplete Firestore documents');
+        },
+        getLocalCachedMovies: async ids => {
             assert.deepEqual(ids, ['1', '2'], 'Only incomplete films are looked up');
             return { 1: { kinopoiskId: 1, name: 'Local film', posterUrl: 'l.jpg' } };
         },
@@ -510,6 +515,90 @@ const doc = (id, seconds, extra = {}) => ({ id: String(id), kinopoiskId: id, las
         initBody.indexOf('this.initializeCustomDropdowns()') < initBody.indexOf('this.loadFiltersFromStorage()'),
         'Dropdowns exist before saved filters update their labels'
     );
+}
+
+// H1. A double click on "Save" writes once; a failed write restores only that card.
+{
+    const page = createPage();
+    page.currentUser = { uid: 'alice' };
+    page.recentLocalEdits = new Map();
+    page.renderedMoviesState = new Map();
+    page.userProfilesMap.set('alice', { id: 'alice', displayName: 'Alice', photoURL: 'a.png' });
+    page.elements = {
+        ratingSlider: { value: '9' },
+        ratingComment: { value: 'Great' },
+        ratingModal: makeElement(),
+        saveRatingBtn: makeElement()
+    };
+    page.t = key => key;
+    page.applyFilters = () => {};
+    globalThis.Utils.showToast = () => {};
+    const original = { movieId: 1, movie: { kinopoiskId: 1, name: 'A' }, rating: 5, myRating: 5, allRaters: [{ userId: 'alice', rating: 5 }] };
+    page.movies = [original, { movieId: 2, movie: { kinopoiskId: 2, name: 'B' } }];
+
+    let writes = 0;
+    let rejectWrite;
+    globalThis.firebaseManager.getRatingService = () => ({
+        addOrUpdateRating: () => {
+            writes++;
+            return new Promise((resolve, reject) => { rejectWrite = reject; });
+        }
+    });
+    let profileReads = 0;
+    globalThis.firebaseManager.getUserService = () => ({ getUserProfile: async () => { profileReads++; return null; } });
+
+    page.selectedMovie = original.movie;
+    const firstSave = page.saveRating();
+    const secondSave = page.saveRating();
+    await Promise.all([firstSave, secondSave]);
+    assert.equal(writes, 1, 'A repeated click while saving does not write twice');
+    assert.equal(profileReads, 0, 'The already loaded profile is reused instead of re-read on every save');
+    assert.equal(page.movies[0].myRating, 9, 'The card updates optimistically');
+
+    // A page arriving while the write is in flight must survive the rollback
+    page.movies.push({ movieId: 3, movie: { kinopoiskId: 3, name: 'C' } });
+    rejectWrite(new Error('offline'));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.deepEqual(page.movies.map(item => item.movieId), [1, 2, 3], 'Other cards and later pages are kept');
+    assert.equal(page.movies[0].myRating, 5, 'The failed card returns to its previous rating');
+    assert.equal(page.movies[0].allRaters[0].rating, 5);
+    assert.equal(page.isSavingRating, false);
+}
+
+// H2. Client-only sorts read large pages and render the full list once.
+{
+    const page = createPage();
+    page.currentRequestId = 1;
+    page.CLIENT_SORT_BATCH_SIZE = 40;
+    page.filters.sort = 'title-asc';
+    page.hasMore = true;
+    page.lastMovieDoc = null;
+    page.elements = {};
+    const calls = [];
+    let renders = 0;
+    page.loadNextBatch = async options => {
+        calls.push(options);
+        page.lastMovieDoc = { page: calls.length };
+        page.hasMore = calls.length < 3;
+    };
+    page.refreshFilterOptionsAndRender = () => { renders++; };
+    await page.loadAllForClientSort();
+    assert.equal(calls.length, 3);
+    assert.ok(calls.every(options => options.limit === 40 && options.render === false), 'Bulk pages skip per-page renders');
+    assert.equal(renders, 1, 'The complete list renders once');
+    assert.equal(page.bulkLoading, false);
+}
+
+// H3. Filter option lists are rebuilt only when their values change.
+{
+    const page = createPage();
+    const list = makeElement();
+    page.dropdowns = { yearFilter: { list, hiddenSelect: makeElement(), trigger: makeElement(), optionsKey: null } };
+    const select = makeElement();
+    const items = [{ value: '2001', label: '2001' }];
+    assert.equal(page.setDropdownOptions('yearFilter', select, 'All', items), true);
+    assert.equal(page.setDropdownOptions('yearFilter', select, 'All', items), false, 'Unchanged options are not rebuilt');
+    assert.equal(page.setDropdownOptions('yearFilter', select, 'All', [...items, { value: '1999', label: '1999' }]), true);
 }
 
 console.log('Ratings page state tests passed');

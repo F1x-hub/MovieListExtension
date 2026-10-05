@@ -369,11 +369,33 @@
     cursor: pointer;
     transition: var(--transition);
     font-size: 10px;
+    /* Now a <button>: drop the native button chrome */
+    border: none;
+    padding: 0;
+    font-family: inherit;
+    line-height: 1;
 }
 
 .remove-filter:hover {
     background: rgba(255, 255, 255, 0.15);
     color: var(--theme-stat-color);
+}
+
+/* Keyboard focus for the filter controls (they used to be mouse-only) */
+.remove-filter:focus-visible,
+.ratings-main .dropdown-trigger:focus-visible,
+.ratings-main .dropdown-option:focus-visible {
+    outline: 2px solid var(--ui-color-interactive, currentColor);
+    outline-offset: 2px;
+}
+
+.ratings-main .dropdown-option:focus-visible {
+    outline-offset: -2px;
+    background: var(--theme-hover-bg);
+}
+
+.ratings-main .dropdown-trigger:disabled {
+    cursor: not-allowed;
 }
 
 /* Results Info Row */
