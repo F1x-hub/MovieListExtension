@@ -99,7 +99,7 @@
 
 .word-guess-status--error,
 .word-guess-feedback.is-error {
-    color: #fca5a5;
+    color: var(--ui-color-status-danger, #dc3545);
 }
 
 .word-guess-form {
@@ -139,7 +139,7 @@
 
 .word-guess-submit {
     padding: 0 17px;
-    color: #09090b;
+    color: var(--ui-color-page, #09090b);
     background: var(--theme-accent, #fbbf24);
     border: 1px solid var(--theme-accent, #fbbf24);
     border-radius: 8px;
@@ -182,7 +182,63 @@
 }
 
 .word-guess-feedback.is-duplicate {
-    color: #d4d4d8;
+    color: var(--theme-text-secondary, #d4d4d8);
+}
+
+.word-guess-feedback.is-hint {
+    color: var(--theme-text-primary, #f4f4f5);
+}
+
+.word-guess-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.word-guess-actions[hidden] {
+    display: none;
+}
+
+.word-guess-action {
+    min-height: 32px;
+    padding: 0 12px;
+    color: var(--theme-text-secondary, #a1a1aa);
+    background: transparent;
+    border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.12));
+    border-radius: 8px;
+    cursor: pointer;
+    font: 600 0.74rem 'Outfit', sans-serif;
+    transition: transform 140ms ease-out, color 140ms ease-out, border-color 140ms ease-out;
+}
+
+.word-guess-action:hover {
+    color: var(--theme-text-primary, #f4f4f5);
+    border-color: var(--theme-accent, #fbbf24);
+}
+
+.word-guess-action:active {
+    transform: scale(0.97);
+}
+
+.word-guess-action:focus-visible {
+    outline: 2px solid var(--theme-accent, #fbbf24);
+    outline-offset: 2px;
+}
+
+.word-guess-action--danger.is-armed {
+    color: var(--ui-color-status-danger, #dc3545);
+    border-color: var(--ui-color-status-danger, #dc3545);
+}
+
+.word-guess-hint-badge {
+    margin-left: 4px;
+    padding: 1px 5px;
+    color: var(--theme-text-secondary, #a1a1aa);
+    font-size: 0.62rem;
+    font-weight: 600;
+    border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.12));
+    border-radius: 999px;
 }
 
 .word-guess-history {

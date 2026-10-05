@@ -19,10 +19,13 @@ function defaultFetch(...args) {
     return globalThis.fetch(...args);
 }
 
-function dateKey(date) {
+export function localDateKey(date) {
     const value = date instanceof Date ? date : new Date(date);
-    if (Number.isNaN(value.getTime())) throw new Error('Некорректная дата daily puzzle');
-    return value.toISOString().slice(0, 10);
+    if (Number.isNaN(value.getTime())) throw new Error('Invalid WordGuess date');
+    // The daily puzzle changes at the player's local midnight, not at UTC midnight.
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${value.getFullYear()}-${month}-${day}`;
 }
 
 function isDateKey(value) {
@@ -87,7 +90,7 @@ export class WordGuessDataLoader {
 
     async getPuzzleForDate(date = new Date()) {
         const manifest = await this.loadManifest();
-        const entry = this.resolveEntry(manifest, dateKey(date));
+        const entry = this.resolveEntry(manifest, localDateKey(date));
         return this.loadPuzzle(entry);
     }
 
@@ -110,6 +113,17 @@ export class WordGuessDataLoader {
     resolveEntry(manifest, requestedDate) {
         const exact = manifest.puzzles.find((entry) => entry.date === requestedDate);
         if (exact) return exact;
+
+        // A continuous rotation keeps the game available after the bundled calendar
+        // ends: later dates reuse the schedule cyclically from the anchor date.
+        const anchorDate = manifest.rotation?.anchorDate;
+        if (anchorDate && isDateKey(requestedDate)) {
+            const offset = Math.round(
+                (dateAtUtcMidnight(requestedDate) - dateAtUtcMidnight(anchorDate)) / DAY_MS
+            );
+            const length = manifest.puzzles.length;
+            return manifest.puzzles[((offset % length) + length) % length];
+        }
         throw new Error(`На дату ${requestedDate} нет загадки WordGuess`);
     }
 
@@ -263,6 +277,7 @@ export class WordGuessDataLoader {
             throw new Error(`WordGuess puzzle должен иметь ранг 1 для ответа: ${expectedId}`);
         }
 
+        let rankToIndex = null;
         return {
             ...puzzle,
             puzzleId: String(puzzle.puzzleId || expectedId),
@@ -273,6 +288,16 @@ export class WordGuessDataLoader {
             getRank(word) {
                 const index = vocabulary.wordToIndex.get(normalizeWord(word));
                 return index === undefined ? undefined : rankTable[index];
+            },
+            // Reverse lookup for hints; built lazily because most sessions never ask.
+            getWordByRank(rank) {
+                if (!rankToIndex) {
+                    rankToIndex = new Uint32Array(rankTable.length + 1);
+                    rankTable.forEach((value, index) => { rankToIndex[value] = index; });
+                }
+                const value = Number(rank);
+                if (!Number.isInteger(value) || value < 1 || value > rankTable.length) return undefined;
+                return vocabulary.words[rankToIndex[value]];
             }
         };
     }

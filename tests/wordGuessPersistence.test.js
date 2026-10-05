@@ -20,7 +20,7 @@ const puzzleTwo = {
     }
 };
 
-let currentDate = new Date('2026-08-22T12:00:00Z');
+let currentDate = new Date(2026, 7, 22, 12);
 let storedProgress = null;
 const storage = {
     async get(key) {
@@ -37,7 +37,7 @@ const storage = {
 };
 const dataLoader = {
     async getPuzzleForDate() {
-        return currentDate.getUTCDate() === 22 ? puzzleOne : puzzleTwo;
+        return currentDate.getDate() === 22 ? puzzleOne : puzzleTwo;
     }
 };
 
@@ -51,7 +51,7 @@ await restoredSession.start();
 assert.equal(restoredSession.getState().attempts, 1, 'same-day history must survive a restart');
 assert.equal(restoredSession.getState().history[0].word, 'море');
 
-currentDate = new Date('2026-08-23T12:00:00Z');
+currentDate = new Date(2026, 7, 23, 12);
 const nextDaySession = new WordGuessController({ dataLoader, storage, now: () => currentDate });
 await nextDaySession.start();
 assert.equal(nextDaySession.getState().attempts, 0, 'new daily puzzle must start with empty history');

@@ -53,22 +53,33 @@ const game = new RubiksCubeGame({
 assert.equal(game.container.querySelectorAll('.rubiks-3d-face').length, 6);
 assert.equal(game.container.querySelector('[data-rubiks-viewport]').getAttribute('tabindex'), '0');
 assert.equal(game.container.querySelectorAll('[data-move]').length, 18);
+assert.equal(game.difficulty, RubiksCubeGame.DEFAULT_DIFFICULTY, 'new players start on the default difficulty');
+assert.equal(game.scramble.length, RubiksCubeGame.DIFFICULTIES[game.difficulty]);
+assert.equal(game.container.querySelector('[aria-label="красный"], [aria-label="зелёный"], [aria-label="белый"]') !== null, true,
+    'sticker labels use localized colour names');
 game.start();
+assert.equal(game.timerId, null, 'the timer waits for the first move');
 game.container.querySelector('[data-move="R"]').click();
 assert.equal(game.moves, 1);
+assert.notEqual(game.timerId, null, 'the first move starts the timer');
 const frontFace = game.container.querySelector('[data-face="F"]');
 frontFace.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
 assert.equal(game.selectedFace, 'F');
-assert.equal(game.selectedAxis, 'horizontal');
 assert.equal(game.container.querySelectorAll('[data-face-move="F"]').length, 2);
-assert.equal(game.container.querySelectorAll('[data-arrow="left"], [data-arrow="right"]').length, 2);
-game.container.querySelector('[data-axis="vertical"]').click();
-assert.equal(game.selectedAxis, 'vertical');
-assert.equal(game.container.querySelectorAll('[data-face-move="F"]').length, 2);
-assert.equal(game.container.querySelectorAll('[data-arrow="up"], [data-arrow="down"]').length, 2);
-game.container.querySelector('[data-face-move="F"][data-arrow="down"]').click();
+assert.equal(game.container.querySelectorAll('[data-arrow="ccw"], [data-arrow="cw"]').length, 2,
+    'a selected face offers counter-clockwise and clockwise turns');
+assert.equal(game.container.querySelector('[data-axis]'), null, 'the no-op axis switch is gone');
+const beforeCcw = game.state.getFace('U').flat().join();
+game.container.querySelector('[data-face-move="F"][data-arrow="ccw"]').click();
 assert.equal(game.moves, 2, 'A face arrow should make a cube move');
+assert.deepEqual(game.history.slice(-1), ["F'"], 'the counter-clockwise arrow makes the inverse turn');
+assert.notEqual(game.state.getFace('U').flat().join(), beforeCcw);
+game.container.querySelector('[data-face-move="F"][data-arrow="cw"]').click();
+assert.deepEqual(game.history.slice(-1), ['F'], 'the clockwise arrow makes the plain turn');
 assert.equal(game.selectedFace, 'F', 'The moved face should stay selected');
+assert.equal(game.getAdjacentStickers('U').length, 12, 'a face turn carries 12 side stickers');
+game.history = ['R'];
+game.moves = 1;
 let viewport = game.container.querySelector('[data-rubiks-viewport]');
 const rightFace = game.container.querySelector('[data-face="R"]');
 const facePointerDown = new dom.window.Event('pointerdown', { bubbles: true });
@@ -92,5 +103,67 @@ const pointerUp = new dom.window.Event('pointerup', { bubbles: true });
 Object.assign(pointerUp, { pointerId: 7 });
 viewport.dispatchEvent(pointerUp);
 game.stop();
+
+// Undo, reset and re-scramble restore earlier cube states.
+const actionDom = new JSDOM('<div id="rubiks"></div>');
+globalThis.document = actionDom.window.document;
+const actionGame = new RubiksCubeGame({
+    container: actionDom.window.document.getElementById('rubiks'),
+    callbacks: { onStatsUpdate: () => {} },
+    audio: { rotate: () => {} }
+});
+actionGame.start();
+const scrambledFaces = () => ['U', 'R', 'F', 'D', 'L', 'B'].map(face => actionGame.state.getFace(face).flat().join()).join('|');
+const initialState = scrambledFaces();
+const undoButton = () => actionGame.container.querySelector('[data-rubiks-action="undo"]');
+assert.equal(undoButton().disabled, true, 'undo starts disabled');
+
+actionGame.container.querySelector('[data-move="R"]').click();
+actionGame.container.querySelector('[data-move="U\'"]').click();
+assert.equal(actionGame.moves, 2);
+assert.deepEqual(actionGame.history, ['R', "U'"]);
+undoButton().click();
+assert.equal(actionGame.moves, 1, 'undo removes the last move from the counter');
+assert.deepEqual(actionGame.history, ['R']);
+actionGame.undo();
+assert.equal(scrambledFaces(), initialState, 'undoing every move returns to the scramble');
+assert.equal(undoButton().disabled, true, 'undo is disabled once the history is empty');
+
+actionGame.turn('F2');
+actionGame.turn('L');
+actionGame.container.querySelector('[data-rubiks-action="reset"]').click();
+assert.equal(scrambledFaces(), initialState, 'reset returns to the same scramble');
+assert.equal(actionGame.moves, 0);
+assert.deepEqual(actionGame.history, []);
+
+const previousScramble = actionGame.scramble.join(' ');
+actionGame.container.querySelector('[data-rubiks-action="scramble"]').click();
+assert.equal(actionGame.scramble.length, RubiksCubeGame.DIFFICULTIES[actionGame.difficulty]);
+assert.notEqual(actionGame.scramble.join(' '), previousScramble, 'a new scramble is generated');
+assert.equal(actionGame.state.isSolved(), false);
+assert.equal(actionGame.moves, 0);
+
+// Difficulty buttons change the scramble length and start a fresh attempt.
+actionGame.container.querySelector('[data-difficulty="hard"]').click();
+assert.equal(actionGame.difficulty, 'hard');
+assert.equal(actionGame.scramble.length, RubiksCubeGame.SCRAMBLE_LENGTH, 'hard keeps the classic 20-move scramble');
+assert.equal(actionGame.bestTimeKey, 'rubiksCubeBestTime', 'hard keeps the original best-time key');
+actionGame.container.querySelector('[data-difficulty="medium"]').click();
+assert.equal(actionGame.scramble.length, RubiksCubeGame.DIFFICULTIES.medium);
+assert.equal(actionGame.bestTimeKey, 'rubiksCubeBestTime:medium', 'each difficulty keeps its own record');
+assert.equal(actionGame.container.querySelector('[data-difficulty="medium"]').getAttribute('aria-pressed'), 'true');
+
+// Re-rendering after a move keeps the controls drawer open and the focus in place.
+const drawer = actionGame.container.querySelector('.rubiks-controls-drawer');
+drawer.open = true;
+drawer.dispatchEvent(new actionDom.window.Event('toggle'));
+const moveButton = actionGame.container.querySelector('[data-move="D"]');
+moveButton.focus();
+moveButton.click();
+assert.equal(actionGame.container.querySelector('.rubiks-controls-drawer').open, true,
+    'the drawer must stay open after a move');
+assert.equal(actionDom.window.document.activeElement?.dataset.move, 'D',
+    'focus must return to the pressed move button');
+actionGame.stop();
 
 console.log('✅ Rubik cube state tests passed!');
