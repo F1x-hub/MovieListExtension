@@ -342,6 +342,7 @@ const doc = (id, seconds, extra = {}) => ({ id: String(id), kinopoiskId: id, las
     page.applyFilters = () => { page.filteredMovies = [...page.movies]; };
     page.saveRatingsToCache = items => { saved = items; };
     page.highlightMovies = keys => marked.push(...keys);
+    page.hydrateMissingMetadata = () => {}; // covered separately below
 
     await page.applyPendingLiveMovies();
     assert.deepEqual(page.movies.map(m => m.movieId).sort(), [1, 9], 'Existing film replaced, new film added once');
@@ -411,6 +412,90 @@ const doc = (id, seconds, extra = {}) => ({ id: String(id), kinopoiskId: id, las
     await newScore.page.saveRating();
     assert.notEqual(newScore.page.movies[0].createdAt, newScore.createdAt, 'A new score moves the card to the top');
     assert.equal(newScore.page.recentLocalEdits.has('5'), true, 'Its listener echo will not be marked as new');
+}
+
+// --- Films whose movie document has no title/poster ---
+
+// M1. A first rating stores the film metadata in Firestore even before the
+// aggregate trigger has marked the document as community-rated.
+{
+    const { default: MovieCacheService } = await import('../src/shared/services/MovieCacheService.js');
+    const writes = [];
+    const localWrites = [];
+    const fakeDb = {
+        collection: () => ({
+            doc: id => ({
+                get: async () => ({ exists: false, data: () => ({}) }),
+                set: async (data, options) => writes.push({ id, data, options })
+            })
+        })
+    };
+    globalThis.firebase = { firestore: { FieldValue: { serverTimestamp: () => 'SERVER_TS' } } };
+    const service = new MovieCacheService({ db: fakeDb });
+    service.setLocalMovieCache = async (id, data) => localWrites.push({ id, data });
+    service.saveToLocalStorage = () => {};
+
+    await service.cacheMovie({ kinopoiskId: 77, name: 'Вавилон', posterUrl: 'p.jpg', avgRating: 9 }, true);
+    assert.equal(writes.length, 1, 'isRated writes to Firestore before hasCommunityRating exists');
+    assert.equal(writes[0].id, '77');
+    assert.equal(writes[0].data.name, 'Вавилон');
+    assert.equal('avgRating' in writes[0].data, false, 'Aggregate fields are never written by the client');
+    assert.deepEqual(writes[0].options, { merge: true });
+
+    await service.cacheMovie({ kinopoiskId: 78, name: 'Unrated', posterUrl: 'p.jpg' });
+    assert.equal(writes.length, 1, 'Unrated films still stay out of Firestore');
+    assert.equal(localWrites[0].id, '78');
+    globalThis.MovieCacheService = MovieCacheService;
+}
+
+// M2. The ratings page fills such cards from local caches, then the Kinopoisk API,
+// stores the metadata (isRated), and tries each film only once.
+{
+    const page = createLivePage();
+    page.movies = [
+        { movieId: 1, movie: { kinopoiskId: 1, avgRating: 6, ratingsCount: 1 } },
+        { movieId: 2, movie: { kinopoiskId: 2, avgRating: 5, ratingsCount: 1 } },
+        { movieId: 3, movie: { kinopoiskId: 3, name: 'Complete', posterUrl: 'c.jpg' } }
+    ];
+    const stored = [];
+    const apiCalls = [];
+    let repaints = 0;
+    globalThis.firebaseManager.getMovieCacheService = () => ({
+        getBatchCachedMovies: async ids => {
+            assert.deepEqual(ids, ['1', '2'], 'Only incomplete films are looked up');
+            return { 1: { kinopoiskId: 1, name: 'Local film', posterUrl: 'l.jpg' } };
+        },
+        cacheMovie: async (movie, isRated) => { stored.push({ id: movie.kinopoiskId, name: movie.name, isRated }); }
+    });
+    globalThis.firebaseManager.getKinopoiskService = () => ({
+        getMovieById: async id => { apiCalls.push(id); return { kinopoiskId: id, name: 'API film', posterUrl: 'a.jpg', genres: ['драма'] }; }
+    });
+    page.populateYearFilter = () => {};
+    page.populateGenreFilter = () => {};
+    page.applyFilters = () => { repaints++; page.filteredMovies = [...page.movies]; };
+    page.saveRatingsToCache = () => {};
+
+    await page.hydrateMissingMetadata();
+    assert.deepEqual(apiCalls, [2], 'The API is used only for films missing from local caches');
+    assert.equal(page.movies[0].movie.name, 'Local film');
+    assert.equal(page.movies[1].movie.name, 'API film');
+    assert.equal(page.movies[1].movie.avgRating, 5, 'Aggregates on the card are kept');
+    assert.deepEqual(stored.sort((a, b) => a.id - b.id), [
+        { id: 1, name: 'Local film', isRated: true },
+        { id: 2, name: 'API film', isRated: true }
+    ], 'Both films are repaired in Firestore');
+    assert.equal(repaints, 1, 'Cards are repainted once');
+
+    page.movies[1].movie.name = '';
+    await page.hydrateMissingMetadata();
+    assert.deepEqual(apiCalls, [2], 'A film is tried at most once per page session');
+
+    const source = fs.readFileSync(path.join(projectRoot, 'src/pages/ratings/ratings.js'), 'utf8');
+    assert.match(source, /card\.classList\.contains\('mc-is-loading'\) && !newCardHTML\.classList\.contains\('mc-is-loading'\)[\s\S]{0,400}card\.replaceWith\(newCardHTML\)/,
+        'A placeholder card is replaced as a whole once metadata arrives');
+    for (const call of ['this.hydrateMissingMetadata(enrichedMovies)', 'this.hydrateMissingMetadata(enrichedBatch)', 'this.hydrateMissingMetadata(enriched)']) {
+        assert.ok(source.includes(call), `Hydration runs after: ${call}`);
+    }
 }
 
 // 3. Init restores saved filters before the cached render, which persists filters.

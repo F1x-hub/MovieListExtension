@@ -684,13 +684,6 @@ span.mc-user-name.mc-skeleton {
 }
 
 /* Action Buttons */
-.mc-actions {
-    display: flex;
-    gap: 8px;
-    margin-top: auto;
-    padding-top: 12px;
-}
-
 .mc-action-btn {
     flex: 1;
     padding: 10px 16px;
