@@ -337,6 +337,130 @@ class BaseParserService {
         return true;
     }
 
+    // ─── Title Matching ───────────────────────────────────────────────
+
+    /**
+     * Lowercase, fold ё to е, and reduce punctuation to single spaces.
+     * @param {*} value
+     * @returns {string}
+     */
+    static normalizeTitle(value) {
+        return String(value ?? '')
+            .toLowerCase()
+            .replace(/ё/g, 'е')
+            .replace(/[^a-zа-я0-9\s]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    /**
+     * normalizeTitle() without spaces, for exact-title comparisons.
+     * @param {*} value
+     * @returns {string}
+     */
+    static compactTitle(value) {
+        return BaseParserService.normalizeTitle(value).replace(/\s/g, '');
+    }
+
+    /**
+     * Whole-word title comparison shared by search-page parsers.
+     * Sequel and part numbers must agree, so "Джон Уик" does not match
+     * "Джон Уик 3", and a bracketed release year in the provider title is
+     * ignored. With `allowSeriesSuffix` an explicit season suffix
+     * ("Джек Ричер 4 сезон") is stripped from the found title.
+     * @param {string} foundTitle
+     * @param {string} targetTitle
+     * @param {{allowSeriesSuffix?: boolean}} [options]
+     * @returns {boolean}
+     */
+    isTitleMatch(foundTitle, targetTitle, options = {}) {
+        if (!foundTitle || !targetTitle) return false;
+        const normalize = BaseParserService.normalizeTitle;
+        let cleanFound = normalize(String(foundTitle).replace(/\(\s*(?:19|20)\d{2}\s*\)/g, ' '));
+        const cleanTarget = normalize(targetTitle);
+        if (!cleanFound || !cleanTarget) return false;
+        if (cleanFound === cleanTarget) return true;
+
+        if (options.allowSeriesSuffix) {
+            cleanFound = cleanFound.replace(
+                /\s+(?:(?:\d+|i|ii|iii|iv|v|vi|vii|viii|ix|x)\s+)?(?:сезон(?:а|ов)?|season|series)(?:\s.*)?$/i,
+                ''
+            ).trim();
+            if (cleanFound === cleanTarget) return true;
+        }
+
+        const romanMap = { i: '1', ii: '2', iii: '3', iv: '4', v: '5', vi: '6', vii: '7', viii: '8', ix: '9', x: '10' };
+        const extractNumbers = words => words
+            .filter(word => /^(?:\d+|i|ii|iii|iv|v|vi|vii|viii|ix|x)$/.test(word))
+            .map(word => romanMap[word] || String(Number(word)));
+
+        const targetWordList = cleanTarget.split(' ');
+        const foundWordList = cleanFound.split(' ');
+        const targetNumbers = extractNumbers(targetWordList);
+        const foundNumbers = extractNumbers(foundWordList);
+
+        if (targetNumbers.length > 0) {
+            if (!targetNumbers.every(num => foundNumbers.includes(num))) return false;
+        } else if (foundNumbers.some(num => num !== '1')) {
+            return false;
+        }
+
+        const targetWords = targetWordList.filter(word => word.length > 1);
+        const foundWords = foundWordList.filter(word => word.length > 1);
+        if (targetWords.length === 0) return false;
+
+        const foundWordSet = new Set(foundWordList);
+        const targetWordSet = new Set(targetWordList);
+        const targetInFound = targetWords.every(word => foundWordSet.has(word));
+        const foundInTarget = foundWords.length >= 2 && foundWords.every(word => targetWordSet.has(word));
+        return targetInFound || foundInTarget;
+    }
+
+    /**
+     * Rank title-matched candidates by release year and exact title, and
+     * reject a best candidate whose year diverges by more than two years
+     * unless its title is an exact match.
+     * @param {Array<{title: string, year?: string|number|null}>} matches
+     * @param {string} targetTitle
+     * @param {string|number|null} targetYear
+     * @param {(candidate: Object) => number} [extraScore]
+     * @returns {Object|null}
+     */
+    rankTitleMatches(matches, targetTitle, targetYear, extraScore = null) {
+        if (!Array.isArray(matches) || matches.length === 0) return null;
+        const year = Number.parseInt(targetYear, 10);
+        const hasYear = Number.isFinite(year);
+        const target = BaseParserService.compactTitle(targetTitle);
+        const scored = matches.map((candidate, index) => {
+            let score = 0;
+            const candidateYear = Number.parseInt(candidate.year, 10);
+            if (hasYear && Number.isFinite(candidateYear)) {
+                const diff = Math.abs(candidateYear - year);
+                if (diff === 0) score += 100;
+                else if (diff <= 1) score += 50;
+                else score -= Math.min(100, diff * 10);
+            }
+            if (BaseParserService.compactTitle(candidate.title) === target) score += 50;
+            if (typeof extraScore === 'function') score += extraScore(candidate) || 0;
+            return { candidate, score, index };
+        });
+        scored.sort((a, b) => b.score - a.score || a.index - b.index);
+        return scored[0].candidate;
+    }
+
+    /**
+     * Whether a candidate's year diverges from the target by more than two years.
+     * @param {Object} candidate
+     * @param {string|number|null} targetYear
+     * @returns {boolean}
+     */
+    static hasYearDivergence(candidate, targetYear) {
+        const year = Number.parseInt(targetYear, 10);
+        const candidateYear = Number.parseInt(candidate?.year, 10);
+        return Number.isFinite(year) && Number.isFinite(candidateYear)
+            && Math.abs(candidateYear - year) > 2;
+    }
+
     // ─── Diagnostics ──────────────────────────────────────────────────
 
     /**
@@ -410,7 +534,8 @@ class BaseParserService {
     async cachedSearch(title, year, options = {}) {
         const mediaType = options?.mediaType || null;
         const seasonNumber = options?.seasonNumber ?? '';
-        const cacheKey = `${title}_${year || ''}_${mediaType || ''}_${seasonNumber}`;
+        const altName = options?.altName || '';
+        const cacheKey = `${title}_${year || ''}_${mediaType || ''}_${seasonNumber}_${altName}`;
         const cached = this._searchCache.get(cacheKey);
         const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
 
@@ -430,7 +555,10 @@ class BaseParserService {
         const request = (async () => {
             try {
                 const result = await this.search(title, year, options);
-                if (cacheGeneration === this._cacheGeneration) {
+                // Parsers report a failed mirror or query as "no result", so a
+                // miss may be transient. Do not let it block a retry for the
+                // whole TTL; concurrent callers still share the in-flight request.
+                if (result && cacheGeneration === this._cacheGeneration) {
                     this._searchCache.set(cacheKey, { data: result, timestamp: Date.now() });
                 }
                 return result;
@@ -482,7 +610,7 @@ class BaseParserService {
         const request = (async () => {
             try {
                 const sources = await this.getVideoSources(searchResult);
-                const normalized = Array.isArray(sources) ? sources : [];
+                const normalized = await this.dropMissingEmbedSources(Array.isArray(sources) ? sources : []);
                 // An empty source list is not a successful discovery result. Do
                 // not poison the source cache after a transient provider page,
                 // expired token, or incomplete iframe response.
@@ -499,6 +627,60 @@ class BaseParserService {
 
         this._sourceInFlight.set(sourceKey, request);
         return request;
+    }
+
+    /**
+     * Drop player embeds that the player service reports as missing.
+     * A Venom embed (`…/embed/kp/<id>`) for a title the service does not have
+     * still loads as a page that only says "видео не найдено", so the
+     * extension would show it as a working player. The service answers such
+     * requests with HTTP 404, which is checked here before mounting. Only a
+     * definitive 404/410 drops a source; network errors and timeouts keep it.
+     * Token-signed URLs are never pre-fetched.
+     * @param {Array<VideoSource>} sources
+     * @returns {Promise<Array<VideoSource>>}
+     */
+    async dropMissingEmbedSources(sources) {
+        if (!Array.isArray(sources) || sources.length === 0) return sources;
+        const checks = await Promise.all(sources.map(async source => {
+            if (!BaseParserService.isCheckableEmbedUrl(source?.url)) return true;
+            try {
+                const response = await this.fetchWithTimeout(source.url, {
+                    credentials: 'omit',
+                    cache: 'no-store'
+                }, EMBED_CHECK_TIMEOUT_MS);
+                try { await response.body?.cancel?.(); } catch { /* ignore */ }
+                if (response.status === 404 || response.status === 410) {
+                    console.warn(`[${this.name}] Player embed has no video (${response.status}), skipping: ${source.url}`);
+                    return false;
+                }
+                return true;
+            } catch {
+                return true;
+            }
+        }));
+        const available = sources.filter((_source, index) => checks[index]);
+        // Keep array-level metadata (for example Seasonvar translations).
+        Object.keys(sources).forEach(key => {
+            if (!/^\d+$/.test(key)) available[key] = sources[key];
+        });
+        return available;
+    }
+
+    /**
+     * Whether a source URL is an unsigned Venom embed that can be pre-checked.
+     * @param {string} sourceUrl
+     * @returns {boolean}
+     */
+    static isCheckableEmbedUrl(sourceUrl) {
+        try {
+            const parsed = new URL(String(sourceUrl || ''));
+            if (parsed.protocol !== 'https:' || !isVenomProviderUrl(parsed)) return false;
+            if (!/\/embed\//.test(parsed.pathname) || /\/embed\/trailer/.test(parsed.pathname)) return false;
+            return ![...parsed.searchParams.keys()].some(key => /token|sign|hash|expires/i.test(key));
+        } catch {
+            return false;
+        }
     }
 
     /**
@@ -544,6 +726,9 @@ class BaseParserService {
 }
 
 const PARSER_DEBUG_STORAGE_KEY = 'movieExtension.debugParsers';
+
+// Pre-mount availability check for player embeds; a slow answer keeps the source.
+const EMBED_CHECK_TIMEOUT_MS = 4000;
 
 const VENOM_AD_FREE_HOSTS = new Set([
     'namy.ws',

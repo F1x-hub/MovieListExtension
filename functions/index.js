@@ -25,6 +25,7 @@ const {
   isAggregateRelevantRatingChange,
 } = require("./ratingAggregation");
 const { scanRatingProjectionIntegrity } = require("./ratingIntegrityService");
+const { createReactionNotifier } = require("./reactionNotifications");
 
 const app = initializeApp();
 const db = getFirestore(app);
@@ -35,6 +36,7 @@ const RATING_INTEGRITY_AUTO_REPAIR = defineString("RATING_INTEGRITY_AUTO_REPAIR"
   default: "false",
 });
 const verifyAdminRequest = createAdminAuthVerifier({ auth: getAuth(), db });
+const notifyReactionOwner = createReactionNotifier({ db });
 let providerKeyManagementHandler = null;
 const providerKeyPools = new Map();
 const DEFAULT_COMMENT_REACTION_TYPES = [
@@ -52,21 +54,28 @@ const DEFAULT_COMMENT_REACTION_TYPES = [
   "hundred",
 ];
 
-async function getActiveCommentReactionTypes() {
+/**
+ * Active reaction types plus the catalog definitions (emoji, image, label)
+ * from one read of the shared config document.
+ */
+async function getCommentReactionCatalog() {
   try {
     const snapshot = await db.collection("settings").doc("commentReactions").get();
-    const configuredTypes = snapshot.exists ? snapshot.data()?.reactionTypes : null;
+    const data = snapshot.exists ? snapshot.data() || {} : {};
+    const definitions = Array.isArray(data.reactions) ? data.reactions : [];
+    const configuredTypes = data.reactionTypes;
     if (Array.isArray(configuredTypes) && configuredTypes.length > 0) {
       const types = [...new Set(configuredTypes
         .map((type) => String(type ?? "").trim().toLowerCase())
         .filter((type) => /^[a-z0-9](?:[a-z0-9_-]{0,47})$/.test(type))
       )].slice(0, 24);
-      if (types.length > 0) return types;
+      if (types.length > 0) return { types, definitions };
     }
+    return { types: DEFAULT_COMMENT_REACTION_TYPES, definitions };
   } catch (error) {
     console.warn("[CommentReactions] Failed to load shared config; using defaults:", error.message);
   }
-  return DEFAULT_COMMENT_REACTION_TYPES;
+  return { types: DEFAULT_COMMENT_REACTION_TYPES, definitions: [] };
 }
 
 function getProviderKeyPool(provider = "kinopoisk") {
@@ -317,7 +326,8 @@ exports.aggregateCommentReactions = onDocumentWritten("commentReactions/{reactio
     .where("ratingId", "==", ratingId)
     .get();
 
-  const activeReactionTypes = await getActiveCommentReactionTypes();
+  const reactionCatalog = await getCommentReactionCatalog();
+  const activeReactionTypes = reactionCatalog.types;
   const counts = Object.fromEntries(activeReactionTypes.map((type) => [type, 0]));
 
   const movieId = rating.movieId ?? dataAfter?.movieId ?? dataBefore?.movieId ?? null;
@@ -355,6 +365,20 @@ exports.aggregateCommentReactions = onDocumentWritten("commentReactions/{reactio
   }, { merge: true });
 
   console.log(`[Cloud Function v2] Aggregated reactions for ${ratingId}: total=${total}`);
+
+  // Tell the rating owner about a newly added reaction. A failure here must
+  // not fail (and retry) the summary rebuild above.
+  try {
+    await notifyReactionOwner({
+      ratingId,
+      rating,
+      dataBefore,
+      dataAfter,
+      reactionDefinitions: reactionCatalog.definitions,
+    });
+  } catch (error) {
+    console.warn(`[CommentReactions] Owner notification failed for ${ratingId}:`, error.message);
+  }
   return null;
 });
 

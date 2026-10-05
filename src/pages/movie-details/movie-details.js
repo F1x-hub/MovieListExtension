@@ -2599,7 +2599,7 @@ class MovieDetailsManager {
                             </div>` : ''}
                             <div class="movie-detail-title-row">
                                 <span class="hero-media-type-badge hero-media-type-badge--${mediaTypeInfo.class}">${this.escapeHtml(mediaTypeInfo.label)}</span>
-                                <h1 class="movie-detail-page-title ${hasLogo ? 'movie-detail-page-title--with-logo' : ''}">${this.escapeHtml(movieName)}</h1>
+                                <h1 class="movie-detail-page-title">${this.escapeHtml(movieName)}</h1>
                             </div>
                             
                             <div class="mc-menu-container" style="position: relative; z-index: 20;">
@@ -5933,8 +5933,10 @@ class MovieDetailsManager {
                     console.warn(`[Player] ${parser.name} source discovery failed:`, e);
                 }
             };
-            await this.parserRegistry.searchAll(movie.name, movie.year, {
+            await this.parserRegistry.searchAll(movie.name || movie.alternativeName, movie.year, {
                 mediaType: movieType,
+                fallbackTitle: movie.alternativeName,
+                altName: movie.alternativeName || null,
                 onResult: (result, parser) => {
                     pendingSourceTasks.push(collectSources(result, parser));
                 }
@@ -6035,8 +6037,10 @@ class MovieDetailsManager {
             }
         };
 
-        const searchPromise = this.parserRegistry.searchAll(movie.name, movie.year, {
+        const searchPromise = this.parserRegistry.searchAll(movie.name || movie.alternativeName, movie.year, {
             mediaType: movieType,
+            fallbackTitle: movie.alternativeName,
+            altName: movie.alternativeName || null,
             onResult: (result, parser) => {
                 const state = states.get(parser.id);
                 if (!state) return;
@@ -9522,7 +9526,9 @@ class MovieDetailsManager {
             } else if (!reusedDiscoveredSources) {
                 // Use enhanced search if available (e.g. SeasonvarParser.searchBestMatch)
                 if (parser.searchBestMatch) {
-                    searchResult = await parser.searchBestMatch(name, targetMovie.alternativeName, targetMovie.year);
+                    searchResult = await parser.searchBestMatch(name, targetMovie.alternativeName, targetMovie.year, {
+                        mediaType: requestedMediaType
+                    });
                 } else {
                     const searchTraceLabel = parserId === 'kinogo' ? '[KinogoSearchTrace]' : '[PlayerSearchTrace]';
                     console.log(`${searchTraceLabel} MovieDetails search dispatch`, {
@@ -9534,10 +9540,23 @@ class MovieDetailsManager {
                         isSeries: Boolean(targetMovie.isSeries),
                         cacheKeyIncludesMediaType: true
                     });
-                    searchResult = await parser.cachedSearch(name, targetMovie.year, {
-                        mediaType: requestedMediaType,
-                        seasonNumber: selection?.seasonNumber ?? null
-                    });
+                    // The original title is a fallback for providers that list
+                    // a title only under it; it never replaces a primary match.
+                    const searchTitles = [...new Set(
+                        [name, targetMovie.alternativeName]
+                            .map(value => (typeof value === 'string' ? value.trim() : ''))
+                            .filter(Boolean)
+                    )];
+                    for (const searchTitle of searchTitles) {
+                        // Same options as background discovery, so both share
+                        // one cache entry for the title.
+                        searchResult = await parser.cachedSearch(searchTitle, targetMovie.year, {
+                            mediaType: requestedMediaType,
+                            seasonNumber: selection?.seasonNumber ?? null,
+                            altName: targetMovie.alternativeName || null
+                        });
+                        if (searchResult) break;
+                    }
                 }
 
                 if (searchResult && typeof parser.isSearchResultCompatible === 'function'

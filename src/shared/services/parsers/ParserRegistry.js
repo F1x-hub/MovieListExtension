@@ -74,17 +74,23 @@ class ParserRegistry {
      * @param {string|number|null} year - Release year
      * @param {Object} [options] - Provider-specific search options. `onResult`
      * and `onSettled` are optional non-blocking parser lifecycle callbacks.
+     * `fallbackTitle` (for example the original title) is searched per parser
+     * only when the primary title finds nothing on that parser.
      * @returns {Promise<SearchResult[]>} Successful results from all parsers
      */
     async searchAll(title, year, options = {}) {
         const parsers = this.getAll();
-        const { onResult, onSettled, ...parserOptions } = options || {};
-        
+        const { onResult, onSettled, fallbackTitle, ...parserOptions } = options || {};
+        const searchTitles = ParserRegistry.getSearchTitles(title, fallbackTitle);
+
         const results = await Promise.allSettled(
             parsers.map(async (parser) => {
                 let result = null;
                 try {
-                    result = await parser.cachedSearch(title, year, parserOptions);
+                    for (const searchTitle of searchTitles) {
+                        result = await parser.cachedSearch(searchTitle, year, parserOptions);
+                        if (result) break;
+                    }
                     if (result) {
                         // Ensure parserId is set
                         result.parserId = parser.id;
@@ -114,6 +120,23 @@ class ParserRegistry {
         return results
             .filter(r => r.status === 'fulfilled' && r.value)
             .map(r => r.value);
+    }
+
+    /**
+     * Distinct non-empty search titles in priority order.
+     * @param {...*} titles
+     * @returns {string[]}
+     */
+    static getSearchTitles(...titles) {
+        const seen = new Set();
+        return titles
+            .map(value => (typeof value === 'string' ? value.trim() : ''))
+            .filter(value => {
+                const key = value.toLowerCase();
+                if (!value || seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
     }
 
     /**

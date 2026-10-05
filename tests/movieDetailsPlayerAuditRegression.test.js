@@ -435,7 +435,7 @@ return isTrustedHostMessage;`);
     assert.match(source, /class="btn btn-secondary btn-lg rate-movie-btn"/, '"Оценить" must be secondary to "Смотреть"');
 
     const detailsCss = read('../src/pages/movie-details/movie-details.css');
-    assert.match(detailsCss, /\.movie-detail-page-title--with-logo\s*\{[^}]*clip:/, 'text title must be visually hidden when title artwork is shown');
+    assert.doesNotMatch(detailsCss, /\.movie-detail-page-title--with-logo/, 'the text title must stay visible next to title artwork');
     assert.match(detailsCss, /\.production-company-logo,\s*\.light-theme \.production-company-logo\s*\{/, 'studio logos need a contrast well in both themes');
     assert.doesNotMatch(detailsCss, /#(?:10b981|f59e0b|ef4444)\b/i, 'details page must use semantic tokens instead of chromatic literals');
     assert.doesNotMatch(html, /style="color: #ef4444;"/);

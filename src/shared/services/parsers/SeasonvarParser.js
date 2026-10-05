@@ -1182,25 +1182,16 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
      * @param {string} name - Movie name
      * @param {string} [altName] - Alternative name
      * @param {string|number} [year] - Year
+     * @param {Object} [options] - cachedSearch options (for example mediaType)
      * @returns {Promise<SearchResult|null>}
      */
-    async searchBestMatch(name, altName, year) {
-        try {
-            const url = `${this.searchUrl}?q=${encodeURIComponent(name)}`;
-            const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
-            const response = perf
-                ? await perf.trackRequest('SEASONVAR_SEARCH', { purpose: 'searchBestMatch', url }, () => this.fetchWithTimeout(url))
-                : await this.fetchWithTimeout(url);
-            if (!response.ok) throw new Error(`Search failed: ${response.status}`);
-            
-            const html = await response.text();
-            const results = this.parseSearchResults(html);
-            
-            return this.selectBestSearchResult(results, name, altName, year);
-        } catch (error) {
-            console.error(`[${this.name}] searchBestMatch error:`, error);
-            return null;
-        }
+    async searchBestMatch(name, altName, year, options = {}) {
+        // Same request, ranking and cache entry as search(): a background
+        // discovery and a later source click no longer search Seasonvar twice.
+        return this.cachedSearch(name, year, {
+            ...options,
+            altName: altName || null
+        });
     }
 
     /**
