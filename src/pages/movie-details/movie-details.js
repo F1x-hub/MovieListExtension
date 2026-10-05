@@ -5913,7 +5913,7 @@ class MovieDetailsManager {
             const pendingSourceTasks = [];
             const collectSources = async (result, parser) => {
                 if (!parser || parser.getPlayerType() === 'custom') return;
-                if (movieType && !parser.supportsType(movieType)) return;
+                if (!(parser.supportsMedia?.(movie, movieType) ?? (!movieType || parser.supportsType(movieType)))) return;
                 try {
                     const sources = await parser.cachedVideoSources(result);
                     if (!sources?.length) return;
@@ -5962,7 +5962,7 @@ class MovieDetailsManager {
         const movieType = movie?.type || (movie?.isSeries ? 'tv-series' : null);
         const parsers = (this.parserRegistry?.getAll?.() || [])
             .filter(parser => parser?.getPlayerType?.() !== 'custom')
-            .filter(parser => !movieType || parser.supportsType?.(movieType));
+            .filter(parser => parser.supportsMedia?.(movie, movieType) ?? (!movieType || parser.supportsType?.(movieType)));
         const states = new Map(parsers.map(parser => [parser.id, {
             parser,
             searchSettled: false,
@@ -6786,6 +6786,18 @@ class MovieDetailsManager {
             }
         }
 
+        // Providers that number episodes themselves (AnimeGo) supply the list
+        // when the catalog has none, plus filler marks for the picker.
+        const providerEpisodes = await this.loadProviderSeasonEpisodes?.(browsingSeason) || null;
+        if ((Number(this.pickerBrowsingSeasonNumber || activePlayingSeason) || 1) !== browsingSeason) return;
+        if (!episodes.length && providerEpisodes?.length) {
+            episodes = providerEpisodes.map(ep => ({
+                episodeNumber: ep.episodeNumber,
+                name: `${ep.episodeNumber} серия`,
+                url: null
+            }));
+        }
+
         if (episodes.length > 0) {
             console.groupCollapsed?.('[SeasonPickerTrace] Render episode list');
             console.log('[SeasonPickerTrace] Context', {
@@ -6836,15 +6848,59 @@ class MovieDetailsManager {
         }
     }
 
-    renderPickerEpisodeButtons(episodes, activePlayingSeason, activePlayingEpisode, browsingSeason) {
-        const episodesList = (typeof document !== 'undefined' && typeof document?.getElementById === 'function')
-            ? document.getElementById('pickerEpisodesList')
-            : (this.elements?.pickerEpisodesList || null);
+    renderPickerEpisodeButtons(episodes, activePlayingSeason, activePlayingEpisode, browsingSeason, { focus = true } = {}) {
+        const byId = id => ((typeof document !== 'undefined' && typeof document?.getElementById === 'function')
+            ? document.getElementById(id)
+            : (this.elements?.[id] || null));
+        const episodesList = byId('pickerEpisodesList');
         if (!episodesList) return;
 
-        episodesList.innerHTML = episodes.map(ep => {
-            const isPlaying = (browsingSeason === activePlayingSeason) && (ep.episodeNumber === activePlayingEpisode);
-            return `<button type="button" class="picker-episode-btn ${isPlaying ? 'picker-episode-btn--active' : ''}" data-season-number="${browsingSeason}" data-episode-number="${ep.episodeNumber}" aria-current="${isPlaying ? 'true' : 'false'}" title="${ep.name || `${ep.episodeNumber} серия`}">${ep.episodeNumber}</button>`;
+        const list = Array.isArray(episodes) ? episodes : [];
+        this.pickerEpisodeContext = { episodes: list, activePlayingSeason, activePlayingEpisode, browsingSeason };
+        const isPlayingSeason = browsingSeason === activePlayingSeason;
+
+        // Long seasons (AnimeGo's 500-episode titles) are browsed in ranges.
+        const ranges = this.buildPickerEpisodeRanges(list);
+        let rangeIndex = 0;
+        if (ranges.length > 1) {
+            const stored = this.pickerEpisodeRange;
+            if (stored?.seasonNumber === browsingSeason && stored.index < ranges.length) {
+                rangeIndex = stored.index;
+            } else if (isPlayingSeason) {
+                const playingRange = ranges.findIndex(range => range.episodes.some(ep => ep.episodeNumber === activePlayingEpisode));
+                if (playingRange >= 0) rangeIndex = playingRange;
+            }
+            this.pickerEpisodeRange = { seasonNumber: browsingSeason, index: rangeIndex };
+        }
+        const visibleEpisodes = ranges.length > 1 ? ranges[rangeIndex].episodes : list;
+        this.renderPickerEpisodeRanges(ranges, rangeIndex, byId('pickerEpisodeRanges'));
+        this.updatePickerEpisodeHeader(list, isPlayingSeason ? activePlayingEpisode : null, byId);
+
+        const escape = value => String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+        const fillerEpisodes = this.getProviderFillerEpisodes?.(browsingSeason) || null;
+        const history = this.currentEpisodeHistory || {};
+        episodesList.innerHTML = visibleEpisodes.map(ep => {
+            const isPlaying = isPlayingSeason && (ep.episodeNumber === activePlayingEpisode);
+            const isFiller = Boolean(fillerEpisodes?.has(Number(ep.episodeNumber)));
+            const isWatched = Boolean(history[`${browsingSeason}:${ep.episodeNumber}`]);
+            const notes = [isFiller ? 'филлер' : null, isWatched ? 'просмотрена' : null].filter(Boolean);
+            const title = `${ep.name || `${ep.episodeNumber} серия`}${notes.length ? ` · ${notes.join(', ')}` : ''}`;
+            const labelAttr = notes.length ? ` aria-label="Серия ${escape(ep.episodeNumber)}, ${notes.join(', ')}"` : '';
+            const classes = [
+                'picker-episode-btn',
+                isPlaying ? 'picker-episode-btn--active' : '',
+                isFiller ? 'picker-episode-btn--filler' : '',
+                isWatched ? 'picker-episode-btn--watched' : ''
+            ].filter(Boolean).join(' ');
+            const fillerBadge = isFiller ? '<span class="picker-episode-btn__filler" aria-hidden="true">F</span>' : '';
+            const watchedBadge = isWatched
+                ? '<span class="picker-episode-btn__watched" aria-hidden="true"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>'
+                : '';
+            return `<button type="button" class="${classes}" data-season-number="${browsingSeason}" data-episode-number="${escape(ep.episodeNumber)}" aria-current="${isPlaying ? 'true' : 'false'}" title="${escape(title)}"${labelAttr}>${escape(ep.episodeNumber)}${fillerBadge}${watchedBadge}</button>`;
         }).join('');
 
         episodesList.querySelectorAll('.picker-episode-btn').forEach(btn => {
@@ -6856,11 +6912,137 @@ class MovieDetailsManager {
             });
         });
 
+        if (!focus) return;
         // Focus currently playing or first episode
         const activeBtn = episodesList.querySelector('.picker-episode-btn--active') || episodesList.querySelector('.picker-episode-btn');
         if (activeBtn) {
             try { activeBtn.focus(); } catch { /* ignore */ }
         }
+    }
+
+    /**
+     * Split a season into ranges of PICKER_EPISODE_RANGE_SIZE episodes.
+     * @param {Array<{episodeNumber: number}>} episodes
+     * @returns {Array<{label: string, episodes: Array}>}
+     */
+    buildPickerEpisodeRanges(episodes) {
+        const list = Array.isArray(episodes) ? episodes : [];
+        if (list.length <= PICKER_EPISODE_RANGE_SIZE) return [{ label: '', episodes: list }];
+        const ranges = [];
+        for (let start = 0; start < list.length; start += PICKER_EPISODE_RANGE_SIZE) {
+            const chunk = list.slice(start, start + PICKER_EPISODE_RANGE_SIZE);
+            ranges.push({ label: `${chunk[0].episodeNumber}–${chunk[chunk.length - 1].episodeNumber}`, episodes: chunk });
+        }
+        return ranges;
+    }
+
+    renderPickerEpisodeRanges(ranges, activeIndex, container) {
+        if (!container) return;
+        if (!Array.isArray(ranges) || ranges.length <= 1) {
+            container.hidden = true;
+            container.innerHTML = '';
+            return;
+        }
+        container.hidden = false;
+        container.innerHTML = ranges.map((range, index) => {
+            const isActive = index === activeIndex;
+            return `<button type="button" class="picker-range-btn${isActive ? ' picker-range-btn--active' : ''}" data-range-index="${index}" aria-pressed="${isActive}">${range.label}</button>`;
+        }).join('');
+        container.querySelectorAll('.picker-range-btn').forEach(button => {
+            button.addEventListener('click', event => {
+                event.stopPropagation();
+                const context = this.pickerEpisodeContext;
+                if (!context) return;
+                this.pickerEpisodeRange = { seasonNumber: context.browsingSeason, index: Number(button.dataset.rangeIndex) };
+                this.renderPickerEpisodeButtons(
+                    context.episodes,
+                    context.activePlayingSeason,
+                    context.activePlayingEpisode,
+                    context.browsingSeason,
+                    { focus: false }
+                );
+                container.querySelector(`[data-range-index="${button.dataset.rangeIndex}"]`)?.focus?.();
+            });
+        });
+    }
+
+    updatePickerEpisodeHeader(episodes, playingEpisode, byId) {
+        const list = Array.isArray(episodes) ? episodes : [];
+        const label = byId('pickerEpisodesLabel');
+        if (label) {
+            const isListed = playingEpisode != null && list.some(ep => ep.episodeNumber === playingEpisode);
+            label.textContent = isListed
+                ? `Серия ${playingEpisode} из ${list.length}`
+                : (list.length ? `Серий: ${list.length}` : 'Серия');
+        }
+
+        const input = byId('pickerEpisodeSearch');
+        if (!input) return;
+        const searchWrapper = input.closest?.('.player-episode-picker__search') || input;
+        searchWrapper.hidden = list.length <= PICKER_EPISODE_SEARCH_MIN_COUNT;
+        const hint = byId('pickerEpisodeSearchHint');
+        if (hint && searchWrapper.hidden) hint.hidden = true;
+        if (input.dataset.pickerSearchBound) return;
+        input.dataset.pickerSearchBound = 'true';
+        input.addEventListener('input', () => this.onPickerEpisodeSearch(input.value, { submit: false }));
+        input.addEventListener('keydown', event => {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            event.stopPropagation();
+            void this.onPickerEpisodeSearch(input.value, { submit: true });
+        });
+    }
+
+    /**
+     * Search by episode number: typing reveals and marks the episode,
+     * Enter plays it. A missing number shows a hint and does nothing else.
+     */
+    async onPickerEpisodeSearch(value, { submit = false } = {}) {
+        const byId = id => ((typeof document !== 'undefined' && typeof document?.getElementById === 'function')
+            ? document.getElementById(id)
+            : (this.elements?.[id] || null));
+        const context = this.pickerEpisodeContext;
+        const hint = byId('pickerEpisodeSearchHint');
+        const episodesList = byId('pickerEpisodesList');
+        episodesList?.querySelectorAll?.('.picker-episode-btn--match').forEach(btn => btn.classList.remove('picker-episode-btn--match'));
+
+        const number = Number.parseInt(String(value || '').trim(), 10);
+        if (!context || !Number.isFinite(number)) {
+            if (hint) hint.hidden = true;
+            return false;
+        }
+        const episode = context.episodes.find(ep => Number(ep.episodeNumber) === number);
+        if (!episode) {
+            if (hint) {
+                hint.textContent = 'Такой серии нет';
+                hint.hidden = false;
+            }
+            return false;
+        }
+        if (hint) hint.hidden = true;
+        if (submit) {
+            await this.onPickerEpisodeClick(number, context.browsingSeason);
+            return true;
+        }
+
+        const ranges = this.buildPickerEpisodeRanges(context.episodes);
+        const rangeIndex = ranges.findIndex(range => range.episodes.includes(episode));
+        if (ranges.length > 1 && rangeIndex >= 0 && this.pickerEpisodeRange?.index !== rangeIndex) {
+            this.pickerEpisodeRange = { seasonNumber: context.browsingSeason, index: rangeIndex };
+            this.renderPickerEpisodeButtons(
+                context.episodes,
+                context.activePlayingSeason,
+                context.activePlayingEpisode,
+                context.browsingSeason,
+                { focus: false }
+            );
+        }
+        const button = byId('pickerEpisodesList')?.querySelector?.(`.picker-episode-btn[data-episode-number="${number}"]`);
+        if (button) {
+            button.classList.add('picker-episode-btn--match');
+            try { button.scrollIntoView?.({ block: 'nearest' }); } catch { /* ignore */ }
+        }
+        return true;
     }
 
     async onPickerSeasonClick(seasonNumber, seasonUrl) {
@@ -7192,6 +7374,21 @@ class MovieDetailsManager {
                         requestedEpisode: selectionPayload.episodeNumber,
                         result: applyResult
                     });
+                } else if (adapter?.supportsInPlaceSelection?.() === true
+                    && typeof this.playbackController?.applySelection === 'function') {
+                    // Opt-in DIRECT adapters (AnimeGo) swap the episode into the
+                    // mounted player; a declined apply falls back to a remount.
+                    adapter.activeContainer = this.elements.videoContainer;
+                    const applyResult = await this.playbackController.applySelection(selectionPayload);
+                    nativeSelectionApplied = applyResult.status === 'APPLIED';
+                    // Progress and auto-next must report the new episode.
+                    if (nativeSelectionApplied) this.bindProviderVideoTracking?.(activeProvider);
+                    console.log('[SeasonPickerTrace] in-place apply result', {
+                        provider: activeProvider,
+                        requestedSeason: selectionPayload.seasonNumber,
+                        requestedEpisode: selectionPayload.episodeNumber,
+                        result: applyResult
+                    });
                 }
                 if (!nativeSelectionApplied) {
                     // Parser players mounted by the legacy source lifecycle already own
@@ -7433,16 +7630,16 @@ class MovieDetailsManager {
                 if (lastSaved && lastSaved.startsWith('parser:')) {
                     const savedParserId = lastSaved.replace('parser:', '');
                     const savedParser = this.parserRegistry.get(savedParserId);
-                    if (savedParser && (!currentType || savedParser.supportsType(currentType))) {
+                    if (savedParser && (savedParser.supportsMedia?.(this.selectedMovie, currentType) ?? (!currentType || savedParser.supportsType(currentType)))) {
                         targetParser = savedParser;
                     }
                 }
                 
                 if (!targetParser) {
                     targetParser = allParsers.find(p => 
-                        p.getPlayerType() !== 'iframe' && (!currentType || p.supportsType(currentType))
+                        p.getPlayerType() !== 'iframe' && (p.supportsMedia?.(this.selectedMovie, currentType) ?? (!currentType || p.supportsType(currentType)))
                     ) || allParsers.find(p => 
-                        p !== allParsers[0] && (!currentType || p.supportsType(currentType))
+                        p !== allParsers[0] && (p.supportsMedia?.(this.selectedMovie, currentType) ?? (!currentType || p.supportsType(currentType)))
                     );
                 }
                 
@@ -8207,7 +8404,7 @@ class MovieDetailsManager {
         const movieType = this.selectedMovie?.type;
         
         const preloadWork = Promise.allSettled(parsers.map(async (parser) => {
-            if (movieType && !parser.supportsType(movieType)) return;
+            if (!(parser.supportsMedia?.(this.selectedMovie, movieType) ?? (!movieType || parser.supportsType(movieType)))) return;
 
             // Default iframe/video renderers are intentionally not preloaded: mounting them
             // in hidden containers duplicates third-party network/player initialization.
@@ -8246,6 +8443,7 @@ class MovieDetailsManager {
                 entry.container.innerHTML = '';
                 const renderOptions = {
                     translations: seriesInfo?.translations || null,
+                    canonicalSeasons: this.getCanonicalSeasonLayout?.() || [],
                     seasons: seasons || [],
                     movieId: registryMovieId,
                     lifecycle: false
@@ -8386,6 +8584,7 @@ class MovieDetailsManager {
             // Pass the pre-resolved auto-select data to renderPlayer, ground-truthed against current selection
             const renderOptions = {
                 ...(entry.renderOptions || {}),
+                canonicalSeasons: this.getCanonicalSeasonLayout?.() || entry.renderOptions?.canonicalSeasons || [],
                 ...this.createSourceLifecycleOptions({
                     url: `parser:${parserId}`,
                     parserId,
@@ -8647,7 +8846,7 @@ class MovieDetailsManager {
     getParserSelectorIds(movieType = this.selectedMovie?.type) {
         return new Set(
             this.parserRegistry.getAll()
-                .filter(parser => !movieType || parser.supportsType(movieType))
+                .filter(parser => parser.supportsMedia?.(this.selectedMovie, movieType) ?? (!movieType || parser.supportsType(movieType)))
                 .map(parser => parser.id)
         );
     }
@@ -8809,6 +9008,151 @@ class MovieDetailsManager {
             this.updateActiveSourceButton(savedValue);
         }
         this.refreshSourceButtonStates();
+    }
+
+    /**
+     * Show the dub selector for the mounted provider player. Parsers publish
+     * `__providerDubState` on the video container after rendering (AnimeGo);
+     * the selector stays hidden for providers without a host-side dub choice.
+     * @param {string|null} providerId - Provider that just mounted, or null to hide
+     */
+    refreshProviderDubSelector(providerId = null) {
+        this.bindProviderDubStateListener();
+        const doc = typeof document !== 'undefined' ? document : null;
+        const control = doc?.getElementById?.('sourceDubControl');
+        const select = doc?.getElementById?.('sourceDubSelect');
+        if (!control || !select) return;
+
+        const state = providerId ? this.elements?.videoContainer?.__providerDubState : null;
+        const translations = state?.providerId === providerId ? state.translations || [] : [];
+        if (translations.length < 2) {
+            control.hidden = true;
+            select.replaceChildren();
+            return;
+        }
+
+        select.replaceChildren(...translations.map(translation => {
+            const option = doc.createElement('option');
+            option.value = translation.id;
+            option.textContent = translation.name;
+            option.selected = translation.id === state.activeTranslationId;
+            return option;
+        }));
+        if (!select.dataset.dubBound) {
+            select.dataset.dubBound = 'true';
+            select.addEventListener('change', () => {
+                void this.onProviderDubChange(select.value);
+            });
+        }
+        control.hidden = false;
+    }
+
+    /**
+     * A parser can change its dub state without a source switch: when the
+     * native stream fails at runtime and its iframe takes over, the toolbar
+     * selector must appear and progress tracking must stop. Bound once.
+     */
+    bindProviderDubStateListener() {
+        const container = this.elements?.videoContainer;
+        if (!container?.addEventListener || container.dataset?.providerDubStateBound) return;
+        if (container.dataset) container.dataset.providerDubStateBound = 'true';
+        container.addEventListener('providerdubstatechange', event => {
+            const activeProvider = this.playbackController?.getActiveProvider?.() || this.activePlayerId;
+            if (!activeProvider || event?.detail?.providerId !== activeProvider) return;
+            this.refreshProviderDubSelector(activeProvider);
+            this.bindProviderVideoTracking?.(activeProvider);
+        });
+    }
+
+    /**
+     * Attach PlaybackController progress/completion/ended tracking to the
+     * native video of an opt-in parser mount (AnimeGo's Kodik stream). Other
+     * sources, and AnimeGo's iframe fallback, are detached.
+     * @param {string|null} providerId - Provider that just mounted, or null
+     * @returns {boolean}
+     */
+    bindProviderVideoTracking(providerId = null) {
+        const controller = this.playbackController;
+        if (typeof controller?.attachExternalVideo !== 'function') return false;
+        const adapter = providerId ? controller.getAdapter?.(providerId) : null;
+        const video = this.elements?.videoContainer?.querySelector?.('video[data-progress-owner="canonical"]');
+        const eligible = adapter?.supportsInPlaceSelection?.() === true
+            && adapter.getProgressConfidence?.() === 'RELIABLE'
+            && Boolean(video);
+        if (!eligible) {
+            controller.detachExternalVideo?.();
+            return false;
+        }
+        return controller.attachExternalVideo(video, { providerId, selection: controller.getSelection?.() });
+    }
+
+    async onProviderDubChange(translationId) {
+        const state = this.elements?.videoContainer?.__providerDubState;
+        const parser = state ? this.parserRegistry?.get?.(state.providerId) : null;
+        if (!parser?.setPreferredTranslation || !translationId || translationId === state.activeTranslationId) return;
+        parser.setPreferredTranslation(state.contextId, translationId);
+        await this.changeVideoSource(`parser:${state.providerId}`);
+    }
+
+    /**
+     * Canonical (Kinopoisk/TMDB) seasons with their episode counts. Providers
+     * that number episodes across a whole title (AnimeGo) map seasons with it.
+     * @returns {Array<{seasonNumber: number, episodeCount: number}>}
+     */
+    getCanonicalSeasonLayout(movie = this.selectedMovie) {
+        const seasons = Array.isArray(movie?.seasons) ? movie.seasons : [];
+        return seasons
+            .filter(season => !season?.isSpecial)
+            .map(season => ({
+                seasonNumber: Number(season?.number ?? season?.seasonNumber),
+                episodeCount: Number(
+                    season?.episodeCount
+                    ?? season?.episodesCount
+                    ?? season?.episodes?.length
+                    ?? 0
+                ) || 0
+            }))
+            .filter(season => Number.isInteger(season.seasonNumber) && season.seasonNumber > 0);
+    }
+
+    /**
+     * Episodes of a season as the active provider numbers them (AnimeGo).
+     * Cached for the picker's synchronous filler marks.
+     * @param {number} seasonNumber
+     * @returns {Promise<Array<{episodeNumber: number, filler: boolean}>|null>}
+     */
+    async loadProviderSeasonEpisodes(seasonNumber) {
+        const activeProvider = this.playbackController?.getActiveProvider?.() || this.activePlayerId;
+        const parser = activeProvider ? this.parserRegistry?.get?.(activeProvider) : null;
+        const sources = activeProvider ? this.playerRegistry?.[activeProvider]?.sources : null;
+        if (typeof parser?.getSeasonEpisodeList !== 'function' || !Array.isArray(sources) || sources.length === 0) {
+            this.providerSeasonEpisodes = null;
+            return null;
+        }
+        const season = Number(seasonNumber) || 1;
+        let episodes = null;
+        try {
+            episodes = await parser.getSeasonEpisodeList(sources, season, {
+                canonicalSeasons: this.getCanonicalSeasonLayout()
+            });
+        } catch (error) {
+            console.warn('[MovieDetails] Provider season episodes unavailable:', error);
+        }
+        this.providerSeasonEpisodes = { providerId: activeProvider, seasonNumber: season, episodes: episodes || [] };
+        return episodes;
+    }
+
+    /**
+     * Filler episode numbers of the season last loaded for the picker.
+     * @param {number} seasonNumber
+     * @returns {Set<number>|null}
+     */
+    getProviderFillerEpisodes(seasonNumber) {
+        const activeProvider = this.playbackController?.getActiveProvider?.() || this.activePlayerId;
+        const cached = this.providerSeasonEpisodes;
+        if (!cached || cached.providerId !== activeProvider || cached.seasonNumber !== Number(seasonNumber)) return null;
+        const fillers = new Set(cached.episodes.filter(episode => episode.filler).map(episode => Number(episode.episodeNumber)));
+        return fillers.size > 0 ? fillers : null;
     }
 
     getSourceButtonProviderKey(value) {
@@ -9019,9 +9363,13 @@ class MovieDetailsManager {
 
         const movieId = String(this.selectedMovie?.kinopoiskId || '');
         const requestId = this.beginSourceSwitchRequest();
-        
+
         this.updateActiveSourceButton(url);
-        
+        // The dub selector belongs to the mounted player; hide it until the
+        // new source publishes its own choices.
+        this.refreshProviderDubSelector?.(null);
+        this.playbackController?.detachExternalVideo?.();
+
         let providerKey = url;
         if (url.startsWith('parser:')) {
             providerKey = url.replace('parser:', '');
@@ -9083,6 +9431,10 @@ class MovieDetailsManager {
             }
             if (sourceChanged && !fromWatchRoom) {
                 this.watchRoomController?.publishHostProvider(parserId, this.getWatchRoomProviderSource());
+            }
+            if (this.isSourceSwitchRequestCurrent(requestId, movieId)) {
+                this.refreshProviderDubSelector?.(sourceChanged ? parserId : null);
+                this.bindProviderVideoTracking?.(sourceChanged ? parserId : null);
             }
             return sourceChanged;
         }
@@ -9328,6 +9680,7 @@ class MovieDetailsManager {
             // Delegate rendering to the parser
             const renderOptions = {
                 translations: seriesInfo?.translations || null,
+                canonicalSeasons: this.getCanonicalSeasonLayout?.() || [],
                 seasons: seasons || [],
                 movieId,
                 season: selection?.seasonNumber ?? null,
@@ -11942,3 +12295,6 @@ if (typeof window !== 'undefined') {
     window.MovieDetailsManager = MovieDetailsManager;
 }
 const MEDIA_PLAYER_TORRENT_SOURCE = 'mediaplayer:torrent';
+// Episode picker: long seasons are browsed in ranges and searchable by number.
+const PICKER_EPISODE_RANGE_SIZE = 100;
+const PICKER_EPISODE_SEARCH_MIN_COUNT = 24;

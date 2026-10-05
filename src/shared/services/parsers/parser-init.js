@@ -10,7 +10,7 @@
 (function() {
     'use strict';
 
-    const registry = new ParserRegistry(['kinogo', 'exfs', 'seasonvar', 'rutube']);
+    const registry = new ParserRegistry(['kinogo', 'exfs', 'seasonvar', 'rutube', 'animego']);
 
     // Register KinoGo parser
     if (typeof KinogoParser !== 'undefined') {
@@ -38,6 +38,14 @@
         registry.register(new RutubeParser());
     } else {
         console.warn('[ParserInit] RutubeParser is unavailable');
+    }
+
+    // Register AnimeGo parser (animego.me). Anime only; kept last because the
+    // Search page treats the first registered parser as its primary source.
+    if (typeof AnimeGoParser !== 'undefined') {
+        registry.register(new AnimeGoParser());
+    } else {
+        console.warn('[ParserInit] AnimeGoParser is unavailable');
     }
 
     // Expose globally

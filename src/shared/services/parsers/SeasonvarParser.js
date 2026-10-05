@@ -577,7 +577,7 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
         if (!translations || translations.length <= 1) return '';
         const hasExplicitActive = translations.some(t => activeTranslationUrl ? t.url === activeTranslationUrl : Boolean(t.active));
         return `
-            <div id="seasonvar-voiceover-source">
+            <div id="seasonvar-voiceover-source" data-player-voiceover-source="seasonvar">
                 ${translations.map((t, idx) => {
                     const isActive = activeTranslationUrl
                         ? t.url === activeTranslationUrl

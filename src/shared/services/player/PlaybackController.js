@@ -87,6 +87,8 @@ class PlaybackController {
         }
         this.activeVideoElement = null;
         this.videoEventListeners = [];
+        // Video mounted by a parser outside adapter.mount() (attachExternalVideo)
+        this.externalVideoElement = null;
         this.lastProgressSaveTime = 0;
         this.PROGRESS_WRITE_THROTTLE_MS = 15000; // 15 seconds
 
@@ -116,7 +118,8 @@ class PlaybackController {
             typeof VidSrcAdapter !== 'undefined' ? VidSrcAdapter : (typeof require !== 'undefined' ? require('./adapters/VidSrcAdapter').VidSrcAdapter : null),
             typeof KinogoAdapter !== 'undefined' ? KinogoAdapter : (typeof require !== 'undefined' ? require('./adapters/KinogoAdapter').KinogoAdapter : null),
             typeof ExFsAdapter !== 'undefined' ? ExFsAdapter : (typeof require !== 'undefined' ? require('./adapters/ExFsAdapter').ExFsAdapter : null),
-            typeof RutubeAdapter !== 'undefined' ? RutubeAdapter : (typeof require !== 'undefined' ? require('./adapters/RutubeAdapter').RutubeAdapter : null)
+            typeof RutubeAdapter !== 'undefined' ? RutubeAdapter : (typeof require !== 'undefined' ? require('./adapters/RutubeAdapter').RutubeAdapter : null),
+            typeof AnimeGoAdapter !== 'undefined' ? AnimeGoAdapter : (typeof require !== 'undefined' ? require('./adapters/AnimeGoAdapter').AnimeGoAdapter : null)
         ];
 
         for (const Cls of adapterClasses) {
@@ -656,6 +659,53 @@ class PlaybackController {
     }
 
     /**
+     * Track progress, completion and `ended` for a native video that a parser
+     * mounted through MovieDetails' source lifecycle instead of
+     * adapter.mount(). Re-attach after an in-place selection change so the
+     * events carry the new season/episode.
+     * @param {HTMLVideoElement} video
+     * @param {Object} [options]
+     * @param {string} [options.providerId] - Defaults to the active provider
+     * @param {Object} [options.selection] - Defaults to the current selection
+     * @returns {boolean} Whether tracking was attached
+     */
+    attachExternalVideo(video, { providerId = this.activeProviderId, selection = this.currentSelection } = {}) {
+        const adapter = this.getAdapter(providerId);
+        if (!video || typeof video.addEventListener !== 'function' || !adapter || !selection) {
+            this.detachExternalVideo();
+            return false;
+        }
+
+        const token = ++this.mountRequestId;
+        this.activeProviderId = adapter.id;
+        this.activeAdapter = adapter;
+        this.resetRuntimeState({
+            providerId: adapter.id,
+            progressConfidence: typeof adapter.getProgressConfidence === 'function' ? adapter.getProgressConfidence() : 'OPAQUE',
+            supportsTimestampResume: typeof adapter.supportsTimestampResume === 'function' ? adapter.supportsTimestampResume() : false,
+            supportsEnded: typeof adapter.supportsEnded === 'function' ? adapter.supportsEnded() : false,
+            mountToken: token,
+            mediaIdentity: {
+                kinopoiskId: selection.kinopoiskId || null,
+                seasonNumber: selection.seasonNumber != null ? selection.seasonNumber : null,
+                episodeNumber: selection.episodeNumber != null ? selection.episodeNumber : null
+            }
+        });
+        this._attachNativeVideoListeners(video, token, selection, adapter);
+        this.externalVideoElement = video;
+        return true;
+    }
+
+    /**
+     * Stop tracking a parser-mounted video (source switch, iframe fallback).
+     */
+    detachExternalVideo() {
+        if (!this.externalVideoElement) return;
+        if (this.activeVideoElement === this.externalVideoElement) this._detachNativeVideoListeners();
+        this.externalVideoElement = null;
+    }
+
+    /**
      * Detaches all video event listeners and cleans up native bridge.
      * @private
      */
@@ -1044,6 +1094,7 @@ class PlaybackController {
      */
     unmountActive() {
         this._detachNativeVideoListeners();
+        this.externalVideoElement = null;
 
         if (this.activeAdapter && typeof this.activeAdapter.unmount === 'function') {
             try {

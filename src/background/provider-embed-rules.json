@@ -262,5 +262,31 @@
         "sub_frame"
       ]
     }
+  },
+  {
+    "id": 108,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "referer",
+          "operation": "set",
+          "value": "https://animego.me/"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "[?&]movieExtensionSite=animego\\.me(&|$)",
+      "initiatorDomains": [
+        "dgdejomdgiabgcfijcdhjefijdfiemhd"
+      ],
+      "requestDomains": [
+        "kodikplayer.com"
+      ],
+      "resourceTypes": [
+        "sub_frame"
+      ]
+    }
   }
 ]

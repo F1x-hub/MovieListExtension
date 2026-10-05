@@ -129,9 +129,13 @@ const embedRules = JSON.parse(fs.readFileSync(new URL('../src/background/provide
 const extensionManifest = JSON.parse(fs.readFileSync(new URL('../manifest.json', import.meta.url), 'utf8'));
 assert.ok(extensionManifest.declarative_net_request.rule_resources.some(rule =>
     rule.enabled && rule.path === 'src/background/provider-embed-rules.json'));
-for (const rule of embedRules) {
+const venomRules = embedRules.filter(rule => rule.condition.requestDomains.includes('variyt.ws'));
+assert.ok(venomRules.length >= 2, 'Ex-FS and KinoGo Venom embeds keep their source-site rules');
+for (const rule of venomRules) {
     assert.ok(rule.condition.requestDomains.includes('nextembed.ws'),
         'the current KinoGo provider must receive the same source-site embed context');
+}
+for (const rule of embedRules) {
     const referer = rule.action.requestHeaders[0];
     const host = new URL(referer.value).hostname;
     assert.equal(referer.header, 'referer');
@@ -139,9 +143,10 @@ for (const rule of embedRules) {
     assert.deepEqual(rule.condition.resourceTypes, ['sub_frame']);
     assert.deepEqual(rule.condition.initiatorDomains, ['dgdejomdgiabgcfijcdhjefijdfiemhd']);
     const pattern = new RegExp(rule.condition.regexFilter);
-    assert.ok(pattern.test(`https://api.variyt.ws/embed/kp/9617?movieExtensionSite=${host}&season=1`));
-    assert.ok(!pattern.test(`https://api.variyt.ws/embed/kp/9617?movieExtensionSite=${host}.evil.test`));
-    assert.ok(!pattern.test('https://api.variyt.ws/embed/kp/9617'));
+    const embedHost = `api.${rule.condition.requestDomains[0]}`;
+    assert.ok(pattern.test(`https://${embedHost}/embed/kp/9617?movieExtensionSite=${host}&season=1`));
+    assert.ok(!pattern.test(`https://${embedHost}/embed/kp/9617?movieExtensionSite=${host}.evil.test`));
+    assert.ok(!pattern.test(`https://${embedHost}/embed/kp/9617`));
     for (const domain of rule.condition.requestDomains) {
         assert.ok(extensionManifest.host_permissions.includes(`https://*.${domain}/*`),
             `header modification requires host permission for ${domain}`);
