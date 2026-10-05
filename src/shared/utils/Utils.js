@@ -940,7 +940,9 @@ class Utils {
         if (!text) return '';
         // Регулярное выражение для поиска URL (http, https)
         const urlRegex = /(https?:\/\/[^\s<]+)/g;
-        return text.replace(urlRegex, (url) => {
+        return text.replace(urlRegex, (rawUrl) => {
+            // Callers pass escaped text, but DOM-based escaping keeps quotes; never let them close href.
+            const url = rawUrl.replace(/"/g, '&quot;');
             const youtubeInfo = Utils.extractYouTubeVideoInfo(url);
             const youtubeClass = youtubeInfo ? ' chat-link--youtube' : '';
             const youtubeDataAttrs = youtubeInfo
@@ -1042,6 +1044,12 @@ class Utils {
      * @param {HTMLElement} rootEl - Корень для делегации (обычно document)
      */
     static bindTabsAndMenus(rootEl) {
+        const setMenuOpen = (menu, isOpen) => {
+            menu.classList.toggle('active', isOpen);
+            const button = menu.previousElementSibling;
+            if (button?.classList.contains('mc-menu-btn')) button.setAttribute('aria-expanded', String(isOpen));
+        };
+
         // click (not mousedown) so keyboard Enter/Space activates tabs and menus too.
         rootEl.addEventListener('click', (e) => {
             // Табы
@@ -1050,8 +1058,14 @@ class Utils {
                 const tabName = tabBtn.dataset.tab;
                 const container = tabBtn.closest('.tabs-container') || document;
                 
-                container.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-                tabBtn.classList.add('active');
+                container.querySelectorAll('.tab-btn').forEach(b => {
+                    const isActive = b === tabBtn;
+                    b.classList.toggle('active', isActive);
+                    if (b.getAttribute('role') === 'tab') {
+                        b.setAttribute('aria-selected', String(isActive));
+                        b.tabIndex = isActive ? 0 : -1;
+                    }
+                });
                 
                 container.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
                 const pane = container.querySelector(`#tab-${tabName}`);
@@ -1066,22 +1080,27 @@ class Utils {
                 const menu = menuBtn.nextElementSibling;
                 if (menu?.classList.contains('mc-menu-dropdown')) {
                     document.querySelectorAll('.mc-menu-dropdown.active').forEach(m => {
-                        if (m !== menu) m.classList.remove('active');
+                        if (m !== menu) setMenuOpen(m, false);
                     });
-                    menu.classList.toggle('active');
+                    setMenuOpen(menu, !menu.classList.contains('active'));
                 }
                 return;
             }
 
             // Закрытие меню при клике вне
             if (!e.target.closest('.mc-menu-dropdown')) {
-                rootEl.querySelectorAll('.mc-menu-dropdown.active').forEach(m => m.classList.remove('active'));
+                rootEl.querySelectorAll('.mc-menu-dropdown.active').forEach(m => setMenuOpen(m, false));
             }
         });
 
         rootEl.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
-                rootEl.querySelectorAll('.mc-menu-dropdown.active').forEach(m => m.classList.remove('active'));
+                rootEl.querySelectorAll('.mc-menu-dropdown.active').forEach(m => {
+                    const returnFocus = m.contains(document.activeElement);
+                    setMenuOpen(m, false);
+                    const button = m.previousElementSibling;
+                    if (returnFocus && button?.classList.contains('mc-menu-btn')) button.focus();
+                });
             }
         });
     }

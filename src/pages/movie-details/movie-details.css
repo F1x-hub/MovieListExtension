@@ -1226,6 +1226,24 @@
     visibility: hidden;
 }
 
+/* Rating tiles open the title on Kinopoisk / IMDb. The rail clips overflow,
+   so the focus ring sits inside the tile. */
+.rating-item-large--link {
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background-color 160ms ease, opacity 160ms ease;
+}
+
+.rating-item-large--link:hover {
+    background: var(--theme-hover-bg);
+}
+
+.rating-item-large--link:focus-visible {
+    outline: 2px solid var(--ui-color-interactive);
+    outline-offset: -2px;
+}
+
 .light-theme .movie-detail-ratings-container {
     background: rgba(9, 9, 11, 0.018);
 }

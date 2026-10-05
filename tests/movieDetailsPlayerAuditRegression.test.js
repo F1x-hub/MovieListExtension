@@ -475,7 +475,8 @@ return isTrustedHostMessage;`);
 
     assert.doesNotMatch(source, /document\.addEventListener\('keydown'/, 'MovieDetails must route keyboard dialogs through the modal stack');
     assert.match(html, /<script defer src="ModalStack\.js"><\/script>\s*(?:<script defer src="[^"]+"><\/script>\s*)*<script defer src="movie-details\.js" type="module">/, 'modal stack must load before MovieDetails');
-    for (const id of ['announce', 'review-reader', 'torrent-source-disclosure', 'watch-room-invite', 'episode-picker', 'trailer', 'rating', 'video-player', 'comment-reaction-picker']) {
+    assert.doesNotMatch(source, /[^.\w]confirm\(/, 'MovieDetails must use the in-page confirmation dialog instead of window.confirm()');
+    for (const id of ['confirm', 'announce', 'review-reader', 'torrent-source-disclosure', 'watch-room-invite', 'episode-picker', 'trailer', 'rating', 'video-player', 'comment-reaction-picker']) {
         assert.match(source, new RegExp(`register\\('${id}'`), `${id} must be a modal stack layer`);
     }
 }

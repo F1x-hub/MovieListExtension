@@ -1297,7 +1297,7 @@ class AdminPanelManager {
             this.renderCommentReactionConfigError('Нельзя удалить последнюю реакцию из каталога.');
             return;
         }
-        if (!confirm(`Удалить реакцию ${reaction.emoji} «${reaction.label}»? Она исчезнет у новых клиентов, а старые записи пользователей сохранятся.`)) return;
+        if (!(await ConfirmDialog.confirm({ title: `Удалить реакцию ${reaction.emoji} «${reaction.label}»?`, message: 'Она исчезнет у новых клиентов, а старые записи пользователей сохранятся.', confirmLabel: 'Удалить', danger: true }))) return;
 
         const saved = await this.persistCommentReactionConfig(
             reactions.filter((item) => item.id !== reactionId),
@@ -3101,7 +3101,7 @@ class AdminPanelManager {
 
         const movieTitle = movieData?.name || 'фильм без названия';
 
-        if (!confirm(`Очистить кэш для фильма «${movieTitle}»?\n\nВсе сохранённые данные этого фильма будут удалены из Firestore и localStorage.`)) {
+        if (!(await ConfirmDialog.confirm({ title: `Очистить кэш для фильма «${movieTitle}»?`, message: 'Все сохранённые данные этого фильма будут удалены из Firestore и localStorage.', confirmLabel: 'Очистить', danger: true }))) {
             return;
         }
 
@@ -3235,7 +3235,7 @@ class AdminPanelManager {
         
         container.querySelectorAll('.btn-report-delete').forEach(btn => {
             btn.addEventListener('click', async (e) => {
-                if (!confirm('Вы точно хотите удалить этот репорт?')) return;
+                if (!(await ConfirmDialog.confirm({ title: 'Удалить репорт?', message: 'Репорт и приложенный скриншот будут удалены.', confirmLabel: 'Удалить', danger: true }))) return;
                 const id = e.target.dataset.id;
                 const photoPath = e.target.dataset.photo;
                 try {
@@ -3315,7 +3315,7 @@ class AdminPanelManager {
         const clearQueueBtn = document.getElementById('clearUnmappedQueueBtn');
         if (clearQueueBtn) {
             clearQueueBtn.addEventListener('click', async () => {
-                if (!confirm('Очистить локальную очередь несмаппленных тайтлов TMDB?')) return;
+                if (!(await ConfirmDialog.confirm({ title: 'Очистить очередь TMDB?', message: 'Локальная очередь несмаппленных тайтлов TMDB будет очищена.', confirmLabel: 'Очистить', danger: true }))) return;
                 if (this.idMappingService) {
                     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
                         await new Promise(res => chrome.storage.local.remove([this.idMappingService.UNMAPPED_QUEUE_KEY], res));
@@ -3336,7 +3336,7 @@ class AdminPanelManager {
                     return;
                 }
 
-                if (!confirm(`Запустить авто-поиск и привязку для ${unmappedItems.length} тайтлов в очереди?`)) return;
+                if (!(await ConfirmDialog.confirm({ title: 'Запустить авто-привязку?', message: `Авто-поиск и привязка для ${unmappedItems.length} тайтлов в очереди.`, confirmLabel: 'Запустить' }))) return;
 
                 try {
                     autoMapQueueBtn.disabled = true;
@@ -3394,7 +3394,7 @@ class AdminPanelManager {
                     return;
                 }
 
-                if (!confirm(`Запустить авто-поиск IMDb ID через TMDB для ${pendingItems.length} фильмов?`)) return;
+                if (!(await ConfirmDialog.confirm({ title: 'Запустить поиск IMDb ID?', message: `Авто-поиск IMDb ID через TMDB для ${pendingItems.length} фильмов.`, confirmLabel: 'Запустить' }))) return;
 
                 try {
                     autoMapKpToImdbBtn.disabled = true;
@@ -3488,7 +3488,7 @@ class AdminPanelManager {
                     return;
                 }
                 const invalidHint = preview.invalid > 0 ? ` Некорректных записей: ${preview.invalid}.` : '';
-                if (!confirm(`Опубликовать ${preview.total} локальных ручных связей в общую базу? Конфликтующие записи не будут перезаписаны.${invalidHint}`)) return;
+                if (!(await ConfirmDialog.confirm({ title: `Опубликовать ${preview.total} ручных связей?`, message: `Локальные ручные связи попадут в общую базу. Конфликтующие записи не будут перезаписаны.${invalidHint}`, confirmLabel: 'Опубликовать' }))) return;
 
                 publishManualMappingsBtn.disabled = true;
                 publishManualMappingsBtn.textContent = 'Публикация...';
@@ -4283,7 +4283,7 @@ class AdminPanelManager {
         // Delete mapping listener
         container.querySelectorAll('.btn-delete-manual-mapping').forEach(btn => {
             btn.addEventListener('click', async () => {
-                if (!confirm('Удалить эту ручную привязку?')) return;
+                if (!(await ConfirmDialog.confirm({ title: 'Удалить ручную привязку?', message: '', confirmLabel: 'Удалить', danger: true }))) return;
                 const mediaType = btn.dataset.mediaType;
                 const tmdbId = btn.dataset.tmdbId;
                 try {

@@ -52,6 +52,7 @@ class MovieDetailsManager {
         this.speculativeMovie = null;
         this.speculativeCacheResolved = false;
         this.postRenderEnrichmentMovieId = null;
+        this.renderEnrichmentSnapshot = null;
         this.currentRating = 0;
         this.originalRating = 0;
         this.isReviewVisible = false;
@@ -720,6 +721,23 @@ class MovieDetailsManager {
         // Tab navigation & Menu delegation
         Utils.bindTabsAndMenus(document);
 
+        // WAI-ARIA tabs: arrows/Home/End move between visible, enabled tabs.
+        // Scoped to the content container; document-level keys belong to ModalStack.
+        this.elements.movieDetailsContainer?.addEventListener('keydown', (e) => {
+            const tab = e.target.closest?.('.movie-tabs [role="tab"]');
+            if (!tab || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+            const tabs = Array.from(tab.closest('[role="tablist"]').querySelectorAll('[role="tab"]'))
+                .filter(item => !item.disabled && item.style.display !== 'none');
+            const index = tabs.indexOf(tab);
+            if (index < 0 || tabs.length < 2) return;
+            e.preventDefault();
+            const nextIndex = e.key === 'Home' ? 0
+                : e.key === 'End' ? tabs.length - 1
+                    : (index + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+            tabs[nextIndex].focus();
+            tabs[nextIndex].click();
+        });
+
         // Action buttons delegation (click keeps Enter/Space activation working)
         document.addEventListener('click', (e) => {
             // If it's not a left click, let the browser handle it (e.g. middle click for new tab)
@@ -744,16 +762,16 @@ class MovieDetailsManager {
             } else if (action === 'add-to-random-pool' && movieId) {
                 this.handleAddToRandomPool(movieId, actionBtn);
             } else if (action === 'force-refresh-movie' && movieId) {
-                document.querySelectorAll('.mc-menu-dropdown.active').forEach(m => m.classList.remove('active'));
+                this.closeOpenMenus();
                 this.handleForceRefreshMovie(movieId);
             } else if (action === 'toggle-collection' && movieId) {
                 const collectionId = actionBtn.getAttribute('data-collection-id');
                 if (collectionId) this.handleToggleCollection(movieId, collectionId, actionBtn);
             } else if (action === 'edit-user-rating' || (action === 'edit' && ratingId)) {
-                document.querySelectorAll('.mc-menu-dropdown.active').forEach(m => m.classList.remove('active'));
+                this.closeOpenMenus();
                 this.showRatingModal(this.selectedMovie);
             } else if (action === 'delete-user-rating' || (action === 'delete' && ratingId)) {
-                document.querySelectorAll('.mc-menu-dropdown.active').forEach(m => m.classList.remove('active'));
+                this.closeOpenMenus();
                 this.deleteUserRating(ratingId);
             } else if (action === 'read-rating-review' && ratingId) {
                 this.openReviewReaderByRatingId(ratingId);
@@ -2058,6 +2076,7 @@ class MovieDetailsManager {
         }
 
         this.selectedMovie = movie;
+        this.updateDocumentMetadata(movie);
         this.initPlayerRegistry(movie.kinopoiskId);
         void this.refreshMediaPlayerReadiness().then(() => {
             if (this.selectedMovie === movie) this.populateSourceSelector();
@@ -2110,6 +2129,14 @@ class MovieDetailsManager {
         if (this.authVerified) this.startPostRenderEnrichment(movie, this.capturePageContext(movie));
     }
 
+    updateDocumentMetadata(movie) {
+        const locale = i18n?.currentLocale || 'ru';
+        document.documentElement.lang = locale;
+        const title = (locale === 'en' && movie?.alternativeName) ? movie.alternativeName : (movie?.name || movie?.alternativeName || '');
+        if (!title) return;
+        document.title = movie?.year ? `${title} (${movie.year}) — Movie Rating Extension` : `${title} — Movie Rating Extension`;
+    }
+
     startPostRenderEnrichment(movie, pageContext = this.capturePageContext(movie)) {
         if (!this.authVerified || !this.isPageContextCurrent(pageContext)) return;
         const movieId = String(movie?.kinopoiskId || '');
@@ -2120,9 +2147,11 @@ class MovieDetailsManager {
             this.rehydrateRatingsForCurrentRender(movieId);
             this.observeOrLoadRecommendations(movie);
             this.observeOrLoadFranchise(movie);
+            this.rehydrateRenderEnrichments(movie, pageContext);
             return;
         }
         this.postRenderEnrichmentMovieId = movieId;
+        this.renderEnrichmentSnapshot = { movieId };
         this.loadAndDisplayUserRatings(movie.kinopoiskId);
 
         // User/provider enrichments are intentionally unavailable to the
@@ -2159,6 +2188,51 @@ class MovieDetailsManager {
         }
     }
 
+    /** Snapshot of render-bound enrichments for the current movie, or null after navigation. */
+    getRenderEnrichmentSnapshot(movieId = this.selectedMovie?.kinopoiskId) {
+        const snapshot = this.renderEnrichmentSnapshot;
+        return snapshot && String(snapshot.movieId) === String(movieId || '') ? snapshot : null;
+    }
+
+    /**
+     * Same-movie renders (language change, healed metadata) replace the DOM but keep the
+     * page generation. Restore results that were patched into the previous DOM without
+     * repeating their provider requests; in-flight loaders resolve into the new DOM.
+     */
+    rehydrateRenderEnrichments(movie, pageContext = this.capturePageContext(movie)) {
+        const snapshot = this.getRenderEnrichmentSnapshot(movie?.kinopoiskId);
+        if (!snapshot || !this.isPageContextCurrent(pageContext)) return;
+        const current = this.selectedMovie || movie;
+
+        if (snapshot.providerRatings) {
+            this.selectedMovie = { ...current, ...snapshot.providerRatings };
+            this.updateProviderRatingsUI(this.selectedMovie);
+        } else if (snapshot.providerRatingsSettled) {
+            this.updateProviderRatingsUI(current);
+        }
+
+        if (snapshot.boxOffice) {
+            this.selectedMovie = { ...this.selectedMovie, boxOffice: snapshot.boxOffice };
+            this.updateFinanceSection(this.selectedMovie, pageContext);
+        }
+
+        if (snapshot.trailer) {
+            this.renderTrailerBlock(snapshot.trailer.trailer, snapshot.trailer.source);
+        } else {
+            const primaryTrailer = this.resolvePrimaryTrailer(movie);
+            if (primaryTrailer) this.renderTrailerBlock(primaryTrailer.trailer, primaryTrailer.source);
+        }
+
+        if (snapshot.soundtrack) this.renderSoundtrackState(snapshot.soundtrack);
+
+        if (Array.isArray(snapshot.seasons) && snapshot.seasons.length > 0 && !(Array.isArray(this.selectedMovie.seasons) && this.selectedMovie.seasons.length > 0)) {
+            this.selectedMovie.seasons = snapshot.seasons;
+        }
+        const hasSeasons = (Array.isArray(this.selectedMovie.seasons) && this.selectedMovie.seasons.length > 0)
+            || (Array.isArray(this.selectedMovie.seasonsInfo) && this.selectedMovie.seasonsInfo.length > 0);
+        if (hasSeasons) this.resolveAndRenderSeasons(this.selectedMovie);
+    }
+
     updateFinanceSection(movie, pageContext = this.capturePageContext(movie)) {
         if (!movie || !this.isPageContextCurrent(pageContext)) return;
         const grid = this.elements.movieDetailsContainer?.querySelector('.movie-detail-meta-grid');
@@ -2188,6 +2262,8 @@ class MovieDetailsManager {
 
             const updatedMovie = { ...this.selectedMovie, boxOffice };
             this.selectedMovie = updatedMovie;
+            const snapshot = this.getRenderEnrichmentSnapshot(movie.kinopoiskId);
+            if (snapshot) snapshot.boxOffice = boxOffice;
             this.updateFinanceSection(updatedMovie, pageContext);
         } catch (error) {
             console.info('[MovieDetails] The Numbers data unavailable:', error.message);
@@ -2208,6 +2284,7 @@ class MovieDetailsManager {
 
         if (typeof RatingsRefreshService !== 'function') {
             console.warn('[MovieDetails] RatingsRefreshService is unavailable');
+            this.settleProviderRatingsUI(movie, pageContext);
             return;
         }
 
@@ -2273,6 +2350,7 @@ class MovieDetailsManager {
 
             if (nextKpRating <= 0 && nextImdbRating <= 0) {
                 console.info('[MovieDetails] Provider ratings unavailable', { kinopoiskId });
+                this.settleProviderRatingsUI(movie, pageContext);
                 return;
             }
 
@@ -2290,6 +2368,15 @@ class MovieDetailsManager {
 
             this.selectedMovie = updatedMovie;
             this.updateProviderRatingsUI(updatedMovie);
+            const snapshot = this.getRenderEnrichmentSnapshot(kinopoiskId);
+            if (snapshot) {
+                snapshot.providerRatings = {
+                    rating: updatedMovie.rating,
+                    votes: updatedMovie.votes,
+                    kpRating: nextKpRating,
+                    imdbRating: nextImdbRating
+                };
+            }
             console.info('[MovieDetails] Provider ratings updated', {
                 kinopoiskId,
                 kpRating: nextKpRating,
@@ -2301,41 +2388,111 @@ class MovieDetailsManager {
             });
         } catch (error) {
             console.warn('[MovieDetails] Provider ratings refresh failed:', error);
+            this.settleProviderRatingsUI(movie, pageContext);
         }
+    }
+
+    /**
+     * Replace loading skeletons with final values (or "—") once the refresh settles
+     * without new data, so a single-provider rating never shows an endless skeleton.
+     */
+    settleProviderRatingsUI(movie, pageContext = this.capturePageContext(movie)) {
+        if (!this.isPageContextCurrent(pageContext)) return;
+        const snapshot = this.getRenderEnrichmentSnapshot(movie?.kinopoiskId);
+        if (snapshot) snapshot.providerRatingsSettled = true;
+        const container = this.elements.movieDetailsContainer?.querySelector('.movie-detail-ratings-container');
+        if (!container?.querySelector('.rating-item-large--loading')) return;
+        this.updateProviderRatingsUI(this.selectedMovie || movie);
     }
 
     updateProviderRatingsUI(movie) {
         const container = this.elements.movieDetailsContainer?.querySelector('.movie-detail-ratings-container');
         if (!container) return;
 
-        const kpRating = Number(movie?.rating?.kp || movie?.kpRating || 0);
-        const imdbRating = Number(movie?.rating?.imdb || movie?.imdbRating || 0);
-        const kpVotes = Number(movie?.votes?.kp || 0);
-        const imdbVotes = Number(movie?.votes?.imdb || 0);
-        const votesLabel = i18n.get('movie_details.votes_count');
-
-        const renderProvider = (className, label, rating, votes) => [
-            '<div class="rating-item-large ' + className + '">',
-            '<span class="rating-label">' + label + '</span>',
-            rating > 0
-                ? '<span class="rating-value">' + parseFloat(rating.toFixed(1)) + '</span>'
-                : '<span class="rating-value rating-value--unavailable">—</span>',
-            votes > 0
-                ? '<span class="rating-votes">' + votesLabel.replace('{count}', this.formatVotes(votes)) + '</span>'
-                : '<span class="rating-votes rating-votes--placeholder" aria-hidden="true">&nbsp;</span>',
-            '</div>'
-        ].join('');
-
         container.innerHTML = [
-            renderProvider('kp', i18n.get('movie_card.kinopoisk'), kpRating, kpVotes),
-            renderProvider('imdb', i18n.get('movie_card.imdb'), imdbRating, imdbVotes)
+            this.renderProviderRatingTile('kp', movie, {
+                rating: Number(movie?.rating?.kp || movie?.kpRating || 0),
+                votes: Number(movie?.votes?.kp || 0)
+            }),
+            this.renderProviderRatingTile('imdb', movie, {
+                rating: Number(movie?.rating?.imdb || movie?.imdbRating || 0),
+                votes: Number(movie?.votes?.imdb || 0)
+            })
         ].join('');
+    }
+
+    /** Public provider page for a rating tile, or null when the ID is unknown. */
+    getProviderRatingUrl(provider, movie) {
+        if (provider === 'kp') {
+            const kinopoiskId = Number(movie?.kinopoiskId);
+            return Number.isInteger(kinopoiskId) && kinopoiskId > 0
+                ? `https://www.kinopoisk.ru/film/${kinopoiskId}/`
+                : null;
+        }
+        if (provider === 'imdb') {
+            const imdbId = String(movie?.identity?.imdbId || movie?.imdbId || movie?.externalId?.imdb || '').trim();
+            return /^tt\d+$/.test(imdbId) ? `https://www.imdb.com/title/${imdbId}/` : null;
+        }
+        return null;
+    }
+
+    /**
+     * Kinopoisk/IMDb rating tile. With a known provider ID the tile is a link that
+     * opens the title on that site in a new tab; otherwise it stays a plain block.
+     */
+    renderProviderRatingTile(provider, movie, { rating = 0, votes = 0, loading = false } = {}) {
+        const label = provider === 'kp' ? i18n.get('movie_card.kinopoisk') : i18n.get('movie_card.imdb');
+        const siteName = provider === 'kp' ? 'Кинопоиске' : 'IMDb';
+        const url = this.getProviderRatingUrl(provider, movie);
+        const classes = `rating-item-large ${provider}${loading ? ' rating-item-large--loading' : ''}${url ? ' rating-item-large--link' : ''}`;
+
+        let body;
+        if (loading) {
+            body = `<span class="rating-label">${label}</span>
+                <span class="rating-value rating-value--skeleton" aria-hidden="true"></span>
+                <span class="rating-votes rating-votes--skeleton" aria-hidden="true"></span>`;
+        } else {
+            const valueText = rating > 0 ? String(parseFloat(rating.toFixed(1))) : '—';
+            body = `<span class="rating-label">${label}</span>
+                ${rating > 0
+                    ? `<span class="rating-value">${valueText}</span>`
+                    : '<span class="rating-value rating-value--unavailable">—</span>'}
+                ${votes > 0
+                    ? `<span class="rating-votes">${i18n.get('movie_details.votes_count').replace('{count}', this.formatVotes(votes))}</span>`
+                    : '<span class="rating-votes rating-votes--placeholder" aria-hidden="true">&nbsp;</span>'}`;
+        }
+
+        if (!url) return `<div class="${classes}">${body}</div>`;
+
+        const valueForLabel = !loading && rating > 0 ? `: ${parseFloat(rating.toFixed(1))}` : '';
+        const ariaLabel = `${label}${valueForLabel}. Открыть на ${siteName} в новой вкладке`;
+        return `<a class="${classes}" href="${this.escapeHtml(url)}" target="_blank" rel="noopener noreferrer" title="Открыть на ${siteName}" aria-label="${this.escapeHtml(ariaLabel)}">${body}</a>`;
+    }
+
+    closeOpenMenus() {
+        document.querySelectorAll('.mc-menu-dropdown.active').forEach(menu => {
+            menu.classList.remove('active');
+            const button = menu.previousElementSibling;
+            if (button?.classList.contains('mc-menu-btn')) button.setAttribute('aria-expanded', 'false');
+        });
+    }
+
+    /** Runtime label without empty units: "45 мин", "2 ч", "1 ч 35 мин". */
+    formatDurationLabel(totalMinutes) {
+        const minutesTotal = Math.round(Number(totalMinutes));
+        if (!Number.isFinite(minutesTotal) || minutesTotal <= 0) return '';
+        const hours = Math.floor(minutesTotal / 60);
+        const minutes = minutesTotal % 60;
+        const parts = [];
+        if (hours > 0) parts.push(`${hours} ${i18n.get('movie_details.meta.hours')}`);
+        if (minutes > 0) parts.push(`${minutes} ${i18n.get('movie_details.meta.minutes')}`);
+        return parts.join(' ');
     }
 
     /**
      * Determine whether shortDescription should be rendered separately from full description.
-     * @param {string} shortDesc 
-     * @param {string} fullDesc 
+     * @param {string} shortDesc
+     * @param {string} fullDesc
      * @returns {boolean}
      */
     shouldRenderShortDescription(shortDesc, fullDesc) {
@@ -2397,28 +2554,9 @@ class MovieDetailsManager {
 
         const hasProviderRatingData = kpRating > 0 || imdbRating > 0;
         const providerRatingsReady = kpRating > 0 && imdbRating > 0;
-        const renderInitialProviderRating = (className, label, rating, voteCount) => {
-            if (!providerRatingsReady) {
-                return `
-                    <div class="rating-item-large ${className} rating-item-large--loading">
-                        <span class="rating-label">${label}</span>
-                        <span class="rating-value rating-value--skeleton" aria-hidden="true"></span>
-                        <span class="rating-votes rating-votes--skeleton" aria-hidden="true"></span>
-                    </div>`;
-            }
-
-            return `
-                <div class="rating-item-large ${className}">
-                    <span class="rating-label">${label}</span>
-                    <span class="rating-value">${parseFloat(rating.toFixed(1))}</span>
-                    ${voteCount > 0
-                        ? `<span class="rating-votes">${i18n.get('movie_details.votes_count').replace('{count}', this.formatVotes(voteCount))}</span>`
-                        : '<span class="rating-votes rating-votes--placeholder" aria-hidden="true">&nbsp;</span>'}
-                </div>`;
-        };
         const initialProviderRatingsMarkup = hasProviderRatingData
-            ? renderInitialProviderRating('kp', i18n.get('movie_card.kinopoisk'), kpRating, votes)
-                + renderInitialProviderRating('imdb', i18n.get('movie_card.imdb'), imdbRating, imdbVotes)
+            ? this.renderProviderRatingTile('kp', movie, { rating: kpRating, votes, loading: !providerRatingsReady })
+                + this.renderProviderRatingTile('imdb', movie, { rating: imdbRating, votes: imdbVotes, loading: !providerRatingsReady })
             : '';
 
         const tmdbVotes = (movie.votes?.tmdb !== undefined && movie.votes?.tmdb !== null && !isNaN(Number(movie.votes.tmdb)) && Number(movie.votes.tmdb) > 0)
@@ -2570,7 +2708,7 @@ class MovieDetailsManager {
                 </div>` : ''}
                 <div class="movie-detail-header">
                     <div class="movie-detail-poster-container">
-                        <img src="${posterUrl}" alt="${movie.name}" class="movie-detail-page-poster" data-fallback="detail" decoding="async" fetchpriority="high">
+                        <img src="${this.escapeHtml(posterUrl)}" alt="${this.escapeHtml(movieName)}" class="movie-detail-page-poster" data-fallback="detail" decoding="async" fetchpriority="high">
                         <div class="movie-poster-placeholder" style="display: none;"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg></div>
                         
 
@@ -2603,7 +2741,7 @@ class MovieDetailsManager {
                             </div>
                             
                             <div class="mc-menu-container" style="position: relative; z-index: 20;">
-                                <button class="mc-menu-btn" title="More options"><span class="mc-menu-icon">⋮</span></button>
+                                <button type="button" class="mc-menu-btn" title="Действия" aria-label="Действия с фильмом" aria-haspopup="true" aria-expanded="false"><span class="mc-menu-icon" aria-hidden="true">⋮</span></button>
                                 <div class="mc-menu-dropdown">
                                     <button class="mc-menu-item ${isFavorite ? 'active' : ''}" data-action="toggle-favorite" 
                                             data-rating-id="${ratingId || 'null'}" 
@@ -2657,31 +2795,31 @@ class MovieDetailsManager {
                         ${this.renderHeroNextEpisode(movie)}
                         ${shortDescToRender ? `<p class="movie-detail-short-description">${this.escapeHtml(shortDescToRender)}</p>` : ''}
                         
-                        <div class="movie-tabs">
-                            <div class="tab-buttons">
-                                <button class="tab-btn active" data-tab="about">${i18n.get('movie_details.tabs.about')}</button>
-                                <button class="tab-btn ${cast.length === 0 ? 'disabled' : ''}" data-tab="actors" ${cast.length === 0 ? 'disabled' : ''}>${i18n.get('movie_details.tabs.actors')}</button>
-                                <button class="tab-btn ${!movie.awards || movie.awards.length === 0 ? 'disabled' : ''}" data-tab="awards" ${!movie.awards || movie.awards.length === 0 ? 'disabled' : ''}>${i18n.get('movie_details.tabs.awards')}</button>
-                                ${facts.length > 0 ? `<button class="tab-btn" data-tab="facts">Факты <span class="tab-count-badge">${facts.length}</span></button>` : ''}
-                                <button class="tab-btn" data-tab="seasons" style="display: none;">Сезоны</button>
-                                <button class="tab-btn" data-tab="soundtrack">Саундтрек</button>
+                        <div class="movie-tabs tabs-container">
+                            <div class="tab-buttons" role="tablist" aria-label="Информация о фильме">
+                                <button type="button" class="tab-btn active" data-tab="about" role="tab" id="tab-btn-about" aria-controls="tab-about" aria-selected="true" tabindex="0">${i18n.get('movie_details.tabs.about')}</button>
+                                <button type="button" class="tab-btn ${cast.length === 0 ? 'disabled' : ''}" data-tab="actors" role="tab" id="tab-btn-actors" aria-controls="tab-actors" aria-selected="false" tabindex="-1" ${cast.length === 0 ? 'disabled' : ''}>${i18n.get('movie_details.tabs.actors')}</button>
+                                <button type="button" class="tab-btn ${!movie.awards || movie.awards.length === 0 ? 'disabled' : ''}" data-tab="awards" role="tab" id="tab-btn-awards" aria-controls="tab-awards" aria-selected="false" tabindex="-1" ${!movie.awards || movie.awards.length === 0 ? 'disabled' : ''}>${i18n.get('movie_details.tabs.awards')}</button>
+                                ${facts.length > 0 ? `<button type="button" class="tab-btn" data-tab="facts" role="tab" id="tab-btn-facts" aria-controls="tab-facts" aria-selected="false" tabindex="-1">${i18n.get('movie_details.tabs.facts')} <span class="tab-count-badge">${facts.length}</span></button>` : ''}
+                                <button type="button" class="tab-btn" data-tab="seasons" role="tab" id="tab-btn-seasons" aria-controls="tab-seasons" aria-selected="false" tabindex="-1" style="display: none;">${i18n.get('movie_details.tabs.seasons')}</button>
+                                <button type="button" class="tab-btn" data-tab="soundtrack" role="tab" id="tab-btn-soundtrack" aria-controls="tab-soundtrack" aria-selected="false" tabindex="-1">${i18n.get('movie_details.tabs.soundtrack')}</button>
                             </div>
                             
                             <div class="tab-content">
-                                <div class="tab-pane active" id="tab-about">
+                                <div class="tab-pane active" id="tab-about" role="tabpanel" aria-labelledby="tab-btn-about" tabindex="0">
                                     <div class="movie-detail-meta-grid">
                                         <div class="meta-item"><span class="meta-label">${this.metaLabel('movie_details.meta.year')}</span><span class="meta-value">${year}</span></div>
-                                        ${statusLabel ? `<div class="meta-item meta-item-status"><span class="meta-label">Статус</span><span class="meta-value status-badge status-badge--${statusBadgeClass}">${this.escapeHtml(statusLabel)}</span></div>` : ''}
+                                        ${statusLabel ? `<div class="meta-item meta-item-status"><span class="meta-label">${this.metaLabel('movie_details.meta.status')}</span><span class="meta-value status-badge status-badge--${statusBadgeClass}">${this.escapeHtml(statusLabel)}</span></div>` : ''}
                                         ${tmdbRating > 0 ? `
                                         <div class="meta-item meta-item--tmdb">
-                                            <span class="meta-label">Рейтинг TMDB</span>
+                                            <span class="meta-label">${this.metaLabel('movie_details.meta.tmdb_rating')}</span>
                                             <span class="meta-value meta-value--tmdb">
                                                 <strong class="meta-tmdb-score">${parseFloat(tmdbRating.toFixed(1))}</strong>
                                                 ${tmdbVotes > 0 ? `<span class="meta-tmdb-separator">·</span><span class="meta-tmdb-votes">${i18n.get('movie_details.votes_count').replace('{count}', this.formatVotes(tmdbVotes))}</span>` : ''}
                                             </span>
                                         </div>` : ''}
                                         ${localizedCountries ? `<div class="meta-item"><span class="meta-label">${this.metaLabel('movie_details.meta.country')}</span><span class="meta-value">${localizedCountries}</span></div>` : ''}
-                                        ${productionCompaniesHtml ? `<div class="meta-item meta-item--companies"><span class="meta-label">Студии</span><span class="meta-value">${productionCompaniesHtml}</span></div>` : ''}
+                                        ${productionCompaniesHtml ? `<div class="meta-item meta-item--companies"><span class="meta-label">${this.metaLabel('movie_details.meta.studios')}</span><span class="meta-value">${productionCompaniesHtml}</span></div>` : ''}
                                         ${localizedGenres ? `<div class="meta-item"><span class="meta-label">${this.metaLabel('movie_details.meta.genre')}</span><span class="meta-value">${localizedGenres}</span></div>` : ''}
                                         ${movie.slogan ? `<div class="meta-item"><span class="meta-label">${this.metaLabel('movie_details.meta.slogan')}</span><span class="meta-value">«${this.escapeHtml(movie.slogan)}»</span></div>` : ''}
                                         ${directorsStr ? `<div class="meta-item"><span class="meta-label">${this.metaLabel('movie_details.meta.director')}</span><span class="meta-value">${directorsStr}</span></div>` : ''}
@@ -2690,7 +2828,7 @@ class MovieDetailsManager {
                                         ${hasSecondaryCrew ? `
                                         <div class="meta-item meta-item--secondary-crew">
                                             <button type="button" class="meta-toggle-btn meta-crew-toggle" data-action="toggle-crew" aria-expanded="${isCrewExpanded}" aria-controls="metaSecondaryCrew">
-                                                <span class="meta-toggle-text">Съёмочная группа</span>
+                                                <span class="meta-toggle-text">${this.metaLabel('movie_details.meta.crew')}</span>
                                                 <svg class="meta-toggle-icon" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true">
                                                     <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
                                                 </svg>
@@ -2706,30 +2844,30 @@ class MovieDetailsManager {
                                         ${premiereRussiaStr ? `<div class="meta-item"><span class="meta-label">${this.metaLabel('movie_details.meta.premiere_russia')}</span><span class="meta-value">${premiereRussiaStr}</span></div>` : ''}
                                         ${premiereWorldStr ? `<div class="meta-item"><span class="meta-label">${this.metaLabel('movie_details.meta.premiere_world')}</span><span class="meta-value">${premiereWorldStr}</span></div>` : ''}
                                         ${premiereDigitalStr ? `<div class="meta-item"><span class="meta-label">${this.metaLabel('movie_details.meta.premiere_digital')}</span><span class="meta-value">${this.escapeHtml(premiereDigitalStr)}</span></div>` : ''}
-                                        ${criticRatingsHtml ? `<div class="meta-item meta-item--critics"><span class="meta-label">Критики</span><span class="meta-value">${criticRatingsHtml}</span></div>` : ''}
+                                        ${criticRatingsHtml ? `<div class="meta-item meta-item--critics"><span class="meta-label">${this.metaLabel('movie_details.meta.critics')}</span><span class="meta-value">${criticRatingsHtml}</span></div>` : ''}
                                         ${ageDisplayStr ? `<div class="meta-item"><span class="meta-label">${this.metaLabel('movie_details.meta.age_rating')}</span><span class="meta-value">${this.escapeHtml(ageDisplayStr)}</span></div>` : ''}
-                                        ${duration ? `<div class="meta-item"><span class="meta-label">${this.metaLabel('movie_details.meta.duration')}</span><span class="meta-value">${Math.floor(duration / 60)} ${i18n.get('movie_details.meta.hours')} ${duration % 60} ${i18n.get('movie_details.meta.minutes')}</span></div>` : ''}
+                                        ${duration ? `<div class="meta-item"><span class="meta-label">${this.metaLabel('movie_details.meta.duration')}</span><span class="meta-value">${this.escapeHtml(this.formatDurationLabel(duration))}</span></div>` : ''}
                                     </div>
                                 </div>
                                 
-                                <div class="tab-pane" id="tab-actors">
+                                <div class="tab-pane" id="tab-actors" role="tabpanel" aria-labelledby="tab-btn-actors" tabindex="0">
                                     ${this.renderActorsTab(cast)}
                                 </div>
                                 
-                                <div class="tab-pane" id="tab-awards">
+                                <div class="tab-pane" id="tab-awards" role="tabpanel" aria-labelledby="tab-btn-awards" tabindex="0">
                                     ${this.renderAwardsTab(movie.awards)}
                                 </div>
 
                                 ${facts.length > 0 ? `
-                                <div class="tab-pane" id="tab-facts">
+                                <div class="tab-pane" id="tab-facts" role="tabpanel" aria-labelledby="tab-btn-facts" tabindex="0">
                                     ${this.renderFactsTab(facts)}
                                 </div>` : ''}
                                 
-                                <div class="tab-pane" id="tab-seasons">
+                                <div class="tab-pane" id="tab-seasons" role="tabpanel" aria-labelledby="tab-btn-seasons" tabindex="0">
                                     <div class="no-data-placeholder">Загрузка...</div>
                                 </div>
 
-                                <div class="tab-pane" id="tab-soundtrack">
+                                <div class="tab-pane" id="tab-soundtrack" role="tabpanel" aria-labelledby="tab-btn-soundtrack" tabindex="0">
                                     <div id="soundtrackContainer" class="soundtrack-container">
                                         <div class="soundtrack-placeholder">Поиск саундтрека...</div>
                                     </div>
@@ -2760,52 +2898,66 @@ class MovieDetailsManager {
     }
 
     async loadSoundtrack(movie) {
+        const movieId = movie?.kinopoiskId;
+        const settle = (state) => {
+            if (String(this.selectedMovie?.kinopoiskId || '') !== String(movieId || '')) return;
+            const snapshot = this.getRenderEnrichmentSnapshot(movieId);
+            if (snapshot) snapshot.soundtrack = state;
+            this.renderSoundtrackState(state);
+        };
+
         // Lazy-load SpotifyService if not yet loaded
         if (!this.spotifyService) {
             try {
                 await LazyLoader.loadScript('../../shared/config/spotify.config.js');
                 await LazyLoader.loadScript('../../shared/services/SpotifyService.js');
-                if (typeof SpotifyService !== 'undefined') {
-                    this.spotifyService = new SpotifyService();
-                } else {
-                    return; // SpotifyService not available
-                }
+                if (typeof SpotifyService === 'undefined') throw new Error('SpotifyService is not defined');
+                this.spotifyService = new SpotifyService();
             } catch (e) {
                 console.warn('[MovieDetails] Failed to load SpotifyService:', e.message);
+                settle({ status: 'error' });
                 return;
             }
         }
 
-        const container = document.getElementById('soundtrackContainer');
-        
-        if (!container) return;
-        
         try {
             // Priority: originalName (native) > alternativeName (usually English) > enName > name (Russian)
             const searchTitle = movie.originalName || movie.alternativeName || movie.enName || movie.name;
-            const year = movie.year;
-            
-            const uri = await this.spotifyService.searchSoundtrack(searchTitle, year);
-            
-            if (uri) {
-                const embedUrl = this.getSafeWebUrl(this.spotifyService.getEmbedUrl(uri));
-                if (!embedUrl) throw new Error('Spotify returned an unsupported embed URL');
-                const frame = document.createElement('iframe');
-                frame.src = embedUrl;
-                frame.width = '100%';
-                frame.height = '380';
-                frame.setAttribute('frameborder', '0');
-                frame.setAttribute('allow', 'autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture');
-                frame.loading = 'lazy';
-                frame.title = 'Spotify';
-                container.replaceChildren(frame);
-            } else {
-                container.innerHTML = `<span class="soundtrack-placeholder">Саундтрек не найден</span>`;
+            const uri = await this.spotifyService.searchSoundtrack(searchTitle, movie.year);
+            if (!uri) {
+                settle({ status: 'missing' });
+                return;
             }
+            const embedUrl = this.getSafeWebUrl(this.spotifyService.getEmbedUrl(uri));
+            if (!embedUrl) throw new Error('Spotify returned an unsupported embed URL');
+            settle({ status: 'found', embedUrl });
         } catch (error) {
             console.error('Error loading soundtrack:', error);
-            container.innerHTML = `<span class="soundtrack-placeholder">Саундтрек недоступен</span>`;
+            settle({ status: 'error' });
         }
+    }
+
+    renderSoundtrackState(state) {
+        const container = document.getElementById('soundtrackContainer');
+        if (!container || !state) return;
+
+        if (state.status === 'found' && state.embedUrl) {
+            const frame = document.createElement('iframe');
+            frame.src = state.embedUrl;
+            frame.width = '100%';
+            frame.height = '380';
+            frame.setAttribute('frameborder', '0');
+            frame.setAttribute('allow', 'autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture');
+            frame.loading = 'lazy';
+            frame.title = 'Spotify';
+            container.replaceChildren(frame);
+            return;
+        }
+
+        const placeholder = document.createElement('span');
+        placeholder.className = 'soundtrack-placeholder';
+        placeholder.textContent = state.status === 'missing' ? 'Саундтрек не найден' : 'Саундтрек недоступен';
+        container.replaceChildren(placeholder);
     }
 
     renderCollectionsMenu(movie) {
@@ -2818,7 +2970,7 @@ class MovieDetailsManager {
                     const isInCollection = col.movieIds && (col.movieIds.includes(Number(movie.kinopoiskId)) || col.movieIds.includes(String(movie.kinopoiskId)));
                     const isCustomIcon = col.icon && (col.icon.startsWith('data:') || col.icon.startsWith('https://'));
                     const iconHtml = isCustomIcon 
-                        ? `<img src="${col.icon}" style="width: 16px; height: 16px; object-fit: cover; border-radius: 4px;">`
+                        ? `<img src="${this.escapeHtml(col.icon)}" alt="" style="width: 16px; height: 16px; object-fit: cover; border-radius: 4px;">`
                         : (col.icon || '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>');
                     return `
                         <button class="mc-menu-item" data-action="toggle-collection"
@@ -2870,6 +3022,7 @@ class MovieDetailsManager {
     resetMovieStateForNavigation(kinopoiskId = null) {
         this.selectedMovie = null;
         this.postRenderEnrichmentMovieId = null;
+        this.renderEnrichmentSnapshot = null;
         this.franchiseState = null;
         if (this.franchiseObserver) {
             try { this.franchiseObserver.disconnect(); } catch { /* ignore */ }
@@ -2956,6 +3109,15 @@ class MovieDetailsManager {
     registerModalLayers() {
         const stack = this.getModalStack();
         const announceModal = () => document.getElementById('announceModal');
+        // The shared ConfirmDialog handles its own Escape/Tab; this layer keeps the
+        // page stack from treating the dialogs underneath it as topmost.
+        stack.register('confirm', {
+            order: 5,
+            isOpen: () => Boolean(window.ConfirmDialog?.isOpen()),
+            close: () => window.ConfirmDialog?.cancel(),
+            getFocusContainer: () => window.ConfirmDialog?.getElement() || null,
+            stopPropagation: true
+        });
         stack.register('announce', {
             order: 10,
             isOpen: () => this.isDialogShown(announceModal()),
@@ -3116,14 +3278,14 @@ class MovieDetailsManager {
                         return `
                         <${tagName}${href} class="sequel-card${inertClass}"${identityAttributes}>
                             <div class="sequel-poster-container">
-                                <img src="${posterUrl}" 
+                                <img src="${this.escapeHtml(posterUrl)}"
                                      alt="${this.escapeHtml(name)}" 
                                      class="sequel-poster" 
                                      loading="lazy" 
                                      decoding="async"
                                      data-fallback="sequel-poster"
                                      data-sequel-id="${movieId || ''}"
-                                     data-year="${year}">
+                                     data-year="${this.escapeHtml(year)}">
                             </div>
                             <div class="sequel-info">
                                 <span class="sequel-year">${year}</span>
@@ -4014,7 +4176,7 @@ class MovieDetailsManager {
         const framesHTML = displayFrames.map((frame, index) => {
             const frameUrl = typeof frame === 'string' ? frame : (frame.url || frame.previewUrl || '');
             if (!frameUrl) return '';
-            return `<div class="movie-frame" data-frame-url="${frameUrl}" data-frame-index="${index}"><img src="${frameUrl}" alt="Кадр" class="movie-frame-image" loading="lazy" decoding="async" data-fallback="frame"></div>`;
+            return `<div class="movie-frame" data-frame-url="${this.escapeHtml(frameUrl)}" data-frame-index="${index}"><img src="${this.escapeHtml(frameUrl)}" alt="Кадр" class="movie-frame-image" loading="lazy" decoding="async" data-fallback="frame"></div>`;
         }).join('');
 
         return framesHTML ? `<div class="movie-frames-section"><h4>${i18n.get('movie_details.frames')}</h4><div class="movie-frames-grid">${framesHTML}</div></div>` : '';
@@ -5306,15 +5468,15 @@ class MovieDetailsManager {
     _renderRatingMenu(ratingId) {
         return `
             <div class="mc-menu-container user-rating-menu-container">
-                <button class="mc-menu-btn" data-rating-id="${ratingId}" aria-label="${i18n.get('movie_details.user_ratings_title')}" title="${i18n.get('movie_details.user_ratings_title')}">
+                <button type="button" class="mc-menu-btn" data-rating-id="${this.escapeHtml(ratingId)}" aria-haspopup="true" aria-expanded="false" aria-label="${i18n.get('movie_details.user_ratings_title')}" title="${i18n.get('movie_details.user_ratings_title')}">
                     <span class="mc-menu-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg></span>
                 </button>
                 <div class="mc-menu-dropdown">
-                    <button class="mc-menu-item" data-rating-id="${ratingId}" data-action="edit-user-rating">
+                    <button class="mc-menu-item" data-rating-id="${this.escapeHtml(ratingId)}" data-action="edit-user-rating">
                         <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></span>
                         <span class="mc-menu-item-text">${i18n.get('movie_details.edit')}</span>
                     </button>
-                    <button class="mc-menu-item delete-item" data-rating-id="${ratingId}" data-action="delete-user-rating">
+                    <button class="mc-menu-item delete-item" data-rating-id="${this.escapeHtml(ratingId)}" data-action="delete-user-rating">
                         <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></span>
                         <span class="mc-menu-item-text">${i18n.get('movie_details.delete')}</span>
                     </button>
@@ -5324,14 +5486,17 @@ class MovieDetailsManager {
     }
 
     /**
-     * Строит DOM-элемент карточки рейтинга.
-     * Используется как для первичного рендера, так и для инкрементального.
+     * Единая разметка содержимого карточки рейтинга для первичного и инкрементального рендера.
      */
-    _buildRatingCard(rating, currentUserId) {
-        const userProfile  = this._userProfileCache?.get(rating.userId);
-        const userName     = userProfile?.displayName || rating.userName || 'Пользователь';
-        const userPhoto    = userProfile?.photoURL   || '/src/shared/assets/icons/app/icon48.png';
-        const isCurrentUser = currentUserId && rating.userId === currentUserId;
+    renderRatingCardInnerHtml(rating, {
+        userProfile = this._userProfileCache?.get(rating.userId),
+        currentUserId = null,
+        reactionSummary = this.commentReactionSummaries?.get(rating.id),
+        userReaction = this.commentUserReactions?.get(rating.id) || null
+    } = {}) {
+        const userName = userProfile?.displayName || rating.userName || 'Пользователь';
+        const userPhoto = userProfile?.photoURL || '/src/shared/assets/icons/app/icon48.png';
+        const isCurrentUser = Boolean(currentUserId && rating.userId === currentUserId);
 
         let dateStr = '';
         if (rating.createdAt) {
@@ -5344,41 +5509,47 @@ class MovieDetailsManager {
             }
         }
 
-        const menuHtml = isCurrentUser ? this._renderRatingMenu(rating.id) : '';
-
         const normalizedComment = Utils.normalizeRatingComment(rating.comment);
         const commentHtml = normalizedComment
             ? `<div class="user-rating-comment">${Utils.parseSpoilers(Utils.linkify(this.escapeHtml(normalizedComment)))}</div>`
             : '';
-        const reviewHtml = this.renderRatingReview(rating);
         const reactionHtml = typeof CommentReactionBar !== 'undefined'
             ? CommentReactionBar.render({
                 ratingId: rating.id,
                 movieId: rating.movieId || rating.kinopoiskId || this.selectedMovie?.kinopoiskId || this._currentMovieId,
-                summary: this.commentReactionSummaries.get(rating.id),
-                userReaction: this.commentUserReactions.get(rating.id) || null
+                summary: reactionSummary,
+                userReaction
             })
             : '';
 
+        return `
+            <div class="user-rating-header">
+                <img src="${this.escapeHtml(userPhoto)}" alt="${this.escapeHtml(userName)}" class="user-rating-avatar" data-fallback="avatar" loading="lazy" decoding="async">
+                <div class="user-rating-info">
+                    <div class="user-rating-name-row">
+                        <span class="user-rating-name clickable-username" role="link" tabindex="0" data-user-id="${this.escapeHtml(rating.userId)}">${this.escapeHtml(userName)}</span>
+                        ${dateStr}
+                    </div>
+                    <div class="user-rating-score"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="color: #eab308; vertical-align: middle; margin-right: 4px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>${this.escapeHtml(rating.rating)}/10</div>
+                </div>
+                ${isCurrentUser ? this._renderRatingMenu(rating.id) : ''}
+            </div>
+            ${commentHtml}
+            ${this.renderRatingReview(rating)}
+            ${reactionHtml}
+        `;
+    }
+
+    /**
+     * Строит DOM-элемент карточки рейтинга.
+     * Используется как для первичного рендера, так и для инкрементального.
+     */
+    _buildRatingCard(rating, currentUserId) {
+        const isCurrentUser = Boolean(currentUserId && rating.userId === currentUserId);
         const card = document.createElement('div');
         card.className = `user-rating-card${isCurrentUser ? ' current-user' : ''}`;
         card.dataset.ratingId = rating.id;
-        card.innerHTML = `
-            <div class="user-rating-header">
-                <img src="${userPhoto}" alt="${this.escapeHtml(userName)}" class="user-rating-avatar" data-fallback="avatar" loading="lazy" decoding="async">
-                <div class="user-rating-info">
-                    <div class="user-rating-name-row">
-                        <span class="user-rating-name clickable-username" role="link" tabindex="0" data-user-id="${rating.userId}">${this.escapeHtml(userName)}</span>
-                        ${dateStr}
-                    </div>
-                    <div class="user-rating-score"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="color: #eab308; vertical-align: middle; margin-right: 4px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>${rating.rating}/10</div>
-                </div>
-                ${menuHtml}
-            </div>
-            ${commentHtml}
-            ${reviewHtml}
-            ${reactionHtml}
-        `;
+        card.innerHTML = this.renderRatingCardInnerHtml(rating, { currentUserId });
         return card;
     }
 
@@ -5447,7 +5618,7 @@ class MovieDetailsManager {
 
         // Обновляем оценку
         const scoreEl = existingCard.querySelector('.user-rating-score');
-        if (scoreEl) scoreEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="color: #eab308; vertical-align: middle; margin-right: 4px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>${rating.rating}/10`;
+        if (scoreEl) scoreEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="color: #eab308; vertical-align: middle; margin-right: 4px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>${this.escapeHtml(rating.rating)}/10`;
 
         // Обновляем комментарий
         let commentEl = existingCard.querySelector('.user-rating-comment');
@@ -5506,7 +5677,7 @@ class MovieDetailsManager {
 
     /** Обрабатывает событие «removed» — убирает карточку с анимацией */
     _onRatingRemoved(ratingId) {
-        const existingCard = document.querySelector(`[data-rating-id="${ratingId}"]`);
+        const existingCard = document.querySelector(`[data-rating-id="${CSS.escape(String(ratingId))}"]`);
         if (!existingCard) return;
 
         existingCard.classList.add('rating-card-leaving');
@@ -5527,54 +5698,14 @@ class MovieDetailsManager {
         if (ratings.length === 0) return `<div class="user-ratings-empty"><p>${i18n.get('movie_details.be_first')}</p></div>`;
 
         const ratingsHTML = ratings.map(rating => {
-            const userProfile = userProfileMap.get(rating.userId);
-            const userName = userProfile?.displayName || rating.userName || i18n.get('navbar.sign_in').replace('Sign In', 'User').replace('Войти', 'Пользователь'); 
-            const userPhoto = userProfile?.photoURL || '/src/shared/assets/icons/app/icon48.png';
-            const isCurrentUser = currentUserId && rating.userId === currentUserId;
-
-            let dateStr = '';
-            if (rating.createdAt) {
-                const dateObj = rating.createdAt.toDate ? rating.createdAt.toDate() : new Date(rating.createdAt);
-                if (!isNaN(dateObj.getTime())) {
-                    const d = dateObj.getDate().toString().padStart(2, '0');
-                    const m = (dateObj.getMonth() + 1).toString().padStart(2, '0');
-                    const y = dateObj.getFullYear();
-                    dateStr = `<span class="user-rating-date">${d}.${m}.${y}</span>`;
-                }
-            }
-
-            const normalizedComment = Utils.normalizeRatingComment(rating.comment);
-            const commentHtml = normalizedComment
-                ? `<div class="user-rating-comment">${Utils.parseSpoilers(Utils.linkify(this.escapeHtml(normalizedComment)))}</div>`
-                : '';
-            const reviewHtml = this.renderRatingReview(rating);
-            const reactionHtml = typeof CommentReactionBar !== 'undefined'
-                ? CommentReactionBar.render({
-                    ratingId: rating.id,
-                    movieId: rating.movieId || rating.kinopoiskId || this.selectedMovie?.kinopoiskId || this._currentMovieId,
-                    summary: reactionSummaries?.get(rating.id),
-                    userReaction: userReactions?.get(rating.id) || null
-                })
-                : '';
-
-            return `
-                <div class="user-rating-card ${isCurrentUser ? 'current-user' : ''}" data-rating-id="${rating.id}">
-                    <div class="user-rating-header">
-                        <img src="${userPhoto}" alt="${this.escapeHtml(userName)}" class="user-rating-avatar" data-fallback="avatar" loading="lazy" decoding="async">
-                        <div class="user-rating-info">
-                            <div class="user-rating-name-row">
-                                <span class="user-rating-name clickable-username" role="link" tabindex="0" data-user-id="${rating.userId}">${this.escapeHtml(userName)}</span>
-                                ${dateStr}
-                            </div>
-                            <div class="user-rating-score"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="color: #eab308; vertical-align: middle; margin-right: 4px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>${rating.rating}/10</div>
-                        </div>
-                        ${isCurrentUser ? this._renderRatingMenu(rating.id) : ''}
-                    </div>
-                    ${commentHtml}
-                    ${reviewHtml}
-                    ${reactionHtml}
-                </div>
-            `;
+            const isCurrentUser = Boolean(currentUserId && rating.userId === currentUserId);
+            const innerHtml = this.renderRatingCardInnerHtml(rating, {
+                userProfile: userProfileMap?.get(rating.userId),
+                currentUserId,
+                reactionSummary: reactionSummaries?.get(rating.id),
+                userReaction: userReactions?.get(rating.id) || null
+            });
+            return `<div class="user-rating-card ${isCurrentUser ? 'current-user' : ''}" data-rating-id="${this.escapeHtml(rating.id)}">${innerHtml}</div>`;
         }).join('');
 
         return `<div class="user-ratings-container"><h4 class="user-ratings-title">${i18n.get('movie_details.user_ratings_title')}</h4><div class="user-ratings-list">${ratingsHTML}</div></div>`;
@@ -5660,15 +5791,23 @@ class MovieDetailsManager {
     }
 
     async deleteUserRating(ratingId) {
-        if (!confirm('Удалить отзыв?')) return;
+        const confirmed = await window.ConfirmDialog.confirm({
+            title: 'Удалить отзыв?',
+            message: 'Оценка, комментарий и рецензия к этому фильму будут удалены без возможности восстановления.',
+            confirmLabel: 'Удалить',
+            danger: true
+        });
+        if (!confirmed) return;
         try {
             const ratingService = firebaseManager.getRatingService();
             await ratingService.deleteRating(this.currentUser.uid, ratingId);
-            document.querySelector(`[data-rating-id="${ratingId}"]`)?.remove();
+            document.querySelector(`[data-rating-id="${CSS.escape(String(ratingId))}"]`)?.remove();
             if (typeof Utils !== 'undefined') Utils.showToast('Отзыв удален', 'success');
-            await this.loadMovieById(this.selectedMovie.kinopoiskId);
+            // The ratings listener owns the review list; only user-scoped controls need a refresh.
+            await this.loadPersonalState(this.selectedMovie.kinopoiskId);
         } catch (error) {
             console.error('Error deleting rating:', error);
+            if (typeof Utils !== 'undefined') Utils.showToast('Не удалось удалить отзыв', 'error');
         }
     }
 
@@ -5803,7 +5942,9 @@ class MovieDetailsManager {
             
             this.closeRatingModal();
             if (typeof Utils !== 'undefined') Utils.showToast('Оценка сохранена!', 'success');
-            await this.loadMovieById(this.selectedMovie.kinopoiskId);
+            // The ratings listener patches the review list live; a full page reload
+            // would reset scroll and drop render-bound enrichments.
+            await this.loadPersonalState(this.selectedMovie.kinopoiskId);
         } catch (error) {
             console.error('Error saving rating:', error);
             this.showRatingReviewError(error.message || 'Не удалось сохранить рецензию.');
@@ -10320,7 +10461,7 @@ class MovieDetailsManager {
         try {
             const result = await RandomPoolService.addMovie(movie);
             this.updateRandomPoolAction(buttonElement, true);
-            document.querySelectorAll('.mc-menu-dropdown.active').forEach(menu => menu.classList.remove('active'));
+            this.closeOpenMenus();
             Utils.showToast(
                 i18n.get(result.added ? 'movie_card.add_random_pool' : 'movie_card.random_pool_added'),
                 'success'
@@ -10495,10 +10636,14 @@ class MovieDetailsManager {
     // updateButtonState removed in favor of Utils.toggleActionButton
 
     escapeHtml(text) {
-        if (!text) return '';
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        if (text === null || text === undefined || text === false || text === '') return '';
+        // Quotes are escaped too: the result is interpolated into attribute values.
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
     }
 
     setupImageErrorHandlers() {
@@ -10766,6 +10911,8 @@ class MovieDetailsManager {
         
         // Insert AFTER the action container (Rate/Watch buttons)
         actionContainer.parentNode.insertBefore(container, actionContainer.nextSibling);
+        const snapshot = this.getRenderEnrichmentSnapshot();
+        if (snapshot) snapshot.trailer = { trailer, source };
     }
 
     openVideoModal(video, trigger = document.activeElement) {
@@ -11343,6 +11490,8 @@ class MovieDetailsManager {
                 if (this.selectedMovie) {
                     this.selectedMovie.seasons = seasons;
                 }
+                const snapshot = this.getRenderEnrichmentSnapshot(movieId);
+                if (snapshot) snapshot.seasons = seasons;
             } else {
                 if (tabBtn) tabBtn.style.display = 'none';
             }

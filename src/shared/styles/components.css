@@ -545,6 +545,72 @@
     border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+/* Shared confirmation dialog (ConfirmDialog.js) — replaces window.confirm().
+   Sits above every page dialog, including the Movie Details player. */
+.modal-overlay.confirm-dialog-overlay {
+    z-index: calc(var(--z-modal) + 10);
+}
+
+.modal-overlay.confirm-dialog-overlay[hidden] {
+    display: none;
+}
+
+.modal.confirm-dialog {
+    display: flex;
+    flex-direction: column;
+    width: min(420px, calc(100vw - 32px));
+    background: var(--ui-color-surface-card);
+    border: 1px solid var(--ui-color-border);
+}
+
+.confirm-dialog__body {
+    padding: 20px 20px 16px;
+}
+
+.confirm-dialog__title {
+    margin: 0;
+    color: var(--ui-color-content);
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.confirm-dialog__message {
+    margin: 8px 0 0;
+    color: var(--ui-color-content-muted);
+    font-size: 14px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+    white-space: pre-line;
+}
+
+.confirm-dialog__message:empty {
+    display: none;
+}
+
+.confirm-dialog__footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-sm);
+    padding: 14px 20px;
+    border-top: 1px solid var(--ui-color-border);
+}
+
+.confirm-dialog__footer .btn:focus-visible {
+    outline: 2px solid var(--ui-color-interactive);
+    outline-offset: 2px;
+}
+
+@media (max-width: 480px) {
+    .confirm-dialog__footer {
+        flex-direction: column-reverse;
+    }
+
+    .confirm-dialog__footer .btn {
+        width: 100%;
+    }
+}
+
 /* Shared Dropdown Components */
 .custom-dropdown {
     position: relative;

@@ -213,7 +213,7 @@ class MovieDetailsMetaRendererMethods {
 
         return `
             <div class="meta-item meta-item--finance">
-                <span class="meta-label">Финансы</span>
+                <span class="meta-label">${this.metaLabel('movie_details.meta.finance')}</span>
                 <div class="meta-value meta-finance-group">
                     ${hasKinopoiskFinance ? `
                     <div class="meta-finance-subgroup">
