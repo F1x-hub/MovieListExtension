@@ -30,6 +30,14 @@ function createFakeDb(collections) {
                 .filter(doc => filters.every(filter => matches(doc, filter)))
                 .map(doc => ({ id: doc.id, data: () => ({ ...doc.data }) }));
             return { docs, forEach: callback => docs.forEach(callback) };
+        },
+        onSnapshot: (next) => {
+            queries.push({ name, filters, orders, live: true });
+            const docs = (collections[name] || [])
+                .filter(doc => filters.every(filter => matches(doc, filter)))
+                .map(doc => ({ id: doc.id, data: () => ({ ...doc.data }) }));
+            next({ docs });
+            return () => { queries.push({ unsubscribed: true }); };
         }
     });
     return { queries, collection: name => makeQuery(name, []) };
@@ -108,6 +116,19 @@ function createFakeDb(collections) {
     moviesDb.queries.length = 0;
     await movieCacheService.getMoviesByAvgRating({ sortBy: 'avg', sortDir: 'asc', limit: 8 });
     assert.deepEqual(moviesDb.queries[0].orders[0], ['avgRating', 'asc'], "'avg' maps to avgRating, not a missing 'avg' field");
+
+    // 2c. The live listener uses the indexed first-page query (hasCommunityRating +
+    // lastRatingUpdatedAt desc + documentId desc) and returns an unsubscribe.
+    moviesDb.queries.length = 0;
+    let liveMovies = null;
+    const unsubscribe = movieCacheService.watchNewestRatedMovies({ limit: 8, onChange: movies => { liveMovies = movies; } });
+    const liveQuery = moviesDb.queries[0];
+    assert.equal(liveQuery.live, true);
+    assert.deepEqual(liveQuery.filters, [['hasCommunityRating', '==', true]]);
+    assert.deepEqual(liveQuery.orders, [['lastRatingUpdatedAt', 'desc'], [DOCUMENT_ID, 'desc']]);
+    assert.equal(liveMovies.length, 3, 'Snapshot documents reach the page callback');
+    unsubscribe();
+    assert.equal(moviesDb.queries.at(-1).unsubscribed, true);
 
     // 3. Ratings page source contract: batched, parallel enrichment and accumulated profiles.
     const ratingsJs = fs.readFileSync(path.join(projectRoot, 'src/pages/ratings/ratings.js'), 'utf8');

@@ -585,6 +585,32 @@ class MovieCacheService {
     }
 
     /**
+     * Live updates for the newest rated movies: the same first-page query the Ratings
+     * page uses for the default "date, newest first" sort. Firestore bills the initial
+     * `limit` documents once and then one read per changed document.
+     * @param {Object} options - { limit, onChange(movies, snapshot), onError(error) }
+     * @returns {Function} - Unsubscribe
+     */
+    watchNewestRatedMovies({ limit = 8, onChange, onError } = {}) {
+        const query = this.db.collection(this.collection)
+            .where('hasCommunityRating', '==', true)
+            .orderBy('lastRatingUpdatedAt', 'desc')
+            .orderBy(firebase.firestore.FieldPath.documentId(), 'desc')
+            .limit(limit);
+
+        return query.onSnapshot(
+            snapshot => {
+                const movies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                onChange?.(movies, snapshot);
+            },
+            error => {
+                console.warn('[MovieCache] Newest rated movies listener failed:', error);
+                onError?.(error);
+            }
+        );
+    }
+
+    /**
      * Get rated movies filtered by avgRating from movies collection (server-side pagination)
      * @param {Object} options - { minAvgRating, maxAvgRating, sortBy, sortDir, limit, lastDoc }
      * @returns {Promise<Object>} - { movies, hasMore, lastDoc }

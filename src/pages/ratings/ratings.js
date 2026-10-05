@@ -31,6 +31,15 @@ class RatingsPageManager {
         this.availableCollections = []; // Store for menu
         this.renderedMoviesState = new Map(); // Store rendered movie signatures for diffing
         this.pendingStatusActions = new Set(); // Movie IDs with a bookmark/status write in flight
+        // Live updates (newest rated movies listener + revalidation on return)
+        this.liveUnsubscribe = null;
+        this.liveSeenTimestamps = null; // movieId -> lastRatingUpdatedAt ms; null until the baseline snapshot
+        this.liveBaselineMinTs = 0;
+        this.pendingLiveMovies = new Map(); // movieId -> movie document awaiting display
+        this.recentLocalEdits = new Map(); // movieId -> ms of a rating saved from this page
+        this.applyingLive = false;
+        this.lastRevalidateAt = 0;
+        this.cacheSnapshot = null; // { timestamp, ids } of the cached first screen
         this.nextBatchPromise = null;
         this.BATCH_SIZE = 8;
         this._moviesLoadTriggered = false;
@@ -169,6 +178,8 @@ class RatingsPageManager {
             moviesGrid: document.getElementById('moviesGrid'),
             emptyState: document.getElementById('emptyState'),
             emptyStateSearchBtn: document.getElementById('emptyStateSearchBtn'),
+            livePill: document.getElementById('ratingsLivePill'),
+            livePillText: document.getElementById('ratingsLivePillText'),
             errorState: document.getElementById('errorState'),
             retryBtn: document.getElementById('retryBtn'),
             
@@ -409,6 +420,27 @@ class RatingsPageManager {
             }
         });
 
+        // Live updates: show queued new ratings, refresh when the user comes back
+        this.elements.livePill?.addEventListener('click', () => this.applyPendingLiveMovies({ reveal: true }));
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) this.onPageReturn();
+        });
+        window.addEventListener('pageshow', (e) => {
+            // Restored from the back/forward cache: the page state may be minutes old
+            if (e.persisted) this.onPageReturn({ force: true });
+        });
+        // Scrolling back to the top shows queued new ratings without a click
+        let scrollFrame = 0;
+        window.addEventListener('scroll', () => {
+            if (this.pendingLiveMovies.size === 0 || scrollFrame) return;
+            scrollFrame = requestAnimationFrame(() => {
+                scrollFrame = 0;
+                if (this.isNearTop()) this.processPendingLiveMovies();
+            });
+        }, { passive: true });
+        // Release the Firestore listener so the page stays eligible for the back/forward cache
+        window.addEventListener('pagehide', () => this.stopLiveUpdates());
+
         // Modal close buttons
         this.elements.ratingModalClose?.addEventListener('mousedown', () => this.closeRatingModal());
         
@@ -463,6 +495,8 @@ class RatingsPageManager {
                             this.renderedMoviesState.clear();
                             this.userProfilesMap.clear();
                             this.fetchedProfileIds.clear();
+                            this.stopLiveUpdates();
+                            this.cacheSnapshot = null;
                             this.ensureInitialLoad('authStateChanged: user switched');
                         } else {
                             const loadAlreadyStarted = this._moviesLoadTriggered;
@@ -531,6 +565,11 @@ class RatingsPageManager {
                 this.restoreCachedProfiles(cache.profiles);
                 this.currentUser = { uid: userId }; // Temporary mock for current user
                 this.extractAndPopulateUsers(cache.ratings);
+                // Lets the first network load mark films rated since this cache was saved
+                this.cacheSnapshot = {
+                    timestamp: Number(cache.timestamp) || 0,
+                    ids: new Set(cache.ratings.map(item => String(item.movieId || item.movie?.kinopoiskId)))
+                };
 
                 // The cache holds only the first page; pagination starts with the
                 // server load in loadMovies(), so no infinite scroll is set up here.
@@ -670,6 +709,9 @@ class RatingsPageManager {
                 this.movies = [];
             }
             this.renderedMoviesState.clear();
+            // A reload fetches fresh data; queued live updates would only duplicate it
+            this.pendingLiveMovies.clear();
+            this.updateLivePill();
             
             this.isLoading = true;
             if (!isBackgroundUpdate) {
@@ -719,6 +761,8 @@ class RatingsPageManager {
                     clearTimeout(loadingTimeout);
                     this.page.showContent();
                     this.isLoading = false;
+                    // The very first rated film should still appear without a reload
+                    this.startLiveUpdates();
                     return;
                 }
 
@@ -752,6 +796,10 @@ class RatingsPageManager {
                 clearTimeout(loadingTimeout);
                 this.page.showContent();
                 this.isLoading = false;
+
+                // Films rated since the cached first screen was saved get the "new" mark once
+                this.highlightNewSinceCache(enrichedMovies);
+                this.startLiveUpdates();
 
                 // Sorts the server cannot order (my rating, title, year) need every page.
                 this.loadAllForClientSort();
@@ -884,7 +932,8 @@ class RatingsPageManager {
                     return;
                 }
 
-                this.movies = [...this.movies, ...enrichedBatch];
+                // Merge by ID: a film inserted live may come back in a later server page
+                this.mergeMoviesById(enrichedBatch);
                 this.extractAndPopulateUsers(this.movies);
                 this.populateYearFilter();
                 this.populateGenreFilter();
@@ -960,6 +1009,297 @@ class RatingsPageManager {
 
         this.applyWatchStatuses(enrichedMovies, bookmarksMap);
         return enrichedMovies;
+    }
+
+    // ---------------------------------------------------------------------------
+    // Live updates
+    //
+    // A Firestore listener watches the newest rated movies (the default first page).
+    // A rating made elsewhere reaches it once aggregateMovieRatings has updated
+    // movies/{id}. When the user is at the top of the default "newest first" list
+    // the film is inserted directly; otherwise it waits behind the "new ratings"
+    // pill so the grid never shifts under the user.
+    // ---------------------------------------------------------------------------
+
+    static LIVE_HIGHLIGHT_MS = 6000;
+    static LOCAL_EDIT_GRACE_MS = 60000;
+    static REVALIDATE_INTERVAL_MS = 30000;
+    static NEAR_TOP_PX = 120;
+
+    getMovieKey(item) {
+        return String(item?.movie?.kinopoiskId || item?.movieId || item?.kinopoiskId || item?.id || '');
+    }
+
+    getLastRatingMs(item) {
+        return getTimestamp(item?.lastRatingUpdatedAt ?? item?.movie?.lastRatingUpdatedAt) || 0;
+    }
+
+    startLiveUpdates() {
+        if (this.liveUnsubscribe || !this.currentUser) return;
+        let movieCacheService;
+        try {
+            movieCacheService = firebaseManager.getMovieCacheService();
+        } catch {
+            return;
+        }
+        if (typeof movieCacheService?.watchNewestRatedMovies !== 'function') return;
+
+        this.liveSeenTimestamps = null;
+        this.liveUnsubscribe = movieCacheService.watchNewestRatedMovies({
+            limit: this.BATCH_SIZE,
+            onChange: movies => this.handleLiveSnapshot(movies),
+            // A failed listener is not fatal: revalidation on return still catches up
+            onError: () => this.stopLiveUpdates()
+        });
+    }
+
+    stopLiveUpdates() {
+        if (this.liveUnsubscribe) {
+            try { this.liveUnsubscribe(); } catch { /* already closed */ }
+        }
+        this.liveUnsubscribe = null;
+        this.liveSeenTimestamps = null;
+    }
+
+    handleLiveSnapshot(movies) {
+        // The first snapshot is the current state, already shown by loadMovies()
+        if (!this.liveSeenTimestamps) {
+            this.liveSeenTimestamps = new Map(movies.map(doc => [this.getMovieKey(doc), this.getLastRatingMs(doc)]));
+            const timestamps = movies.map(doc => this.getLastRatingMs(doc)).filter(Boolean);
+            this.liveBaselineMinTs = timestamps.length ? Math.min(...timestamps) : 0;
+            return;
+        }
+
+        const now = Date.now();
+        let queued = false;
+        movies.forEach(doc => {
+            const key = this.getMovieKey(doc);
+            const ts = this.getLastRatingMs(doc);
+            // A film that only slid into the top N because another one left it is
+            // older than the baseline and is not "new"; a fresh rating is newer.
+            const previous = this.liveSeenTimestamps.get(key) ?? this.liveBaselineMinTs;
+            this.liveSeenTimestamps.set(key, Math.max(ts, previous));
+            if (!key || ts <= previous) return;
+
+            // A rating saved on this page is already shown (optimistically)
+            const localEditAt = this.recentLocalEdits.get(key) || 0;
+            if (now - localEditAt < RatingsPageManager.LOCAL_EDIT_GRACE_MS) return;
+
+            this.pendingLiveMovies.set(key, doc);
+            queued = true;
+        });
+
+        if (queued) this.processPendingLiveMovies();
+    }
+
+    isNearTop() {
+        return (window.scrollY || 0) < RatingsPageManager.NEAR_TOP_PX;
+    }
+
+    /** True when the default newest-first list is shown without client-side filters. */
+    isDefaultNewestView() {
+        const { field, direction } = this.parseSortKey();
+        return field === 'date' && direction === 'desc';
+    }
+
+    hasClientFilters() {
+        return Boolean(this.filters.search || this.filters.genre || this.filters.year || this.filters.user)
+            || this.isAvgRatingFilterActive();
+    }
+
+    processPendingLiveMovies() {
+        if (this.pendingLiveMovies.size === 0) {
+            this.updateLivePill();
+            return;
+        }
+        const canInsertDirectly = !document.hidden
+            && !this.isLoading
+            && this.isNearTop()
+            && this.isDefaultNewestView();
+
+        if (canInsertDirectly) {
+            this.applyPendingLiveMovies();
+        } else {
+            this.updateLivePill();
+        }
+    }
+
+    updateLivePill() {
+        const pill = this.elements?.livePill;
+        if (!pill) return;
+        const count = this.pendingLiveMovies.size;
+        pill.hidden = count === 0;
+        if (count > 0 && this.elements.livePillText) {
+            this.elements.livePillText.textContent = this.text('live.new_ratings', { count });
+        }
+    }
+
+    /**
+     * Enrich queued live movies, merge them into the list and mark them as new.
+     * With `reveal` (pill click) the view moves to them: the top of the default
+     * list, or the first marked card for other sorts.
+     */
+    async applyPendingLiveMovies({ reveal = false } = {}) {
+        if (this.applyingLive || this.pendingLiveMovies.size === 0) return;
+        this.applyingLive = true;
+
+        const pending = [...this.pendingLiveMovies.values()];
+        this.pendingLiveMovies.clear();
+        this.updateLivePill();
+        const requestId = this.currentRequestId;
+
+        try {
+            const movieCacheService = firebaseManager.getMovieCacheService();
+            const ratingService = firebaseManager.getRatingService();
+            const enriched = await this.enrichMoviePage(
+                this.mergeCachedMovieMetadata(pending, movieCacheService),
+                ratingService
+            );
+            // A reload started meanwhile already carries this data
+            if (requestId !== this.currentRequestId) return;
+
+            enriched.forEach(item => {
+                this.liveSeenTimestamps?.set(this.getMovieKey(item), this.getLastRatingMs(item));
+            });
+            this.mergeMoviesById(enriched);
+            this.extractAndPopulateUsers(this.movies);
+            this.populateYearFilter();
+            this.populateGenreFilter();
+            this.applyFilters();
+            this.saveDefaultFirstPageToCache();
+
+            const keys = enriched.map(item => this.getMovieKey(item));
+            this.highlightMovies(keys);
+            if (reveal) this.revealMovies(keys);
+        } catch (error) {
+            console.warn('[RatingsPage] Failed to apply live rating updates:', error);
+            // Put them back so the pill can retry
+            pending.forEach(doc => this.pendingLiveMovies.set(this.getMovieKey(doc), doc));
+            this.updateLivePill();
+        } finally {
+            this.applyingLive = false;
+            if (this.pendingLiveMovies.size > 0) this.processPendingLiveMovies();
+        }
+    }
+
+    /** Replace items already in this.movies by movie ID and append the rest. */
+    mergeMoviesById(items) {
+        const indexByKey = new Map(this.movies.map((item, index) => [this.getMovieKey(item), index]));
+        items.forEach(item => {
+            const index = indexByKey.get(this.getMovieKey(item));
+            if (index === undefined) {
+                indexByKey.set(this.getMovieKey(item), this.movies.length);
+                this.movies.push(item);
+            } else {
+                this.movies[index] = item;
+            }
+        });
+    }
+
+    /** The cache holds the default first screen; keep it current after live inserts. */
+    saveDefaultFirstPageToCache() {
+        if (!this.isDefaultNewestView() || this.hasClientFilters()) return;
+        this.saveRatingsToCache(this.filteredMovies.slice(0, this.BATCH_SIZE));
+    }
+
+    findCardElement(key) {
+        const grid = this.elements?.moviesGrid;
+        if (!grid || !key) return null;
+        const escaped = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(key) : key.replace(/"/g, '\\"');
+        return grid.querySelector(`.movie-card-component[data-movie-id="${escaped}"]`);
+    }
+
+    /** Neutral outline plus a "New" label (never color alone), removed after a few seconds. */
+    highlightMovies(keys) {
+        const label = this.text('live.new_badge');
+        keys.forEach(key => {
+            const card = this.findCardElement(key);
+            if (!card) return;
+            clearTimeout(card._ratingsNewTimer);
+            card.classList.add('ratings-card--new');
+            if (!card.querySelector('.ratings-new-badge')) {
+                const badge = document.createElement('span');
+                badge.className = 'ratings-new-badge';
+                badge.textContent = label;
+                (card.querySelector('.mc-poster-container') || card).appendChild(badge);
+            }
+            card._ratingsNewTimer = setTimeout(() => {
+                card.classList.remove('ratings-card--new');
+                card.querySelector('.ratings-new-badge')?.remove();
+            }, RatingsPageManager.LIVE_HIGHLIGHT_MS);
+        });
+    }
+
+    revealMovies(keys) {
+        const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+        const behavior = reducedMotion ? 'auto' : 'smooth';
+        if (this.isDefaultNewestView()) {
+            window.scrollTo({ top: 0, behavior });
+            return;
+        }
+        const firstCard = keys.map(key => this.findCardElement(key)).find(Boolean);
+        firstCard?.scrollIntoView({ behavior, block: 'center' });
+    }
+
+    /** Mark films whose latest rating is newer than the cached first screen. */
+    highlightNewSinceCache(movies) {
+        const snapshot = this.cacheSnapshot;
+        this.cacheSnapshot = null; // only the first load after the cached render
+        if (!snapshot?.timestamp) return;
+        const keys = movies
+            .filter(item => this.getLastRatingMs(item) > snapshot.timestamp)
+            .map(item => this.getMovieKey(item));
+        if (keys.length > 0) this.highlightMovies(keys);
+    }
+
+    /** Back on the tab or restored from the back/forward cache. */
+    onPageReturn({ force = false } = {}) {
+        if (!this._moviesLoadTriggered || !this.currentUser) return;
+        this.startLiveUpdates();
+
+        const now = Date.now();
+        if (this.isLoading || (!force && now - this.lastRevalidateAt < RatingsPageManager.REVALIDATE_INTERVAL_MS)) {
+            this.processPendingLiveMovies();
+            return;
+        }
+        this.lastRevalidateAt = now;
+        this.revalidateFirstPage();
+    }
+
+    /**
+     * Re-read the first page of the current sort and queue changed or new films
+     * through the live path. Loaded pages and scroll position are kept.
+     */
+    async revalidateFirstPage() {
+        const requestId = this.currentRequestId;
+        try {
+            const movieCacheService = firebaseManager.getMovieCacheService();
+            const { sortBy, sortDir } = this.getServerSortParams();
+            const { movies } = await movieCacheService.getMoviesByAvgRating({
+                minAvgRating: this.filters.avgRatingFrom,
+                maxAvgRating: this.filters.avgRatingTo,
+                sortBy,
+                sortDir,
+                limit: this.BATCH_SIZE,
+                lastDoc: null
+            });
+            if (requestId !== this.currentRequestId) return;
+
+            const known = new Map(this.movies.map(item => [this.getMovieKey(item), item]));
+            const now = Date.now();
+            movies.forEach(doc => {
+                const key = this.getMovieKey(doc);
+                if (now - (this.recentLocalEdits.get(key) || 0) < RatingsPageManager.LOCAL_EDIT_GRACE_MS) return;
+                const current = known.get(key);
+                const changed = !current
+                    || this.getLastRatingMs(doc) > this.getLastRatingMs(current)
+                    || Number(doc.ratingsCount || 0) !== Number(current.ratingsCount || 0);
+                if (key && changed) this.pendingLiveMovies.set(key, doc);
+            });
+            this.processPendingLiveMovies();
+        } catch (error) {
+            console.warn('[RatingsPage] Revalidation on return failed:', error);
+        }
     }
 
     setupInfiniteScroll() {
@@ -2423,6 +2763,10 @@ class RatingsPageManager {
             const movieIndex = this.movies.findIndex(m => Number(m.movie?.kinopoiskId || m.movieId) === movieId);
             if (movieIndex > -1) {
                 const movieItem = this.movies[movieIndex];
+                // Mirrors aggregateMovieRatings: only a changed score moves the film's
+                // lastRatingUpdatedAt. A comment-only edit keeps the card in place, as it
+                // will be after a reload.
+                const scoreChanged = this.getMyRating(movieItem).rating !== rating;
                 // The saved rating becomes the card's featured rating
                 movieItem.userId = this.currentUser.uid;
                 movieItem.userName = displayName;
@@ -2434,9 +2778,13 @@ class RatingsPageManager {
                 movieItem.myComment = comment;
                 movieItem.allRaters = movieItem.allRaters || [];
                 movieItem.updatedAt = new Date();
-                movieItem.createdAt = new Date();
-                if (movieItem.movie) movieItem.movie.lastRatingUpdatedAt = new Date();
-                
+                if (scoreChanged) {
+                    movieItem.createdAt = new Date();
+                    if (movieItem.movie) movieItem.movie.lastRatingUpdatedAt = new Date();
+                    // The listener will report this change; the card is already up to date
+                    this.recentLocalEdits.set(String(movieId), Date.now());
+                }
+
                 let raterIndex = movieItem.allRaters.findIndex(r => r.userId === this.currentUser.uid);
                 if (raterIndex > -1) {
                     movieItem.allRaters[raterIndex].rating = rating;
@@ -2459,6 +2807,7 @@ class RatingsPageManager {
                 movieItem.ratingsCount = movieItem.allRaters.length;
             } else {
                 addedNew = true;
+                this.recentLocalEdits.set(String(movieId), Date.now());
                 const newMovieItem = {
                     id: `opt_${Date.now()}`,
                     movieId: movieId,

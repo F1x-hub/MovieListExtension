@@ -107,15 +107,18 @@ class RatingService {
         }) => rating);
     }
 
+    /**
+     * Drop the popup's recent-ratings cache after a rating change.
+     *
+     * The Ratings page cache (`ratings_cache_{uid}`) is intentionally kept: that page
+     * renders it instantly and always revalidates from Firestore in the background,
+     * so deleting it only replaced the instant first screen with a full loader.
+     * Removing one known key also avoids reading all of chrome.storage.local.
+     */
     async invalidateRatingsCache(userId = null) {
         try {
             if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-                const allStorage = await chrome.storage.local.get(null);
-                const keysToRemove = Object.keys(allStorage).filter(k => k.startsWith('ratings_cache_') || k === 'recent_ratings_cache');
-                if (keysToRemove.length > 0) {
-                    await chrome.storage.local.remove(keysToRemove);
-                    console.log('RatingService: Invalidated ratings caches:', keysToRemove);
-                }
+                await chrome.storage.local.remove('recent_ratings_cache');
             }
         } catch (error) {
             console.warn('RatingService: Failed to invalidate cache', error);
