@@ -3006,7 +3006,12 @@ class SearchManager {
     // Old modal logic removed
 
     async deleteUserRating(ratingId) {
-        const confirmed = confirm(i18n.get('settings.reset_confirm'));
+        const confirmed = await ConfirmDialog.confirm({
+            title: i18n.get('confirm_dialog.delete_rating_title'),
+            message: i18n.get('confirm_dialog.delete_rating_message'),
+            confirmLabel: i18n.get('confirm_dialog.delete'),
+            danger: true
+        });
         
         if (!confirmed) return;
         

@@ -399,9 +399,14 @@ class WatchlistPageManager {
                     break;
                 case 'remove-from-watchlist':
                     if (movieId) {
-                        if (confirm('Вы уверены, что хотите удалить этот фильм из списка просмотра?')) {
-                            this.removeFromWatchlist(movieId);
-                        }
+                        ConfirmDialog.confirm({
+                            title: 'Убрать из «Буду смотреть»?',
+                            message: 'Фильм пропадёт из списка просмотра.',
+                            confirmLabel: 'Убрать',
+                            danger: true
+                        }).then(confirmed => {
+                            if (confirmed) this.removeFromWatchlist(movieId);
+                        });
                     }
                     break;
             }

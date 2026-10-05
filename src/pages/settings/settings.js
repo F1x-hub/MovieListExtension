@@ -1475,7 +1475,13 @@ document.addEventListener('DOMContentLoaded', async () => {
      * Reset settings to defaults
      */
     async function resetSettings() {
-        if (confirm(i18n.get('settings.reset_confirm'))) {
+        const confirmed = await ConfirmDialog.confirm({
+            title: i18n.get('confirm_dialog.reset_settings_title'),
+            message: i18n.get('settings.reset_confirm'),
+            confirmLabel: i18n.get('confirm_dialog.reset'),
+            danger: true
+        });
+        if (confirmed) {
             try {
                 if (mediaPlayerRetentionLoaded && currentState.torrentRetentionDays !== 7) {
                     if (!mediaPlayerService) throw new Error('MediaPlayer недоступен.');

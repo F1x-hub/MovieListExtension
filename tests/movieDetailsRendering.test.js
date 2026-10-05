@@ -800,7 +800,8 @@ const movieWithFacts = {
     ]
 };
 const htmlWithFacts = manager.createDetailedMovieCard(movieWithFacts);
-assert(htmlWithFacts.includes('data-tab="facts">Факты <span class="tab-count-badge">7</span></button>'), 'Must render Facts tab button with count badge');
+assert(htmlWithFacts.includes('data-tab="facts" role="tab" id="tab-btn-facts" aria-controls="tab-facts" aria-selected="false" tabindex="-1">Факты <span class="tab-count-badge">7</span></button>'), 'Must render Facts tab button with count badge');
+assert(htmlWithFacts.includes('id="tab-facts" role="tabpanel" aria-labelledby="tab-btn-facts"'), 'Facts tab pane must be a labelled tabpanel');
 assert(htmlWithFacts.includes('id="tab-facts"'), 'Must render Facts tab pane container');
 assert(htmlWithFacts.includes('Первый интересный факт о съемках.'), 'Must render non-spoiler fact');
 assert(htmlWithFacts.includes('class="fact-item fact-item--spoiler"'), 'Must wrap spoiler fact in spoiler container');

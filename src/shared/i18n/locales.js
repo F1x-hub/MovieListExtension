@@ -8,6 +8,21 @@ export const locales = {
             more: "+{count} more",
             close: "Close"
         },
+        confirm_dialog: {
+            title: "Confirm action",
+            confirm: "Confirm",
+            cancel: "Cancel",
+            delete: "Delete",
+            remove: "Remove",
+            reset: "Reset",
+            delete_rating_title: "Delete rating?",
+            delete_rating_message: "Your rating, comment and review for this movie will be deleted permanently.",
+            remove_bookmark_title: "Remove from all lists?",
+            remove_bookmark_message: "The movie will be removed from Favorites, Watching and Plan to Watch.",
+            delete_collection_title: "Delete collection «{name}»?",
+            delete_collection_message: "This action cannot be undone. The movies themselves stay in your lists.",
+            reset_settings_title: "Reset settings?"
+        },
         errors: {
             actions: {
                 retry: "Try again",
@@ -459,7 +474,10 @@ export const locales = {
             tabs: {
                 about: "About",
                 actors: "Actors",
-                awards: "Awards"
+                awards: "Awards",
+                facts: "Facts",
+                seasons: "Seasons",
+                soundtrack: "Soundtrack"
             },
             meta: {
                 year: "Year of production:",
@@ -485,7 +503,13 @@ export const locales = {
                 rating_mpaa: "MPAA Rating",
                 duration: "Duration:",
                 hours: "h",
-                minutes: "min"
+                minutes: "min",
+                status: "Status",
+                tmdb_rating: "TMDB rating",
+                studios: "Studios",
+                critics: "Critics",
+                finance: "Box office",
+                crew: "Film crew"
             },
             description: "Description",
             no_description: "No description available",
@@ -708,6 +732,21 @@ export const locales = {
             unknown_movie: "фильма",
             more: "Ещё {count}",
             close: "Закрыть"
+        },
+        confirm_dialog: {
+            title: "Подтвердите действие",
+            confirm: "Подтвердить",
+            cancel: "Отмена",
+            delete: "Удалить",
+            remove: "Убрать",
+            reset: "Сбросить",
+            delete_rating_title: "Удалить оценку?",
+            delete_rating_message: "Оценка, комментарий и рецензия к этому фильму будут удалены без возможности восстановления.",
+            remove_bookmark_title: "Убрать из всех списков?",
+            remove_bookmark_message: "Фильм пропадёт из «Избранного», «Смотрю» и «Буду смотреть».",
+            delete_collection_title: "Удалить коллекцию «{name}»?",
+            delete_collection_message: "Это действие нельзя отменить. Сами фильмы останутся в ваших списках.",
+            reset_settings_title: "Сбросить настройки?"
         },
         errors: {
             actions: {
@@ -1160,7 +1199,10 @@ export const locales = {
             tabs: {
                 about: "О фильме",
                 actors: "Актёры",
-                awards: "Награды"
+                awards: "Награды",
+                facts: "Факты",
+                seasons: "Сезоны",
+                soundtrack: "Саундтрек"
             },
             meta: {
                 year: "Год производства:",
@@ -1186,7 +1228,13 @@ export const locales = {
                 rating_mpaa: "Рейтинг MPAA",
                 duration: "Время:",
                 hours: "ч",
-                minutes: "мин"
+                minutes: "мин",
+                status: "Статус",
+                tmdb_rating: "Рейтинг TMDB",
+                studios: "Студии",
+                critics: "Критики",
+                finance: "Финансы",
+                crew: "Съёмочная группа"
             },
             description: "Описание",
             no_description: "Описание отсутствует",

@@ -227,6 +227,26 @@ assert(htmlPendingProvider.includes('rating-item-large imdb rating-item-large--l
 assert.equal((htmlPendingProvider.match(/rating-value--skeleton/g) || []).length, 2, '0. Both provider values use synchronized skeletons');
 console.log('  ✅ 0. KP and IMDb render as one synchronized provider rail while IMDb is pending');
 
+const htmlProviderLinks = manager.createDetailedMovieCard({
+    kinopoiskId: 662551,
+    name: 'Хелтер-скелтер',
+    externalId: { imdb: 'tt2125501' },
+    rating: { kp: 6.4, imdb: 6.4 },
+    votes: { kp: 5700, imdb: 3000 }
+});
+assert(htmlProviderLinks.includes('<a class="rating-item-large kp rating-item-large--link" href="https://www.kinopoisk.ru/film/662551/" target="_blank" rel="noopener noreferrer"'), '0b. KP tile links to the Kinopoisk film page');
+assert(htmlProviderLinks.includes('<a class="rating-item-large imdb rating-item-large--link" href="https://www.imdb.com/title/tt2125501/" target="_blank" rel="noopener noreferrer"'), '0b. IMDb tile links to the IMDb title page');
+const htmlNoImdbId = manager.createDetailedMovieCard({
+    kinopoiskId: 662551,
+    name: 'Без IMDb ID',
+    imdbId: 'javascript:alert(1)',
+    rating: { kp: 6.4, imdb: 6.4 },
+    votes: { kp: 5700, imdb: 3000 }
+});
+assert(htmlNoImdbId.includes('<div class="rating-item-large imdb">'), '0b. IMDb tile stays a plain block without a valid tt ID');
+assert(!htmlNoImdbId.includes('javascript:'), '0b. Invalid IMDb IDs never reach an href');
+console.log('  ✅ 0b. Rating tiles open Kinopoisk / IMDb only for valid provider IDs');
+
 // 1. TMDB large left card absent
 assert(!htmlFull.includes('rating-item-large tmdb'), '1. TMDB rating card must be absent from left rating rail');
 console.log('  ✅ 1. TMDB large left card absent from left rating rail');

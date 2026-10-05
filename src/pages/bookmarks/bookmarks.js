@@ -420,9 +420,13 @@ class BookmarksPageManager {
     async handleRemoveBookmark(movieId) {
         if (!this.currentUser || !movieId) return;
         
-        if (!confirm('Are you sure you want to remove this movie from all lists (Favorites, Watching, Plan to Watch)?')) {
-            return;
-        }
+        const confirmed = await ConfirmDialog.confirm({
+            title: i18n.get('confirm_dialog.remove_bookmark_title'),
+            message: i18n.get('confirm_dialog.remove_bookmark_message'),
+            confirmLabel: i18n.get('confirm_dialog.remove'),
+            danger: true
+        });
+        if (!confirmed) return;
 
         try {
             const success = await this.favoriteService.removeFromFavorites(this.currentUser.uid, movieId);
@@ -1567,7 +1571,12 @@ class BookmarksPageManager {
         const collection = await this.collectionService.getCollection(this.activeCollectionId);
         if (!collection) return;
 
-        const confirmed = confirm(`Are you sure you want to delete "${collection.name}"? This action cannot be undone.`);
+        const confirmed = await ConfirmDialog.confirm({
+            title: i18n.get('confirm_dialog.delete_collection_title').replace('{name}', collection.name || ''),
+            message: i18n.get('confirm_dialog.delete_collection_message'),
+            confirmLabel: i18n.get('confirm_dialog.delete'),
+            danger: true
+        });
         if (!confirmed) return;
 
         try {

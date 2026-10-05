@@ -393,9 +393,14 @@ class WatchingPageManager {
             
             if (action === 'remove-from-watching') { 
                 if (movieId) {
-                    if (confirm('Вы уверены, что хотите удалить этот фильм из списка "Смотрю"?')) {
-                        this.removeFromWatching(movieId);
-                    }
+                    ConfirmDialog.confirm({
+                        title: 'Убрать из «Смотрю»?',
+                        message: 'Фильм пропадёт из списка «Смотрю».',
+                        confirmLabel: 'Убрать',
+                        danger: true
+                    }).then(confirmed => {
+                        if (confirmed) this.removeFromWatching(movieId);
+                    });
                 }
             } else if (action === 'view-details') {
                 if (movieId) {
