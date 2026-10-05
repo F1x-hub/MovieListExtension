@@ -21,9 +21,8 @@ for (const id of ['resultsInfo', 'loadingSection', 'moviesGrid', 'emptyState', '
     assert.match(ratingsHtml, new RegExp(`id=["']${id}["']`), `Ratings page must keep ${id}`);
 }
 
-for (const id of ['movieModal', 'ratingModal']) {
-    assert.match(ratingsHtml, new RegExp(`id=["']${id}["']`), `Ratings page must keep ${id}`);
-}
+assert.match(ratingsHtml, /id=["']ratingModal["']/, 'Ratings page must keep ratingModal');
+assert.doesNotMatch(ratingsHtml, /id=["']movieModal["']/, 'The unused movie details modal stays removed');
 
 for (const pattern of [
     /<canvas\b/i,
@@ -50,7 +49,10 @@ for (const pattern of [
 }
 
 assert.match(ratingsJs, /this\.createMovieCard\(movieData\)/, 'Ratings must keep the ordinary card path');
-assert.match(ratingsJs, /showMovieDetails\(/, 'Ratings must keep the ordinary details path');
+// Movie details open through Utils.bindMovieCardNavigation; the never-called
+// showMovieDetails() modal path was removed as dead code.
+assert.doesNotMatch(ratingsJs, /showMovieDetails\(/, 'The dead details modal path stays removed');
+assert.match(ratingsJs, /Utils\.bindMovieCardNavigation\(this\.elements\.moviesGrid\)/, 'Ratings opens details through card navigation');
 assert.match(ratingsJs, /editRating\(/, 'Ratings must keep the ordinary rating path');
 
 assertNotPresent(ratingsCss, /ratings-sphere-/i, 'Sphere CSS must be absent');

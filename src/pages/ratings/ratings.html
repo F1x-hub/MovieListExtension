@@ -46,7 +46,7 @@
                             <span><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></span>
                             <span data-i18n="ratings.filters.clear">Clear Filters</span>
                         </button>
-                        <button class="toggle-filters-btn" id="toggleFiltersBtn">
+                        <button type="button" class="toggle-filters-btn" id="toggleFiltersBtn" aria-label="Show or hide filters" data-i18n="[aria-label]ratings.filters.toggle">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
                         </button>
                     </div>
@@ -71,7 +71,7 @@
                                 <span class="dropdown-arrow"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
                             </button>
                             <div class="dropdown-list" id="genreFilterList">
-                                <div class="dropdown-option" data-value="">All Genres</div>
+                                <div class="dropdown-option" data-value="" data-i18n="ratings.filters.all_genres">All Genres</div>
                             </div>
                             <select class="filter-select-hidden" id="genreFilter">
                                 <option value="">All Genres</option>
@@ -88,7 +88,7 @@
                                 <span class="dropdown-arrow"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
                             </button>
                             <div class="dropdown-list" id="yearFilterList">
-                                <div class="dropdown-option" data-value="">All Years</div>
+                                <div class="dropdown-option" data-value="" data-i18n="ratings.filters.all_years">All Years</div>
                             </div>
                             <select class="filter-select-hidden" id="yearFilter">
                                 <option value="">All Years</option>
@@ -113,8 +113,8 @@
                         </div>
                     </div>
 
-                    <!-- User Filter (only visible in All Ratings mode) -->
-                    <div class="filter-group" id="userFilterGroup" style="display: none;">
+                    <!-- User Filter -->
+                    <div class="filter-group" id="userFilterGroup">
                         <label class="filter-label" for="userFilterTrigger" data-i18n="ratings.filters.user">User</label>
                         <div class="custom-dropdown" data-dropdown="userFilter">
                             <button type="button" class="dropdown-trigger" id="userFilterTrigger">
@@ -122,7 +122,7 @@
                                 <span class="dropdown-arrow"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
                             </button>
                             <div class="dropdown-list" id="userFilterList">
-                                <div class="dropdown-option" data-value="">All Users</div>
+                                <div class="dropdown-option" data-value="" data-i18n="ratings.filters.all_users">All Users</div>
                             </div>
                             <select class="filter-select-hidden" id="userFilter">
                                 <option value="">All Users</option>
@@ -168,7 +168,7 @@
 
                 <!-- Active Filters Container -->
                 <div class="active-filters-container" id="activeFiltersContainer" style="display: none;">
-                    <span class="active-filters-label">Active Filters:</span>
+                    <span class="active-filters-label" data-i18n="ratings.active_filters.label">Active Filters:</span>
                     <div class="active-filters-list" id="activeFiltersList">
                         <!-- Active filter tags will be inserted here -->
                     </div>
@@ -177,7 +177,7 @@
 
             <!-- Results Info -->
             <div class="results-info" id="resultsInfo">
-                <span class="results-count" id="resultsCount">Loading...</span>
+                <span class="results-count" id="resultsCount" data-i18n="ratings.results.loading">Loading...</span>
                 <span class="results-mode" id="resultsMode"></span>
             </div>
 
@@ -197,7 +197,7 @@
                 <div class="empty-state-icon"><svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="2" ry="2"></rect><path d="M16 6 22 2"></path><path d="M22 6 2 6"></path><path d="M7 6 2 2"></path><path d="M12 6 7 2"></path><path d="M17 6 12 2"></path></svg></div>
                 <h3 class="empty-state-title" data-i18n="ratings.empty.title">No movies found</h3>
                 <p class="empty-state-text" data-i18n="ratings.empty.message">Try adjusting your filters or start rating some movies!</p>
-                <button class="empty-state-btn" onmousedown="window.navigation?.navigateToPage('search')" data-i18n="ratings.empty.search_btn">
+                <button type="button" class="empty-state-btn" id="emptyStateSearchBtn" data-i18n="ratings.empty.search_btn">
                     Search Movies
                 </button>
             </div>
@@ -212,28 +212,15 @@
         </div>
     </main>
 
-    <!-- Movie Detail Modal -->
-    <div class="modal-overlay ratings-modal-overlay" id="movieModal" style="display: none;" role="dialog" aria-modal="true" aria-label="Movie details">
-        <div class="modal ratings-detail-modal">
-            <div class="modal-header">
-                <h3 class="modal-title" id="modalTitle">Movie Details</h3>
-                <button class="modal-close" id="modalClose" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
-            </div>
-            <div class="modal-body" id="modalBody">
-                <!-- Movie details will be inserted here -->
-            </div>
-        </div>
-    </div>
-
-    <!-- Rating Modal (Edit/Add) -->
-    <div id="ratingModal" class="modal-overlay ratings-modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-label="Rate movie">
+    <!-- Rating Modal (Edit) -->
+    <div id="ratingModal" class="modal-overlay ratings-modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-label="Rate movie" data-i18n="[aria-label]ratings.modal.rate_movie">
         <div class="modal rating-modal">
             <div class="modal-header rating-header">
                 <div class="rating-header-content">
                     <div class="rating-header-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #eab308;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></div>
                     <h2 class="modal-title" id="ratingModalTitle" data-i18n="ratings.modal.rate_movie">Rate This Movie</h2>
                 </div>
-                <button class="modal-close" id="ratingModalClose" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+                <button class="modal-close" id="ratingModalClose" aria-label="Close" data-i18n="[aria-label]ratings.modal.close"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
             </div>
             <div class="modal-body">
                 <div class="movie-rating-card" id="movieRatingInfo">
@@ -243,7 +230,7 @@
                 <div class="rating-section">
                     <div class="current-rating-display" id="currentRatingInfo" style="display: none;">
                         <div class="current-rating-header">
-                            <h4>Your Current Rating</h4>
+                            <h4 data-i18n="ratings.modal.current_rating">Your Current Rating</h4>
                         </div>
                         <div class="current-rating-content">
                             <div class="current-rating-score">

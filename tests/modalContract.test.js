@@ -45,8 +45,10 @@ for (const selector of ['modal-overlay', 'modal-content', 'modal-header', 'modal
 }
 
 assert.match(ratingsHtml, /class="modal-overlay ratings-modal-overlay"/);
-assert.match(ratingsHtml, /class="modal ratings-detail-modal"/);
-assert.match(ratingsStyles, /\.ratings-detail-modal(?:\s|\.)/);
+// The unused movie-details modal was removed; the rating modal is the page's dialog.
+assert.match(ratingsHtml, /id="ratingModal"[^>]*role="dialog"[^>]*aria-modal="true"/);
+assert.doesNotMatch(ratingsHtml, /ratings-detail-modal|id="movieModal"/);
+assert.doesNotMatch(ratingsStyles, /\.ratings-detail-modal/);
 
 for (const selector of ['modal-overlay', 'modal-content', 'modal-header', 'modal-title', 'modal-close', 'modal-body', 'modal-footer']) {
     assert.doesNotMatch(

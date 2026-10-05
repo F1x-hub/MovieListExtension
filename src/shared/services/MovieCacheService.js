@@ -58,6 +58,9 @@ function hasUsableMovieMetadata(field, value) {
 }
 
 class MovieCacheService {
+    static MISSING_SORT_FIELD_CACHE_KEY = 'ratings_missing_sort_field_scan_v1';
+    static MISSING_SORT_FIELD_SCAN_TTL = 12 * 60 * 60 * 1000; // 12 hours
+
     constructor(firebaseManager) {
         this.db = firebaseManager.db;
         this.collection = 'movies';
@@ -519,6 +522,69 @@ class MovieCacheService {
     }
 
     /**
+     * Return rated movies that lack `lastRatingUpdatedAt` (legacy aggregates that the
+     * ordered ratings query cannot see). The full-collection scan is expensive, so its
+     * result (the list of missing IDs) is cached in chrome.storage.local for
+     * MISSING_SORT_FIELD_SCAN_TTL; within that window only the known IDs are re-read.
+     * @returns {Promise<Array<Object>>} - Movie documents still missing the field
+     */
+    async getMissingSortFieldMovies() {
+        const cacheKey = MovieCacheService.MISSING_SORT_FIELD_CACHE_KEY;
+        const isMissing = data => data?.hasCommunityRating === true
+            && (data.lastRatingUpdatedAt === undefined || data.lastRatingUpdatedAt === null);
+        const hasStorage = typeof chrome !== 'undefined' && chrome.storage?.local;
+
+        let cached = null;
+        try {
+            if (hasStorage) cached = (await chrome.storage.local.get(cacheKey))?.[cacheKey] || null;
+        } catch (error) {
+            console.warn('[MovieCache] Failed to read missing sort field cache:', error);
+        }
+
+        const isFresh = cached
+            && Array.isArray(cached.ids)
+            && Number.isFinite(cached.scannedAt)
+            && Date.now() - cached.scannedAt < MovieCacheService.MISSING_SORT_FIELD_SCAN_TTL;
+
+        if (isFresh) {
+            if (cached.ids.length === 0) return [];
+            const CHUNK_SIZE = 10;
+            const chunks = [];
+            for (let i = 0; i < cached.ids.length; i += CHUNK_SIZE) {
+                chunks.push(cached.ids.slice(i, i + CHUNK_SIZE));
+            }
+            const snapshots = await Promise.all(chunks.map(chunk => this.db.collection(this.collection)
+                .where(firebase.firestore.FieldPath.documentId(), 'in', chunk)
+                .get()));
+            const movies = [];
+            snapshots.forEach(snapshot => snapshot.docs.forEach(doc => {
+                const data = doc.data();
+                if (isMissing(data)) movies.push({ id: doc.id, ...data });
+            }));
+            return movies;
+        }
+
+        const snapshot = await this.db.collection(this.collection)
+            .where('hasCommunityRating', '==', true)
+            .get();
+        const movies = snapshot.docs
+            .filter(doc => isMissing(doc.data()))
+            .map(doc => ({ id: doc.id, ...doc.data() }));
+
+        try {
+            if (hasStorage) {
+                await chrome.storage.local.set({
+                    [cacheKey]: { ids: movies.map(movie => movie.id), scannedAt: Date.now() }
+                });
+            }
+        } catch (error) {
+            console.warn('[MovieCache] Failed to save missing sort field cache:', error);
+        }
+
+        return movies;
+    }
+
+    /**
      * Get rated movies filtered by avgRating from movies collection (server-side pagination)
      * @param {Object} options - { minAvgRating, maxAvgRating, sortBy, sortDir, limit, lastDoc }
      * @returns {Promise<Object>} - { movies, hasMore, lastDoc }
@@ -535,19 +601,15 @@ class MovieCacheService {
             let query = this.db.collection(this.collection)
                 .where('hasCommunityRating', '==', true);
 
-            let unorderedQuery = this.db.collection(this.collection)
-                .where('hasCommunityRating', '==', true);
-
-            const firestoreSortField = sortBy === 'date' ? 'lastRatingUpdatedAt' : (sortBy === 'rating' ? 'avgRating' : (sortBy === 'title' ? 'name' : sortBy));
+            // Short UI aliases: 'date' and 'avg' come from the ratings page sort keys.
+            const SORT_FIELD_ALIASES = { date: 'lastRatingUpdatedAt', avg: 'avgRating', rating: 'avgRating', title: 'name' };
+            const firestoreSortField = SORT_FIELD_ALIASES[sortBy] || sortBy;
 
             if (isFilterActive) {
                 query = query
                     .where('avgRating', '>=', minAvgRating)
                     .where('avgRating', '<=', maxAvgRating)
                     .orderBy('avgRating', 'desc');
-                unorderedQuery = unorderedQuery
-                    .where('avgRating', '>=', minAvgRating)
-                    .where('avgRating', '<=', maxAvgRating);
             } else {
                 if (firestoreSortField) {
                     query = query.orderBy(firestoreSortField, sortDir);
@@ -565,32 +627,38 @@ class MovieCacheService {
                 query = query.startAfter(lastDoc);
             }
 
-            const snapshot = await query.get();
+            // Firestore excludes documents that do not have an orderBy field. Check
+            // for those legacy aggregates on the first page as well; waiting until
+            // the final page made them disappear whenever healthy documents filled
+            // the first page. All missing-field documents are merged once, while the
+            // normal ordered query keeps ownership of subsequent-page pagination.
+            // The lookup runs in parallel with the page query and reuses a cached
+            // scan result instead of reading the whole collection on every load.
+            const checkMissingSortField = !lastDoc && firestoreSortField === 'lastRatingUpdatedAt';
+            const [snapshot, missingSortFieldMovies] = await Promise.all([
+                query.get(),
+                checkMissingSortField ? this.getMissingSortFieldMovies() : Promise.resolve([])
+            ]);
             const allDocs = snapshot.docs;
 
             const hasMore = allDocs.length > limit;
             const pageDocs = hasMore ? allDocs.slice(0, limit) : allDocs;
             let movies = pageDocs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-            // Firestore excludes documents that do not have an orderBy field. Check
-            // for those legacy aggregates on the first page as well; waiting until
-            // the final page made them disappear whenever healthy documents filled
-            // the first page. All missing-field documents are merged once, while the
-            // normal ordered query keeps ownership of subsequent-page pagination.
-            if (!lastDoc && firestoreSortField === 'lastRatingUpdatedAt') {
-                const unorderedSnapshot = await unorderedQuery.get();
-                const missingSortFieldDocs = unorderedSnapshot.docs.filter(doc => {
-                    const value = doc.data().lastRatingUpdatedAt;
-                    return value === undefined || value === null;
-                });
-
-                if (missingSortFieldDocs.length > 0) {
-                    console.error('[MovieCache] Ratings query excluded rated movies without lastRatingUpdatedAt', {
-                        missingCount: missingSortFieldDocs.length,
-                        movieIds: missingSortFieldDocs.map(doc => doc.id)
+            if (checkMissingSortField) {
+                const fallbackMovies = missingSortFieldMovies
+                    .filter(movie => {
+                        if (!isFilterActive) return true;
+                        const avgRating = Number(movie.avgRating);
+                        return avgRating >= minAvgRating && avgRating <= maxAvgRating;
                     });
 
-                    const fallbackMovies = missingSortFieldDocs.map(doc => ({ id: doc.id, ...doc.data() }));
+                if (fallbackMovies.length > 0) {
+                    console.error('[MovieCache] Ratings query excluded rated movies without lastRatingUpdatedAt', {
+                        missingCount: fallbackMovies.length,
+                        movieIds: fallbackMovies.map(movie => movie.id)
+                    });
+
                     const getFallbackTimestamp = movie => {
                         const value = movie.updatedAt || movie.lastUpdated || 0;
                         if (typeof value?.toMillis === 'function') return value.toMillis();
