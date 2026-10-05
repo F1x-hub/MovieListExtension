@@ -23,6 +23,7 @@
     "lint": "eslint \"src/**/*.js\" \"content-scripts/**/*.js\"",
     "test:admin": "node tests/adminAccessibilityContract.test.js && node tests/adminFirestoreUsageContract.test.js && node tests/adminApprovals.test.js && node tests/adminIdentityWorkspace.test.js && node tests/commentReactionConfig.test.js",
     "test:random-marathon": "node tests/randomMarathonFunction.test.cjs && node tests/randomMarathonClient.test.cjs && node tests/randomMarathonContract.test.js",
+    "test:random-wheel": "node tests/randomWheelAudio.test.js && node tests/randomPageHardening.test.js && node tests/randomMarathonContract.test.js",
     "test:shared-mappings": "node tests/sharedIdMappingFirestore.test.js && node tests/sharedIdMappingFirestoreRules.test.js",
   "test:catalog-navigation": "node tests/catalogNavigationDependencies.test.js",
   "test:kinopoisk-similar": "node tests/kinopoiskSimilarParser.test.js",

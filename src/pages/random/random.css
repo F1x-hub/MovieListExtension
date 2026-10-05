@@ -1767,7 +1767,8 @@
 }
 
 .roll-close-btn,
-.roll-settings-btn {
+.roll-settings-btn,
+.roll-volume-btn {
     position: absolute;
     top: 12px;
     width: 36px;
@@ -1781,7 +1782,12 @@
 }
 
 .roll-close-btn { right: 12px; font-size: 24px; }
-.roll-settings-btn { left: 12px; display: grid; place-items: center; }
+.roll-settings-btn,
+.roll-volume-btn { left: 12px; display: grid; place-items: center; }
+.roll-volume-btn { top: 56px; z-index: 5; }
+.roll-volume-btn .roll-volume-muted-mark,
+.roll-volume-btn.is-muted .roll-volume-waves { display: none; }
+.roll-volume-btn.is-muted .roll-volume-muted-mark { display: block; }
 .roll-close-btn:disabled,
 .roll-settings-btn:disabled { cursor: default; }
 
@@ -1953,6 +1959,47 @@
 
 .roll-wheel-center:disabled { cursor: default; }
 
+.roll-volume-panel {
+    --popover-surface-bg: var(--ui-color-surface);
+    --popover-surface-border: var(--ui-color-border-hover);
+    position: absolute;
+    z-index: 7;
+    top: 56px;
+    left: 56px;
+    box-sizing: border-box;
+    width: min(220px, calc(100% - 68px));
+    padding: 12px;
+    text-align: left;
+}
+
+.roll-volume-panel[hidden] { display: none; }
+
+.roll-volume-control {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 4ch;
+    align-items: center;
+    gap: 6px 10px;
+    color: var(--ui-color-content-muted);
+    font: 500 12px/1.4 var(--font-family);
+}
+
+.roll-volume-control input {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+    height: 24px;
+    margin: 0;
+    accent-color: var(--ui-color-content);
+    cursor: pointer;
+}
+
+.roll-volume-control output {
+    color: var(--ui-color-content);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+}
+
 .roll-result {
     min-height: 28px;
     margin: 18px auto 0;
@@ -1997,8 +2044,10 @@
 
 .roll-close-btn:focus-visible,
 .roll-settings-btn:focus-visible,
+.roll-volume-btn:focus-visible,
 .roll-settings-field input:focus-visible,
 .roll-settings-save:focus-visible,
+.roll-volume-control input:focus-visible,
 .roll-wheel-center:focus-visible,
 .roll-action-btn:focus-visible,
 .roll-result-link:focus-visible {
