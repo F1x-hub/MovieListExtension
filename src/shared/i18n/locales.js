@@ -499,6 +499,8 @@ export const locales = {
         },
         ratings: {
             title: "Rated",
+            page_title: "Rated - Movie Rating Extension",
+            unknown_user: "Unknown user",
             subtitle: "Manage and explore your movie ratings",
             filters: {
                 title: "Filters & Search",
@@ -512,7 +514,8 @@ export const locales = {
                 any_average: "Any Average",
                 user: "User",
                 all_users: "All Users",
-                sort: "Sort By"
+                sort: "Sort By",
+                toggle: "Show or hide filters"
             },
             sort: {
                 date_newest: "Date Added (Newest)",
@@ -524,9 +527,31 @@ export const locales = {
                 title_az: "Title (A-Z)",
                 title_za: "Title (Z-A)",
                 year_newest: "Year (Newest)",
-                year_oldest: "Year (Oldest)"
+                year_oldest: "Year (Oldest)",
+                locked_by_avg_filter: "Sorted by average rating while the rating filter is active"
             },
             loading: "Loading your collection...",
+            results: {
+                loading: "Loading...",
+                count: "Showing {count} of {total} movies",
+                mode: "All ratings"
+            },
+            active_filters: {
+                label: "Active filters:",
+                search: "Search: {value}",
+                genre: "Genre: {value}",
+                year: "Year: {value}",
+                rating: "Rating: {from} – {to}",
+                user: "User: {value}",
+                remove: "Remove filter"
+            },
+            errors: {
+                sign_in: "Please sign in to view ratings",
+                firebase_init: "Failed to initialize Firebase",
+                firebase_setup: "Firebase setup failed: {message}",
+                timeout: "Loading timed out. Please refresh the page.",
+                load_failed: "Failed to load movies: {message}"
+            },
             empty: {
                 title: "No movies found",
                 message: "Try adjusting your filters or start rating some movies!",
@@ -543,7 +568,34 @@ export const locales = {
                 share_thoughts: "Share Your Thoughts",
                 placeholder: "What did you think about this movie? (Optional)",
                 cancel: "Cancel",
-                save: "Save Rating"
+                save: "Save Rating",
+                close: "Close",
+                current_rating: "Your current rating",
+                edit_title: "Edit rating: {title}",
+                no_comment: "No comment",
+                kp_label: "KP",
+                no_score: "n/a"
+            },
+            toast: {
+                sign_in: "Please sign in",
+                favorite_added: "Added to Favorites",
+                favorite_removed: "Removed from Favorites",
+                favorites_limit: "Favorites limit reached (50 movies)",
+                watching_added: "Added to Watching",
+                watching_removed: "Removed from Watching",
+                watched_added: "Marked as watched",
+                watched_removed: "Removed from Watched",
+                watchlist_added: "Added to Plan to Watch",
+                watchlist_removed: "Removed from Plan to Watch",
+                status_error: "Couldn't update the status",
+                collection_added: "Added to collection",
+                collection_removed: "Removed from collection",
+                collection_error: "Couldn't update the collection",
+                rating_added: "Rating added",
+                rating_updated: "Rating updated",
+                rating_invalid: "Rating must be between 1 and 10",
+                rating_save_failed: "Couldn't save the rating. Changes were rolled back.",
+                rating_save_error: "Couldn't save the rating. Please try again."
             }
         },
         movie_card: {
@@ -1432,6 +1484,8 @@ export const locales = {
         },
         ratings: {
             title: "Оцененные",
+            page_title: "Оценённые - Movie Rating Extension",
+            unknown_user: "Неизвестный пользователь",
             subtitle: "Управляйте и изучайте свои оценки",
             filters: {
                 title: "Фильтры и Поиск",
@@ -1445,7 +1499,8 @@ export const locales = {
                 any_average: "Любой рейтинг",
                 user: "Пользователь",
                 all_users: "Все пользователи",
-                sort: "Сортировка"
+                sort: "Сортировка",
+                toggle: "Показать или скрыть фильтры"
             },
             sort: {
                 date_newest: "Дата добавления (Сначала новые)",
@@ -1457,9 +1512,31 @@ export const locales = {
                 title_az: "Название (А-Я)",
                 title_za: "Название (Я-А)",
                 year_newest: "Год (Новые)",
-                year_oldest: "Год (Старые)"
+                year_oldest: "Год (Старые)",
+                locked_by_avg_filter: "Сортировка зафиксирована по среднему рейтингу, пока активен фильтр рейтинга"
             },
             loading: "Загрузка коллекции...",
+            results: {
+                loading: "Загрузка...",
+                count: "Показано: {count} из {total}",
+                mode: "Все оценки"
+            },
+            active_filters: {
+                label: "Активные фильтры:",
+                search: "Поиск: {value}",
+                genre: "Жанр: {value}",
+                year: "Год: {value}",
+                rating: "Рейтинг: {from} – {to}",
+                user: "Пользователь: {value}",
+                remove: "Убрать фильтр"
+            },
+            errors: {
+                sign_in: "Войдите, чтобы увидеть оценки",
+                firebase_init: "Не удалось инициализировать Firebase",
+                firebase_setup: "Ошибка настройки Firebase: {message}",
+                timeout: "Загрузка заняла слишком много времени. Обновите страницу.",
+                load_failed: "Не удалось загрузить фильмы: {message}"
+            },
             empty: {
                 title: "Фильмы не найдены",
                 message: "Попробуйте изменить фильтры или оцените пару фильмов!",
@@ -1476,7 +1553,34 @@ export const locales = {
                 share_thoughts: "Поделитесь мнением",
                 placeholder: "Что вы думаете об этом фильме? (Необязательно)",
                 cancel: "Отмена",
-                save: "Сохранить"
+                save: "Сохранить",
+                close: "Закрыть",
+                current_rating: "Ваша текущая оценка",
+                edit_title: "Изменить оценку: {title}",
+                no_comment: "Без комментария",
+                kp_label: "КП",
+                no_score: "н/д"
+            },
+            toast: {
+                sign_in: "Войдите в систему",
+                favorite_added: "Добавлено в избранное",
+                favorite_removed: "Удалено из избранного",
+                favorites_limit: "Достигнут лимит избранного (50 фильмов)",
+                watching_added: "Добавлено в «Смотрю»",
+                watching_removed: "Удалено из «Смотрю»",
+                watched_added: "Отмечено как просмотренное",
+                watched_removed: "Удалено из просмотренных",
+                watchlist_added: "Добавлено в «Буду смотреть»",
+                watchlist_removed: "Удалено из «Буду смотреть»",
+                status_error: "Не удалось обновить статус",
+                collection_added: "Добавлено в коллекцию",
+                collection_removed: "Удалено из коллекции",
+                collection_error: "Не удалось обновить коллекцию",
+                rating_added: "Оценка добавлена",
+                rating_updated: "Оценка обновлена",
+                rating_invalid: "Оценка должна быть от 1 до 10",
+                rating_save_failed: "Не удалось сохранить оценку. Изменения отменены.",
+                rating_save_error: "Не удалось сохранить оценку. Попробуйте ещё раз."
             }
         },
         movie_card: {

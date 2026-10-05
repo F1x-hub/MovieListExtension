@@ -708,38 +708,6 @@
     backdrop-filter: blur(12px);
 }
 
-.ratings-detail-modal {
-    background: rgba(20, 20, 22, 0.95);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    max-width: 500px;
-    width: 90%;
-    max-height: 85vh;
-    overflow-y: auto;
-    box-shadow: 0 24px 50px rgba(0, 0, 0, 0.6);
-}
-
-.ratings-detail-modal .modal-title {
-    font-size: 1.15rem;
-    font-weight: 600;
-    color: var(--theme-stat-color);
-    margin: 0;
-    font-family: var(--font-family);
-}
-
-.ratings-detail-modal .modal-close {
-    font-size: 1.5rem;
-    border-radius: 50%;
-}
-
-.ratings-detail-modal .modal-close:hover {
-    background: rgba(255, 255, 255, 0.06);
-    color: var(--theme-text-primary);
-}
-
-.ratings-detail-modal .modal-body {
-    padding: 24px;
-}
-
 /* Edit Rating Form Control styling */
 .form-group {
     display: flex;
@@ -1004,15 +972,6 @@
 .light-theme .movies-grid .mc-user-info {
     background: rgba(9, 9, 11, 0.03);
     border-color: rgba(9, 9, 11, 0.04);
-}
-
-.light-theme .ratings-detail-modal {
-    background: #ffffff;
-    border-color: rgba(9, 9, 11, 0.08);
-}
-
-.light-theme .ratings-detail-modal .modal-header {
-    border-bottom-color: rgba(9, 9, 11, 0.05);
 }
 
 .light-theme .rating-modal .modal-footer {

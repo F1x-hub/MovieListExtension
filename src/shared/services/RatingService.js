@@ -709,9 +709,15 @@ class RatingService {
         }
     }
 
-    async fetchAverageRatingsFromFirestore(movieIds) {
-        // Load all ratings for these movies in batch (Firestore 'in' limit is 30)
-        const normalizedMovieIds = [...new Set(movieIds
+    /**
+     * Load the current (deduplicated) rating documents for several movies.
+     * Numeric and legacy string movie IDs are queried together; chunks run in parallel.
+     * @param {Array<number|string>} movieIds - Kinopoisk movie IDs
+     * @returns {Promise<{normalizedMovieIds: number[], currentRatings: Array}>}
+     */
+    async fetchCurrentRatingsForMovies(movieIds) {
+        // Firestore 'in' limit is 30
+        const normalizedMovieIds = [...new Set((movieIds || [])
             .map(movieId => Number(movieId))
             .filter(movieId => Number.isInteger(movieId) && movieId > 0))];
         const queryMovieIds = normalizedMovieIds.flatMap(movieId => [movieId, String(movieId)]);
@@ -721,16 +727,60 @@ class RatingService {
             movieIdChunks.push(queryMovieIds.slice(i, i + CHUNK_SIZE));
         }
 
-        const allResults = [];
-        for (const chunk of movieIdChunks) {
-            const query = this.db.collection(this.collection)
-                .where('movieId', 'in', chunk);
-            const snapshot = await query.get();
-            snapshot.forEach(doc => allResults.push({ id: doc.id, ...doc.data() }));
-        }
+        const snapshots = await Promise.all(movieIdChunks.map(chunk => this.db.collection(this.collection)
+            .where('movieId', 'in', chunk)
+            .get()));
 
+        const allResults = [];
+        snapshots.forEach(snapshot => {
+            snapshot.forEach(doc => allResults.push({ id: doc.id, ...doc.data() }));
+        });
+
+        return {
+            normalizedMovieIds,
+            currentRatings: this.getCurrentRatings(allResults)
+        };
+    }
+
+    /**
+     * Batched replacement for calling getMovieRatings() once per movie: one query
+     * set returns both per-movie averages and per-movie rater lists.
+     * @param {Array<number|string>} movieIds - Kinopoisk movie IDs
+     * @param {number} limit - Maximum raters per movie
+     * @returns {Promise<{averages: Object, ratersByMovie: Map<number, Array>}>}
+     */
+    async getMovieRatingsBatch(movieIds, limit = 20, options = {}) {
+        const { normalizedMovieIds, currentRatings } = await this.fetchCurrentRatingsForMovies(movieIds);
+        const averages = this.buildAverageRatings(normalizedMovieIds, currentRatings, movieIds);
+
+        const grouped = new Map(normalizedMovieIds.map(movieId => [movieId, []]));
+        currentRatings.forEach(rating => {
+            const movieId = Number(rating.movieId);
+            if (grouped.has(movieId)) grouped.get(movieId).push(rating);
+        });
+
+        const ratersByMovie = new Map();
+        grouped.forEach((ratings, movieId) => {
+            // Same ordering as getMovieRatings(): newest createdAt first
+            ratings.sort((a, b) => {
+                const dateA = a.createdAt?.toDate?.() || new Date(a.createdAt) || new Date(0);
+                const dateB = b.createdAt?.toDate?.() || new Date(b.createdAt) || new Date(0);
+                return dateB - dateA;
+            });
+            ratersByMovie.set(movieId, ratings.slice(0, limit).map(rating => this.toRatingViewModel(rating, options)));
+        });
+
+        return { averages, ratersByMovie };
+    }
+
+    async fetchAverageRatingsFromFirestore(movieIds) {
+        const { normalizedMovieIds, currentRatings } = await this.fetchCurrentRatingsForMovies(movieIds);
+        return this.buildAverageRatings(normalizedMovieIds, currentRatings, movieIds);
+    }
+
+    buildAverageRatings(normalizedMovieIds, currentRatings, movieIds = []) {
         const movieRatings = {};
-        this.getCurrentRatings(allResults).forEach(data => {
+        currentRatings.forEach(data => {
             const movieId = Number(data.movieId);
             if (!Number.isInteger(movieId) || movieId <= 0) return;
             if (!movieRatings[movieId]) {
