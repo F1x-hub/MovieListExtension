@@ -800,6 +800,8 @@ class RatingsPageManager {
                 // Films rated since the cached first screen was saved get the "new" mark once
                 this.highlightNewSinceCache(enrichedMovies);
                 this.startLiveUpdates();
+                // Fill cards whose movie document has no title/poster (does not block the page)
+                this.hydrateMissingMetadata(enrichedMovies);
 
                 // Sorts the server cannot order (my rating, title, year) need every page.
                 this.loadAllForClientSort();
@@ -934,6 +936,7 @@ class RatingsPageManager {
 
                 // Merge by ID: a film inserted live may come back in a later server page
                 this.mergeMoviesById(enrichedBatch);
+                this.hydrateMissingMetadata(enrichedBatch);
                 this.extractAndPopulateUsers(this.movies);
                 this.populateYearFilter();
                 this.populateGenreFilter();
@@ -1009,6 +1012,98 @@ class RatingsPageManager {
 
         this.applyWatchStatuses(enrichedMovies, bookmarksMap);
         return enrichedMovies;
+    }
+
+    // ---------------------------------------------------------------------------
+    // Missing film metadata
+    //
+    // A movies/{id} document can carry only rating aggregates (title, poster and
+    // description missing) — e.g. films first rated before cacheMovie() honoured
+    // `isRated`, or when the rater's metadata write failed. Instead of showing a
+    // placeholder until someone opens the details page, the page fills such cards
+    // itself: local caches first, then a bounded Kinopoisk API lookup, and stores
+    // the result in Firestore so the document is repaired for everyone.
+    // ---------------------------------------------------------------------------
+
+    static METADATA_HYDRATION_LIMIT = 8;
+    static METADATA_API_CONCURRENCY = 2;
+
+    hasDisplayMetadata(movie) {
+        const name = typeof movie?.name === 'string' ? movie.name.trim().toLowerCase() : '';
+        const hasName = Boolean(name) && !['loading...', 'unknown movie', 'unknown title'].includes(name);
+        return hasName && Boolean(movie?.posterUrl);
+    }
+
+    async hydrateMissingMetadata(items = this.movies) {
+        this.metadataHydrationAttempted = this.metadataHydrationAttempted || new Set();
+        const missing = (items || [])
+            .filter(item => !this.hasDisplayMetadata(item.movie))
+            .map(item => this.getMovieKey(item))
+            .filter(key => key && !this.metadataHydrationAttempted.has(key))
+            .slice(0, RatingsPageManager.METADATA_HYDRATION_LIMIT);
+        if (missing.length === 0) return;
+
+        // Each film is tried once per page session so a failing lookup cannot loop
+        missing.forEach(key => this.metadataHydrationAttempted.add(key));
+        const requestId = this.currentRequestId;
+
+        let movieCacheService;
+        try {
+            movieCacheService = firebaseManager.getMovieCacheService();
+        } catch {
+            return;
+        }
+
+        // 1. Local caches (this browser may have the metadata from browsing or rating)
+        const found = new Map();
+        try {
+            const cached = await movieCacheService.getBatchCachedMovies(missing) || {};
+            missing.forEach(key => {
+                const movie = cached[key] || cached[Number(key)];
+                if (this.hasDisplayMetadata(movie)) found.set(key, movie);
+            });
+        } catch (error) {
+            console.warn('[RatingsPage] Local metadata lookup failed:', error);
+        }
+
+        // 2. Kinopoisk API for the rest, a few at a time to respect the shared quota
+        const remaining = missing.filter(key => !found.has(key));
+        let kinopoiskService = null;
+        try {
+            kinopoiskService = remaining.length ? firebaseManager.getKinopoiskService() : null;
+        } catch {
+            kinopoiskService = null;
+        }
+        if (kinopoiskService?.getMovieById) {
+            for (let i = 0; i < remaining.length; i += RatingsPageManager.METADATA_API_CONCURRENCY) {
+                const chunk = remaining.slice(i, i + RatingsPageManager.METADATA_API_CONCURRENCY);
+                const results = await Promise.all(chunk.map(key => kinopoiskService.getMovieById(Number(key))
+                    .catch(error => {
+                        console.warn(`[RatingsPage] Metadata fetch failed for ${key}:`, error);
+                        return null;
+                    })));
+                chunk.forEach((key, index) => {
+                    if (this.hasDisplayMetadata(results[index])) found.set(key, results[index]);
+                });
+            }
+        }
+        if (found.size === 0 || requestId !== this.currentRequestId) return;
+
+        // 3. Repair the Firestore document (metadata fields only) and update the cards
+        const merge = window.MovieCacheService?.mergeMovieMetadata
+            || ((primary, fallback) => ({ ...fallback, ...primary }));
+        found.forEach((metadata, key) => {
+            movieCacheService.cacheMovie({ ...metadata, kinopoiskId: Number(key) }, true)
+                .catch(error => console.warn(`[RatingsPage] Could not store metadata for ${key}:`, error));
+            this.movies.forEach(item => {
+                if (this.getMovieKey(item) === key) item.movie = merge(item.movie || {}, metadata);
+            });
+        });
+
+        this.populateYearFilter();
+        this.populateGenreFilter();
+        this.applyFilters();
+        this.saveDefaultFirstPageToCache();
     }
 
     // ---------------------------------------------------------------------------
@@ -1171,6 +1266,7 @@ class RatingsPageManager {
             const keys = enriched.map(item => this.getMovieKey(item));
             this.highlightMovies(keys);
             if (reveal) this.revealMovies(keys);
+            this.hydrateMissingMetadata(enriched);
         } catch (error) {
             console.warn('[RatingsPage] Failed to apply live rating updates:', error);
             // Put them back so the pill can retry
@@ -2022,122 +2118,132 @@ class RatingsPageManager {
                 
                 // create a temporary new card to extract the latest enriched HTML
                 const newCardHTML = this.createMovieCard(movieData);
-                
-                // Update movie title if changed (cache → enriched)
-                const titleEl = card.querySelector('.mc-title');
-                const newTitleEl = newCardHTML.querySelector('.mc-title');
-                if (titleEl && newTitleEl) {
-                    if (titleEl.textContent.trim() !== newTitleEl.textContent.trim()) {
-                        titleEl.textContent = newTitleEl.textContent;
-                        titleEl.title = newTitleEl.title;
-                    }
-                    if (!newTitleEl.classList.contains('mc-skeleton')) {
-                        titleEl.classList.remove('mc-skeleton');
-                    }
-                }
 
-                // Update movie poster if changed
-                const posterContainer = card.querySelector('.mc-poster-container');
-                const newPosterContainer = newCardHTML.querySelector('.mc-poster-container');
-                if (posterContainer && newPosterContainer && !newPosterContainer.classList.contains('mc-skeleton')) {
-                    posterContainer.classList.remove('mc-skeleton');
-                }
+                if (card.classList.contains('mc-is-loading') && !newCardHTML.classList.contains('mc-is-loading')) {
+                    // A placeholder card (no title/poster yet) is replaced as a whole once the
+                    // film metadata arrives; patching it piecemeal left loading-only markup behind.
+                    if (movieData.id) newCardHTML.setAttribute('data-rating-id', movieData.id);
+                    newCardHTML.setAttribute('data-movie-id', key);
+                    card.replaceWith(newCardHTML);
+                    card = newCardHTML;
+                } else {
 
-                const posterEl = card.querySelector('.mc-poster');
-                const newPosterEl = newCardHTML.querySelector('.mc-poster');
-                if (posterEl && newPosterEl) {
-                    const newPosterSrc = newPosterEl.getAttribute('src');
-                    if (posterEl.getAttribute('src') !== newPosterSrc) {
-                        posterEl.src = newPosterSrc;
-                        posterEl.alt = newPosterEl.alt;
-                    }
-                }
-
-                // Update movie year
-                const yearEl = card.querySelector('.mc-year');
-                const newYearEl = newCardHTML.querySelector('.mc-year');
-                if (yearEl && newYearEl) {
-                    if (yearEl.textContent.trim() !== newYearEl.textContent.trim()) {
-                        yearEl.textContent = newYearEl.textContent;
-                    }
-                    if (!newYearEl.classList.contains('mc-skeleton')) {
-                        yearEl.classList.remove('mc-skeleton');
-                    }
-                }
-
-                // Update movie genres
-                const genresEl = card.querySelector('.mc-genres');
-                const newGenresEl = newCardHTML.querySelector('.mc-genres');
-                if (genresEl && newGenresEl) {
-                    if (genresEl.innerHTML !== newGenresEl.innerHTML) {
-                        genresEl.innerHTML = newGenresEl.innerHTML;
-                    }
-                    if (!newGenresEl.classList.contains('mc-skeleton')) {
-                        genresEl.classList.remove('mc-skeleton');
-                        genresEl.style.height = '';
-                        genresEl.style.borderRadius = '';
-                    }
-                }
-
-                // Update KP and IMDb ratings
-                const kpEl = card.querySelector('.mc-rating-kp');
-                const newKpEl = newCardHTML.querySelector('.mc-rating-kp');
-                if (kpEl && newKpEl && kpEl.textContent.trim() !== newKpEl.textContent.trim()) {
-                    kpEl.textContent = newKpEl.textContent;
-                }
-
-                const imdbEl = card.querySelector('.mc-rating-imdb');
-                const newImdbEl = newCardHTML.querySelector('.mc-rating-imdb');
-                if (imdbEl && newImdbEl && imdbEl.textContent.trim() !== newImdbEl.textContent.trim()) {
-                    imdbEl.textContent = newImdbEl.textContent;
-                }
-
-                // Update movie description
-                let descEl = card.querySelector('.mc-description');
-                const newDescEl = newCardHTML.querySelector('.mc-description');
-                if (newDescEl) {
-                    if (descEl) {
-                        if (descEl.textContent.trim() !== newDescEl.textContent.trim()) {
-                            descEl.textContent = newDescEl.textContent;
+                    // Update movie title if changed (cache → enriched)
+                    const titleEl = card.querySelector('.mc-title');
+                    const newTitleEl = newCardHTML.querySelector('.mc-title');
+                    if (titleEl && newTitleEl) {
+                        if (titleEl.textContent.trim() !== newTitleEl.textContent.trim()) {
+                            titleEl.textContent = newTitleEl.textContent;
+                            titleEl.title = newTitleEl.title;
                         }
-                    } else {
-                        // If description was missing but now exists, insert it after genres
-                        const genresArea = card.querySelector('.mc-genres');
-                        if (genresArea) {
-                            genresArea.insertAdjacentHTML('afterend', newDescEl.outerHTML);
+                        if (!newTitleEl.classList.contains('mc-skeleton')) {
+                            titleEl.classList.remove('mc-skeleton');
+                        }
+                    }
+
+                    // Update movie poster if changed
+                    const posterContainer = card.querySelector('.mc-poster-container');
+                    const newPosterContainer = newCardHTML.querySelector('.mc-poster-container');
+                    if (posterContainer && newPosterContainer && !newPosterContainer.classList.contains('mc-skeleton')) {
+                        posterContainer.classList.remove('mc-skeleton');
+                    }
+
+                    const posterEl = card.querySelector('.mc-poster');
+                    const newPosterEl = newCardHTML.querySelector('.mc-poster');
+                    if (posterEl && newPosterEl) {
+                        const newPosterSrc = newPosterEl.getAttribute('src');
+                        if (posterEl.getAttribute('src') !== newPosterSrc) {
+                            posterEl.src = newPosterSrc;
+                            posterEl.alt = newPosterEl.alt;
+                        }
+                    }
+
+                    // Update movie year
+                    const yearEl = card.querySelector('.mc-year');
+                    const newYearEl = newCardHTML.querySelector('.mc-year');
+                    if (yearEl && newYearEl) {
+                        if (yearEl.textContent.trim() !== newYearEl.textContent.trim()) {
+                            yearEl.textContent = newYearEl.textContent;
+                        }
+                        if (!newYearEl.classList.contains('mc-skeleton')) {
+                            yearEl.classList.remove('mc-skeleton');
+                        }
+                    }
+
+                    // Update movie genres
+                    const genresEl = card.querySelector('.mc-genres');
+                    const newGenresEl = newCardHTML.querySelector('.mc-genres');
+                    if (genresEl && newGenresEl) {
+                        if (genresEl.innerHTML !== newGenresEl.innerHTML) {
+                            genresEl.innerHTML = newGenresEl.innerHTML;
+                        }
+                        if (!newGenresEl.classList.contains('mc-skeleton')) {
+                            genresEl.classList.remove('mc-skeleton');
+                            genresEl.style.height = '';
+                            genresEl.style.borderRadius = '';
+                        }
+                    }
+
+                    // Update KP and IMDb ratings
+                    const kpEl = card.querySelector('.mc-rating-kp');
+                    const newKpEl = newCardHTML.querySelector('.mc-rating-kp');
+                    if (kpEl && newKpEl && kpEl.textContent.trim() !== newKpEl.textContent.trim()) {
+                        kpEl.textContent = newKpEl.textContent;
+                    }
+
+                    const imdbEl = card.querySelector('.mc-rating-imdb');
+                    const newImdbEl = newCardHTML.querySelector('.mc-rating-imdb');
+                    if (imdbEl && newImdbEl && imdbEl.textContent.trim() !== newImdbEl.textContent.trim()) {
+                        imdbEl.textContent = newImdbEl.textContent;
+                    }
+
+                    // Update movie description
+                    let descEl = card.querySelector('.mc-description');
+                    const newDescEl = newCardHTML.querySelector('.mc-description');
+                    if (newDescEl) {
+                        if (descEl) {
+                            if (descEl.textContent.trim() !== newDescEl.textContent.trim()) {
+                                descEl.textContent = newDescEl.textContent;
+                            }
                         } else {
-                            const titleRow = card.querySelector('.mc-title-row');
-                            if (titleRow) {
-                                titleRow.insertAdjacentHTML('afterend', newDescEl.outerHTML);
+                            // If description was missing but now exists, insert it after genres
+                            const genresArea = card.querySelector('.mc-genres');
+                            if (genresArea) {
+                                genresArea.insertAdjacentHTML('afterend', newDescEl.outerHTML);
+                            } else {
+                                const titleRow = card.querySelector('.mc-title-row');
+                                if (titleRow) {
+                                    titleRow.insertAdjacentHTML('afterend', newDescEl.outerHTML);
+                                }
                             }
                         }
+                    } else if (descEl) {
+                        descEl.remove();
                     }
-                } else if (descEl) {
-                    descEl.remove();
-                }
 
-                // Update user info section (avatar, name, rating, raters count, raters popup)
-                const oldUserInfo = card.querySelector('.mc-user-info');
-                const newUserInfo = newCardHTML.querySelector('.mc-user-info');
-                if (oldUserInfo && newUserInfo) {
-                    if (oldUserInfo.innerHTML !== newUserInfo.innerHTML) {
-                        oldUserInfo.innerHTML = newUserInfo.innerHTML;
+                    // Update user info section (avatar, name, rating, raters count, raters popup)
+                    const oldUserInfo = card.querySelector('.mc-user-info');
+                    const newUserInfo = newCardHTML.querySelector('.mc-user-info');
+                    if (oldUserInfo && newUserInfo) {
+                        if (oldUserInfo.innerHTML !== newUserInfo.innerHTML) {
+                            oldUserInfo.innerHTML = newUserInfo.innerHTML;
+                        }
+                    } else if (!oldUserInfo && newUserInfo) {
+                        const contentEl = card.querySelector('.mc-content');
+                        if (contentEl) {
+                            contentEl.appendChild(newUserInfo.cloneNode(true));
+                        }
+                    } else if (oldUserInfo && !newUserInfo) {
+                        oldUserInfo.remove();
                     }
-                } else if (!oldUserInfo && newUserInfo) {
-                    const contentEl = card.querySelector('.mc-content');
-                    if (contentEl) {
-                        contentEl.appendChild(newUserInfo.cloneNode(true));
-                    }
-                } else if (oldUserInfo && !newUserInfo) {
-                    oldUserInfo.remove();
-                }
 
-                // Update average rating if data has changed (e.g. cache → enriched data)
-                const avgRatingEl = card.querySelector('.mc-rating-avg');
-                const newAvgRatingEl = newCardHTML.querySelector('.mc-rating-avg');
-                if (avgRatingEl && newAvgRatingEl) {
-                    if (avgRatingEl.textContent.trim() !== newAvgRatingEl.textContent.trim()) {
-                        avgRatingEl.textContent = newAvgRatingEl.textContent;
+                    // Update average rating if data has changed (e.g. cache → enriched data)
+                    const avgRatingEl = card.querySelector('.mc-rating-avg');
+                    const newAvgRatingEl = newCardHTML.querySelector('.mc-rating-avg');
+                    if (avgRatingEl && newAvgRatingEl) {
+                        if (avgRatingEl.textContent.trim() !== newAvgRatingEl.textContent.trim()) {
+                            avgRatingEl.textContent = newAvgRatingEl.textContent;
+                        }
                     }
                 }
             }

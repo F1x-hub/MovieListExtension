@@ -313,7 +313,11 @@ class MovieCacheService {
             const safeCacheData = this.mergeMovieMetadata(cacheData, existingMovieData);
             const isCommunityRated = existingMovie.exists && existingMovie.data().hasCommunityRating === true;
 
-            if (isCommunityRated) {
+            // `isRated` comes from callers that have just written (or found) a rating.
+            // For a film's first rating, aggregateMovieRatings has not set
+            // hasCommunityRating yet; checking only the document sent the metadata to
+            // the local cache and left an aggregate-only movie (no title or poster).
+            if (isRated === true || isCommunityRated) {
                 // Merge pure metadata into existing Firestore document without touching aggregate fields
                 await movieRef.set(safeCacheData, { merge: true });
                 this.saveToLocalStorage(movieId, {

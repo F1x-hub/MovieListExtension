@@ -156,6 +156,14 @@ function createFakeDb(collections) {
     assert.match(ratingsJs, /this\.setupGridEventListeners\(\);[\s\S]*Utils\.bindMovieCardNavigation\(this\.elements\.moviesGrid\)/,
         'Action listener is registered before card navigation, which binds to the real grid element');
 
+    // Card rows align: no empty bottom block competes with the ratings row's
+    // margin-top:auto (it pushed rated-by-me cards' ratings up a row).
+    const movieCardJs = fs.readFileSync(path.join(projectRoot, 'src/shared/components/MovieCard.js'), 'utf8');
+    const movieCardCss = fs.readFileSync(path.join(projectRoot, 'src/shared/styles/movie-card.css'), 'utf8');
+    assert.doesNotMatch(movieCardJs, /class="mc-actions"/, 'MovieCard renders no empty .mc-actions block');
+    assert.doesNotMatch(movieCardCss, /^\.mc-actions\s*\{/m, 'No auto-margin .mc-actions rule');
+    assert.match(movieCardCss, /\.mc-ratings-row \{[^}]*margin-top: auto;/, 'Ratings row stays bottom-aligned');
+
     // 6. Small fixes.
     const ratingsHtml = fs.readFileSync(path.join(projectRoot, 'src/pages/ratings/ratings.html'), 'utf8');
     assert.doesNotMatch(ratingsHtml, /\son[a-z]+="/i, 'Inline handlers are blocked by the extension CSP');

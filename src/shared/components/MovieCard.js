@@ -673,12 +673,6 @@ class MovieCard {
                         <span class="mc-rating-text">${window.i18n?.get('movie_card.my_rating')}: ${rating}</span>
                     </div>
                 ` : ''}
-                
-                ${showEditRating || showAddToCollection ? `
-                    <div class="mc-actions">
-                        <!-- Action buttons section - currently empty, kept for future extensions -->
-                    </div>
-                ` : ''}
             </div>
         `;
         }
