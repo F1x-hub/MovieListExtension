@@ -1,5 +1,6 @@
 
 import { i18n } from '../../shared/i18n/I18n.js';
+import { RandomWheelAudio } from './RandomWheelAudio.js';
 
 const DEFAULT_SPINNER_POSTER = '/src/shared/assets/icons/app/icon128-white.png';
 const PREVIEW_POSTERS = [];
@@ -7,6 +8,8 @@ const DEFAULT_ROLL_DURATION_SECONDS = 6;
 const MIN_ROLL_DURATION_SECONDS = 2;
 const MAX_ROLL_DURATION_SECONDS = 1800;
 const ROLL_DURATION_STORAGE_KEY = 'random_wheel_duration_seconds';
+const ROLL_VOLUME_STORAGE_KEY = 'random_wheel_volume_percent';
+const DEFAULT_ROLL_VOLUME_PERCENT = 100;
 const SAFE_MARATHON_POSTER_HOSTS = new Set([
     'image.tmdb.org',
     'image.openmoviedb.com',
@@ -92,6 +95,12 @@ class RandomManager {
         this._searchTimer = null;
         this.rollAnimRunning = false;
         this._rollAnimationId = 0;
+        const storedRollVolume = localStorage.getItem(ROLL_VOLUME_STORAGE_KEY);
+        const savedRollVolume = storedRollVolume === null ? DEFAULT_ROLL_VOLUME_PERCENT : Number(storedRollVolume);
+        this.rollVolumePercent = Number.isInteger(savedRollVolume) && savedRollVolume >= 0 && savedRollVolume <= 100
+            ? savedRollVolume : DEFAULT_ROLL_VOLUME_PERCENT;
+        this._rollAudio = new RandomWheelAudio(this.rollVolumePercent / 100);
+        window.addEventListener('pagehide', () => this._rollAudio.stop());
         const savedRollDuration = Number(localStorage.getItem(ROLL_DURATION_STORAGE_KEY));
         this.rollDurationSeconds = Number.isInteger(savedRollDuration)
             && savedRollDuration >= MIN_ROLL_DURATION_SECONDS
@@ -1330,14 +1339,19 @@ class RandomManager {
         wheel.classList.add('roll-wheel--pending');
         overlay.classList.remove('hidden');
         this._setRollBusy(true);
+        this._rollAudio.startSpin();
     }
 
     _stopRollAnimation() {
         const overlay = document.getElementById('rollAnimOverlay');
         const wheel = document.getElementById('rollWheel');
         this._rollAnimationId++;
+        this._rollAudio.stop();
         wheel?.classList.remove('roll-wheel--pending');
         if (wheel) wheel.style.removeProperty('transform');
+        const volumePanel = overlay?.querySelector('#rollVolumePanel');
+        if (volumePanel) volumePanel.hidden = true;
+        overlay?.querySelector('#rollVolumeBtn')?.setAttribute('aria-expanded', 'false');
         overlay?.classList.add('hidden');
         this._setRollBusy(false);
     }
@@ -1732,6 +1746,9 @@ class RandomManager {
                 <button class="roll-settings-btn" id="rollSettingsBtn" type="button" aria-label="Настроить время вращения" aria-expanded="false" aria-controls="rollSettingsPanel">
                     <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-1.88 1.88-.06-.06A1.7 1.7 0 0 0 16 18.4a1.7 1.7 0 0 0-1 1.57V21h-6v-1.03A1.7 1.7 0 0 0 8 18.4a1.7 1.7 0 0 0-1.88.34l-.06.06-1.88-1.88.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.57-1H2v-4h1.03A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88L4.2 7.06l1.88-1.88.06.06A1.7 1.7 0 0 0 8 5.6a1.7 1.7 0 0 0 1-1.57V3h6v1.03A1.7 1.7 0 0 0 16 5.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 1.88 1.88-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.57 1H22v4h-1.03A1.7 1.7 0 0 0 19.4 15Z"/></svg>
                 </button>
+                <button class="roll-volume-btn" id="rollVolumeBtn" type="button" aria-label="Громкость" aria-expanded="false" aria-controls="rollVolumePanel">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path class="roll-volume-waves" d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/><path class="roll-volume-muted-mark" d="m16 9 5 6m0-6-5 6"/></svg>
+                </button>
                 <button class="roll-close-btn" id="rollCloseBtn" type="button" aria-label="Закрыть колесо">×</button>
                 <div class="roll-title" id="rollTitle">Колесо фильмов</div>
                 <form class="roll-settings-panel" id="rollSettingsPanel" novalidate hidden>
@@ -1741,6 +1758,11 @@ class RandomManager {
                     <div class="roll-settings-error" id="rollSettingsError" aria-live="polite"></div>
                     <button class="roll-settings-save" type="submit">Сохранить</button>
                 </form>
+                <div class="popover-surface roll-volume-panel roll-volume-control" id="rollVolumePanel" hidden>
+                    <label for="rollVolumeInput">Громкость</label>
+                    <output id="rollVolumeValue" for="rollVolumeInput" aria-hidden="true"></output>
+                    <input id="rollVolumeInput" type="range" min="0" max="100" step="1">
+                </div>
                 <div class="roll-wheel-stage">
                     <div class="roll-wheel-pointer" aria-hidden="true"></div>
                     <div class="roll-wheel-frame"><div class="roll-wheel" id="rollWheel" aria-hidden="true"></div></div>
@@ -1754,6 +1776,32 @@ class RandomManager {
             </div>`;
         document.body.appendChild(el);
 
+        const volumeInput = el.querySelector('#rollVolumeInput');
+        const volumeValue = el.querySelector('#rollVolumeValue');
+        const volumeButton = el.querySelector('#rollVolumeBtn');
+        const volumePanel = el.querySelector('#rollVolumePanel');
+        const hideVolume = () => {
+            volumePanel.hidden = true;
+            volumeButton.setAttribute('aria-expanded', 'false');
+        };
+        const showVolume = () => {
+            volumeValue.textContent = `${this.rollVolumePercent}%`;
+            const label = this.rollVolumePercent === 0 ? 'Звук выключен. Настроить громкость' : `Громкость: ${this.rollVolumePercent}%`;
+            volumeButton.setAttribute('aria-label', label);
+            volumeButton.title = label;
+            volumeButton.classList.toggle('is-muted', this.rollVolumePercent === 0);
+            volumeInput.setAttribute('aria-valuetext', this.rollVolumePercent === 0
+                ? 'Звук выключен' : `${this.rollVolumePercent}%`);
+        };
+        volumeInput.value = this.rollVolumePercent;
+        showVolume();
+        volumeInput.addEventListener('input', () => {
+            this.rollVolumePercent = Number(volumeInput.value);
+            this._rollAudio.setVolume(this.rollVolumePercent / 100);
+            localStorage.setItem(ROLL_VOLUME_STORAGE_KEY, String(this.rollVolumePercent));
+            showVolume();
+        });
+
         const settingsButton = el.querySelector('#rollSettingsBtn');
         const settingsPanel = el.querySelector('#rollSettingsPanel');
         const durationInput = el.querySelector('#rollDurationInput');
@@ -1762,8 +1810,20 @@ class RandomManager {
             settingsPanel.hidden = true;
             settingsButton.setAttribute('aria-expanded', 'false');
         };
+        volumeButton.addEventListener('click', () => {
+            if (volumePanel.hidden) {
+                hideSettings();
+                volumePanel.hidden = false;
+                volumeButton.setAttribute('aria-expanded', 'true');
+                volumeInput.focus();
+            } else {
+                hideVolume();
+                volumeButton.focus();
+            }
+        });
         settingsButton.addEventListener('click', () => {
             if (settingsPanel.hidden) {
+                hideVolume();
                 durationInput.value = this.rollDurationSeconds;
                 settingsError.textContent = '';
                 settingsPanel.hidden = false;
@@ -1789,15 +1849,22 @@ class RandomManager {
         });
         const close = () => {
             if (!this.rollAnimRunning) {
+                this._rollAudio.stop();
                 hideSettings();
+                hideVolume();
                 el.classList.add('hidden');
             }
         };
         el.addEventListener('click', (event) => {
+            if (!volumePanel.contains(event.target) && !volumeButton.contains(event.target)) hideVolume();
             if (event.target === el) close();
         });
         el.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && !this.rollAnimRunning) {
+            if (event.key === 'Escape' && !volumePanel.hidden) {
+                event.stopPropagation();
+                hideVolume();
+                volumeButton.focus();
+            } else if (event.key === 'Escape' && !this.rollAnimRunning) {
                 event.stopPropagation();
                 if (!settingsPanel.hidden) {
                     hideSettings();
@@ -1831,6 +1898,7 @@ class RandomManager {
         const wheel = document.getElementById('rollWheel');
         const center = document.getElementById('rollCenterBtn');
         this._rollAnimationId++;
+        this._rollAudio.stop();
         this._rollStart = start;
         wheel.classList.remove('roll-wheel--pending');
         wheel.style.transform = 'rotate(0deg)';
@@ -1885,6 +1953,8 @@ class RandomManager {
         const duration = reducedMotion ? 0 : this.rollDurationSeconds * 1000;
         const animationId = ++this._rollAnimationId;
         const startTime = performance.now();
+        if (duration > 0) this._rollAudio.startSpin(duration);
+        else this._rollAudio.stop();
 
         const step = (now) => {
             if (animationId !== this._rollAnimationId) return;
@@ -1894,6 +1964,7 @@ class RandomManager {
             if (progress < 1) {
                 requestAnimationFrame(step);
             } else {
+                this._rollAudio.finish();
                 this._setRollBusy(false);
                 const winner = candidates[winnerIdx];
                 const title = document.createElement('a');
@@ -1914,6 +1985,7 @@ class RandomManager {
                 goBtn.disabled = false;
                 center.textContent = 'Готово';
                 goBtn.onclick = async () => {
+                    this._rollAudio.stop();
                     goBtn.disabled = true;
                     await finishWinner(winner, overlay);
                 };
