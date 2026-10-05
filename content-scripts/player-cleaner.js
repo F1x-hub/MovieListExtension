@@ -245,6 +245,16 @@
         });
     };
 
+    // An extension-page parser video (AnimeGo) whose episodes the host owns:
+    // the player's arrows request navigation from the host page itself.
+    const isHostEpisodeNavigation = () => permanentVideo?.dataset?.canonicalEpisodeNav === 'true'
+        && isExtensionPageContext();
+
+    // Arrows request host navigation in canonical provider frames and for
+    // host-owned extension-page videos; otherwise they use the provider list.
+    const usesHostEpisodeNavigation = () => (canonicalPickerRequested && window.parent && window.parent !== window)
+        || isHostEpisodeNavigation();
+
     const applyCanonicalPickerVisibility = () => {
         const legacyButtons = document.querySelectorAll('.episode-list-btn');
         const nativeNavigationButtons = document.querySelectorAll('.provider-native-episode-nav');
@@ -263,7 +273,7 @@
             // The host picker owns episode selection, but these arrows are still
             // useful controls: they now request navigation from that same owner.
             const canonicalPickerOnly = button.dataset.canonicalPickerOnly === 'true';
-            button.style.display = canonicalPickerRequested
+            button.style.display = canonicalPickerRequested || isHostEpisodeNavigation()
                 ? 'flex'
                 : (canonicalPickerOnly ? 'none' : (button.dataset.canonicalPickerDisplay || 'flex'));
         });
@@ -3220,7 +3230,7 @@
     
                 // Logic to update buttons
                 updateNavButtons = () => {
-                    if (canonicalPickerRequested) {
+                    if (canonicalPickerRequested || isHostEpisodeNavigation()) {
                         prevEpisodeBtn.style.display = 'flex';
                         nextEpisodeBtn.style.display = 'flex';
                         // In canonical mode the host owns the episode list and
@@ -3260,7 +3270,7 @@
                 // Actions
                 prevEpisodeBtn.onclick = (e) => {
                     e.stopPropagation();
-                    if (canonicalPickerRequested && window.parent && window.parent !== window) {
+                    if (usesHostEpisodeNavigation()) {
                         postToHost({
                             type: 'PLAYER_EPISODE_NAVIGATE',
                             direction: 'previous'
@@ -3275,7 +3285,7 @@
                 };
                 nextEpisodeBtn.onclick = (e) => {
                     e.stopPropagation();
-                    if (canonicalPickerRequested && window.parent && window.parent !== window) {
+                    if (usesHostEpisodeNavigation()) {
                         postToHost({
                             type: 'PLAYER_EPISODE_NAVIGATE',
                             direction: 'next'
@@ -4703,7 +4713,22 @@
                 ];
             };
 
+            // Parsers whose qualities are separate streams (AnimeGo's Kodik
+            // manifests carry one level each) list them in a hidden bridge.
+            const getBridgeQualityOptions = () => {
+                const bridge = document.querySelector('[data-player-quality-source]');
+                const items = bridge ? Array.from(bridge.querySelectorAll('[data-quality-option]')) : [];
+                if (items.length < 2) return [];
+                return items.map(item => ({
+                    label: item.textContent.trim(),
+                    isActive: item.classList.contains('active'),
+                    action: () => item.click()
+                }));
+            };
+
             const getQualityOptions = () => {
+                const bridgeOptions = getBridgeQualityOptions();
+                if (bridgeOptions.length > 0) return bridgeOptions;
                 const nativeHlsOptions = getNativeHlsQualityOptions();
                 if (nativeHlsOptions.length > 0) return nativeHlsOptions;
                 if (permanentVideo?.dataset?.playerProvider === 'torrent') return [];
@@ -5170,10 +5195,10 @@
 
     function findAndRenderVoiceovers(container, exclusionContainer) {
         
-        // Strategy 0: Explicit Seasonvar Bridge (Added by Parser)
-        const svContainer = document.querySelector('#seasonvar-voiceover-source');
-        if (svContainer) {
-            extractAndRender(svContainer.querySelectorAll('.seasonvar-voiceover-item'), container);
+        // Strategy 0: Explicit parser bridge (Seasonvar, AnimeGo native Kodik)
+        const bridgeContainer = document.querySelector('[data-player-voiceover-source], #seasonvar-voiceover-source');
+        if (bridgeContainer) {
+            extractAndRender(bridgeContainer.querySelectorAll('[data-voiceover-option], .seasonvar-voiceover-item'), container);
             return;
         }
 

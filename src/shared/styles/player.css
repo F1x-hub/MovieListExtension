@@ -623,6 +623,65 @@ body.player-modal-open {
     line-height: 34px;
 }
 
+/* The dub choice never shrinks; the source buttons scroll instead. */
+.source-toolbar__dub {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding-left: 10px;
+    border-left: 1px solid var(--ui-color-border);
+}
+
+.source-toolbar__dub[hidden] {
+    display: none;
+}
+
+.source-toolbar__dub-label {
+    flex: 0 0 auto;
+    color: var(--ui-color-content-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.source-toolbar__dub-select {
+    min-width: 110px;
+    max-width: 220px;
+    height: 34px;
+    padding: 0 10px;
+    color: var(--ui-color-content);
+    background: var(--ui-color-surface);
+    border: 1px solid var(--ui-color-border);
+    border-radius: 10px;
+    font-family: var(--font-family);
+    font-size: 13px;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    transition: border-color 160ms ease;
+}
+
+.source-toolbar__dub-select:hover {
+    border-color: var(--ui-color-border-hover);
+}
+
+.source-toolbar__dub-select:focus-visible {
+    outline: 2px solid var(--ui-color-interactive);
+    outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+    .source-toolbar__dub-label {
+        display: none;
+    }
+
+    .source-toolbar__dub-select {
+        max-width: 140px;
+    }
+}
+
 .source-buttons-container {
     min-width: 0;
     display: flex;
@@ -1867,6 +1926,128 @@ body.player-modal-open {
     border-color: var(--ui-color-interactive-hover) !important;
     color: var(--ui-color-page) !important;
     box-shadow: none;
+}
+
+/* Provider-reported filler: a letter badge plus a dashed border, never color alone. */
+.picker-episode-btn--filler {
+    position: relative;
+    border-style: dashed;
+}
+
+.picker-episode-btn__filler {
+    position: absolute;
+    top: 2px;
+    right: 4px;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--ui-color-content-muted);
+}
+
+.picker-episode-btn--active .picker-episode-btn__filler {
+    color: inherit;
+}
+
+/* Watched: a check mark, independent of color. */
+.picker-episode-btn--watched {
+    position: relative;
+}
+
+.picker-episode-btn__watched {
+    position: absolute;
+    left: 4px;
+    bottom: 3px;
+    display: inline-flex;
+    color: var(--ui-color-content-muted);
+}
+
+.picker-episode-btn--active .picker-episode-btn__watched {
+    color: inherit;
+}
+
+/* Search match: a visible outline in both themes. */
+.picker-episode-btn--match {
+    outline: 2px solid var(--ui-color-interactive);
+    outline-offset: 1px;
+}
+
+.player-episode-picker__episodes-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.player-episode-picker__search[hidden],
+.player-episode-picker__ranges[hidden],
+.player-episode-picker__hint[hidden] {
+    display: none;
+}
+
+.player-episode-picker__search-input {
+    width: 76px;
+    height: 28px;
+    padding: 0 8px;
+    color: var(--ui-color-content);
+    background: var(--ui-color-surface);
+    border: 1px solid var(--ui-color-border);
+    border-radius: 8px;
+    font-family: var(--font-family);
+    font-size: 13px;
+    text-align: center;
+    -moz-appearance: textfield;
+}
+
+.player-episode-picker__search-input::-webkit-outer-spin-button,
+.player-episode-picker__search-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.player-episode-picker__search-input:focus-visible {
+    outline: 2px solid var(--ui-color-interactive);
+    outline-offset: 1px;
+}
+
+.player-episode-picker__hint {
+    color: var(--ui-color-content-muted);
+    font-size: 12px;
+}
+
+.player-episode-picker__ranges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.picker-range-btn {
+    height: 28px;
+    padding: 0 10px;
+    color: var(--ui-color-content-muted);
+    background: transparent;
+    border: 1px solid var(--ui-color-border);
+    border-radius: 8px;
+    font-family: var(--font-family);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color 140ms ease, border-color 140ms ease, background-color 140ms ease;
+}
+
+.picker-range-btn:hover {
+    color: var(--ui-color-content);
+    border-color: var(--ui-color-border-hover);
+}
+
+.picker-range-btn--active {
+    color: var(--ui-color-page);
+    background: var(--ui-color-interactive);
+    border-color: var(--ui-color-interactive-hover);
+}
+
+.picker-range-btn:focus-visible {
+    outline: 2px solid var(--ui-color-interactive);
+    outline-offset: 2px;
 }
 
 @media (max-width: 480px) {

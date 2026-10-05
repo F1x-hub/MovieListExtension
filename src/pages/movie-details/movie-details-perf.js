@@ -141,7 +141,7 @@
 
         completePlayerPreload() {
             if (!this.trace) return null;
-            const requests = this.trace.requests.filter(request => /^(SEASONVAR|KINOGO|EXFS|RUTUBE)_/.test(request.category));
+            const requests = this.trace.requests.filter(request => /^(SEASONVAR|KINOGO|EXFS|RUTUBE|ANIMEGO)_/.test(request.category));
             const byProvider = requests.reduce((result, request) => {
                 const provider = request.category.split('_')[0];
                 result[provider] = (result[provider] || 0) + 1;

@@ -321,6 +321,18 @@ class BaseParserService {
         return supported.includes(movieType);
     }
 
+    /**
+     * Check whether this parser should be offered for a concrete title.
+     * Defaults to the media-type gate; parsers whose audience is not a type
+     * (for example anime, which providers label as series or films) override it.
+     * @param {Object|null} _movie - Selected movie DTO
+     * @param {string|null} mediaType - Normalized media type, if known
+     * @returns {boolean}
+     */
+    supportsMedia(_movie, mediaType) {
+        return !mediaType || this.supportsType(mediaType);
+    }
+
     isSearchResultCompatible(_result, _movieType) {
         return true;
     }
@@ -391,7 +403,7 @@ class BaseParserService {
      * @returns {Promise<SearchResult|null>}
      */
     getPerfCategory(operation) {
-        const provider = { kinogo: 'KINOGO', exfs: 'EXFS', seasonvar: 'SEASONVAR', rutube: 'RUTUBE' }[this.id];
+        const provider = { kinogo: 'KINOGO', exfs: 'EXFS', seasonvar: 'SEASONVAR', rutube: 'RUTUBE', animego: 'ANIMEGO' }[this.id];
         return provider ? `${provider}_${operation}` : 'OTHER';
     }
 

@@ -225,7 +225,14 @@
                         <div class="player-episode-picker__seasons" id="pickerSeasonsList" role="tablist" aria-label="Сезоны"></div>
                     </div>
                     <div class="player-episode-picker__section">
-                        <div class="player-episode-picker__label" id="pickerEpisodesLabel">Серия</div>
+                        <div class="player-episode-picker__episodes-head">
+                            <div class="player-episode-picker__label" id="pickerEpisodesLabel" aria-live="polite">Серия</div>
+                            <div class="player-episode-picker__search" hidden>
+                                <input class="player-episode-picker__search-input" id="pickerEpisodeSearch" type="number" inputmode="numeric" min="1" placeholder="№" aria-label="Серия по номеру: Enter — открыть" aria-describedby="pickerEpisodeSearchHint">
+                            </div>
+                        </div>
+                        <div class="player-episode-picker__hint" id="pickerEpisodeSearchHint" role="status" aria-live="polite" hidden></div>
+                        <div class="player-episode-picker__ranges" id="pickerEpisodeRanges" role="group" aria-label="Диапазоны серий" hidden></div>
                         <div class="player-episode-picker__episodes" id="pickerEpisodesList" role="group" aria-label="Серии"></div>
                     </div>
                 </div>
@@ -234,6 +241,10 @@
                 <div class="source-toolbar">
                     <span class="source-toolbar__label" id="sourceToolbarLabel">Источник</span>
                     <div class="source-buttons-container" id="sourceButtonsContainer" role="toolbar" aria-label="Источники видео" aria-controls="videoContainer"></div>
+                    <label class="source-toolbar__dub" id="sourceDubControl" hidden>
+                        <span class="source-toolbar__dub-label">Озвучка</span>
+                        <select class="source-toolbar__dub-select" id="sourceDubSelect" aria-controls="videoContainer"></select>
+                    </label>
                     <button type="button" class="torrent-workspace-link" id="torrentWorkspaceBtn" aria-controls="torrentSourcePanel" hidden>Раздачи ↓</button>
                 </div>
                 <div class="player-source-guidance" id="playerSourceGuidance" style="display: none;" role="status" aria-live="polite">
@@ -446,6 +457,8 @@
     <script defer src="../../shared/services/parsers/SeasonvarParser.js"></script>
     <script defer src="../../shared/services/parsers/KinogoParser.js"></script>
     <script defer src="../../shared/services/parsers/RutubeParser.js"></script>
+    <script defer src="../../shared/services/parsers/KodikStreamResolver.js"></script>
+    <script defer src="../../shared/services/parsers/AnimeGoParser.js"></script>
     <script defer src="../../shared/services/parsers/parser-init.js"></script>
     <!-- Playback Controller & Adapters -->
     <script defer src="../../shared/services/player/PlaybackSelection.js"></script>
@@ -455,6 +468,7 @@
     <script defer src="../../shared/services/player/adapters/KinogoAdapter.js"></script>
     <script defer src="../../shared/services/player/adapters/ExFsAdapter.js"></script>
     <script defer src="../../shared/services/player/adapters/RutubeAdapter.js"></script>
+    <script defer src="../../shared/services/player/adapters/AnimeGoAdapter.js"></script>
     <script defer src="../../shared/services/player/PlaybackRuntime.js"></script>
     <script defer src="../../shared/services/player/PlaybackController.js"></script>
     <script defer src="../../shared/services/player/RutubeWatchRoomBridge.js"></script>
