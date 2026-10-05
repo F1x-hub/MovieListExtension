@@ -531,6 +531,10 @@ export const locales = {
                 locked_by_avg_filter: "Sorted by average rating while the rating filter is active"
             },
             loading: "Loading your collection...",
+            live: {
+                new_ratings: "New ratings: {count} · Show",
+                new_badge: "New"
+            },
             results: {
                 loading: "Loading...",
                 count: "Showing {count} of {total} movies",
@@ -1516,6 +1520,10 @@ export const locales = {
                 locked_by_avg_filter: "Сортировка зафиксирована по среднему рейтингу, пока активен фильтр рейтинга"
             },
             loading: "Загрузка коллекции...",
+            live: {
+                new_ratings: "Новые оценки: {count} · Показать",
+                new_badge: "Новое"
+            },
             results: {
                 loading: "Загрузка...",
                 count: "Показано: {count} из {total}",

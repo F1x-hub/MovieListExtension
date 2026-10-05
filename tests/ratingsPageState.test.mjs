@@ -242,6 +242,177 @@ function createPage() {
     assert.equal(page.text('active_filters.rating', { from: '5.0', to: '9.0' }), 'Rating: 5.0 – 9.0');
 }
 
+// --- New ratings arriving while the page is open ---
+
+// L1. A rating write keeps the Ratings page cache (only the popup cache is dropped).
+{
+    const removed = [];
+    const previousChrome = globalThis.chrome;
+    globalThis.chrome = { ...previousChrome, storage: { ...previousChrome.storage, local: {
+        get: async () => { throw new Error('must not read all of chrome.storage.local'); },
+        remove: async keys => { removed.push(keys); }
+    } } };
+    const { default: RatingService } = await import('../src/shared/services/RatingService.js');
+    await new RatingService({ db: null }).invalidateRatingsCache('alice');
+    assert.deepEqual(removed, ['recent_ratings_cache'], 'ratings_cache_{uid} survives a rating write');
+    globalThis.chrome = previousChrome;
+}
+
+function createLivePage() {
+    const page = createPage();
+    page.BATCH_SIZE = 8;
+    page.currentRequestId = 1;
+    page.pendingLiveMovies = new Map();
+    page.recentLocalEdits = new Map();
+    page.liveSeenTimestamps = null;
+    page.liveBaselineMinTs = 0;
+    page.elements = { livePill: makeElement(), livePillText: makeElement() };
+    page.elements.livePill.hidden = true;
+    return page;
+}
+const doc = (id, seconds, extra = {}) => ({ id: String(id), kinopoiskId: id, lastRatingUpdatedAt: { seconds }, ...extra });
+
+// L2. Listener: baseline ignored, fresh ratings queued, slide-ins and own edits skipped.
+{
+    const page = createLivePage();
+    let processed = 0;
+    page.processPendingLiveMovies = () => { processed++; };
+
+    page.handleLiveSnapshot([doc(1, 300), doc(2, 200), doc(3, 100)]);
+    assert.equal(page.pendingLiveMovies.size, 0, 'The first snapshot is the state already on screen');
+
+    page.recentLocalEdits.set('5', Date.now());
+    page.handleLiveSnapshot([doc(4, 400), doc(5, 390), doc(1, 300), doc(2, 200), doc(6, 50)]);
+    assert.deepEqual([...page.pendingLiveMovies.keys()], ['4'], 'Only the genuinely new rating is queued');
+    assert.equal(processed, 1);
+
+    page.handleLiveSnapshot([doc(4, 400), doc(1, 300)]);
+    assert.equal(processed, 1, 'An unchanged snapshot queues nothing');
+    page.handleLiveSnapshot([doc(2, 500), doc(4, 400)]);
+    assert.ok(page.pendingLiveMovies.has('2'), 'A re-rated loaded film is queued again');
+}
+
+// L3. Insert directly at the top of the default list, otherwise show the pill.
+{
+    const page = createLivePage();
+    let applied = 0;
+    page.applyPendingLiveMovies = () => { applied++; };
+    page.pendingLiveMovies.set('7', doc(7, 700));
+
+    globalThis.scrollY = 0;
+    document.hidden = false;
+    page.processPendingLiveMovies();
+    assert.equal(applied, 1, 'At the top of "newest first" the film is inserted directly');
+
+    globalThis.scrollY = 900;
+    page.processPendingLiveMovies();
+    assert.equal(applied, 1, 'Scrolled down: no grid shift');
+    assert.equal(page.elements.livePill.hidden, false, 'The pill appears instead');
+    assert.equal(page.elements.livePillText.textContent, 'New ratings: 1 · Show');
+
+    globalThis.scrollY = 0;
+    page.filters.sort = 'title-asc';
+    page.processPendingLiveMovies();
+    assert.equal(applied, 1, 'Other sorts never reorder on their own');
+    page.filters.sort = 'date-desc';
+
+    document.hidden = true;
+    page.processPendingLiveMovies();
+    assert.equal(applied, 1, 'A hidden tab waits for the user to come back');
+    document.hidden = false;
+}
+
+// L4. Applying live films merges them by ID, marks them, and keeps the cache current.
+{
+    const page = createLivePage();
+    page.movies = [{ movieId: 1, movie: { kinopoiskId: 1, name: 'Old' } }];
+    page.pendingLiveMovies.set('1', doc(1, 900));
+    page.pendingLiveMovies.set('9', doc(9, 950));
+    page.liveSeenTimestamps = new Map();
+    const marked = [];
+    let saved = null;
+    globalThis.firebaseManager.getMovieCacheService = () => ({ mergeMovieMetadata: (primary, fallback) => ({ ...fallback, ...primary }) });
+    globalThis.firebaseManager.getRatingService = () => ({});
+    page.enrichMoviePage = async movies => movies.map(m => ({
+        movieId: Number(m.kinopoiskId), movie: { ...m, name: `Film ${m.kinopoiskId}` }, allRaters: []
+    }));
+    page.extractAndPopulateUsers = () => {};
+    page.populateYearFilter = () => {};
+    page.populateGenreFilter = () => {};
+    page.applyFilters = () => { page.filteredMovies = [...page.movies]; };
+    page.saveRatingsToCache = items => { saved = items; };
+    page.highlightMovies = keys => marked.push(...keys);
+
+    await page.applyPendingLiveMovies();
+    assert.deepEqual(page.movies.map(m => m.movieId).sort(), [1, 9], 'Existing film replaced, new film added once');
+    assert.equal(page.movies.find(m => m.movieId === 1).movie.name, 'Film 1');
+    assert.deepEqual(marked.sort(), ['1', '9'], 'Both films get the "new" mark');
+    assert.ok(saved, 'Default first screen cache is refreshed');
+    assert.equal(page.pendingLiveMovies.size, 0);
+    assert.equal(page.elements.livePill.hidden, true);
+
+    // A server page that returns a live-inserted film again does not duplicate it
+    page.mergeMoviesById([{ movieId: 9, movie: { kinopoiskId: 9 } }]);
+    assert.equal(page.movies.filter(m => m.movieId === 9).length, 1);
+}
+
+// L5. Returning to the page re-reads the first page and queues only real changes.
+{
+    const page = createLivePage();
+    page.movies = [
+        { movieId: 1, ratingsCount: 2, movie: { kinopoiskId: 1, lastRatingUpdatedAt: { seconds: 100 } } },
+        { movieId: 2, ratingsCount: 1, movie: { kinopoiskId: 2, lastRatingUpdatedAt: { seconds: 100 } } },
+        { movieId: 3, ratingsCount: 1, movie: { kinopoiskId: 3, lastRatingUpdatedAt: { seconds: 100 } } }
+    ];
+    page.recentLocalEdits.set('3', Date.now());
+    page.processPendingLiveMovies = () => {};
+    globalThis.firebaseManager.getMovieCacheService = () => ({
+        getMoviesByAvgRating: async () => ({ movies: [
+            doc(8, 400, { ratingsCount: 1 }), // new film
+            doc(1, 100, { ratingsCount: 2 }), // unchanged
+            doc(2, 300, { ratingsCount: 2 }), // re-rated by someone
+            doc(3, 350, { ratingsCount: 1 }) // the user's own edit from this page
+        ] })
+    });
+    await page.revalidateFirstPage();
+    assert.deepEqual([...page.pendingLiveMovies.keys()].sort(), ['2', '8']);
+}
+
+// L6. A comment-only edit keeps the card's position; a new score moves it.
+{
+    const makeSavePage = () => {
+        const page = createLivePage();
+        page.currentUser = { uid: 'alice' };
+        const createdAt = new Date('2026-01-01T00:00:00Z');
+        page.movies = [{
+            movieId: 5, rating: 7, myRating: 7, myComment: 'ok', createdAt,
+            allRaters: [{ userId: 'alice', rating: 7, comment: 'ok' }],
+            movie: { kinopoiskId: 5, name: 'Film', lastRatingUpdatedAt: createdAt }
+        }];
+        page.selectedMovie = page.movies[0].movie;
+        page.elements = { ...page.elements, ratingSlider: { value: '7' }, ratingComment: { value: 'better words' }, ratingModal: { style: {} } };
+        page.applyFilters = () => {};
+        return { page, createdAt };
+    };
+    globalThis.Utils.showToast = () => {};
+    globalThis.firebaseManager.getRatingService = () => ({ addOrUpdateRating: async () => ({ id: 'alice_5' }) });
+    globalThis.firebaseManager.getUserService = () => ({ getUserProfile: async () => ({ displayName: 'Alice' }) });
+
+    const commentOnly = makeSavePage();
+    await commentOnly.page.saveRating();
+    const item = commentOnly.page.movies[0];
+    assert.equal(item.myComment, 'better words');
+    assert.equal(item.createdAt, commentOnly.createdAt, 'Comment-only edit keeps the sort date');
+    assert.equal(item.movie.lastRatingUpdatedAt, commentOnly.createdAt);
+    assert.equal(commentOnly.page.recentLocalEdits.has('5'), false, 'The server will not report a comment-only edit');
+
+    const newScore = makeSavePage();
+    newScore.page.elements.ratingSlider.value = '9';
+    await newScore.page.saveRating();
+    assert.notEqual(newScore.page.movies[0].createdAt, newScore.createdAt, 'A new score moves the card to the top');
+    assert.equal(newScore.page.recentLocalEdits.has('5'), true, 'Its listener echo will not be marked as new');
+}
+
 // 3. Init restores saved filters before the cached render, which persists filters.
 {
     const source = fs.readFileSync(path.join(projectRoot, 'src/pages/ratings/ratings.js'), 'utf8');
