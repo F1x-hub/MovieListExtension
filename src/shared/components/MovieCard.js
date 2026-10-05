@@ -231,10 +231,9 @@ class MovieCard {
         if (isSearchVariant) {
             card.innerHTML = `
                 <a href="${detailsUrl}" class="mc-poster-container ${isLoading ? 'mc-skeleton' : ''}" data-action="view-details"${canonicalMovieId ? ` data-movie-id="${canonicalMovieId}"` : ''} ${movie.tmdbId ? `data-tmdb-id="${movie.tmdbId}"` : ''} data-movie-title="${this.escapeHtml(title)}">
-                    <img src="${posterUrl}" 
+                    <img src="${this.escapeHtml(posterUrl)}"
                          alt="${this.escapeHtml(title)}" 
-                         class="mc-poster"${posterLoadingAttributes}${posterDeferredAttributes}
-                         onerror="Utils.handlePosterError(this)">
+                         class="mc-poster"${posterLoadingAttributes}${posterDeferredAttributes}>
                     <div class="mc-poster-overlay"></div>
                     
                     <div class="mc-badges-overlay" aria-label="Рейтинги">${this.renderCompactRatingBadges({ kpRating: kinopoiskRating, imdbRating, userRating: rating, showSkeleton: showRatingSkeleton })}</div>
@@ -393,10 +392,9 @@ class MovieCard {
             // Build standard card HTML
             card.innerHTML = `
             <a href="${detailsUrl}" class="mc-poster-container ${isLoading ? 'mc-skeleton' : ''}" data-action="view-details"${canonicalMovieId ? ` data-movie-id="${canonicalMovieId}"` : ''} ${movie.tmdbId ? `data-tmdb-id="${movie.tmdbId}"` : ''} data-movie-title="${this.escapeHtml(title)}">
-                <img src="${posterUrl}" 
+                <img src="${this.escapeHtml(posterUrl)}"
                      alt="${this.escapeHtml(title)}" 
-                     class="mc-poster"${posterLoadingAttributes}${posterDeferredAttributes}
-                     onerror="Utils.handlePosterError(this)">
+                     class="mc-poster"${posterLoadingAttributes}${posterDeferredAttributes}>
                 ${animeStyle ? '<div class="mc-poster-overlay"></div>' : ''}
             </a>
             
@@ -623,42 +621,41 @@ class MovieCard {
                 </div>
                 ` : `
                 <div class="mc-ratings-row mc-ratings-unreleased">
-                    <div class="mc-unreleased-badge" title="${(Number.isFinite(parseInt(year, 10)) && parseInt(year, 10) >= new Date().getFullYear()) ? 'Фильм ещё не вышел в прокат' : 'Оценки пока отсутствуют'}">
+                    <div class="mc-unreleased-badge" title="${this.escapeHtml((Number.isFinite(parseInt(year, 10)) && parseInt(year, 10) >= new Date().getFullYear()) ? this.t('not_released_title', 'Not released yet') : this.t('no_ratings_title', 'No ratings yet'))}">
                         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mc-unreleased-icon"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                        <span>${(Number.isFinite(parseInt(year, 10)) && parseInt(year, 10) >= new Date().getFullYear()) ? 'Скоро в кино' : (window.i18n?.get('movie_card.no_ratings') || 'Ожидает оценок')}</span>
+                        <span>${this.escapeHtml((Number.isFinite(parseInt(year, 10)) && parseInt(year, 10) >= new Date().getFullYear()) ? this.t('coming_soon', 'Coming soon') : this.t('no_ratings', 'Awaiting ratings'))}</span>
                     </div>
                 </div>
                 `}
                 
                 ${showUserInfo && userId ? `
-                    <div class="mc-user-info clickable-username" data-user-id="${userId}" title="Перейти в профиль">
-                        <img src="${options.userInfoLoading ? 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==' : (userPhoto || '/src/shared/assets/icons/app/icon48.png')}" 
-                             alt="${this.escapeHtml(userDisplayName || userEmail || 'User')}" 
-                             class="mc-user-avatar ${options.userInfoLoading ? 'mc-skeleton' : ''}" 
-                             decoding="async"
-                             onerror="Utils.handlePosterError(this)">
+                    <div class="mc-user-info clickable-username" data-user-id="${this.escapeHtml(userId)}" title="${this.escapeHtml(this.t('open_profile', 'Open profile'))}">
+                        <img src="${options.userInfoLoading ? 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==' : this.escapeHtml(this.safeImageUrl(userPhoto))}"
+                             alt="${this.escapeHtml(userDisplayName || userEmail || this.t('user_fallback', 'User'))}"
+                             class="mc-user-avatar ${options.userInfoLoading ? 'mc-skeleton' : ''}"
+                             decoding="async">
                         <span class="mc-user-name ${options.userInfoLoading ? 'mc-skeleton' : ''}">
-                            ${this.escapeHtml(userDisplayName || userEmail?.split('@')[0] || 'User')}
+                            ${this.escapeHtml(userDisplayName || userEmail?.split('@')[0] || this.t('user_fallback', 'User'))}
                         </span>
                         ${rating > 0 ? `<span class="mc-user-rating"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> ${rating}</span>` : ''}
                         
                         ${data.allRaters && data.allRaters.length > 1 ? `
-                            <span class="mc-raters-count">+${data.allRaters.length - 1} ещё</span>
+                            <span class="mc-raters-count">${this.escapeHtml(this.t('more_raters', '+{count} more').replace('{count}', String(data.allRaters.length - 1)))}</span>
                             <div class="mc-raters-popup">
                                 <div class="mc-raters-popup-inner">
                                 ${data.allRaters.map(r => {
                                     const raterDate = r.createdAt?.seconds ? new Date(r.createdAt.seconds * 1000) : new Date(r.createdAt || Date.now());
-                                    const dateStr = raterDate.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                                    const dateStr = Number.isNaN(raterDate.getTime()) ? '' : raterDate.toLocaleDateString(this.dateLocale(), { day: '2-digit', month: '2-digit', year: 'numeric' });
                                     return `
-                                    <div class="mc-rater-row clickable-rater" data-user-id="${r.userId}">
-                                        <img src="${r.userPhoto || '/src/shared/assets/icons/app/icon48.png'}" class="mc-rater-avatar" onerror="Utils.handlePosterError(this)">
+                                    <div class="mc-rater-row clickable-rater" data-user-id="${this.escapeHtml(r.userId)}">
+                                        <img src="${this.escapeHtml(this.safeImageUrl(r.userPhoto))}" alt="" class="mc-rater-avatar" decoding="async">
                                         <div class="mc-rater-details">
-                                            <span class="mc-rater-name">${this.escapeHtml(r.userDisplayName || r.userEmail?.split('@')[0] || 'User')}</span>
+                                            <span class="mc-rater-name">${this.escapeHtml(r.userDisplayName || r.userEmail?.split('@')[0] || this.t('user_fallback', 'User'))}</span>
                                             <span class="mc-rater-date">${dateStr}</span>
                                         </div>
                                         <span class="mc-rater-score">
                                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-                                            ${r.rating}
+                                            ${this.escapeHtml(r.rating)}
                                         </span>
                                     </div>
                                     `;
@@ -679,8 +676,55 @@ class MovieCard {
 
         // Attach event listeners
         this.attachEventListeners(card);
+        // CSP blocks inline onerror handlers, so image fallbacks are bound here
+        this.bindImageFallbacks(card);
 
         return card;
+    }
+
+    /** Localized movie card text with an English fallback. */
+    static t(key, fallback = '') {
+        const fullKey = `movie_card.${key}`;
+        const value = window.i18n?.get?.(fullKey);
+        return value && value !== fullKey ? value : fallback;
+    }
+
+    static dateLocale() {
+        return window.i18n?.currentLocale === 'en' ? 'en-US' : 'ru-RU';
+    }
+
+    /**
+     * Only http(s), inline image data and extension-relative paths may be used as an
+     * image source; user profile fields such as photoURL are otherwise untrusted.
+     */
+    static safeImageUrl(url, fallback = '/src/shared/assets/icons/app/icon48.png') {
+        const value = typeof url === 'string' ? url.trim() : '';
+        if (!value) return fallback;
+        if (/^(?:https?|chrome-extension):\/\//i.test(value) || /^data:image\/(?:png|jpe?g|gif|webp);base64,/i.test(value)) return value;
+        if (value.startsWith('/') && !value.startsWith('//')) return value;
+        return fallback;
+    }
+
+    /**
+     * Capture-phase image error handler on a card (or any container): posters fall
+     * back to the app poster, avatars to the app icon. Bound once per element, it
+     * also covers images whose markup is replaced later (e.g. the user info row).
+     */
+    static bindImageFallbacks(root) {
+        if (!root || typeof root.addEventListener !== 'function' || root.dataset?.imageFallbacksBound === 'true') return;
+        if (root.dataset) root.dataset.imageFallbacksBound = 'true';
+        root.addEventListener('error', (event) => {
+            const img = event.target;
+            if (img?.tagName !== 'IMG' || img.dataset?.fallbackApplied === 'true') return;
+            const isAvatar = img.classList.contains('mc-user-avatar') || img.classList.contains('mc-rater-avatar');
+            if (!isAvatar && !img.classList.contains('mc-poster')) return;
+            img.dataset.fallbackApplied = 'true';
+            if (isAvatar) {
+                img.src = '/src/shared/assets/icons/app/icon48.png';
+            } else if (typeof Utils !== 'undefined' && Utils.handlePosterError) {
+                Utils.handlePosterError(img);
+            }
+        }, true);
     }
 
     /**
@@ -1009,13 +1053,9 @@ class MovieCard {
      */
     static escapeHtml(text) {
         if (text === null || text === undefined) return '';
-        const str = String(text);
-        if (typeof document !== 'undefined' && document.createElement) {
-            const div = document.createElement('div');
-            div.textContent = str;
-            return div.innerHTML;
-        }
-        return str
+        // String replacement in every environment: the textContent/innerHTML trick
+        // leaves quotes unescaped, which broke out of attribute values.
+        return String(text)
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')

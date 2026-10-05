@@ -202,28 +202,44 @@ class UserService {
      * @returns {Promise<Array>} - Array of user profiles
      */
     async getUserProfilesByIds(userIds) {
-        try {
-            const profiles = [];
-            const batchSize = 10; // Firestore 'in' query limit
-            
-            for (let i = 0; i < userIds.length; i += batchSize) {
-                const batch = userIds.slice(i, i + batchSize);
-                // Use documentId() which indexs by the document ID directly, 
-                // more reliable than querying a 'userId' field even if it exists.
-                const query = this.db.collection(this.collection)
-                    .where(firebase.firestore.FieldPath.documentId(), 'in', batch);
-                
-                const results = await query.get();
-                results.forEach(doc => {
-                    profiles.push({ id: doc.id, ...doc.data() });
-                });
-            }
-            
-            return profiles;
-        } catch (error) {
-            console.error('Error getting user profiles by IDs:', error);
-            return [];
+        return (await this.getUserProfilesByIdsDetailed(userIds)).profiles;
+    }
+
+    /**
+     * Like getUserProfilesByIds(), but reports which IDs could not be looked up.
+     * Chunks of 10 IDs (the Firestore 'in' limit) run in parallel, and one failed
+     * chunk no longer discards the profiles the other chunks returned.
+     * @param {Array<string>} userIds
+     * @returns {Promise<{profiles: Array<Object>, failedIds: Array<string>}>}
+     */
+    async getUserProfilesByIdsDetailed(userIds) {
+        const ids = [...new Set((userIds || []).map(id => String(id || '').trim()).filter(Boolean))];
+        const batchSize = 10;
+        const batches = [];
+        for (let i = 0; i < ids.length; i += batchSize) {
+            batches.push(ids.slice(i, i + batchSize));
         }
+
+        const results = await Promise.all(batches.map(async batch => {
+            try {
+                // documentId() indexes by the document ID directly, more reliable
+                // than querying a 'userId' field even if it exists.
+                const snapshot = await this.db.collection(this.collection)
+                    .where(firebase.firestore.FieldPath.documentId(), 'in', batch)
+                    .get();
+                const profiles = [];
+                snapshot.forEach(doc => profiles.push({ id: doc.id, ...doc.data() }));
+                return { profiles, failedIds: [] };
+            } catch (error) {
+                console.error('Error getting user profiles by IDs:', error);
+                return { profiles: [], failedIds: batch };
+            }
+        }));
+
+        return {
+            profiles: results.flatMap(result => result.profiles),
+            failedIds: results.flatMap(result => result.failedIds)
+        };
     }
 
     /**

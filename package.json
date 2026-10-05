@@ -28,7 +28,7 @@
   "test:catalog-navigation": "node tests/catalogNavigationDependencies.test.js",
   "test:kinopoisk-similar": "node tests/kinopoiskSimilarParser.test.js",
   "test:visual-design": "node tests/visualDesignContract.test.js",
-    "test:ratings-page": "node tests/ratingsPageContract.test.js && node tests/ratingsPageAuditFixes.test.cjs && node tests/ratingsPageState.test.mjs",
+    "test:ratings-page": "node tests/ratingsPageContract.test.js && node tests/ratingsPageAuditFixes.test.cjs && node tests/ratingsPageState.test.mjs && node tests/ratingsPageHardening.test.cjs",
     "test:media-player": "node tests/mediaPlayerIntegrationContract.test.js && node tests/movieDetailsTorrentLibrary.test.js && node tests/torrentSharedPlayer.test.cjs && node tests/parserStreamFallback.test.cjs && node tests/playerProgressScope.test.cjs && node tests/playerQualityLabel.test.cjs && npm run test:player-preview",
     "test:player-preview": "node tests/providerPreviewBridge.test.cjs && node tests/playerHoverPreview.test.cjs",
     "test:update-service": "node tests/updateService.test.js && node tests/updateServicePlayback.test.js",

@@ -41,7 +41,12 @@ class RatingsPageManager {
         this.lastRevalidateAt = 0;
         this.cacheSnapshot = null; // { timestamp, ids } of the cached first screen
         this.nextBatchPromise = null;
-        this.BATCH_SIZE = 8;
+        this.BATCH_SIZE = 12;
+        // Client-only sorts read every page: larger pages, one render at the end
+        this.CLIENT_SORT_BATCH_SIZE = 40;
+        this.bulkLoading = false;
+        this.isSavingRating = false;
+        this.modalReturnFocus = null;
         this._moviesLoadTriggered = false;
         this.init();
     }
@@ -220,42 +225,63 @@ class RatingsPageManager {
         });
     }
 
+    /**
+     * Custom filter dropdowns (listbox pattern). Triggers are real buttons, so mouse,
+     * Enter and Space all open them through `click`; arrow keys move between options,
+     * Enter/Space select, Escape closes and returns focus to the trigger. Option
+     * clicks are delegated on the list, so rebuilt option lists need no listeners.
+     */
     initializeCustomDropdowns() {
         this.dropdowns = {};
         const dropdownElements = document.querySelectorAll('.custom-dropdown');
-        
+
         dropdownElements.forEach(dropdown => {
             const dropdownId = dropdown.getAttribute('data-dropdown');
             const trigger = dropdown.querySelector('.dropdown-trigger');
             const list = dropdown.querySelector('.dropdown-list');
             const hiddenSelect = dropdown.querySelector('.filter-select-hidden');
-            const options = list.querySelectorAll('.dropdown-option');
-            
+
             if (!dropdownId || !trigger || !list || !hiddenSelect) return;
-            
+
             this.dropdowns[dropdownId] = {
                 element: dropdown,
                 trigger: trigger,
                 list: list,
                 hiddenSelect: hiddenSelect,
-                isOpen: false
+                isOpen: false,
+                optionsKey: null
             };
-            
-            trigger.addEventListener('mousedown', (e) => {
-                e.stopPropagation();
-                this.toggleDropdown(dropdownId);
+
+            if (!list.id) list.id = `${dropdownId}List`;
+            list.setAttribute('role', 'listbox');
+            list.tabIndex = -1;
+            trigger.setAttribute('aria-haspopup', 'listbox');
+            trigger.setAttribute('aria-controls', list.id);
+            trigger.setAttribute('aria-expanded', 'false');
+            this.decorateDropdownOptions(dropdownId);
+
+            trigger.addEventListener('click', () => this.toggleDropdown(dropdownId, { focusOption: true }));
+            trigger.addEventListener('keydown', (e) => {
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    this.openDropdown(dropdownId, { focusOption: true });
+                }
             });
-            
-            options.forEach(option => {
-                option.addEventListener('mousedown', (e) => {
-                    e.stopPropagation();
-                    const value = option.getAttribute('data-value');
-                    const text = option.textContent.trim();
-                    this.selectDropdownOption(dropdownId, value, text);
-                });
+
+            list.addEventListener('click', (e) => {
+                const option = e.target.closest('.dropdown-option');
+                if (!option || !list.contains(option)) return;
+                this.selectDropdownOption(dropdownId, option.getAttribute('data-value') ?? '', option.textContent.trim());
+                trigger.focus();
+            });
+            list.addEventListener('keydown', (e) => this.handleDropdownKeydown(dropdownId, e));
+
+            // Closes when focus leaves the dropdown (Tab, or a click elsewhere)
+            dropdown.addEventListener('focusout', (e) => {
+                if (!dropdown.contains(e.relatedTarget)) this.closeDropdown(dropdownId);
             });
         });
-        
+
         document.addEventListener('mousedown', (e) => {
             if (!e.target.closest('.custom-dropdown')) {
                 this.closeAllDropdowns();
@@ -263,81 +289,181 @@ class RatingsPageManager {
         });
     }
 
-    toggleDropdown(dropdownId) {
+    /** ARIA roles and selection state for the current options of a dropdown. */
+    decorateDropdownOptions(dropdownId) {
+        const dropdown = this.dropdowns?.[dropdownId];
+        if (!dropdown) return;
+        const selectedValue = dropdown.hiddenSelect?.value ?? '';
+        dropdown.list.querySelectorAll('.dropdown-option').forEach(option => {
+            const isSelected = (option.getAttribute('data-value') ?? '') === selectedValue;
+            option.setAttribute('role', 'option');
+            option.tabIndex = -1;
+            option.setAttribute('aria-selected', String(isSelected));
+            option.classList.toggle('selected', isSelected);
+        });
+    }
+
+    getDropdownOptions(dropdownId) {
+        const dropdown = this.dropdowns?.[dropdownId];
+        return dropdown ? Array.from(dropdown.list.querySelectorAll('.dropdown-option')) : [];
+    }
+
+    handleDropdownKeydown(dropdownId, e) {
         const dropdown = this.dropdowns[dropdownId];
         if (!dropdown) return;
-        
-        const isCurrentlyOpen = dropdown.isOpen;
-        
-        this.closeAllDropdowns();
-        
-        if (!isCurrentlyOpen) {
+        const options = this.getDropdownOptions(dropdownId);
+        const index = options.indexOf(document.activeElement);
+
+        switch (e.key) {
+            case 'ArrowDown':
+                e.preventDefault();
+                options[Math.min(options.length - 1, index + 1)]?.focus();
+                break;
+            case 'ArrowUp':
+                e.preventDefault();
+                options[Math.max(0, index - 1)]?.focus();
+                break;
+            case 'Home':
+                e.preventDefault();
+                options[0]?.focus();
+                break;
+            case 'End':
+                e.preventDefault();
+                options[options.length - 1]?.focus();
+                break;
+            case 'Enter':
+            case ' ':
+                if (index > -1) {
+                    e.preventDefault();
+                    const option = options[index];
+                    this.selectDropdownOption(dropdownId, option.getAttribute('data-value') ?? '', option.textContent.trim());
+                    dropdown.trigger.focus();
+                }
+                break;
+            case 'Escape':
+                e.preventDefault();
+                this.closeDropdown(dropdownId);
+                dropdown.trigger.focus();
+                break;
+            case 'Tab':
+                this.closeDropdown(dropdownId);
+                break;
+        }
+    }
+
+    openDropdown(dropdownId, { focusOption = false } = {}) {
+        const dropdown = this.dropdowns[dropdownId];
+        if (!dropdown || dropdown.trigger.disabled) return;
+        if (!dropdown.isOpen) {
+            this.closeAllDropdowns();
             dropdown.element.classList.add('open');
+            dropdown.trigger.setAttribute('aria-expanded', 'true');
             dropdown.isOpen = true;
+        }
+        if (focusOption) {
+            const options = this.getDropdownOptions(dropdownId);
+            (options.find(option => option.classList.contains('selected')) || options[0])?.focus();
+        }
+    }
+
+    closeDropdown(dropdownId) {
+        const dropdown = this.dropdowns?.[dropdownId];
+        if (!dropdown || !dropdown.isOpen) return;
+        dropdown.element.classList.remove('open');
+        dropdown.trigger.setAttribute('aria-expanded', 'false');
+        dropdown.isOpen = false;
+    }
+
+    toggleDropdown(dropdownId, options = {}) {
+        const dropdown = this.dropdowns[dropdownId];
+        if (!dropdown) return;
+        if (dropdown.isOpen) {
+            this.closeDropdown(dropdownId);
+        } else {
+            this.openDropdown(dropdownId, options);
         }
     }
 
     closeAllDropdowns() {
-        Object.keys(this.dropdowns).forEach(dropdownId => {
-            const dropdown = this.dropdowns[dropdownId];
-            if (dropdown && dropdown.isOpen) {
-                dropdown.element.classList.remove('open');
-                dropdown.isOpen = false;
-            }
-        });
+        Object.keys(this.dropdowns || {}).forEach(dropdownId => this.closeDropdown(dropdownId));
     }
 
     selectDropdownOption(dropdownId, value, text) {
         const dropdown = this.dropdowns[dropdownId];
         if (!dropdown) return;
-        
+
         const valueElement = dropdown.trigger.querySelector('.dropdown-value');
         if (valueElement) {
             valueElement.textContent = text;
         }
-        
+
         if (dropdown.hiddenSelect) {
             dropdown.hiddenSelect.value = value;
+            this.decorateDropdownOptions(dropdownId);
             const changeEvent = new Event('change', { bubbles: true });
             dropdown.hiddenSelect.dispatchEvent(changeEvent);
         }
-        
-        const options = dropdown.list.querySelectorAll('.dropdown-option');
-        options.forEach(option => {
-            option.classList.remove('selected');
-            if (option.getAttribute('data-value') === value) {
-                option.classList.add('selected');
-            }
-        });
-        
+
         this.closeAllDropdowns();
     }
 
     updateDropdownValue(dropdownId, value) {
-        const dropdown = this.dropdowns[dropdownId];
+        const dropdown = this.dropdowns?.[dropdownId];
         if (!dropdown) return;
-        
-        const options = dropdown.list.querySelectorAll('.dropdown-option');
-        let selectedText = '';
-        
-        options.forEach(option => {
-            option.classList.remove('selected');
-            if (option.getAttribute('data-value') === value) {
-                option.classList.add('selected');
-                selectedText = option.textContent.trim();
-            }
-        });
-        
-        if (selectedText) {
+
+        const option = this.getDropdownOptions(dropdownId)
+            .find(item => (item.getAttribute('data-value') ?? '') === value);
+        if (option) {
             const valueElement = dropdown.trigger.querySelector('.dropdown-value');
             if (valueElement) {
-                valueElement.textContent = selectedText;
+                valueElement.textContent = option.textContent.trim();
             }
         }
-        
+
         if (dropdown.hiddenSelect) {
             dropdown.hiddenSelect.value = value;
         }
+        this.decorateDropdownOptions(dropdownId);
+    }
+
+    /**
+     * Rebuild a filter's hidden <select> and its custom option list. Skipped when the
+     * values are unchanged, which is the common case for every loaded page.
+     */
+    setDropdownOptions(dropdownId, selectElement, allLabel, items) {
+        const dropdown = this.dropdowns?.[dropdownId];
+        const optionsKey = JSON.stringify([allLabel, ...items.map(item => [item.value, item.label])]);
+        if (dropdown && dropdown.optionsKey === optionsKey) return false;
+        if (dropdown) dropdown.optionsKey = optionsKey;
+
+        if (selectElement) {
+            const createSelectOption = (value, label) => {
+                const option = document.createElement('option');
+                option.value = value;
+                option.textContent = label;
+                return option;
+            };
+            selectElement.innerHTML = '';
+            selectElement.appendChild(createSelectOption('', allLabel));
+            items.forEach(item => selectElement.appendChild(createSelectOption(item.value, item.label)));
+        }
+
+        if (dropdown) {
+            const createOption = (value, label) => {
+                const option = document.createElement('div');
+                option.className = 'dropdown-option';
+                option.setAttribute('data-value', value);
+                option.textContent = label;
+                return option;
+            };
+            const fragment = document.createDocumentFragment();
+            fragment.appendChild(createOption('', allLabel));
+            items.forEach(item => fragment.appendChild(createOption(item.value, item.label)));
+            dropdown.list.innerHTML = '';
+            dropdown.list.appendChild(fragment);
+            this.decorateDropdownOptions(dropdownId);
+        }
+        return true;
     }
 
     setupEventListeners() {
@@ -394,10 +520,11 @@ class RatingsPageManager {
             this.loadAllForClientSort();
         });
         
-        this.elements.clearFiltersBtn?.addEventListener('mousedown', () => this.clearFilters());
+        // `click` (not mousedown) so every control also works from the keyboard
+        this.elements.clearFiltersBtn?.addEventListener('click', () => this.clearFilters());
         
         // Active Filter Tags Click (Event Delegation)
-        this.elements.activeFiltersList?.addEventListener('mousedown', (e) => {
+        this.elements.activeFiltersList?.addEventListener('click', (e) => {
             const removeBtn = e.target.closest('.remove-filter');
             if (removeBtn) {
                 const filterType = removeBtn.dataset.filterType;
@@ -406,10 +533,10 @@ class RatingsPageManager {
         });
         
         // Toggle Filters
-        this.elements.toggleFiltersBtn?.addEventListener('mousedown', () => this.toggleFilters());
+        this.elements.toggleFiltersBtn?.addEventListener('click', () => this.toggleFilters());
         
         // Retry button
-        this.elements.retryBtn?.addEventListener('mousedown', () => this.loadMovies());
+        this.elements.retryBtn?.addEventListener('click', () => this.loadMovies('userAction'));
         
         // Empty state: open Search (inline handlers are blocked by the extension CSP)
         this.elements.emptyStateSearchBtn?.addEventListener('click', () => {
@@ -442,7 +569,7 @@ class RatingsPageManager {
         window.addEventListener('pagehide', () => this.stopLiveUpdates());
 
         // Modal close buttons
-        this.elements.ratingModalClose?.addEventListener('mousedown', () => this.closeRatingModal());
+        this.elements.ratingModalClose?.addEventListener('click', () => this.closeRatingModal());
         
         // Rating modal
         this.elements.ratingSlider?.addEventListener('input', (e) => {
@@ -454,8 +581,15 @@ class RatingsPageManager {
             this.elements.charCount.textContent = count;
         });
         
-        this.elements.saveRatingBtn?.addEventListener('mousedown', () => this.saveRating());
-        this.elements.cancelRatingBtn?.addEventListener('mousedown', () => this.closeRatingModal());
+        this.elements.saveRatingBtn?.addEventListener('click', () => this.saveRating());
+        this.elements.cancelRatingBtn?.addEventListener('click', () => this.closeRatingModal());
+        // Escape closes the dialog; Tab stays inside it while it is open
+        this.elements.ratingModal?.addEventListener('keydown', (e) => this.handleRatingModalKeydown(e));
+        // Enter in the form saves instead of submitting the page
+        document.getElementById('ratingForm')?.addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.saveRating();
+        });
         
         // Close modals on background click
         
@@ -533,11 +667,9 @@ class RatingsPageManager {
 
     ensureInitialLoad(callerContext = 'unspecified') {
         if (this._moviesLoadTriggered) {
-            console.log(`[RatingsPage] Startup loadMovies already triggered once, skipping duplicate call from: ${callerContext}`);
             return;
         }
         if (!this.currentUser) {
-            console.log(`[RatingsPage] Cannot load movies yet, no authenticated user (caller: ${callerContext})`);
             return;
         }
         this._moviesLoadTriggered = true;
@@ -559,7 +691,6 @@ class RatingsPageManager {
             const cache = result[cacheKey];
             
             if (cache && cache.ratings) {
-                console.log('RatingsPage: Loaded ratings from cache');
                 
                 // Restore rater profiles so cached cards render names/avatars instead of skeletons
                 this.restoreCachedProfiles(cache.profiles);
@@ -680,7 +811,6 @@ class RatingsPageManager {
             };
             
             await chrome.storage.local.set({ [cacheKey]: cacheData });
-            console.log('RatingsPage: Saved ratings to cache');
         } catch (e) {
             console.warn('RatingsPage: Failed to save cache', e);
         }
@@ -688,12 +818,10 @@ class RatingsPageManager {
 
     async loadMovies(callerContext = 'unspecified') {
         if (this.isLoading && this.activeLoadPromise && callerContext !== 'filterChange' && callerContext !== 'userAction') {
-            console.log(`[loadMovies] Reusing active in-flight request (caller: ${callerContext})`);
             return this.activeLoadPromise;
         }
 
         const requestId = ++this.currentRequestId;
-        console.log(`[loadMovies #${requestId}] Initiated by: ${callerContext}`);
 
         this.activeLoadPromise = (async () => {
             const isBackgroundUpdate = this.movies.length > 0;
@@ -722,7 +850,12 @@ class RatingsPageManager {
                 if (this.isLoading && this.currentRequestId === requestId) {
                     console.warn('Loading timeout - forcing completion');
                     this.isLoading = false;
-                    this.page.showError(this.text('errors.timeout'));
+                    if (isBackgroundUpdate && this.movies.length > 0) {
+                        // Cards from the cache or an earlier load stay usable
+                        if (typeof Utils !== 'undefined') Utils.showToast(this.text('errors.refresh_timeout'), 'warning');
+                    } else {
+                        this.page.showError(this.text('errors.timeout'));
+                    }
                 }
             }, 30000);
             
@@ -743,7 +876,6 @@ class RatingsPageManager {
                 });
 
                 if (this.currentRequestId !== requestId) {
-                    console.log(`[loadMovies] Outdated request ${requestId} ignored (current is ${this.currentRequestId}).`);
                     clearTimeout(loadingTimeout);
                     return;
                 }
@@ -770,7 +902,6 @@ class RatingsPageManager {
                 const enrichedMovies = await this.enrichMoviePage(pagedMovies, ratingService, { refreshProfiles: true });
 
                 if (this.currentRequestId !== requestId) {
-                    console.log(`[loadMovies] Outdated request ${requestId} after enrichment ignored (current is ${this.currentRequestId}).`);
                     clearTimeout(loadingTimeout);
                     return;
                 }
@@ -807,7 +938,6 @@ class RatingsPageManager {
                 this.loadAllForClientSort();
             } catch (error) {
                 if (this.currentRequestId !== requestId) {
-                    console.log(`[loadMovies] Outdated request ${requestId} error ignored.`);
                     clearTimeout(loadingTimeout);
                     return;
                 }
@@ -865,18 +995,31 @@ class RatingsPageManager {
         return { sortBy: 'date', sortDir: 'desc', clientOnly: true };
     }
 
-    /** Load the remaining pages when the active sort is applied on the client only. */
+    /**
+     * Load the remaining pages when the active sort is applied on the client only.
+     * Pages are read CLIENT_SORT_BATCH_SIZE at a time and the list is rendered once
+     * at the end (progress is shown in the results line), instead of re-rendering
+     * and rebuilding every filter after each small page.
+     */
     async loadAllForClientSort() {
         if (this.loadAllPromise) return this.loadAllPromise;
+        if (!this.hasMore || !this.getServerSortParams().clientOnly) return;
 
         this.loadAllPromise = (async () => {
             const requestId = this.currentRequestId;
-            while (this.hasMore && this.getServerSortParams().clientOnly && this.currentRequestId === requestId) {
-                const cursorBefore = this.lastMovieDoc;
-                await this.loadNextBatch();
-                // Stop if a batch failed or made no progress instead of retrying forever
-                if (this.lastMovieDoc === cursorBefore) break;
+            this.bulkLoading = true;
+            try {
+                while (this.hasMore && this.getServerSortParams().clientOnly && this.currentRequestId === requestId) {
+                    const cursorBefore = this.lastMovieDoc;
+                    await this.loadNextBatch({ limit: this.CLIENT_SORT_BATCH_SIZE, render: false });
+                    // Stop if a batch failed or made no progress instead of retrying forever
+                    if (this.lastMovieDoc === cursorBefore) break;
+                    if (this.hasMore) this.showBulkProgress();
+                }
+            } finally {
+                this.bulkLoading = false;
             }
+            if (this.currentRequestId === requestId) this.refreshFilterOptionsAndRender();
         })();
 
         try {
@@ -886,18 +1029,32 @@ class RatingsPageManager {
         }
     }
 
-    loadNextBatch() {
+    showBulkProgress() {
+        if (this.elements?.resultsCount) {
+            this.elements.resultsCount.textContent = this.text('results.loading_all', { count: this.movies.length });
+        }
+    }
+
+    /** Rebuild the filter options from the loaded films and render the list. */
+    refreshFilterOptionsAndRender() {
+        this.extractAndPopulateUsers(this.movies);
+        this.populateYearFilter();
+        this.populateGenreFilter();
+        this.applyFilters();
+    }
+
+    loadNextBatch(options = {}) {
         if (!this.hasMore) return Promise.resolve();
         // Share one in-flight batch between the scroll observer and loadAllForClientSort
         if (!this.nextBatchPromise) {
-            this.nextBatchPromise = this.fetchNextBatch().finally(() => {
+            this.nextBatchPromise = this.fetchNextBatch(options).finally(() => {
                 this.nextBatchPromise = null;
             });
         }
         return this.nextBatchPromise;
     }
 
-    async fetchNextBatch() {
+    async fetchNextBatch({ limit = this.BATCH_SIZE || 8, render = true } = {}) {
         const requestId = this.currentRequestId;
         this.loadingMore = true;
 
@@ -911,12 +1068,11 @@ class RatingsPageManager {
                 maxAvgRating: this.filters.avgRatingTo,
                 sortBy,
                 sortDir,
-                limit: this.BATCH_SIZE || 8,
+                limit,
                 lastDoc: this.lastMovieDoc
             });
 
             if (this.currentRequestId !== requestId) {
-                console.log(`[loadNextBatch] Outdated request ${requestId} ignored.`);
                 this.loadingMore = false;
                 return;
             }
@@ -929,7 +1085,6 @@ class RatingsPageManager {
                 const enrichedBatch = await this.enrichMoviePage(pagedMovies, ratingService);
 
                 if (this.currentRequestId !== requestId) {
-                    console.log(`[loadNextBatch] Outdated request ${requestId} after enrichment ignored.`);
                     this.loadingMore = false;
                     return;
                 }
@@ -937,10 +1092,7 @@ class RatingsPageManager {
                 // Merge by ID: a film inserted live may come back in a later server page
                 this.mergeMoviesById(enrichedBatch);
                 this.hydrateMissingMetadata(enrichedBatch);
-                this.extractAndPopulateUsers(this.movies);
-                this.populateYearFilter();
-                this.populateGenreFilter();
-                this.applyFilters();
+                if (render) this.refreshFilterOptionsAndRender();
             }
 
             this.loadingMore = false;
@@ -1054,10 +1206,13 @@ class RatingsPageManager {
             return;
         }
 
-        // 1. Local caches (this browser may have the metadata from browsing or rating)
+        // 1. Local caches (this browser may have the metadata from browsing or rating).
+        // Local only: the Firestore documents are the ones known to lack metadata.
         const found = new Map();
         try {
-            const cached = await movieCacheService.getBatchCachedMovies(missing) || {};
+            const cached = typeof movieCacheService.getLocalCachedMovies === 'function'
+                ? await movieCacheService.getLocalCachedMovies(missing) || {}
+                : {};
             missing.forEach(key => {
                 const movie = cached[key] || cached[Number(key)];
                 if (this.hasDisplayMetadata(movie)) found.set(key, movie);
@@ -1100,6 +1255,8 @@ class RatingsPageManager {
             });
         });
 
+        // A bulk load for a client-only sort renders once when it finishes
+        if (this.bulkLoading) return;
         this.populateYearFilter();
         this.populateGenreFilter();
         this.applyFilters();
@@ -1409,7 +1566,8 @@ class RatingsPageManager {
 
         this.observer = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
-                if (entry.isIntersecting && !this.loadingMore && this.hasMore) {
+                // A bulk load for a client-only sort renders the full list itself
+                if (entry.isIntersecting && !this.loadingMore && this.hasMore && !this.bulkLoading) {
                     this.loadNextBatch().then(() => {
                         this.checkToFillViewport();
                     });
@@ -1431,7 +1589,7 @@ class RatingsPageManager {
     }
 
     checkToFillViewport() {
-        if (!this.hasMore || this.loadingMore) return;
+        if (!this.hasMore || this.loadingMore || this.bulkLoading) return;
         const sentinel = document.getElementById('scrollSentinel');
         if (sentinel) {
             const rect = sentinel.getBoundingClientRect();
@@ -1479,15 +1637,26 @@ class RatingsPageManager {
             if (userIds.length === 0) return;
 
             const userService = firebaseManager.getUserService();
-            // `users` can only be read when signed in; getUserProfilesByIds() returns []
-            // on errors, so an empty answer before auth is restored is not conclusive.
+            // `users` can only be read when signed in; failed lookups resolve to no
+            // profiles, so an empty answer before auth is restored is not conclusive.
             const requestedWhileSignedIn = Boolean(firebaseManager.getCurrentUser?.());
-            const userProfiles = await userService.getUserProfilesByIds(userIds);
+            let userProfiles;
+            let failedIds = null;
+            if (typeof userService.getUserProfilesByIdsDetailed === 'function') {
+                ({ profiles: userProfiles, failedIds } = await userService.getUserProfilesByIdsDetailed(userIds));
+            } else {
+                userProfiles = await userService.getUserProfilesByIds(userIds);
+            }
 
             // A conclusive lookup marks every requested ID done, including users without a
             // profile document (they render their fallback name instead of a skeleton).
-            // Otherwise mark only profiles actually received so the rest are retried.
-            if (requestedWhileSignedIn || userProfiles.length > 0) {
+            // IDs whose lookup failed, or any ID before sign-in, stay open for a retry.
+            if (failedIds) {
+                if (requestedWhileSignedIn) {
+                    const failed = new Set(failedIds.map(String));
+                    userIds.filter(id => !failed.has(id)).forEach(id => this.fetchedProfileIds.add(id));
+                }
+            } else if (requestedWhileSignedIn || userProfiles.length > 0) {
                 userIds.forEach(id => this.fetchedProfileIds.add(id));
             }
             userProfiles.forEach(profile => {
@@ -1596,38 +1765,15 @@ class RatingsPageManager {
         if (this.filters.year) years.add(String(this.filters.year));
 
         const sortedYears = Array.from(years).sort((a, b) => b - a);
-        const yearFilter = this.elements.yearFilter;
-        
-        if (yearFilter) {
-            yearFilter.innerHTML = `<option value="">${i18n.get('ratings.filters.all_years')}</option>`;
-            
-            sortedYears.forEach(year => {
-                const option = document.createElement('option');
-                option.value = year;
-                option.textContent = year;
-                yearFilter.appendChild(option);
-            });
-            
-            if (this.dropdowns?.yearFilter) {
-                const dropdownList = this.dropdowns.yearFilter.list;
-                dropdownList.innerHTML = `<div class="dropdown-option" data-value="">${i18n.get('ratings.filters.all_years')}</div>`;
-                
-                sortedYears.forEach(year => {
-                    const option = document.createElement('div');
-                    option.className = 'dropdown-option';
-                    option.setAttribute('data-value', year);
-                    option.textContent = year;
-                    option.addEventListener('mousedown', (e) => {
-                        e.stopPropagation();
-                        this.selectDropdownOption('yearFilter', year, year);
-                    });
-                    dropdownList.appendChild(option);
-                });
-            }
+        const rebuilt = this.setDropdownOptions(
+            'yearFilter',
+            this.elements.yearFilter,
+            i18n.get('ratings.filters.all_years'),
+            sortedYears.map(year => ({ value: year, label: year }))
+        );
 
-            // Rebuilding the options reset the selection; restore the active year filter
-            if (this.filters.year) this.updateDropdownValue('yearFilter', String(this.filters.year));
-        }
+        // Rebuilding the options reset the selection; restore the active year filter
+        if (rebuilt && this.filters.year) this.updateDropdownValue('yearFilter', String(this.filters.year));
     }
 
     populateGenreFilter() {
@@ -1646,42 +1792,16 @@ class RatingsPageManager {
         if (this.filters.genre) genres.add(this.filters.genre);
 
         const sortedGenres = Array.from(genres).sort();
-        const genreFilter = this.elements.genreFilter;
-        
-        if (genreFilter) {
-            // Preserve current selection if possible
-            const currentSelection = this.filters.genre;
-            
-            genreFilter.innerHTML = `<option value="">${i18n.get('ratings.filters.all_genres')}</option>`;
-            
-            sortedGenres.forEach(genre => {
-                const option = document.createElement('option');
-                option.value = genre;
-                option.textContent = genre; // Capitalize first letter if needed, but usually fine as is
-                genreFilter.appendChild(option);
-            });
-            
-            if (this.dropdowns?.genreFilter) {
-                const dropdownList = this.dropdowns.genreFilter.list;
-                dropdownList.innerHTML = `<div class="dropdown-option" data-value="">${i18n.get('ratings.filters.all_genres')}</div>`;
-                
-                sortedGenres.forEach(genre => {
-                    const option = document.createElement('div');
-                    option.className = 'dropdown-option';
-                    option.setAttribute('data-value', genre);
-                    option.textContent = genre;
-                    option.addEventListener('mousedown', (e) => {
-                        e.stopPropagation();
-                        this.selectDropdownOption('genreFilter', genre, genre);
-                    });
-                    dropdownList.appendChild(option);
-                });
-            }
-            if (currentSelection && genres.has(currentSelection)) {
-                // Restores both the hidden select and the visible dropdown label
-                this.updateDropdownValue('genreFilter', currentSelection);
-                genreFilter.value = currentSelection;
-            }
+        const rebuilt = this.setDropdownOptions(
+            'genreFilter',
+            this.elements.genreFilter,
+            i18n.get('ratings.filters.all_genres'),
+            sortedGenres.map(genre => ({ value: genre, label: genre }))
+        );
+
+        // Restores both the hidden select and the visible dropdown label
+        if (rebuilt && this.filters.genre && genres.has(this.filters.genre)) {
+            this.updateDropdownValue('genreFilter', this.filters.genre);
         }
     }
 
@@ -1748,38 +1868,15 @@ class RatingsPageManager {
             a.displayName.localeCompare(b.displayName)
         );
         
-        const userFilter = this.elements.userFilter;
-        if (userFilter) {
-            const allUsersLabel = i18n.get('ratings.filters.all_users') || 'All Users';
-            userFilter.innerHTML = `<option value="">${allUsersLabel}</option>`;
-            
-            this.allUsers.forEach(user => {
-                const option = document.createElement('option');
-                option.value = user.id;
-                option.textContent = user.displayName;
-                userFilter.appendChild(option);
-            });
-            
-            if (this.dropdowns?.userFilter) {
-                const dropdownList = this.dropdowns.userFilter.list;
-                dropdownList.innerHTML = `<div class="dropdown-option" data-value="">${allUsersLabel}</div>`;
-                
-                this.allUsers.forEach(user => {
-                    const option = document.createElement('div');
-                    option.className = 'dropdown-option';
-                    option.setAttribute('data-value', user.id);
-                    option.textContent = user.displayName;
-                    option.addEventListener('mousedown', (e) => {
-                        e.stopPropagation();
-                        this.selectDropdownOption('userFilter', user.id, user.displayName);
-                    });
-                    dropdownList.appendChild(option);
-                });
-            }
+        const rebuilt = this.setDropdownOptions(
+            'userFilter',
+            this.elements.userFilter,
+            i18n.get('ratings.filters.all_users') || 'All Users',
+            this.allUsers.map(user => ({ value: user.id, label: user.displayName }))
+        );
 
-            // Rebuilding the options reset the selection; restore the active user filter
-            if (this.filters.user) this.updateDropdownValue('userFilter', this.filters.user);
-        }
+        // Rebuilding the options reset the selection; restore the active user filter
+        if (rebuilt && this.filters.user) this.updateDropdownValue('userFilter', this.filters.user);
     }
 
     applyFilters() {
@@ -1879,10 +1976,11 @@ class RatingsPageManager {
                 tagEl.className = 'filter-tag';
                 const labelEl = document.createElement('span');
                 labelEl.textContent = tag.label;
-                const removeEl = document.createElement('span');
+                const removeEl = document.createElement('button');
+                removeEl.type = 'button';
                 removeEl.className = 'remove-filter';
                 removeEl.dataset.filterType = tag.type;
-                removeEl.setAttribute('aria-label', this.text('active_filters.remove'));
+                removeEl.setAttribute('aria-label', `${this.text('active_filters.remove')}: ${tag.label}`);
                 removeEl.textContent = '×';
                 tagEl.append(labelEl, removeEl);
                 this.elements.activeFiltersList.appendChild(tagEl);
@@ -1989,15 +2087,12 @@ class RatingsPageManager {
         const dropdown = this.dropdowns?.sortFilter;
         const dropdownElement = dropdown?.element || dropdown?.container;
         if (dropdownElement) {
-            if (isFilterActive) {
-                dropdownElement.style.pointerEvents = 'none';
-                dropdownElement.style.opacity = '0.6';
-                dropdownElement.title = i18n.get('ratings.sort.locked_by_avg_filter');
-            } else {
-                dropdownElement.style.pointerEvents = 'auto';
-                dropdownElement.style.opacity = '1';
-                dropdownElement.title = '';
-            }
+            // A disabled trigger is skipped by the mouse and the keyboard alike
+            if (dropdown.trigger) dropdown.trigger.disabled = isFilterActive;
+            if (isFilterActive) this.closeDropdown('sortFilter');
+            dropdownElement.classList.toggle('is-locked', isFilterActive);
+            dropdownElement.style.opacity = isFilterActive ? '0.6' : '1';
+            dropdownElement.title = isFilterActive ? i18n.get('ratings.sort.locked_by_avg_filter') : '';
         }
     }
 
@@ -2433,46 +2528,49 @@ class RatingsPageManager {
         return true;
     }
 
-    updateButtonState(button, type, isActive) {
-        if (!button) return;
-        
-        if (type === 'favorite') {
-            button.setAttribute('data-is-favorite', isActive);
-            Utils.toggleActionButton(button, isActive, {
-                active: i18n.get('movie_card.remove_favorite'),
-                inactive: i18n.get('movie_card.add_favorite')
-            }, {
-                active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>',
-                inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>'
-            });
-        } else if (type === 'watching') {
-            button.setAttribute('data-is-watching', isActive);
-            Utils.toggleActionButton(button, isActive, {
-                active: i18n.get('movie_card.remove_watching'),
-                inactive: i18n.get('movie_card.add_watching')
-            }, {
-                active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>',
-                inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>'
-            });
-        } else if (type === 'watchlist') {
-            button.setAttribute('data-is-in-watchlist', isActive);
-            Utils.toggleActionButton(button, isActive, {
-                active: i18n.get('movie_card.remove_watchlist'),
-                inactive: i18n.get('movie_card.add_watchlist')
-            }, {
-                active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>',
-                inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>'
-            });
-        } else if (type === 'watched') {
-            button.setAttribute('data-is-watched', isActive);
-            Utils.toggleActionButton(button, isActive, {
-                active: i18n.get('movie_card.remove_watched'),
-                inactive: i18n.get('movie_card.add_watched')
-            }, {
-                active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>',
-                inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>'
-            });
+    static STATUS_BUTTONS = {
+        favorite: {
+            attribute: 'data-is-favorite',
+            labels: ['movie_card.remove_favorite', 'movie_card.add_favorite'],
+            path: '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>',
+            fillWhenActive: true
+        },
+        watching: {
+            attribute: 'data-is-watching',
+            labels: ['movie_card.remove_watching', 'movie_card.add_watching'],
+            path: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>',
+            fillWhenActive: false
+        },
+        watchlist: {
+            attribute: 'data-is-in-watchlist',
+            labels: ['movie_card.remove_watchlist', 'movie_card.add_watchlist'],
+            path: '<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>',
+            fillWhenActive: true
+        },
+        watched: {
+            attribute: 'data-is-watched',
+            labels: ['movie_card.remove_watched', 'movie_card.add_watched'],
+            path: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline>',
+            fillWhenActive: false
         }
+    };
+
+    static statusIcon(path, filled) {
+        return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="${filled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
+    }
+
+    updateButtonState(button, type, isActive) {
+        const config = RatingsPageManager.STATUS_BUTTONS[type];
+        if (!button || !config) return;
+
+        button.setAttribute(config.attribute, isActive);
+        Utils.toggleActionButton(button, isActive, {
+            active: i18n.get(config.labels[0]),
+            inactive: i18n.get(config.labels[1])
+        }, {
+            active: RatingsPageManager.statusIcon(config.path, config.fillWhenActive),
+            inactive: RatingsPageManager.statusIcon(config.path, false)
+        });
     }
 
     refreshCardButtons(descriptor) {
@@ -2596,7 +2694,7 @@ class RatingsPageManager {
 
         try {
             const favoriteService = firebaseManager.getFavoriteService();
-            const movieData = this.filteredMovies.find(m => (m.movie?.kinopoiskId || m.movieId) == movieId);
+            const movieData = this.findMovieData(movieId);
             if (!movieData) return;
 
             const isWatching = movieData.isWatching || (movieData.status === 'watching');
@@ -2639,7 +2737,7 @@ class RatingsPageManager {
 
         try {
             const favoriteService = firebaseManager.getFavoriteService();
-            const movieData = this.filteredMovies.find(m => (m.movie?.kinopoiskId || m.movieId) == movieId);
+            const movieData = this.findMovieData(movieId);
             if (!movieData) return;
 
             const isWatched = movieData.status === 'watched';
@@ -2680,7 +2778,7 @@ class RatingsPageManager {
 
         try {
             const favoriteService = firebaseManager.getFavoriteService();
-            const movieData = this.filteredMovies.find(m => (m.movie?.kinopoiskId || m.movieId) == movieId);
+            const movieData = this.findMovieData(movieId);
             if (!movieData) return;
 
             const isInWatchlist = movieData.isInWatchlist || (movieData.status === 'plan_to_watch');
@@ -2732,10 +2830,7 @@ class RatingsPageManager {
             
             if (isChecked) {
                 checkSpan.remove();
-                if (textSpan) {
-                    textSpan.style.fontWeight = 'normal';
-                    textSpan.style.color = '';
-                }
+                if (textSpan) textSpan.style.fontWeight = 'normal';
             } else {
                 const newCheck = document.createElement('span');
                 newCheck.className = 'mc-collection-check';
@@ -2744,11 +2839,9 @@ class RatingsPageManager {
                 newCheck.style.fontWeight = 'bold';
                 newCheck.style.color = 'var(--accent-color, #4CAF50)';
                 buttonElement.appendChild(newCheck);
-                
-                if (textSpan) {
-                    textSpan.style.fontWeight = '500';
-                    textSpan.style.color = '#fff';
-                }
+
+                // Text keeps the theme's menu color (a fixed white was unreadable in the light theme)
+                if (textSpan) textSpan.style.fontWeight = '500';
             }
 
             await this.collectionService.toggleMovieInCollection(collectionId, parseInt(movieId));
@@ -2827,54 +2920,64 @@ class RatingsPageManager {
         this.elements.ratingComment.value = currentComment || '';
         this.elements.charCount.textContent = (currentComment || '').length;
         
-        this.elements.ratingModal.style.display = 'flex';
+        this.openRatingModal();
     }
 
     async saveRating() {
         if (!this.elements.ratingSlider || !this.elements.ratingComment) return;
         if (!this.selectedMovie || !this.currentUser) return;
-        
+        // One save at a time: a second click while the profile loads must not write twice
+        if (this.isSavingRating) return;
+        this.isSavingRating = true;
+        if (this.elements.saveRatingBtn) this.elements.saveRatingBtn.disabled = true;
+
         try {
             const rating = parseInt(this.elements.ratingSlider.value);
             const comment = this.elements.ratingComment.value.trim();
-            
+
             // Validation
             if (rating < 1 || rating > 10) {
                 Utils.showToast(this.t('rating_invalid'), 'warning');
                 return;
             }
-            
+
             const ratingService = firebaseManager.getRatingService();
-            const userService = firebaseManager.getUserService();
-            
-            // Get fresh user profile
-            const userProfile = await userService.getUserProfile(this.currentUser.uid);
-            
+            const uid = this.currentUser.uid;
+
+            // The signed-in user's profile is normally already loaded for the cards;
+            // only fetch it when it is not, instead of on every save.
+            let userProfile = this.userProfilesMap.get(String(uid)) || null;
+            if (!userProfile) {
+                userProfile = await firebaseManager.getUserService().getUserProfile(uid);
+                if (userProfile) this.userProfilesMap.set(String(uid), userProfile);
+            }
+
             // Get display name based on user preference
             const displayName = typeof Utils !== 'undefined' && Utils.getDisplayName
                 ? Utils.getDisplayName(userProfile, this.currentUser)
                 : (userProfile?.displayName || this.currentUser.displayName || this.currentUser.email);
-            
+
             const photoURL = userProfile?.photoURL || this.currentUser.photoURL || '';
             // closeRatingModal() clears this.selectedMovie before the background write below
             const selectedMovie = this.selectedMovie;
             const movieId = Number(selectedMovie.kinopoiskId || selectedMovie.movieId);
-            
-            // Backup old states for rollback
-            const oldMoviesState = JSON.parse(JSON.stringify(this.movies));
-            
+
             let addedNew = false;
-            
+            // Rollback restores only this card, so pages or live updates that arrive
+            // while the write is in flight are kept.
+            let backupItem = null;
+
             // 1. Update this.movies
             const movieIndex = this.movies.findIndex(m => Number(m.movie?.kinopoiskId || m.movieId) === movieId);
             if (movieIndex > -1) {
                 const movieItem = this.movies[movieIndex];
+                backupItem = this.cloneMovieItem(movieItem);
                 // Mirrors aggregateMovieRatings: only a changed score moves the film's
                 // lastRatingUpdatedAt. A comment-only edit keeps the card in place, as it
                 // will be after a reload.
                 const scoreChanged = this.getMyRating(movieItem).rating !== rating;
                 // The saved rating becomes the card's featured rating
-                movieItem.userId = this.currentUser.uid;
+                movieItem.userId = uid;
                 movieItem.userName = displayName;
                 movieItem.userDisplayName = displayName;
                 movieItem.userPhoto = photoURL;
@@ -2891,14 +2994,14 @@ class RatingsPageManager {
                     this.recentLocalEdits.set(String(movieId), Date.now());
                 }
 
-                let raterIndex = movieItem.allRaters.findIndex(r => r.userId === this.currentUser.uid);
+                let raterIndex = movieItem.allRaters.findIndex(r => r.userId === uid);
                 if (raterIndex > -1) {
                     movieItem.allRaters[raterIndex].rating = rating;
                     movieItem.allRaters[raterIndex].comment = comment;
                     movieItem.allRaters[raterIndex].updatedAt = new Date();
                 } else {
                     movieItem.allRaters.push({
-                        userId: this.currentUser.uid,
+                        userId: uid,
                         userName: displayName,
                         userPhoto: photoURL,
                         movieId: movieId,
@@ -2923,7 +3026,7 @@ class RatingsPageManager {
                     updatedAt: new Date(),
                     allRaters: [
                         {
-                            userId: this.currentUser.uid,
+                            userId: uid,
                             userName: displayName,
                             userPhoto: photoURL,
                             movieId: movieId,
@@ -2941,18 +3044,18 @@ class RatingsPageManager {
                 };
                 this.movies.unshift(newMovieItem);
             }
-            
+
             // Close modal and apply filters immediately
             this.closeRatingModal();
             this.applyFilters();
-            
+
             if (typeof Utils !== 'undefined') {
                 Utils.showToast(movieIndex > -1 ? this.t('rating_updated') : this.t('rating_added'), 'success');
             }
-            
+
             // Perform Firestore write in background
             ratingService.addOrUpdateRating(
-                this.currentUser.uid,
+                uid,
                 displayName,
                 photoURL,
                 movieId,
@@ -2960,7 +3063,6 @@ class RatingsPageManager {
                 comment,
                 selectedMovie
             ).then((actualRating) => {
-                console.log('Optimistic rating confirmed by Firestore:', actualRating);
                 // Update temporary opt_ IDs with real ones
                 if (addedNew) {
                     const freshIndex = this.movies.findIndex(m => Number(m.movie?.kinopoiskId || m.movieId) === movieId);
@@ -2973,20 +3075,88 @@ class RatingsPageManager {
                 if (typeof Utils !== 'undefined') {
                     Utils.showToast(this.t('rating_save_failed'), 'error');
                 }
-                // Rollback states
-                this.movies = oldMoviesState;
-                this.applyFilters();
+                this.rollbackRating(movieId, backupItem);
             });
-            
+
         } catch (error) {
             console.error('Error saving rating:', error);
             Utils.showToast(this.t('rating_save_error'), 'error');
+        } finally {
+            this.isSavingRating = false;
+            if (this.elements.saveRatingBtn) this.elements.saveRatingBtn.disabled = false;
         }
     }
 
+    /** Copy of a card item deep enough to undo the optimistic edit in saveRating(). */
+    cloneMovieItem(item) {
+        return {
+            ...item,
+            movie: item.movie ? { ...item.movie } : item.movie,
+            allRaters: Array.isArray(item.allRaters) ? item.allRaters.map(rater => ({ ...rater })) : item.allRaters
+        };
+    }
+
+    /** Undo one failed optimistic rating: restore the card's backup, or drop a new card. */
+    rollbackRating(movieId, backupItem) {
+        const key = String(movieId);
+        this.recentLocalEdits.delete(key);
+        const index = this.movies.findIndex(m => Number(m.movie?.kinopoiskId || m.movieId) === Number(movieId));
+        if (index > -1) {
+            if (backupItem) {
+                this.movies[index] = backupItem;
+            } else {
+                this.movies.splice(index, 1);
+            }
+        }
+        this.renderedMoviesState.delete(key);
+        this.applyFilters();
+    }
+
+    openRatingModal() {
+        const modal = this.elements.ratingModal;
+        if (!modal) return;
+        this.modalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        modal.style.display = 'flex';
+        // Move focus into the dialog so the keyboard and screen readers land on it
+        this.elements.ratingSlider?.focus();
+    }
+
     closeRatingModal() {
+        const wasOpen = this.elements.ratingModal.style.display !== 'none';
         this.elements.ratingModal.style.display = 'none';
         this.selectedMovie = null;
+        const returnTo = this.modalReturnFocus;
+        this.modalReturnFocus = null;
+        if (wasOpen && returnTo?.isConnected) returnTo.focus();
+    }
+
+    getRatingModalFocusables() {
+        const modal = this.elements.ratingModal;
+        if (!modal) return [];
+        return Array.from(modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
+            .filter(el => !el.disabled && el.offsetParent !== null);
+    }
+
+    /** Escape closes the rating dialog; Tab and Shift+Tab cycle inside it. */
+    handleRatingModalKeydown(e) {
+        if (this.elements.ratingModal?.style.display === 'none') return;
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            this.closeRatingModal();
+            return;
+        }
+        if (e.key !== 'Tab') return;
+        const focusables = this.getRatingModalFocusables();
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+        }
     }
 
     showEmptyState() {
@@ -3100,15 +3270,19 @@ class RatingsPageManager {
             return Utils.escapeHtml(text);
         }
         
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        return String(text ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
     }
 
     toggleFilters() {
         if (!this.elements.filtersSection) return;
         
         const isCollapsed = this.elements.filtersSection.classList.toggle('collapsed');
+        this.elements.toggleFiltersBtn?.setAttribute('aria-expanded', String(!isCollapsed));
         localStorage.setItem('ratingsFiltersCollapsed', isCollapsed);
     }
 
@@ -3116,6 +3290,7 @@ class RatingsPageManager {
         const isCollapsed = localStorage.getItem('ratingsFiltersCollapsed') === 'true';
         if (isCollapsed && this.elements.filtersSection) {
             this.elements.filtersSection.classList.add('collapsed');
+            this.elements.toggleFiltersBtn?.setAttribute('aria-expanded', 'false');
         }
     }
 }

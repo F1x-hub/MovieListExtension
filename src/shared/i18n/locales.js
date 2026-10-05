@@ -515,7 +515,9 @@ export const locales = {
                 user: "User",
                 all_users: "All Users",
                 sort: "Sort By",
-                toggle: "Show or hide filters"
+                toggle: "Show or hide filters",
+                avg_from: "Minimum average rating",
+                avg_to: "Maximum average rating"
             },
             sort: {
                 date_newest: "Date Added (Newest)",
@@ -538,7 +540,8 @@ export const locales = {
             results: {
                 loading: "Loading...",
                 count: "Showing {count} of {total} movies",
-                mode: "All ratings"
+                mode: "All ratings",
+                loading_all: "Loading all films for this sort: {count}..."
             },
             active_filters: {
                 label: "Active filters:",
@@ -554,6 +557,7 @@ export const locales = {
                 firebase_init: "Failed to initialize Firebase",
                 firebase_setup: "Firebase setup failed: {message}",
                 timeout: "Loading timed out. Please refresh the page.",
+                refresh_timeout: "Couldn't refresh the list. Showing saved data.",
                 load_failed: "Failed to load movies: {message}"
             },
             empty: {
@@ -603,6 +607,14 @@ export const locales = {
             }
         },
         movie_card: {
+            open_profile: "Open profile",
+            options: "Options",
+            no_ratings: "Awaiting ratings",
+            more_raters: "+{count} more",
+            user_fallback: "User",
+            coming_soon: "Coming soon",
+            not_released_title: "Not released yet",
+            no_ratings_title: "No ratings yet",
             add_favorite: "Add to Favorites",
             remove_favorite: "Remove from Favorites",
             add_watchlist: "Add to Plan to Watch",
@@ -1504,7 +1516,9 @@ export const locales = {
                 user: "Пользователь",
                 all_users: "Все пользователи",
                 sort: "Сортировка",
-                toggle: "Показать или скрыть фильтры"
+                toggle: "Показать или скрыть фильтры",
+                avg_from: "Минимальный средний рейтинг",
+                avg_to: "Максимальный средний рейтинг"
             },
             sort: {
                 date_newest: "Дата добавления (Сначала новые)",
@@ -1527,7 +1541,8 @@ export const locales = {
             results: {
                 loading: "Загрузка...",
                 count: "Показано: {count} из {total}",
-                mode: "Все оценки"
+                mode: "Все оценки",
+                loading_all: "Загружаем все фильмы для этой сортировки: {count}..."
             },
             active_filters: {
                 label: "Активные фильтры:",
@@ -1543,6 +1558,7 @@ export const locales = {
                 firebase_init: "Не удалось инициализировать Firebase",
                 firebase_setup: "Ошибка настройки Firebase: {message}",
                 timeout: "Загрузка заняла слишком много времени. Обновите страницу.",
+                refresh_timeout: "Не удалось обновить список. Показаны сохранённые данные.",
                 load_failed: "Не удалось загрузить фильмы: {message}"
             },
             empty: {
@@ -1592,6 +1608,14 @@ export const locales = {
             }
         },
         movie_card: {
+            open_profile: "Перейти в профиль",
+            options: "Действия",
+            no_ratings: "Ожидает оценок",
+            more_raters: "+{count} ещё",
+            user_fallback: "Пользователь",
+            coming_soon: "Скоро в кино",
+            not_released_title: "Фильм ещё не вышел в прокат",
+            no_ratings_title: "Оценки пока отсутствуют",
             add_favorite: "В избранное",
             remove_favorite: "Из избранного",
             add_watchlist: "Буду смотреть",

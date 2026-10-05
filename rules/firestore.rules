@@ -11,6 +11,15 @@ service cloud.firestore {
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
+
+    // Profile photo: empty, an http(s)/extension URL or an inline image, made only of
+    // URL characters (no quotes, angle brackets or whitespace that could break out of
+    // an HTML attribute on other users' pages).
+    function isSafePhotoUrl(value) {
+      return value == null || value == '' ||
+        (value is string &&
+          value.matches('^(https?://|chrome-extension://|data:image/(png|jpe?g|gif|webp);base64,)[A-Za-z0-9._~:/?#@!$&()*+,;=%-]*$'));
+    }
     
     // Helper function to check if user is admin
     function isAdmin() {
@@ -475,11 +484,16 @@ service cloud.firestore {
       // Allow users to create their own profile, but forbidden from granting themselves admin or approved status
       allow create: if isOwner(userId) &&
         (!('isAdmin' in request.resource.data) || request.resource.data.isAdmin == false) &&
-        (!('approvalStatus' in request.resource.data) || request.resource.data.approvalStatus == 'pending');
-      
-      // Allow users to update their own profile (cannot modify isAdmin or approvalStatus)
+        (!('approvalStatus' in request.resource.data) || request.resource.data.approvalStatus == 'pending') &&
+        (!('photoURL' in request.resource.data) || isSafePhotoUrl(request.resource.data.photoURL));
+
+      // Allow users to update their own profile (cannot modify isAdmin or approvalStatus).
+      // photoURL is rendered on other users' pages, so a changed value must be an image URL.
       allow update: if isOwner(userId) &&
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'approvalStatus']);
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'approvalStatus']) &&
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['photoURL']) ||
+          !('photoURL' in request.resource.data) ||
+          isSafePhotoUrl(request.resource.data.photoURL));
       
       // Allow admins to update any user profile (can change approvalStatus and isAdmin)
       allow update: if isAdmin();
