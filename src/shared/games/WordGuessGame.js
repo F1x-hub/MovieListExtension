@@ -18,7 +18,7 @@ export class WordGuessGame {
     async start() {
         this.ensureStylesLoaded();
         this.container ||= document.getElementById('wordGuessGame');
-        if (!this.container) throw new Error('WordGuess container не найден');
+        if (!this.container) throw new Error('WordGuess container not found');
 
         this.renderer = new WordGuessRenderer({ container: this.container, controller: null });
         this.controller = new WordGuessController({
@@ -27,11 +27,10 @@ export class WordGuessGame {
             storage: this.storage,
             onStateChange: (state) => {
                 this.renderer.render(state);
+                // The game panel shows attempts and best rank; the sidebar shows hints.
                 this.callbacks.onStatsUpdate?.({
                     score: state.attempts,
-                    highScore: state.bestRank ?? 0,
-                    level: 1,
-                    lines: state.history.length
+                    highScore: state.hintsUsed || 0
                 });
             }
         });

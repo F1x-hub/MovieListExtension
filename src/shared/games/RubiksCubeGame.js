@@ -1,3 +1,5 @@
+import { escapeHtml, plural, t } from './gamesI18n.js';
+
 const FACE_ORDER = ['U', 'R', 'F', 'D', 'L', 'B'];
 const MOVE_FACES = ['U', 'R', 'F', 'D', 'L', 'B'];
 
@@ -11,6 +13,8 @@ const FACE_DEFINITIONS = Object.freeze({
 });
 
 const STORAGE_KEY = 'rubiksCubeBestTime';
+const DIFFICULTY_STORAGE_KEY = 'rubiksCubeDifficulty';
+const TURN_EASING = 'cubic-bezier(0.23, 1, 0.32, 1)';
 
 function add(a, b) {
     return a.map((value, index) => value + b[index]);
@@ -43,6 +47,18 @@ function sameVector(a, b) {
     return a.every((value, index) => value === b[index]);
 }
 
+function stickerPosition(face, row, col) {
+    const definition = FACE_DEFINITIONS[face];
+    return add(definition.normal, add(scale(definition.right, col - 1), scale(definition.down, row - 1)));
+}
+
+export function invertRubiksMove(move) {
+    const parsed = RubiksCubeState.parseMove(move);
+    if (!parsed) return null;
+    if (parsed.quarterTurns === 2) return `${parsed.face}2`;
+    return parsed.direction === 1 ? parsed.face : `${parsed.face}'`;
+}
+
 export function formatRubiksTime(totalSeconds) {
     const seconds = Math.max(0, Math.floor(totalSeconds));
     const minutes = Math.floor(seconds / 60);
@@ -60,15 +76,11 @@ export class RubiksCubeState {
             const definition = FACE_DEFINITIONS[face];
             for (let row = 0; row < 3; row++) {
                 for (let col = 0; col < 3; col++) {
-                    const position = add(
-                        definition.normal,
-                        add(scale(definition.right, col - 1), scale(definition.down, row - 1))
-                    );
                     this.stickers.push({
                         face,
                         color: definition.color,
                         normal: [...definition.normal],
-                        position
+                        position: stickerPosition(face, row, col)
                     });
                 }
             }
@@ -124,13 +136,18 @@ export class RubiksCubeState {
 
 export class RubiksCubeGame {
     static SCRAMBLE_LENGTH = 20;
+    // Scramble length per difficulty; "hard" keeps the classic 20-move scramble.
+    static DIFFICULTIES = Object.freeze({ easy: 4, medium: 10, hard: 20 });
+    static DEFAULT_DIFFICULTY = 'easy';
 
-    constructor({ container, callbacks, audio, random = Math.random }) {
+    constructor({ container, callbacks, audio, random = Math.random, difficulty = null }) {
         this.container = container;
         this.callbacks = callbacks;
         this.audio = audio;
         this.random = random;
         this.state = new RubiksCubeState();
+        this.difficulty = RubiksCubeGame.DIFFICULTIES[difficulty] ? difficulty : RubiksCubeGame.DEFAULT_DIFFICULTY;
+        this.difficultyFixed = Boolean(RubiksCubeGame.DIFFICULTIES[difficulty]);
         this.moves = 0;
         this.elapsed = 0;
         this.bestTime = null;
@@ -141,21 +158,45 @@ export class RubiksCubeGame {
         this.rotation = { x: -24, y: -34 };
         this.dragState = null;
         this.selectedFace = null;
-        this.selectedAxis = 'horizontal';
         this.isAnimating = false;
         this.animationTimer = null;
         this.animationElement = null;
+        this.stickerAnimations = [];
+        this.history = [];
+        this.drawerOpen = false;
 
         this.scrambleCube();
         this.render();
-        this.loadBestTime();
+        this.loadPreferences();
+    }
+
+    get bestTimeKey() {
+        return this.difficulty === 'hard' ? STORAGE_KEY : `${STORAGE_KEY}:${this.difficulty}`;
+    }
+
+    async loadPreferences() {
+        if (typeof chrome === 'undefined' || !chrome.storage?.local) return;
+        try {
+            if (!this.difficultyFixed) {
+                const stored = (await chrome.storage.local.get(DIFFICULTY_STORAGE_KEY))?.[DIFFICULTY_STORAGE_KEY];
+                // Only adopt the saved difficulty before the player has touched the cube.
+                if (RubiksCubeGame.DIFFICULTIES[stored] && stored !== this.difficulty && !this.history.length) {
+                    this.difficulty = stored;
+                    this.newScramble();
+                }
+            }
+            await this.loadBestTime();
+        } catch {
+            // The game remains fully playable when storage is unavailable.
+        }
     }
 
     async loadBestTime() {
         if (typeof chrome === 'undefined' || !chrome.storage?.local) return;
         try {
-            const result = await chrome.storage.local.get(STORAGE_KEY);
-            this.bestTime = Number.isFinite(result[STORAGE_KEY]) ? result[STORAGE_KEY] : null;
+            const key = this.bestTimeKey;
+            const result = await chrome.storage.local.get(key);
+            this.bestTime = Number.isFinite(result?.[key]) ? result[key] : null;
             this.emitStats();
         } catch {
             // The game remains fully playable when storage is unavailable.
@@ -164,12 +205,27 @@ export class RubiksCubeGame {
 
     saveBestTime() {
         if (typeof chrome === 'undefined' || !chrome.storage?.local || this.bestTime === null) return;
-        chrome.storage.local.set({ [STORAGE_KEY]: this.bestTime });
+        chrome.storage.local.set({ [this.bestTimeKey]: this.bestTime });
+    }
+
+    setDifficulty(difficulty) {
+        if (!RubiksCubeGame.DIFFICULTIES[difficulty] || difficulty === this.difficulty) return;
+        this.difficulty = difficulty;
+        this.bestTime = null;
+        if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+            try {
+                chrome.storage.local.set({ [DIFFICULTY_STORAGE_KEY]: difficulty });
+            } catch { /* Preference is optional. */ }
+        }
+        this.newScramble();
+        this.loadBestTime();
     }
 
     scrambleCube() {
+        this.scramble = [];
+        const length = RubiksCubeGame.DIFFICULTIES[this.difficulty] || RubiksCubeGame.SCRAMBLE_LENGTH;
         let previousFace = '';
-        while (this.scramble.length < RubiksCubeGame.SCRAMBLE_LENGTH) {
+        while (this.scramble.length < length) {
             const face = MOVE_FACES[Math.floor(this.random() * MOVE_FACES.length)];
             if (face === previousFace) continue;
             const suffix = this.random() < 0.16 ? '2' : this.random() < 0.5 ? "'" : '';
@@ -178,23 +234,40 @@ export class RubiksCubeGame {
             this.scramble.push(move);
             previousFace = face;
         }
+        // A short scramble can cancel itself out; a solved start is never offered.
+        if (this.state.isSolved()) this.scrambleCube();
     }
 
+    /** The timer waits for the first move, so studying the scramble is free. */
     start() {
+        this.stopTimer();
+        this.startedAt = null;
+        this.emitStats();
+    }
+
+    startTimer() {
+        if (this.timerId !== null || this.finished) return;
         this.startedAt = Date.now();
         this.timerId = setInterval(() => {
             if (this.finished) return;
             this.elapsed = (Date.now() - this.startedAt) / 1000;
             this.emitStats();
         }, 250);
-        this.emitStats();
     }
 
     stop() {
+        this.stopTimer();
+        this.cancelAnimation();
+    }
+
+    stopTimer() {
         if (this.timerId !== null) {
             clearInterval(this.timerId);
             this.timerId = null;
         }
+    }
+
+    cancelAnimation() {
         if (this.animationTimer !== null) {
             globalThis.clearTimeout(this.animationTimer);
             this.animationTimer = null;
@@ -206,17 +279,92 @@ export class RubiksCubeGame {
             'is-turning-reverse-double'
         );
         this.animationElement = null;
+        this.stickerAnimations.forEach(animation => animation.cancel?.());
+        this.stickerAnimations = [];
         this.isAnimating = false;
     }
 
-    turn(move) {
+    /** Returns the cube to the current scramble and restarts the attempt. */
+    resetToScramble() {
+        this.cancelAnimation();
+        this.state.reset();
+        this.scramble.forEach(move => this.state.applyMove(move));
+        this.restartAttempt();
+    }
+
+    /** Generates a fresh scramble and restarts the attempt. */
+    newScramble() {
+        this.cancelAnimation();
+        this.state.reset();
+        this.scrambleCube();
+        this.restartAttempt();
+    }
+
+    restartAttempt() {
+        this.moves = 0;
+        this.elapsed = 0;
+        this.history = [];
+        this.finished = false;
+        this.callbacks.onRestart?.();
+        this.render();
+        this.start();
+    }
+
+    undo() {
+        if (this.finished || this.isAnimating || !this.history.length) return;
+        const inverse = invertRubiksMove(this.history[this.history.length - 1]);
+        if (inverse) this.turn(inverse, { undo: true });
+    }
+
+    /** Sticker elements on the four side faces that travel with a face turn. */
+    getAdjacentStickers(face) {
+        const axis = FACE_DEFINITIONS[face].normal;
+        const elements = [];
+        FACE_ORDER.forEach(otherFace => {
+            if (otherFace === face) return;
+            const definition = FACE_DEFINITIONS[otherFace];
+            for (let row = 0; row < 3; row++) {
+                for (let col = 0; col < 3; col++) {
+                    if (dot(stickerPosition(otherFace, row, col), axis) !== 1) continue;
+                    const element = this.container?.querySelector(
+                        `[data-face="${otherFace}"] [data-row="${row}"][data-col="${col}"]`
+                    );
+                    if (element) elements.push({ element, definition });
+                }
+            }
+        });
+        return elements;
+    }
+
+    /**
+     * Rotates the edge stickers of the neighbouring faces around the cube centre so
+     * the whole layer visibly turns, not only the face itself.
+     */
+    animateAdjacentStickers(face, angle, duration) {
+        const axis = FACE_DEFINITIONS[face].normal;
+        this.getAdjacentStickers(face).forEach(({ element, definition }) => {
+            if (typeof element.animate !== 'function') return;
+            const faceElement = element.parentElement;
+            const half = (faceElement?.offsetWidth || 0) / 2;
+            const originX = half - (faceElement?.clientLeft || 0) - element.offsetLeft;
+            const originY = half - (faceElement?.clientTop || 0) - element.offsetTop;
+            const localAxis = [dot(axis, definition.right), dot(axis, definition.down), dot(axis, definition.normal)];
+            element.style.transformOrigin = `${originX}px ${originY}px ${-half}px`;
+            this.stickerAnimations.push(element.animate([
+                { transform: `rotate3d(${localAxis.join(', ')}, 0deg)` },
+                { transform: `rotate3d(${localAxis.join(', ')}, ${angle}deg)` }
+            ], { duration, easing: TURN_EASING, fill: 'forwards' }));
+        });
+    }
+
+    turn(move, { undo = false } = {}) {
         if (this.finished || this.isAnimating) return;
         const parsedMove = RubiksCubeState.parseMove(move);
         if (!parsedMove) return;
 
         const faceElement = this.container?.querySelector(`[data-face="${parsedMove.face}"]`);
         if (typeof faceElement?.animate !== 'function') {
-            this.commitTurn(move);
+            this.commitTurn(move, { undo });
             return;
         }
 
@@ -237,92 +385,108 @@ export class RubiksCubeGame {
             }
             faceElement.classList.remove(animationClass);
             this.animationElement = null;
-            this.commitTurn(move);
+            this.stickerAnimations = [];
+            this.commitTurn(move, { undo });
         };
 
         faceElement.addEventListener('animationend', finishAnimation, { once: true });
         faceElement.classList.add(animationClass);
+        // The model's direction -1 (clockwise from outside) is a positive CSS angle.
+        this.animateAdjacentStickers(parsedMove.face, -parsedMove.direction * 90 * parsedMove.quarterTurns, duration);
         this.animationTimer = globalThis.setTimeout(finishAnimation, duration + 80);
     }
 
-    commitTurn(move) {
+    commitTurn(move, { undo = false } = {}) {
         if (!this.state.applyMove(move)) return;
-        this.moves += 1;
+        if (undo) {
+            this.history.pop();
+            this.moves = Math.max(0, this.moves - 1);
+        } else {
+            this.history.push(move);
+            this.moves += 1;
+            this.startTimer();
+        }
         this.audio?.rotate?.();
         this.isAnimating = false;
-        this.render();
-        this.emitStats();
 
         if (this.state.isSolved()) {
             this.finished = true;
+            this.elapsed = this.startedAt ? (Date.now() - this.startedAt) / 1000 : 0;
             this.stop();
-            this.elapsed = (Date.now() - this.startedAt) / 1000;
             if (this.bestTime === null || this.elapsed < this.bestTime) {
                 this.bestTime = this.elapsed;
                 this.saveBestTime();
             }
+            this.render();
             this.audio?.clear?.();
             this.emitStats();
             this.callbacks.onSolved?.({ moves: this.moves, time: this.elapsed, bestTime: this.bestTime });
+            return;
         }
+        this.render();
+        this.emitStats();
     }
 
     render() {
         if (!this.container) return;
+        const focusSelector = this.getFocusedControlSelector();
         const faces = ['F', 'B', 'R', 'L', 'U', 'D'];
+        const scrambleLength = this.scramble.length;
+        const difficultyButtons = Object.keys(RubiksCubeGame.DIFFICULTIES).map(level => `
+            <button type="button" class="rubiks-difficulty-btn ${this.difficulty === level ? 'is-active' : ''}" data-difficulty="${level}" aria-pressed="${this.difficulty === level}">${escapeHtml(t(`rubiks.difficulty_${level}`))}</button>
+        `).join('');
         this.container.innerHTML = `
             <div class="rubiks-game-header">
                 <div>
-                    <span class="rubiks-game-kicker">20 ходов на старт</span>
-                    <h3>Соберите кубик</h3>
+                    <span class="rubiks-game-kicker">${escapeHtml(t('rubiks.kicker', { count: scrambleLength, moves: plural(scrambleLength, 'rubiks.move_forms') }))}</span>
+                    <h3>${escapeHtml(t('rubiks.title'))}</h3>
                 </div>
-                <span class="rubiks-scramble" title="Последняя последовательность перемешивания">${this.scramble.join(' ')}</span>
+                <span class="rubiks-scramble" title="${escapeHtml(t('rubiks.scramble_title'))}">${this.scramble.join(' ')}</span>
+            </div>
+            <div class="rubiks-toolbar">
+                <div class="rubiks-difficulty" role="group" aria-label="${escapeHtml(t('rubiks.difficulty_label'))}">${difficultyButtons}</div>
+                <div class="rubiks-actions" role="group" aria-label="${escapeHtml(t('rubiks.actions_label'))}">
+                    <button type="button" class="rubiks-action-btn" data-rubiks-action="undo" ${this.history.length && !this.finished ? '' : 'disabled'} title="${escapeHtml(t('rubiks.undo_title'))}">${escapeHtml(t('rubiks.undo'))}</button>
+                    <button type="button" class="rubiks-action-btn" data-rubiks-action="reset" ${this.history.length || this.finished ? '' : 'disabled'}>${escapeHtml(t('rubiks.reset'))}</button>
+                    <button type="button" class="rubiks-action-btn" data-rubiks-action="scramble">${escapeHtml(t('rubiks.scramble'))}</button>
+                </div>
             </div>
             <div class="rubiks-game-main">
-                <div class="rubiks-3d-viewport" data-rubiks-viewport tabindex="0" aria-label="Кубик Рубика. Кликните по грани для стрелок или зажмите и потяните для обзора">
+                <div class="rubiks-3d-viewport" data-rubiks-viewport tabindex="0" aria-label="${escapeHtml(t('rubiks.viewport_label'))}">
                     <div class="rubiks-3d-cube" data-rubiks-cube style="transform: rotateX(${this.rotation.x}deg) rotateY(${this.rotation.y}deg)">
                     ${faces.map(face => `
-                        <div class="rubiks-3d-face rubiks-3d-face--${face} ${this.selectedFace === face ? 'is-selected' : ''}" data-face="${face}" role="grid" aria-label="Грань ${face}">
-                            ${this.state.getFace(face).flat().map(color => `
-                                <span class="rubiks-sticker rubiks-sticker--${color}" role="gridcell" aria-label="${color}"></span>
+                        <div class="rubiks-3d-face rubiks-3d-face--${face} ${this.selectedFace === face ? 'is-selected' : ''}" data-face="${face}" role="grid" aria-label="${escapeHtml(t('rubiks.face_label', { face }))}">
+                            ${this.state.getFace(face).flat().map((color, index) => `
+                                <span class="rubiks-sticker rubiks-sticker--${color}" data-row="${Math.floor(index / 3)}" data-col="${index % 3}" role="gridcell" aria-label="${escapeHtml(t(`rubiks.colors.${color}`))}"></span>
                             `).join('')}
                         </div>
                     `).join('')}
                     </div>
                     ${this.selectedFace ? `
                         <div class="rubiks-face-control-overlay" data-face-control>
-                            <div class="rubiks-axis-switch" role="group" aria-label="Ось поворота грани ${this.selectedFace}">
-                                <span class="rubiks-axis-label">Грань ${this.selectedFace} · ось</span>
-                                <button type="button" class="rubiks-axis-button ${this.selectedAxis === 'horizontal' ? 'is-active' : ''}" data-face-control data-axis="horizontal" aria-pressed="${this.selectedAxis === 'horizontal'}" aria-label="Горизонтальная ось">↔</button>
-                                <button type="button" class="rubiks-axis-button ${this.selectedAxis === 'vertical' ? 'is-active' : ''}" data-face-control data-axis="vertical" aria-pressed="${this.selectedAxis === 'vertical'}" aria-label="Вертикальная ось">↕</button>
-                            </div>
-                            <div class="rubiks-face-arrows" aria-label="Управление гранью ${this.selectedFace}">
-                                ${this.selectedAxis === 'horizontal' ? `
-                                    <button type="button" class="rubiks-face-arrow rubiks-face-arrow--left" data-face-control data-face-move="${this.selectedFace}" data-arrow="left" aria-label="Повернуть грань ${this.selectedFace} влево">←</button>
-                                    <button type="button" class="rubiks-face-arrow rubiks-face-arrow--right" data-face-control data-face-move="${this.selectedFace}" data-arrow="right" aria-label="Повернуть грань ${this.selectedFace} вправо">→</button>
-                                ` : `
-                                    <button type="button" class="rubiks-face-arrow rubiks-face-arrow--up" data-face-control data-face-move="${this.selectedFace}" data-arrow="up" aria-label="Повернуть грань ${this.selectedFace} вверх">↑</button>
-                                    <button type="button" class="rubiks-face-arrow rubiks-face-arrow--down" data-face-control data-face-move="${this.selectedFace}" data-arrow="down" aria-label="Повернуть грань ${this.selectedFace} вниз">↓</button>
-                                `}
+                            <span class="rubiks-face-label">${escapeHtml(t('rubiks.face_label', { face: this.selectedFace }))}</span>
+                            <div class="rubiks-face-arrows" aria-label="${escapeHtml(t('rubiks.face_controls', { face: this.selectedFace }))}">
+                                <button type="button" class="rubiks-face-arrow rubiks-face-arrow--left" data-face-control data-face-move="${this.selectedFace}" data-arrow="ccw" aria-label="${escapeHtml(t('rubiks.turn_ccw', { face: this.selectedFace }))}" title="${escapeHtml(t('rubiks.turn_ccw', { face: this.selectedFace }))}">↺</button>
+                                <button type="button" class="rubiks-face-arrow rubiks-face-arrow--right" data-face-control data-face-move="${this.selectedFace}" data-arrow="cw" aria-label="${escapeHtml(t('rubiks.turn_cw', { face: this.selectedFace }))}" title="${escapeHtml(t('rubiks.turn_cw', { face: this.selectedFace }))}">↻</button>
                             </div>
                         </div>
                     ` : ''}
-                    <span class="rubiks-drag-hint"><span aria-hidden="true">↗</span> Клик → грань и ось · Зажмите — обзор</span>
+                    <span class="rubiks-drag-hint"><span aria-hidden="true">↗</span> ${escapeHtml(t('rubiks.drag_hint'))}</span>
                 </div>
-                <details class="rubiks-controls-drawer">
-                    <summary><span>Управление ходами</span><span aria-hidden="true">⌄</span></summary>
+                <details class="rubiks-controls-drawer" ${this.drawerOpen ? 'open' : ''}>
+                    <summary><span>${escapeHtml(t('rubiks.moves_drawer'))}</span><span aria-hidden="true">⌄</span></summary>
                     <div class="rubiks-control-panel">
-                        <div class="rubiks-controls" aria-label="Ходы кубика">
+                        <div class="rubiks-controls" aria-label="${escapeHtml(t('rubiks.moves_label'))}">
                             ${MOVE_FACES.map(face => `
                                 <div class="rubiks-move-group">
                                     <span>${face}</span>
-                                    <button type="button" data-move="${face}" aria-label="Поворот ${face}">${face}</button>
-                                    <button type="button" data-move="${face}'" aria-label="Обратный поворот ${face}">${face}'</button>
-                                    <button type="button" data-move="${face}2" aria-label="Двойной поворот ${face}">${face}2</button>
+                                    <button type="button" data-move="${face}" aria-label="${escapeHtml(t('rubiks.move_cw', { face }))}">${face}</button>
+                                    <button type="button" data-move="${face}'" aria-label="${escapeHtml(t('rubiks.move_ccw', { face }))}">${face}'</button>
+                                    <button type="button" data-move="${face}2" aria-label="${escapeHtml(t('rubiks.move_double', { face }))}">${face}2</button>
                                 </div>
                             `).join('')}
                         </div>
-                        <p class="rubiks-hint">Клавиши: <kbd>U R F D L B</kbd><br><kbd>Shift</kbd> — обратно</p>
+                        <p class="rubiks-hint">${t('rubiks.keys_hint')}</p>
                     </div>
                 </details>
             </div>
@@ -331,12 +495,19 @@ export class RubiksCubeGame {
         this.container.querySelectorAll('[data-move]').forEach(button => {
             button.addEventListener('click', () => this.turn(button.dataset.move));
         });
-        this.container.querySelectorAll('[data-axis]').forEach(button => {
-            button.addEventListener('click', (event) => {
-                event.stopPropagation();
-                this.selectedAxis = button.dataset.axis;
-                this.render();
+        this.container.querySelector('.rubiks-controls-drawer')?.addEventListener('toggle', (event) => {
+            this.drawerOpen = event.currentTarget.open;
+        });
+        this.container.querySelectorAll('[data-rubiks-action]').forEach(button => {
+            button.addEventListener('click', () => {
+                const action = button.dataset.rubiksAction;
+                if (action === 'undo') this.undo();
+                else if (action === 'reset') this.resetToScramble();
+                else if (action === 'scramble') this.newScramble();
             });
+        });
+        this.container.querySelectorAll('[data-difficulty]').forEach(button => {
+            button.addEventListener('click', () => this.setDifficulty(button.dataset.difficulty));
         });
         this.container.querySelectorAll('[data-face]').forEach(faceElement => {
             faceElement.addEventListener('click', (event) => {
@@ -349,13 +520,38 @@ export class RubiksCubeGame {
             button.addEventListener('click', (event) => {
                 event.stopPropagation();
                 const face = button.dataset.faceMove;
-                const arrow = button.dataset.arrow;
-                const move = arrow === 'left' || arrow === 'up' ? `${face}'` : face;
                 this.selectedFace = face;
-                this.turn(move);
+                this.turn(button.dataset.arrow === 'ccw' ? `${face}'` : face);
             });
         });
         this.bindDragControls();
+        this.restoreFocus(focusSelector);
+    }
+
+    /**
+     * Full re-renders replace every control, so the focused control is remembered
+     * by its data attributes and focused again once the new markup is in place.
+     */
+    getFocusedControlSelector() {
+        const active = this.container.ownerDocument?.activeElement;
+        if (!active || !this.container.contains(active)) return null;
+        if (active.matches('summary')) return '.rubiks-controls-drawer summary';
+        if (active.hasAttribute('data-rubiks-viewport')) return '[data-rubiks-viewport]';
+        const parts = ['data-move', 'data-rubiks-action', 'data-difficulty', 'data-face-move', 'data-arrow']
+            .filter(name => active.hasAttribute(name))
+            .map(name => `[${name}="${active.getAttribute(name)}"]`);
+        return parts.length ? parts.join('') : null;
+    }
+
+    restoreFocus(selector) {
+        if (!selector) return;
+        const target = this.container.querySelector(selector);
+        if (target && !target.disabled) {
+            target.focus({ preventScroll: true });
+            return;
+        }
+        // A control that became disabled (undo without history) hands focus to the cube.
+        this.container.querySelector('[data-rubiks-viewport]')?.focus({ preventScroll: true });
     }
 
     bindDragControls() {
