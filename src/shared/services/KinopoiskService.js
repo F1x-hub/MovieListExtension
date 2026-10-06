@@ -66,6 +66,15 @@ function kinopoiskTraceNow() {
         : Date.now();
 }
 
+// Per-search traces are diagnostics: localStorage 'movielist:debug-ratings' = '1'.
+function isKinopoiskSearchTraceEnabled() {
+    try {
+        return globalThis.localStorage?.getItem('movielist:debug-ratings') === '1';
+    } catch {
+        return false;
+    }
+}
+
 function createKinopoiskSearchTrace(traceId, query, startedAtOverride = null) {
     const startedAt = Number.isFinite(startedAtOverride)
         ? startedAtOverride
@@ -76,7 +85,7 @@ function createKinopoiskSearchTrace(traceId, query, startedAtOverride = null) {
         startedAt,
         mark(stage, details = {}) {
             const elapsedMs = Math.round((kinopoiskTraceNow() - startedAt) * 10) / 10;
-            console.info('[KinopoiskSearchTrace]', {
+            if (isKinopoiskSearchTraceEnabled()) console.info('[KinopoiskSearchTrace]', {
                 traceId: this.traceId,
                 query: this.query,
                 stage,
@@ -373,7 +382,7 @@ class KinopoiskService {
         const stageStartedAt = kinopoiskTraceNow();
 
         try {
-            console.log(`KinopoiskService: Requesting offscreen browser scraping for "${cleanQuery}"`);
+            if (isKinopoiskSearchTraceEnabled()) console.log(`KinopoiskService: Requesting offscreen browser scraping for "${cleanQuery}"`);
             const timeoutMs = options.timeoutMs || 8000;
             trace.mark('offscreen:start', {
                 timeoutMs,

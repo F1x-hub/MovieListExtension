@@ -42,10 +42,13 @@ function createSearchCard(movie) {
 const tmdbOnlyCard = createSearchCard({
     tmdbId: 100,
     isTmdbOnly: true,
-    name: 'TMDB title',
+    // The title must not contain "TMDB" itself, or the check below would
+    // match the title instead of a leaked TMDB rating badge.
+    name: 'Unmapped title',
     tmdbRating: 8.1
 });
 assert.doesNotMatch(tmdbOnlyCard.innerHTML, /TMDB/);
+assert.doesNotMatch(tmdbOnlyCard.innerHTML, /8\.1/, 'TMDB score is never shown as a provider rating');
 assert.doesNotMatch(tmdbOnlyCard.innerHTML, /mc-badge-kp/);
 
 const providerCard = createSearchCard({

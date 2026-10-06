@@ -457,13 +457,37 @@ export const locales = {
                 start_here: "Ready to start",
                 progress: "Viewing progress",
                 empty_title: "Your current watch will appear here",
-                empty_text: "Add a movie or series to your Watching list."
+                empty_text: "Add a movie or series to your Watching list.",
+                season: "Season {n}",
+                episode: "Episode {n}",
+                completed: "Watched"
             },
             taste: {
                 title: "My taste",
                 subtitle: "What appears most often in your ratings.",
+                title_other: "Taste",
+                subtitle_other: "What appears most often in this user's ratings.",
                 empty: "Rate a few movies to reveal your favorite genres.",
-                distribution_empty: "Your rating distribution will appear here."
+                empty_other: "This user has no favorite genres yet.",
+                distribution_empty: "Your rating distribution will appear here.",
+                distribution_empty_other: "This user has no ratings yet."
+            },
+            page_title: "My profile",
+            page_title_other: "Profile: {name}",
+            sign_in_required: "Sign in to view your profile",
+            not_found: "Profile not found",
+            load_failed: "Failed to load the profile. Check your connection and try again.",
+            offline_cache: "No connection: showing saved profile data.",
+            recent_ratings_failed: "Failed to load ratings.",
+            ui: {
+                avatar_alt: "Profile photo",
+                error_title: "Something went wrong",
+                loading_ratings: "Loading ratings",
+                close: "Close",
+                rated_prefix: "Rated: ",
+                ratings_empty: "No ratings yet. Start rating movies!",
+                ratings_empty_other: "This user has no ratings yet.",
+                unknown_genres: "Genre not specified"
             },
             edit_profile: "Edit Profile",
             loading: "Loading profile...",
@@ -486,7 +510,48 @@ export const locales = {
                 favorite_genre: "Favorite Genre",
                 social_links: "Social Links (optional)",
                 cancel: "Cancel",
-                save: "Save Changes"
+                save: "Save Changes",
+                saving: "Saving...",
+                saved: "Profile updated",
+                save_failed: "Failed to save the profile. Try again.",
+                username_taken: "This username is already taken. Choose another one.",
+                username_check_failed: "Could not check the username. Check your connection and try again.",
+                wrong_password: "The current password is incorrect.",
+                too_many_requests: "Too many attempts. Try again later.",
+                weak_password: "The new password is too weak.",
+                network_error: "No connection. Check your network and try again.",
+                password_not_changed: "The profile was saved, but the password was not changed: {reason}",
+                upload_banner_hint: "Upload a banner",
+                upload_photo_hint: "Upload a photo",
+                change_banner: "Change banner",
+                remove_banner: "Remove banner",
+                remove_photo: "Remove photo",
+                banner_preview_alt: "Banner preview",
+                photo_preview_alt: "Photo preview",
+                first_name_placeholder: "e.g. Alex",
+                last_name_placeholder: "e.g. Mercer",
+                username_hint: "3–20 characters: Latin letters, numbers and underscores",
+                bio_placeholder: "Tell the community about your favorite movies, directors or genres...",
+                display_format_fullname: "First name + last name",
+                display_format_username: "Username",
+                security_title: "Security & password",
+                change_password: "Change password",
+                current_password: "Current password",
+                new_password: "New password",
+                confirm_password: "Confirm new password",
+                new_password_placeholder: "At least 6 characters",
+                confirm_password_placeholder: "Repeat the new password",
+                first_name_required: "Enter your first name",
+                last_name_required: "Enter your last name",
+                username_required: "Enter a username",
+                username_length: "The username must be 3–20 characters long",
+                username_chars: "Use only Latin letters, numbers and underscores",
+                bio_too_long: "The bio must be at most 200 characters",
+                password_too_short: "The new password must be at least 6 characters",
+                password_mismatch: "The passwords do not match",
+                current_password_required: "Enter your current password",
+                file_type_invalid: "Use a JPG, PNG, WebP or GIF image.",
+                file_too_large: "The file must be smaller than 5 MB."
             },
             cropper: {
                 title: "Crop Image",
@@ -494,7 +559,77 @@ export const locales = {
                 banner: "Banner",
                 cancel: "Cancel",
                 apply: "Apply",
-                gif_bypass: "GIF image cannot be cropped in browser, using original image."
+                gif_bypass: "GIF image cannot be cropped in browser, using original image.",
+                close: "Close the cropper",
+                image_alt: "Image to crop",
+                selection_label: "Crop area: arrows move it, + and − resize it"
+            }
+        },
+        home: {
+            page_title: "Home | MovieList Extension",
+            page_heading: "Home",
+            loading: "Loading showcase...",
+            error_title: "Loading error",
+            error_message: "Could not load data",
+            retry: "Retry",
+            discovery_error: "Could not load recommendations",
+            no_data: "Nothing here yet",
+            untitled: "Untitled",
+            rating_kp: "Kinopoisk rating",
+            rating_imdb: "IMDb rating",
+            rating_kp_loading: "Loading Kinopoisk rating",
+            rating_imdb_loading: "Loading IMDb rating",
+            rating_kp_unavailable: "Kinopoisk rating unavailable",
+            rating_imdb_unavailable: "IMDb rating unavailable",
+            sections: {
+                films: "Movies",
+                series: "Series",
+                cartoons: "Cartoons",
+                anime: "Anime"
+            },
+            see_all: {
+                films: "All movies",
+                series: "All series",
+                cartoons: "All cartoons",
+                anime: "All anime",
+                watching: "All in progress",
+                watchlist: "All bookmarks"
+            },
+            slider: {
+                label: "Trending this week",
+                pages: "Carousel pages",
+                page: "Page {index} of {total}",
+                slide_of: "{index} of {total}: {title}"
+            },
+            cta: {
+                title: "Sync your viewing and lists",
+                text: "Bookmark films, resume watching from anywhere, and share ratings with friends.",
+                button: "Sign in / Sign up"
+            },
+            empty_personal: "You have no shows in progress or saved bookmarks yet",
+            personal_error: "Could not load your bookmarks",
+            badges: {
+                new: "New",
+                season: "Season {season}",
+                airing: "New episodes"
+            },
+            progress: {
+                season_episode: "S{season} · E{episode}",
+                episode: "Episode {episode}",
+                season: "Season {season}",
+                time: "Stopped at {time}"
+            },
+            explore_catalog: "Find a film in the catalog",
+            continue_watching: "Continue watching",
+            watchlist: "Plan to watch",
+            dashboard: {
+                activity: "Your activity",
+                total_ratings: "Total ratings",
+                average_rating: "Average score",
+                watching: "In progress",
+                watchlist: "Bookmarked",
+                community: "Community picks",
+                community_empty: "No rated films yet"
             }
         },
         ratings: {
@@ -607,6 +742,7 @@ export const locales = {
             }
         },
         movie_card: {
+            ratings_label: "Ratings",
             open_profile: "Open profile",
             options: "Options",
             no_ratings: "Awaiting ratings",
@@ -1458,13 +1594,37 @@ export const locales = {
                 start_here: "Можно начать",
                 progress: "Прогресс просмотра",
                 empty_title: "Здесь появится ваш текущий просмотр",
-                empty_text: "Добавьте фильм или сериал в список «Смотрю»."
+                empty_text: "Добавьте фильм или сериал в список «Смотрю».",
+                season: "Сезон {n}",
+                episode: "Серия {n}",
+                completed: "Просмотрено"
             },
             taste: {
                 title: "Мой вкус",
                 subtitle: "Что чаще всего появляется в ваших оценках.",
+                title_other: "Вкус",
+                subtitle_other: "Что чаще всего появляется в оценках пользователя.",
                 empty: "Оцените несколько фильмов, чтобы увидеть любимые жанры.",
-                distribution_empty: "Здесь появится распределение ваших оценок."
+                empty_other: "У пользователя пока нет любимых жанров.",
+                distribution_empty: "Здесь появится распределение ваших оценок.",
+                distribution_empty_other: "У пользователя пока нет оценок."
+            },
+            page_title: "Мой профиль",
+            page_title_other: "Профиль: {name}",
+            sign_in_required: "Войдите в аккаунт, чтобы открыть профиль",
+            not_found: "Профиль не найден",
+            load_failed: "Не удалось загрузить профиль. Проверьте подключение и попробуйте ещё раз.",
+            offline_cache: "Нет связи: показаны сохранённые данные профиля.",
+            recent_ratings_failed: "Не удалось загрузить оценки.",
+            ui: {
+                avatar_alt: "Фото профиля",
+                error_title: "Что-то пошло не так",
+                loading_ratings: "Загрузка оценок",
+                close: "Закрыть",
+                rated_prefix: "Оценено: ",
+                ratings_empty: "Оценок пока нет. Начните оценивать фильмы!",
+                ratings_empty_other: "У пользователя пока нет оценок.",
+                unknown_genres: "Жанр не указан"
             },
             edit_profile: "Редактировать",
             loading: "Загрузка профиля...",
@@ -1487,7 +1647,48 @@ export const locales = {
                 favorite_genre: "Любимый жанр",
                 social_links: "Социальные сети",
                 cancel: "Отмена",
-                save: "Сохранить"
+                save: "Сохранить",
+                saving: "Сохранение...",
+                saved: "Профиль обновлён",
+                save_failed: "Не удалось сохранить профиль. Попробуйте ещё раз.",
+                username_taken: "Этот никнейм уже занят. Выберите другой.",
+                username_check_failed: "Не удалось проверить никнейм. Проверьте подключение и попробуйте ещё раз.",
+                wrong_password: "Текущий пароль указан неверно.",
+                too_many_requests: "Слишком много попыток. Попробуйте позже.",
+                weak_password: "Новый пароль слишком простой.",
+                network_error: "Нет связи. Проверьте подключение и попробуйте ещё раз.",
+                password_not_changed: "Профиль сохранён, но пароль не изменён: {reason}",
+                upload_banner_hint: "Загрузить обложку",
+                upload_photo_hint: "Загрузить фото",
+                change_banner: "Сменить обложку",
+                remove_banner: "Удалить обложку",
+                remove_photo: "Удалить фото",
+                banner_preview_alt: "Превью обложки",
+                photo_preview_alt: "Превью фото",
+                first_name_placeholder: "Например, Алекс",
+                last_name_placeholder: "Например, Мерсер",
+                username_hint: "3–20 символов: латинские буквы, цифры и подчёркивание",
+                bio_placeholder: "Расскажите о любимых фильмах, режиссёрах или жанрах...",
+                display_format_fullname: "Имя и фамилия",
+                display_format_username: "Никнейм",
+                security_title: "Безопасность и пароль",
+                change_password: "Сменить пароль",
+                current_password: "Текущий пароль",
+                new_password: "Новый пароль",
+                confirm_password: "Повторите новый пароль",
+                new_password_placeholder: "Не менее 6 символов",
+                confirm_password_placeholder: "Повторите новый пароль",
+                first_name_required: "Укажите имя",
+                last_name_required: "Укажите фамилию",
+                username_required: "Укажите никнейм",
+                username_length: "Никнейм должен содержать от 3 до 20 символов",
+                username_chars: "Используйте только латинские буквы, цифры и подчёркивание",
+                bio_too_long: "Текст «О себе» — не более 200 символов",
+                password_too_short: "Новый пароль должен содержать не менее 6 символов",
+                password_mismatch: "Пароли не совпадают",
+                current_password_required: "Укажите текущий пароль",
+                file_type_invalid: "Используйте изображение JPG, PNG, WebP или GIF.",
+                file_too_large: "Файл должен быть меньше 5 МБ."
             },
             cropper: {
                 title: "Обрезать изображение",
@@ -1495,7 +1696,77 @@ export const locales = {
                 banner: "Баннер",
                 cancel: "Отмена",
                 apply: "Применить",
-                gif_bypass: "GIF-изображение обрезается без браузера, используется оригинал."
+                gif_bypass: "GIF нельзя обрезать в браузере, поэтому используется исходное изображение.",
+                close: "Закрыть обрезку",
+                image_alt: "Изображение для обрезки",
+                selection_label: "Область обрезки: стрелки двигают её, + и − меняют размер"
+            }
+        },
+        home: {
+            page_title: "Главная | MovieList Extension",
+            page_heading: "Главная",
+            loading: "Загрузка витрины...",
+            error_title: "Ошибка загрузки",
+            error_message: "Не удалось загрузить данные",
+            retry: "Повторить",
+            discovery_error: "Не удалось загрузить подборки",
+            no_data: "Нет данных",
+            untitled: "Без названия",
+            rating_kp: "Оценка Кинопоиска",
+            rating_imdb: "Оценка IMDb",
+            rating_kp_loading: "Загрузка рейтинга КП",
+            rating_imdb_loading: "Загрузка рейтинга IMDb",
+            rating_kp_unavailable: "Оценка Кинопоиска недоступна",
+            rating_imdb_unavailable: "Оценка IMDb недоступна",
+            sections: {
+                films: "Фильмы",
+                series: "Сериалы",
+                cartoons: "Мультфильмы",
+                anime: "Аниме"
+            },
+            see_all: {
+                films: "Все фильмы",
+                series: "Все сериалы",
+                cartoons: "Все мультфильмы",
+                anime: "Всё аниме",
+                watching: "Все просмотры",
+                watchlist: "Все закладки"
+            },
+            slider: {
+                label: "Популярное на этой неделе",
+                pages: "Страницы карусели",
+                page: "Страница {index} из {total}",
+                slide_of: "{index} из {total}: {title}"
+            },
+            cta: {
+                title: "Синхронизируйте просмотр и списки",
+                text: "Сохраняйте фильмы в закладки, продолжайте просмотр с любого места и делитесь оценками с друзьями.",
+                button: "Войти / Зарегистрироваться"
+            },
+            empty_personal: "У вас пока нет активных просмотров и сохраненных закладок",
+            personal_error: "Не удалось загрузить ваши закладки",
+            badges: {
+                new: "Новинка",
+                season: "{season} сезон",
+                airing: "Новые серии"
+            },
+            progress: {
+                season_episode: "{season} сезон, {episode} серия",
+                episode: "{episode} серия",
+                season: "{season} сезон",
+                time: "Остановились на {time}"
+            },
+            explore_catalog: "Найти фильм в каталоге",
+            continue_watching: "Продолжить просмотр",
+            watchlist: "Буду смотреть",
+            dashboard: {
+                activity: "Ваша активность",
+                total_ratings: "Оценок всего",
+                average_rating: "Средний балл",
+                watching: "В процессе",
+                watchlist: "В закладках",
+                community: "Выбор сообщества",
+                community_empty: "Пока нет оцененных фильмов"
             }
         },
         ratings: {
@@ -1608,6 +1879,7 @@ export const locales = {
             }
         },
         movie_card: {
+            ratings_label: "Рейтинги",
             open_profile: "Перейти в профиль",
             options: "Действия",
             no_ratings: "Ожидает оценок",

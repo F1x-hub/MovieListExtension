@@ -8,7 +8,7 @@
  * A Kinopoisk ID is optional until the user opens the card.
  * 
  * SEMANTIC CONTRACT:
- *  - featured: Mixed trending showcase (up to 10)
+ *  - featured: Trending movies of the week (up to 10)
  *  - films:    Live-action movies (media_type = movie AND !animation)
  *  - series:   Live-action TV series (media_type = tv AND !animation)
  *  - cartoons: Non-Japanese animation (isAnimation AND !isAnime) [movies & TV]
@@ -28,6 +28,27 @@ const SECTION_TARGETS = Object.freeze({
     shows: 12 // backward-compatibility alias for anime
 });
 
+// Minimum TMDB vote counts for Home sections. Provider lists such as
+// now_playing and trending/tv otherwise surface obscure titles with a
+// handful of votes ahead of recognisable releases.
+const SECTION_MIN_VOTES = Object.freeze({
+    featured: 5,
+    films: 100,
+    series: 50,
+    cartoons: 30,
+    anime: 30
+});
+
+// Titles must contain Latin or Cyrillic letters. TMDB returns the original
+// CJK title when no Russian translation exists, which users cannot read.
+const READABLE_TITLE_PATTERN = /[A-Za-z\u0400-\u04FF]/;
+// Older payloads, newest first. v13 lacks the currently-airing Anime pool.
+const LEGACY_TMDB_ONLY_CACHE_KEYS = Object.freeze([
+    'home_discovery_cache_v13',
+    'home_discovery_cache_v13_en-US',
+    'home_discovery_cache_v12'
+]);
+
 class HomeCacheService {
     static SECTION_TARGETS = SECTION_TARGETS;
 
@@ -42,10 +63,188 @@ class HomeCacheService {
         this.tmdbService = tmdbService || (firebaseManager?.getTMDBService?.()) || (typeof TMDBService !== 'undefined' ? new TMDBService() : null);
         
         this.CACHE_KEY = 'home_discovery_cache_v10';
-        // v12 preserves English/original titles needed by IMDb HTML search.
-        this.TMDB_ONLY_CACHE_KEY = 'home_discovery_cache_v12';
+        // v14: Anime shows series airing now (new series and new seasons).
+        this.TMDB_ONLY_CACHE_KEY = 'home_discovery_cache_v14';
         this.CACHE_DURATION = 4 * 60 * 60 * 1000; // 4 hours Content Cache TTL
         this.isRefreshing = false;
+        this.tmdbOnlyRefreshPromises = new Map();
+        // TMDB-only refreshes lock per language: an English refresh must not
+        // wait behind (or be mistaken for) a Russian one.
+        this.tmdbOnlyRefreshingLanguages = new Set();
+    }
+
+    /**
+     * TMDB language for an interface locale ('en' -> 'en-US'); Russian stays
+     * the default because it is the original Home language.
+     * @param {string} [locale]
+     * @returns {string}
+     */
+    _tmdbLanguage(locale) {
+        const base = String(locale || '').toLowerCase().split('-')[0];
+        return base === 'en' ? 'en-US' : 'ru-RU';
+    }
+
+    /**
+     * Each language has its own cache so titles always match the interface.
+     * @param {string} language - TMDB language tag
+     * @returns {string}
+     */
+    _tmdbOnlyCacheKey(language = 'ru-RU') {
+        return language === 'ru-RU' ? this.TMDB_ONLY_CACHE_KEY : `${this.TMDB_ONLY_CACHE_KEY}_${language}`;
+    }
+
+    /**
+     * A TMDB client that requests the given language without changing the
+     * shared instance used elsewhere on the page.
+     * @param {Object} base
+     * @param {string} language
+     * @returns {Object}
+     */
+    _tmdbForLanguage(base, language) {
+        if (!base || !language || base.defaultLanguage === language) return base;
+        return Object.assign(Object.create(base), { defaultLanguage: language });
+    }
+
+    /**
+     * Check whether a TMDB candidate is good enough for a Home section.
+     * @param {Object} item
+     * @param {string} section
+     * @returns {boolean}
+     */
+    _passesQualityGate(item, section) {
+        if (!item) return false;
+        const title = item.name || item.title || '';
+        if (!READABLE_TITLE_PATTERN.test(title)) return false;
+        // Currently airing anime passed its own audience check in
+        // TMDBService.getAiringAnime; new series rarely have 30 votes yet.
+        const minVotes = item.airingStatus ? 0 : (SECTION_MIN_VOTES[section] || 0);
+        const votes = Number(item.voteCount ?? item.vote_count) || 0;
+        return votes >= minVotes;
+    }
+
+    /**
+     * Rewrite cached `original` TMDB posters to the card size.
+     * @param {Object} data
+     * @returns {Object}
+     */
+    _withCardSizedPosters(data) {
+        const resize = card => {
+            if (!card || typeof card.posterUrl !== 'string') return card;
+            return { ...card, posterUrl: card.posterUrl.replace('/t/p/original/', '/t/p/w342/') };
+        };
+        const result = { ...data };
+        for (const section of ['featured', 'films', 'series', 'cartoons', 'anime']) {
+            if (Array.isArray(data?.[section])) result[section] = data[section].map(resize);
+        }
+        result.shows = result.anime;
+        return result;
+    }
+
+    /**
+     * Read a pre-v13 TMDB-only cache so upgraded users see cards immediately
+     * while the quality-gated payload is fetched.
+     * @returns {Promise<Object|null>}
+     */
+    async _takeLegacyTmdbOnlyCache(language = 'ru-RU') {
+        // Only legacy payloads in the requested language are reusable.
+        const keys = LEGACY_TMDB_ONLY_CACHE_KEYS.filter(key => (language === 'ru-RU'
+            ? !key.includes('_en-US')
+            : key.endsWith(`_${language}`)));
+        for (const key of keys) {
+            const legacy = await this._getRawCache(key);
+            if (legacy?.data && this._isUsableDiscoveryPayload(legacy.data)) {
+                return this._withCardSizedPosters(legacy.data);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Map `movie:<id>`/`tv:<id>` to Russian titles from the cached Russian
+     * payload (any age). It never fetches: an English refresh used to wait
+     * for a whole Russian refresh first, doubling cold-start time.
+     * @returns {Promise<Map<string, string>|null>} null when no Russian cache exists
+     */
+    async _readRussianTitleIndex() {
+        const cached = await this._getRawCache(this._tmdbOnlyCacheKey('ru-RU'));
+        if (!cached?.data) return null;
+        const index = new Map();
+        for (const section of ['featured', 'films', 'series', 'cartoons', 'anime']) {
+            const cards = Array.isArray(cached.data[section]) ? cached.data[section] : [];
+            cards.forEach(card => {
+                if (!card?.tmdbId || !card.name) return;
+                index.set(`${card.mediaType === 'tv' ? 'tv' : 'movie'}:${card.tmdbId}`, card.name);
+            });
+        }
+        return index;
+    }
+
+    /**
+     * Add Russian `searchTitle`s to cards of a non-Russian payload.
+     * @param {Object} payload
+     * @param {Map<string, string>} index
+     * @returns {number} Number of cards that received a search title
+     */
+    _attachSearchTitles(payload, index) {
+        let attached = 0;
+        for (const section of ['featured', 'films', 'series', 'cartoons', 'anime']) {
+            (Array.isArray(payload?.[section]) ? payload[section] : []).forEach(card => {
+                const russianTitle = index.get(`${card.mediaType === 'tv' ? 'tv' : 'movie'}:${card.tmdbId}`);
+                if (russianTitle && russianTitle !== card.name && card.searchTitle !== russianTitle) {
+                    card.searchTitle = russianTitle;
+                    attached += 1;
+                }
+            });
+        }
+        return attached;
+    }
+
+    /**
+     * Without a Russian cache, fetch it in the background after the
+     * non-Russian payload is saved, then add search titles to that payload
+     * for the next visit. The current page never waits for it.
+     * @param {string} language
+     */
+    _backfillSearchTitles(language) {
+        this._startTmdbOnlyBackgroundRefresh('ru-RU')
+            .then(async () => {
+                const index = await this._readRussianTitleIndex();
+                const cacheKey = this._tmdbOnlyCacheKey(language);
+                const cached = await this._getRawCache(cacheKey);
+                if (!index || !cached?.data) return;
+                if (this._attachSearchTitles(cached.data, index) > 0) {
+                    cached.data.shows = cached.data.anime;
+                    await this._saveRawCache(cached.data, cacheKey, cached.timestamp);
+                }
+            })
+            .catch(error => {
+                console.warn('[HomeCacheService] Russian search titles backfill failed:', error);
+            });
+    }
+
+    _removeLegacyTmdbOnlyCaches() {
+        if (typeof chrome === 'undefined' || !chrome.storage?.local?.remove) return;
+        try {
+            chrome.storage.local.remove([...LEGACY_TMDB_ONLY_CACHE_KEYS]);
+        } catch (error) {
+            console.warn('[HomeCacheService] Failed to remove legacy Home caches:', error);
+        }
+    }
+
+    /**
+     * Start a TMDB-only background refresh, sharing one in-flight promise.
+     * @returns {Promise<Object>}
+     */
+    _startTmdbOnlyBackgroundRefresh(language = 'ru-RU') {
+        if (!this.tmdbOnlyRefreshPromises.has(language)) {
+            const promise = this.refreshTmdbOnlyDiscoveryData({ language })
+                .finally(() => { this.tmdbOnlyRefreshPromises.delete(language); });
+            promise.catch(error => {
+                console.warn('[HomeCacheService] Background TMDB-only refresh failed:', error);
+            });
+            this.tmdbOnlyRefreshPromises.set(language, promise);
+        }
+        return this.tmdbOnlyRefreshPromises.get(language);
     }
 
     /**
@@ -170,9 +369,10 @@ class HomeCacheService {
         }
     }
 
-    async getTmdbOnlyDiscoveryData() {
+    async getTmdbOnlyDiscoveryData(options = {}) {
+        const language = this._tmdbLanguage(options.locale);
         try {
-            const cached = await this._getRawCache(this.TMDB_ONLY_CACHE_KEY);
+            const cached = await this._getRawCache(this._tmdbOnlyCacheKey(language));
 
             if (cached && cached.data && this._isUsableDiscoveryPayload(cached.data) && this._isCacheValid(cached.timestamp)) {
                 this._trackCachedSections(cached.data);
@@ -183,14 +383,20 @@ class HomeCacheService {
             if (cached && cached.data && this._isUsableDiscoveryPayload(cached.data)) {
                 this._trackCachedSections(cached.data);
                 console.log('[HomeCacheService] TMDB-only cache stale; refreshing in background');
-                this.refreshTmdbOnlyDiscoveryData().catch(error => {
-                    console.warn('[HomeCacheService] Background TMDB-only refresh failed:', error);
-                });
-                return { data: cached.data, isFromCache: true, isStale: true };
+                const refreshPromise = this._startTmdbOnlyBackgroundRefresh(language);
+                return { data: cached.data, isFromCache: true, isStale: true, refreshPromise };
+            }
+
+            const legacyData = await this._takeLegacyTmdbOnlyCache(language);
+            if (legacyData) {
+                this._trackCachedSections(legacyData);
+                console.log('[HomeCacheService] Serving legacy TMDB-only cache while refreshing');
+                const refreshPromise = this._startTmdbOnlyBackgroundRefresh(language);
+                return { data: legacyData, isFromCache: true, isStale: true, refreshPromise };
             }
 
             console.log('[HomeCacheService] Cold cache; fetching TMDB-only discovery data');
-            return { data: await this.refreshTmdbOnlyDiscoveryData(), isFromCache: false };
+            return { data: await this.refreshTmdbOnlyDiscoveryData({ language }), isFromCache: false };
         } catch (error) {
             console.error('[HomeCacheService] Error loading TMDB-only discovery data:', error);
             throw error;
@@ -204,33 +410,47 @@ class HomeCacheService {
         }
     }
 
-    async refreshTmdbOnlyDiscoveryData() {
-        if (this.isRefreshing) {
-            while (this.isRefreshing) {
+    async refreshTmdbOnlyDiscoveryData(options = {}) {
+        const language = options.language || 'ru-RU';
+        const cacheKey = this._tmdbOnlyCacheKey(language);
+        // Kinopoisk search matches Russian titles best. Other languages take
+        // them from the cached Russian payload without waiting for a fetch.
+        const russianTitles = language === 'ru-RU' ? null : await this._readRussianTitleIndex();
+        if (this.tmdbOnlyRefreshingLanguages.has(language)) {
+            while (this.tmdbOnlyRefreshingLanguages.has(language)) {
                 await new Promise(resolve => setTimeout(resolve, 100));
             }
-            const currentCache = await this._getRawCache(this.TMDB_ONLY_CACHE_KEY);
-            return currentCache?.data || { featured: [], films: [], series: [], cartoons: [], anime: [], shows: [] };
+            // The finished refresh may have been for another language; only
+            // reuse its result when it produced a usable cache for this one.
+            const currentCache = await this._getRawCache(cacheKey);
+            if (currentCache?.data && this._isUsableDiscoveryPayload(currentCache.data)) {
+                return currentCache.data;
+            }
         }
 
-        this.isRefreshing = true;
+        this.tmdbOnlyRefreshingLanguages.add(language);
         try {
-            const tmdb = this.tmdbService || (typeof TMDBService !== 'undefined' ? new TMDBService() : null);
+            const baseTmdb = this.tmdbService || (typeof TMDBService !== 'undefined' ? new TMDBService() : null);
+            const tmdb = this._tmdbForLanguage(baseTmdb, language);
             if (!tmdb || typeof tmdb.isConfigured !== 'function' || !tmdb.isConfigured()) {
                 throw new Error('TMDB service is not configured for Home discovery');
             }
 
-            const [feat1, feat2, film1, film2, ser1, ser2, cart1, cart2, ani1, ani2] = await Promise.allSettled([
+            // Trending TV page 3 is requested up front: the Series vote floor
+            // exhausted pages 1-2 on every refresh, adding a sequential step.
+            const [feat1, feat2, film1, film2, ser1, ser2, ser3, cart1, cart2, ani1, ani2, airingAnime] = await Promise.allSettled([
                 tmdb.getTrendingMovies?.('week', 1) || Promise.resolve([]),
                 tmdb.getTrendingMovies?.('week', 2) || Promise.resolve([]),
                 tmdb.getNowPlayingMovies?.(1) || Promise.resolve([]),
                 tmdb.getNowPlayingMovies?.(2) || Promise.resolve([]),
                 tmdb.getTrendingTvShows?.(1) || Promise.resolve([]),
                 tmdb.getTrendingTvShows?.(2) || Promise.resolve([]),
+                tmdb.getTrendingTvShows?.(3) || Promise.resolve([]),
                 tmdb.getFreshAnimation?.(1) || Promise.resolve([]),
                 tmdb.getFreshAnimation?.(2) || Promise.resolve([]),
                 tmdb.getFreshAnime?.(1) || Promise.resolve([]),
-                tmdb.getFreshAnime?.(2) || Promise.resolve([])
+                tmdb.getFreshAnime?.(2) || Promise.resolve([]),
+                tmdb.getAiringAnime?.() || Promise.resolve([])
             ]);
 
             const mergeCandidates = (...results) => {
@@ -240,9 +460,13 @@ class HomeCacheService {
                     const items = result.status === 'fulfilled' && Array.isArray(result.value) ? result.value : [];
                     for (const item of items) {
                         if (item?.adult === true) continue;
+                        if (!(item?.posterUrl || item?.posterPath || item?.poster)) continue;
                         const tmdbId = Number(item?.tmdbId || item?.id);
-                        if (!Number.isSafeInteger(tmdbId) || tmdbId <= 0 || seen.has(tmdbId)) continue;
-                        seen.add(tmdbId);
+                        if (!Number.isSafeInteger(tmdbId) || tmdbId <= 0) continue;
+                        // TMDB movie and TV ids are separate namespaces.
+                        const key = `${item.mediaType === 'tv' ? 'tv' : 'movie'}:${tmdbId}`;
+                        if (seen.has(key)) continue;
+                        seen.add(key);
                         merged.push({ ...item, tmdbId });
                     }
                 }
@@ -251,17 +475,28 @@ class HomeCacheService {
 
             const featuredCandidates = mergeCandidates(feat1, feat2);
             const filmsCandidates = mergeCandidates(film1, film2).map(item => ({ ...item, mediaType: 'movie' }));
-            const seriesCandidates = mergeCandidates(ser1, ser2).map(item => ({ ...item, mediaType: 'tv' }));
+            const seriesCandidates = mergeCandidates(ser1, ser2, ser3).map(item => ({ ...item, mediaType: 'tv' }));
             const cartoonsCandidates = mergeCandidates(cart1, cart2).map(item => ({
                 ...item,
                 mediaType: item.mediaType || 'movie',
                 type: 'cartoon'
             }));
-            const animeCandidates = mergeCandidates(ani1, ani2).map(item => ({
-                ...item,
-                mediaType: item.mediaType || 'tv',
-                type: 'anime'
-            }));
+            // Trending TV anime first: long-running shows such as One Piece
+            // fall outside the fresh-anime date window but are what people
+            // watch this week. Non-anime trending series fail the anime gate.
+            // Anime is what is coming out now: new series and series with
+            // episodes airing this week. The popular-in-3-years pool only fills
+            // remaining slots (it made the section look like a list of 2023
+            // hits). Trending TV is no longer used: it surfaced year-round
+            // long-runners such as One Piece and Detective Conan.
+            const animeCandidates = [
+                ...mergeCandidates(airingAnime).map(item => ({ ...item, mediaType: 'tv', type: 'anime' })),
+                ...mergeCandidates(ani1, ani2).map(item => ({
+                    ...item,
+                    mediaType: item.mediaType || 'tv',
+                    type: 'anime'
+                }))
+            ];
 
             const currentYear = new Date().getFullYear();
             const minFilmsReleaseDate = `${currentYear - 2}-01-01`;
@@ -283,10 +518,8 @@ class HomeCacheService {
                     alternativeName: item.alternativeName || item.originalTitle || item.original_title || item.original_name || '',
                     englishTitle: item.englishTitle || item.nameEn || item.englishName || item.originalTitle || item.original_title || item.original_name || item.alternativeName || '',
                     posterUrl: item.posterUrl || item.posterPath || item.poster || '',
-                    backdrop: item.backdrop || item.backdropUrl || '',
                     year: item.year || (item.releaseDate || item.release_date || '').slice?.(0, 4) || null,
                     releaseDate: item.releaseDate || item.release_date || null,
-                    description: item.description || item.overview || '',
                     kpRating: null,
                     ratingTmdb: item.ratingTmdb || item.vote_average || item.rating || null,
                     imdbRating: item.imdbRating || null,
@@ -295,23 +528,28 @@ class HomeCacheService {
                     originalLanguage: item.originalLanguage || item.original_language || '',
                     originCountry: item.originCountry || item.origin_country || [],
                     mediaType,
-                    type: item.type || defaultType,
+                    // Animation sections label cards by their section once the
+                    // classifier has accepted them.
+                    type: (section === 'anime' || section === 'cartoons') ? defaultType : (item.type || defaultType),
                     section,
+                    ...(item.airingStatus ? { airingStatus: item.airingStatus } : {}),
+                    ...(item.seasonNumber ? { seasonNumber: item.seasonNumber } : {}),
                     isTmdbOnly: true,
                     source: 'tmdb-only'
                 };
             };
 
             const usedTmdbIds = new Set();
-            const takeSection = (candidates, section, defaultType, predicate = () => true) => {
+            const identityKey = item => `${item.mediaType === 'tv' ? 'tv' : 'movie'}:${item.tmdbId}`;
+            const takeSection = (candidates, section, defaultType, predicate = () => true, limit = SECTION_TARGETS[section]) => {
                 const result = [];
                 for (const item of candidates) {
-                    if (result.length >= SECTION_TARGETS[section]) break;
+                    if (result.length >= limit) break;
                     if (!predicate(item) || !this.isCandidateForSection(item, section)) continue;
-                    if (usedTmdbIds.has(item.tmdbId)) continue;
+                    if (!this._passesQualityGate(item, section)) continue;
                     const card = toCard(item, defaultType, section);
-                    if (!card) continue;
-                    usedTmdbIds.add(item.tmdbId);
+                    if (!card || usedTmdbIds.has(identityKey(card))) continue;
+                    usedTmdbIds.add(identityKey(card));
                     result.push(card);
                 }
                 return result;
@@ -321,31 +559,50 @@ class HomeCacheService {
             for (const item of featuredCandidates) {
                 if (featured.length >= SECTION_TARGETS.featured) break;
                 if (!this.isCandidateForSection(item, 'featured')) continue;
+                if (!this._passesQualityGate(item, 'featured')) continue;
                 const card = toCard(item, item.mediaType || 'movie', 'featured');
-                if (!card || usedTmdbIds.has(card.tmdbId)) continue;
-                usedTmdbIds.add(card.tmdbId);
+                if (!card || usedTmdbIds.has(identityKey(card))) continue;
+                usedTmdbIds.add(identityKey(card));
                 featured.push(card);
             }
 
             let films = takeSection(filmsCandidates, 'films', 'movie', isFreshMovie);
             if (films.length < SECTION_TARGETS.films && typeof tmdb.getFreshMovies === 'function') {
                 for (let page = 1; page <= 3 && films.length < SECTION_TARGETS.films; page++) {
-                    const extra = await tmdb.getFreshMovies(page, { withoutGenres: 16, minReleaseDate: minFilmsReleaseDate });
+                    const extra = await tmdb.getFreshMovies(page, {
+                        withoutGenres: 16,
+                        minReleaseDate: minFilmsReleaseDate,
+                        minVotes: SECTION_MIN_VOTES.films
+                    });
                     const extraCandidates = Array.isArray(extra) ? extra.map(item => ({ ...item, tmdbId: Number(item.tmdbId || item.id), mediaType: 'movie' })) : [];
-                    films.push(...takeSection(extraCandidates, 'films', 'movie', isFreshMovie));
+                    films.push(...takeSection(extraCandidates, 'films', 'movie', isFreshMovie, SECTION_TARGETS.films - films.length));
                 }
             }
 
             const series = takeSection(seriesCandidates, 'series', 'tv-series');
+            if (series.length < SECTION_TARGETS.series && typeof tmdb.getTrendingTvShows === 'function') {
+                // The vote floor can exhaust the first two trending pages.
+                for (let page = 4; page <= 5 && series.length < SECTION_TARGETS.series; page++) {
+                    const extra = await tmdb.getTrendingTvShows(page);
+                    const extraCandidates = Array.isArray(extra)
+                        ? extra.map(item => ({ ...item, tmdbId: Number(item.tmdbId || item.id), mediaType: 'tv' }))
+                        : [];
+                    series.push(...takeSection(extraCandidates, 'series', 'tv-series', undefined, SECTION_TARGETS.series - series.length));
+                }
+            }
             const cartoons = takeSection(cartoonsCandidates, 'cartoons', 'cartoon');
             const anime = takeSection(animeCandidates, 'anime', 'anime');
             const discoveryPayload = { featured, films, series, cartoons, anime, shows: anime };
+            if (russianTitles) this._attachSearchTitles(discoveryPayload, russianTitles);
 
             if (!this._isUsableDiscoveryPayload(discoveryPayload)) {
                 throw new Error('TMDB-only discovery returned an unusable payload');
             }
 
-            await this._saveRawCache(discoveryPayload, this.TMDB_ONLY_CACHE_KEY);
+            await this._saveRawCache(discoveryPayload, cacheKey);
+            // Any successful refresh retires pre-v13 data, whatever the language.
+            this._removeLegacyTmdbOnlyCaches();
+            if (language !== 'ru-RU' && !russianTitles) this._backfillSearchTitles(language);
             console.log('[HomeCacheService] TMDB-only discovery refresh completed:', {
                 featured: featured.length,
                 films: films.length,
@@ -355,7 +612,7 @@ class HomeCacheService {
             });
             return discoveryPayload;
         } finally {
-            this.isRefreshing = false;
+            this.tmdbOnlyRefreshingLanguages.delete(language);
         }
     }
 
@@ -959,7 +1216,7 @@ class HomeCacheService {
     async clearCache() {
         if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
             return new Promise((resolve) => {
-                chrome.storage.local.remove([this.CACHE_KEY, this.TMDB_ONLY_CACHE_KEY], () => {
+                chrome.storage.local.remove([this.CACHE_KEY, this.TMDB_ONLY_CACHE_KEY, this._tmdbOnlyCacheKey('en-US'), ...LEGACY_TMDB_ONLY_CACHE_KEYS], () => {
                     console.log('[HomeCacheService] Discovery cache cleared');
                     resolve();
                 });
@@ -984,13 +1241,15 @@ class HomeCacheService {
         });
     }
 
-    async _saveRawCache(data, cacheKey = this.CACHE_KEY) {
+    async _saveRawCache(data, cacheKey = this.CACHE_KEY, timestamp = Date.now()) {
         if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) {
             return;
         }
 
+        // Pass the original timestamp when patching a payload, so the patch
+        // does not extend its freshness.
         const cacheObject = {
-            timestamp: Date.now(),
+            timestamp,
             version: '3.0',
             data: data
         };

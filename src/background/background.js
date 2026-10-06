@@ -959,7 +959,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return false;
     } else if (message.target === 'kinopoisk-search-coordinator') {
         // Message from content script running inside the scraper iframe
-        console.info('[KinopoiskOffscreenTrace]', {
+        debugTrace('[KinopoiskOffscreenTrace]', {
             traceId: _currentSearchRequest?.traceId || null,
             stage: 'content-script:result-received',
             requestId: message.requestId || null,
@@ -1007,6 +1007,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // --- Offscreen Document Coordinator (Radio & Search Scraper) ---
 let _offscreenPromise = null;
 let _currentSearchRequest = null;
+
+// Offscreen search traces are diagnostics, enabled with
+// chrome.storage.local.set({ movielistDebugTraces: true }). Warnings always log.
+let _debugTracesEnabled = false;
+chrome.storage?.local?.get?.(['movielistDebugTraces'], result => {
+    _debugTracesEnabled = result?.movielistDebugTraces === true;
+});
+chrome.storage?.onChanged?.addListener?.((changes, area) => {
+    if (area === 'local' && changes.movielistDebugTraces) {
+        _debugTracesEnabled = changes.movielistDebugTraces.newValue === true;
+    }
+});
+function debugTrace(...args) {
+    if (_debugTracesEnabled) console.info(...args);
+}
 const _searchQueue = [];
 const _searchInFlight = new Map();
 const _recentSearchResults = new Map();
@@ -1245,7 +1260,7 @@ async function processSearchQueue() {
     let timeoutId = null;
     let isDone = false;
 
-    console.info('[KinopoiskOffscreenTrace]', {
+    debugTrace('[KinopoiskOffscreenTrace]', {
         traceId,
         stage: 'queue:dequeued',
         requestId,
@@ -1281,7 +1296,7 @@ async function processSearchQueue() {
                 ? result.reason
                 : null
         };
-        console.info('[KinopoiskOffscreenTrace]', {
+        debugTrace('[KinopoiskOffscreenTrace]', {
             traceId,
             stage: 'request:finish',
             requestId,
@@ -1320,13 +1335,13 @@ async function processSearchQueue() {
 
     try {
         const offscreenInitStartedAt = Date.now();
-        console.info('[KinopoiskOffscreenTrace]', {
+        debugTrace('[KinopoiskOffscreenTrace]', {
             traceId,
             stage: 'offscreen:init:start',
             requestId
         });
         await ensureOffscreen();
-        console.info('[KinopoiskOffscreenTrace]', {
+        debugTrace('[KinopoiskOffscreenTrace]', {
             traceId,
             stage: 'offscreen:init:end',
             requestId,
@@ -1351,7 +1366,7 @@ async function processSearchQueue() {
         finish({ success: false, reason: 'BACKGROUND_TIMEOUT', items: [] });
     }, timeoutMs);
 
-    console.info('[KinopoiskOffscreenTrace]', {
+    debugTrace('[KinopoiskOffscreenTrace]', {
         traceId,
         stage: 'iframe:load-dispatch',
         requestId,

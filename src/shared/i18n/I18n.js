@@ -12,10 +12,27 @@ class I18n {
             const result = await chrome.storage.sync.get(['language']);
             if (result.language && this.locales[result.language]) {
                 this.currentLocale = result.language;
+            } else {
+                // No saved choice yet: follow the browser language instead of
+                // silently switching Russian-speaking users to English.
+                this.currentLocale = this.detectBrowserLocale();
             }
         } catch (error) {
             console.error('Failed to load language settings:', error);
         }
+    }
+
+    detectBrowserLocale() {
+        let language;
+        try {
+            language = (typeof chrome !== 'undefined' && chrome.i18n?.getUILanguage?.())
+                || (typeof navigator !== 'undefined' ? navigator.language : '')
+                || '';
+        } catch {
+            language = '';
+        }
+        const base = String(language).toLowerCase().split('-')[0];
+        return this.locales[base] ? base : 'en';
     }
 
     get(key) {

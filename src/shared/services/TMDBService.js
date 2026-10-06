@@ -7,6 +7,28 @@ const DEFAULT_TMDB_CONFIG = {
     DEFAULT_LANGUAGE: 'ru-RU',
     rotateKey() {}
 };
+// The tmdbProxy Cloud Function serves one request per instance, so a burst of
+// 30+ parallel requests started new instances and some waited ~7.5 s on a
+// cold start. Requests through the proxy are capped per page instead.
+const TMDB_PROXY_MAX_CONCURRENT = 6;
+const tmdbProxySlots = { active: 0, waiting: [] };
+
+async function acquireTmdbProxySlot() {
+    if (tmdbProxySlots.active < TMDB_PROXY_MAX_CONCURRENT) {
+        tmdbProxySlots.active += 1;
+        return;
+    }
+    await new Promise(resolve => tmdbProxySlots.waiting.push(resolve));
+}
+
+function releaseTmdbProxySlot() {
+    const next = tmdbProxySlots.waiting.shift();
+    if (next) next();
+    else tmdbProxySlots.active = Math.max(0, tmdbProxySlots.active - 1);
+}
+
+const TMDB_AIRING_DETAILS_CACHE_KEY = 'tmdb_airing_details_v1';
+const TMDB_AIRING_DETAILS_TTL_MS = 24 * 60 * 60 * 1000;
 const tmdbConfig = (typeof globalThis !== 'undefined' && globalThis.TMDB_CONFIG)
     ? globalThis.TMDB_CONFIG
     : DEFAULT_TMDB_CONFIG;
@@ -20,6 +42,9 @@ class TMDBService {
         this.baseUrl = tmdbConfig.BASE_URL;
         this.defaultLanguage = tmdbConfig.DEFAULT_LANGUAGE || 'ru-RU';
         this.maxRequestsPerSecond = tmdbConfig.MAX_REQUESTS_PER_SECOND || 35;
+        // A stalled proxy otherwise leaves callers (e.g. Home skeletons)
+        // waiting forever without reaching their error state.
+        this.requestTimeoutMs = 12000;
         this.requestTimestamps = [];
         this.inFlightSeasonRequests = new Map();
         this.seasonCachePrefix = 'tmdb_season_cache_v1_';
@@ -69,6 +94,32 @@ class TMDBService {
      * @param {Object} options - Fetch options
      * @returns {Promise<Response>}
      */
+    /**
+     * Add a request timeout while still honouring the caller's abort signal.
+     * @param {Object} options - Fetch options
+     * @returns {Object} Fetch options with a combined signal
+     */
+    _withRequestTimeout(options = {}) {
+        if (typeof AbortController === 'undefined') return options;
+        const controller = new AbortController();
+        const external = options.signal;
+        if (external) {
+            if (external.aborted) {
+                controller.abort(external.reason);
+            } else {
+                external.addEventListener('abort', () => controller.abort(external.reason), { once: true });
+            }
+        }
+        const timer = setTimeout(() => {
+            const reason = typeof DOMException === 'function'
+                ? new DOMException('TMDB request timed out', 'TimeoutError')
+                : new Error('TMDB request timed out');
+            controller.abort(reason);
+        }, this.requestTimeoutMs);
+        timer?.unref?.();
+        return { ...options, signal: controller.signal };
+    }
+
     async _fetchViaProxy(url, options = {}) {
         const targetUrl = new URL(url);
         if (targetUrl.origin !== 'https://api.themoviedb.org' || !targetUrl.pathname.startsWith('/3/')) {
@@ -78,13 +129,19 @@ class TMDBService {
         const proxyUrl = new URL(tmdbConfig.TMDB_PROXY_URL || DEFAULT_TMDB_PROXY_URL);
         proxyUrl.searchParams.set('url', targetUrl.toString());
 
-        return fetch(proxyUrl.toString(), {
-            ...options,
-            headers: {
-                Accept: 'application/json',
-                ...options.headers
-            }
-        });
+        // The request timeout starts once a slot is free, not while queued.
+        await acquireTmdbProxySlot();
+        try {
+            return await fetch(proxyUrl.toString(), this._withRequestTimeout({
+                ...options,
+                headers: {
+                    Accept: 'application/json',
+                    ...options.headers
+                }
+            }));
+        } finally {
+            releaseTmdbProxySlot();
+        }
     }
 
     async _fetchWithRotation(url, options = {}) {
@@ -110,7 +167,7 @@ class TMDBService {
 
             let response;
             try {
-                response = await fetch(url, fetchOptions);
+                response = await fetch(url, this._withRequestTimeout(fetchOptions));
             } catch (networkError) {
                 lastError = networkError;
                 console.warn(`TMDBService: network error on attempt ${attempt + 1}/${maxAttempts}:`, networkError.message);
@@ -416,8 +473,10 @@ class TMDBService {
             name: title,
             alternativeName: originalTitle,
             englishTitle: originalTitle,
-            posterUrl: this.buildImageUrl(item.poster_path),
-            backdrop: this.buildImageUrl(item.backdrop_path),
+            // Card-sized posters: `original` files are ~1 MB each and made
+            // list pages download tens of megabytes for ~200px cards.
+            posterUrl: this.buildImageUrl(item.poster_path, 'w342'),
+            backdrop: this.buildImageUrl(item.backdrop_path, 'w780'),
             year: this.getYear(releaseDate),
             releaseDate,
             description: item.overview || '',
@@ -470,6 +529,7 @@ class TMDBService {
             with_genres: '16',
             sort_by: 'popularity.desc',
             'first_air_date.gte': minDate,
+            'first_air_date.lte': todayStr,
             'vote_count.gte': '5',
             include_adult: 'false',
             without_keywords: explicitKeywords
@@ -739,6 +799,7 @@ class TMDBService {
      */
     async getFreshAnime(page = 1, options = {}, signal = null) {
         const currentYear = new Date().getFullYear();
+        const todayStr = new Date().toISOString().split('T')[0];
         const minDate = options.minReleaseDate || `${currentYear - 3}-01-01`;
 
         // Exclusions: hentai(198385), erotic(256466), softcore(155477), pornography(445), erotica(325693)
@@ -753,6 +814,7 @@ class TMDBService {
             with_original_language: 'ja',
             sort_by: 'popularity.desc',
             'primary_release_date.gte': minDate,
+            'primary_release_date.lte': todayStr,
             'vote_count.gte': '5',
             include_adult: 'false',
             without_keywords: explicitKeywords,
@@ -766,6 +828,7 @@ class TMDBService {
             with_original_language: 'ja',
             sort_by: 'popularity.desc',
             'first_air_date.gte': minDate,
+            'first_air_date.lte': todayStr,
             'vote_count.gte': '5',
             include_adult: 'false',
             without_keywords: explicitKeywords,
@@ -805,6 +868,155 @@ class TMDBService {
 
         const merged = [...normalizedMovies, ...normalizedTv].sort((a, b) => scoreAnime(b) - scoreAnime(a));
         return merged;
+    }
+
+    /**
+     * Anime that is coming out now: series that premiered in the last ~4
+     * months plus older series whose episodes are airing this week. Year-round
+     * long-runners (Detective Conan, Doraemon, One Piece, Pokémon) are left
+     * out by the size of their current season; they air every week but are
+     * not "new".
+     * Requests: 4 discover pages plus one details call per older airing
+     * series (at most `maxDetails`).
+     * @param {Object} [options={}]
+     * @param {number} [options.maxSequels=7] - Cap for older airing series
+     * @param {number} [options.maxDetails=16] - Details lookups for older series
+     * @param {AbortSignal} [signal=null]
+     * @returns {Promise<Array<Object>>} Normalized items with `airingStatus`
+     *   ('new' | 'airing') and `seasonNumber` when a new numbered season is airing
+     */
+    async getAiringAnime(options = {}, signal = null) {
+        const dayMs = 24 * 60 * 60 * 1000;
+        const now = Date.now();
+        const isoDate = offsetDays => new Date(now + offsetDays * dayMs).toISOString().split('T')[0];
+        const today = isoDate(0);
+        const newSince = isoDate(-120);
+        const seasonSince = isoDate(-270);
+        const maxSequels = options.maxSequels ?? 7;
+        const maxDetails = options.maxDetails ?? 16;
+        const base = {
+            language: this.defaultLanguage,
+            with_genres: '16',
+            with_original_language: 'ja',
+            sort_by: 'popularity.desc',
+            include_adult: 'false',
+            without_keywords: '198385,256466,155477,445,325693',
+            without_companies: '149421,125825,152965,238639'
+        };
+        const discover = async params => {
+            const response = await this._fetchWithRotation(
+                `${this.baseUrl}/discover/tv?${new URLSearchParams({ ...base, ...params })}`,
+                { method: 'GET', signal }
+            );
+            if (!response.ok) throw new Error(`TMDB airing anime request failed: HTTP ${response.status}`);
+            const data = await response.json();
+            return Array.isArray(data.results) ? data.results : [];
+        };
+
+        const [airing1, airing2, new1, new2] = await Promise.allSettled([
+            discover({ 'air_date.gte': isoDate(-21), 'air_date.lte': isoDate(7), page: '1' }),
+            discover({ 'air_date.gte': isoDate(-21), 'air_date.lte': isoDate(7), page: '2' }),
+            discover({ 'first_air_date.gte': newSince, 'first_air_date.lte': today, page: '1' }),
+            discover({ 'first_air_date.gte': newSince, 'first_air_date.lte': today, page: '2' })
+        ]);
+        const valuesOf = (...results) => results.flatMap(result => (result.status === 'fulfilled' ? result.value : []));
+
+        const byId = new Map();
+        for (const show of valuesOf(new1, new2)) {
+            if (!show?.id || show.adult || !show.poster_path || !show.first_air_date || show.first_air_date < newSince) continue;
+            // Brand-new series have few votes; require some audience signal.
+            if ((Number(show.vote_count) || 0) < 5 && (Number(show.popularity) || 0) < 20) continue;
+            byId.set(show.id, { show, airingStatus: 'new', seasonNumber: null });
+        }
+
+        const olderAiring = valuesOf(airing1, airing2)
+            .filter(show => show?.id && !show.adult && show.poster_path && !byId.has(show.id)
+                && show.first_air_date && show.first_air_date < newSince)
+            .slice(0, maxDetails);
+        const sequels = [];
+        // Season numbers and episode counts do not depend on the language,
+        // so one daily cache serves every interface language and refresh.
+        const detailsCache = await this._readAiringDetailsCache();
+        let detailsCacheChanged = false;
+        await Promise.allSettled(olderAiring.map(async show => {
+            let seasonsSource = detailsCache[show.id]?.seasons;
+            if (!seasonsSource) {
+                const response = await this._fetchWithRotation(
+                    `${this.baseUrl}/tv/${show.id}?${new URLSearchParams({ language: this.defaultLanguage })}`,
+                    { method: 'GET', signal }
+                );
+                if (!response.ok) return;
+                const details = await response.json();
+                seasonsSource = (Array.isArray(details.seasons) ? details.seasons : []).map(season => ({
+                    season_number: season.season_number,
+                    air_date: season.air_date || null,
+                    episode_count: season.episode_count || 0
+                }));
+                detailsCache[show.id] = { seasons: seasonsSource, fetchedAt: now };
+                detailsCacheChanged = true;
+            }
+            const seasons = seasonsSource
+                .filter(season => season.season_number > 0 && season.air_date && season.air_date <= isoDate(7))
+                .sort((a, b) => b.air_date.localeCompare(a.air_date));
+            const latest = seasons[0];
+            // Year-round broadcasts keep one huge season (Conan, Doraemon,
+            // One Piece, Pokémon: 150+ episodes). Long seasonal franchises such
+            // as JoJo have many episodes in total but short seasons.
+            if ((Number(latest?.episode_count) || 0) > 100) return;
+            const isNewSeason = Boolean(latest && latest.air_date >= seasonSince && latest.season_number > 1);
+            sequels.push({ show, airingStatus: 'airing', seasonNumber: isNewSeason ? latest.season_number : null });
+        }));
+
+        if (detailsCacheChanged) await this._writeAiringDetailsCache(detailsCache);
+
+        sequels
+            .sort((a, b) => (Number(b.show.popularity) || 0) - (Number(a.show.popularity) || 0))
+            .slice(0, maxSequels)
+            .forEach(entry => byId.set(entry.show.id, entry));
+
+        return [...byId.values()]
+            .sort((a, b) => {
+                // Currently airing sequels first (most watched), then new series.
+                if (a.airingStatus !== b.airingStatus) return a.airingStatus === 'airing' ? -1 : 1;
+                return (Number(b.show.popularity) || 0) - (Number(a.show.popularity) || 0);
+            })
+            .map(({ show, airingStatus, seasonNumber }) => ({
+                ...this.normalizeTmdbItem(show, 'anime'),
+                mediaType: 'tv',
+                airingStatus,
+                seasonNumber
+            }));
+    }
+
+    /**
+     * Fresh (<24h) season summaries for airing anime, keyed by TMDB TV ID.
+     * @returns {Promise<Object>}
+     */
+    async _readAiringDetailsCache() {
+        if (typeof chrome === 'undefined' || !chrome.storage?.local) return {};
+        try {
+            const stored = await chrome.storage.local.get([TMDB_AIRING_DETAILS_CACHE_KEY]);
+            const entries = stored?.[TMDB_AIRING_DETAILS_CACHE_KEY] || {};
+            const fresh = {};
+            Object.entries(entries).forEach(([id, entry]) => {
+                if (Date.now() - Number(entry?.fetchedAt || 0) < TMDB_AIRING_DETAILS_TTL_MS) fresh[id] = entry;
+            });
+            return fresh;
+        } catch {
+            return {};
+        }
+    }
+
+    async _writeAiringDetailsCache(entries) {
+        if (typeof chrome === 'undefined' || !chrome.storage?.local) return;
+        try {
+            const newest = Object.entries(entries)
+                .sort((a, b) => Number(b[1]?.fetchedAt || 0) - Number(a[1]?.fetchedAt || 0))
+                .slice(0, 200);
+            await chrome.storage.local.set({ [TMDB_AIRING_DETAILS_CACHE_KEY]: Object.fromEntries(newest) });
+        } catch {
+            // The cache only saves requests.
+        }
     }
 
     /**
@@ -1149,7 +1361,8 @@ class TMDBService {
     async _fetchTvDetails(tmdbId, language, options = {}) {
         const params = new URLSearchParams({
             language,
-            append_to_response: 'credits,videos,content_ratings,images',
+            // external_ids carries the IMDb ID; TV details have no imdb_id field.
+            append_to_response: 'credits,videos,content_ratings,images,external_ids',
         });
         if (!options.includeAllImageLanguages) {
             params.set('include_image_language', 'ru,en,null');

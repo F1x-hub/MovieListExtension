@@ -9,8 +9,14 @@
 }
 
 .report-widget-btn {
-    width: 40px;
+    /* A slim edge handle: at 40px wide it covered the first card and section
+       headings of edge-to-edge layouts. 24px keeps the WCAG 2.5.8 minimum
+       target size; it widens on hover and keyboard focus. */
+    width: 24px;
     height: 60px;
+    padding: 0;
+    overflow: hidden;
+    opacity: 0.85;
     background: var(--ui-color-interactive);
     color: var(--primary-bg, #ffffff);
     border: none;
@@ -20,15 +26,28 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: width var(--transition-base, 0.3s), background var(--transition-base, 0.3s), box-shadow var(--transition-base, 0.3s);
+    transition: width var(--transition-base, 0.3s), opacity var(--transition-base, 0.3s), background var(--transition-base, 0.3s), box-shadow var(--transition-base, 0.3s);
     font-size: var(--font-size-2xl, 24px);
     z-index: var(--z-fixed, 1030);
 }
 
-.report-widget-btn:hover {
-    width: 48px;
+.report-widget-btn svg {
+    flex-shrink: 0;
+}
+
+.report-widget-btn:hover,
+.report-widget-btn:focus-visible {
+    width: 40px;
+    opacity: 1;
     background: var(--ui-color-interactive-hover);
     box-shadow: var(--shadow-lg, 4px 0 12px rgba(0, 0, 0, 0.4));
+}
+
+/* Touch screens have no hover to widen the handle: keep a usable target. */
+@media (hover: none) {
+    .report-widget-btn {
+        width: 32px;
+    }
 }
 
 @media (max-width: 640px) {

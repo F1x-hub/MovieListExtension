@@ -1629,10 +1629,15 @@ class Navigation {
             }
 
             let photo = photoURL;
+            let photoPath;
             const file = avatarInput.files && avatarInput.files[0];
             if (file) {
                 try {
-                    photo = await firebaseManager.uploadAvatar(file);
+                    // uploadAvatar resolves to { photoURL, photoPath }; storing the object
+                    // as photoURL was rejected by the Firestore rules and broke the avatar.
+                    const upload = await firebaseManager.uploadAvatar(file);
+                    photo = upload.photoURL;
+                    photoPath = upload.photoPath;
                 } catch {
                     alert('Avatar upload failed');
                     return;
@@ -1652,7 +1657,9 @@ class Navigation {
                 const userNow = firebaseManager.getCurrentUser();
                 if (typeof UserService !== 'undefined') {
                     const userService = firebaseManager.getUserService();
-                    await userService.updateUserProfile(userNow.uid, { displayName: name, photoURL: photo, email: userNow.email });
+                    const profileUpdate = { displayName: name, photoURL: photo, email: userNow.email };
+                    if (photoPath) profileUpdate.photoPath = photoPath;
+                    await userService.updateUserProfile(userNow.uid, profileUpdate);
                 }
 
                 if (!isGoogle && fields.style.display !== 'none') {

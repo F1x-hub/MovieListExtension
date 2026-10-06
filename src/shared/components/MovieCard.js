@@ -130,10 +130,17 @@ class MovieCard {
         const movie = data.movie || {};
         const isEnglish = window.i18n?.currentLocale === 'en';
         
-        // Prefer English title if in English mode
-        const title = (isEnglish && movie.alternativeName) 
-            ? movie.alternativeName 
-            : (movie.name || data.movieTitle || window.i18n?.get('movie_card.unknown_movie') || 'Unknown Movie');
+        // Prefer a Latin-script title in English mode. Original titles can be
+        // Japanese/Chinese/Korean, and TMDB-only cards are already fetched in
+        // the interface language, so their `name` is the English title.
+        const isLatinTitle = value => typeof value === 'string'
+            && /[A-Za-z]/.test(value)
+            && !/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(value);
+        const englishTitle = isEnglish && !movie.isTmdbOnly
+            ? [movie.alternativeName, movie.englishTitle].find(isLatinTitle)
+            : null;
+        const title = englishTitle
+            || movie.name || data.movieTitle || window.i18n?.get('movie_card.unknown_movie') || 'Unknown Movie';
 
         const fallbackPosterUrl = '/src/shared/assets/icons/app/icon48.png';
         const sourcePosterUrl = movie.posterUrl || '';
@@ -218,6 +225,7 @@ class MovieCard {
         card.dataset.movieTitle = title;
         if (movie.alternativeName) card.dataset.movieOriginalTitle = movie.alternativeName;
         if (movie.englishTitle) card.dataset.movieEnglishTitle = movie.englishTitle;
+        if (movie.searchTitle) card.dataset.movieSearchTitle = movie.searchTitle;
         if (movie.year || movie.releaseDate) card.dataset.movieYear = String(movie.year || String(movie.releaseDate).slice(0, 4));
         if (movie.mediaType || movie.type) card.dataset.mediaType = String(movie.mediaType || movie.type);
         if (data.id) card.dataset.ratingId = data.id;
@@ -229,14 +237,16 @@ class MovieCard {
 
         // Build card HTML
         if (isSearchVariant) {
+            // The title link below is the card's single keyboard stop; the
+            // poster link stays clickable but is skipped by Tab.
             card.innerHTML = `
-                <a href="${detailsUrl}" class="mc-poster-container ${isLoading ? 'mc-skeleton' : ''}" data-action="view-details"${canonicalMovieId ? ` data-movie-id="${canonicalMovieId}"` : ''} ${movie.tmdbId ? `data-tmdb-id="${movie.tmdbId}"` : ''} data-movie-title="${this.escapeHtml(title)}">
+                <a href="${detailsUrl}" class="mc-poster-container ${isLoading ? 'mc-skeleton' : ''}" tabindex="-1" data-action="view-details"${canonicalMovieId ? ` data-movie-id="${canonicalMovieId}"` : ''} ${movie.tmdbId ? `data-tmdb-id="${movie.tmdbId}"` : ''} data-movie-title="${this.escapeHtml(title)}">
                     <img src="${this.escapeHtml(posterUrl)}"
                          alt="${this.escapeHtml(title)}" 
                          class="mc-poster"${posterLoadingAttributes}${posterDeferredAttributes}>
                     <div class="mc-poster-overlay"></div>
                     
-                    <div class="mc-badges-overlay" aria-label="Рейтинги">${this.renderCompactRatingBadges({ kpRating: kinopoiskRating, imdbRating, userRating: rating, showSkeleton: showRatingSkeleton })}</div>
+                    <div class="mc-badges-overlay" aria-label="${this.escapeHtml(this.t('ratings_label', 'Рейтинги'))}">${this.renderCompactRatingBadges({ kpRating: kinopoiskRating, imdbRating, userRating: rating, showSkeleton: showRatingSkeleton })}</div>
                 </a>
                 
                 ${showThreeDotMenu ? `

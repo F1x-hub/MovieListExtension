@@ -912,7 +912,8 @@ console.log('\n--- 6. Testing MediaAggregatorService async getMovieDetails flow 
     await logoSelector._fetchTvDetails(94997, 'ru-RU');
     const combinedTvParams = new URL(combinedDetailsUrl).searchParams;
     assert.strictEqual(combinedDetailsRequests, 1, 'TV images must also use the existing combined details request');
-    assert.strictEqual(combinedTvParams.get('append_to_response'), 'credits,videos,content_ratings,images');
+    // external_ids gives TV titles their IMDb ID in the same request.
+    assert.strictEqual(combinedTvParams.get('append_to_response'), 'credits,videos,content_ratings,images,external_ids');
     assert.strictEqual(combinedTvParams.get('include_image_language'), 'ru,en,null');
 
     // 7.0.1 A non-preferred-language TMDB logo must be recovered lazily.

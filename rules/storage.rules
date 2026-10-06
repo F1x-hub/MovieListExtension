@@ -17,16 +17,26 @@ service firebase.storage {
       allow delete: if isAdmin();
     }
 
+    // Profile images: the profile page accepts PNG/JPEG/WebP/GIF up to 5 MB.
+    // SVG/HTML are excluded because the files are publicly readable.
+    function isValidProfileImage() {
+      return request.resource.size > 0
+        && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType in ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+    }
+
     // Allow anyone to read avatars, but only owner can write
     match /avatars/{userId}/{allPaths=**} {
       allow read: if true;
-      allow write: if request.auth != null && request.auth.uid == userId;
+      allow create, update: if request.auth != null && request.auth.uid == userId && isValidProfileImage();
+      allow delete: if request.auth != null && request.auth.uid == userId;
     }
-    
+
     // Allow anyone to read banners, but only owner can write
     match /banners/{userId}/{allPaths=**} {
       allow read: if true;
-      allow write: if request.auth != null && request.auth.uid == userId;
+      allow create, update: if request.auth != null && request.auth.uid == userId && isValidProfileImage();
+      allow delete: if request.auth != null && request.auth.uid == userId;
     }
     // Allow anyone to read collection icons, but only owner can write
     match /collection_icons/{userId}/{allPaths=**} {

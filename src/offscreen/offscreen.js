@@ -3,13 +3,22 @@
  * This document lives outside the visible pages and survives navigation.
  * All control is done via chrome.runtime messages.
  */
+// Scraper iframe traces: localStorage 'movielist:debug-ratings' = '1'.
+function scraperTrace(...args) {
+    try {
+        if (globalThis.localStorage?.getItem('movielist:debug-ratings') === '1') console.info(...args);
+    } catch {
+        // Tracing is optional.
+    }
+}
+
 const audio = document.getElementById('radio');
 const scraperFrame = document.getElementById('scraperFrame');
 let activeScraperRequestId = null;
 let scraperLoadStartedAt = 0;
 
 scraperFrame?.addEventListener('load', () => {
-    console.info('[KinopoiskOffscreenTrace]', {
+    scraperTrace('[KinopoiskOffscreenTrace]', {
         stage: 'iframe:load',
         requestId: activeScraperRequestId,
         stageDurationMs: scraperLoadStartedAt ? Date.now() - scraperLoadStartedAt : null
@@ -38,12 +47,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 if (scraperFrame) {
                     activeScraperRequestId = message.requestId || null;
                     scraperLoadStartedAt = Date.now();
-                    console.info('[KinopoiskOffscreenTrace]', {
+                    scraperTrace('[KinopoiskOffscreenTrace]', {
                         stage: 'iframe:load-start',
                         requestId: activeScraperRequestId,
                         searchUrl: message.searchUrl
                     });
-                    console.log('[Offscreen] Loading scraper iframe:', message.searchUrl);
                     scraperFrame.src = message.searchUrl || 'about:blank';
                     sendResponse({ success: true });
                 } else {
@@ -53,11 +61,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
             case 'CLEANUP_SEARCH_FRAME':
                 if (scraperFrame) {
-                    console.info('[KinopoiskOffscreenTrace]', {
+                    scraperTrace('[KinopoiskOffscreenTrace]', {
                         stage: 'iframe:cleanup',
                         requestId: activeScraperRequestId
                     });
-                    console.log('[Offscreen] Cleaning up scraper iframe');
                     scraperFrame.src = 'about:blank';
                     activeScraperRequestId = null;
                     scraperLoadStartedAt = 0;

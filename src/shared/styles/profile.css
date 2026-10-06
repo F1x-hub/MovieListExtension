@@ -177,36 +177,6 @@
     transform: scale(0.97);
 }
 
-.btn-profile-menu {
-    width: 38px;
-    height: 38px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--theme-bg-secondary);
-    border: 1px solid var(--theme-border);
-    border-radius: var(--radius-lg);
-    color: var(--theme-text-secondary);
-    cursor: pointer;
-    transition: transform 140ms var(--ease-spring), background 180ms ease, border-color 180ms ease;
-}
-
-.btn-profile-menu:hover {
-    background: var(--theme-hover-bg);
-    color: var(--theme-text-primary);
-    border-color: var(--theme-border-hover);
-}
-
-.btn-profile-menu:active {
-    transform: scale(0.96);
-}
-
-.btn-profile-menu .menu-icon {
-    font-size: 1.25rem;
-    line-height: 1;
-    font-weight: 700;
-}
-
 /* User Details Section */
 .profile-details {
     padding: 16px 24px 0 24px;
@@ -317,71 +287,6 @@
     transform: translateY(-1px);
 }
 
-/* Profile Dropdown */
-.profile-dropdown {
-    position: absolute;
-    top: calc(100% + 8px);
-    right: 0;
-    background: var(--theme-bg-secondary);
-    border: 1px solid var(--theme-border-hover);
-    border-radius: var(--radius-lg);
-    padding: 6px;
-    min-width: 190px;
-    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
-    display: none;
-    z-index: 50;
-    transform-origin: top right;
-    animation: dropdownEnter 180ms var(--ease-out) forwards;
-}
-
-.profile-dropdown.show {
-    display: block;
-}
-
-@keyframes dropdownEnter {
-    from {
-        opacity: 0;
-        transform: scale(0.95) translateY(-4px);
-    }
-    to {
-        opacity: 1;
-        transform: scale(1) translateY(0);
-    }
-}
-
-.profile-dropdown .dropdown-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    width: 100%;
-    padding: 9px 14px;
-    background: transparent;
-    border: none;
-    border-radius: var(--radius-md);
-    color: var(--theme-text-primary);
-    font-family: var(--font-family);
-    font-size: 0.875rem;
-    font-weight: 500;
-    text-align: left;
-    cursor: pointer;
-    transition: background 140ms ease, color 140ms ease, transform 140ms var(--ease-spring);
-}
-
-.profile-dropdown .dropdown-item:hover {
-    background: var(--theme-hover-bg);
-    color: var(--theme-stat-color);
-}
-
-.profile-dropdown .dropdown-item:active {
-    transform: scale(0.98);
-}
-
-.profile-dropdown .dropdown-icon {
-    display: flex;
-    align-items: center;
-    color: var(--theme-text-muted);
-}
-
 /* ==========================================================================
    Statistics Showcase Section
    ========================================================================== */
@@ -416,7 +321,35 @@
 
 .stat-card--link:focus-visible,
 .dashboard-section-link:focus-visible,
-.continue-watching-item:focus-visible {
+.continue-watching-item:focus-visible,
+.recent-rating-card:focus-visible {
+    outline: 2px solid var(--theme-text-primary);
+    outline-offset: 3px;
+}
+
+/* Another user's counters: they describe that user, so they are not links to the viewer's lists. */
+.stat-card--static {
+    color: inherit;
+    cursor: default;
+}
+
+.stat-card--static:hover {
+    transform: none;
+}
+
+/* Kept in the tab order (unlike display: none) so the upload labels work from the keyboard. */
+.profile-file-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    opacity: 0;
+}
+
+.banner-upload-wrapper:focus-within .banner-preview,
+.photo-upload-wrapper:focus-within .photo-preview {
     outline: 2px solid var(--theme-text-primary);
     outline-offset: 3px;
 }
@@ -457,6 +390,10 @@
     grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.85fr);
     gap: 18px;
     margin-bottom: 36px;
+}
+
+.profile-dashboard--single {
+    grid-template-columns: minmax(0, 1fr);
 }
 
 .profile-dashboard-card {
@@ -888,6 +825,23 @@
     gap: 12px;
 }
 
+.recent-ratings-empty {
+    color: var(--theme-text-muted);
+    text-align: center;
+    padding: 32px 20px;
+    font-size: 0.95rem;
+}
+
+.recent-ratings-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 32px 20px;
+    color: var(--theme-text-muted);
+    text-align: center;
+}
+
 .recent-rating-card {
     background: var(--theme-bg-card);
     border: 1px solid var(--theme-border);
@@ -1084,9 +1038,10 @@
     align-items: center;
     justify-content: center;
     padding: 10px 22px;
-    background: #ef4444;
-    color: white;
-    border: none;
+    /* Retrying is not a destructive action: neutral primary button, not danger red. */
+    background: var(--ui-button-primary-bg);
+    color: var(--ui-button-primary-content);
+    border: 1px solid var(--ui-button-primary-border);
     border-radius: var(--radius-lg);
     font-family: var(--font-family);
     font-size: 0.9rem;
@@ -1389,7 +1344,9 @@
 }
 
 .banner-upload-wrapper:hover .btn-remove-overlay,
-.photo-upload-wrapper:hover .btn-remove-overlay {
+.photo-upload-wrapper:hover .btn-remove-overlay,
+.banner-upload-wrapper:focus-within .btn-remove-overlay,
+.photo-upload-wrapper:focus-within .btn-remove-overlay {
     opacity: 1;
 }
 
@@ -1462,6 +1419,15 @@
     border-color: var(--theme-border-hover);
     box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
     background: var(--theme-bg-secondary);
+}
+
+/* The soft white halo above is invisible on the light theme; keyboard focus gets
+   a solid ring in both themes. */
+.form-group input:focus-visible,
+.form-group textarea:focus-visible,
+.form-group select:focus-visible {
+    outline: 2px solid var(--theme-text-primary);
+    outline-offset: 1px;
 }
 
 .input-with-prefix {
@@ -1634,6 +1600,11 @@
     cursor: move;
     border-radius: 50%;
     box-sizing: border-box;
+}
+
+.cropper-selection:focus-visible {
+    outline: 2px solid var(--theme-text-primary);
+    outline-offset: 2px;
 }
 
 .cropper-selection.mode-banner {

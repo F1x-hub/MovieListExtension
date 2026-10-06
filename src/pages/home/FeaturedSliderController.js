@@ -53,6 +53,42 @@ class FeaturedSliderController {
         this.onDragStart = this.onDragStart.bind(this);
         this.onClickCapture = this.onClickCapture.bind(this);
         this.onWheel = this.onWheel.bind(this);
+        this.onFocusIn = this.onFocusIn.bind(this);
+        this.onKeyDown = this.onKeyDown.bind(this);
+        this.onSectionScroll = this.onSectionScroll.bind(this);
+        this.sectionElement = null;
+    }
+
+    /**
+     * Localized slider text with a Russian fallback.
+     * @param {string} key
+     * @param {string} fallback
+     * @param {Object} [params]
+     * @returns {string}
+     */
+    t(key, fallback, params = null) {
+        const fullKey = `home.slider.${key}`;
+        const value = (typeof window !== 'undefined' && window.i18n?.get) ? window.i18n.get(fullKey) : null;
+        let text = value && value !== fullKey ? value : fallback;
+        if (params) {
+            Object.entries(params).forEach(([name, replacement]) => {
+                text = text.replace(`{${name}}`, String(replacement));
+            });
+        }
+        return text;
+    }
+
+    /**
+     * Page that shows the card at the given index.
+     * @param {number} index
+     * @returns {number}
+     */
+    getPageForIndex(index) {
+        if (this.totalPages <= 1) return 0;
+        // The last page is end-aligned, so its first visible card is not a
+        // multiple of itemsPerPage.
+        if (index >= this.items.length - this.itemsPerPage) return this.totalPages - 1;
+        return Math.min(Math.floor(index / this.itemsPerPage), this.totalPages - 1);
     }
 
     /**
@@ -141,6 +177,10 @@ class FeaturedSliderController {
         this.sliderElement.addEventListener('dragstart', this.onDragStart);
         this.sliderElement.addEventListener('click', this.onClickCapture, true); // Capture phase to prevent accidental card navigation when dragging
         this.sliderElement.addEventListener('wheel', this.onWheel, { passive: false });
+        this.sliderElement.addEventListener('focusin', this.onFocusIn);
+        this.sliderElement.addEventListener('keydown', this.onKeyDown);
+        this.sectionElement = this.sliderElement.parentElement || null;
+        this.sectionElement?.addEventListener('scroll', this.onSectionScroll);
     }
 
     /**
@@ -157,6 +197,58 @@ class FeaturedSliderController {
         this.sliderElement.removeEventListener('dragstart', this.onDragStart);
         this.sliderElement.removeEventListener('click', this.onClickCapture, true);
         this.sliderElement.removeEventListener('wheel', this.onWheel);
+        this.sliderElement.removeEventListener('focusin', this.onFocusIn);
+        this.sliderElement.removeEventListener('keydown', this.onKeyDown);
+        this.sectionElement?.removeEventListener('scroll', this.onSectionScroll);
+        this.sectionElement = null;
+    }
+
+    /**
+     * The section clips the track with overflow:hidden and pages it with a
+     * transform. Browsers still scroll it to reveal a focused card, and they
+     * do so after focusin, so any native scroll is undone here; the transform
+     * set by onFocusIn already shows the card.
+     */
+    onSectionScroll() {
+        if (this.sectionElement && this.sectionElement.scrollLeft !== 0) {
+            this.sectionElement.scrollLeft = 0;
+        }
+    }
+
+    /**
+     * Keep keyboard focus visible: tabbing onto an off-screen card moves the
+     * carousel to the page that contains it.
+     * @param {FocusEvent} e
+     */
+    onFocusIn(e) {
+        const card = e.target?.closest?.('.featured-card');
+        if (!card) return;
+        // Browsers scroll the overflow-hidden section to reveal the focused
+        // card, which would double-shift it on top of our transform.
+        const section = this.sliderElement?.parentElement;
+        if (section && section.scrollLeft !== 0) section.scrollLeft = 0;
+        const index = Number(card.dataset.slideIndex);
+        if (!Number.isInteger(index)) return;
+        const page = this.getPageForIndex(index);
+        if (page !== this.currentPage) this.showPage(page, true);
+    }
+
+    /**
+     * Arrow keys move between carousel pages and focus the first visible card.
+     * @param {KeyboardEvent} e
+     */
+    onKeyDown(e) {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        if (this.totalPages <= 1) return;
+        const step = e.key === 'ArrowRight' ? 1 : -1;
+        const target = Math.max(0, Math.min(this.totalPages - 1, this.currentPage + step));
+        if (target === this.currentPage) return;
+        e.preventDefault();
+        this.showPage(target, true);
+        const firstIndex = target === this.totalPages - 1
+            ? Math.max(0, this.items.length - this.itemsPerPage)
+            : target * this.itemsPerPage;
+        this.sliderElement?.querySelector(`.featured-card[data-slide-index="${firstIndex}"]`)?.focus({ preventScroll: true });
     }
 
     /**
@@ -499,11 +591,11 @@ class FeaturedSliderController {
         if (this.totalPages <= 1) return;
 
         for (let i = 0; i < this.totalPages; i++) {
-            const dot = document.createElement('div');
+            const dot = document.createElement('button');
+            dot.type = 'button';
             dot.className = 'pagination-dot';
             dot.dataset.page = i;
-            dot.setAttribute('role', 'button');
-            dot.setAttribute('aria-label', `Слайд ${i + 1}`);
+            dot.setAttribute('aria-label', this.t('page', 'Страница {index} из {total}', { index: i + 1, total: this.totalPages }));
             dot.addEventListener('click', () => this.showPage(i, true));
             this.paginationElement.appendChild(dot);
         }

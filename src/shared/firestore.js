@@ -284,22 +284,55 @@ class FirebaseManager {
     }
 
     async changePasswordWithReauth(currentPassword, newPassword) {
+        await this.reauthenticateWithPassword(currentPassword);
+        await this.updatePassword(newPassword);
+        return true;
+    }
+
+    /**
+     * Confirms the current password without changing anything, so a caller can
+     * reject a wrong password before it writes other data.
+     */
+    async reauthenticateWithPassword(currentPassword) {
         const user = this.getCurrentUser();
         if (!user || !user.email) throw new Error('No email user');
         const credential = firebase.auth.EmailAuthProvider.credential(user.email, currentPassword);
         await user.reauthenticateWithCredential(credential);
+        return true;
+    }
+
+    /** Sets a new password; call reauthenticateWithPassword() shortly before. */
+    async updatePassword(newPassword) {
+        const user = this.getCurrentUser();
+        if (!user) throw new Error('No authenticated user');
         await user.updatePassword(newPassword);
         return true;
     }
 
-    async uploadAvatar(file) {
+    /**
+     * Object name for a profile image. `versioned` gives every upload its own name,
+     * so the stored document keeps pointing at a complete file until it is updated
+     * (the caller deletes the previous object afterwards) and the year-long
+     * Cache-Control never serves an old image under a reused URL.
+     */
+    static profileImagePath(folder, uid, baseName, file, versioned) {
+        if (!versioned) return `${folder}/${uid}/${baseName}.jpg`;
+        const extension = {
+            'image/png': 'png',
+            'image/webp': 'webp',
+            'image/gif': 'gif'
+        }[String(file?.type || '').toLowerCase()] || 'jpg';
+        return `${folder}/${uid}/${baseName}_${Date.now()}.${extension}`;
+    }
+
+    async uploadAvatar(file, { versioned = false } = {}) {
         const user = this.getCurrentUser();
         if (!user) throw new Error('No authenticated user');
 
         try {
             const token = await user.getIdToken();
             const bucket = 'movielistdb-13208.firebasestorage.app';
-            const objectPath = `avatars/${user.uid}/profile.jpg`;
+            const objectPath = FirebaseManager.profileImagePath('avatars', user.uid, 'profile', file, versioned);
             
             const uploadUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o?name=${encodeURIComponent(objectPath)}&uploadType=media`;
             
@@ -503,15 +536,14 @@ class FirebaseManager {
         return true;
     }
 
-    async uploadBanner(file) {
+    async uploadBanner(file, { versioned = false } = {}) {
         const user = this.getCurrentUser();
         if (!user) throw new Error('No authenticated user');
 
         try {
             const token = await user.getIdToken();
             const bucket = 'movielistdb-13208.firebasestorage.app';
-            // Use a fixed name or timestamped name. Fixed name saves space/cleanup logic.
-            const objectPath = `banners/${user.uid}/banner.jpg`;
+            const objectPath = FirebaseManager.profileImagePath('banners', user.uid, 'banner', file, versioned);
             
             const uploadUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o?name=${encodeURIComponent(objectPath)}&uploadType=media`;
             
@@ -769,8 +801,34 @@ class FirebaseManager {
                 clearTimeout(this.tokenRefreshTimeout);
                 this.tokenRefreshTimeout = null;
             }
+
+            await this.clearProfileCaches();
         } catch (error) {
             throw new Error(`Sign out failed: ${error.message}`, { cause: error });
+        }
+    }
+
+    /**
+     * Removes profile data cached by the profile page (profiles of every viewed
+     * user and their avatar/banner images) so it does not outlive the session.
+     */
+    async clearProfileCaches() {
+        try {
+            const storage = typeof chrome !== 'undefined' ? chrome.storage?.local : null;
+            if (!storage) return;
+            const indexKey = 'profile_cache_index';
+            const keys = new Set(['profile_cache', indexKey]);
+            const indexResult = await storage.get([indexKey]);
+            Object.keys(indexResult[indexKey] || {}).forEach(uid => keys.add(`profile_cache_${uid}`));
+            if (typeof storage.getKeys === 'function') {
+                // Also entries written before the index existed.
+                (await storage.getKeys())
+                    .filter(key => key.startsWith('profile_cache_'))
+                    .forEach(key => keys.add(key));
+            }
+            await storage.remove([...keys]);
+        } catch (error) {
+            console.warn('Could not clear cached profiles on sign-out:', error);
         }
     }
 

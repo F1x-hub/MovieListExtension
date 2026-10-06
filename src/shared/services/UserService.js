@@ -121,9 +121,11 @@ class UserService {
     /**
      * Get user profile by ID
      * @param {string} userId - User ID
+     * @param {{throwOnError?: boolean}} [options] - throwOnError rethrows read failures
+     *   so callers can tell "no profile" from "could not read"
      * @returns {Promise<Object|null>} - User profile or null
      */
-    async getUserProfile(userId) {
+    async getUserProfile(userId, { throwOnError = false } = {}) {
         try {
             const userRef = this.db.collection(this.collection).doc(userId);
             const userDoc = await userRef.get();
@@ -134,6 +136,7 @@ class UserService {
             return null;
         } catch (error) {
             console.error('Error getting user profile:', error);
+            if (throwOnError) throw error;
             return null;
         }
     }
@@ -311,11 +314,12 @@ class UserService {
     /**
      * Get user profile with statistics
      * @param {string} userId - User ID
+     * @param {{throwOnError?: boolean}} [options]
      * @returns {Promise<Object>} - User profile with computed stats
      */
-    async getUserProfileWithStats(userId) {
+    async getUserProfileWithStats(userId, { throwOnError = false } = {}) {
         try {
-            const userProfile = await this.getUserProfile(userId);
+            const userProfile = await this.getUserProfile(userId, { throwOnError });
             if (!userProfile) {
                 return null;
             }
@@ -347,6 +351,7 @@ class UserService {
             return userProfile;
         } catch (error) {
             console.error('Error getting user profile with stats:', error);
+            if (throwOnError) throw error;
             return null;
         }
     }
@@ -355,9 +360,11 @@ class UserService {
      * Check if username is available
      * @param {string} username - Username to check
      * @param {string} currentUserId - Current user ID (to exclude from check)
+     * @param {{throwOnError?: boolean}} [options] - throwOnError rethrows a failed lookup
+     *   instead of reporting the name as taken
      * @returns {Promise<boolean>} - True if username is available
      */
-    async isUsernameAvailable(username, currentUserId) {
+    async isUsernameAvailable(username, currentUserId, { throwOnError = false } = {}) {
         try {
             if (!username || username.trim() === '') {
                 return false;
@@ -380,67 +387,8 @@ class UserService {
             return false;
         } catch (error) {
             console.error('Error checking username availability:', error);
+            if (throwOnError) throw error;
             return false;
-        }
-    }
-
-    /**
-     * Get user statistics
-     * @param {string} userId - User ID
-     * @returns {Promise<Object>} - Statistics object
-     */
-    async getUserStats(userId) {
-        try {
-            const ratingsQuery = this.db.collection('ratings')
-                .where('userId', '==', userId);
-
-
-            const watchlistQuery = this.db.collection('watchlist')
-                .where('userId', '==', userId);
-
-            const watchingQuery = this.db.collection('watching')
-                .where('userId', '==', userId);
-
-            const favoritesQuery = this.db.collection('favorites')
-                .where('userId', '==', userId);
-
-            const [ratingsSnapshot, favoritesSnapshot, watchlistSnapshot, watchingSnapshot] = await Promise.all([
-                ratingsQuery.get(),
-                favoritesQuery.get(),
-                watchlistQuery.get(),
-                watchingQuery.get()
-            ]);
-
-            let totalRatings = 0;
-            let sumRatings = 0;
-
-            ratingsSnapshot.forEach(doc => {
-                const data = doc.data();
-                if (data.rating) {
-                    totalRatings++;
-                    sumRatings += data.rating;
-                }
-            });
-
-            const averageRating = totalRatings > 0 
-                ? Math.round((sumRatings / totalRatings) * 10) / 10 
-                : 0;
-
-            return {
-                totalRatings,
-                averageRating,
-                favoritesCount: favoritesSnapshot.size,
-                watchlistCount: watchlistSnapshot.size,
-                watchingCount: watchingSnapshot.size
-            };
-        } catch (error) {
-            console.error('Error getting user stats:', error);
-            return {
-                totalRatings: 0,
-                averageRating: 0,
-                favoritesCount: 0,
-                watchlistCount: 0
-            };
         }
     }
 }

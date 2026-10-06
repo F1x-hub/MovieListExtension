@@ -22,8 +22,28 @@ class HomeMovieNavigationService {
         this.cacheWritePromise = Promise.resolve();
     }
 
+    /**
+     * [KPCardTrace] diagnostics run per card and per search, so they are
+     * opt-in: localStorage 'movielist:debug-ratings' = '1'. Errors always log.
+     * @param {string} event
+     * @param {Object} [details]
+     */
+    _kpTrace(event, details = {}) {
+        if (event.includes('error')) {
+            console.warn('[KPCardTrace]', event, details);
+            return;
+        }
+        let enabled;
+        try {
+            enabled = globalThis.localStorage?.getItem('movielist:debug-ratings') === '1';
+        } catch {
+            enabled = false;
+        }
+        if (enabled) console.info('[KPCardTrace]', event, details);
+    }
+
     async resolve(item = {}, options = {}) {
-        console.info('[KPCardTrace] resolve:start', {
+        this._kpTrace('resolve:start', {
             tmdbId: item.tmdbId || item.id || null,
             title: item.name || item.title || null,
             year: item.year || item.releaseDate || item.release_date || null,
@@ -60,15 +80,18 @@ class HomeMovieNavigationService {
         if (!Number.isSafeInteger(tmdbId) || tmdbId <= 0) return null;
 
         const key = `${mediaType}:${tmdbId}`;
+        // The shared lookup always reports failures; each caller then sees
+        // { failed } only if it asked for it (a click expects a KP ID or null).
+        const forCaller = result => (result?.failed && !options.reportFailure ? null : result);
         if (this.inFlight.has(key)) {
-            console.info('[KPCardTrace] resolve:in-flight-hit', { key });
-            return this.inFlight.get(key);
+            this._kpTrace('resolve:in-flight-hit', { key });
+            return forCaller(await this.inFlight.get(key));
         }
 
-        const promise = this._resolveUnmapped(item, key, mediaType, tmdbId, options)
+        const promise = this._resolveUnmapped(item, key, mediaType, tmdbId, { ...options, reportFailure: true })
             .finally(() => this.inFlight.delete(key));
         this.inFlight.set(key, promise);
-        return promise;
+        return forCaller(await promise);
     }
 
     async _resolveUnmapped(item, key, mediaType, tmdbId, options = {}) {
@@ -76,7 +99,7 @@ class HomeMovieNavigationService {
         const cached = cache[key];
         if (cached?.status === 'resolved' && Number(cached.kpId) > 0
             && (options.requireRating !== true || Number(cached.kpRating) > 0)) {
-            console.info('[KPCardTrace] resolve:cache-hit', {
+            this._kpTrace('resolve:cache-hit', {
                 key,
                 kpId: cached.kpId,
                 kpRating: cached.kpRating || 0,
@@ -97,14 +120,14 @@ class HomeMovieNavigationService {
             && Number(cached.expiresAt) > Date.now()
             && Number(cached.retryAfter) > Date.now()
             && options.forceRetry !== true) {
-            console.info('[KPCardTrace] resolve:negative-cache-hit', {
+            this._kpTrace('resolve:negative-cache-hit', {
                 key,
                 retryAfter: cached.retryAfter
             });
             return null;
         }
 
-        const titles = [item.name || item.title, item.alternativeName || item.originalName || item.original_title]
+        const titles = [item.searchTitle, item.name || item.title, item.alternativeName || item.originalName || item.original_title]
             .filter(value => typeof value === 'string' && value.trim())
             .map(value => value.trim())
             .filter((value, index, values) => values.indexOf(value) === index);
@@ -125,9 +148,16 @@ class HomeMovieNavigationService {
             sessionId: options.sessionId || null,
             // Identity and rating are separate contracts. A search card can
             // expose a valid KP ID before its numeric rating is rendered.
-            requireRating: false
+            requireRating: false,
+            reportFailure: true
         });
-        console.info('[KPCardTrace] resolve:html-result', {
+        if (result?.failed) {
+            // The search did not run to completion: no negative mapping, so
+            // the next attempt is not blocked for the negative-retry window.
+            console.warn('[HomeMovieNavigation] Kinopoisk search failed:', { tmdbId, mediaType, reason: result.reason });
+            return options.reportFailure ? { failed: true, reason: result.reason } : null;
+        }
+        this._kpTrace('resolve:html-result', {
             key,
             titles,
             year,
@@ -183,7 +213,7 @@ class HomeMovieNavigationService {
     }
 
     async _resolveDirectHtmlRatings(item, directId, options = {}) {
-        const titles = [item.name || item.title, item.alternativeName || item.originalName || item.original_title]
+        const titles = [item.searchTitle, item.name || item.title, item.alternativeName || item.originalName || item.original_title]
             .filter(value => typeof value === 'string' && value.trim())
             .map(value => value.trim())
             .filter((value, index, values) => values.indexOf(value) === index);
@@ -204,7 +234,7 @@ class HomeMovieNavigationService {
             });
             const resultId = Number(result?.kinopoiskId) || 0;
             if (resultId !== directId) {
-                console.info('[KPCardTrace] resolve:direct-rating-mismatch', {
+                this._kpTrace('resolve:direct-rating-mismatch', {
                     directId,
                     resultId,
                     title: titles[0],
@@ -220,7 +250,7 @@ class HomeMovieNavigationService {
                 imdbId: result?.imdbId || null,
                 originalTitle: result?.originalTitle || result?.originalName || null
             };
-            console.info('[KPCardTrace] resolve:direct-rating-result', {
+            this._kpTrace('resolve:direct-rating-result', {
                 directId,
                 title: titles[0],
                 year,
@@ -228,7 +258,7 @@ class HomeMovieNavigationService {
             });
             return ratings;
         } catch (error) {
-            console.info('[KPCardTrace] resolve:direct-rating-error', {
+            this._kpTrace('resolve:direct-rating-error', {
                 directId,
                 title: titles[0],
                 message: error.message

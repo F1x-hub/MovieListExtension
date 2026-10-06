@@ -716,6 +716,7 @@ class Utils {
             title: String(info.title || ''),
             originalTitle: String(info.alternativeName || ''),
             year: String(info.year || ''),
+            ...(info.searchTitle ? { searchTitle: String(info.searchTitle) } : {}),
             mediaType: String(info.mediaType || 'movie')
         });
         const url = chrome.runtime.getURL(
@@ -752,6 +753,8 @@ class Utils {
                 || titleEl?.textContent?.trim() || target.getAttribute('title') || target.getAttribute('alt') || 'Unknown';
             const alternativeName = target.getAttribute('data-movie-original-title')
                 || cardEl.getAttribute('data-movie-original-title') || '';
+            const searchTitle = target.getAttribute('data-movie-search-title')
+                || cardEl.getAttribute('data-movie-search-title') || '';
             const year = target.getAttribute('data-movie-year') || cardEl.getAttribute('data-movie-year') || '';
             const tmdbId = target.getAttribute('data-tmdb-id') || cardEl.getAttribute('data-tmdb-id') || '';
             const mediaType = target.getAttribute('data-media-type') || cardEl.getAttribute('data-media-type') || 'movie';
@@ -759,7 +762,7 @@ class Utils {
                 || cardEl.getAttribute('data-is-tmdb-only') === 'true';
             const hasValidId = movieId && movieId !== 'null' && movieId !== 'undefined' && movieId !== '';
 
-            return { target, cardEl, movieId: hasValidId ? movieId : null, tmdbId, title, alternativeName, year, mediaType, isTmdbOnly };
+            return { target, cardEl, movieId: hasValidId ? movieId : null, tmdbId, title, alternativeName, searchTitle, year, mediaType, isTmdbOnly };
         }
 
         async function _resolveAndOpen(info, newTab = false, targetWindow = null) {
@@ -818,6 +821,16 @@ class Utils {
             });
         }
 
+        function _openInNewTab(info) {
+            // Reserve the tab during the trusted user gesture. The actual
+            // destination is known only after the asynchronous HTML lookup.
+            const targetWindow = window.open('about:blank', '_blank');
+            _resolveAndOpen(info, true, targetWindow).catch(error => {
+                if (targetWindow && !targetWindow.closed) targetWindow.close();
+                console.warn('[MovieCardNavigation] TMDB-only new-tab resolution failed:', error);
+            });
+        }
+
         // Left-click handler
         container.addEventListener('click', (e) => {
             if (e.button !== 0) return;
@@ -827,6 +840,12 @@ class Utils {
             if (!info || (!info.movieId && !info.isTmdbOnly && typeof options.resolveMovie !== 'function')) return;
 
             e.preventDefault();
+
+            // Ctrl/Cmd/Shift+click opens a new tab, as for ordinary links.
+            if (e.ctrlKey || e.metaKey || e.shiftKey) {
+                _openInNewTab(info);
+                return;
+            }
 
             console.log('[MovieCardNavigation] Card clicked (LKM):', {
                 title: info.title,

@@ -163,9 +163,12 @@ class FavoriteService {
      * @param {string} status - Filter by status ('all', 'watching', 'plan_to_watch', 'favorite')
      * @param {string} sortBy - Field to sort by
      * @param {string} order - Sort order: 'asc' or 'desc'
+     * @param {Object} [options]
+     * @param {boolean} [options.throwOnError=false] - Rethrow read failures instead of
+     *   returning an empty list, so callers can tell "no bookmarks" from "offline".
      * @returns {Promise<Array>} - Array of entries
      */
-    async getFavorites(userId, status = 'all', sortBy = 'createdAt', order = 'desc') {
+    async getFavorites(userId, status = 'all', sortBy = 'createdAt', order = 'desc', options = {}) {
         try {
             if (!userId) {
                 return [];
@@ -215,6 +218,7 @@ class FavoriteService {
             return favorites;
         } catch (error) {
             console.error('Error getting bookmarks:', error);
+            if (options.throwOnError) throw error;
             return [];
         }
     }
@@ -225,7 +229,7 @@ class FavoriteService {
      * @param {string} status - Optional status filter
      * @returns {Promise<number>} - Count
      */
-    async getFavoritesCount(userId, status = 'all') {
+    async getFavoritesCount(userId, status = 'all', { throwOnError = false } = {}) {
         try {
             if (!userId) {
                 return 0;
@@ -242,6 +246,7 @@ class FavoriteService {
             return snapshot.size;
         } catch (error) {
             console.error('Error getting bookmarks count:', error);
+            if (throwOnError) throw error;
             return 0;
         }
     }

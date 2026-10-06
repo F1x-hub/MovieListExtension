@@ -534,8 +534,9 @@ class BaseParserService {
     async cachedSearch(title, year, options = {}) {
         const mediaType = options?.mediaType || null;
         const seasonNumber = options?.seasonNumber ?? '';
+        const seasonYear = options?.seasonYear ?? '';
         const altName = options?.altName || '';
-        const cacheKey = `${title}_${year || ''}_${mediaType || ''}_${seasonNumber}_${altName}`;
+        const cacheKey = `${title}_${year || ''}_${mediaType || ''}_${seasonNumber}_${seasonYear}_${altName}`;
         const cached = this._searchCache.get(cacheKey);
         const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
 

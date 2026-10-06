@@ -12,6 +12,7 @@ const { createAdminAuthVerifier, setAdminCors } = require("./adminAuth");
 const { createProviderKeyVault } = require("./providerKeyVault");
 const { createProviderKeyPool } = require("./providerKeyPool");
 const { createTmdbProxyHandler } = require("./tmdbProxy");
+const { createImdbRatingsHandler } = require("./imdbRatingsProxy");
 const {
   createProviderKeyManagementHandler,
   createProviderKeyManagementService,
@@ -199,6 +200,19 @@ exports.tmdbProxy = onRequest(
       reportOutcome: (outcome) => getProviderKeyPool("tmdb").reportOutcome(outcome),
     },
   })
+);
+
+/**
+ * IMDb ratings for extension cards, batched through IMDb's public GraphQL
+ * endpoint. No secrets: IMDb blocks direct extension reads, not the data.
+ */
+exports.imdbRatings = onRequest(
+  {
+    region: "us-central1",
+    timeoutSeconds: 20,
+    memory: "256MiB",
+  },
+  createImdbRatingsHandler()
 );
 
 /**

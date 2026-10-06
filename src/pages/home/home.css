@@ -5,10 +5,25 @@
 /* Main Container */
 .container {
     max-width: 1400px;
-    margin: 80px auto 40px;
+    /* body already reserves 60px for the fixed navigation; 80px on top of it
+       left an empty band above the slider. Matches the catalogue's 28px. */
+    margin: 18px auto 40px;
     padding: 0 20px;
     background-color: transparent;
     min-height: 100vh;
+}
+
+/* Page title for assistive technology; the slider is the visual header. */
+.home-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 /* ==========================================================================
@@ -398,7 +413,7 @@
     border: 1px solid var(--theme-border);
 }
 
-.home-cta-text h3 {
+.home-cta-text h2 {
     margin: 0 0 6px 0;
     font-size: 18px;
     font-weight: 600;
@@ -499,7 +514,7 @@
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
 }
 
-.home-dashboard-card h3 {
+.home-dashboard-card h2 {
     margin: 0 0 18px 0;
     font-size: 16px;
     font-weight: 600;
@@ -710,4 +725,190 @@
 
 :root.light-theme .home-stat-box {
     background: rgba(0, 0, 0, 0.025);
+}
+
+/* ==========================================================================
+   Loading skeletons, inline section states, and accessibility
+   ========================================================================== */
+.home-skeleton-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.home-skeleton-poster,
+.home-skeleton-line,
+.home-skeleton-block {
+    background: var(--theme-hover-bg);
+    border-radius: 12px;
+    animation: homeSkeletonPulse 1.4s ease-in-out infinite;
+}
+
+.home-skeleton-poster {
+    aspect-ratio: 2 / 3;
+    width: 100%;
+}
+
+.home-skeleton-line {
+    height: 12px;
+    width: 85%;
+    border-radius: 6px;
+}
+
+.home-skeleton-line--short {
+    width: 50%;
+}
+
+.featured-card--skeleton {
+    cursor: default;
+    box-shadow: none;
+}
+
+.featured-card--skeleton:hover {
+    transform: none;
+    box-shadow: none;
+}
+
+.featured-card--skeleton .home-skeleton-block {
+    border-radius: 0;
+}
+
+@keyframes homeSkeletonPulse {
+    0%, 100% { opacity: 0.55; }
+    50% { opacity: 1; }
+}
+
+.home-section-empty,
+.home-community-empty {
+    color: var(--theme-text-secondary);
+    text-align: center;
+    grid-column: 1 / -1;
+    padding: 24px 0;
+    margin: 0;
+}
+
+.home-community-empty {
+    font-size: 13px;
+    text-align: left;
+}
+
+.home-section-message {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 32px 16px;
+    border: 1px dashed var(--theme-border);
+    border-radius: 12px;
+    color: var(--theme-text-secondary);
+    text-align: center;
+}
+
+.home-section-message p {
+    margin: 0;
+}
+
+.home-section-retry {
+    padding: 8px 18px;
+    border-radius: 8px;
+    border: 1px solid var(--theme-border);
+    background: var(--theme-hover-bg);
+    color: var(--theme-text-primary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.home-section-retry:hover {
+    background: var(--theme-active-bg);
+    border-color: var(--theme-border-hover);
+}
+
+.pagination-dot:focus-visible,
+.featured-card:focus-visible,
+.home-section-retry:focus-visible,
+.home-cta-btn:focus-visible,
+.home-explore-btn:focus-visible {
+    outline: 2px solid var(--ui-color-interactive, var(--theme-text-primary));
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .home-card-animate,
+    .home-hero-animate {
+        animation: none !important;
+        opacity: 1 !important;
+        transform: none !important;
+    }
+
+    .featured-slider-container,
+    .featured-card,
+    .featured-poster,
+    .pagination-dot {
+        transition: none !important;
+    }
+
+    .featured-card:hover,
+    .featured-card:hover .featured-poster {
+        transform: none;
+    }
+
+    .home-skeleton-poster,
+    .home-skeleton-line,
+    .home-skeleton-block,
+    .featured-rating-badge--loading {
+        animation: none !important;
+    }
+}
+
+.home-progress-badge {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    z-index: 2;
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: rgba(9, 9, 11, 0.78);
+    color: #f4f4f5;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.2;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+}
+
+/* "Новинка" / "N сезон" / "Новые серии" on anime that is coming out now */
+.home-airing-badge {
+    position: absolute;
+    left: 8px;
+    bottom: 8px;
+    z-index: 2;
+    max-width: calc(100% - 16px);
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    color: #f4f4f5;
+    background: rgba(9, 9, 11, 0.78);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+}
+
+.home-airing-badge--new {
+    color: #111111;
+    background: rgba(245, 197, 24, 0.95);
+    border-color: rgba(255, 220, 80, 0.65);
 }

@@ -40,6 +40,11 @@ class RatingsRefreshService {
         return record;
     }
 
+    static normalizeImdbId(value) {
+        const id = String(value || '').trim();
+        return /^tt\d{7,10}$/i.test(id) ? id : null;
+    }
+
     mergeRatingSources(result, sharedRecord) {
         if (!sharedRecord) return result;
 
@@ -47,6 +52,11 @@ class RatingsRefreshService {
             ...(result || {}),
             votes: { ...(result?.votes || {}) }
         };
+        // The card cache keeps the IMDb ID found on the Kinopoisk page; the
+        // IMDb rating tile needs it to link to the title.
+        const sharedImdbId = RatingsRefreshService.normalizeImdbId(sharedRecord.imdbId);
+        if (!RatingsRefreshService.normalizeImdbId(merged.imdbId) && sharedImdbId) merged.imdbId = sharedImdbId;
+        if (Number(sharedRecord.imdbCheckedAt) > 0) merged.imdbCheckedAt = Number(sharedRecord.imdbCheckedAt);
         const providers = [
             ['kpRating', 'kp'],
             ['imdbRating', 'imdb']
@@ -129,20 +139,44 @@ class RatingsRefreshService {
         const stored = await chrome.storage.local.get(key);
         const cache = stored?.[key] || {};
         const recordKey = `kp:${kinopoiskId}`;
-        const current = cache[recordKey];
-        if (!current) return;
+        const now = Date.now();
+        // Movie Details can open titles the card enrichment never saw; start
+        // a record in the card-cache shape so the IMDb check is remembered.
+        const current = cache[recordKey] || {
+            status: 'resolved',
+            kpId: Number(kinopoiskId),
+            kpRating: 0,
+            imdbRating: 0,
+            votes: {},
+            imdbId: null,
+            updatedAt: now,
+            expiresAt: now + 7 * 24 * 60 * 60 * 1000
+        };
 
         const nextVotes = { ...(current.votes || {}) };
         if (Number(ratings?.votes?.kp) > 0) nextVotes.kp = Number(ratings.votes.kp);
         if (Number(ratings?.votes?.imdb) > 0) nextVotes.imdb = Number(ratings.votes.imdb);
-        const now = Date.now();
+        const imdbId = RatingsRefreshService.normalizeImdbId(current.imdbId)
+            || RatingsRefreshService.normalizeImdbId(ratings?.imdbId);
+        const nextKpRating = Number(ratings?.kpRating) > 0 ? Number(ratings.kpRating) : (Number(current.kpRating) || 0);
+        const nextImdbRating = Number(ratings?.imdbRating) > 0 ? Number(ratings.imdbRating) : (Number(current.imdbRating) || 0);
         await chrome.storage.local.set({
             [key]: {
                 ...cache,
                 [recordKey]: {
                     ...current,
-                    kpRating: Number(ratings?.kpRating) > 0 ? Number(ratings.kpRating) : current.kpRating,
-                    imdbRating: Number(ratings?.imdbRating) > 0 ? Number(ratings.imdbRating) : current.imdbRating,
+                    kpRating: nextKpRating,
+                    imdbRating: nextImdbRating,
+                    ...(imdbId ? { imdbId } : {}),
+                    kpState: nextKpRating > 0 ? 'available' : (current.kpState || 'unavailable'),
+                    imdbState: nextImdbRating > 0 ? 'available' : 'unavailable',
+                    status: nextKpRating > 0 || nextImdbRating > 0 ? 'resolved' : (current.status || 'no-ratings'),
+                    // The Kinopoisk page was read for IMDb data; Movie Details
+                    // and card enrichment wait before reading it again.
+                    ...(ratings?.imdbChecked ? {
+                        imdbCheckedAt: now,
+                        ...(nextImdbRating > 0 ? {} : { imdbRetryAfter: now + 12 * 60 * 60 * 1000 })
+                    } : {}),
                     votes: nextVotes,
                     updatedAt: now,
                     expiresAt: Math.max(Number(current.expiresAt) || 0, now + 7 * 24 * 60 * 60 * 1000)
@@ -225,7 +259,9 @@ class RatingsRefreshService {
         if (imdbId && !hasSharedImdbRating) {
             ratingRequests.push({
                 provider: 'imdb',
-                promise: imdbParser.getImdbRating(imdbId)
+                promise: imdbParser.getImdbRatingPreferProxy
+                    ? imdbParser.getImdbRatingPreferProxy(imdbId)
+                    : imdbParser.getImdbRating(imdbId)
             });
         }
         if (ratingRequests.length === 0) return {};

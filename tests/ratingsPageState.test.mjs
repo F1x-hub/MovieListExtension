@@ -255,7 +255,7 @@ function createPage() {
     } } };
     const { default: RatingService } = await import('../src/shared/services/RatingService.js');
     await new RatingService({ db: null }).invalidateRatingsCache('alice');
-    assert.deepEqual(removed, ['recent_ratings_cache'], 'ratings_cache_{uid} survives a rating write');
+    assert.deepEqual(removed, ['recent_ratings_cache', 'home_rating_stats_v1_alice'], 'ratings_cache_{uid} survives a rating write; Home statistics are refreshed');
     globalThis.chrome = previousChrome;
 }
 

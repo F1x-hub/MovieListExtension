@@ -641,6 +641,23 @@ class MovieCacheService {
     }
 
     /**
+     * Get the movies with the most community ratings. A single-field orderBy
+     * uses Firestore's automatic index, so no composite index is required;
+     * documents without `ratingsCount` are naturally excluded.
+     * @param {number} [limit=24]
+     * @returns {Promise<Array<Object>>}
+     */
+    async getMostRatedMovies(limit = 24) {
+        const snapshot = await this.db.collection(this.collection)
+            .orderBy('ratingsCount', 'desc')
+            .limit(limit)
+            .get();
+        return snapshot.docs
+            .map(doc => ({ id: doc.id, ...doc.data() }))
+            .filter(movie => movie.hasCommunityRating === true && Number(movie.ratingsCount) > 0);
+    }
+
+    /**
      * Get rated movies filtered by avgRating from movies collection (server-side pagination)
      * @param {Object} options - { minAvgRating, maxAvgRating, sortBy, sortDir, limit, lastDoc }
      * @returns {Promise<Object>} - { movies, hasMore, lastDoc }

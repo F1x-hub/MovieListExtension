@@ -119,6 +119,9 @@ class RatingService {
         try {
             if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
                 await chrome.storage.local.remove('recent_ratings_cache');
+                // Home caches the user's rating statistics briefly; a rating
+                // write must not leave its counters stale.
+                if (userId) await chrome.storage.local.remove(`home_rating_stats_v1_${userId}`);
             }
         } catch (error) {
             console.warn('RatingService: Failed to invalidate cache', error);

@@ -441,10 +441,13 @@
         }
 
         if (imdbRating <= 0) {
+            // Only the structured SSR rating object counts, e.g.
+            // "imdb":{"__typename":"Rating","value":8.1,...}. A loose
+            // "imdb ... number" match could pick an unrelated number.
             const scripts = root.querySelectorAll?.('script') || [];
             for (const script of scripts) {
                 const source = script.textContent || '';
-                const match = source.match(/(?:IMDb|imdb)[^\d]{0,80}(?:rating|value)?[^\d]{0,20}([0-9]+(?:[.,][0-9]+)?)/i);
+                const match = source.match(/"imdb"\s*:\s*\{[^{}]{0,200}?"value"\s*:\s*([0-9]+(?:\.[0-9]+)?)/);
                 const value = parseRating(match?.[1] || '');
                 if (value > 0 && value <= 10) {
                     imdbRating = value;
@@ -531,6 +534,19 @@
     let similarParseCount = 0;
     let similarParseTotalMs = 0;
     let similarParseMaxMs = 0;
+    // [KPScraperTrace] info logs are diagnostics, enabled with
+    // chrome.storage.local.set({ movielistDebugTraces: true }). Warnings always log.
+    let scraperTracesEnabled = false;
+    try {
+        chrome.storage?.local?.get?.(['movielistDebugTraces'], result => {
+            scraperTracesEnabled = result?.movielistDebugTraces === true;
+        });
+    } catch {
+        scraperTracesEnabled = false;
+    }
+    const scraperTrace = (...args) => {
+        if (scraperTracesEnabled) console.info(...args);
+    };
     const SCRAPER_CHECK_DEBOUNCE_MS = 100;
     const SCRAPER_POLL_INTERVAL_MS = 1000;
     const RATING_HYDRATION_TIMEOUT_MS = 1400;
@@ -610,7 +626,7 @@
         const meta = getRequestMetadata();
         const diagnostics = getScraperDiagnostics();
 
-        console.info('[KPScraperTrace] result-send', {
+        scraperTrace('[KPScraperTrace] result-send', {
             requestId: meta.requestId,
             query: meta.query,
             type,
@@ -653,7 +669,7 @@
             similarParseTotalMs += parseMs;
             similarParseMaxMs = Math.max(similarParseMaxMs, parseMs);
             if (items.length > 0) {
-                console.info('[KPScraperTrace] similar-items-ready', {
+                scraperTrace('[KPScraperTrace] similar-items-ready', {
                     requestId: meta.requestId,
                     itemCount: items.length,
                     waitedMs: Date.now() - pageStartedAt,
@@ -667,15 +683,16 @@
 
         if (meta.isMoviePage) {
             const ratings = extractMoviePageRatingsFromDOM(document);
-            if (ratings.kpRating > 0 && ratings.imdbRating > 0
-                && ratings.kpVotes > 0 && ratings.imdbVotes > 0) {
-                console.info('[KPScraperTrace] movie-page-ratings-ready', ratings);
+            // Both ratings are enough: vote counts are optional and waiting
+            // for them cost up to DETAIL_RATING_TIMEOUT_MS per card.
+            if (ratings.kpRating > 0 && ratings.imdbRating > 0) {
+                scraperTrace('[KPScraperTrace] movie-page-ratings-ready', ratings);
                 sendResult('SCRAPE_MOVIE_RATINGS_SUCCESS', { ratings });
                 return;
             }
             if (!firstItemsAt) firstItemsAt = Date.now();
             if (Date.now() - firstItemsAt < DETAIL_RATING_TIMEOUT_MS) return;
-            console.info('[KPScraperTrace] movie-page-ratings-empty', ratings);
+            scraperTrace('[KPScraperTrace] movie-page-ratings-empty', ratings);
             sendResult('SCRAPE_MOVIE_RATINGS_SUCCESS', { ratings });
             return;
         }
@@ -685,7 +702,7 @@
             if (!firstItemsAt) firstItemsAt = Date.now();
             if (!firstItemsLogged) {
                 firstItemsLogged = true;
-                console.info('[KPScraperTrace] dom-items-detected', {
+                scraperTrace('[KPScraperTrace] dom-items-detected', {
                     requestId: meta.requestId,
                     query: meta.query,
                     itemCount: items.length,
@@ -705,7 +722,7 @@
                 return;
             }
 
-            console.info('[KPScraperTrace] result-ready', {
+            scraperTrace('[KPScraperTrace] result-ready', {
                 itemCount: items.length,
                 requireRating: meta.requireRating,
                 ratingHydration: hydration,
@@ -760,7 +777,7 @@
                 sendResult('SCRAPE_RESULT_BLOCKED', { reason: 'SCRAPE_BLOCKED_EVEN_WITH_SESSION' });
             } else if (getRequestMetadata().isMoviePage) {
                 const ratings = extractMoviePageRatingsFromDOM(document);
-                console.info('[KPScraperTrace] movie-page-ratings-timeout', ratings);
+                scraperTrace('[KPScraperTrace] movie-page-ratings-timeout', ratings);
                 sendResult('SCRAPE_MOVIE_RATINGS_SUCCESS', { ratings });
             } else if (getRequestMetadata().isSimilarPage) {
                 const finalItems = extractSimilarMoviesFromDOM(document);
