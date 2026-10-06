@@ -150,6 +150,26 @@ class KinopoiskPersonHtmlService {
      * @param {Object} [options] - Optional diagnostics sourceName
      * @returns {Promise<{kinopoiskId:number,name:string,year:number|null}|null>}
      */
+    /**
+     * [KPCardTrace] diagnostics run per card and per search, so they are
+     * opt-in: localStorage 'movielist:debug-ratings' = '1'. Errors always log.
+     * @param {string} event
+     * @param {Object} [details]
+     */
+    _kpTrace(event, details = {}) {
+        if (event.includes('error')) {
+            console.warn('[KPCardTrace]', event, details);
+            return;
+        }
+        let enabled;
+        try {
+            enabled = globalThis.localStorage?.getItem('movielist:debug-ratings') === '1';
+        } catch {
+            enabled = false;
+        }
+        if (enabled) console.info('[KPCardTrace]', event, details);
+    }
+
     async findMovieByTitle(titles, year = null, options = {}) {
         const firstTitle = (Array.isArray(titles) ? titles : [titles])
             .find(title => typeof title === 'string' && title.trim());
@@ -157,16 +177,20 @@ class KinopoiskPersonHtmlService {
         // Scheduler requests need one background consumer per card. The
         // background queue owns physical deduplication and cancellation
         // accounting, so do not collapse these callers in this service map.
-        if (options.requestKey) return this._findMovieByTitle(titles, year, options);
+        if (options.requestKey) {
+            const result = await this._findMovieByTitle(titles, year, options);
+            return result?.failed && !options.reportFailure ? null : result;
+        }
         const inFlightKey = `${this._normalizeMovieTitle(firstTitle)}|${Number(year) || ''}|${options.mediaType || ''}|${options.allowYearTolerance ? 'tolerant' : 'strict'}|${Number(options.maxYearDelta) || ''}|${options.requireRating ? 'rating' : 'identity'}`;
         if (this.movieSearchInFlight.has(inFlightKey)) {
-            console.info('[KPCardTrace] search:in-flight-hit', { inFlightKey });
+            this._kpTrace('search:in-flight-hit', { inFlightKey });
             return this.movieSearchInFlight.get(inFlightKey);
         }
-        const promise = this._findMovieByTitle(titles, year, options)
+        const promise = this._findMovieByTitle(titles, year, { ...options, reportFailure: true })
             .finally(() => this.movieSearchInFlight.delete(inFlightKey));
         this.movieSearchInFlight.set(inFlightKey, promise);
-        return promise;
+        const result = await promise;
+        return result?.failed && !options.reportFailure ? null : result;
     }
 
     async _findMovieByTitle(titles, year = null, options = {}) {
@@ -179,10 +203,18 @@ class KinopoiskPersonHtmlService {
         if (this.movieSearchBlocked) return null;
 
         const sourceName = options.sourceName || 'KinopoiskPersonHtmlService.movieSearch';
+        // A technical failure (timeout, blocked page, network) is not "this
+        // title is not on Kinopoisk": it is not cached for the session, and
+        // callers that pass `reportFailure` get { failed, reason } to retry
+        // sooner instead of storing a negative mapping.
+        const technicalFailure = reason => {
+            this._kpTrace('search:failed', { searchTitle: candidateTitles[0], reason });
+            return options.reportFailure ? { failed: true, reason } : null;
+        };
 
         const searchTitle = candidateTitles[0];
         const cacheKey = `${this._normalizeMovieTitle(searchTitle)}|${Number(year) || ''}|${options.mediaType || ''}|${options.allowYearTolerance ? 'tolerant' : 'strict'}|${Number(options.maxYearDelta) || ''}|${options.requireRating ? 'rating' : 'identity'}`;
-        console.info('[KPCardTrace] search:start', {
+        this._kpTrace('search:start', {
             searchTitle,
             candidateTitles,
             year: Number(year) || null,
@@ -190,7 +222,7 @@ class KinopoiskPersonHtmlService {
         });
         if (this.movieSearchCache.has(cacheKey)) {
             const cached = this.movieSearchCache.get(cacheKey);
-            console.info('[KPCardTrace] search:cache-hit', {
+            this._kpTrace('search:cache-hit', {
                 durationMs: Date.now() - startedAt,
                 searchTitle,
                 result: cached
@@ -203,7 +235,7 @@ class KinopoiskPersonHtmlService {
         // can receive an SSO shell even when the same search works in Chrome.
         if (typeof this.kinopoiskService?.scrapeSearchResultsOffscreen === 'function') {
             try {
-                console.info('[KPCardTrace] search:offscreen-request', {
+                this._kpTrace('search:offscreen-request', {
                     searchTitle,
                     timeoutMs: 8000
                 });
@@ -252,7 +284,7 @@ class KinopoiskPersonHtmlService {
                         ...(firstMovie.imdbId ? { imdbId: firstMovie.imdbId } : {})
                     }
                     : null;
-                console.info('[KPCardTrace] search:offscreen-result', {
+                this._kpTrace('search:offscreen-result', {
                     durationMs: Date.now() - startedAt,
                     searchTitle,
                     resultCount: Array.isArray(results) ? results.length : null,
@@ -262,10 +294,12 @@ class KinopoiskPersonHtmlService {
                     result
                 });
                 const ratingFound = Number(result?.kpRating) > 0;
-                this.movieSearchCache.set(cacheKey, result);
+                // Cache only completed searches; a failed scrape (no results
+                // list) must not read as "not found" for the whole session.
+                if (results !== null && results !== undefined) this.movieSearchCache.set(cacheKey, result);
                 if (result && (!options.requireRating || ratingFound)) return result;
                 if (result && options.requireRating) {
-                    console.info('[KPCardTrace] search:offscreen-without-rating', {
+                    this._kpTrace('search:offscreen-without-rating', {
                         durationMs: Date.now() - startedAt,
                         searchTitle,
                         kinopoiskId: result.kinopoiskId
@@ -273,17 +307,16 @@ class KinopoiskPersonHtmlService {
                 }
                 if (results !== null && !(result && options.requireRating && !ratingFound)) return null;
                 if (failureReason && !this.isHtmlFallbackAllowed(failureReason)) {
-                    console.info('[KPCardTrace] search:html-fallback-skipped', {
+                    this._kpTrace('search:html-fallback-skipped', {
                         durationMs: Date.now() - startedAt,
                         searchTitle,
                         failureReason
                     });
-                    this.movieSearchCache.set(cacheKey, null);
-                    return null;
+                    return technicalFailure(failureReason);
                 }
             } catch (error) {
                 offscreenFailureReason = error?.reason || 'OFFSCREEN_MESSAGE_FAILED';
-                console.info('[KPCardTrace] search:offscreen-error', {
+                this._kpTrace('search:offscreen-error', {
                     durationMs: Date.now() - startedAt,
                     searchTitle,
                     message: error.message
@@ -293,17 +326,16 @@ class KinopoiskPersonHtmlService {
         }
 
         if (offscreenFailureReason && !this.isHtmlFallbackAllowed(offscreenFailureReason)) {
-            console.info('[KPCardTrace] search:html-fallback-skipped', {
+            this._kpTrace('search:html-fallback-skipped', {
                 durationMs: Date.now() - startedAt,
                 searchTitle,
                 failureReason: offscreenFailureReason
             });
-            this.movieSearchCache.set(cacheKey, null);
-            return null;
+            return technicalFailure(offscreenFailureReason);
         }
 
         try {
-            console.info('[KPCardTrace] search:html-request', { searchTitle });
+            this._kpTrace('search:html-request', { searchTitle });
             const html = await this._fetchHtml(
                 `${this.baseUrl}/new-search/?text=${encodeURIComponent(searchTitle)}`,
                 sourceName
@@ -319,11 +351,10 @@ class KinopoiskPersonHtmlService {
             if (responseDiagnostics.hasSsoGate && !responseDiagnostics.hasFilmRoute) {
                 this.movieSearchBlocked = true;
                 console.warn('[KinopoiskPersonHtmlService] Movie search blocked by Kinopoisk SSO gate');
-                this.movieSearchCache.set(cacheKey, null);
-                return null;
+                return technicalFailure('SSO_BLOCKED');
             }
             const result = this.parseMovieSearchHtml(html, candidateTitles, year, options);
-            console.info('[KPCardTrace] search:html-result', {
+            this._kpTrace('search:html-result', {
                 durationMs: Date.now() - startedAt,
                 searchTitle,
                 htmlLength: html.length,
@@ -332,7 +363,7 @@ class KinopoiskPersonHtmlService {
             this.movieSearchCache.set(cacheKey, result);
             return result;
         } catch (error) {
-            console.info('[KPCardTrace] search:html-error', {
+            this._kpTrace('search:html-error', {
                 durationMs: Date.now() - startedAt,
                 searchTitle,
                 message: error.message
@@ -341,8 +372,7 @@ class KinopoiskPersonHtmlService {
                 title: searchTitle,
                 message: error.message
             });
-            this.movieSearchCache.set(cacheKey, null);
-            return null;
+            return technicalFailure('HTML_SEARCH_FAILED');
         }
     }
 
@@ -673,6 +703,16 @@ class KinopoiskPersonHtmlService {
         const targetYear = Number(year) || null;
         const allowYearTolerance = options.allowYearTolerance === true;
         const maxYearDelta = Number(options.maxYearDelta) || 1;
+        // KP result URLs say /film/ or /series/. A TV card must prefer a
+        // series with the same title and year over a film, and vice versa.
+        const wantedKind = options.mediaType === 'tv' ? 'series' : (options.mediaType === 'movie' ? 'film' : null);
+        // A substring counts only when the titles are of similar length, so
+        // "Мятеж" does not match "Мятеж на Баунти".
+        const isClosePartial = (left, right) => {
+            const shorter = left.length <= right.length ? left : right;
+            const longer = left.length <= right.length ? right : left;
+            return shorter.length >= 4 && longer.includes(shorter) && shorter.length / longer.length >= 0.6;
+        };
         const scored = movies.map((movie, index) => {
             const movieTitles = [movie.title, movie.originalTitle]
                 .map(title => this._normalizeMovieTitle(title))
@@ -681,7 +721,7 @@ class KinopoiskPersonHtmlService {
             for (const movieTitle of movieTitles) {
                 for (const wantedTitle of wanted) {
                     if (movieTitle === wantedTitle) titleScore = Math.max(titleScore, 100);
-                    else if (movieTitle.includes(wantedTitle) || wantedTitle.includes(movieTitle)) {
+                    else if (isClosePartial(movieTitle, wantedTitle)) {
                         titleScore = Math.max(titleScore, 50);
                     }
                 }
@@ -705,7 +745,8 @@ class KinopoiskPersonHtmlService {
                 }
             }
 
-            return { movie, score: titleScore + yearScore, index, rejected };
+            const typeScore = wantedKind && movie.type && movie.type !== wantedKind ? -70 : 0;
+            return { movie, score: titleScore + yearScore + typeScore, index, rejected };
         });
 
         const eligible = scored.filter(candidate => !candidate.rejected);

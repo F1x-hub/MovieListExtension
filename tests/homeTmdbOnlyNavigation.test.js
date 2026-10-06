@@ -38,7 +38,8 @@ const makeMovie = (id, section) => ({
     mediaType: section === 'series' || section === 'anime' ? 'tv' : 'movie',
     type: section,
     section,
-    posterUrl: `https://image.test/${id}.jpg`
+    posterUrl: `https://image.test/${id}.jpg`,
+    voteCount: 500
 });
 
 const tmdb = {
@@ -57,7 +58,7 @@ home.isCandidateForSection = (item, section) => section === 'featured' || item.s
 const discovery = await home.getDiscoveryData(null, { tmdbOnly: true });
 assert.equal(discovery.isFromCache, false);
 assert.equal(globalThis.chrome.storage.local.store.home_discovery_cache_v10, undefined);
-assert.ok(globalThis.chrome.storage.local.store.home_discovery_cache_v12);
+assert.ok(globalThis.chrome.storage.local.store.home_discovery_cache_v14);
 
 for (const section of ['featured', 'films', 'series', 'cartoons', 'anime']) {
     assert.ok(discovery.data[section].length >= 3);

@@ -6,7 +6,24 @@ class ImageCacheService {
     constructor() {
         this.CACHE_KEY = 'profile_cache';
         this.MAX_CACHE_SIZE = 10 * 1024 * 1024; // 10MB limit
+        // One entry above this (base64 characters) is not cached: a single large
+        // GIF would otherwise evict every other cached avatar and banner.
+        this.MAX_ITEM_SIZE = 2 * 1024 * 1024;
         this.CACHE_EXPIRY = 7 * 24 * 60 * 60 * 1000; // 7 days
+        // All entries share one storage key, so writes are serialized: concurrent
+        // read-modify-write cycles (avatar and banner together) lost one update.
+        this.writeQueue = Promise.resolve();
+    }
+
+    /**
+     * Runs a read-modify-write of the shared cache key after the previous one.
+     * @param {Function} task
+     * @returns {Promise<*>}
+     */
+    runExclusive(task) {
+        const run = this.writeQueue.then(task, task);
+        this.writeQueue = run.catch(() => {});
+        return run;
     }
 
     /**
@@ -20,21 +37,22 @@ class ImageCacheService {
         try {
             const result = await chrome.storage.local.get(this.CACHE_KEY);
             const cache = result[this.CACHE_KEY] || {};
-            
+
             if (!cache[userId] || !cache[userId][type]) {
                 return null;
             }
 
             const item = cache[userId][type];
-            
+
             // Check if the URL has changed or if it's an old cache entry without a URL
             if (expectedUrl && (!item.url || item.url !== expectedUrl)) {
                 await this.invalidateCache(userId, type);
                 return null;
             }
-            
-            // Check expiry
-            if (Date.now() - item.timestamp > this.CACHE_EXPIRY) {
+
+            // Check expiry; entries that are not images (an error page cached by an
+            // earlier version) are dropped as well.
+            if (Date.now() - item.timestamp > this.CACHE_EXPIRY || !ImageCacheService.isImageDataUrl(item.data)) {
                 await this.invalidateCache(userId, type);
                 return null;
             }
@@ -44,6 +62,10 @@ class ImageCacheService {
             console.error('Error getting cached image:', error);
             return null;
         }
+    }
+
+    static isImageDataUrl(value) {
+        return typeof value === 'string' && /^data:image\/(?:png|jpe?g|gif|webp);base64,/i.test(value);
     }
 
     /**
@@ -59,25 +81,31 @@ class ImageCacheService {
             if (data instanceof Blob) {
                 base64Data = await this.blobToBase64(data);
             }
-
-            const result = await chrome.storage.local.get(this.CACHE_KEY);
-            const cache = result[this.CACHE_KEY] || {};
-
-            if (!cache[userId]) {
-                cache[userId] = {};
+            if (!ImageCacheService.isImageDataUrl(base64Data) || base64Data.length > this.MAX_ITEM_SIZE) {
+                // Not cacheable: drop a stale entry so the URL is used directly.
+                await this.invalidateCache(userId, type);
+                return;
             }
 
-            cache[userId][type] = {
-                data: base64Data,
-                url: url,
-                timestamp: Date.now()
-            };
+            await this.runExclusive(async () => {
+                const result = await chrome.storage.local.get(this.CACHE_KEY);
+                const cache = result[this.CACHE_KEY] || {};
 
-            // Check size and clean up if needed
-            await this.enforceCacheLimit(cache);
+                if (!cache[userId]) {
+                    cache[userId] = {};
+                }
 
-            await chrome.storage.local.set({ [this.CACHE_KEY]: cache });
-            console.log(`Cached ${type} for user ${userId}`);
+                cache[userId][type] = {
+                    data: base64Data,
+                    url: url,
+                    timestamp: Date.now()
+                };
+
+                // Check size and clean up if needed
+                await this.enforceCacheLimit(cache);
+
+                await chrome.storage.local.set({ [this.CACHE_KEY]: cache });
+            });
         } catch (error) {
             console.error('Error caching image:', error);
         }
@@ -90,17 +118,19 @@ class ImageCacheService {
      */
     async invalidateCache(userId, type) {
         try {
-            const result = await chrome.storage.local.get(this.CACHE_KEY);
-            const cache = result[this.CACHE_KEY];
+            await this.runExclusive(async () => {
+                const result = await chrome.storage.local.get(this.CACHE_KEY);
+                const cache = result[this.CACHE_KEY];
 
-            if (cache && cache[userId]) {
-                if (type) {
-                    delete cache[userId][type];
-                } else {
-                    delete cache[userId];
+                if (cache && cache[userId]) {
+                    if (type) {
+                        delete cache[userId][type];
+                    } else {
+                        delete cache[userId];
+                    }
+                    await chrome.storage.local.set({ [this.CACHE_KEY]: cache });
                 }
-                await chrome.storage.local.set({ [this.CACHE_KEY]: cache });
-            }
+            });
         } catch (error) {
             console.error('Error invalidating cache:', error);
         }
@@ -112,7 +142,7 @@ class ImageCacheService {
      */
     async enforceCacheLimit(cache) {
         let currentSize = JSON.stringify(cache).length;
-        
+
         if (currentSize <= this.MAX_CACHE_SIZE) return;
 
         console.log('Cache limit exceeded, cleaning up...');
@@ -136,7 +166,7 @@ class ImageCacheService {
         while (currentSize > this.MAX_CACHE_SIZE && items.length > 0) {
             const itemToRemove = items.shift();
             delete cache[itemToRemove.userId][itemToRemove.type];
-            
+
             // Cleanup empty user objects
             if (Object.keys(cache[itemToRemove.userId]).length === 0) {
                 delete cache[itemToRemove.userId];
@@ -148,7 +178,7 @@ class ImageCacheService {
 
     /**
      * Convert Blob to Base64
-     * @param {Blob} blob 
+     * @param {Blob} blob
      * @returns {Promise<string>}
      */
     blobToBase64(blob) {
@@ -161,16 +191,20 @@ class ImageCacheService {
     }
 
     /**
-     * Fetch image from URL and cache it
-     * @param {string} userId 
-     * @param {string} type 
-     * @param {string} url 
+     * Fetch image from URL and cache it. Error responses (404/403 pages) and
+     * non-image bodies are never cached, so a failed fetch cannot pin a broken
+     * avatar for the whole cache lifetime.
+     * @param {string} userId
+     * @param {string} type
+     * @param {string} url
      */
     async fetchAndCache(userId, type, url) {
         if (!url) return;
         try {
             const response = await fetch(url);
+            if (!response.ok) return;
             const blob = await response.blob();
+            if (!/^image\//i.test(blob.type || '')) return;
             await this.cacheImage(userId, type, blob, url);
         } catch (error) {
             console.error(`Error fetching image to cache (${type}):`, error);
@@ -178,5 +212,10 @@ class ImageCacheService {
     }
 }
 
-// Export instance
-window.imageCacheService = new ImageCacheService();
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = ImageCacheService;
+}
+if (typeof window !== 'undefined') {
+    // Export instance
+    window.imageCacheService = new ImageCacheService();
+}

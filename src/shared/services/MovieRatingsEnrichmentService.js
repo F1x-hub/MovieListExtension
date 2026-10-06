@@ -34,6 +34,12 @@ class MovieRatingsEnrichmentService {
         // Retry it periodically instead of treating it as a permanent answer.
         this.negativeRetryMs = 15 * 60 * 1000;
         this.providerRetryMs = 15 * 60 * 1000;
+        // A title without an IMDb rating stays without one for a while; the
+        // previous once-per-page-session retry re-scraped such cards on every
+        // visit and still showed "IMDb —".
+        this.imdbRetryMs = 12 * 60 * 60 * 1000;
+        // A failed (not "not found") Kinopoisk search is retried soon.
+        this.searchFailureRetryMs = 2 * 60 * 1000;
         this.maxCacheEntries = 400;
         this.maxCardsPerFlush = options.maxCardsPerFlush || 6;
         this.batchDelayMs = options.batchDelayMs ?? 350;
@@ -88,8 +94,22 @@ class MovieRatingsEnrichmentService {
         return this.isCardInViewport(card) ? visiblePriority : 'below-viewport';
     }
 
+    /**
+     * Forget cards removed by a re-render so tracked sets do not keep
+     * detached DOM nodes alive.
+     */
+    releaseDetachedCards() {
+        for (const card of this.trackedCards) {
+            if (card?.isConnected !== false) continue;
+            this.observer?.unobserve?.(card);
+            this.pendingCards.delete(card);
+            this.trackedCards.delete(card);
+        }
+    }
+
     observe(container) {
         if (!container || typeof container.querySelectorAll !== 'function') return;
+        this.releaseDetachedCards();
         const cards = Array.from(container.querySelectorAll('.movie-card-component, .featured-card'))
             .filter(card => card.dataset.ratingsState !== 'ready');
         this.trace('observe', {
@@ -271,7 +291,10 @@ class MovieRatingsEnrichmentService {
 
         for (const candidate of missingIdentity) {
             if (!this.isCurrentCandidate(candidate)) continue;
-            const record = this.createRecord(candidate, { status: 'not-found' });
+            const record = this.createRecord(candidate, {
+                status: 'not-found',
+                ...(candidate.searchFailed ? { retryAfterMs: this.searchFailureRetryMs } : {})
+            });
             cache[candidate.key] = record;
             if (this.isCurrentCandidate(candidate)) this.applyRatings(candidate.card, record);
         }
@@ -327,6 +350,7 @@ class MovieRatingsEnrichmentService {
 
     async enrichProvidersInBackground(candidates) {
         const startedAt = Date.now();
+        await this.prefetchImdbRatings(candidates);
         const records = await Promise.all(candidates.map(async candidate => {
             try {
                 return await this.buildRatingRecordDedup(candidate);
@@ -359,6 +383,63 @@ class MovieRatingsEnrichmentService {
             processed: records.length,
             updatedCards: records.filter(({ candidate }) => this.isCurrentCandidate(candidate)).length
         });
+    }
+
+    /**
+     * Fill IMDb ratings for many cards with one proxied GraphQL request.
+     * IMDb IDs come from the card, the KP search result, or TMDB external IDs.
+     * Candidates are updated in place; `imdbChecked` marks titles IMDb
+     * answered for, so a title without an IMDb rating does not trigger a
+     * hidden Kinopoisk page load just to look for one.
+     * @param {Array<Object>} candidates
+     */
+    async prefetchImdbRatings(candidates = []) {
+        if (!this.imdbParser?.getImdbRatingsBatch) return;
+        // While the proxy is down (or not deployed) TMDB external_ids lookups
+        // would be wasted; the KP movie page supplies IMDb instead.
+        if (this.imdbParser.isRatingsProxyAvailable && !this.imdbParser.isRatingsProxyAvailable()) return;
+        const missing = candidates.filter(candidate => !(Number(candidate.imdbRating) > 0));
+        if (missing.length === 0) return;
+
+        await Promise.all(missing.map(async candidate => {
+            if (this.normalizeImdbId(candidate.imdbId)) return;
+            const tmdbId = Number(candidate.item?.tmdbId || candidate.card?.dataset?.tmdbId) || null;
+            if (!tmdbId || typeof this.tmdbService?.getExternalIds !== 'function') return;
+            try {
+                const external = await this.tmdbService.getExternalIds(
+                    tmdbId,
+                    this.isTvMediaType(candidate.item?.mediaType || candidate.card?.dataset?.mediaType) ? 'tv' : 'movie'
+                );
+                candidate.imdbId = this.normalizeImdbId(external?.imdb_id) || candidate.imdbId || null;
+            } catch (error) {
+                this.trace('imdb:external-ids-error', { tmdbId, message: error?.message || String(error) });
+            }
+        }));
+
+        const ids = missing.map(candidate => this.normalizeImdbId(candidate.imdbId)).filter(Boolean);
+        if (ids.length === 0) return;
+        const startedAt = Date.now();
+        const ratings = await this.imdbParser.getImdbRatingsBatch(ids);
+        this.trace('imdb:batch', {
+            durationMs: Date.now() - startedAt,
+            requested: ids.length,
+            answered: ratings ? ratings.size : null
+        });
+        if (!ratings) return;
+        missing.forEach(candidate => {
+            const id = this.normalizeImdbId(candidate.imdbId);
+            const value = id ? ratings.get(id) : null;
+            if (!value) return;
+            candidate.imdbChecked = true;
+            if (value.rating > 0) {
+                candidate.imdbRating = value.rating;
+                candidate.imdbVotes = value.votes || candidate.imdbVotes || 0;
+            }
+        });
+    }
+
+    isTvMediaType(value) {
+        return ['tv', 'tv-series', 'series', 'mini-series', 'tv-show', 'animated-series'].includes(String(value || '').toLowerCase());
     }
 
     async resolveIdentityDedup(candidate) {
@@ -405,15 +486,12 @@ class MovieRatingsEnrichmentService {
             .replace(/\s+/g, ' ');
     }
 
+    // Vote counts are not required: compact cards do not display them, and
+    // waiting for them forced an extra hidden Kinopoisk page per card.
     hasPendingProvider(candidate) {
         const kpRating = Number(candidate?.kpRating) || 0;
         const imdbRating = Number(candidate?.imdbRating) || 0;
-        const kpVotes = Number(candidate?.kpVotes) || 0;
-        const imdbVotes = Number(candidate?.imdbVotes) || 0;
-        return kpRating <= 0
-            || imdbRating <= 0
-            || (kpRating > 0 && kpVotes <= 0)
-            || (imdbRating > 0 && imdbVotes <= 0);
+        return kpRating <= 0 || (imdbRating <= 0 && candidate?.imdbChecked !== true);
     }
 
     hasAvailableProvider(candidate) {
@@ -527,8 +605,13 @@ class MovieRatingsEnrichmentService {
                 lookupRatings: true,
                 requestKey: this.identityRequestKey(candidate.item),
                 priority: this.requestPriority(candidate.card, 'visible-identity'),
-                sessionId: this.enrichmentSessionId
+                sessionId: this.enrichmentSessionId,
+                reportFailure: true
             });
+            if (result?.failed) {
+                this.trace('identity:search-failed', { ...this.cardTraceData(candidate.card), reason: result.reason });
+                return { ...candidate, kpId: 0, searchFailed: true };
+            }
             const resultOriginalTitle = String(result?.originalTitle || result?.originalName || '').trim();
             if (resultOriginalTitle && candidate.card?.dataset) {
                 candidate.card.dataset.movieOriginalTitle = candidate.card.dataset.movieOriginalTitle || resultOriginalTitle;
@@ -577,6 +660,7 @@ class MovieRatingsEnrichmentService {
         let kpVotes = Number(candidate.kpVotes) || 0;
         let imdbVotes = Number(candidate.imdbVotes) || 0;
         let kpMoviePageAttempted = false;
+        const imdbChecked = candidate.imdbChecked === true;
         this.trace('ratings:start', {
             ...this.cardTraceData(candidate.card),
             kpId: candidate.kpId,
@@ -596,8 +680,7 @@ class MovieRatingsEnrichmentService {
             && this.hasPendingProvider({
                 kpRating,
                 imdbRating,
-                kpVotes,
-                imdbVotes
+                imdbChecked
             })) {
             kpMoviePageAttempted = true;
             try {
@@ -632,7 +715,7 @@ class MovieRatingsEnrichmentService {
         // Search HTML is the primary KP rating source. Parse the movie page
         // only when the search result did not expose the KP rating.
         if (this.enableDetailFallback && !kpMoviePageAttempted
-            && (kpRating <= 0 || kpVotes <= 0) && this.ratingParser?.getKinopoiskRating) {
+            && kpRating <= 0 && this.ratingParser?.getKinopoiskRating) {
             try {
                 const parsed = await this.ratingParser.getKinopoiskRating(candidate.kpId);
                 kpRating = kpRating > 0 ? kpRating : Number(parsed?.rating) || 0;
@@ -643,65 +726,9 @@ class MovieRatingsEnrichmentService {
             }
         }
 
-        // Direct IMDb rating fallback: only when IMDb rating is missing (<= 0)
-        if (this.enableDetailFallback
-            && imdbRating <= 0
-            && this.imdbParser) {
-            try {
-                let parsed = null;
-                const tmdbId = Number(candidate.item?.tmdbId || candidate.card?.dataset?.tmdbId) || null;
-
-                // 1. If imdbId is not known, try to resolve it from TMDB external_ids
-                if (!imdbId && tmdbId && this.tmdbService && typeof this.tmdbService.getExternalIds === 'function') {
-                    try {
-                        const ext = await this.tmdbService.getExternalIds(
-                            tmdbId,
-                            candidate.item?.mediaType || candidate.card?.dataset?.mediaType || 'movie'
-                        );
-                        if (ext?.imdb_id) {
-                            imdbId = this.normalizeImdbId(ext.imdb_id);
-                        }
-                    } catch (e) {
-                        console.warn('[MovieRatings] TMDB external_ids fallback failed:', e?.message || e);
-                    }
-                }
-
-                // 2. Fetch rating by imdbId if available
-                if (imdbId && typeof this.imdbParser.getImdbRating === 'function') {
-                    parsed = await this.imdbParser.getImdbRating(imdbId);
-                }
-                // 3. Otherwise, search IMDb by title & year (preferring Latin/English title)
-                else if (typeof this.imdbParser.getImdbRatingByTitle === 'function') {
-                    const candidateTitles = [
-                        candidate.item?.englishTitle,
-                        candidate.item?.alternativeName,
-                        candidate.item?.originalTitle,
-                        candidate.item?.original_title,
-                        candidate.item?.originalName,
-                        candidate.card?.dataset?.movieEnglishTitle,
-                        candidate.card?.dataset?.movieOriginalTitle,
-                        candidate.item?.name,
-                        candidate.item?.title,
-                        candidate.card?.dataset?.movieTitle
-                    ].map(t => String(t || '').trim()).filter(Boolean);
-
-                    const latinTitle = candidateTitles.find(t => /[a-zA-Z]/.test(t));
-                    const searchTitle = latinTitle || candidateTitles[0] || '';
-                    const year = Number(candidate.item?.year || candidate.card?.dataset?.movieYear || String(candidate.item?.releaseDate || candidate.item?.release_date || '').slice(0, 4)) || null;
-                    if (searchTitle) {
-                        parsed = await this.imdbParser.getImdbRatingByTitle(searchTitle, year);
-                    }
-                }
-
-                if (parsed) {
-                    imdbRating = imdbRating > 0 ? imdbRating : Number(parsed?.rating) || 0;
-                    imdbVotes = imdbVotes > 0 ? imdbVotes : Number(parsed?.votes) || 0;
-                    imdbId = imdbId || this.normalizeImdbId(parsed?.imdbId);
-                }
-            } catch (error) {
-                console.warn('[MovieRatings] IMDb rating fallback failed:', error.message);
-            }
-        }
+        // IMDb is read in batches by prefetchImdbRatings(); direct IMDb page
+        // and suggestion fetches are blocked for extension pages (HTTP 202
+        // challenge, no CORS) and are no longer attempted per card.
 
         const result = {
             candidate,
@@ -752,10 +779,10 @@ class MovieRatingsEnrichmentService {
                     ? this.negativeTtlMs
                     : this.cacheTtlMs
             ),
-            ...(isNegative ? { retryAfter: now + this.negativeRetryMs } : {}),
+            ...(isNegative ? { retryAfter: now + (Number(values.retryAfterMs) || this.negativeRetryMs) } : {}),
             ...(kpId > 0 && kpRating <= 0 ? { kpRetryAfter: now + this.providerRetryMs } : {}),
             ...(imdbRating <= 0 ? {
-                imdbRetryAfter: now + this.providerRetryMs,
+                imdbRetryAfter: now + this.imdbRetryMs,
                 imdbAttemptSessionId: this.enrichmentSessionId
             } : {})
         };
@@ -796,21 +823,26 @@ class MovieRatingsEnrichmentService {
         const imdbPending = record?.imdbState === 'pending'
             || (record?.status === 'partial' && imdbRating <= 0);
         const isSettled = record?.status !== 'loading' && !kpPending && !imdbPending;
+        const label = (key, fallback) => {
+            const fullKey = `home.${key}`;
+            const value = globalThis.i18n?.get?.(fullKey);
+            return value && value !== fullKey ? value : fallback;
+        };
         if (kpPending && kpRating <= 0) {
-            badges.push('<span class="featured-rating-badge featured-rating-badge--loading" title="Loading Kinopoisk rating"><span>KP</span><i aria-hidden="true"></i></span>');
+            badges.push(`<span class="featured-rating-badge featured-rating-badge--loading" aria-label="${label('rating_kp_loading', 'Загрузка рейтинга КП')}"><span>КП</span><i aria-hidden="true"></i></span>`);
         }
         if (kpRating > 0) {
-            badges.push(`<span class="featured-rating-badge featured-rating-badge--kp" title="Оценка Кинопоиска">КП ${kpRating.toFixed(1)}</span>`);
+            badges.push(`<span class="featured-rating-badge featured-rating-badge--kp" title="${label('rating_kp', 'Оценка Кинопоиска')}">КП ${kpRating.toFixed(1)}</span>`);
         } else if (isSettled) {
-            badges.push('<span class="featured-rating-badge featured-rating-badge--unavailable" title="Оценка Кинопоиска недоступна">КП —</span>');
+            badges.push(`<span class="featured-rating-badge featured-rating-badge--unavailable" title="${label('rating_kp_unavailable', 'Оценка Кинопоиска недоступна')}">КП —</span>`);
         }
         if (imdbPending && imdbRating <= 0) {
-            badges.push('<span class="featured-rating-badge featured-rating-badge--loading" title="Loading IMDb rating"><span>IMDb</span><i aria-hidden="true"></i></span>');
+            badges.push(`<span class="featured-rating-badge featured-rating-badge--loading" aria-label="${label('rating_imdb_loading', 'Загрузка рейтинга IMDb')}"><span>IMDb</span><i aria-hidden="true"></i></span>`);
         }
         if (imdbRating > 0) {
-            badges.push(`<span class="featured-rating-badge featured-rating-badge--imdb" title="Оценка IMDb">IMDb ${imdbRating.toFixed(1)}</span>`);
+            badges.push(`<span class="featured-rating-badge featured-rating-badge--imdb" title="${label('rating_imdb', 'Оценка IMDb')}">IMDb ${imdbRating.toFixed(1)}</span>`);
         } else if (isSettled) {
-            badges.push('<span class="featured-rating-badge featured-rating-badge--unavailable" title="Оценка IMDb недоступна">IMDb —</span>');
+            badges.push(`<span class="featured-rating-badge featured-rating-badge--unavailable" title="${label('rating_imdb_unavailable', 'Оценка IMDb недоступна')}">IMDb —</span>`);
         }
         overlay.innerHTML = badges.join('');
         return true;
@@ -824,6 +856,7 @@ class MovieRatingsEnrichmentService {
             name: card.dataset.movieTitle || '',
             alternativeName: card.dataset.movieOriginalTitle || '',
             englishTitle: card.dataset.movieEnglishTitle || card.dataset.movieOriginalTitle || '',
+            searchTitle: card.dataset.movieSearchTitle || '',
             year: Number(card.dataset.movieYear) || null,
             mediaType: card.dataset.mediaType || 'movie',
             type: card.dataset.mediaType || 'movie'
@@ -834,7 +867,8 @@ class MovieRatingsEnrichmentService {
         const kpId = Number(item.kinopoiskId);
         if (Number.isSafeInteger(kpId) && kpId > 0) return `kp:${kpId}`;
         const tmdbId = Number(item.tmdbId);
-        return tmdbId > 0 ? `tmdb:${tmdbId}` : `unknown:${item.name || 'card'}`;
+        if (tmdbId > 0) return `tmdb:${this.isTvMediaType(item.mediaType || item.type) ? 'tv' : 'movie'}:${tmdbId}`;
+        return `unknown:${item.name || 'card'}`;
     }
 
     isUsableCache(record) {
@@ -845,7 +879,7 @@ class MovieRatingsEnrichmentService {
             return Number(record.retryAfter) > Date.now();
         }
         if (this.isProviderRetryExpired(record, 'kpRating', 'kpRetryAfter', Number(record.kpId) > 0)) return false;
-        if (Number(record.imdbRating) <= 0 && record.imdbAttemptSessionId !== this.enrichmentSessionId) {
+        if (Number(record.imdbRating) <= 0 && !(Number(record.imdbRetryAfter) > Date.now())) {
             return false;
         }
         return true;
@@ -856,20 +890,12 @@ class MovieRatingsEnrichmentService {
         if (this.isNegativeRecord(record)) return this.isUsableCache(record);
         if (this.isProviderRetryExpired(record, 'kpRating', 'kpRetryAfter', Number(record.kpId) > 0)) return false;
         if (Number(record.imdbRating) <= 0) {
+            // A settled "no IMDb rating" result is reused until its retry time
+            // instead of only within the current page session.
             return record.imdbState === 'unavailable'
-                && record.imdbAttemptSessionId === this.enrichmentSessionId
                 && Number(record.imdbRetryAfter) > Date.now();
         }
-        if (this.hasMissingVotes(record)) return false;
         return true;
-    }
-
-    hasMissingVotes(record) {
-        const kpRating = Number(record?.kpRating) || 0;
-        const imdbRating = Number(record?.imdbRating) || 0;
-        const kpVotes = Number(record?.votes?.kp) || 0;
-        const imdbVotes = Number(record?.votes?.imdb) || 0;
-        return (kpRating > 0 && kpVotes <= 0) || (imdbRating > 0 && imdbVotes <= 0);
     }
 
     isProviderRetryExpired(record, ratingField, retryField, shouldRetry) {

@@ -31,7 +31,7 @@ const storage = {
 const batchCalls = [];
 let navigationCalls = 0;
 let apiBatchCalls = 0;
-let imdbPageCalls = 0;
+let imdbBatchCalls = 0;
 global.MovieCard = {
     updateCompactRatings(card, ratings) {
         card.appliedRatings = ratings;
@@ -58,16 +58,19 @@ const service = new MovieRatingsEnrichmentService({
         }
     },
     imdbParser: {
-        async getImdbRating(imdbId) {
-            imdbPageCalls += 1;
-            assert.equal(imdbId, 'tt1234567');
-            return { imdbId: 'tt1234567', rating: 8.1, votes: 1000 };
+        async getImdbRatingsBatch(imdbIds) {
+            imdbBatchCalls += 1;
+            assert.deepEqual(imdbIds, ['tt1234567']);
+            return new Map([['tt1234567', { rating: 8.1, votes: 1000 }]]);
         }
     },
     kinopoiskService: {
         async getMoviesByIdsBatch(items) {
             apiBatchCalls += 1;
             throw new Error(`API batch must not be called for card ratings: ${items.length}`);
+        },
+        async scrapeMoviePageRatingsOffscreen() {
+            throw new Error('The KP movie page must not load when the IMDb batch answered');
         }
     }
 });
@@ -77,7 +80,7 @@ service.pendingCards.add(firstCard);
 await flushAndWaitForProviders(service);
 
 assert.equal(navigationCalls, 1);
-assert.equal(imdbPageCalls, 1);
+assert.equal(imdbBatchCalls, 1);
 assert.deepEqual(batchCalls, []);
 assert.equal(apiBatchCalls, 0);
 assert.equal(firstCard.appliedRatings.kpRating, 7.4);
@@ -191,7 +194,7 @@ assert.equal(cachedService.isUsableCache({
     imdbRating: 0,
     imdbRetryAfter: Date.now() + 60_000,
     expiresAt: Date.now() + 60_000
-}), false);
+}), true, 'a missing IMDb rating is reused until its retry time');
 assert.equal(cachedService.isUsableCache({
     status: 'resolved',
     kpId: 777,
@@ -208,6 +211,14 @@ assert.equal(cachedService.isUsableCache({
     imdbRating: 0,
     imdbRetryAfter: Date.now() + 60_000,
     imdbAttemptSessionId: 'previous-session',
+    expiresAt: Date.now() + 60_000
+}), true, 'the retry gate no longer resets on every page load');
+assert.equal(cachedService.isUsableCache({
+    status: 'resolved',
+    kpId: 777,
+    kpRating: 7.5,
+    imdbRating: 0,
+    imdbRetryAfter: Date.now() - 1,
     expiresAt: Date.now() + 60_000
 }), false);
 
@@ -333,7 +344,7 @@ cachedService.cancelCard(tmdbOnlyCard);
 assert.equal(cancellationMessages[0].requestKey, 'kp-detail:7777:movie');
 global.chrome = previousChrome;
 
-console.log('✅ Movie ratings enrichment uses KP data and the legacy IMDb title-page path');
+console.log('✅ Movie ratings enrichment uses KP data and batched IMDb ratings');
 let releaseImdb;
 const delayedStageService = new MovieRatingsEnrichmentService({
     storage: {
@@ -347,7 +358,7 @@ const delayedStageService = new MovieRatingsEnrichmentService({
         }
     },
     imdbParser: {
-        getImdbRating: async () => new Promise(resolve => { releaseImdb = resolve; })
+        getImdbRatingsBatch: async () => new Promise(resolve => { releaseImdb = resolve; })
     }
 });
 const delayedCard = createCard(9001);
@@ -357,7 +368,9 @@ assert.equal(delayedCard.appliedRatings.kpRating, 7.9);
 assert.equal(delayedCard.appliedRatings.imdbRating, 0);
 assert.equal(delayedCard.dataset.ratingsState, 'partial');
 assert.equal(delayedCard.appliedRatings.imdbState, 'pending');
-releaseImdb({ rating: 8.4, imdbId: 'tt9001001' });
+// The IMDb batch starts a few microtasks after Stage A has painted.
+while (typeof releaseImdb !== 'function') await new Promise(resolve => setTimeout(resolve, 0));
+releaseImdb(new Map([['tt9001001', { rating: 8.4, votes: 10 }]]));
 await delayedStageService.lastBackgroundEnrichment;
 assert.equal(delayedCard.appliedRatings.imdbRating, 8.4);
 assert.equal(delayedCard.dataset.ratingsState, 'ready');
@@ -429,7 +442,8 @@ releaseLifecycleCache({ movie_card_ratings_v4: {} });
 await lifecycleFlush;
 assert.equal(lifecycleNavigationCalls, 0);
 
-// Test: English title search fallback when Kinopoisk has 0 ratings and no imdbId
+// Test: the IMDb title-search fallback is not attempted. IMDb's suggestion
+// API sends no CORS headers, so it cannot work from extension pages.
 let imdbTitleSearchCalls = 0;
 const titleSearchService = new MovieRatingsEnrichmentService({
     storage: {
@@ -439,13 +453,7 @@ const titleSearchService = new MovieRatingsEnrichmentService({
     enableDetailFallback: true,
     navigationService: {
         async resolve() {
-            return {
-                kinopoiskId: 6548088,
-                kpRating: 0,
-                imdbRating: 0,
-                imdbId: null,
-                originalTitle: 'The Dog Stars'
-            };
+            return { kinopoiskId: 6548088, kpRating: 0, imdbRating: 0, imdbId: null, originalTitle: 'The Dog Stars' };
         }
     },
     kinopoiskService: {
@@ -454,10 +462,9 @@ const titleSearchService = new MovieRatingsEnrichmentService({
         }
     },
     imdbParser: {
-        async getImdbRatingByTitle(title, year) {
+        async getImdbRatingsBatch() { return new Map(); },
+        async getImdbRatingByTitle() {
             imdbTitleSearchCalls += 1;
-            assert.equal(title, 'The Dog Stars');
-            assert.equal(year, 2026);
             return { rating: 6.5, votes: 2000, imdbId: 'tt21285562' };
         }
     }
@@ -468,15 +475,15 @@ dogStarsCard.dataset.movieOriginalTitle = 'The Dog Stars';
 dogStarsCard.dataset.movieYear = '2026';
 titleSearchService.pendingCards.add(dogStarsCard);
 await flushAndWaitForProviders(titleSearchService);
-assert.equal(imdbTitleSearchCalls, 1);
-assert.equal(dogStarsCard.appliedRatings.imdbRating, 6.5);
-assert.equal(dogStarsCard.appliedRatings.imdbId, 'tt21285562');
-assert.equal(dogStarsCard.appliedRatings.votes.imdb, 2000);
-console.log('✅ Direct English title search fallback successfully resolves missing IMDb ratings');
+assert.equal(imdbTitleSearchCalls, 0);
+assert.equal(dogStarsCard.appliedRatings.imdbRating, 0);
+console.log('✅ The CORS-blocked IMDb title search is not attempted');
 
-// Test: TMDB external_ids fallback when card has tmdbId and KP has 0 ratings and no imdbId
+// Test: TMDB external_ids supply the IMDb ID for the batched IMDb request,
+// and the KP movie page is skipped once both ratings are known.
 let tmdbExternalIdsCalls = 0;
-let directImdbIdCalls = 0;
+let imdbBatchIdsSeen = null;
+let kpPageCallsWithBatch = 0;
 const tmdbExtService = new MovieRatingsEnrichmentService({
     storage: {
         get(keys, callback) { callback({ movie_card_ratings_v4: {} }); },
@@ -484,32 +491,28 @@ const tmdbExtService = new MovieRatingsEnrichmentService({
     },
     enableDetailFallback: true,
     tmdbService: {
-        async getExternalIds(tmdbId) {
+        async getExternalIds(tmdbId, mediaType) {
             tmdbExternalIdsCalls += 1;
             assert.equal(tmdbId, 1384216);
+            assert.equal(mediaType, 'movie');
             return { id: 1384216, imdb_id: 'tt21285562' };
         }
     },
     navigationService: {
         async resolve() {
-            return {
-                kinopoiskId: 6548088,
-                kpRating: 0,
-                imdbRating: 0,
-                imdbId: null
-            };
+            return { kinopoiskId: 6548088, kpRating: 7.2, imdbRating: 0, imdbId: null };
         }
     },
     kinopoiskService: {
         async scrapeMoviePageRatingsOffscreen() {
-            return { kpRating: 0, imdbRating: 0, imdbId: null };
+            kpPageCallsWithBatch += 1;
+            return { kpRating: 7.2, imdbRating: 0, imdbId: null };
         }
     },
     imdbParser: {
-        async getImdbRating(imdbId) {
-            directImdbIdCalls += 1;
-            assert.equal(imdbId, 'tt21285562');
-            return { rating: 6.5, votes: 2000, imdbId: 'tt21285562' };
+        async getImdbRatingsBatch(ids) {
+            imdbBatchIdsSeen = ids;
+            return new Map([['tt21285562', { rating: 6.5, votes: 2000 }]]);
         }
     }
 });
@@ -519,10 +522,36 @@ tmdbExtCard.dataset.movieYear = '2026';
 tmdbExtService.pendingCards.add(tmdbExtCard);
 await flushAndWaitForProviders(tmdbExtService);
 assert.equal(tmdbExternalIdsCalls, 1);
-assert.equal(directImdbIdCalls, 1);
+assert.deepEqual(imdbBatchIdsSeen, ['tt21285562']);
+assert.equal(kpPageCallsWithBatch, 0, 'no hidden KP page when both ratings are known');
 assert.equal(tmdbExtCard.appliedRatings.imdbRating, 6.5);
 assert.equal(tmdbExtCard.appliedRatings.imdbId, 'tt21285562');
-console.log('✅ TMDB external_ids resolution fallback successfully resolves missing IMDb ratings');
+assert.equal(tmdbExtCard.dataset.ratingsState, 'ready');
+
+// A title IMDb answered for without a rating is settled: no KP page either.
+let kpPageCallsUnrated = 0;
+const unratedService = new MovieRatingsEnrichmentService({
+    storage: {
+        get(keys, callback) { callback({ movie_card_ratings_v4: {} }); },
+        set(values, callback) { callback?.(); }
+    },
+    enableDetailFallback: true,
+    navigationService: { async resolve() { return { kinopoiskId: 6548090, kpRating: 6.9, imdbId: 'tt30000001' }; } },
+    kinopoiskService: { async scrapeMoviePageRatingsOffscreen() { kpPageCallsUnrated += 1; return {}; } },
+    imdbParser: { async getImdbRatingsBatch() { return new Map([['tt30000001', { rating: 0, votes: 0 }]]); } }
+});
+const unratedCard = createCard(6548090);
+unratedService.pendingCards.add(unratedCard);
+await flushAndWaitForProviders(unratedService);
+assert.equal(kpPageCallsUnrated, 0);
+assert.equal(unratedCard.appliedRatings.kpRating, 6.9);
+assert.equal(unratedCard.appliedRatings.imdbState, 'unavailable');
+assert.ok(unratedCard.appliedRatings.imdbRetryAfter - Date.now() > 11 * 60 * 60 * 1000, 'missing IMDb retried after ~12h');
+
+// Movie and TV cards with the same TMDB ID never share a cache record.
+assert.equal(unratedService.cacheKeyFor({ tmdbId: 5, mediaType: 'movie' }), 'tmdb:movie:5');
+assert.equal(unratedService.cacheKeyFor({ tmdbId: 5, mediaType: 'tv' }), 'tmdb:tv:5');
+console.log('✅ TMDB external_ids feed the batched IMDb request without a KP page load');
 
 }
 

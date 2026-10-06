@@ -34,6 +34,14 @@ class QuotaTrackerService {
     }
 
     logSummary(label = 'Quota Summary') {
+        // A per-page-load table is a diagnostic; opt in like other traces.
+        let enabled;
+        try {
+            enabled = globalThis.localStorage?.getItem('movielist:debug-ratings') === '1';
+        } catch {
+            enabled = false;
+        }
+        if (!enabled) return;
         console.group(`[QuotaTracker] ${label}`);
         console.table(this.counters);
         console.groupEnd();

@@ -683,7 +683,7 @@ const searchHtml = `<!doctype html><html><body><div class="ani-grid">
         host.activePlayerId = 'animego';
         host.selectedMovie = { seasons: [{ number: 1, episodeCount: 2 }, { number: 2, episodeCount: 2 }] };
         assert.deepEqual(JSON.parse(JSON.stringify(host.getCanonicalSeasonLayout())), [
-            { seasonNumber: 1, episodeCount: 2 }, { seasonNumber: 2, episodeCount: 2 }
+            { seasonNumber: 1, episodeCount: 2, airYear: null }, { seasonNumber: 2, episodeCount: 2, airYear: null }
         ]);
         host.playerRegistry = { animego: { sources: [1, 2, 3, 4].map(number => ({
             type: 'animego-episode', episodeNumber: number, episodeId: String(number), filler: number === 2 || number === 4

@@ -21,6 +21,25 @@ service cloud.firestore {
           value.matches('^(https?://|chrome-extension://|data:image/(png|jpe?g|gif|webp);base64,)[A-Za-z0-9._~:/?#@!$&()*+,;=%-]*$'));
     }
     
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    // Self-edited profile fields shown on other users' pages. Only values that an
+    // update actually changes are checked, so legacy documents keep working.
+    function isValidProfileFieldUpdate() {
+      let data = request.resource.data;
+      let keys = changedKeys();
+      return (!keys.hasAny(['bannerURL']) || !('bannerURL' in data) || isSafePhotoUrl(data.bannerURL))
+        && (!keys.hasAny(['username']) || (data.username is string && data.username.matches('^[A-Za-z0-9_]{3,20}$')))
+        && (!keys.hasAny(['usernameLower']) || (data.usernameLower is string && data.usernameLower == data.username.lower()))
+        && (!keys.hasAny(['firstName']) || (data.firstName is string && data.firstName.size() <= 50))
+        && (!keys.hasAny(['lastName']) || (data.lastName is string && data.lastName.size() <= 50))
+        && (!keys.hasAny(['displayName']) || (data.displayName is string && data.displayName.size() <= 200))
+        && (!keys.hasAny(['bio']) || (data.bio is string && data.bio.size() <= 200))
+        && (!keys.hasAny(['displayNameFormat']) || data.displayNameFormat in ['fullname', 'username']);
+    }
+
     // Helper function to check if user is admin
     function isAdmin() {
       return isAuthenticated() && 
@@ -478,14 +497,17 @@ service cloud.firestore {
 
     // Users collection
     match /users/{userId} {
-      // Allow authenticated users to read profiles (needed for approval check on login)
-      allow read: if isAuthenticated();
+      // Everyone reads their own profile (the approval check on login runs while
+      // still pending); other profiles, including their e-mail field, are readable
+      // only by approved users and admins.
+      allow read: if isOwner(userId) || isApprovedUser() || isAdmin();
       
       // Allow users to create their own profile, but forbidden from granting themselves admin or approved status
       allow create: if isOwner(userId) &&
         (!('isAdmin' in request.resource.data) || request.resource.data.isAdmin == false) &&
         (!('approvalStatus' in request.resource.data) || request.resource.data.approvalStatus == 'pending') &&
-        (!('photoURL' in request.resource.data) || isSafePhotoUrl(request.resource.data.photoURL));
+        (!('photoURL' in request.resource.data) || isSafePhotoUrl(request.resource.data.photoURL)) &&
+        (!('bannerURL' in request.resource.data) || isSafePhotoUrl(request.resource.data.bannerURL));
 
       // Allow users to update their own profile (cannot modify isAdmin or approvalStatus).
       // photoURL is rendered on other users' pages, so a changed value must be an image URL.
@@ -493,7 +515,8 @@ service cloud.firestore {
         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'approvalStatus']) &&
         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['photoURL']) ||
           !('photoURL' in request.resource.data) ||
-          isSafePhotoUrl(request.resource.data.photoURL));
+          isSafePhotoUrl(request.resource.data.photoURL)) &&
+        isValidProfileFieldUpdate();
       
       // Allow admins to update any user profile (can change approvalStatus and isAdmin)
       allow update: if isAdmin();

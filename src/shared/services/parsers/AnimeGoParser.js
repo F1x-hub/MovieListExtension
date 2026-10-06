@@ -106,7 +106,7 @@ class AnimeGoParser extends BaseParserService {
             const base = this.parseSearchResults(html, query, year);
             if (!base) continue;
             const seasonResult = Number.isInteger(seasonNumber) && seasonNumber > 1
-                ? this.findSeasonResult(html, base, seasonNumber)
+                ? this.findSeasonResult(html, base, seasonNumber, Number(options?.seasonYear) || null)
                 : null;
             return this.rememberResult(seasonResult || base, title, year);
         }
@@ -139,12 +139,15 @@ class AnimeGoParser extends BaseParserService {
      * @param {string} html - search page
      * @param {SearchResult} base - matched base title
      * @param {number} seasonNumber - season above 1
+     * @param {number|null} [seasonYear] - premiere year of that season; used
+     *   when AnimeGo names the season by subtitle instead of a number
      * @returns {SearchResult|null}
      */
-    findSeasonResult(html, base, seasonNumber) {
+    findSeasonResult(html, base, seasonNumber, seasonYear = null) {
         const marker = AnimeGoParser.buildSeasonMarker(seasonNumber);
         const baseYear = Number.parseInt(base.year, 10) || null;
-        const matches = this.parseSearchCards(html).filter(card => {
+        const cards = this.parseSearchCards(html);
+        const matches = cards.filter(card => {
             if (card.animeId === base.animeId) return false;
             if (baseYear && card.year && card.year < baseYear) return false;
             return [[card.title, base.title], [card.originalTitle, base.originalTitle]].some(([candidate, prefix]) => {
@@ -154,7 +157,7 @@ class AnimeGoParser extends BaseParserService {
                 return marker.test(candidateText.slice(prefixText.length));
             });
         }).sort((left, right) => (left.year || 0) - (right.year || 0));
-        const card = matches[0];
+        const card = matches[0] || AnimeGoParser.findSubtitledSeasonCard(cards, base, seasonYear);
         if (!card) return null;
         return {
             title: card.title,
@@ -253,6 +256,8 @@ class AnimeGoParser extends BaseParserService {
         const isFirstSeason = !Number.isInteger(season) || season <= 1;
         const layout = new Map((canonicalSeasons || [])
             .map(entry => [Number(entry?.seasonNumber), Number(entry?.episodeCount) || 0]));
+        const seasonYears = new Map((canonicalSeasons || [])
+            .map(entry => [Number(entry?.seasonNumber), Number(entry?.airYear) || null]));
 
         const loadEpisodes = async (searchOptions) => {
             if (!query) return null;
@@ -296,7 +301,7 @@ class AnimeGoParser extends BaseParserService {
         if (!isFirstSeason && scope === season) return continueIntoNextTitles(numbered(episodes, 'scoped'));
 
         if (!isFirstSeason) {
-            const seasonTitle = await loadEpisodes({ seasonNumber: season });
+            const seasonTitle = await loadEpisodes({ seasonNumber: season, seasonYear: seasonYears.get(season) || null });
             if (seasonTitle?.result?.seasonNumber === season && seasonTitle.list.length > 0) {
                 return continueIntoNextTitles(numbered(seasonTitle.list, 'scoped'));
             }
@@ -939,6 +944,32 @@ class AnimeGoParser extends BaseParserService {
         return [...matching, ...players.filter(player => player.translationId !== preferred)];
     }
 
+    /**
+     * A later season AnimeGo lists under a subtitle ("Невероятное приключение
+     * ДжоДжо: Гонка «Стальной шар»"): the base title, a ":" or "." separator,
+     * and the season's premiere year. Series kinds win over OVA, specials and
+     * films; the shortest title wins over "… Часть 2" of the same year.
+     * @param {Array<Object>} cards
+     * @param {SearchResult} base
+     * @param {number|null} seasonYear
+     * @returns {Object|null}
+     */
+    static findSubtitledSeasonCard(cards, base, seasonYear) {
+        if (!seasonYear || !base?.title) return null;
+        const prefix = String(base.title).toLowerCase().replace(/ё/g, 'е').trim();
+        const isSeriesKind = kind => !kind || /^(сериал|ona|tv|тв)$/i.test(String(kind).trim());
+        const candidates = cards.filter(card => {
+            if (card.animeId === base.animeId || card.year !== seasonYear) return false;
+            const title = String(card.title || '').toLowerCase().replace(/ё/g, 'е');
+            return title.startsWith(prefix) && /^\s*[:.]\s*\S/.test(title.slice(prefix.length));
+        });
+        candidates.sort((left, right) => (
+            Number(isSeriesKind(right.kind)) - Number(isSeriesKind(left.kind))
+            || String(left.title).length - String(right.title).length
+        ));
+        return candidates[0] || null;
+    }
+
     // ─── Parsing ──────────────────────────────────────────────────────
 
     /**
@@ -955,7 +986,7 @@ class AnimeGoParser extends BaseParserService {
 
         let best = null;
         this.parseSearchCards(html).forEach(card => {
-            const score = AnimeGoParser.scoreCandidate(target, [card.title, card.originalTitle], year, card.year);
+            const score = AnimeGoParser.scoreCandidate(target, [card.title, card.originalTitle], year, card.year, targetTitle);
             if (score < ANIMEGO_MIN_MATCH_SCORE || (best && score <= best.score)) return;
             best = {
                 score,
@@ -1142,8 +1173,26 @@ class AnimeGoParser extends BaseParserService {
     static normalizeTitle(value) {
         return String(value || '')
             .toLowerCase()
+            .replace(ANIMEGO_TITLE_QUALIFIER, ' ')
             .replace(/ё/g, 'е')
             .replace(/[^a-zа-я0-9]+/g, '');
+    }
+
+    /**
+     * Word stems of a title: Russian endings removed from words longer than
+     * four letters, release qualifiers dropped.
+     * @param {string} value
+     * @returns {string}
+     */
+    static titleStems(value) {
+        return String(value || '')
+            .toLowerCase()
+            .replace(ANIMEGO_TITLE_QUALIFIER, ' ')
+            .replace(/ё/g, 'е')
+            .split(/[^a-zа-я0-9]+/)
+            .filter(Boolean)
+            .map(word => (word.length > 4 ? word.replace(ANIMEGO_RU_ENDING, '') : word))
+            .join(' ');
     }
 
     /**
@@ -1151,8 +1200,9 @@ class AnimeGoParser extends BaseParserService {
      * matching year. Short prefixes ("Наруто" in "Наруто: Ураганные хроники")
      * are other seasons, and year differences beyond one are remakes.
      */
-    static scoreCandidate(normalizedTarget, titles, targetYear, cardYear) {
+    static scoreCandidate(normalizedTarget, titles, targetYear, cardYear, rawTarget = null) {
         let titleScore = 0;
+        const targetStems = rawTarget ? AnimeGoParser.titleStems(rawTarget) : '';
         for (const title of titles) {
             const candidate = AnimeGoParser.normalizeTitle(title);
             if (!candidate) continue;
@@ -1165,6 +1215,9 @@ class AnimeGoParser extends BaseParserService {
                 / Math.max(candidate.length, normalizedTarget.length);
             if (contained && lengthRatio >= ANIMEGO_MIN_CONTAINMENT_RATIO) {
                 titleScore = Math.max(titleScore, 40);
+            }
+            if (targetStems && targetStems.length >= 5 && AnimeGoParser.titleStems(title) === targetStems) {
+                titleScore = Math.max(titleScore, ANIMEGO_STEM_MATCH_SCORE);
             }
         }
         if (titleScore === 0) return 0;
@@ -1230,6 +1283,13 @@ const ANIMEGO_RU_SEASON_ORDINALS = {
 };
 const ANIMEGO_MIN_MATCH_SCORE = 70;
 const ANIMEGO_MIN_CONTAINMENT_RATIO = 0.8;
+// Catalogs inflect the same Russian title differently ("Невероятные
+// приключения ДжоДжо" on Kinopoisk, "Невероятное приключение ДжоДжо" on
+// AnimeGo); titles whose words share stems score just below an exact match.
+const ANIMEGO_STEM_MATCH_SCORE = 90;
+const ANIMEGO_RU_ENDING = /(ыми|ими|ого|его|ому|ему|ые|ие|ое|ее|ая|яя|ый|ий|ой|ую|юю|ия|ья|ье|ов|ев|ам|ям|ах|ях|ом|ем|а|я|о|е|ы|и|у|ю|ь)$/;
+// Release-format qualifiers AnimeGo appends to original titles: "(TV)".
+const ANIMEGO_TITLE_QUALIFIER = /\((?:tv|тв|ova|ona|movie|фильм|сериал)[^)]*\)/gi;
 const ANIMEGO_MAX_EPISODE_PAGES = 20;
 // Highest AnimeGo season title a catalog season may continue into.
 const ANIMEGO_MAX_CONTINUATION_SEASON = 10;

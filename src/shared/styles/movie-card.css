@@ -1040,7 +1040,7 @@ span.mc-user-name.mc-skeleton {
     height: auto;
     border-radius: var(--radius-lg, 16px) var(--radius-lg, 16px) 0 0;
     overflow: hidden;
-    background-color: #121214;
+    background-color: var(--ui-color-surface-muted, var(--theme-bg-secondary));
     flex-shrink: 0;
 }
 

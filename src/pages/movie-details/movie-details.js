@@ -1291,6 +1291,7 @@ class MovieDetailsManager {
         const tmdbId = Number(urlParams.get('resolveTmdbId'));
         const title = urlParams.get('title') || '';
         const originalTitle = urlParams.get('originalTitle') || '';
+        const searchTitle = urlParams.get('searchTitle') || '';
         const year = Number(urlParams.get('year')) || null;
         const mediaType = urlParams.get('mediaType') || 'movie';
 
@@ -1316,6 +1317,7 @@ class MovieDetailsManager {
                 tmdbId,
                 name: title,
                 alternativeName: originalTitle,
+                searchTitle,
                 year,
                 mediaType,
                 isTmdbOnly: true
@@ -2312,7 +2314,18 @@ class MovieDetailsManager {
             };
             const resultKpRating = Number(result?.kpRating) || kpRating;
             const resultImdbRating = Number(result?.imdbRating) || imdbRating;
-            const needsVoteRepair = (resultKpRating > 0 && Number(cachedVotes.kp) <= 0)
+            // The hidden Kinopoisk page also shows the IMDb rating. It is the
+            // only working IMDb source when the ratings proxy is unavailable
+            // (imdb.com answers extension fetches with a bot challenge), so a
+            // missing rating needs it as much as missing vote counts do.
+            const hasImdbId = [movie?.identity?.imdbId, movie?.imdbId, movie?.externalId?.imdb, result?.imdbId]
+                .some(value => /^tt\d{7,10}$/i.test(String(value || '').trim()));
+            // A title checked within 12 hours that still has no IMDb rating or
+            // ID (no IMDb page) is not loaded again on every visit.
+            const imdbRecentlyChecked = Date.now() - (Number(result?.imdbCheckedAt) || 0) < 12 * 60 * 60 * 1000;
+            const needsVoteRepair = resultKpRating <= 0
+                || ((resultImdbRating <= 0 || !hasImdbId) && !imdbRecentlyChecked)
+                || (resultKpRating > 0 && Number(cachedVotes.kp) <= 0)
                 || (resultImdbRating > 0 && Number(cachedVotes.imdb) <= 0);
             const kinopoiskService = needsVoteRepair
                 ? firebaseManager?.getKinopoiskService?.()
@@ -2331,6 +2344,9 @@ class MovieDetailsManager {
                     if (Number(pageRatings?.imdbVotes) > 0) cachedVotes.imdb = Number(pageRatings.imdbVotes);
                     result = {
                         ...result,
+                        // The Kinopoisk page links to the IMDb title; keep the ID.
+                        imdbId: result?.imdbId || pageRatings?.imdbId || null,
+                        imdbChecked: true,
                         kpRating: Number(pageRatings?.kpRating) > 0 ? Number(pageRatings.kpRating) : result?.kpRating,
                         imdbRating: Number(pageRatings?.imdbRating) > 0 ? Number(pageRatings.imdbRating) : result?.imdbRating,
                         votes: cachedVotes
@@ -2354,6 +2370,13 @@ class MovieDetailsManager {
                 return;
             }
 
+            // An IMDb ID found while refreshing (Kinopoisk page or card cache)
+            // makes the IMDb tile a link when the details had none.
+            const validImdbId = value => (/^tt\d{7,10}$/i.test(String(value || '').trim()) ? String(value).trim() : null);
+            const knownImdbId = validImdbId(movie?.identity?.imdbId)
+                || validImdbId(movie?.imdbId)
+                || validImdbId(movie?.externalId?.imdb)
+                || validImdbId(result?.imdbId);
             const updatedMovie = {
                 ...movie,
                 rating: {
@@ -2363,7 +2386,12 @@ class MovieDetailsManager {
                 },
                 votes: nextVotes,
                 kpRating: nextKpRating,
-                imdbRating: nextImdbRating
+                imdbRating: nextImdbRating,
+                ...(knownImdbId ? {
+                    imdbId: knownImdbId,
+                    identity: { ...(movie.identity || {}), imdbId: knownImdbId },
+                    externalId: { ...(movie.externalId || {}), imdb: knownImdbId }
+                } : {})
             };
 
             this.selectedMovie = updatedMovie;
@@ -9255,7 +9283,10 @@ class MovieDetailsManager {
                     ?? season?.episodesCount
                     ?? season?.episodes?.length
                     ?? 0
-                ) || 0
+                ) || 0,
+                // Lets providers that name later seasons by subtitle (AnimeGo:
+                // "ДжоДжо: Гонка «Стальной шар»") find a season by its year.
+                airYear: Number(String(season?.airDate || season?.air_date || '').slice(0, 4)) || null
             }))
             .filter(season => Number.isInteger(season.seasonNumber) && season.seasonNumber > 0);
     }

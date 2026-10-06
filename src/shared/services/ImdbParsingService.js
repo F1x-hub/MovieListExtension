@@ -6,6 +6,88 @@ class ImdbParsingService {
     constructor() {
         this.baseUrl = 'https://www.imdb.com';
         this.suggestionBaseUrl = 'https://v3.sg.media-imdb.com';
+        // IMDb title pages answer extension fetches with an HTTP 202 bot
+        // challenge and the suggestion API has no CORS headers. The
+        // `imdbRatings` Cloud Function reads ratings from IMDb's GraphQL in
+        // batches instead.
+        this.ratingsProxyUrl = 'https://us-central1-movielistdb-13208.cloudfunctions.net/imdbRatings';
+        this.ratingsBatchSize = 50;
+        this.ratingsTimeoutMs = 8000;
+        // After a proxy failure (e.g. not deployed yet) skip it for a while
+        // so every card does not repeat a failing request.
+        this.ratingsProxyRetryMs = 10 * 60 * 1000;
+        this.ratingsProxyUnavailableKey = 'movielist:imdb-ratings-proxy-unavailable-until';
+        this.ratingsProxyUnavailableUntil = this._readProxyUnavailableUntil();
+    }
+
+    // Shared by all extension pages (same origin), so a missing or failing
+    // proxy is not retried on every page load either.
+    _readProxyUnavailableUntil() {
+        try {
+            return Number(globalThis.localStorage?.getItem(this.ratingsProxyUnavailableKey)) || 0;
+        } catch {
+            return 0;
+        }
+    }
+
+    _markProxyUnavailable() {
+        this.ratingsProxyUnavailableUntil = Date.now() + this.ratingsProxyRetryMs;
+        try {
+            globalThis.localStorage?.setItem(this.ratingsProxyUnavailableKey, String(this.ratingsProxyUnavailableUntil));
+        } catch {
+            // Back-off stays per page when storage is unavailable.
+        }
+    }
+
+    /**
+     * Whether a batched ratings request is worth trying now.
+     * @returns {boolean}
+     */
+    isRatingsProxyAvailable() {
+        return Date.now() >= Math.max(this.ratingsProxyUnavailableUntil, this._readProxyUnavailableUntil());
+    }
+
+    /**
+     * Read IMDb ratings for many titles through the `imdbRatings` proxy.
+     * @param {string[]} imdbIds
+     * @returns {Promise<Map<string, {rating: number, votes: number}>|null>}
+     *   A map with an entry for every ID IMDb answered for (rating 0 when the
+     *   title has no rating), or null when the proxy is unavailable.
+     */
+    async getImdbRatingsBatch(imdbIds = []) {
+        const ids = [...new Set((Array.isArray(imdbIds) ? imdbIds : [])
+            .map(id => String(id || '').trim())
+            .filter(id => /^tt\d{7,10}$/.test(id)))];
+        const result = new Map();
+        if (ids.length === 0) return result;
+        if (!this.isRatingsProxyAvailable()) return null;
+
+        for (let index = 0; index < ids.length; index += this.ratingsBatchSize) {
+            const chunk = ids.slice(index, index + this.ratingsBatchSize);
+            const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+            const timer = controller ? setTimeout(() => controller.abort(), this.ratingsTimeoutMs) : null;
+            try {
+                const response = await fetch(`${this.ratingsProxyUrl}?ids=${encodeURIComponent(chunk.join(','))}`, {
+                    headers: { Accept: 'application/json' },
+                    ...(controller ? { signal: controller.signal } : {})
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const payload = await response.json();
+                Object.entries(payload?.ratings || {}).forEach(([id, value]) => {
+                    result.set(id, {
+                        rating: Number(value?.rating) || 0,
+                        votes: Number(value?.votes) || 0
+                    });
+                });
+            } catch (error) {
+                console.warn('[ImdbParser] IMDb ratings proxy unavailable:', error?.message || error);
+                this._markProxyUnavailable();
+                return result.size > 0 ? result : null;
+            } finally {
+                if (timer) clearTimeout(timer);
+            }
+        }
+        return result;
     }
 
     /**
@@ -119,6 +201,19 @@ class ImdbParsingService {
             ...ratingData,
             imdbId
         };
+    }
+
+    /**
+     * IMDb rating for one title: the ratings proxy first, then the title page
+     * (which usually answers extension fetches with a bot challenge).
+     * @param {string} imdbId
+     * @returns {Promise<Object|null>} { rating, votes, imdbId } or null
+     */
+    async getImdbRatingPreferProxy(imdbId) {
+        const ratings = await this.getImdbRatingsBatch([imdbId]);
+        const value = ratings?.get(imdbId);
+        if (value) return value.rating > 0 ? { ...value, imdbId } : null;
+        return this.getImdbRating(imdbId);
     }
 
     /**
