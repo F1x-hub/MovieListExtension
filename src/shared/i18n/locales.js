@@ -797,7 +797,22 @@ export const locales = {
                 searching: "Searching specifically for you...",
                 no_movie: "No movie found with these criteria.",
                 relax_filters: "Try relaxing the filters.",
-                try_again: "Try Again"
+                try_again: "Try Again",
+                load_error: "Could not load a movie.",
+                load_error_hint: "Check your connection or account access and try again.",
+                retry_load: "Retry",
+                relax_action: "Relax filters"
+            },
+            tag_states: {
+                neutral: "No preference. Activate to include.",
+                include: "Included. Activate to exclude.",
+                exclude: "Excluded. Activate to clear."
+            },
+            pool: {
+                clear_title: "Clear the movie pool?",
+                clear_message: "All movies will be removed from your personal pool.",
+                save_error: "Could not save the pool. Try again.",
+                watch_removes: "The title opens details. Watch removes this movie from your pool."
             },
             types: {
                 movie: "Movies",
@@ -1934,7 +1949,22 @@ export const locales = {
                 searching: "Ищем специально для вас...",
                 no_movie: "Фильм по таким критериям не найден.",
                 relax_filters: "Попробуйте смягчить фильтры.",
-                try_again: "Повторить"
+                try_again: "Повторить",
+                load_error: "Не удалось загрузить фильм.",
+                load_error_hint: "Проверьте соединение или доступ к аккаунту и повторите попытку.",
+                retry_load: "Повторить загрузку",
+                relax_action: "Смягчить фильтры"
+            },
+            tag_states: {
+                neutral: "Без предпочтений. Нажмите, чтобы включить.",
+                include: "Включено. Нажмите, чтобы исключить.",
+                exclude: "Исключено. Нажмите, чтобы сбросить."
+            },
+            pool: {
+                clear_title: "Очистить пул фильмов?",
+                clear_message: "Все фильмы будут удалены из личного пула.",
+                save_error: "Не удалось сохранить пул. Повторите попытку.",
+                watch_removes: "Название открывает детали. «Смотреть» уберёт фильм из пула."
             },
             types: {
                 movie: "Фильмы",

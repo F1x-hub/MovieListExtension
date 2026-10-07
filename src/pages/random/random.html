@@ -23,16 +23,16 @@
         <!-- Configuration Section (Top) -->
         <div class="config-section">
             <div class="config-card">
-                <div class="config-header" id="configHeader">
-                    <div class="config-title-wrapper">
-                        <h2 data-i18n="random.config.title">Configuration</h2>
-                    </div>
-                    <button id="toggleConfigBtn" class="btn btn-icon-only toggle-btn" title="Toggle Filters" aria-label="Toggle Filters">
+                <button type="button" class="config-header" id="configHeader" aria-expanded="false" aria-controls="configBody">
+                    <span class="config-title-wrapper">
+                        <span class="config-title" data-i18n="random.config.title">Configuration</span>
+                    </span>
+                    <span id="toggleConfigBtn" class="btn btn-icon-only toggle-btn" aria-hidden="true">
                         <span class="icon-chevron"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
-                    </button>
-                </div>
+                    </span>
+                </button>
                 
-                <div class="config-body collapsed" id="configBody">
+                <div class="config-body collapsed" id="configBody" inert>
                     <div class="config-actions-row">
                         <button id="resetFiltersBtn" class="btn btn-text-icon" title="Reset Filters" data-i18n="random.config.reset">
                             <span class="btn-text">Сбросить фильтры</span>
@@ -198,27 +198,30 @@
                 <div id="errorState" class="error-state" style="display: none;">
                     <div class="error-icon"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M16 16s-1.5-2-4-2-4 2-4 2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg></div>
                     <p class="error-text">
-                        <span data-i18n="random.states.no_movie">No movie found with these criteria.</span><br>
-                        <span data-i18n="random.states.relax_filters">Try relaxing the filters.</span>
+                        <span id="randomFailureText"></span><br>
+                        <span id="randomFailureHint"></span>
                     </p>
-                    <button id="tryAgainBtn" class="btn btn-primary-gradient mt-4" data-i18n="random.states.try_again">Try Again</button>
+                    <button id="tryAgainBtn" class="btn btn-primary-gradient mt-4">Try Again</button>
                 </div>
             </div>
         </div>
     </div>
 
+    <p id="poolStatus" role="status" aria-live="polite"></p>
+
     <!-- Pool Modal -->
-    <div id="poolModal" class="pool-modal hidden">
+    <div id="poolModal" class="pool-modal hidden" role="dialog" aria-modal="true" aria-labelledby="poolModalTitle">
         <div class="pool-modal-inner">
             <div class="pool-modal-header">
-                <span>Пул для рандомайзера</span>
-                <button class="btn-icon pool-modal-close-btn" id="closePoolModal">
+                <span id="poolModalTitle">Пул для рандомайзера</span>
+                <button class="btn-icon pool-modal-close-btn" id="closePoolModal" aria-label="Закрыть пул">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                     </svg>
                 </button>
             </div>
             <div id="poolList" class="pool-list"></div>
+            <p id="poolModalStatus" role="status" aria-live="polite"></p>
             <div class="pool-modal-footer">
             <button class="btn btn-danger" id="clearPoolBtn">Очистить пул</button>
                 <button class="btn-roll-from-pool" id="rollFromPoolBtn">Крутить из пула</button>
@@ -267,6 +270,8 @@
     <script src="../../shared/utils/IconUtils.js"></script>
     <script src="../../shared/utils/Icons.js"></script>
     <script src="../../shared/utils/Utils.js"></script>
+    <script src="../../shared/utils/PosterUrl.js"></script>
+    <script src="../../shared/components/ConfirmDialog.js"></script>
     <script src="../../shared/services/RandomPoolService.js"></script>
     <script src="../../shared/services/RandomMarathonService.js"></script>
     <script src="../../shared/components/BackToTop.js"></script>

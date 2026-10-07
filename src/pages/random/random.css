@@ -67,13 +67,42 @@
     gap: 12px;
 }
 
-.config-header h2 {
+.config-header .config-title {
     font-family: var(--font-family);
     font-size: 16px;
     font-weight: 600;
     margin: 0;
     color: var(--theme-text-primary);
     letter-spacing: -0.01em;
+}
+
+/* Native controls retain the existing page geometry. */
+.config-header {
+    width: 100%;
+    border: 0;
+    border-bottom: 1px solid var(--ui-color-border);
+    font: inherit;
+    text-align: left;
+    color: inherit;
+}
+
+.main-container .tag-btn {
+    font: inherit;
+}
+
+.config-header:focus-visible,
+.tag-btn:focus-visible,
+.movie-result button:focus-visible,
+.movie-result img[role="button"]:focus-visible,
+.pool-search-input:focus-visible,
+.pool-modal button:focus-visible,
+.pool-modal a:focus-visible,
+.pool-modal img[role="button"]:focus-visible,
+.pool-search-wrap a:focus-visible,
+.pool-search-wrap button:focus-visible,
+.pool-search-wrap img[role="button"]:focus-visible {
+    outline: 3px solid var(--ui-color-interactive);
+    outline-offset: 3px;
 }
 
 .config-body {

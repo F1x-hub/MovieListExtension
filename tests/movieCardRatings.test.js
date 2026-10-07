@@ -98,3 +98,6 @@ assert.match(unavailableOverlay.innerHTML, />КП<\/span><span>—<\/span>/);
 assert.match(unavailableOverlay.innerHTML, />IMDb<\/span><span>—<\/span>/);
 
 console.log('✅ Movie card KP/IMDb labels and TMDB suppression passed');
+
+// Keep compact renderer regressions in the existing shared MovieCard test gate.
+require('./movieCardCompactSafety.test.cjs');
