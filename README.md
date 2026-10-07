@@ -292,6 +292,17 @@ Release entries are intentionally collapsed to keep this page readable.
 The extension manifest is the source of truth for the Chrome build version; `package.json`
 keeps npm-compatible three-component semver metadata.
 
+<details open>
+<summary><strong>Unreleased</strong></summary>
+
+### Fixes
+
+- Random filters, reload and watch actions work with the keyboard; filter buttons announce their include/exclude state, dialogs manage focus, and pool search results have normal links. Language changes preserve selected filters, and damaged saved ranges are normalized before use.
+- Random requests and searches ignore stale responses, delayed poster errors cannot replace the selected poster, and page exit clears pending timers. Empty results and loading failures have separate messages and actions. Search results use safe DOM rendering, and external poster URLs are validated for supported provider hosts.
+- Personal pool mutations coordinate across extension tabs with Web Locks, and Random reflects storage changes without overwriting another tab's additions. Clearing asks for confirmation; failed writes report an error and keep the winner available for retry. The winner title remains a normal details link, with a hint that the Watch button removes the film from the pool.
+
+</details>
+
 <details>
 <summary><strong>1.3.5</strong> — discovery, anime playback and profile improvements</summary>
 

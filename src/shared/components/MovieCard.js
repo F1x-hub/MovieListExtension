@@ -904,7 +904,8 @@ class MovieCard {
         };
 
         // Extract data
-        const posterUrl = movie.posterUrl || '/src/shared/assets/icons/app/icon48.png';
+        const posterUrl = (typeof PosterUrl !== 'undefined' ? PosterUrl.safe(movie.posterUrl) : '')
+            || '/src/shared/assets/icons/app/icon48.png';
         const movieName = movie.name || movie.nameRu || 'Неизвестный фильм';
         const movieAltName = movie.alternativeName || movie.nameEn || '';
         const year = movie.year || '';
@@ -976,7 +977,7 @@ class MovieCard {
         card.innerHTML = `
             <div class="cmc-layout">
                 <div class="cmc-poster-section">
-                    <img src="${posterUrl}" 
+                    <img src="${this.escapeHtml(posterUrl)}"
                          alt="${this.escapeHtml(movieName)}" 
                          class="cmc-poster"
                          decoding="async">
@@ -1047,7 +1048,7 @@ class MovieCard {
         // Attach watch button handler
         const watchBtn = card.querySelector('.cmc-watch-btn');
         if (watchBtn) {
-            watchBtn.addEventListener('mousedown', () => {
+            watchBtn.addEventListener('click', () => {
                 const movieId = canonicalMovieId;
                 if (movieId) {
                     window.location.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`);

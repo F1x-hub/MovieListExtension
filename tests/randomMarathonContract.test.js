@@ -12,18 +12,19 @@ const css = fs.readFileSync(path.join(root, 'src/pages/random/random.css'), 'utf
 const rules = fs.readFileSync(path.join(root, 'rules/firestore.rules'), 'utf8');
 const functions = fs.readFileSync(path.join(root, 'functions/randomMarathon.js'), 'utf8');
 const functionsIndex = fs.readFileSync(path.join(root, 'functions/index.js'), 'utf8');
-const posterHelpersStart = page.indexOf('const SAFE_MARATHON_POSTER_HOSTS');
+const posterHelpersStart = page.indexOf('function getSafePosterUrl');
 const posterHelpersEnd = page.indexOf('class RandomManager', posterHelpersStart);
 assert.notEqual(posterHelpersStart, -1);
 assert.notEqual(posterHelpersEnd, -1);
 const posterHelperContext = { URL, Set };
+runInNewContext(fs.readFileSync(path.join(root, 'src/shared/utils/PosterUrl.js'), 'utf8'), posterHelperContext);
 runInNewContext(
     `${page.slice(posterHelpersStart, posterHelpersEnd)}\nglobalThis.getMarathonPosterUrls = getMarathonPosterUrls;`,
     posterHelperContext
 );
 assert.deepEqual(
     Array.from(posterHelperContext.getMarathonPosterUrls('http://st.kp.yandex.net/images/film_iphone/iphone360_289.jpg?d=old', 289)),
-    ['https://st.kp.yandex.net/images/film_iphone/iphone360_289.jpg']
+    ['https://st.kp.yandex.net/images/film_iphone/iphone360_289.jpg?d=old', 'https://st.kp.yandex.net/images/film_iphone/iphone360_289.jpg']
 );
 assert.deepEqual(
     Array.from(posterHelperContext.getMarathonPosterUrls('https://unsupported.example/poster.jpg', 289)),
@@ -91,7 +92,7 @@ assert.match(page, /function getMarathonPosterUrls\(value, kpId\)/);
 assert.match(page, /https:\/\/st\.kp\.yandex\.net\/images\/film_iphone\/iphone360_\$\{movieId\}\.jpg/);
 assert.match(page, /getMarathonPosterUrls\(item\.poster, item\.kpId\)/);
 assert.match(page, /getMarathonPosterUrls\(movie\.poster, movie\.kpId\)/);
-assert.match(page, /if \(url\.protocol === 'http:' && isSupportedHost\) url\.protocol = 'https:'/);
+assert.match(page, /PosterUrl\.safe\(value\)/);
 assert.match(page, /window\.ImageLightbox\.show\(currentPosterUrl\)/);
 assert.match(page, /currentLink\.className = 'marathon-current-movie-link'/);
 assert.match(page, /currentLink\.href = chrome\.runtime\.getURL\(`src\/pages\/movie-details\/movie-details\.html\?movieId=\$\{current\.kpId\}`\)/);

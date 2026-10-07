@@ -225,6 +225,8 @@ for (const options of [{ supported: false }, { fetchAudio: async () => ({ ok: fa
 // Exercise the real page handlers and animation with controlled frames, without network or storage writes.
 {
     const dom = new JSDOM('<!doctype html><body></body>', { url: 'https://wheel.test/' });
+    const pageErrors = [];
+    dom.window.addEventListener('error', event => { pageErrors.push(event.error); });
     let now = 0;
     let reducedMotion = false;
     const frames = [];
@@ -239,7 +241,8 @@ for (const options of [{ supported: false }, { fetchAudio: async () => ({ ok: fa
     dom.window.matchMedia = () => ({ matches: reducedMotion });
     const context = {
         document: dom.window.document, window: dom.window, localStorage: dom.window.localStorage,
-        URL, RandomWheelAudio: Audio, KinopoiskService: class {},
+        URL, RandomWheelAudio: Audio, KinopoiskService: class {}, i18n: { get: key => key },
+        setTimeout, clearTimeout, setInterval, clearInterval,
         performance: { now: () => now }, requestAnimationFrame: fn => frames.push(fn),
         getComputedStyle: () => ({ transform: 'none' }),
         chrome: { runtime: { getURL: p => `https://wheel.test/${p}` } }
@@ -340,6 +343,8 @@ for (const options of [{ supported: false }, { fetchAudio: async () => ({ ok: fa
     assert.deepEqual(calls.at(-1), ['stop'], 'Opening the selected movie must stop the cue');
     dom.window.dispatchEvent(new dom.window.Event('pagehide'));
     assert.deepEqual(calls.at(-1), ['stop']);
+    assert.equal(manager._disposed, true, 'Pagehide must complete page cleanup');
+    assert.deepEqual(pageErrors, [], 'Page event handlers must not fail silently in JSDOM');
     dom.window.close();
 }
 

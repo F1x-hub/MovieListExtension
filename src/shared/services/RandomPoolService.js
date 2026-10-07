@@ -5,6 +5,8 @@
  * metadata needed by the Random page and never depends on authentication.
  */
 class RandomPoolService {
+    static _writeQueue = Promise.resolve();
+
     static get storageKey() {
         return 'randomPool';
     }
@@ -63,10 +65,26 @@ class RandomPoolService {
         return this.normalizePool(data[this.storageKey]);
     }
 
-    static async savePool(pool) {
+    static async _writePool(pool) {
         const normalizedPool = this.normalizePool(pool);
         await chrome.storage.local.set({ [this.storageKey]: normalizedPool });
         return normalizedPool;
+    }
+
+    static async _withPoolLock(operation) {
+        if (typeof navigator !== 'undefined' && typeof navigator.locks?.request === 'function') {
+            return navigator.locks.request(this.storageKey, operation);
+        }
+
+        // Older runtimes retain page-local serialization; cross-page mutations
+        // require the shared origin lock supplied by Web Locks.
+        const pending = this._writeQueue.then(operation);
+        this._writeQueue = pending.catch(() => {});
+        return pending;
+    }
+
+    static async savePool(pool) {
+        return this._withPoolLock(() => this._writePool(pool));
     }
 
     static async addMovie(movie) {
@@ -75,18 +93,37 @@ class RandomPoolService {
             throw new Error('Random pool requires a valid Kinopoisk movie ID');
         }
 
-        const pool = await this.getPool();
-        const existing = pool.find(item => this.getMovieId(item) === entry.kpId);
-        if (existing) {
-            return { added: false, movie: existing, pool };
+        return this._withPoolLock(async () => {
+            const pool = await this.getPool();
+            const existing = pool.find(item => this.getMovieId(item) === entry.kpId);
+            if (existing) {
+                return { added: false, movie: existing, pool };
+            }
+
+            pool.push(entry);
+            return {
+                added: true,
+                movie: entry,
+                pool: await this._writePool(pool)
+            };
+        });
+    }
+
+    static async removeMovie(movieOrId) {
+        const movieId = this.getMovieId(movieOrId);
+        if (!movieId) {
+            throw new Error('Random pool requires a valid Kinopoisk movie ID');
         }
 
-        pool.push(entry);
-        return {
-            added: true,
-            movie: entry,
-            pool: await this.savePool(pool)
-        };
+        return this._withPoolLock(async () => {
+            const pool = await this.getPool();
+            const remaining = pool.filter(item => this.getMovieId(item) !== movieId);
+            return remaining.length === pool.length ? pool : this._writePool(remaining);
+        });
+    }
+
+    static async clear() {
+        return this._withPoolLock(() => this._writePool([]));
     }
 }
 
