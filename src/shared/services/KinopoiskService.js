@@ -1367,7 +1367,8 @@ class KinopoiskService {
             const url = `${this.baseUrl}${KINOPOISK_CONFIG.ENDPOINTS.MOVIE}/${movieId}`;
             
             const response = await this._fetchWithRotation(url, {
-                method: 'GET'
+                method: 'GET',
+                signal: AbortSignal.timeout(12000)
             });
 
             if (!response.ok) {

@@ -109,6 +109,31 @@ async function revokeRoomAccess(rtdb, { userId, roomId }) {
   });
 }
 
+// Removes the live room for every member. Clients see the state disappear
+// and leave the room; access entries go with it so no member can recreate
+// presence nodes before the scheduled cleanup runs.
+async function closeRoomLive(rtdb, { roomId }) {
+  const membersSnapshot = await rtdb.ref(`roomLive/${roomId}/members`).once("value");
+  const members = membersSnapshot?.val?.() || {};
+  const updates = { [`roomLive/${roomId}`]: null };
+  Object.keys(members).forEach((userId) => {
+    updates[`roomAccess/${userId}/${roomId}`] = null;
+  });
+  await rtdb.ref().update(updates);
+}
+
+// Moves every member's RTDB access expiry with the extended room; clients
+// listen to their own entry and re-arm their local expiry timer.
+async function extendRoomAccess(rtdb, { roomId, expiresAtMs }) {
+  const membersSnapshot = await rtdb.ref(`roomLive/${roomId}/members`).once("value");
+  const members = membersSnapshot?.val?.() || {};
+  const updates = {};
+  Object.keys(members).forEach((userId) => {
+    updates[`roomAccess/${userId}/${roomId}/expiresAtMs`] = expiresAtMs;
+  });
+  if (Object.keys(updates).length > 0) await rtdb.ref().update(updates);
+}
+
 async function syncRoomMemberRole(rtdb, { userId, roomId, role }) {
   await rtdb.ref().update({
     [`roomAccess/${userId}/${roomId}/role`]: role,
@@ -184,6 +209,20 @@ function createWatchRoomsStagingHandler({ service, verifyIdToken, getRealtimeDat
         return;
       }
 
+      if (action === "end") {
+        const result = await service.endRoom({ actorUid, requestId, roomId: req.body?.roomId });
+        await closeRoomLive(rtdb, { roomId: result.roomId });
+        res.status(200).json(result);
+        return;
+      }
+
+      if (action === "extend") {
+        const result = await service.extendRoom({ actorUid, requestId, roomId: req.body?.roomId });
+        await extendRoomAccess(rtdb, result);
+        res.status(200).json(result);
+        return;
+      }
+
       if (action === "setMemberRole") {
         const result = await service.setMemberRole({
           actorUid,
@@ -213,7 +252,9 @@ module.exports = {
   EXTENSION_ORIGIN,
   STAGING_MAX_INVITE_USES,
   STAGING_MAX_PARTICIPANTS,
+  closeRoomLive,
   createWatchRoomsStagingHandler,
+  extendRoomAccess,
   grantRoomAccess,
   memberDisplayName,
   normalizeProviderHint,

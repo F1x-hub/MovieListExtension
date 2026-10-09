@@ -78,7 +78,7 @@ const navigation = new HomeMovieNavigationService({
             htmlLookups++;
             htmlLookupOptions = options;
             await new Promise(resolve => setTimeout(resolve, 5));
-            return { kinopoiskId: 482, name: 'История игрушек', year: 1995 };
+            return { kinopoiskId: 482, name: 'История игрушек', originalTitle: 'Toy Story', year: 1995, mediaType: 'movie' };
         }
     }
 });
@@ -90,6 +90,7 @@ assert.equal(second.kinopoiskId, 482);
 assert.equal(htmlLookups, 1);
 assert.equal(htmlLookupOptions.allowYearTolerance, true);
 assert.equal(htmlLookupOptions.maxYearDelta, 1);
+assert.equal(htmlLookupOptions.requireVerifiedIdentity, true);
 assert.equal((await navigation.resolve(item)).source, 'html-cache');
 assert.equal(htmlLookups, 1);
 
@@ -106,7 +107,7 @@ const recoveryNavigation = new HomeMovieNavigationService({
     htmlSearchService: {
         findMovieByTitle: async () => {
             recoveredLookups += 1;
-            return { kinopoiskId: 1000, name: 'Recovered title', year: 2026 };
+            return { kinopoiskId: 1000, name: 'Recovered title', year: 2026, mediaType: 'movie' };
         }
     }
 });
@@ -124,7 +125,7 @@ const identityOnlyNavigation = new HomeMovieNavigationService({
     htmlSearchService: {
         findMovieByTitle: async (titles, year, options) => {
             identityWithMissingRatingOptions = options;
-            return { kinopoiskId: 2000, name: 'Identity only', year };
+            return { kinopoiskId: 2000, name: 'Identity only', year, mediaType: 'movie' };
         }
     }
 });
@@ -137,6 +138,46 @@ const identityOnlyResult = await identityOnlyNavigation.resolve({
 assert.equal(identityOnlyResult.kinopoiskId, 2000);
 assert.equal(identityOnlyResult.kpRating, 0);
 assert.equal(identityWithMissingRatingOptions.requireRating, false);
+
+const wrongPositiveCacheKey = 'home_kp_html_mapping_v5';
+globalThis.chrome.storage.local.store[wrongPositiveCacheKey] = {
+    'tv:3000': {
+        status: 'resolved', kpId: 178720, tmdbId: 3000, mediaType: 'tv',
+        title: 'Светлячок', originalTitle: 'Firefly', year: 2002,
+        resolvedMediaType: 'tv', verified: true, updatedAt: Date.now(), kpRating: 8.7
+    }
+};
+let staleMappingLookups = 0;
+const checkedNavigation = new HomeMovieNavigationService({
+    htmlSearchService: {
+        async findMovieByTitle(titles, year, options) {
+            staleMappingLookups += 1;
+            assert.equal(options.requireVerifiedIdentity, true);
+            return { kinopoiskId: 3001, name: 'Хранилище 13', originalTitle: 'Warehouse 13', year: 2009, mediaType: 'tv' };
+        }
+    }
+});
+const checkedMapping = await checkedNavigation.resolve({
+    tmdbId: 3000, name: 'Хранилище 13', alternativeName: 'Warehouse 13', year: 2009, mediaType: 'tv'
+});
+assert.equal(staleMappingLookups, 1, 'A fresh cache entry for another title and year must be ignored');
+assert.equal(checkedMapping.kinopoiskId, 3001);
+assert.equal(checkedMapping.verified, true);
+
+let missingMetadataLookups = 0;
+const missingMetadataNavigation = new HomeMovieNavigationService({
+    htmlSearchService: {
+        async findMovieByTitle() {
+            missingMetadataLookups += 1;
+            return { kinopoiskId: 4001 };
+        }
+    }
+});
+const unverifiedMapping = await missingMetadataNavigation.resolve({
+    tmdbId: 4000, name: 'Warehouse 13', year: 2009, mediaType: 'tv'
+});
+assert.equal(missingMetadataLookups, 1);
+assert.equal(unverifiedMapping, null, 'Missing candidate title/year/type cannot authorize navigation');
 
 let forbiddenKpCalls = 0;
 const aggregator = new MediaAggregatorService({
@@ -173,5 +214,6 @@ assert.equal(forbiddenKpCalls, 0);
 assert.equal(tmdbOnlyDetails.kinopoiskId, 482);
 assert.equal(tmdbOnlyDetails.tmdbId, 999);
 assert.equal(tmdbOnlyDetails.name, 'История игрушек');
+assert.equal(tmdbOnlyDetails.identity.status, 'UNVERIFIED', 'Synthetic KP data cannot verify its own TMDB mapping');
 
 console.log('Home TMDB-only discovery and click-time HTML navigation tests passed');

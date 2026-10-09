@@ -77,8 +77,20 @@ const ssrSearchHtml = `<script>window.Ya.__ssr_initial_data = ${JSON.stringify({
     assert.deepStrictEqual(service.parseMovieSearchHtml(movieSearchHtml, ['С Земли на Луну'], 1998), {
         kinopoiskId: 3556,
         name: 'С Земли на Луну',
-        year: 1998
+        year: 1998,
+        mediaType: 'movie'
     });
+    assert.equal(service.parseMovieSearchHtml('<a href="/film/3556/">С Земли на Луну</a>', ['С Земли на Луну'], 1998), null,
+        'HTML fallback must not fill in the requested year when the result has no year');
+    assert.equal(service.parseMovieSearchHtml(
+        '<div data-test-id="movie-list-item"><a href="/series/3556/">С Земли на Луну</a><span>1998</span></div>',
+        ['С Земли на Луну'], 1998, { mediaType: 'movie' }
+    ), null, 'HTML fallback must reject a candidate of the wrong media type');
+    assert.equal(service.parseMovieSearchHtml(
+        '<div data-test-id="movie-list-item"><a href="/film/1/">Same</a><span>1998</span></div>'
+        + '<div data-test-id="movie-list-item"><a href="/film/2/">Same</a><span>1998</span></div>',
+        ['Same'], 1998, { mediaType: 'movie' }
+    ), null, 'HTML fallback must reject ambiguous exact matches');
 
     const parsed = service.parsePersonPageHtml(pageHtml, 9144);
     assert.strictEqual(parsed.personId, 9144);
@@ -146,7 +158,7 @@ const ssrSearchHtml = `<script>window.Ya.__ssr_initial_data = ${JSON.stringify({
         kinopoiskService: {
             async scrapeSearchResultsOffscreen(query) {
                 offscreenQuery = query;
-                return [{ type: 'film', id: 448 }];
+                return [{ type: 'film', id: 448, title: 'Forrest Gump', originalTitle: 'Forrest Gump', year: 1994 }];
             }
         },
         fetchImpl: async () => {
@@ -158,7 +170,9 @@ const ssrSearchHtml = `<script>window.Ya.__ssr_initial_data = ${JSON.stringify({
     assert.deepStrictEqual(result, {
         kinopoiskId: 448,
         name: 'Forrest Gump',
-        year: 1994
+        originalTitle: 'Forrest Gump',
+        year: 1994,
+        mediaType: 'movie'
     });
     assert.strictEqual(offscreenQuery, 'Forrest Gump');
 
@@ -197,6 +211,30 @@ const ssrSearchHtml = `<script>window.Ya.__ssr_initial_data = ${JSON.stringify({
         2026
     );
     assert.equal(strictYearResult, null, 'Strict matching must reject a different release year');
+
+    const incompleteIdentity = new KinopoiskPersonHtmlService({
+        kinopoiskService: { async scrapeSearchResultsOffscreen() { return [{ type: 'series', id: 900 }]; } }
+    });
+    assert.equal(await incompleteIdentity.findMovieByTitle(['Warehouse 13'], 2009, { mediaType: 'tv' }), null,
+        'A metadata-free candidate must remain unresolved instead of borrowing the requested title and year');
+
+    const wrongKindIdentity = new KinopoiskPersonHtmlService({
+        kinopoiskService: { async scrapeSearchResultsOffscreen() {
+            return [{ type: 'film', id: 901, title: 'Warehouse 13', year: 2009 }];
+        } }
+    });
+    assert.equal(await wrongKindIdentity.findMovieByTitle(['Warehouse 13'], 2009, { mediaType: 'tv' }), null);
+
+    const ambiguousIdentity = new KinopoiskPersonHtmlService({
+        kinopoiskService: { async scrapeSearchResultsOffscreen() {
+            return [
+                { type: 'series', id: 902, title: 'Warehouse 13', year: 2009 },
+                { type: 'series', id: 903, title: 'Warehouse 13', year: 2009 }
+            ];
+        } }
+    });
+    assert.equal(await ambiguousIdentity.findMovieByTitle(['Warehouse 13'], 2009, { mediaType: 'tv' }), null,
+        'Multiple exact candidates must remain unresolved');
 
     console.log('  ✅ Movie lookup uses browser-context scraping and selects the requested title/year over sequels');
 }

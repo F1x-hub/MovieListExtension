@@ -58,6 +58,8 @@ const view = {
     watchRoomMembersList: list,
   },
   refreshWatchRoomControls,
+  sessionCleared: false,
+  clearWatchRoomSession() { this.sessionCleared = true; },
 };
 
 renderWatchRoomMembers.call(view, { roomId: null, role: null, members: [] });
@@ -73,5 +75,10 @@ assert.equal(participantButton.attributes.get('aria-expanded'), 'false');
 assert.equal(view.elements.watchRoomParticipantCount.textContent, '0');
 assert.deepEqual(list.children, []);
 assert.equal(view.watchRoomJoinCode, null);
+assert.equal(view.sessionCleared, true, 'an ended or expired room is not rejoined after a reload');
+assert.match(markup, /id="leaveWatchRoomBtn"[^>]*data-watch-room-action="leave"[^>]*hidden/);
+assert.match(source, /else if \(action === 'leave'\) \{\s*void this\.leaveWatchRoom\(\);/);
+assert.match(source, /getAttribute\('data-source-state'\) === 'ready'\) \{\s*void this\.resumeWatchRoomIfPending\?\.\(\);/,
+  'a ready player triggers the saved-room rejoin');
 
 console.log('movieDetailsWatchRoomUi.test.cjs: an expired room returns the UI to create/join state without restoration');

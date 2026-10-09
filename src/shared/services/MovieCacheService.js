@@ -141,10 +141,15 @@ class MovieCacheService {
     /**
      * Get cached movie by Kinopoisk ID
      * @param {number} kinopoiskId - Kinopoisk movie ID
+     * @param {Object} options - localOnly skips Firestore and preserves stale local metadata
      * @returns {Promise<Object|null>} - Cached movie data or null
      */
-    async getCachedMovie(kinopoiskId) {
+    async getCachedMovie(kinopoiskId, options = {}) {
         try {
+            if (options.localOnly) {
+                const movies = await this.getLocalCachedMovies([kinopoiskId]);
+                return movies[String(kinopoiskId)] || null;
+            }
             const docRef = this.db.collection(this.collection).doc(kinopoiskId.toString());
             const doc = await docRef.get();
             if (doc.exists && doc.data().hasCommunityRating === true) {

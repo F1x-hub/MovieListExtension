@@ -55,6 +55,10 @@ const seek = bridge.handleWindowMessage({
 });
 assert.equal(seek.messages[0].kind, 'seeked');
 assert.equal(seek.messages[0].currentTimeMs, 20_000);
+assert.deepEqual(seek.messages[1], {
+  type: 'ROOM_SYNC_TELEMETRY', subscriptionId: 'room-sync-1', kind: 'timeupdate', currentTimeMs: 20_000,
+  paused: false, observedAtMs: clock,
+}, 'Rutube time samples feed room drift correction');
 
 const blocked = bridge.handleWindowMessage({
   source: iframeWindow,

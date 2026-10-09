@@ -28,7 +28,9 @@ const popupJs = fs.readFileSync(popupJsPath, 'utf8');
 assert(popupJs.includes('root: this.elements.feedContent'), 'setupIntersectionObserver must configure root as feedContent');
 assert(popupJs.includes('this.consecutiveAutoLoads'), 'popup.js must maintain consecutiveAutoLoads counter');
 assert(popupJs.includes('MAX_CONSECUTIVE_AUTO_LOADS'), 'popup.js must define MAX_CONSECUTIVE_AUTO_LOADS');
-assert(popupJs.includes('feedContent.addEventListener(\'scroll\''), 'popup.js must reset auto-loads on user scroll event');
+assert(popupJs.includes("on(this.elements.feedContent, 'wheel', resumePagination)")
+    && popupJs.includes("on(this.elements.feedContent, 'touchmove', resumePagination)"),
+    'popup.js must reset auto-loads on user wheel/touch input, without treating layout-driven scroll as a new user budget');
 assert(popupJs.includes('isCircuitBreakerTripped'), 'popup.js must track isCircuitBreakerTripped state');
 
 console.log('✅ Contract 2: popup.js implements observer scoping, scroll reset, and circuit breaker');

@@ -166,6 +166,15 @@
                         <button class="player-nav-btn watch-room-controls__button" id="watchRoomMembersBtn" type="button" data-watch-room-action="toggle-members" title="Участники комнаты" aria-expanded="false" aria-controls="watchRoomMembersPopover" hidden>
                             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="3"></circle><circle cx="17" cy="9" r="2.25"></circle><path d="M2.8 19c.7-3.1 2.6-4.7 5.2-4.7s4.5 1.6 5.2 4.7"></path><path d="M14.2 15.1c1.9.2 3.3 1.5 3.8 3.9"></path></svg><span class="player-nav-btn__label" id="watchRoomParticipantCount">0</span>
                         </button>
+                        <button class="player-nav-btn watch-room-controls__button" id="leaveWatchRoomBtn" type="button" data-watch-room-action="leave" title="Выйти из комнаты" hidden>
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg><span class="player-nav-btn__label" id="leaveWatchRoomLabel">Выйти</span>
+                        </button>
+                        <button class="player-nav-btn watch-room-controls__button" id="extendWatchRoomBtn" type="button" data-watch-room-action="extend" title="Продлить комнату на 2 часа" hidden>
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"></circle><polyline points="12 9 12 13 14.5 14.5"></polyline><line x1="10" y1="2" x2="14" y2="2"></line></svg><span class="player-nav-btn__label">Продлить</span>
+                        </button>
+                        <button class="player-nav-btn watch-room-controls__button" id="resumeWatchRoomPlaybackBtn" type="button" data-watch-room-action="resume-playback" title="Браузер не дал запустить видео автоматически" hidden>
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="7 4 20 12 7 20 7 4"></polygon></svg><span class="player-nav-btn__label">Включить просмотр</span>
+                        </button>
                         <span class="watch-room-controls__status" id="watchRoomStatus" role="status" aria-live="polite"></span>
                         <div class="watch-room-members-popover" id="watchRoomMembersPopover" role="dialog" aria-label="Участники комнаты" hidden>
                             <div class="watch-room-members-popover__title">В комнате</div>

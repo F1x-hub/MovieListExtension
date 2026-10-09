@@ -305,6 +305,7 @@ return isTrustedHostMessage;`);
         },
         refreshWatchRoomControls() {},
         setWatchRoomStatus() {},
+        saveWatchRoomSession() {},
         openWatchRoomInvite: extractMethod('openWatchRoomInvite'),
         closeWatchRoomInvite: extractMethod('closeWatchRoomInvite'),
         setWatchRoomInviteError: extractMethod('setWatchRoomInviteError'),

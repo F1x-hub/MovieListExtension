@@ -1036,12 +1036,16 @@ export const locales = {
             update: {
                 title: "Update Available",
                 version: "New version ready",
-                btn: "Update"
+                btn: "Update",
+                dismiss: "Dismiss update"
             },
             header: {
                 title: "Movie Ratings",
                 not_authenticated: "Not authenticated",
-                signed_in_as: "Signed in as {user}"
+                signed_in_as: "Signed in as {user}",
+                home: "Open Home",
+                user_menu: "Account menu",
+                avatar_alt: "Account avatar"
             },
             auth: {
                 google_btn: "Continue with Google",
@@ -1077,6 +1081,7 @@ export const locales = {
                 logo_alt: "Movie Ratings logo",
                 password_show: "Show password",
                 password_hide: "Hide password",
+                logout_failed: "Could not sign out. Try again.",
                 invalid_credentials: "Incorrect email or password.",
                 network_error: "Connection problem. Check your internet connection and try again.",
                 service_unavailable: "Sign-in is temporarily unavailable. Try again later.",
@@ -1094,10 +1099,24 @@ export const locales = {
                 pending_login_msg: "Your registration is currently under review by the administrator. Access will be granted once approved.",
                 rejected_title: "Access Restricted",
                 rejected_msg: "Your registration was rejected by the administrator.",
-                back_to_login: "Back to Sign In"
+                back_to_login: "Back to Sign In",
+                unavailable_title: "Couldn't check account access",
+                unavailable_msg: "Check your connection and try again.",
+                retry: "Check again"
             },
             content: {
                 search_placeholder: "Search movies...",
+                search: "Search movies",
+                search_title: "Find a movie",
+                search_label: "Movie title",
+                search_close: "Close search",
+                search_loading: "Searching for movies…",
+                search_empty: "No movies found",
+                search_error: "Couldn't search movies. Try again.",
+                filter_all: "All",
+                filter_my: "Mine",
+                filter_label: "Rating feed filter",
+                profile: "My profile",
                 settings: "Settings",
                 logout: "Sign Out",
                 recent_ratings: "Recent Ratings",
@@ -1105,7 +1124,47 @@ export const locales = {
                 refresh: "Refresh",
                 empty_title: "No ratings yet",
                 empty_text: "Start rating movies to see them here!",
-                loading: "Loading..."
+                empty_all_title: "No ratings yet",
+                empty_all_text: "Find a movie to add the first rating.",
+                empty_my_title: "You haven't rated any movies yet",
+                empty_my_text: "Your ratings and reviews will appear here.",
+                find_movie: "Find a movie",
+                feed_label: "Recent ratings",
+                load_failed: "Couldn't load ratings",
+                stale_data: "Showing saved ratings. Refresh to check for changes.",
+                retry: "Try again",
+                error_dismiss: "Dismiss message",
+                loading: "Loading...",
+                loading_more: "Loading more ratings…",
+                back_to_top: "Back to top"
+            },
+            rating: {
+                menu: "Rating actions",
+                average: "Community average",
+                no_ratings: "No ratings",
+                unknown_movie: "Untitled movie",
+                unknown_user: "User",
+                no_genres: "No genres",
+                saved: "Rating saved",
+                deleted: "Rating deleted",
+                save_failed: "Couldn't save the rating. Try again.",
+                delete_failed: "Couldn't delete the rating. Try again.",
+                edit_title: "Edit rating",
+                edit_rating: "Your rating",
+                edit_comment: "Review (optional)",
+                comment_count: "{count}/500 characters",
+                save: "Save",
+                cancel: "Cancel"
+            },
+            password_reset: {
+                title: "Reset password",
+                help: "Enter your account email to receive a password reset link.",
+                request: "Send reset link",
+                sending: "Sending…",
+                success: "If an account uses this email, a reset link has been sent. Check your inbox and spam folder.",
+                error: "Couldn't send the reset link. Try again.",
+                email_label: "Email address",
+                email_placeholder: "Your account email"
             }
         },
         person_details: {
@@ -2188,12 +2247,16 @@ export const locales = {
             update: {
                 title: "Доступно обновление",
                 version: "Новая версия готова",
-                btn: "Обновить"
+                btn: "Обновить",
+                dismiss: "Закрыть уведомление об обновлении"
             },
             header: {
                 title: "Movie Ratings",
                 not_authenticated: "Не авторизован",
-                signed_in_as: "Вошли как {user}"
+                signed_in_as: "Вошли как {user}",
+                home: "Открыть главную",
+                user_menu: "Меню аккаунта",
+                avatar_alt: "Аватар аккаунта"
             },
             auth: {
                 google_btn: "Продолжить с Google",
@@ -2229,6 +2292,7 @@ export const locales = {
                 logo_alt: "Логотип Movie Ratings",
                 password_show: "Показать пароль",
                 password_hide: "Скрыть пароль",
+                logout_failed: "Не удалось выйти. Попробуйте ещё раз.",
                 invalid_credentials: "Неверный email или пароль.",
                 network_error: "Проблема с подключением. Проверьте интернет и попробуйте снова.",
                 service_unavailable: "Вход временно недоступен. Попробуйте позже.",
@@ -2246,10 +2310,24 @@ export const locales = {
                 pending_login_msg: "Ваша регистрация находится на рассмотрении у администратора. Доступ будет открыт сразу после проверки.",
                 rejected_title: "Доступ ограничен",
                 rejected_msg: "Ваша регистрация была отклонена администратором.",
-                back_to_login: "Вернуться ко входу"
+                back_to_login: "Вернуться ко входу",
+                unavailable_title: "Не удалось проверить доступ",
+                unavailable_msg: "Проверьте подключение и повторите проверку.",
+                retry: "Проверить снова"
             },
             content: {
                 search_placeholder: "Поиск фильмов...",
+                search: "Поиск фильмов",
+                search_title: "Найти фильм",
+                search_label: "Название фильма",
+                search_close: "Закрыть поиск",
+                search_loading: "Ищем фильмы…",
+                search_empty: "Ничего не найдено",
+                search_error: "Не удалось найти фильмы. Попробуйте ещё раз.",
+                filter_all: "Все",
+                filter_my: "Мои",
+                filter_label: "Фильтр ленты оценок",
+                profile: "Мой профиль",
                 settings: "Настройки",
                 logout: "Выйти",
                 recent_ratings: "Недавние оценки",
@@ -2257,7 +2335,47 @@ export const locales = {
                 refresh: "Обновить",
                 empty_title: "Оценок пока нет",
                 empty_text: "Оцените фильмы, чтобы увидеть их здесь!",
-                loading: "Загрузка..."
+                empty_all_title: "Оценок пока нет",
+                empty_all_text: "Найдите фильм и добавьте первую оценку.",
+                empty_my_title: "Вы ещё не оценивали фильмы",
+                empty_my_text: "Здесь будут ваши оценки и отзывы.",
+                find_movie: "Найти фильм",
+                feed_label: "Недавние оценки",
+                load_failed: "Не удалось загрузить оценки",
+                stale_data: "Показаны сохранённые оценки. Обновите ленту, чтобы загрузить изменения.",
+                retry: "Повторить",
+                error_dismiss: "Закрыть сообщение",
+                loading: "Загрузка...",
+                loading_more: "Загружаем ещё оценки…",
+                back_to_top: "Наверх"
+            },
+            rating: {
+                menu: "Действия с оценкой",
+                average: "Средняя оценка",
+                no_ratings: "Нет оценок",
+                unknown_movie: "Без названия",
+                unknown_user: "Пользователь",
+                no_genres: "Без жанра",
+                saved: "Оценка сохранена",
+                deleted: "Оценка удалена",
+                save_failed: "Не удалось сохранить оценку. Попробуйте ещё раз.",
+                delete_failed: "Не удалось удалить оценку. Попробуйте ещё раз.",
+                edit_title: "Редактировать оценку",
+                edit_rating: "Ваша оценка",
+                edit_comment: "Отзыв (необязательно)",
+                comment_count: "{count}/500 символов",
+                save: "Сохранить",
+                cancel: "Отмена"
+            },
+            password_reset: {
+                title: "Восстановить пароль",
+                help: "Введите почту аккаунта, чтобы получить ссылку для сброса пароля.",
+                request: "Отправить ссылку",
+                sending: "Отправляем…",
+                success: "Если аккаунт с такой почтой существует, ссылка отправлена. Проверьте входящие и папку «Спам».",
+                error: "Не удалось отправить ссылку. Попробуйте ещё раз.",
+                email_label: "Электронная почта",
+                email_placeholder: "Почта вашего аккаунта"
             }
         },
         person_details: {

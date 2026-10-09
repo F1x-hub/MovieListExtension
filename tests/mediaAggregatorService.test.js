@@ -92,6 +92,21 @@ assert.strictEqual(identityAuto.verificationSource, 'automatic', 'Verification s
 assert.strictEqual(identityAuto.kinopoiskId, 5452840);
 assert.strictEqual(identityAuto.tmdbId, 1083381);
 
+const syntheticTmdbIdentity = MediaAggregatorService.resolveIdentity(
+    {
+        kinopoiskId: 7654321,
+        name: 'Warehouse 13',
+        year: 2009,
+        type: 'tv-series',
+        externalId: { tmdb: 12345 },
+        provenance: 'synthetic-tmdb-only'
+    },
+    { tmdbId: 12345, name: 'Warehouse 13', year: 2009, type: 'tv-series' },
+    { candidateTmdbId: 12345, isLegacyResolved: true }
+);
+assert.strictEqual(syntheticTmdbIdentity.status, 'UNVERIFIED', 'A synthetic TMDB external ID cannot verify its own KP identity');
+assert.notStrictEqual(syntheticTmdbIdentity.verificationMethod, 'exact_external_tmdb');
+
 // 2.2 Exact externalId.imdb verification
 const identityImdb = MediaAggregatorService.resolveIdentity(
     { kinopoiskId: 100, externalId: { imdb: 'tt0111161' } },

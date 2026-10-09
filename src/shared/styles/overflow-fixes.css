@@ -1,10 +1,6 @@
 /* Overflow fixes for Movie Rating Extension */
 
-/* Ensure all containers respect their boundaries */
-.popup-container * {
-    max-width: 100%;
-    box-sizing: border-box;
-}
+/* Geometry and overlay bounds are owned by popup.css. Keep text fixes local. */
 
 /* Fix text overflow issues */
 .rating-movie-title,
@@ -19,24 +15,9 @@
 }
 
 /* Fix flex container overflow */
-.rating-item,
 .search-result-item {
     min-width: 0;
     overflow: hidden;
-}
-
-/* Fix header overflow */
-.popup-header {
-    min-width: 0;
-    overflow: hidden;
-}
-
-.popup-title {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 /* Fix search input overflow */
@@ -49,12 +30,6 @@
 .feed-content {
     min-width: 0;
     overflow-x: hidden;
-}
-
-/* Fix rating content overflow */
-.rating-content {
-    min-width: 0;
-    overflow: hidden;
 }
 
 /* Fix user actions overflow */
@@ -102,50 +77,6 @@
 .search-result-info {
     min-width: 0;
     overflow: hidden;
-}
-
-/* Responsive fixes for very small screens */
-@media (max-width: 320px) {
-    .popup-container {
-        width: 100vw;
-        min-width: 320px;
-    }
-    
-    .rating-item {
-        padding: var(--space-sm);
-        gap: var(--space-sm);
-    }
-    
-    .rating-poster {
-        width: 60px;
-        height: 90px;
-    }
-    
-    .popup-header {
-        padding: var(--space-sm);
-    }
-    
-    .search-section {
-        padding: var(--space-sm);
-    }
-    
-    .feed-content {
-        padding: var(--space-sm);
-    }
-}
-
-/* Fix for Chrome extension popup specific issues */
-body {
-    width: 400px;
-    min-width: 400px;
-    max-width: 400px;
-    overflow-x: hidden;
-}
-
-/* Ensure proper scrolling */
-.feed-content {
-    scrollbar-width: thin;
-    scrollbar-color: var(--accent-color) var(--secondary-bg);
 }
 
 /* Fix for flex items that might overflow */

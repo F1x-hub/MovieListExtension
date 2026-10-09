@@ -11,6 +11,7 @@ class HomeRenderer {
     constructor(options = {}) {
         this.navigationOptions = options;
         this.ratingEnricher = options.ratingEnricher || null;
+        this.personalTierStates = new WeakMap();
     }
 
     /**
@@ -168,9 +169,65 @@ class HomeRenderer {
 
     renderPersonalSkeleton(container) {
         if (!container) return;
+        const current = this.personalTierStates.get(container);
+        if (current?.mode === 'content') return;
+        if (current?.mode === 'skeleton') {
+            current.sections.forEach((section, kind) => {
+                this.patchPersonalHeaderText(section, this.getPersonalSectionHeader(kind));
+            });
+            return;
+        }
+        this.resetPersonalTier(container);
         container.setAttribute('aria-busy', 'true');
-        container.innerHTML = '<div class="category-section"><div class="grid-container" id="home-personal-skeleton"></div></div>';
-        this.renderGridSkeleton(container.querySelector('#home-personal-skeleton'));
+        const sections = new Map();
+        ['watching', 'watchlist'].forEach(kind => {
+            const section = this.createPersonalSection(kind);
+            const count = section.node.querySelector('.section-count-badge');
+            count.textContent = '—';
+            count.setAttribute('aria-hidden', 'true');
+            this.renderGridSkeleton(section.grid);
+            sections.set(kind, section);
+            container.appendChild(section.node);
+        });
+        this.personalTierStates.set(container, { mode: 'skeleton', sections });
+    }
+
+    resetPersonalTier(container) {
+        if (!container) return;
+        this.personalTierStates.delete(container);
+        if (container.childNodes.length) container.replaceChildren();
+        if (container.hasAttribute('aria-busy')) container.removeAttribute('aria-busy');
+    }
+
+    getPersonalSectionHeader(kind, total = 0) {
+        const watching = kind === 'watching';
+        return {
+            icon: watching
+                ? '<svg class="section-header-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>'
+                : '<svg class="section-header-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>',
+            title: watching ? this.t('continue_watching', 'Продолжить просмотр') : this.t('watchlist', 'Буду смотреть'),
+            total,
+            href: watching ? '../bookmarks/bookmarks.html?filter=watching' : '../bookmarks/bookmarks.html?filter=plan_to_watch',
+            linkText: watching ? this.t('see_all.watching', 'Все просмотры') : this.t('see_all.watchlist', 'Все закладки')
+        };
+    }
+
+    createPersonalSection(kind) {
+        const node = document.createElement('div');
+        node.className = 'category-section home-personal-category';
+        const header = this.getPersonalSectionHeader(kind);
+        node.innerHTML = `${this.renderSectionHeader(header)}<div class="grid-container" id="home-${kind}-grid"></div>`;
+        return { node, grid: node.querySelector('.grid-container'), cards: new Map(), header };
+    }
+
+    patchPersonalHeaderText(section, header) {
+        if (header.title !== section.header.title) {
+            section.node.querySelector('h2').firstChild.nodeValue = `${header.title} `;
+        }
+        if (header.linkText !== section.header.linkText) {
+            section.node.querySelector('.section-see-all span').textContent = header.linkText;
+        }
+        section.header = header;
     }
 
     /**
@@ -221,12 +278,14 @@ class HomeRenderer {
             : 'loading="lazy"';
         const year = this.escapeHtml(item.year || '');
         const mediaType = this.escapeHtml(item.mediaType || item.type || 'movie');
+        const imdbId = /^tt\d{7,10}$/.test(item.imdbId || '') ? item.imdbId : '';
+        const ratingAttributes = `${kpRating > 0 ? ` data-kp-rating="${kpRating}"` : ''}${imdbRating > 0 ? ` data-imdb-rating="${imdbRating}"` : ''}${imdbId ? ` data-imdb-id="${imdbId}"` : ''}`;
         const slideLabel = total > 0
             ? ` aria-roledescription="slide" aria-label="${this.escapeHtml(this.t('slider.slide_of', '{index} из {total}: {title}', { index: index + 1, total, title: item.name || item.title || '' }))}"`
             : '';
 
         return `
-            <a href="${linkUrl}" class="featured-card home-hero-animate" style="animation-delay: ${delay}ms" data-slide-index="${index}"${slideLabel} data-action="view-details" data-movie-id="${this.escapeHtml(movieId || '')}" ${tmdbId ? `data-tmdb-id="${tmdbId}"` : ''} data-is-tmdb-only="${item.isTmdbOnly ? 'true' : 'false'}" data-movie-title="${title}" data-movie-original-title="${this.escapeHtml(originalTitle)}" data-movie-english-title="${this.escapeHtml(englishTitle)}"${item.searchTitle ? ` data-movie-search-title="${this.escapeHtml(item.searchTitle)}"` : ''} data-movie-year="${year}" data-media-type="${mediaType}">
+            <a href="${linkUrl}" class="featured-card home-hero-animate" style="animation-delay: ${delay}ms" data-slide-index="${index}"${slideLabel} data-action="view-details" data-movie-id="${this.escapeHtml(movieId || '')}" ${tmdbId ? `data-tmdb-id="${tmdbId}"` : ''}${ratingAttributes} data-is-tmdb-only="${item.isTmdbOnly ? 'true' : 'false'}" data-movie-title="${title}" data-movie-original-title="${this.escapeHtml(originalTitle)}" data-movie-english-title="${this.escapeHtml(englishTitle)}"${item.searchTitle ? ` data-movie-search-title="${this.escapeHtml(item.searchTitle)}"` : ''} data-movie-year="${year}" data-media-type="${mediaType}">
                 <img class="featured-poster" src="${poster}" alt="${title}" draggable="false" width="256" height="380" ${loadingAttributes} decoding="async">
                 ${ratingBadge}
                 <div class="featured-overlay">
@@ -334,21 +393,46 @@ class HomeRenderer {
      */
     renderPersonalTier(personalData = {}, container, onSignInClick, onRetry = null) {
         if (!container) return;
-        container.removeAttribute('aria-busy');
+        let state = this.personalTierStates.get(container);
+        if (state?.userId && personalData.userId && state.userId !== personalData.userId) {
+            this.resetPersonalTier(container);
+            state = null;
+        }
 
         if (personalData.isAuthenticated && personalData.loadFailed) {
+            // A failed refresh must not discard already usable personal cards.
+            if (state?.mode === 'content') return;
+            const errorText = this.t('personal_error', 'Не удалось загрузить ваши закладки');
+            const retryText = this.t('retry', 'Повторить');
+            const textSignature = JSON.stringify([errorText, retryText]);
+            if (state?.mode === 'error' && state.textSignature === textSignature) {
+                state.onRetry = onRetry;
+                return;
+            }
+            this.resetPersonalTier(container);
             container.innerHTML = `
                 <div class="home-section-message" role="alert">
-                    <p>${this.escapeHtml(this.t('personal_error', 'Не удалось загрузить ваши закладки'))}</p>
-                    <button type="button" class="home-section-retry">${this.escapeHtml(this.t('retry', 'Повторить'))}</button>
+                    <p>${this.escapeHtml(errorText)}</p>
+                    <button type="button" class="home-section-retry">${this.escapeHtml(retryText)}</button>
                 </div>
             `;
+            state = { mode: 'error', onRetry, textSignature, userId: personalData.userId };
+            this.personalTierStates.set(container, state);
             const retry = container.querySelector('.home-section-retry');
-            if (retry && typeof onRetry === 'function') retry.addEventListener('click', onRetry);
+            if (retry) retry.addEventListener('click', () => state.onRetry?.());
             return;
         }
 
         if (!personalData.isAuthenticated) {
+            const titleText = this.t('cta.title', 'Синхронизируйте просмотр и списки');
+            const bodyText = this.t('cta.text', 'Сохраняйте фильмы в закладки, продолжайте просмотр с любого места и делитесь оценками с друзьями.');
+            const buttonText = this.t('cta.button', 'Войти / Зарегистрироваться');
+            const textSignature = JSON.stringify([titleText, bodyText, buttonText]);
+            if (state?.mode === 'guest' && state.textSignature === textSignature) {
+                state.onSignInClick = onSignInClick;
+                return;
+            }
+            this.resetPersonalTier(container);
             container.innerHTML = `
                 <div class="home-cta-card">
                     <div class="home-cta-content">
@@ -358,73 +442,181 @@ class HomeRenderer {
                             </svg>
                         </div>
                         <div class="home-cta-text">
-                            <h2>${this.escapeHtml(this.t('cta.title', 'Синхронизируйте просмотр и списки'))}</h2>
-                            <p>${this.escapeHtml(this.t('cta.text', 'Сохраняйте фильмы в закладки, продолжайте просмотр с любого места и делитесь оценками с друзьями.'))}</p>
+                            <h2>${this.escapeHtml(titleText)}</h2>
+                            <p>${this.escapeHtml(bodyText)}</p>
                         </div>
                     </div>
-                    <button type="button" class="home-cta-btn" id="homeSignInBtn">${this.escapeHtml(this.t('cta.button', 'Войти / Зарегистрироваться'))}</button>
+                    <button type="button" class="home-cta-btn" id="homeSignInBtn">${this.escapeHtml(buttonText)}</button>
                 </div>
             `;
 
+            state = { mode: 'guest', onSignInClick, textSignature };
+            this.personalTierStates.set(container, state);
             const signInBtn = container.querySelector('#homeSignInBtn');
-            if (signInBtn && typeof onSignInClick === 'function') {
-                signInBtn.addEventListener('click', onSignInClick);
-            }
+            if (signInBtn) signInBtn.addEventListener('click', () => state.onSignInClick?.());
             return;
         }
 
         if (!personalData.hasContent) {
+            const emptyText = this.t('empty_personal', 'У вас пока нет активных просмотров и сохраненных закладок');
+            const exploreText = this.t('explore_catalog', 'Найти фильм в каталоге');
+            const textSignature = JSON.stringify([emptyText, exploreText]);
+            if (state?.mode === 'empty' && state.textSignature === textSignature) return;
+            this.resetPersonalTier(container);
             container.innerHTML = `
                 <div class="home-empty-personal">
-                    <p>${this.escapeHtml(this.t('empty_personal', 'У вас пока нет активных просмотров и сохраненных закладок'))}</p>
-                    <a href="../catalog/catalog.html?category=films" class="home-explore-btn">${this.escapeHtml(this.t('explore_catalog', 'Найти фильм в каталоге'))}</a>
+                    <p>${this.escapeHtml(emptyText)}</p>
+                    <a href="../catalog/catalog.html?category=films" class="home-explore-btn">${this.escapeHtml(exploreText)}</a>
                 </div>
             `;
+            this.personalTierStates.set(container, { mode: 'empty', userId: personalData.userId, textSignature });
             return;
         }
 
-        container.innerHTML = '';
-        const fragment = document.createDocumentFragment();
+        if (!state || !['content', 'skeleton'].includes(state.mode)) {
+            this.resetPersonalTier(container);
+            state = { sections: new Map() };
+        }
+        if (container.hasAttribute('aria-busy')) container.removeAttribute('aria-busy');
+        state.mode = 'content';
+        state.userId = personalData.userId;
+        this.personalTierStates.set(container, state);
 
-        if (personalData.watching && personalData.watching.length > 0) {
-            const watchingSection = document.createElement('div');
-            watchingSection.className = 'category-section';
-            watchingSection.style.marginBottom = '32px';
-            watchingSection.innerHTML = `
-                ${this.renderSectionHeader({
-                    icon: '<svg class="section-header-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>',
-                    title: this.t('continue_watching', 'Продолжить просмотр'),
-                    total: personalData.watchingTotal ?? personalData.watching.length,
-                    href: '../bookmarks/bookmarks.html?filter=watching',
-                    linkText: this.t('see_all.watching', 'Все просмотры')
-                })}
-                <div class="grid-container" id="home-watching-grid"></div>
-            `;
-            const grid = watchingSection.querySelector('#home-watching-grid');
-            this.renderCategoryGrid(personalData.watching, grid, { isWatching: true });
-            this.applyWatchProgress(personalData.watching, grid);
-            fragment.appendChild(watchingSection);
+        const gridsToObserve = [];
+        ['watching', 'watchlist'].forEach((kind, index) => {
+            const items = Array.isArray(personalData[kind]) ? personalData[kind] : [];
+            let section = state.sections.get(kind);
+            if (!items.length) {
+                section?.node.remove();
+                state.sections.delete(kind);
+                return;
+            }
+            if (!section) {
+                section = this.createPersonalSection(kind);
+                state.sections.set(kind, section);
+            }
+            const header = this.getPersonalSectionHeader(kind, personalData[`${kind}Total`] ?? items.length);
+            this.patchPersonalHeaderText(section, header);
+            const count = section.node.querySelector('.section-count-badge');
+            const totalText = String(Number(header.total) || 0);
+            if (count.textContent !== totalText) count.textContent = totalText;
+            if (count.hasAttribute('aria-hidden')) count.removeAttribute('aria-hidden');
+            const options = kind === 'watching' ? { isWatching: true } : { isInWatchlist: true };
+            if (this.patchPersonalGrid(items, section, options)) gridsToObserve.push(section.grid);
+            // Mount both sections before handing any card to the observer.
+            const preceding = index === 0 ? null : state.sections.get('watching')?.node;
+            const anchor = preceding ? preceding.nextSibling : container.firstChild;
+            if (anchor !== section.node) container.insertBefore(section.node, anchor);
+        });
+        gridsToObserve.forEach(grid => {
+            this.bindMovieCardNavigation(grid);
+            if (grid.isConnected) this.ratingEnricher?.observe?.(grid);
+        });
+    }
+
+    patchPersonalGrid(items, section, options) {
+        const { grid, cards } = section;
+        const wanted = new Set();
+        let newCards = false;
+        if (grid.hasAttribute('aria-busy')) {
+            grid.replaceChildren();
+            grid.removeAttribute('aria-busy');
+        }
+        items.forEach((item, index) => {
+            const data = this.getMovieCardData(item, options);
+            const key = String(data.movieId || (data.movie.tmdbId ? `tmdb:${data.movie.type}:${data.movie.tmdbId}` : data.id || index));
+            if (wanted.has(key)) return;
+            wanted.add(key);
+            const signature = JSON.stringify([data, this.t('continue_watching', 'Продолжить просмотр')]);
+            let entry = cards.get(key);
+            if (!entry || entry.signature !== signature) {
+                const node = this.createMovieCard(item, options);
+                if (!node) return;
+                node.classList.remove('fade-in');
+                if (entry) {
+                    this.preservePersonalEnrichment(entry, node, data);
+                    const active = document.activeElement;
+                    const focusedIndex = entry.node.contains(active)
+                        ? Array.from(entry.node.querySelectorAll('a, button, [tabindex]')).indexOf(active) : -1;
+                    entry.node.replaceWith(node);
+                    if (focusedIndex >= 0) node.querySelectorAll('a, button, [tabindex]')[focusedIndex]?.focus({ preventScroll: true });
+                } else {
+                    node.classList.add('home-card-animate');
+                    node.style.animationDelay = `${Math.min(index * 35, 400)}ms`;
+                }
+                entry = { node, signature, data };
+                cards.set(key, entry);
+                newCards = true;
+            }
+            const anchor = grid.children[wanted.size - 1] || null;
+            if (anchor !== entry.node) {
+                const active = document.activeElement;
+                const retainedFocus = entry.node.contains(active);
+                if (entry.node.isConnected && entry.node.classList.contains('home-card-animate')) {
+                    entry.node.classList.remove('home-card-animate');
+                    entry.node.style.removeProperty('animation-delay');
+                }
+                grid.insertBefore(entry.node, anchor);
+                if (retainedFocus) active.focus({ preventScroll: true });
+            }
+            this.patchWatchProgress(entry.node, options.isWatching
+                ? this.formatWatchProgress(item?.watchProgress, item?.type || item?.movie?.type || '') : '');
+        });
+        cards.forEach((entry, key) => {
+            if (!wanted.has(key)) {
+                entry.node.remove();
+                cards.delete(key);
+            }
+        });
+        return newCards;
+    }
+
+    preservePersonalEnrichment(entry, node, data) {
+        const previous = entry.data.movie;
+        if (!this.samePersonalIdentity(previous, data.movie)) return;
+        if (Number(entry.node.dataset.movieId) !== Number(node.dataset.movieId)) return;
+        const sameProviderInputs = previous.kpRating === data.movie.kpRating && previous.imdbRating === data.movie.imdbRating;
+        const oldOverlay = entry.node.querySelector('.mc-badges-overlay');
+        const newOverlay = node.querySelector('.mc-badges-overlay');
+        if (!sameProviderInputs || !entry.node.dataset.ratingsState || !oldOverlay || !newOverlay) return;
+        newOverlay.replaceWith(oldOverlay);
+        ['ratingsState', 'ratingsStatus', 'ratingsEnrichmentKey', 'movieId', 'kpRating', 'imdbRating', 'imdbId'].forEach(key => {
+            if (entry.node.dataset[key]) node.dataset[key] = entry.node.dataset[key];
+        });
+        // In-flight work refers to the old element; re-observe its replacement
+        // while keeping any already settled provider badge visible.
+        if (node.dataset.ratingsState !== 'ready') node.dataset.ratingsState = 'empty';
+    }
+
+    samePersonalIdentity(previous, current) {
+        const previousKinopoiskId = Number(previous?.kinopoiskId || previous?.movieId) || 0;
+        const currentKinopoiskId = Number(current?.kinopoiskId || current?.movieId) || 0;
+        if (previousKinopoiskId > 0 || currentKinopoiskId > 0) {
+            return previousKinopoiskId > 0 && previousKinopoiskId === currentKinopoiskId;
         }
 
-        if (personalData.watchlist && personalData.watchlist.length > 0) {
-            const watchlistSection = document.createElement('div');
-            watchlistSection.className = 'category-section';
-            watchlistSection.innerHTML = `
-                ${this.renderSectionHeader({
-                    icon: '<svg class="section-header-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>',
-                    title: this.t('watchlist', 'Буду смотреть'),
-                    total: personalData.watchlistTotal ?? personalData.watchlist.length,
-                    href: '../bookmarks/bookmarks.html?filter=plan_to_watch',
-                    linkText: this.t('see_all.watchlist', 'Все закладки')
-                })}
-                <div class="grid-container" id="home-watchlist-grid"></div>
-            `;
-            const grid = watchlistSection.querySelector('#home-watchlist-grid');
-            this.renderCategoryGrid(personalData.watchlist, grid, { isInWatchlist: true });
-            fragment.appendChild(watchlistSection);
-        }
+        const previousTmdbId = Number(previous?.tmdbId) || 0;
+        const currentTmdbId = Number(current?.tmdbId) || 0;
+        const isTv = value => ['tv', 'tv-series', 'series', 'mini-series', 'animated-series', 'anime', 'cartoon']
+            .includes(String(value || '').toLowerCase());
+        return previousTmdbId > 0 && previousTmdbId === currentTmdbId
+            && isTv(previous?.mediaType || previous?.type) === isTv(current?.mediaType || current?.type);
+    }
 
-        container.appendChild(fragment);
+    patchWatchProgress(card, label) {
+        const poster = card.querySelector('.mc-poster-container');
+        if (!poster) return;
+        let badge = poster.querySelector('.home-progress-badge');
+        if (!label) {
+            badge?.remove();
+            return;
+        }
+        if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'home-progress-badge';
+            poster.appendChild(badge);
+        }
+        if (badge.textContent !== label) badge.textContent = label;
     }
 
     /**
@@ -439,10 +631,7 @@ class HomeRenderer {
             const label = this.formatWatchProgress(item?.watchProgress, item?.type || item?.movie?.type || '');
             const poster = cards[index]?.querySelector('.mc-poster-container');
             if (!label || !poster) return;
-            const badge = document.createElement('span');
-            badge.className = 'home-progress-badge';
-            badge.textContent = label;
-            poster.appendChild(badge);
+            this.patchWatchProgress(cards[index], label);
         });
     }
 
@@ -527,6 +716,7 @@ class HomeRenderer {
             communityGrid.appendChild(fragment);
 
             this.bindMovieCardNavigation(communityGrid);
+            if (communityGrid.isConnected) this.ratingEnricher?.observe?.(communityGrid);
         }
 
         container.style.display = 'block';
@@ -544,18 +734,56 @@ class HomeRenderer {
             throw new Error('[HomeRenderer] MovieCard component must be loaded before rendering cards');
         }
 
+        const cardData = this.getMovieCardData(item, options);
+        const cardOptions = {
+            variant: 'search',
+            showThreeDotMenu: false,
+            showAverageRating: true,
+            showUserRating: false,
+            showDescription: false,
+            showRatingSkeleton: true,
+            lazyPoster: true,
+            ...options
+        };
+
+        return movieCardComponent.create(cardData, cardOptions);
+    }
+
+    getMovieCardData(item, options = {}) {
         const movieObj = item.movie || item;
-        const validMovieId = (typeof Utils !== 'undefined' && Utils.extractKinopoiskId) ? Utils.extractKinopoiskId(movieObj) : (movieObj.kinopoiskId || movieObj.movieId || null);
+        const isPersonalBookmark = options.isWatching === true || options.isInWatchlist === true;
+        // Bookmarks uses the top-level movieId as the saved identity. Legacy
+        // nested movie/kinopoiskId fields may describe an older, conflicting
+        // mapping, so personal Home cards must keep the same source of truth.
+        const bookmarkMovieId = isPersonalBookmark
+            ? ((typeof Utils !== 'undefined' && Utils.extractKinopoiskId
+                ? Utils.extractKinopoiskId({ movieId: item.movieId })
+                    || Utils.extractKinopoiskId({ kinopoiskId: item.kinopoiskId })
+                : Number(item.movieId || item.kinopoiskId)) || null)
+            : null;
+        const validMovieId = bookmarkMovieId || ((typeof Utils !== 'undefined' && Utils.extractKinopoiskId)
+            ? Utils.extractKinopoiskId(movieObj)
+            : (movieObj.kinopoiskId || movieObj.movieId || null));
+        const nestedMovieId = (typeof Utils !== 'undefined' && Utils.extractKinopoiskId)
+            ? Utils.extractKinopoiskId(movieObj)
+            : Number(movieObj.kinopoiskId || movieObj.movieId) || null;
+        const hasConflictingNestedIdentity = !!bookmarkMovieId && !!nestedMovieId
+            && Number(bookmarkMovieId) !== Number(nestedMovieId);
 
         // Keep provider ratings separate: TMDB must never be shown as Kinopoisk.
-        const displayKpRating = movieObj.kpRating || movieObj.ratingKp || 0;
-        const displayImdbRating = movieObj.imdbRating || movieObj.ratingImdb || 0;
+        const displayKpRating = hasConflictingNestedIdentity
+            ? (item.kpRating || item.ratingKp || 0)
+            : (movieObj.kpRating || movieObj.ratingKp || 0);
+        const displayImdbRating = hasConflictingNestedIdentity
+            ? (item.imdbRating || item.ratingImdb || 0)
+            : (movieObj.imdbRating || movieObj.ratingImdb || 0);
 
-        const cardData = {
+        return {
             movie: {
                 kinopoiskId: validMovieId,
                 tmdbId: movieObj.tmdbId || null,
-                isTmdbOnly: !!movieObj.isTmdbOnly,
+                imdbId: movieObj.imdbId || item.imdbId || '',
+                isTmdbOnly: !bookmarkMovieId && !!movieObj.isTmdbOnly,
                 name: movieObj.name || movieObj.movieTitle || movieObj.title || '',
                 alternativeName: movieObj.alternativeName || movieObj.originalTitle || movieObj.originalName || movieObj.original_title || movieObj.original_name || movieObj.movieTitleEn || '',
                 englishTitle: movieObj.englishTitle || movieObj.nameEn || movieObj.englishName || movieObj.movieTitleEn || movieObj.originalTitle || movieObj.original_title || movieObj.original_name || movieObj.alternativeName || '',
@@ -578,19 +806,6 @@ class HomeRenderer {
             isWatching: !!options.isWatching,
             isInWatchlist: !!options.isInWatchlist
         };
-
-        const cardOptions = {
-            variant: 'search',
-            showThreeDotMenu: false,
-            showAverageRating: true,
-            showUserRating: false,
-            showDescription: false,
-            showRatingSkeleton: true,
-            lazyPoster: true,
-            ...options
-        };
-
-        return movieCardComponent.create(cardData, cardOptions);
     }
 
 

@@ -13,6 +13,10 @@ const HOME_COMMUNITY_PRIOR_VOTES = 5;
 // their own mean would let single-vote films keep winning.
 const HOME_COMMUNITY_PRIOR_MEAN = 7;
 const HOME_FAVORITES_REUSE_MS = 30 * 1000;
+// v2 ignores previews that may have captured a conflicting legacy nested ID.
+const HOME_PERSONAL_CACHE_PREFIX = 'home_personal_preview_v2_';
+const HOME_PERSONAL_REVISION_PREFIX = 'home_personal_preview_revision_';
+const HOME_PERSONAL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const HOME_RATING_STATS_TTL_MS = 5 * 60 * 1000;
 const HOME_RATING_STATS_CACHE_PREFIX = 'home_rating_stats_v1_';
 const HOME_PROGRESS_STORAGE_PREFIX = 'watching_progress_';
@@ -39,6 +43,8 @@ class HomeDataController {
         this.firebaseManager = firebaseManager;
         this.servicesOwner = undefined;
         this.favoriteListsRequest = null;
+        this.personalCacheEpochs = new Map();
+        this.personalCacheWrites = new Map();
         this.initServices();
     }
 
@@ -139,6 +145,102 @@ class HomeDataController {
         if (userParam && userParam.uid) return userParam.uid;
         if (userParam === null || userParam === undefined) return this.getCurrentUser()?.uid || null;
         return null;
+    }
+
+    clearFavoriteLists(uid) {
+        if (!uid || this.favoriteListsRequest?.uid === uid) this.favoriteListsRequest = null;
+    }
+
+    // Store only preview fields, never bookmark notes or authentication data.
+    compactPersonalPreview(uid, data) {
+        if (!uid || !data?.isAuthenticated || data.userId !== uid) return null;
+        if (!Array.isArray(data.watching) || !Array.isArray(data.watchlist)) return null;
+        const fields = ['id', 'movieId', 'kinopoiskId', 'tmdbId', 'imdbId', 'isTmdbOnly',
+            'name', 'movieTitle', 'title', 'alternativeName', 'originalTitle', 'originalName',
+            'original_title', 'original_name', 'movieTitleEn', 'englishTitle', 'nameEn',
+            'englishName', 'searchTitle', 'posterUrl', 'posterPath', 'poster', 'year',
+            'releaseYear', 'releaseDate', 'release_date', 'mediaType', 'type', 'kpRating',
+            'ratingKp', 'imdbRating', 'ratingImdb', 'rating', 'avgRating', 'averageRating',
+            'ratingsCount', 'ratingId'];
+        const project = item => {
+            if (!item || typeof item !== 'object') return null;
+            const result = {};
+            for (const field of fields) {
+                const value = item[field];
+                if (typeof value === 'string' || typeof value === 'boolean'
+                    || (typeof value === 'number' && Number.isFinite(value))) result[field] = value;
+            }
+            if (Array.isArray(item.genres)) {
+                result.genres = item.genres.slice(0, 20).map(genre =>
+                    typeof genre === 'string' ? genre : { name: String(genre?.name || genre?.genre || '') });
+            }
+            if (item.movie) result.movie = project(item.movie);
+            if (item.watchProgress) {
+                result.watchProgress = {};
+                for (const field of ['season', 'episode', 'timestamp', 'updatedAt']) {
+                    const value = Number(item.watchProgress[field]);
+                    if (Number.isFinite(value)) result.watchProgress[field] = value;
+                }
+            }
+            return result;
+        };
+        const watching = data.watching.slice(0, HOME_PERSONAL_PREVIEW_LIMIT).map(project).filter(Boolean);
+        const watchlist = data.watchlist.slice(0, HOME_PERSONAL_PREVIEW_LIMIT).map(project).filter(Boolean);
+        const total = (value, items) => Math.max(items.length,
+            Number.isFinite(Number(value)) ? Math.floor(Number(value)) : items.length);
+        return {
+            isAuthenticated: true, userId: uid, watching, watchlist,
+            watchingTotal: total(data.watchingTotal, watching),
+            watchlistTotal: total(data.watchlistTotal, watchlist),
+            hasContent: watching.length > 0 || watchlist.length > 0
+        };
+    }
+
+    async getPersonalRevision(uid) {
+        return this.readStorage(`${HOME_PERSONAL_REVISION_PREFIX}${uid}`);
+    }
+
+    async getPersonalPreview(uid) {
+        const epoch = this.personalCacheEpochs.get(uid) || 0;
+        const [cached, revision] = await Promise.all([
+            this.readStorage(`${HOME_PERSONAL_CACHE_PREFIX}${uid}`), this.getPersonalRevision(uid)
+        ]);
+        if (epoch !== (this.personalCacheEpochs.get(uid) || 0)) return null;
+        const age = Date.now() - Number(cached?.timestamp);
+        if (cached?.schemaVersion !== 2 || cached.userId !== uid || age < 0
+            || !Number.isFinite(age) || age >= HOME_PERSONAL_CACHE_TTL_MS
+            || (cached.revision || null) !== revision) return null;
+        return this.compactPersonalPreview(uid, cached.data);
+    }
+
+    async savePersonalPreview(uid, data, revision = undefined) {
+        const preview = this.compactPersonalPreview(uid, data);
+        if (!preview || data.loadFailed || data.partialFailure) return;
+        const epoch = this.personalCacheEpochs.get(uid) || 0;
+        const expectedRevision = revision === undefined ? await this.getPersonalRevision(uid) : revision;
+        const previous = this.personalCacheWrites.get(uid) || Promise.resolve();
+        const write = previous.then(async () => {
+            if (epoch !== (this.personalCacheEpochs.get(uid) || 0)
+                || expectedRevision !== await this.getPersonalRevision(uid)) return;
+            await this.writeStorage(`${HOME_PERSONAL_CACHE_PREFIX}${uid}`, {
+                schemaVersion: 2, userId: uid, timestamp: Date.now(), revision: expectedRevision, data: preview
+            });
+        });
+        this.personalCacheWrites.set(uid, write);
+        await write;
+        if (this.personalCacheWrites.get(uid) === write) this.personalCacheWrites.delete(uid);
+    }
+
+    async invalidatePersonalPreview(uid) {
+        if (!uid) return;
+        this.personalCacheEpochs.set(uid, (this.personalCacheEpochs.get(uid) || 0) + 1);
+        this.clearFavoriteLists(uid);
+        await this.personalCacheWrites.get(uid);
+        try {
+            await chrome.storage.local.remove([`${HOME_PERSONAL_CACHE_PREFIX}${uid}`]);
+        } catch {
+            // Cache invalidation must not block authentication or rendering.
+        }
     }
 
     /**
@@ -265,13 +367,12 @@ class HomeDataController {
         const watchlist = watchlistAll.slice(0, HOME_PERSONAL_PREVIEW_LIMIT);
 
         return {
-            isAuthenticated: true,
-            userId: uid,
-            watching,
-            watchingTotal: watchingAll.length,
-            watchlist,
-            watchlistTotal: watchlistAll.length,
-            hasContent: watching.length > 0 || watchlist.length > 0,
+            ...this.compactPersonalPreview(uid, {
+                isAuthenticated: true, userId: uid, watching, watchlist,
+                watchingTotal: watchingAll.length, watchlistTotal: watchlistAll.length
+            }),
+            watchingFailed: lists.watchingFailed,
+            watchlistFailed: lists.watchlistFailed,
             partialFailure: lists.watchingFailed || lists.watchlistFailed
         };
     }

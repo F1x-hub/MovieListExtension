@@ -1,10 +1,17 @@
 /**
  * Shared back-to-top control for extension pages.
- * Uses the popup container when the popup owns scrolling and the document otherwise.
+ * Uses the popup feed, its container fallback, or the document scroll on full pages.
  */
 class BackToTop {
     static BUTTON_ID = 'backToTopButton';
     static VISIBILITY_THRESHOLD = 240;
+    static cleanup = null;
+
+    static dispose() {
+        const cleanup = BackToTop.cleanup;
+        BackToTop.cleanup = null;
+        cleanup?.();
+    }
 
     static init() {
         if (!document.body || document.getElementById(BackToTop.BUTTON_ID)) {
@@ -17,6 +24,8 @@ class BackToTop {
         button.className = 'back-to-top';
         button.setAttribute('aria-label', 'Наверх');
         button.setAttribute('aria-hidden', 'true');
+        button.disabled = true;
+        button.tabIndex = -1;
         button.title = 'Наверх';
         button.innerHTML = `
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -27,16 +36,19 @@ class BackToTop {
         `;
 
         const popupContainer = document.querySelector('.popup-container');
-        const usesElementScroll = Boolean(popupContainer);
-        const scrollTarget = usesElementScroll ? popupContainer : window;
+        const elementScrollTarget = popupContainer?.querySelector('#feedContent') || popupContainer;
+        const usesElementScroll = Boolean(elementScrollTarget);
+        const scrollTarget = elementScrollTarget || window;
         const getScrollTop = () => usesElementScroll
-            ? popupContainer.scrollTop
+            ? elementScrollTarget.scrollTop
             : window.scrollY || document.documentElement.scrollTop;
 
         const updateVisibility = () => {
             const isVisible = getScrollTop() > BackToTop.VISIBILITY_THRESHOLD;
             button.classList.toggle('is-visible', isVisible);
             button.setAttribute('aria-hidden', String(!isVisible));
+            button.disabled = !isVisible;
+            button.tabIndex = isVisible ? 0 : -1;
         };
 
         button.addEventListener('click', () => {
@@ -46,7 +58,7 @@ class BackToTop {
             const behavior = prefersReducedMotion ? 'auto' : 'smooth';
 
             if (usesElementScroll) {
-                popupContainer.scrollTo({ top: 0, behavior });
+                elementScrollTarget.scrollTo({ top: 0, behavior });
             } else {
                 window.scrollTo({ top: 0, behavior });
             }
@@ -54,6 +66,16 @@ class BackToTop {
 
         scrollTarget.addEventListener('scroll', updateVisibility, { passive: true });
         window.addEventListener('resize', updateVisibility, { passive: true });
+        const onPageHide = (event) => {
+            if (!event.persisted) BackToTop.dispose();
+        };
+        window.addEventListener('pagehide', onPageHide);
+        BackToTop.cleanup = () => {
+            scrollTarget.removeEventListener('scroll', updateVisibility);
+            window.removeEventListener('resize', updateVisibility);
+            window.removeEventListener('pagehide', onPageHide);
+            button.remove();
+        };
         document.body.append(button);
         updateVisibility();
     }

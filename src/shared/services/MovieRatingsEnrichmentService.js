@@ -200,17 +200,35 @@ class MovieRatingsEnrichmentService {
         const candidates = [];
         let cacheHits = 0;
         let partialCacheHits = 0;
+        let repairedCache = false;
+        const invalidatedCacheKeys = [];
 
         for (const card of cards) {
             if (flushGeneration !== this.lifecycleGeneration) return;
             const item = this.itemFromCard(card);
             const key = this.cacheKeyFor(item);
             if (this.cancelledCardKeys.has(key)) continue;
-            const cached = cache[key];
+            let cached = cache[key];
+            if (cached && !this.isCacheIdentityCompatible(cached, item)) {
+                this.trace('cache:identity-mismatch', {
+                    ...this.cardTraceData(card),
+                    key,
+                    cachedKpId: Number(cached.kpId) || null,
+                    canonicalKpId: Number(item.kinopoiskId) || null
+                });
+                delete cache[key];
+                invalidatedCacheKeys.push(key);
+                cached = null;
+            }
             card.dataset.ratingsEnrichmentKey = key;
             if (this.isFullyUsableCache(cached)) {
                 cacheHits += 1;
-                this.applyRatings(card, cached);
+                const record = this.preserveKnownRatings(cached, item);
+                if (record.kpRating !== cached.kpRating || record.imdbRating !== cached.imdbRating || record.imdbId !== cached.imdbId) {
+                    cache[key] = record;
+                    repairedCache = true;
+                }
+                this.applyRatings(card, record);
                 continue;
             }
             if (cached && this.isNegativeRecord(cached)) {
@@ -235,11 +253,11 @@ class MovieRatingsEnrichmentService {
             const cachedIdentity = cached && Number(cached.kpId) > 0
                 ? {
                     kpId: Number(cached.kpId),
-                    kpRating: Number(cached.kpRating) || 0,
-                    imdbRating: Number(cached.imdbRating) || 0,
+                    kpRating: this.knownRating(cached.kpRating) || this.knownRating(item.kpRating),
+                    imdbRating: this.knownRating(cached.imdbRating) || this.knownRating(item.imdbRating),
                     kpVotes: Number(cached.votes?.kp) || 0,
                     imdbVotes: Number(cached.votes?.imdb) || 0,
-                    imdbId: this.normalizeImdbId(cached.imdbId),
+                    imdbId: this.normalizeImdbId(cached.imdbId) || item.imdbId,
                     kpState: cached.kpState,
                     imdbState: cached.imdbState
                 }
@@ -256,6 +274,9 @@ class MovieRatingsEnrichmentService {
         });
 
         if (candidates.length === 0) {
+            if (repairedCache || invalidatedCacheKeys.length > 0) {
+                await this.writeCache(this.boundCache(cache), invalidatedCacheKeys);
+            }
             this.trace('flush:complete', {
                 durationMs: Date.now() - startedAt,
                 cacheOnly: true,
@@ -319,7 +340,7 @@ class MovieRatingsEnrichmentService {
             }
             return { candidate, record };
         });
-        await this.writeCache(this.boundCache(cache));
+        await this.writeCache(this.boundCache(cache), invalidatedCacheKeys);
 
         const enrichable = withIdentity.filter(candidate => this.isCurrentCandidate(candidate)).filter(candidate => (
             this.hasPendingProvider(candidate)
@@ -574,6 +595,7 @@ class MovieRatingsEnrichmentService {
             const resolved = {
                 ...candidate,
                 kpId: directId,
+                identityVerified: true,
                 kpRating: Number(candidate.item.kpRating) || 0,
                 imdbRating: Number(candidate.item.imdbRating) || 0,
                 imdbId: this.normalizeImdbId(candidate.item.imdbId),
@@ -613,21 +635,28 @@ class MovieRatingsEnrichmentService {
                 return { ...candidate, kpId: 0, searchFailed: true };
             }
             const resultOriginalTitle = String(result?.originalTitle || result?.originalName || '').trim();
+            const identityVerified = !candidate.item.isTmdbOnly
+                || (result?.verified === true && this.isTmdbIdentityCompatible(result, candidate.item));
             if (resultOriginalTitle && candidate.card?.dataset) {
-                candidate.card.dataset.movieOriginalTitle = candidate.card.dataset.movieOriginalTitle || resultOriginalTitle;
-                candidate.card.dataset.movieEnglishTitle = candidate.card.dataset.movieEnglishTitle || resultOriginalTitle;
+                if (identityVerified) {
+                    candidate.card.dataset.movieOriginalTitle = candidate.card.dataset.movieOriginalTitle || resultOriginalTitle;
+                    candidate.card.dataset.movieEnglishTitle = candidate.card.dataset.movieEnglishTitle || resultOriginalTitle;
+                }
             }
             const resolved = {
                 ...candidate,
+                identityVerified,
                 item: {
                     ...candidate.item,
                     alternativeName: candidate.item.alternativeName || resultOriginalTitle,
                     englishTitle: candidate.item.englishTitle || resultOriginalTitle
                 },
-                kpId: Number(result?.kinopoiskId || result?.movieId) || 0,
-                kpRating: Number(result?.kpRating) || 0,
-                imdbRating: Number(result?.imdbRating) || 0,
-                imdbId: this.normalizeImdbId(result?.imdbId),
+                kpId: identityVerified ? Number(result?.kinopoiskId || result?.movieId) || 0 : 0,
+                kpRating: (identityVerified ? this.knownRating(result?.kpRating) : 0)
+                    || this.knownRating(candidate.item.kpRating),
+                imdbRating: (identityVerified ? this.knownRating(result?.imdbRating) : 0)
+                    || this.knownRating(candidate.item.imdbRating),
+                imdbId: (identityVerified ? this.normalizeImdbId(result?.imdbId) : null) || candidate.item.imdbId,
                 kpVotes: Number(result?.kpVotes || result?.votes?.kp) || 0,
                 imdbVotes: Number(result?.imdbVotes || result?.votes?.imdb) || 0
             };
@@ -753,7 +782,28 @@ class MovieRatingsEnrichmentService {
         return result;
     }
 
+    knownRating(value) {
+        const rating = Number(value);
+        return Number.isFinite(rating) && rating > 0 ? rating : 0;
+    }
+
+    preserveKnownRatings(record, known = {}) {
+        const kpRating = this.knownRating(record.kpRating) || this.knownRating(known.kpRating);
+        const imdbRating = this.knownRating(record.imdbRating) || this.knownRating(known.imdbRating);
+        return {
+            ...record,
+            kpRating,
+            imdbRating,
+            imdbId: this.normalizeImdbId(record.imdbId) || this.normalizeImdbId(known.imdbId),
+            ...(kpRating > 0 ? { kpState: 'available' } : {}),
+            ...(imdbRating > 0 ? { imdbState: 'available' } : {}),
+            ...(record.status === 'no-ratings' && (kpRating > 0 || imdbRating > 0) ? { status: 'resolved' } : {}),
+            ...(record.status === 'partial' && kpRating > 0 && imdbRating > 0 ? { status: 'resolved' } : {})
+        };
+    }
+
     createRecord(candidate, values = {}) {
+        values = this.preserveKnownRatings(values, this.preserveKnownRatings(candidate, candidate.item));
         const hasRating = Number(values.kpRating) > 0 || Number(values.imdbRating) > 0;
         const status = values.status || (hasRating ? 'resolved' : 'no-ratings');
         const isNegative = status === 'not-found' || status === 'no-ratings';
@@ -764,6 +814,11 @@ class MovieRatingsEnrichmentService {
         return {
             status,
             kpId,
+            tmdbId: Number(candidate.item?.tmdbId) || null,
+            name: String(candidate.item?.name || candidate.item?.title || '').trim(),
+            year: Number(candidate.item?.year) || null,
+            mediaType: candidate.item?.mediaType || candidate.item?.type || null,
+            identityVerified: candidate.identityVerified === true || Number(candidate.item?.kinopoiskId) > 0,
             kpRating,
             imdbRating,
             votes: {
@@ -789,6 +844,19 @@ class MovieRatingsEnrichmentService {
     }
 
     applyRatings(card, record, options = {}) {
+        const item = this.itemFromCard(card);
+        if (!this.isCacheIdentityCompatible(record, item)) {
+            this.trace('card:identity-mismatch', {
+                ...this.cardTraceData(card),
+                cachedKpId: Number(record?.kpId) || null,
+                canonicalKpId: Number(item.kinopoiskId) || null
+            });
+            return false;
+        }
+        record = this.preserveKnownRatings(record, this.itemFromCard(card));
+        if (record.kpRating > 0) card.dataset.kpRating = String(record.kpRating);
+        if (record.imdbRating > 0) card.dataset.imdbRating = String(record.imdbRating);
+        if (record.imdbId) card.dataset.imdbId = record.imdbId;
         if (record.kpId > 0) card.dataset.movieId = String(record.kpId);
         if (card.classList?.contains('featured-card')) {
             this.updateFeaturedRatings(card, record);
@@ -809,6 +877,7 @@ class MovieRatingsEnrichmentService {
             imdbState: record.imdbState,
             status: record.status
         });
+        return true;
     }
 
     updateFeaturedRatings(card, record) {
@@ -858,6 +927,10 @@ class MovieRatingsEnrichmentService {
             englishTitle: card.dataset.movieEnglishTitle || card.dataset.movieOriginalTitle || '',
             searchTitle: card.dataset.movieSearchTitle || '',
             year: Number(card.dataset.movieYear) || null,
+            kpRating: this.knownRating(card.dataset.kpRating),
+            imdbRating: this.knownRating(card.dataset.imdbRating),
+            imdbId: this.normalizeImdbId(card.dataset.imdbId),
+            isTmdbOnly,
             mediaType: card.dataset.mediaType || 'movie',
             type: card.dataset.mediaType || 'movie'
         };
@@ -869,6 +942,35 @@ class MovieRatingsEnrichmentService {
         const tmdbId = Number(item.tmdbId);
         if (tmdbId > 0) return `tmdb:${this.isTvMediaType(item.mediaType || item.type) ? 'tv' : 'movie'}:${tmdbId}`;
         return `unknown:${item.name || 'card'}`;
+    }
+
+    isCacheIdentityCompatible(record, item) {
+        if (!record || !item) return false;
+        const canonicalKinopoiskId = Number(item.kinopoiskId) || 0;
+        const recordKinopoiskId = Number(record.kpId) || 0;
+        if (canonicalKinopoiskId > 0) {
+            return recordKinopoiskId <= 0 || recordKinopoiskId === canonicalKinopoiskId;
+        }
+        if (item.isTmdbOnly === true) {
+            return this.isTmdbIdentityCompatible(record, item)
+                && (recordKinopoiskId <= 0 || record.identityVerified === true);
+        }
+        return true;
+    }
+
+    isTmdbIdentityCompatible(candidate, item) {
+        const tmdbId = Number(item?.tmdbId) || 0;
+        if (tmdbId <= 0 || Number(candidate?.tmdbId) !== tmdbId) return false;
+        const expectedYear = Number(item?.year) || 0;
+        const candidateYear = Number(candidate?.year) || 0;
+        if (expectedYear <= 0 || candidateYear <= 0 || Math.abs(expectedYear - candidateYear) > 1) return false;
+        if (this.isTvMediaType(item?.mediaType || item?.type)
+            !== this.isTvMediaType(candidate?.mediaType || candidate?.type)) return false;
+        const expectedTitles = [item?.name, item?.alternativeName, item?.englishTitle, item?.searchTitle]
+            .map(title => this.normalizeIdentityTitle(title)).filter(Boolean);
+        const candidateTitles = [candidate?.name, candidate?.title, candidate?.originalTitle, candidate?.originalName]
+            .map(title => this.normalizeIdentityTitle(title)).filter(Boolean);
+        return expectedTitles.length > 0 && expectedTitles.some(title => candidateTitles.includes(title));
     }
 
     isUsableCache(record) {
@@ -931,13 +1033,14 @@ class MovieRatingsEnrichmentService {
             : callback();
     }
 
-    async writeCache(cache) {
+    async writeCache(cache, removeKeys = []) {
         if (!this.storage?.set) return;
         const write = () => this.withCacheWriteLock(async () => {
             const latest = this.storage.get
                 ? await new Promise(resolve => this.storage.get([this.cacheKey], result => resolve(result?.[this.cacheKey] || {})))
                 : {};
             const merged = { ...latest };
+            removeKeys.forEach(key => delete merged[key]);
             Object.entries(cache).forEach(([key, value]) => {
                 const oldValue = merged[key];
                 if (!oldValue || Number(value?.updatedAt) >= Number(oldValue?.updatedAt)) {

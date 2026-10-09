@@ -312,6 +312,12 @@ assert.match(featuredOverlay.innerHTML, /КП 7\.4/);
 assert.match(featuredOverlay.innerHTML, /IMDb 8\.1/);
 
 cachedService.applyRatings(featuredCard, { kpId: 1042, kpRating: 0, imdbRating: 0, status: 'no-ratings' });
+assert.match(featuredOverlay.innerHTML, /КП 7\.4/);
+assert.match(featuredOverlay.innerHTML, /IMDb 8\.1/);
+assert.doesNotMatch(featuredOverlay.innerHTML, /featured-rating-badge--unavailable/);
+// A different card with no known providers still shows explicit unavailable/pending states.
+featuredCard.dataset = {};
+cachedService.applyRatings(featuredCard, { kpId: 1042, kpRating: 0, imdbRating: 0, status: 'no-ratings' });
 assert.equal(featuredOverlay.innerHTML.includes('featured-rating-badge--unavailable'), true);
 cachedService.applyRatings(featuredCard, {
     kpId: 1042,
@@ -548,6 +554,64 @@ assert.equal(unratedCard.appliedRatings.kpRating, 6.9);
 assert.equal(unratedCard.appliedRatings.imdbState, 'unavailable');
 assert.ok(unratedCard.appliedRatings.imdbRetryAfter - Date.now() > 11 * 60 * 60 * 1000, 'missing IMDb retried after ~12h');
 
+const identityGuard = new MovieRatingsEnrichmentService({ storage });
+const canonicalCard = createCard(178720);
+canonicalCard.dataset.movieId = '178720';
+assert.equal(identityGuard.applyRatings(canonicalCard, {
+    kpId: 178721, kpRating: 8.7, imdbRating: 8.9, status: 'resolved'
+}), false, 'A cached KP record cannot override a different canonical card ID');
+assert.equal(canonicalCard.dataset.movieId, '178720');
+assert.equal(canonicalCard.appliedRatings, undefined);
+
+const tmdbIdentityGuardCard = createCard(3000);
+Object.assign(tmdbIdentityGuardCard.dataset, {
+    isTmdbOnly: 'true', movieTitle: 'Warehouse 13', movieYear: '2009', mediaType: 'tv'
+});
+assert.equal(identityGuard.applyRatings(tmdbIdentityGuardCard, {
+    kpId: 178720, tmdbId: 3000, name: 'Firefly', year: 2002, mediaType: 'tv',
+    identityVerified: true, kpRating: 8.7, imdbRating: 8.9, status: 'resolved'
+}), false, 'A TMDB-only card rejects a KP record with incompatible title and year');
+assert.equal(tmdbIdentityGuardCard.dataset.movieId, undefined);
+assert.equal(tmdbIdentityGuardCard.appliedRatings, undefined);
+
+assert.equal(identityGuard.applyRatings(tmdbIdentityGuardCard, {
+    kpId: 3001, tmdbId: 3000, name: 'Warehouse 13', year: 2009, mediaType: 'tv',
+    identityVerified: true, kpRating: 7.3, imdbRating: 7.8, status: 'resolved'
+}), true, 'A verified record matching TMDB ID, title, year, and type can enrich the card');
+assert.equal(tmdbIdentityGuardCard.dataset.movieId, '3001');
+
+let rejectedTmdbCacheLookups = 0;
+const wrongTmdbRecord = {
+    status: 'resolved', kpId: 178720, tmdbId: 3000, name: 'Firefly', year: 2002, mediaType: 'tv',
+    identityVerified: true, kpRating: 8.7, imdbRating: 8.9,
+    kpState: 'available', imdbState: 'available', expiresAt: Date.now() + 60_000
+};
+const identityCacheStorage = {
+    values: { movie_card_ratings_v4: { 'tmdb:tv:3000': wrongTmdbRecord } },
+    get(keys, callback) { callback({ movie_card_ratings_v4: this.values.movie_card_ratings_v4 }); },
+    set(values, callback) { Object.assign(this.values, values); callback?.(); }
+};
+const identityCacheService = new MovieRatingsEnrichmentService({
+    storage: identityCacheStorage,
+    navigationService: { async resolve() {
+        rejectedTmdbCacheLookups += 1;
+        return {
+            verified: true, kinopoiskId: 3001, tmdbId: 3000, name: 'Warehouse 13',
+            year: 2009, mediaType: 'tv', kpRating: 7.3, imdbRating: 7.8
+        };
+    } },
+    imdbParser: null
+});
+const identityCacheCard = createCard(3000);
+Object.assign(identityCacheCard.dataset, {
+    isTmdbOnly: 'true', movieTitle: 'Warehouse 13', movieYear: '2009', mediaType: 'tv'
+});
+identityCacheService.pendingCards.add(identityCacheCard);
+await flushAndWaitForProviders(identityCacheService);
+assert.equal(rejectedTmdbCacheLookups, 1, 'An incompatible persistent TMDB rating record must be ignored');
+assert.equal(identityCacheCard.dataset.movieId, '3001');
+assert.equal(identityCacheCard.appliedRatings.kpRating, 7.3);
+
 // Movie and TV cards with the same TMDB ID never share a cache record.
 assert.equal(unratedService.cacheKeyFor({ tmdbId: 5, mediaType: 'movie' }), 'tmdb:movie:5');
 assert.equal(unratedService.cacheKeyFor({ tmdbId: 5, mediaType: 'tv' }), 'tmdb:tv:5');
@@ -555,7 +619,7 @@ console.log('✅ TMDB external_ids feed the batched IMDb request without a KP pa
 
 }
 
-run().catch(error => {
+run().then(() => require('./homeSeededRatings.test.cjs').run()).catch(error => {
     console.error('❌ Movie ratings enrichment test failed:', error);
     process.exitCode = 1;
 });

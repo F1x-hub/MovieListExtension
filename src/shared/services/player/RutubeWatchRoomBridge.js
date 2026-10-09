@@ -118,6 +118,17 @@ class RutubeWatchRoomBridge {
                 }
                 this.currentTimeMs = currentTimeMs;
                 this.lastTimeSample = { currentTimeMs, atMs: this.now() };
+                // Periodic samples let the room controller measure drift.
+                if (!this.adPlaying) {
+                    const sample = this.telemetry('timeupdate', currentTimeMs);
+                    if (sample) {
+                        messages.push({
+                            ...sample,
+                            paused: this.lastState !== 'playing',
+                            observedAtMs: this.lastTimeSample.atMs,
+                        });
+                    }
+                }
             }
         } else if (type === 'player:changeState' && !this.adPlaying) {
             const state = data.data?.state;

@@ -71,6 +71,10 @@ class HomePage {
         this.personalGeneration = 0;
         this.dashboardGeneration = 0;
         this.discoveryGeneration = 0;
+        this.authGeneration = 0;
+        this.personalUid = undefined;
+        this.personalSnapshot = null;
+        this.personalRequest = null;
 
         this.bindEvents();
     }
@@ -93,8 +97,25 @@ class HomePage {
             console.log('HomePage: Auth state changed, refreshing personal tier & dashboard', event.detail);
             const isAuth = event.detail?.isAuthenticated ?? !!event.detail?.user;
             const user = isAuth ? (event.detail?.user || this.dataController.getCurrentUser()) : false;
+            ++this.authGeneration;
             this.updatePersonalTier(user);
             this.updateDashboard(user);
+        });
+        this.personalStorageListener = (changes, area) => {
+            const uid = this.personalUid;
+            if (area !== 'local' || !uid || !changes[`home_personal_preview_revision_${uid}`]) return;
+            ++this.personalGeneration;
+            this.personalRequest = null;
+            this.dataController.clearFavoriteLists(uid);
+            this.updatePersonalTier(uid);
+            this.updateDashboard(uid);
+        };
+        globalThis.chrome?.storage?.onChanged?.addListener(this.personalStorageListener);
+        window.addEventListener('pagehide', event => {
+            if (event.persisted) return;
+            ++this.personalGeneration;
+            ++this.dashboardGeneration;
+            globalThis.chrome?.storage?.onChanged?.removeListener(this.personalStorageListener);
         });
     }
 
@@ -108,6 +129,9 @@ class HomePage {
                 window.i18n.onLocaleChange?.(locale => this.handleLocaleChange(locale));
             }
             globalThis.quotaTracker?.resetForNewPageLoad();
+            // Reserve the personal layout before revealing the page, without
+            // waiting for Firestore or treating unresolved auth as a guest.
+            await this.preparePersonalTier();
             this.page.showContent();
             // Progressive rendering: display content container without full-screen blocking overlay
             if (this.contentContainer) this.contentContainer.style.display = 'block';
@@ -117,10 +141,11 @@ class HomePage {
             // Discovery and personal data load independently: a provider
             // failure must not hide the user's own lists.
             const discoveryTask = this.loadDiscovery();
-            const personalTask = this.resolveInitialUser().then(currentUser => Promise.allSettled([
-                this.updatePersonalTier(currentUser),
-                this.updateDashboard(currentUser)
-            ]));
+            const personalTask = this.resolveInitialUser().then(currentUser => currentUser === undefined
+                ? null : Promise.allSettled([
+                    this.updatePersonalTier(currentUser || false),
+                    this.updateDashboard(currentUser || false)
+                ]));
 
             await Promise.allSettled([discoveryTask, personalTask]);
             globalThis.quotaTracker?.logSummary('Home page load');
@@ -134,15 +159,73 @@ class HomePage {
 
     /**
      * A signed-in user must not see the guest banner while Firebase restores
-     * the session: after a short wait show a skeleton and keep waiting.
-     * @returns {Promise<Object|null>}
+     * the session. Unresolved auth keeps the prepared layout until an event.
+     * @returns {Promise<Object|null|undefined>}
      */
     async resolveInitialUser() {
+        const authGeneration = this.authGeneration;
         const user = await this.dataController.ensureAuthReady(350);
+        if (authGeneration !== this.authGeneration) return undefined;
         const fm = this.dataController.firebaseManager || window.firebaseManager;
-        if (user || !fm || fm.isAuthReady !== false) return user;
-        this.renderer.renderPersonalSkeleton(this.personalTierSection);
-        return this.dataController.ensureAuthReady(5000);
+        if (!fm) return undefined;
+        if (fm.isAuthReady !== false) return user;
+        const restored = await this.dataController.ensureAuthReady(5000);
+        if (authGeneration !== this.authGeneration || fm.isAuthReady === false) return undefined;
+        return restored;
+    }
+
+    async preparePersonalTier() {
+        const authGeneration = this.authGeneration;
+        const fm = this.dataController.firebaseManager || window.firebaseManager;
+        const user = this.dataController.getCurrentUser();
+        if (fm && fm.isAuthReady !== false) {
+            const uid = user?.uid || null;
+            this.selectPersonalUid(uid);
+            if (!uid) {
+                this.renderPersonalData({ isAuthenticated: false });
+                return;
+            }
+            const cached = await this.dataController.getPersonalPreview(uid);
+            if (authGeneration === this.authGeneration && uid === this.personalUid && cached
+                && !this.personalSnapshot) this.renderPersonalData(cached);
+            return;
+        }
+        let knownUid = user?.uid;
+        if (!knownUid) {
+            try {
+                const stored = await chrome.storage.local.get(['user', 'isAuthenticated']);
+                if (stored?.isAuthenticated === true) knownUid = stored.user?.uid;
+            } catch {
+                // Unknown auth stays neutral; Firebase's eventual event resolves it.
+            }
+        }
+        if (authGeneration === this.authGeneration && knownUid && !this.personalSnapshot) {
+            this.renderer.renderPersonalSkeleton(this.personalTierSection);
+        }
+    }
+
+    selectPersonalUid(uid) {
+        if (this.personalUid === uid) return;
+        const previousUid = this.personalUid;
+        ++this.personalGeneration;
+        this.personalRequest = null;
+        this.personalSnapshot = null;
+        this.personalUid = uid;
+        this.dataController.clearFavoriteLists();
+        if (previousUid) this.dataController.invalidatePersonalPreview(previousUid);
+        // The first confirmed account can reuse its already mounted skeleton.
+        if (previousUid !== undefined || !uid) this.renderer.resetPersonalTier(this.personalTierSection);
+        if (uid) this.renderer.renderPersonalSkeleton(this.personalTierSection);
+    }
+
+    renderPersonalData(data) {
+        this.renderer.renderPersonalTier(data, this.personalTierSection,
+            () => this.handleAuthModal(),
+            () => {
+                this.dataController.clearFavoriteLists(this.personalUid);
+                return this.updatePersonalTier(this.personalUid || false);
+            });
+        if (data.isAuthenticated && !data.loadFailed) this.personalSnapshot = data;
     }
 
     handleLocaleChange(locale) {
@@ -150,9 +233,14 @@ class HomePage {
         // Discovery titles are language-specific, so reload that payload
         // (usually from its own cache) instead of re-rendering old titles.
         this.loadDiscovery();
-        const user = this.dataController.getCurrentUser();
-        this.updatePersonalTier(user || false);
-        this.updateDashboard(user || false);
+        if (this.personalSnapshot) this.renderPersonalData(this.personalSnapshot);
+        else if (this.personalTierSection?.hasAttribute('aria-busy')) {
+            this.renderer.renderPersonalSkeleton(this.personalTierSection);
+        }
+        if (this.personalUid !== undefined) {
+            this.updatePersonalTier(this.personalUid || false);
+            this.updateDashboard(this.personalUid || false);
+        }
     }
 
     renderDiscovery(discovery) {
@@ -213,19 +301,55 @@ class HomePage {
     // update started meanwhile, so a slow response for a previous user can
     // never overwrite the current state (e.g. after sign-out).
     async updatePersonalTier(userParam = null) {
-        const generation = ++this.personalGeneration;
-        try {
-            const personalData = await this.dataController.fetchPersonalData(userParam);
-            if (generation !== this.personalGeneration) return;
-            this.renderer.renderPersonalTier(
-                personalData,
-                this.personalTierSection,
-                () => this.handleAuthModal(),
-                () => this.updatePersonalTier(this.dataController.getCurrentUser() || false)
-            );
-        } catch (error) {
-            console.warn('HomePage: Error updating personal tier:', error);
+        const uid = this.dataController.resolveUid(userParam);
+        this.selectPersonalUid(uid);
+        if (!uid) {
+            this.renderPersonalData({ isAuthenticated: false });
+            return;
         }
+        if (this.personalRequest?.uid === uid) return this.personalRequest.promise;
+        const generation = ++this.personalGeneration;
+        const request = { uid, promise: null };
+        this.personalRequest = request;
+        request.promise = (async () => {
+            try {
+                if (!this.personalSnapshot) {
+                    const cached = await this.dataController.getPersonalPreview(uid);
+                    if (generation !== this.personalGeneration) return;
+                    if (cached) this.renderPersonalData(cached);
+                }
+                const revision = await this.dataController.getPersonalRevision(uid);
+                let personalData = await this.dataController.fetchPersonalData(uid);
+                if (generation !== this.personalGeneration) return;
+                if (revision !== await this.dataController.getPersonalRevision(uid)) {
+                    if (generation !== this.personalGeneration) return;
+                    this.dataController.clearFavoriteLists(uid);
+                    this.personalRequest = null;
+                    return this.updatePersonalTier(uid);
+                }
+                if (generation !== this.personalGeneration) return;
+                // A failed list cannot erase the accepted preview of that list.
+                if (personalData.partialFailure && this.personalSnapshot) {
+                    personalData = { ...personalData };
+                    for (const list of ['watching', 'watchlist']) {
+                        if (personalData[`${list}Failed`]) {
+                            personalData[list] = this.personalSnapshot[list];
+                            personalData[`${list}Total`] = this.personalSnapshot[`${list}Total`];
+                        }
+                    }
+                    personalData.hasContent = personalData.watching.length > 0 || personalData.watchlist.length > 0;
+                }
+                this.renderPersonalData(personalData);
+                await this.dataController.savePersonalPreview(uid, personalData, revision);
+            } catch (error) {
+                if (generation !== this.personalGeneration) return;
+                console.warn('HomePage: Error updating personal tier:', error);
+                this.renderPersonalData({ isAuthenticated: true, userId: uid, loadFailed: true });
+            } finally {
+                if (this.personalRequest === request) this.personalRequest = null;
+            }
+        })();
+        return request.promise;
     }
 
     async updateDashboard(userParam = null) {
