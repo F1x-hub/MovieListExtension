@@ -165,7 +165,26 @@ async function run() {
     assert.match(widgetCss, /\.report-widget-btn \{[^}]*width: 24px;/);
     assert.match(widgetCss, /\.report-widget-btn:focus-visible \{[^}]*width: 40px;/);
     assert.match(read('src/pages/home/home.css'), /margin: 18px auto 40px;/);
-    assert.match(read('src/pages/home/home.js'), /this\.loadDiscovery\(\);\s*const user = this\.dataController\.getCurrentUser\(\);/);
+    // Locale changes rerender the accepted account, without converting
+    // unresolved authentication into a guest during bootstrap.
+    const localeDocument = { documentElement: {}, addEventListener() {} };
+    const HomePage = loadClassicScript('src/pages/home/home.js', 'HomePage', { console, window: {}, document: localeDocument });
+    const localeCalls = [];
+    const localePage = {
+        personalUid: 'user-1', personalSnapshot: { userId: 'user-1' },
+        loadDiscovery: () => localeCalls.push('discovery'),
+        renderPersonalData: data => localeCalls.push(data.userId),
+        updatePersonalTier: uid => localeCalls.push(`personal:${uid}`),
+        updateDashboard: uid => localeCalls.push(`dashboard:${uid}`)
+    };
+    HomePage.prototype.handleLocaleChange.call(localePage, 'en');
+    assert.equal(localeDocument.documentElement.lang, 'en');
+    assert.deepEqual(localeCalls, ['discovery', 'user-1', 'personal:user-1', 'dashboard:user-1']);
+    localeCalls.length = 0;
+    localePage.personalUid = undefined;
+    localePage.personalSnapshot = null;
+    HomePage.prototype.handleLocaleChange.call(localePage, 'ru');
+    assert.deepEqual(localeCalls, ['discovery']);
 
     console.log('Home page audit round 3 tests passed');
 }

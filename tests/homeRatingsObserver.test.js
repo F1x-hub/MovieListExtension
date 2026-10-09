@@ -28,3 +28,8 @@ assert.match(
 );
 
 console.log('✅ Home category grids register cards for KP/IMDb rating enrichment');
+
+// CJS exports its completion promise so asynchronous lifecycle assertions are
+// awaited by this existing npm-test entry point instead of escaping the runner.
+const personalLifecycle = await import('./homePersonalLifecycle.test.cjs');
+await personalLifecycle.default;

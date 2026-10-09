@@ -37,6 +37,19 @@
             ".write": "auth != null && root.child('approvedRoomAccess').child(auth.uid).child('approved').val() === true && (root.child('roomAccess').child(auth.uid).child($roomId).child('role').val() === 'owner' || root.child('roomAccess').child(auth.uid).child($roomId).child('role').val() === 'controller') && root.child('roomAccess').child(auth.uid).child($roomId).child('expiresAtMs').val() > now",
             ".validate": "newData.isString() && newData.val() === auth.uid"
           },
+          "selection": {
+            ".write": "auth != null && root.child('approvedRoomAccess').child(auth.uid).child('approved').val() === true && (root.child('roomAccess').child(auth.uid).child($roomId).child('role').val() === 'owner' || root.child('roomAccess').child(auth.uid).child($roomId).child('role').val() === 'controller') && root.child('roomAccess').child(auth.uid).child($roomId).child('expiresAtMs').val() > now",
+            ".validate": "newData.hasChildren(['seasonNumber', 'episodeNumber']) && newData.child('seasonNumber').isNumber() && newData.child('seasonNumber').val() >= 0 && newData.child('seasonNumber').val() <= 1000 && newData.child('episodeNumber').isNumber() && newData.child('episodeNumber').val() >= 0 && newData.child('episodeNumber').val() <= 100000",
+            "seasonNumber": {
+              ".validate": "newData.isNumber()"
+            },
+            "episodeNumber": {
+              ".validate": "newData.isNumber()"
+            },
+            "$other": {
+              ".validate": false
+            }
+          },
           "contentRevision": {
             ".write": false
           },

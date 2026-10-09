@@ -809,8 +809,7 @@ class FirebaseManager {
     }
 
     /**
-     * Removes profile data cached by the profile page (profiles of every viewed
-     * user and their avatar/banner images) so it does not outlive the session.
+     * Removes profile-page and popup profile data so it does not outlive the session.
      */
     async clearProfileCaches() {
         try {
@@ -820,12 +819,20 @@ class FirebaseManager {
             const keys = new Set(['profile_cache', indexKey]);
             const indexResult = await storage.get([indexKey]);
             Object.keys(indexResult[indexKey] || {}).forEach(uid => keys.add(`profile_cache_${uid}`));
+            let storedKeys;
             if (typeof storage.getKeys === 'function') {
-                // Also entries written before the index existed.
-                (await storage.getKeys())
-                    .filter(key => key.startsWith('profile_cache_'))
-                    .forEach(key => keys.add(key));
+                try {
+                    storedKeys = await storage.getKeys();
+                } catch {
+                    storedKeys = Object.keys(await storage.get(null));
+                }
+            } else {
+                storedKeys = Object.keys(await storage.get(null));
             }
+            // Include legacy/orphaned entries that have no profile-cache index.
+            storedKeys
+                .filter(key => key.startsWith('profile_cache_') || key.startsWith('user_profile_'))
+                .forEach(key => keys.add(key));
             await storage.remove([...keys]);
         } catch (error) {
             console.warn('Could not clear cached profiles on sign-out:', error);
@@ -849,6 +856,13 @@ class FirebaseManager {
         } catch (error) {
             throw new Error(`Email sign-in failed: ${error.message}`, { cause: error });
         }
+    }
+
+    async sendPasswordResetEmail(email) {
+        if (!this.isInitialized || !this.auth) {
+            throw new Error('Firebase not initialized');
+        }
+        await this.auth.sendPasswordResetEmail(email);
     }
 
     async createUserWithEmail(email, password) {

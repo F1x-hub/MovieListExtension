@@ -275,9 +275,10 @@ class KinopoiskPersonHtmlService {
                 const result = firstMovie
                     ? {
                         kinopoiskId: Number(firstMovie.id),
-                        name: firstMovie.title || firstMovie.originalTitle || searchTitle,
+                        name: firstMovie.title || firstMovie.originalTitle || null,
                         ...(firstMovie.originalTitle ? { originalTitle: firstMovie.originalTitle } : {}),
-                        year: Number(firstMovie.year) || Number(year) || null,
+                        year: Number(firstMovie.year) || null,
+                        mediaType: firstMovie.type === 'series' ? 'tv' : 'movie',
                         ...(Number(firstMovie.kpRating) > 0 ? { kpRating: Number(firstMovie.kpRating) } : {}),
                         ...(Number(firstMovie.kpVotes) > 0 ? { kpVotes: Number(firstMovie.kpVotes) } : {}),
                         ...(Number(firstMovie.imdbRating) > 0 ? { imdbRating: Number(firstMovie.imdbRating) } : {}),
@@ -590,7 +591,7 @@ class KinopoiskPersonHtmlService {
         if (wanted.length === 0) return null;
 
         const candidates = [];
-        const linkPattern = /href=["'](?:https?:\/\/(?:www\.)?kinopoisk\.ru)?\/(?:film|series)\/(\d+)(?:\/[^"']*)?["']/gi;
+        const linkPattern = /href=["'](?:https?:\/\/(?:www\.)?kinopoisk\.ru)?\/(film|series)\/(\d+)(?:\/[^"']*)?["']/gi;
         let match;
 
         while ((match = linkPattern.exec(normalizedHtml))) {
@@ -599,7 +600,11 @@ class KinopoiskPersonHtmlService {
             const anchorHtml = linkStart >= 0 && linkEnd > match.index
                 ? normalizedHtml.slice(linkStart, linkEnd)
                 : '';
-            const anchorText = this._normalizeMovieTitle(this._stripHtml(anchorHtml));
+            const secondaryAnchorTitle = this._extractSecondaryMovieTitle(anchorHtml);
+            const primaryAnchorHtml = secondaryAnchorTitle
+                ? anchorHtml.replace(/<span\b(?=[^>]*class=["'][^"']*secondaryTitle__[^"']*["'])[^>]*>[\s\S]*?<\/span>/i, ' ')
+                : anchorHtml;
+            const anchorText = this._normalizeMovieTitle(this._stripHtml(primaryAnchorHtml));
             const contextStart = Math.max(0, linkStart >= 0 ? linkStart : match.index - 300);
             const contextEnd = Math.min(normalizedHtml.length, (linkEnd >= 0 ? linkEnd : match.index) + 300);
             const context = normalizedHtml.slice(contextStart, contextEnd);
@@ -613,49 +618,40 @@ class KinopoiskPersonHtmlService {
                 ? normalizedHtml.slice(itemStart, nextItemMarker >= 0 ? nextItemMarker : normalizedHtml.length)
                 : context;
             const years = [...itemHtml.matchAll(/\b((?:18|19|20)\d{2})\b/g)].map(item => Number(item[1]));
-            const candidateYear = years.find(value => value === Number(year)) || years[0] || null;
-
-            let titleScore = 0;
-            for (const wantedTitle of wanted) {
-                if (!anchorText) continue;
-                if (anchorText === wantedTitle) titleScore = Math.max(titleScore, 100);
-                else if (anchorText.includes(wantedTitle) || wantedTitle.includes(anchorText)) {
-                    titleScore = Math.max(titleScore, 60);
-                }
-            }
-            if (titleScore === 0) continue;
-
-            let yearScore = 0;
-            if (Number(year) && candidateYear) {
-                if (candidateYear === Number(year)) {
-                    yearScore = 25;
-                } else if (options.allowYearTolerance === true
-                    && Math.abs(candidateYear - Number(year)) <= (Number(options.maxYearDelta) || 1)) {
-                    yearScore = 10;
-                } else {
-                    continue;
-                }
-            }
+            const candidateYear = years.find(value => value === Number(year))
+                || (options.allowYearTolerance === true
+                    ? years.find(value => Math.abs(value - Number(year)) <= (Number(options.maxYearDelta) || 1))
+                    : null)
+                || (years.length === 1 ? years[0] : null);
+            const mediaType = match[1] === 'series' ? 'tv' : 'movie';
+            const wantedKind = this._normalizeSearchMediaType(options.mediaType);
+            const anchorTitles = [anchorText, this._normalizeMovieTitle(secondaryAnchorTitle)]
+                .filter(Boolean);
+            if (!candidateYear || !anchorTitles.some(title => wanted.includes(title))) continue;
+            if (wantedKind && mediaType !== wantedKind) continue;
+            if (Number(year) && Math.abs(candidateYear - Number(year)) > (options.allowYearTolerance === true
+                ? (Number(options.maxYearDelta) || 1) : 0)) continue;
             candidates.push({
-                kinopoiskId: Number(match[1]),
-                name: this._stripHtml(anchorHtml).replace(/\s+/g, ' ').trim(),
-                originalTitle: this._extractSecondaryMovieTitle(anchorHtml)
+                kinopoiskId: Number(match[2]),
+                name: this._stripHtml(primaryAnchorHtml).replace(/\s+/g, ' ').trim(),
+                originalTitle: secondaryAnchorTitle
                     || this._extractSecondaryMovieTitle(itemHtml),
                 year: candidateYear,
-                score: titleScore + yearScore,
+                mediaType,
                 ...this._extractMovieSearchRatingMetadata(itemHtml)
             });
         }
 
-        candidates.sort((left, right) => right.score - left.score);
-        const best = candidates[0];
-        if (!best || best.kinopoiskId <= 0) return null;
+        const distinctCandidates = [...new Map(candidates.map(candidate => [candidate.kinopoiskId, candidate])).values()];
+        if (distinctCandidates.length !== 1 || distinctCandidates[0].kinopoiskId <= 0) return null;
+        const best = distinctCandidates[0];
 
         return {
             kinopoiskId: best.kinopoiskId,
             name: best.name,
             ...(best.originalTitle ? { originalTitle: best.originalTitle } : {}),
-            ...(best.year ? { year: best.year } : {}),
+            year: best.year,
+            mediaType: best.mediaType,
             ...(Number(best.kpRating) > 0 ? { kpRating: best.kpRating } : {}),
             ...(Number(best.kpVotes) > 0 ? { kpVotes: best.kpVotes } : {}),
             ...(Number(best.imdbRating) > 0 ? { imdbRating: best.imdbRating } : {}),
@@ -701,63 +697,28 @@ class KinopoiskPersonHtmlService {
 
         const wanted = candidateTitles.map(title => this._normalizeMovieTitle(title)).filter(Boolean);
         const targetYear = Number(year) || null;
+        const wantedKind = this._normalizeSearchMediaType(options.mediaType);
         const allowYearTolerance = options.allowYearTolerance === true;
         const maxYearDelta = Number(options.maxYearDelta) || 1;
-        // KP result URLs say /film/ or /series/. A TV card must prefer a
-        // series with the same title and year over a film, and vice versa.
-        const wantedKind = options.mediaType === 'tv' ? 'series' : (options.mediaType === 'movie' ? 'film' : null);
-        // A substring counts only when the titles are of similar length, so
-        // "Мятеж" does not match "Мятеж на Баунти".
-        const isClosePartial = (left, right) => {
-            const shorter = left.length <= right.length ? left : right;
-            const longer = left.length <= right.length ? right : left;
-            return shorter.length >= 4 && longer.includes(shorter) && shorter.length / longer.length >= 0.6;
-        };
-        const scored = movies.map((movie, index) => {
+        const matches = movies.filter(movie => {
             const movieTitles = [movie.title, movie.originalTitle]
                 .map(title => this._normalizeMovieTitle(title))
                 .filter(Boolean);
-            let titleScore = movieTitles.length === 0 ? 0 : -100;
-            for (const movieTitle of movieTitles) {
-                for (const wantedTitle of wanted) {
-                    if (movieTitle === wantedTitle) titleScore = Math.max(titleScore, 100);
-                    else if (isClosePartial(movieTitle, wantedTitle)) {
-                        titleScore = Math.max(titleScore, 50);
-                    }
-                }
-            }
-
             const movieYear = Number(movie.year) || null;
-            const isExactTitle = movieTitles.some(movieTitle => wanted.includes(movieTitle));
-            let yearScore = 0;
-            let rejected = false;
-            if (targetYear && movieYear) {
-                if (movieYear === targetYear) {
-                    yearScore = 80;
-                } else if (allowYearTolerance && isExactTitle
-                    && Math.abs(movieYear - targetYear) <= maxYearDelta) {
-                    // TMDB and Kinopoisk can differ by one year for unreleased,
-                    // festival, or region-specific release dates. Only allow
-                    // this for an exact title match and keep exact years ahead.
-                    yearScore = 60 - Math.abs(movieYear - targetYear) * 20;
-                } else {
-                    rejected = true;
-                }
-            }
-
-            const typeScore = wantedKind && movie.type && movie.type !== wantedKind ? -70 : 0;
-            return { movie, score: titleScore + yearScore + typeScore, index, rejected };
+            const mediaType = this._normalizeSearchMediaType(movie.type);
+            if (!movieTitles.some(title => wanted.includes(title)) || !movieYear || !mediaType) return false;
+            if (wantedKind && mediaType !== wantedKind) return false;
+            return !targetYear || Math.abs(movieYear - targetYear) <= (allowYearTolerance ? maxYearDelta : 0);
         });
+        const distinctMatches = [...new Map(matches.map(movie => [Number(movie.id), movie])).values()];
+        return distinctMatches.length === 1 ? distinctMatches[0] : null;
+    }
 
-        const eligible = scored.filter(candidate => !candidate.rejected);
-        eligible.sort((left, right) => right.score - left.score || left.index - right.index);
-        const best = eligible[0];
-        if (!best) return null;
-
-        // If the scraper supplied metadata, reject a clear title/year mismatch.
-        const hasMetadata = Boolean(best.movie.title || best.movie.originalTitle || best.movie.year);
-        if (hasMetadata && best.score < 0) return null;
-        return best.movie;
+    _normalizeSearchMediaType(value) {
+        const normalized = String(value || '').toLowerCase();
+        if (['film', 'movie'].includes(normalized)) return 'movie';
+        if (['series', 'tv', 'tv-series', 'mini-series', 'animated-series', 'anime'].includes(normalized)) return 'tv';
+        return null;
     }
 
     parsePersonPageHtml(html, personId = null) {

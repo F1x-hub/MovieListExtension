@@ -10,11 +10,9 @@ class HomeMovieNavigationService {
                 ? new KinopoiskPersonHtmlService({ kinopoiskService })
                 : null
         );
-        // Bump when the matching policy changes so stale negative results do
-        // not suppress a newly eligible HTML mapping for 24 hours.
-        // v4 also stores the KP secondary/original title needed for IMDb HTML
-        // search after a card is resolved from a KP-only identity.
-        this.cacheKey = 'home_kp_html_mapping_v4';
+        // v5 contains only mappings checked against real KP title, year, and type.
+        this.cacheKey = 'home_kp_html_mapping_v5';
+        this.resolvedCacheTtlMs = 30 * 24 * 60 * 60 * 1000;
         // Negative mappings are provisional because KP HTML can temporarily
         // return an SSO shell or an incompletely hydrated search page.
         this.negativeRetryMs = 15 * 60 * 1000;
@@ -97,7 +95,13 @@ class HomeMovieNavigationService {
     async _resolveUnmapped(item, key, mediaType, tmdbId, options = {}) {
         const cache = await this._readCache();
         const cached = cache[key];
-        if (cached?.status === 'resolved' && Number(cached.kpId) > 0
+        const titles = this._requestedTitles(item);
+        const year = this._requestedYear(item);
+        const cacheAge = Date.now() - Number(cached?.updatedAt);
+        if (options.forceRetry !== true
+            && cached?.status === 'resolved' && cached.verified === true && Number(cached.kpId) > 0
+            && cacheAge >= 0 && cacheAge < this.resolvedCacheTtlMs
+            && this._isVerifiedIdentity(cached, titles, year, mediaType)
             && (options.requireRating !== true || Number(cached.kpRating) > 0)) {
             this._kpTrace('resolve:cache-hit', {
                 key,
@@ -108,11 +112,16 @@ class HomeMovieNavigationService {
             });
             return {
                 kinopoiskId: Number(cached.kpId),
+                tmdbId: Number(cached.tmdbId),
                 kpRating: Number(cached.kpRating) || 0,
                 kpVotes: Number(cached.kpVotes) || 0,
                 imdbRating: Number(cached.imdbRating) || 0,
                 imdbId: cached.imdbId || null,
                 originalTitle: cached.originalTitle || null,
+                name: cached.title,
+                year: Number(cached.year),
+                mediaType: cached.resolvedMediaType,
+                verified: true,
                 source: 'html-cache'
             };
         }
@@ -127,12 +136,6 @@ class HomeMovieNavigationService {
             return null;
         }
 
-        const titles = [item.searchTitle, item.name || item.title, item.alternativeName || item.originalName || item.original_title]
-            .filter(value => typeof value === 'string' && value.trim())
-            .map(value => value.trim())
-            .filter((value, index, values) => values.indexOf(value) === index);
-        const year = Number(item.year || String(item.releaseDate || item.release_date || '').slice(0, 4)) || null;
-
         if (!this.htmlSearchService || titles.length === 0) {
             await this._writeNegative(cache, key);
             return null;
@@ -143,6 +146,7 @@ class HomeMovieNavigationService {
             allowYearTolerance: true,
             maxYearDelta: 1,
             mediaType,
+            requireVerifiedIdentity: true,
             requestKey: options.requestKey || null,
             priority: options.priority || 'visible-identity',
             sessionId: options.sessionId || null,
@@ -166,12 +170,17 @@ class HomeMovieNavigationService {
             imdbRating: result?.imdbRating || 0,
             imdbId: result?.imdbId || null
         });
-        if (!result?.kinopoiskId) {
+        if (!Number.isSafeInteger(Number(result?.kinopoiskId)) || Number(result.kinopoiskId) <= 0
+            || !this._isVerifiedIdentity(result, titles, year, mediaType)) {
             console.warn('[HomeMovieNavigation] No Kinopoisk HTML mapping found:', {
                 tmdbId,
                 mediaType,
                 titles,
-                year
+                year,
+                candidateId: Number(result?.kinopoiskId) || null,
+                candidateTitle: result?.name || result?.title || null,
+                candidateYear: Number(result?.year) || null,
+                candidateMediaType: result?.mediaType || result?.type || null
             });
             await this._writeNegative(cache, key);
             return null;
@@ -182,15 +191,16 @@ class HomeMovieNavigationService {
             kpId: Number(result.kinopoiskId),
             tmdbId,
             mediaType,
-            title: titles[0],
-            year,
+            title: String(result.name || result.title || '').trim(),
+            originalTitle: String(result.originalTitle || result.originalName || '').trim() || null,
+            year: Number(result.year),
+            resolvedMediaType: this._normalizeMediaType(result.mediaType || result.type),
             source: 'kinopoisk-html',
             verified: true,
             kpRating: Number(result.kpRating) || 0,
             kpVotes: Number(result.kpVotes) || 0,
             imdbRating: Number(result.imdbRating) || 0,
             imdbId: result.imdbId || null,
-            originalTitle: result.originalTitle || result.originalName || null,
             updatedAt: Date.now()
         };
         await this._writeCache(cache);
@@ -203,13 +213,55 @@ class HomeMovieNavigationService {
         });
         return {
             kinopoiskId: Number(result.kinopoiskId),
+            tmdbId,
+            name: result.name || result.title,
+            originalTitle: result.originalTitle || result.originalName || null,
+            year: Number(result.year),
+            mediaType: this._normalizeMediaType(result.mediaType || result.type),
+            verified: true,
             kpRating: Number(result.kpRating) || 0,
             kpVotes: Number(result.kpVotes) || 0,
             imdbRating: Number(result.imdbRating) || 0,
             imdbId: result.imdbId || null,
-            originalTitle: result.originalTitle || result.originalName || null,
             source: 'kinopoisk-html'
         };
+    }
+
+    _requestedTitles(item) {
+        return [item.searchTitle, item.name || item.title, item.alternativeName || item.originalName || item.original_title]
+            .filter(value => typeof value === 'string' && value.trim())
+            .map(value => value.trim())
+            .filter((value, index, values) => values.indexOf(value) === index);
+    }
+
+    _requestedYear(item) {
+        return Number(item.year || String(item.releaseDate || item.release_date || '').slice(0, 4)) || null;
+    }
+
+    _normalizeIdentityTitle(value) {
+        return String(value || '')
+            .normalize('NFKC')
+            .toLowerCase()
+            .replace(/ё/g, 'е')
+            .replace(/[^\p{L}\p{N}]+/gu, ' ')
+            .trim()
+            .replace(/\s+/g, ' ');
+    }
+
+    _isVerifiedIdentity(candidate, requestedTitles, requestedYear, requestedMediaType) {
+        const expectedTitles = requestedTitles.map(title => this._normalizeIdentityTitle(title)).filter(Boolean);
+        const candidateTitles = [candidate?.name, candidate?.title, candidate?.originalTitle, candidate?.originalName]
+            .map(title => this._normalizeIdentityTitle(title)).filter(Boolean);
+        const candidateYear = Number(candidate?.year);
+        const candidateMediaType = this._normalizeMediaType(
+            candidate?.resolvedMediaType || candidate?.mediaType || candidate?.type
+        );
+        return expectedTitles.length > 0
+            && expectedTitles.some(title => candidateTitles.includes(title))
+            && Number.isSafeInteger(Number(requestedYear)) && Number(requestedYear) > 0
+            && Number.isSafeInteger(candidateYear) && candidateYear > 0
+            && Math.abs(candidateYear - Number(requestedYear)) <= 1
+            && candidateMediaType === requestedMediaType;
     }
 
     async _resolveDirectHtmlRatings(item, directId, options = {}) {
@@ -229,11 +281,17 @@ class HomeMovieNavigationService {
                 allowYearTolerance: true,
                 maxYearDelta: 1,
                 mediaType: this._normalizeMediaType(item.mediaType || item.type),
+                requireVerifiedIdentity: true,
                 requestKey: options.requestKey || null,
                 requireRating: true
             });
             const resultId = Number(result?.kinopoiskId) || 0;
-            if (resultId !== directId) {
+            if (resultId !== directId || !this._isVerifiedIdentity(
+                result,
+                titles,
+                year,
+                this._normalizeMediaType(item.mediaType || item.type)
+            )) {
                 this._kpTrace('resolve:direct-rating-mismatch', {
                     directId,
                     resultId,

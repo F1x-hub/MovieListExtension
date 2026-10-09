@@ -56,11 +56,14 @@ async function runDirectRatingLookupTest() {
                 directLookupOptions = { titles, year, options };
                 return {
                     kinopoiskId: 123456,
+                    name: 'Тестовый фильм',
                     kpRating: 7.4,
                     kpVotes: 62592,
                     imdbRating: 8.1,
                     imdbId: 'tt1234567',
-                    originalTitle: 'Test Movie'
+                    originalTitle: 'Test Movie',
+                    year: 2022,
+                    mediaType: 'movie'
                 };
             }
         }
@@ -83,7 +86,7 @@ async function runSchedulerConsumerAccountingTest() {
             async scrapeSearchResultsOffscreen() {
                 schedulerRequestCalls += 1;
                 return {
-                    items: [{ id: 123456, title: 'Test Movie', year: 2022, kpRating: 7.4 }]
+                    items: [{ id: 123456, type: 'film', title: 'Test Movie', originalTitle: 'Test Movie', year: 2022, kpRating: 7.4 }]
                 };
             }
         }

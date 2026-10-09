@@ -154,8 +154,12 @@ class MovieDetailsManager {
                 getProviderId: () => this.getWatchRoomProviderId(),
                 getProviderSource: () => this.getWatchRoomProviderSource(),
                 getPlayerBridge: () => this.getWatchRoomPlayerBridge(),
+                getSelection: () => this.playbackController?.getSelection?.() || null,
                 onProviderChange: (providerId, providerSource) => this.changeWatchRoomProvider(providerId, providerSource),
-                onStatus: (message) => this.setWatchRoomStatus(message),
+                onSelectionRequest: (selection) => this.changeWatchRoomSelection(selection),
+                onStatus: (message, options) => this.setWatchRoomStatus(message, options),
+                onPlaybackBlocked: (blocked) => this.setWatchRoomPlaybackBlocked(blocked),
+                onExpiryWarning: (warning) => this.setWatchRoomExpiryWarning(warning),
                 onRoomUpdate: (room) => this.renderWatchRoomMembers(room),
             })
             : null;
@@ -180,6 +184,8 @@ class MovieDetailsManager {
                         this.currentEpisode = selection.episodeNumber;
                     }
                     this.updateActiveEpisodePlayingState(selection);
+                    // Episode changes are shared with an active watch room.
+                    this.watchRoomController?.publishHostSelection?.(selection);
                 },
                 onProviderChange: (providerId) => {
                     this.activePlayerId = providerId;
@@ -275,7 +281,10 @@ class MovieDetailsManager {
         this.setupEventListeners();
         this.setupCommentReactionListeners();
         this.initSelectionPopup();
-        this.init();
+        this.init().catch(error => {
+            console.error('[MovieDetails] Initialization failed:', error);
+            this.page.showError(error, { context: { operation: 'movie-details-init' } });
+        });
     }
 
     async init() {
@@ -386,6 +395,10 @@ class MovieDetailsManager {
             joinWatchRoomBtn: document.getElementById('joinWatchRoomBtn'),
             copyWatchRoomCodeBtn: document.getElementById('copyWatchRoomCodeBtn'),
             watchRoomMembersBtn: document.getElementById('watchRoomMembersBtn'),
+            leaveWatchRoomBtn: document.getElementById('leaveWatchRoomBtn'),
+            resumeWatchRoomPlaybackBtn: document.getElementById('resumeWatchRoomPlaybackBtn'),
+            extendWatchRoomBtn: document.getElementById('extendWatchRoomBtn'),
+            leaveWatchRoomLabel: document.getElementById('leaveWatchRoomLabel'),
             watchRoomParticipantCount: document.getElementById('watchRoomParticipantCount'),
             watchRoomMembersPopover: document.getElementById('watchRoomMembersPopover'),
             watchRoomMembersList: document.getElementById('watchRoomMembersList'),
@@ -568,8 +581,14 @@ class MovieDetailsManager {
         if (this.elements.videoContainer && typeof MutationObserver !== 'undefined') {
             // PlayerSourceLifecycle writes data-source-state for every source
             // path; mirror it onto the active source button.
-            new MutationObserver(() => this.refreshSourceButtonStates())
-                .observe(this.elements.videoContainer, { attributes: true, attributeFilter: ['data-source-state'] });
+            new MutationObserver(() => {
+                this.refreshSourceButtonStates();
+                // A ready player is the earliest moment a saved watch room
+                // can be rejoined after a reload or an invite hand-off.
+                if (this.elements.videoContainer.getAttribute('data-source-state') === 'ready') {
+                    void this.resumeWatchRoomIfPending?.();
+                }
+            }).observe(this.elements.videoContainer, { attributes: true, attributeFilter: ['data-source-state'] });
         }
         if (this.elements.videoPlayerModal) {
             this.elements.videoPlayerModal.addEventListener('mousedown', (e) => {
@@ -1177,7 +1196,7 @@ class MovieDetailsManager {
 
         this.perf?.mark('md:admin-cache-ready');
 
-        // Auth and public cache lookup intentionally start together after the
+        // Auth and browser-local cache lookup start together after the
         // FirebaseManager exists. The cache path never invokes provider APIs.
         if (!window.firebaseManager) {
             await this.waitForFirebaseManager();
@@ -1193,13 +1212,21 @@ class MovieDetailsManager {
             window.history.replaceState({}, document.title, cleanUrl.toString());
         }
 
-        const authPromise = firebaseManager.waitForAuthReady();
+        const authPromise = firebaseManager.waitForAuthReady(15000);
         const canSpeculate = !firebaseManager.isAuthReady || firebaseManager.isAuthenticated();
         const cachePromise = movieId && canSpeculate
             ? this.loadSpeculativeCachedMovie(movieId)
             : Promise.resolve(null);
         await authPromise;
         this.perf?.mark('md:auth-ready');
+        if (!firebaseManager.isAuthReady && !firebaseManager.isAuthenticated()) {
+            this.authDecision = 'unresolved';
+            throw createAppError('GENERIC_LOAD_ERROR', {
+                retryable: true,
+                userMessage: 'Не удалось восстановить вход. Проверьте соединение и повторите загрузку.',
+                context: { operation: 'movie-details-auth-timeout' }
+            });
+        }
         
         const isAuth = firebaseManager.isAuthenticated();
         console.log('[DIAG] Auth check:', JSON.stringify({ isAuth: firebaseManager.isAuthenticated() }));
@@ -1231,7 +1258,7 @@ class MovieDetailsManager {
             const cachedLoaded = Boolean(speculativeMovie);
             await this.loadMovieById(movieId, !cachedLoaded, cachedLoaded, {
                 prefetchedCachedMovie: speculativeMovie,
-                prefetchedCacheResolved: this.speculativeCacheResolved,
+                prefetchedCacheResolved: this.speculativeCacheResolved && Boolean(speculativeMovie),
                 forceRefresh: clearMovieCache
             });
             this.initPlayerRegistry();
@@ -1313,7 +1340,7 @@ class MovieDetailsManager {
             const resolver = new HomeMovieNavigationService({
                 kinopoiskService: firebaseManager.getKinopoiskService()
             });
-            const resolved = await resolver.resolve({
+            const resolved = await this.withMovieLoadDeadline(resolver.resolve({
                 tmdbId,
                 name: title,
                 alternativeName: originalTitle,
@@ -1321,7 +1348,7 @@ class MovieDetailsManager {
                 year,
                 mediaType,
                 isTmdbOnly: true
-            }, { forceRetry: urlParams.has('retry') });
+            }, { forceRetry: urlParams.has('retry') }));
             const kinopoiskId = Number(resolved?.kinopoiskId || resolved?.movieId);
             if (!Number.isSafeInteger(kinopoiskId) || kinopoiskId <= 0) {
                 throw new Error('Точная карточка фильма в Kinopoisk не найдена');
@@ -1398,14 +1425,14 @@ class MovieDetailsManager {
 
             let movie = localMovie;
             if (localMovie) {
-                // Paint the fastest trusted source immediately, then allow one public
-                // MovieCache read to upgrade it only when the cached DTO is richer/newer.
+                // Paint immediately, then check browser-local metadata for a richer DTO.
                 this.speculativeMovie = localMovie;
                 await this.displayMovieDetails(localMovie);
             }
 
             const movieCacheService = firebaseManager.getMovieCacheService?.();
-            const publicCachedMovie = movieCacheService ? await movieCacheService.getCachedMovie(movieId) : null;
+            const publicCachedMovie = movieCacheService
+                ? await movieCacheService.getCachedMovie(movieId, { localOnly: true }) : null;
             if (!movie && publicCachedMovie) movie = publicCachedMovie;
             if (localMovie && publicCachedMovie && this.shouldUpgradeSpeculativeMovie(localMovie, publicCachedMovie)) {
                 movie = publicCachedMovie;
@@ -1416,7 +1443,7 @@ class MovieDetailsManager {
             }
             this.speculativeCacheResolved = true;
 
-            if (!movie || movie._cacheExpired || this.authDecision === 'guest') {
+            if (!movie || this.authDecision === 'guest') {
                 this.perf?.mark('md:speculative-cache-ready');
                 return null;
             }
@@ -1424,6 +1451,10 @@ class MovieDetailsManager {
 
             this.speculativeMovie ||= movie;
             this.perf?.setScenarioHint(movie === localMovie ? 'instantLocalStorage' : 'movieCacheHit');
+            // Stale metadata remains a usable visual fallback while providers refresh it.
+            if (movieCacheService?.isMetadataCacheValid && !movieCacheService.isMetadataCacheValid(movie)) {
+                movie = { ...movie, _cacheExpired: true };
+            }
             if (!localMovie) await this.displayMovieDetails(movie);
             this.perf?.mark('md:speculative-cache-ready');
             this.perf?.mark('md:speculative-rendered');
@@ -1449,13 +1480,14 @@ class MovieDetailsManager {
     }
 
     async waitForFirebaseManager() {
-        return new Promise((resolve) => {
+        await new Promise((resolve) => {
             if (window.firebaseManager && window.firebaseManager.isInitialized) {
                 resolve();
                 return;
             }
             
             const onReady = () => {
+                clearInterval(checkInterval);
                 window.removeEventListener('firebaseManagerReady', onReady);
                 resolve();
             };
@@ -1476,6 +1508,9 @@ class MovieDetailsManager {
                 }
             }, 100);
         });
+        if (!window.firebaseManager?.isInitialized) {
+            throw new Error('Не удалось запустить сервис загрузки. Повторите попытку.');
+        }
     }
 
     goBackToSearch() {
@@ -1494,6 +1529,7 @@ class MovieDetailsManager {
 
     async loadMovieById(movieId, shouldShowLoading = true, skipRender = false, options = {}) {
         const pageContext = this.beginPageGeneration(movieId);
+        let loadActive = true;
         this.perf?.mark('md:aggregation-start');
         try {
             if (shouldShowLoading) {
@@ -1519,7 +1555,7 @@ class MovieDetailsManager {
             let movie = options.prefetchedCacheResolved ? (options.prefetchedCachedMovie || null) : null;
             if (mediaAggregator) {
                 try {
-                    movie = await mediaAggregator.getMovieDetails(movieId, {
+                    movie = await this.withMovieLoadDeadline(mediaAggregator.getMovieDetails(movieId, {
                         title: params.get('title') || '',
                         year: params.get('year') || '',
                         candidateTmdbId: params.get('tmdbId') || '',
@@ -1527,8 +1563,15 @@ class MovieDetailsManager {
                         skipKinopoiskApi: params.get('source') === 'home-tmdb-only',
                         prefetchedCachedMovie: options.prefetchedCachedMovie || null,
                         prefetchedCacheResolved: options.prefetchedCacheResolved === true,
-                        forceRefresh: options.forceRefresh === true
-                    });
+                        forceRefresh: options.forceRefresh === true,
+                        onBaseMovie: baseMovie => {
+                            if (!loadActive || !this.isPageContextCurrent(pageContext) || this.selectedMovie) return;
+                            skipRender = true;
+                            void this.displayMovieDetails(baseMovie).catch(error => {
+                                console.warn('[MovieDetails] Base metadata render failed:', error);
+                            });
+                        }
+                    }));
 
                     if (!this.isPageContextCurrent(pageContext)) return;
 
@@ -1564,26 +1607,35 @@ class MovieDetailsManager {
                         skipRender = false;
                     }
                 } catch (aggErr) {
-                    console.warn('[MovieDetails] MediaAggregator failed, falling back to cache/legacy fetch:', aggErr);
+                    if (!this.isPageContextCurrent(pageContext)) return;
+                    console.warn('[MovieDetails] MediaAggregator failed, retaining cached metadata:', aggErr);
+                    movie ||= options.prefetchedCachedMovie;
+                    if (!movie && String(this.selectedMovie?.kinopoiskId) === String(movieId)) {
+                        movie = this.selectedMovie;
+                    }
+                    // Aggregation already attempted the providers. Do not repeat the
+                    // same failing request through the legacy compatibility path.
+                    if (!movie) throw aggErr;
                 }
             }
 
             if (!movie) {
-                movie = await movieCacheService.getCachedMovie(movieId);
+                movie = await this.withMovieLoadDeadline(movieCacheService.getCachedMovie(movieId));
                 if (!this.isPageContextCurrent(pageContext)) return;
                 const hasDetailedInfo = Utils.hasDetailedMovieInfo(movie);
                 
                 if (!movie || !hasDetailedInfo) {
                     try {
-                        const freshMovie = await kinopoiskService.getMovieById(movieId, {
+                        const freshMovie = await this.withMovieLoadDeadline(kinopoiskService.getMovieById(movieId, {
                             cachedMovie: movie,
                             title: params.get('title') || '',
                             year: params.get('year') || ''
-                        });
+                        }));
                         if (!this.isPageContextCurrent(pageContext)) return;
                         if (freshMovie) {
                             movie = freshMovie;
-                            await movieCacheService.cacheMovie(movie);
+                            void Promise.resolve().then(() => movieCacheService.cacheMovie(freshMovie))
+                                .catch(error => console.warn('[MovieDetails] Cache write failed:', error));
                             skipRender = false;
                         }
                     } catch (apiError) {
@@ -1637,6 +1689,7 @@ class MovieDetailsManager {
             // every movie load also covers explicit refreshes after rating/bookmark actions.
             if (this.currentUser && this.selectedMovie) this.loadPersonalState(movieId);
         } catch (error) {
+            if (!this.isPageContextCurrent(pageContext)) return;
             console.error('Error loading movie:', error);
             this.page.showError(error, {
                 context: {
@@ -1646,10 +1699,29 @@ class MovieDetailsManager {
                 }
             });
         } finally {
+            loadActive = false;
             if (this.isPageContextCurrent(pageContext)) {
                 this.page.hideLoader();
             }
 
+        }
+    }
+
+    async withMovieLoadDeadline(work, timeoutMs = 25000) {
+        let timer;
+        try {
+            return await Promise.race([
+                work,
+                new Promise((resolve, reject) => {
+                    timer = setTimeout(() => reject(createAppError('GENERIC_LOAD_ERROR', {
+                        retryable: true,
+                        userMessage: 'Загрузка фильма заняла слишком много времени. Повторите попытку.',
+                        context: { operation: 'movie-details-timeout' }
+                    })), timeoutMs);
+                })
+            ]);
+        } finally {
+            clearTimeout(timer);
         }
     }
 
@@ -10532,17 +10604,36 @@ class MovieDetailsManager {
         } catch (error) { console.error('Error toggling favorite:', error); }
     }
 
+    captureFavoriteToggleContext(movieId) {
+        const userId = this.currentUser?.uid;
+        const movie = this.selectedMovie;
+        const selectedId = Number(movie?.kinopoiskId || movie?.movieId || movie?.id);
+        const requestedId = Number(movieId);
+        if (!userId || !Number.isSafeInteger(selectedId) || selectedId <= 0
+            || selectedId !== requestedId) return null;
+        return { userId, movieId: selectedId, movie };
+    }
+
+    isFavoriteToggleContextCurrent(context) {
+        if (!context || this.currentUser?.uid !== context.userId) return false;
+        const selectedId = Number(this.selectedMovie?.kinopoiskId
+            || this.selectedMovie?.movieId || this.selectedMovie?.id);
+        return selectedId === context.movieId;
+    }
+
     async handleWatchingToggle(movieId, buttonElement) {
-        if (!this.currentUser) return;
+        const context = this.captureFavoriteToggleContext(movieId);
+        if (!context) return;
         try {
             const favoriteService = firebaseManager.getFavoriteService();
-            const bookmark = await favoriteService.getBookmark(this.currentUser.uid, movieId);
+            const bookmark = await favoriteService.getBookmark(context.userId, context.movieId);
+            if (!this.isFavoriteToggleContextCurrent(context)) return;
             const isWatching = bookmark?.status === 'watching';
             
             if (isWatching) {
-                await favoriteService.removeFromFavorites(this.currentUser.uid, movieId);
+                await favoriteService.removeFromFavorites(context.userId, context.movieId);
             } else {
-                await favoriteService.addToFavorites(this.currentUser.uid, { ...this.selectedMovie, movieId }, 'watching');
+                await favoriteService.addToFavorites(context.userId, { ...context.movie, movieId: context.movieId }, 'watching');
             }
             
             const newState = !isWatching;
@@ -10558,16 +10649,18 @@ class MovieDetailsManager {
     }
 
     async handleWatchedToggle(movieId, buttonElement) {
-        if (!this.currentUser) return;
+        const context = this.captureFavoriteToggleContext(movieId);
+        if (!context) return;
         try {
             const favoriteService = firebaseManager.getFavoriteService();
-            const bookmark = await favoriteService.getBookmark(this.currentUser.uid, movieId);
+            const bookmark = await favoriteService.getBookmark(context.userId, context.movieId);
+            if (!this.isFavoriteToggleContextCurrent(context)) return;
             const isWatched = bookmark?.status === 'watched';
             
             if (isWatched) {
-                await favoriteService.removeFromFavorites(this.currentUser.uid, movieId);
+                await favoriteService.removeFromFavorites(context.userId, context.movieId);
             } else {
-                await favoriteService.addToFavorites(this.currentUser.uid, { ...this.selectedMovie, movieId }, 'watched');
+                await favoriteService.addToFavorites(context.userId, { ...context.movie, movieId: context.movieId }, 'watched');
             }
             
             const newState = !isWatched;
@@ -10583,16 +10676,18 @@ class MovieDetailsManager {
     }
 
     async handleWatchlistToggle(movieId, buttonElement) {
-        if (!this.currentUser) return;
+        const context = this.captureFavoriteToggleContext(movieId);
+        if (!context) return;
         try {
             const favoriteService = firebaseManager.getFavoriteService();
-            const bookmark = await favoriteService.getBookmark(this.currentUser.uid, movieId);
+            const bookmark = await favoriteService.getBookmark(context.userId, context.movieId);
+            if (!this.isFavoriteToggleContextCurrent(context)) return;
             const isInWatchlist = bookmark?.status === 'plan_to_watch';
             
             if (isInWatchlist) {
-                await favoriteService.removeFromFavorites(this.currentUser.uid, movieId);
+                await favoriteService.removeFromFavorites(context.userId, context.movieId);
             } else {
-                await favoriteService.addToFavorites(this.currentUser.uid, { ...this.selectedMovie, movieId }, 'plan_to_watch');
+                await favoriteService.addToFavorites(context.userId, { ...context.movie, movieId: context.movieId }, 'plan_to_watch');
             }
             
             const newState = !isInWatchlist;

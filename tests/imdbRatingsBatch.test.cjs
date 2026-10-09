@@ -113,9 +113,9 @@ async function run() {
     assert.equal(kp._selectMovieSearchResult(results, ['Колония'], 2026, { mediaType: 'tv' }).id, 2, 'TV cards prefer series');
     assert.equal(kp._selectMovieSearchResult(results, ['Колония'], 2026, { mediaType: 'movie' }).id, 1);
     assert.equal(
-        kp._selectMovieSearchResult([{ id: 3, type: 'film', title: 'Колония', year: 2026 }], ['Колония'], 2026, { mediaType: 'tv' }).id,
-        3,
-        'a type mismatch lowers the score but an exact title and year still match'
+        kp._selectMovieSearchResult([{ id: 3, type: 'film', title: 'Колония', year: 2026 }], ['Колония'], 2026, { mediaType: 'tv' }),
+        null,
+        'a candidate with the wrong media type cannot verify an identity'
     );
     assert.equal(
         kp._selectMovieSearchResult([{ id: 4, type: 'film', title: 'Мятеж на Баунти', year: 2026 }], ['Мятеж'], 2026, { mediaType: 'movie' }),

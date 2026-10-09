@@ -621,6 +621,248 @@ global.document = {
       && error.retryable === false
   );
 
+  // Timeline accuracy: server-time anchoring, tolerance-based seeks and drift
+  // correction.
+  global.window.firebaseManager.getCurrentUser = () => ({ uid: 'viewer' });
+  const flushMicrotasks = async () => {
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+  };
+  const timelineFollower = (role = 'viewer') => {
+    const commands = [];
+    const follower = new WatchRoomStagingController({ getIframe: () => ({ contentWindow: {} }) });
+    follower.room = { roomId: 'timeline-room' };
+    follower.role = role;
+    follower.postToPlayer = (message) => commands.push(message);
+    return { follower, commands };
+  };
+
+  const skewed = timelineFollower();
+  // This computer's clock runs 5 s ahead of the Firebase server.
+  skewed.follower.serverTimeOffsetMs = -5_000;
+  skewed.follower.applyRoomState({
+    phase: 'playing', basePositionMs: 10_000, effectiveAtMs: Date.now() - 5_000 - 2_000, updatedBy: 'owner',
+  });
+  const skewedSeek = skewed.commands.find((command) => command.action === 'seek');
+  assert.ok(skewedSeek.positionMs >= 12_000 && skewedSeek.positionMs < 12_250,
+    `room position uses server time, not the local wall clock (got ${skewedSeek.positionMs})`);
+
+  const tolerant = timelineFollower();
+  tolerant.follower.playerSample = { positionMs: 20_400, paused: false, atMs: Date.now() };
+  tolerant.follower.applyRoomState({
+    phase: 'playing', basePositionMs: 20_000, effectiveAtMs: Date.now(), updatedBy: 'owner',
+  });
+  assert.deepEqual(tolerant.commands, [], 'a playing follower inside the tolerance is not re-seeked');
+  tolerant.follower.playerSample = { positionMs: 20_100, paused: true, atMs: Date.now() - 60_000 };
+  tolerant.follower.applyRoomState({
+    phase: 'paused', basePositionMs: 20_000, effectiveAtMs: Date.now(), updatedBy: 'owner',
+  });
+  assert.deepEqual(tolerant.commands, [], 'an aligned paused follower receives no commands');
+  tolerant.follower.playerSample = { positionMs: 20_000, paused: false, atMs: Date.now() };
+  tolerant.follower.applyRoomState({
+    phase: 'paused', basePositionMs: 20_150, effectiveAtMs: Date.now(), updatedBy: 'owner',
+  });
+  assert.deepEqual(tolerant.commands.map(({ action }) => action), ['pause'],
+    'a pause only pauses when the position is already aligned');
+  tolerant.commands.length = 0;
+  tolerant.follower.playerSample = { positionMs: 21_000, paused: true, atMs: Date.now() };
+  tolerant.follower.applyRoomState({
+    phase: 'paused', basePositionMs: 20_000, effectiveAtMs: Date.now(), updatedBy: 'owner',
+  });
+  assert.deepEqual(tolerant.commands.map(({ action }) => action), ['seek'],
+    'a paused follower outside the paused tolerance is aligned');
+
+  const drifting = timelineFollower();
+  drifting.follower.roomState = {
+    phase: 'playing', basePositionMs: 60_000, effectiveAtMs: Date.now(), updatedBy: 'owner',
+  };
+  const behindSample = () => ({
+    kind: 'timeupdate', currentTimeMs: 57_000, paused: false, observedAtMs: Date.now(),
+  });
+  drifting.follower.handleRoomTelemetry(behindSample());
+  assert.equal(drifting.commands.length, 0, 'one drifting sample is not enough to seek');
+  drifting.follower.handleRoomTelemetry(behindSample());
+  const driftSeeks = drifting.commands.filter((command) => command.action === 'seek');
+  assert.equal(driftSeeks.length, 1, 'confirmed drift seeks the follower back onto the room timeline');
+  assert.ok(Math.abs(driftSeeks[0].positionMs - 60_000) < 250);
+  assert.equal(drifting.commands.some((command) => command.action === 'play'), false,
+    'drift correction of a playing follower does not resend play');
+  drifting.follower.ignoreRemoteTelemetryUntil = 0;
+  drifting.follower.handleRoomTelemetry(behindSample());
+  drifting.follower.handleRoomTelemetry(behindSample());
+  assert.equal(drifting.commands.filter((command) => command.action === 'seek').length, 1,
+    'the drift cooldown prevents a seek loop on a slow source');
+  drifting.follower.lastDriftCorrectionAt = 0;
+  drifting.follower.handleRoomTelemetry({
+    kind: 'timeupdate', currentTimeMs: 60_300, paused: false, observedAtMs: Date.now(),
+  });
+  drifting.follower.handleRoomTelemetry({
+    kind: 'timeupdate', currentTimeMs: 60_300, paused: false, observedAtMs: Date.now(),
+  });
+  assert.equal(drifting.commands.filter((command) => command.action === 'seek').length, 1,
+    'small drift stays inside the tolerance');
+
+  const authority = timelineFollower('controller');
+  const authorityWrites = [];
+  authority.follower.stateRef = { update: async (value) => authorityWrites.push(value) };
+  authority.follower.serverTimeOffsetMs = 30_000;
+  authority.follower.roomState = {
+    revision: 7, phase: 'playing', basePositionMs: 100_000, effectiveAtMs: Date.now() + 30_000, updatedBy: 'viewer',
+  };
+  // The publisher stalled for 4 s while buffering.
+  const stalledSample = () => ({
+    kind: 'timeupdate', currentTimeMs: 96_000, paused: false, observedAtMs: Date.now(),
+  });
+  authority.follower.handleRoomTelemetry(stalledSample());
+  authority.follower.handleRoomTelemetry(stalledSample());
+  await flushMicrotasks();
+  assert.equal(authority.commands.length, 0, 'the timeline publisher is never seeked by its own room state');
+  assert.equal(authorityWrites.length, 1, 'the timeline publisher re-anchors the room after its playback slipped');
+  assert.equal(authorityWrites[0].phase, 'playing');
+  assert.ok(Math.abs(authorityWrites[0].basePositionMs - 96_000) < 250);
+  assert.ok(Math.abs(authorityWrites[0].effectiveAtMs - (Date.now() + 30_000)) < 250,
+    'the re-anchor is stamped with estimated server time');
+  assert.equal(authorityWrites[0].revision, 8);
+
+  const serverStamped = timelineFollower('owner');
+  const serverStampedWrites = [];
+  serverStamped.follower.stateRef = { update: async (value) => serverStampedWrites.push(value) };
+  serverStamped.follower.serverTimeOffsetMs = -20_000;
+  serverStamped.follower.roomState = { revision: 0, phase: 'paused', basePositionMs: 0, providerHint: 'kinogo' };
+  serverStamped.follower.publishHostTelemetry({ kind: 'pause', currentTimeMs: 5_000 });
+  await flushMicrotasks();
+  assert.ok(Math.abs(serverStampedWrites[0].effectiveAtMs - (Date.now() - 20_000)) < 250,
+    'published timeline events use estimated server time');
+  serverStamped.follower.roomState = {
+    ...serverStamped.follower.roomState,
+    phase: 'playing', basePositionMs: 5_000, effectiveAtMs: Date.now() - 20_000 - 3_000,
+  };
+  serverStamped.follower.publishHostProvider('exfs');
+  await flushMicrotasks();
+  assert.ok(Math.abs(serverStampedWrites[1].basePositionMs - 8_000) < 250,
+    'a source change re-anchors the current room position instead of rewinding it');
+
+  const echoController = timelineFollower('controller');
+  let echoPublishes = 0;
+  echoController.follower.publishHostTelemetry = () => { echoPublishes += 1; };
+  echoController.follower.applyRoomState({
+    phase: 'paused', basePositionMs: 300_000, effectiveAtMs: Date.now(), updatedBy: 'owner',
+  });
+  // A slow HLS seek reports after the fallback window has already closed.
+  echoController.follower.ignoreRemoteTelemetryUntil = 0;
+  echoController.follower.handleRoomTelemetry({ kind: 'seeking', currentTimeMs: 300_000 });
+  echoController.follower.handleRoomTelemetry({ kind: 'seeked', currentTimeMs: 300_050 });
+  echoController.follower.handleRoomTelemetry({ kind: 'pause', currentTimeMs: 300_050 });
+  assert.equal(echoPublishes, 0, 'late player effects of a room command are not echoed into a new room state');
+  echoController.follower.handleRoomTelemetry({ kind: 'seeked', currentTimeMs: 300_000 });
+  assert.equal(echoPublishes, 1, 'each expected effect is consumed once; a repeat is a real user action');
+  echoController.follower.handleRoomTelemetry({ kind: 'play', currentTimeMs: 300_000 });
+  assert.equal(echoPublishes, 2, 'a user action that was not commanded by the room is published');
+
+  // Series episode synchronization.
+  const selectionHost = timelineFollower('owner');
+  const selectionHostWrites = [];
+  selectionHost.follower.stateRef = { update: async (value) => selectionHostWrites.push(value) };
+  selectionHost.follower.roomState = {
+    revision: 3, phase: 'playing', basePositionMs: 900_000, effectiveAtMs: Date.now(), updatedBy: 'viewer',
+    selection: { seasonNumber: 1, episodeNumber: 2 },
+  };
+  selectionHost.follower.publishHostSelection({ seasonNumber: 1, episodeNumber: 2, source: 'PLAYER_NAVIGATION' });
+  await flushMicrotasks();
+  assert.equal(selectionHostWrites.length, 0, 'the room episode is not republished');
+  selectionHost.follower.publishHostSelection({ seasonNumber: 1, episodeNumber: 3, source: 'AUTO_NEXT' });
+  await flushMicrotasks();
+  assert.deepEqual(selectionHostWrites[0].selection, { seasonNumber: 1, episodeNumber: 3 },
+    'an episode change by the owner is shared with the room');
+  assert.equal(selectionHostWrites[0].phase, 'paused');
+  assert.equal(selectionHostWrites[0].basePositionMs, 0, 'a new episode starts the room timeline from zero');
+  selectionHost.follower.publishHostSelection({ seasonNumber: 0, episodeNumber: null });
+  selectionHost.follower.publishHostSelection(null);
+  await flushMicrotasks();
+  assert.equal(selectionHostWrites.length, 1, 'movies and incomplete selections publish no episode');
+
+  let viewerSelection = { seasonNumber: 1, episodeNumber: 2 };
+  const selectionRequests = [];
+  const selectionViewer = timelineFollower('viewer');
+  const selectionStatuses = [];
+  selectionViewer.follower.getSelection = () => viewerSelection;
+  selectionViewer.follower.onStatus = (message) => selectionStatuses.push(message);
+  selectionViewer.follower.onSelectionRequest = async (selection) => {
+    selectionRequests.push(selection);
+    viewerSelection = { ...selection, source: 'PLAYER_NAVIGATION' };
+    return true;
+  };
+  selectionViewer.follower.roomState = {
+    revision: 4, phase: 'playing', basePositionMs: 0, effectiveAtMs: Date.now(), updatedBy: 'owner',
+    selection: { seasonNumber: 1, episodeNumber: 3 },
+  };
+  selectionViewer.follower.followRoomState(selectionViewer.follower.roomState);
+  assert.equal(selectionViewer.commands.length, 0, 'the timeline waits until the room episode is open');
+  assert.equal(selectionStatuses.at(-1), 'Переключаю на 1 сезон, 3 серию…');
+  selectionViewer.follower.followRoomState(selectionViewer.follower.roomState);
+  await flushMicrotasks();
+  assert.deepEqual(selectionRequests, [{ seasonNumber: 1, episodeNumber: 3 }],
+    'a follower opens the room episode exactly once');
+  selectionViewer.follower.handleRoomTelemetry({ kind: 'loadedmetadata', currentTimeMs: 0, paused: true });
+  assert.deepEqual(selectionViewer.commands.map(({ action }) => action), ['play'],
+    'the room timeline is applied once the new episode is ready');
+  assert.equal(selectionViewer.follower.selectionSwitch, null);
+
+  selectionViewer.commands.length = 0;
+  viewerSelection = { seasonNumber: 1, episodeNumber: 4, source: 'AUTO_NEXT' };
+  selectionViewer.follower.publishHostSelection(viewerSelection);
+  await flushMicrotasks();
+  assert.equal(selectionRequests.length, 1, "a viewer's own auto-next waits for the room's next episode");
+  viewerSelection = { seasonNumber: 2, episodeNumber: 1, source: 'SEASONS_TAB' };
+  selectionViewer.follower.publishHostSelection(viewerSelection);
+  await flushMicrotasks();
+  assert.deepEqual(selectionRequests.at(-1), { seasonNumber: 1, episodeNumber: 3 },
+    'a viewer who picks another episode is returned to the room episode');
+
+  const timeoutCallbacks = [];
+  const stuckViewer = new WatchRoomStagingController({
+    getIframe: () => ({ contentWindow: {} }),
+    setTimeout: (callback) => { timeoutCallbacks.push(callback); return timeoutCallbacks.length; },
+    clearTimeout: () => {},
+    getSelection: () => ({ seasonNumber: 1, episodeNumber: 1 }),
+    onSelectionRequest: async () => true,
+  });
+  const stuckStatuses = [];
+  stuckViewer.onStatus = (message) => stuckStatuses.push(message);
+  stuckViewer.room = { roomId: 'timeline-room' };
+  stuckViewer.role = 'viewer';
+  stuckViewer.postToPlayer = () => {};
+  stuckViewer.roomState = {
+    revision: 1, phase: 'paused', basePositionMs: 0, effectiveAtMs: Date.now(), updatedBy: 'owner',
+    selection: { seasonNumber: 1, episodeNumber: 5 },
+  };
+  stuckViewer.followRoomState(stuckViewer.roomState);
+  await flushMicrotasks();
+  timeoutCallbacks.at(-1)();
+  assert.equal(stuckViewer.selectionSwitch, null);
+  assert.equal(stuckStatuses.at(-1), 'Серия комнаты не загрузилась у вас — откройте её вручную',
+    'a provider that never opens the episode does not cause a retry loop');
+
+  global.window.firebaseManager = {
+    getCurrentUser: () => ({ uid: 'owner' }),
+    getRealtimeDatabase: () => rtdb,
+  };
+  const seedingOwner = new WatchRoomStagingController({
+    getSelection: () => ({ seasonNumber: 2, episodeNumber: 5, source: 'SEASONS_TAB' }),
+  });
+  seedingOwner.probePlayer = async () => ({
+    capabilities: { observeTime: true, play: true, pause: true, seek: true, duration: true },
+  });
+  seedingOwner.postToPlayer = () => {};
+  await seedingOwner.connect({ roomId: 'seeded-room', expiresAtMs: Date.now() + 60_000 }, 'owner');
+  listeners.get('roomLive/seeded-room/state:value')({ val: () => ({
+    providerHint: 'kinogo', phase: 'paused', basePositionMs: 0, effectiveAtMs: Date.now(), revision: 0, updatedBy: 'owner',
+  }) });
+  await flushMicrotasks();
+  assert.deepEqual(updatesToRtdb.at(-1).value.selection, { seasonNumber: 2, episodeNumber: 5 },
+    'the owner seeds a new room with the episode it is watching');
+  seedingOwner.disconnect(false);
+
   const movieDetailsSource = fs.readFileSync('src/pages/movie-details/movie-details.js', 'utf8');
   const membersRenderer = movieDetailsSource.match(/renderWatchRoomMembers\([\s\S]*?\n    async setWatchRoomMemberRole\(/)?.[0] || '';
   assert.doesNotMatch(membersRenderer, /В комнате:/, 'the member counter is shown only on the participant button');

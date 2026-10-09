@@ -187,6 +187,52 @@ const service = createWatchRoomService({
   assert.strictEqual(db.docs.has("watchRooms/id-1/members/viewer"), false);
   assert.strictEqual(db.docs.get("watchRoomAclOutbox/id-1_viewer_3").desiredRole, null);
 
+  await assert.rejects(
+    () => service.extendRoom({ actorUid: "viewer", requestId: "extend-request-00001", roomId: "id-1" }),
+    (error) => error.code === "ROOM_ACCESS_DENIED",
+    "only a member can ask to extend"
+  );
+  const roomCreatedAtMs = db.docs.get("watchRooms/id-1").createdAt.getTime();
+  const initialExpiresAtMs = db.docs.get("watchRooms/id-1").expiresAt.getTime();
+  const extended = await service.extendRoom({ actorUid: "owner", requestId: "extend-request-00002", roomId: "id-1" });
+  assert.deepStrictEqual(extended, { roomId: "id-1", expiresAtMs: initialExpiresAtMs + 2 * 60 * 60 * 1000 });
+  assert.strictEqual(db.docs.get("watchRooms/id-1").expiresAt.getTime(), extended.expiresAtMs);
+  let lastExtension = extended;
+  for (let step = 3; step < 10; step += 1) {
+    try {
+      lastExtension = await service.extendRoom({ actorUid: "owner", requestId: `extend-request-0000${step}`, roomId: "id-1" });
+    } catch (error) {
+      assert.strictEqual(error.code, "ROOM_EXTENSION_LIMIT");
+      break;
+    }
+  }
+  assert.strictEqual(lastExtension.expiresAtMs, roomCreatedAtMs + 12 * 60 * 60 * 1000,
+    "extensions stop at the maximum room lifetime");
+  await assert.rejects(
+    () => service.extendRoom({ actorUid: "owner", requestId: "extend-request-00010", roomId: "id-1" }),
+    (error) => error.code === "ROOM_EXTENSION_LIMIT"
+  );
+  await assert.rejects(
+    () => service.endRoom({ actorUid: "viewer", requestId: "end-request-0000001", roomId: "id-1" }),
+    (error) => error.code === "ROOM_ACCESS_DENIED",
+    "a former member cannot end the room"
+  );
+  const ended = await service.endRoom({ actorUid: "owner", requestId: "end-request-0000002", roomId: "id-1" });
+  assert.deepStrictEqual(ended, { roomId: "id-1", state: "ended" });
+  assert.strictEqual(db.docs.get("watchRooms/id-1").status, "ended");
+  assert.strictEqual(db.docs.get("watchRooms/id-1").expiresAt.getTime(), now.getTime(),
+    "an ended room is immediately eligible for scheduled cleanup");
+  assert.deepStrictEqual(
+    await service.endRoom({ actorUid: "owner", requestId: "end-request-0000003", roomId: "id-1" }),
+    { roomId: "id-1", state: "ended" },
+    "ending an ended room is idempotent"
+  );
+  await assert.rejects(
+    () => service.redeemInvite({ actorUid: "viewer", requestId: "redeem-after-end-01", inviteId: invite.inviteId, secret: invite.secret }),
+    (error) => error.code === "ROOM_NOT_JOINABLE",
+    "an ended room cannot be joined again"
+  );
+
   const stagingDb = new FakeDb();
   stagingDb.docs.set("users/owner", { approvalStatus: "approved", displayName: "Owner" });
   for (let index = 1; index <= 10; index += 1) {

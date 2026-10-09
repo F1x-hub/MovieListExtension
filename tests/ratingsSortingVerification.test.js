@@ -152,7 +152,7 @@ assert.strictEqual(rawMovieReplacement[0].imdbRating, 6.7, 'Raw movie IMDb must 
 console.log('✅ Ratings page merges provider fields into raw movie responses');
 
 const popupSource = fs.readFileSync(path.resolve('src/popup/popup.js'), 'utf8');
-assert(popupSource.includes('Utils.formatGenres(movie?.genres, 2)'), 'Popup normalizes object-shaped genres before rendering');
+assert.match(popupSource, /Utils\.formatGenres\(movie(?:\?\.|\.)genres, 2\)/, 'Popup normalizes object-shaped genres before rendering');
 assert(!popupSource.includes("movie?.genres?.slice(0, 2).join(', ')"), 'Popup does not stringify genre objects with Array.join');
 console.log('✅ Popup genre rendering avoids [object Object]');
 

@@ -69,6 +69,16 @@ class MovieCard {
         const overlay = card?.querySelector?.('.mc-badges-overlay');
         if (!overlay) return false;
 
+        // Missing provider responses must not erase a rating already rendered.
+        ratings = {
+            ...ratings,
+            kpRating: this.normalizeRating(ratings.kpRating) || this.normalizeRating(card.dataset.kpRating),
+            imdbRating: this.normalizeRating(ratings.imdbRating) || this.normalizeRating(card.dataset.imdbRating)
+        };
+        if (ratings.kpRating > 0) card.dataset.kpRating = String(ratings.kpRating);
+        if (ratings.imdbRating > 0) card.dataset.imdbRating = String(ratings.imdbRating);
+        if (/^tt\d{7,10}$/.test(ratings.imdbId || '')) card.dataset.imdbId = ratings.imdbId;
+
         const showUnavailable = ratings.showUnavailable ?? (
             ratings.status === 'no-ratings'
             || ratings.status === 'not-found'
@@ -221,6 +231,10 @@ class MovieCard {
         if (canonicalMovieId) card.dataset.movieId = String(canonicalMovieId);
         if (movie.tmdbId) card.dataset.tmdbId = String(movie.tmdbId);
         if (movie.isTmdbOnly) card.dataset.isTmdbOnly = 'true';
+        if (kinopoiskRating > 0) card.dataset.kpRating = String(kinopoiskRating);
+        if (imdbRating > 0) card.dataset.imdbRating = String(imdbRating);
+        const imdbId = movie.imdbId || data.imdbId;
+        if (/^tt\d{7,10}$/.test(imdbId || '')) card.dataset.imdbId = imdbId;
         if (rating > 0) card.dataset.userRating = String(rating);
         card.dataset.movieTitle = title;
         if (movie.alternativeName) card.dataset.movieOriginalTitle = movie.alternativeName;

@@ -375,6 +375,14 @@
     margin-bottom: 48px;
 }
 
+.personal-tier-section .home-personal-category {
+    margin-bottom: 0;
+}
+
+.personal-tier-section .home-personal-category + .home-personal-category {
+    margin-top: 32px;
+}
+
 .home-cta-card {
     background: linear-gradient(135deg, rgba(39, 39, 42, 0.55) 0%, rgba(24, 24, 27, 0.8) 100%);
     border: 1px solid var(--theme-border);

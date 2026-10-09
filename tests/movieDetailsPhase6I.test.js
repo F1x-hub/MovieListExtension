@@ -5,7 +5,7 @@ const source = fs.readFileSync(new URL('../src/pages/movie-details/movie-details
 const perfSource = fs.readFileSync(new URL('../src/pages/movie-details/movie-details-perf.js', import.meta.url), 'utf8');
 const aggregator = fs.readFileSync(new URL('../src/shared/services/MediaAggregatorService.js', import.meta.url), 'utf8');
 
-assert(source.includes('const authPromise = firebaseManager.waitForAuthReady();'), 'auth readiness must start as a promise');
+assert(source.includes('const authPromise = firebaseManager.waitForAuthReady(15000);'), 'auth restoration needs a bounded window beyond one second');
 assert(source.includes('const cachePromise = movieId && canSpeculate'), 'cache lookup must start alongside auth');
 for (const mark of [
     'md:start',

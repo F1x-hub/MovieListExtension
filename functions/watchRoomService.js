@@ -3,6 +3,10 @@ const crypto = require("crypto");
 const MAX_PARTICIPANTS = 20;
 const DEFAULT_ROOM_TTL_MS = 4 * 60 * 60 * 1000;
 const DEFAULT_INVITE_TTL_MS = 24 * 60 * 60 * 1000;
+// An owner may extend a room in steps, but never past this lifetime, which
+// stays inside the invite's 24-hour validity.
+const ROOM_EXTENSION_STEP_MS = 2 * 60 * 60 * 1000;
+const MAX_ROOM_LIFETIME_MS = 12 * 60 * 60 * 1000;
 const ROOM_STATUSES = new Set(["lobby", "active"]);
 
 function createWatchRoomError(code, message, statusCode = 400) {
@@ -485,6 +489,80 @@ function createWatchRoomService({
     return { roomId, state: "left" };
   }
 
+  async function extendRoom({ actorUid, requestId, roomId } = {}) {
+    requireUid(actorUid);
+    requireRequestId(requestId);
+    if (typeof roomId !== "string" || !roomId) throw createWatchRoomError("INVALID_ROOM", "Room ID is invalid");
+    const extendedAt = now();
+    const roomRef = rooms.doc(roomId);
+    const memberRef = roomRef.collection("members").doc(actorUid);
+
+    return db.runTransaction(async (transaction) => {
+      const [roomSnapshot, memberSnapshot] = await Promise.all([
+        transaction.get(roomRef),
+        transaction.get(memberRef),
+      ]);
+      if (!roomSnapshot.exists || !memberSnapshot.exists) {
+        throw createWatchRoomError("ROOM_ACCESS_DENIED", "Room membership was not found", 403);
+      }
+      const room = roomSnapshot.data() || {};
+      if (room.ownerId !== actorUid || memberSnapshot.data()?.role !== "owner") {
+        throw createWatchRoomError("ROOM_OWNER_REQUIRED", "Only the room owner can extend the room", 403);
+      }
+      const expiresAtMs = toMillis(room.expiresAt);
+      if (!ROOM_STATUSES.has(room.status) || expiresAtMs <= extendedAt.getTime()) {
+        throw createWatchRoomError("ROOM_NOT_JOINABLE", "Room is not active", 409);
+      }
+      const createdAtMs = toMillis(room.createdAt);
+      const lifetimeLimitMs = Number.isFinite(createdAtMs)
+        ? createdAtMs + MAX_ROOM_LIFETIME_MS
+        : extendedAt.getTime() + ROOM_EXTENSION_STEP_MS;
+      const nextExpiresAtMs = Math.min(expiresAtMs + ROOM_EXTENSION_STEP_MS, lifetimeLimitMs);
+      if (nextExpiresAtMs <= expiresAtMs) {
+        throw createWatchRoomError("ROOM_EXTENSION_LIMIT", "Room reached its maximum lifetime", 409);
+      }
+      transaction.update(roomRef, {
+        expiresAt: new Date(nextExpiresAtMs),
+        lastActivityAt: extendedAt,
+      });
+      return { roomId, expiresAtMs: nextExpiresAtMs };
+    });
+  }
+
+  // Ends a room for everyone. The room becomes immediately expired, so invite
+  // redemption rejects it and the scheduled cleanup removes its documents.
+  async function endRoom({ actorUid, requestId, roomId } = {}) {
+    requireUid(actorUid);
+    requireRequestId(requestId);
+    if (typeof roomId !== "string" || !roomId) throw createWatchRoomError("INVALID_ROOM", "Room ID is invalid");
+    const endedAt = now();
+    const roomRef = rooms.doc(roomId);
+    const memberRef = roomRef.collection("members").doc(actorUid);
+
+    await db.runTransaction(async (transaction) => {
+      const [roomSnapshot, memberSnapshot] = await Promise.all([
+        transaction.get(roomRef),
+        transaction.get(memberRef),
+      ]);
+      if (!roomSnapshot.exists || !memberSnapshot.exists) {
+        throw createWatchRoomError("ROOM_ACCESS_DENIED", "Room membership was not found", 403);
+      }
+      const room = roomSnapshot.data() || {};
+      if (room.ownerId !== actorUid || memberSnapshot.data()?.role !== "owner") {
+        throw createWatchRoomError("ROOM_OWNER_REQUIRED", "Only the room owner can end the room", 403);
+      }
+      if (room.status === "ended") return;
+      transaction.update(roomRef, {
+        status: "ended",
+        endedAt,
+        expiresAt: endedAt,
+        lastActivityAt: endedAt,
+      });
+    });
+
+    return { roomId, state: "ended" };
+  }
+
   async function setMemberRole({ actorUid, requestId, roomId, targetUid, role } = {}) {
     requireUid(actorUid);
     requireRequestId(requestId);
@@ -536,6 +614,8 @@ function createWatchRoomService({
     createInvite,
     createRoom,
     createRoomWithInvite,
+    endRoom,
+    extendRoom,
     getApprovedProfile,
     leaveRoom,
     redeemInvite,
@@ -546,6 +626,8 @@ function createWatchRoomService({
 module.exports = {
   DEFAULT_INVITE_TTL_MS,
   DEFAULT_ROOM_TTL_MS,
+  MAX_ROOM_LIFETIME_MS,
+  ROOM_EXTENSION_STEP_MS,
   MAX_PARTICIPANTS,
   createSafeRoomDto,
   createWatchRoomError,

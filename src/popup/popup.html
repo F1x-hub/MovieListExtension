@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="popup-document">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,7 +12,7 @@
     <link rel="stylesheet" href="../shared/styles/overflow-fixes.css">
     <script src="../shared/services/ThemeService.js"></script>
 </head>
-<body>
+<body class="popup-page">
     <script src="theme-init.js"></script>
     <div class="popup-container">
         <!-- Update Banner -->
@@ -27,32 +27,32 @@
             </div>
             <div class="update-actions">
                 <button id="updateBtn" class="btn-update" data-i18n="popup.update.btn">Update</button>
-                <button id="dismissUpdateBtn" class="btn-dismiss" aria-label="Dismiss"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+                <button id="dismissUpdateBtn" class="btn-dismiss" aria-label="Dismiss update" data-i18n="[aria-label]popup.update.dismiss"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
             </div>
         </div>
 
-        <!-- Header (Row 1: 42px) -->
+        <!-- Header -->
         <header class="popup-header">
             <div class="popup-title-container">
-                <a href="#" class="popup-logo" id="popupLogo" title="Go to Home">
-                    <img src="../shared/assets/icons/app/icon48-white.png" alt="Logo" class="popup-logo-img">
+                <a href="../pages/home/home.html" class="popup-logo" id="popupLogo" title="Go to Home" aria-label="Go to Home" data-i18n="[aria-label]popup.header.home">
+                    <img src="../shared/assets/icons/app/icon48-white.png" alt="" class="popup-logo-img" aria-hidden="true">
                 </a>
                 <h1 class="popup-title" data-i18n="popup.header.title">Movie Ratings</h1>
             </div>
             <div class="header-actions-group" id="headerActionsGroup" style="display: none;">
-                <button type="button" id="refreshBtn" class="btn-icon-header" title="Refresh" data-i18n="[title]popup.content.refresh" aria-label="Refresh">
+                <button type="button" id="refreshBtn" class="btn-icon-header" title="Refresh" data-i18n="[aria-label]popup.content.refresh" aria-label="Refresh">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
                 </button>
-                <button type="button" id="openFullBtn" class="btn-icon-header" title="Open Full Page" data-i18n="[title]popup.content.view_all" aria-label="Open Full Page">
+                <button type="button" id="openFullBtn" class="btn-icon-header" title="Open Full Page" data-i18n="[aria-label]popup.content.view_all" aria-label="Open Full Page">
                     <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
                 </button>
                 <div class="avatar-container" id="avatarContainer">
-                    <button type="button" id="userAvatarBtn" class="avatar-btn" aria-label="User Menu" aria-haspopup="true" aria-expanded="false">
-                        <img id="userAvatar" class="user-avatar" src="" alt="User Avatar" style="display: none;">
+                    <button type="button" id="userAvatarBtn" class="avatar-btn" aria-label="Account menu" data-i18n="[aria-label]popup.header.user_menu" aria-expanded="false" aria-controls="avatarDropdown">
+                        <img id="userAvatar" class="user-avatar" src="" alt="" aria-hidden="true" style="display: none;">
                         <span id="userAvatarFallback" class="avatar-fallback"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></span>
                     </button>
-                    <!-- Avatar Dropdown Menu (190px) -->
-                    <div id="avatarDropdown" class="popover-surface avatar-dropdown">
+                    <!-- Account actions -->
+                    <div id="avatarDropdown" class="popover-surface avatar-dropdown" hidden inert>
                         <div class="avatar-dropdown-header">
                             <span id="userName" class="dropdown-username">User</span>
                         </div>
@@ -73,13 +73,13 @@
                     </div>
                 </div>
             </div>
-            <div class="auth-status" id="authStatus">
+            <div class="auth-status" id="authStatus" role="status" aria-live="polite">
                 <span id="statusText" data-i18n="popup.header.not_authenticated">Not authenticated</span>
             </div>
         </header>
 
         <!-- Initial Loading -->
-        <div class="initial-loading app-loader app-loader--section" id="initialLoading" style="display: flex;" role="status" aria-label="Loading ratings">
+        <div class="initial-loading app-loader app-loader--section" id="initialLoading" style="display: flex;" role="status" aria-label="Loading ratings" data-i18n="[aria-label]popup.content.loading">
             <div class="app-loader__indicator" aria-hidden="true"></div>
         </div>
 
@@ -87,7 +87,7 @@
         <div class="auth-section" id="authSection" style="display: none;">
             <div class="auth-container">
                 <!-- Inline Auth Error Banner -->
-                <div id="authErrorMessage" class="auth-error-banner" style="display: none;" role="alert"></div>
+                <div id="authErrorMessage" class="auth-error-banner" style="display: none;" role="alert" aria-live="assertive" aria-atomic="true"></div>
 
                 <!-- Login Form -->
                 <div id="loginFormSection" class="auth-content active">
@@ -111,8 +111,8 @@
                         <form id="loginEmailForm" class="auth-form" novalidate>
                             <div class="form-group">
                                 <label for="loginEmail" data-i18n="popup.auth.email_label">Электронная почта</label>
-                                <input type="email" id="loginEmail" class="form-input" placeholder="Ваш адрес электронной почты" data-i18n="[placeholder]popup.auth.email_placeholder" required autocomplete="email">
-                                <div class="field-error-message" id="loginEmailError" style="display: none;"></div>
+                                <input type="email" id="loginEmail" class="form-input" placeholder="Ваш адрес электронной почты" data-i18n="[placeholder]popup.auth.email_placeholder" required autocomplete="email" aria-invalid="false" aria-describedby="loginEmailError">
+                                <div class="field-error-message" role="alert" aria-live="polite" aria-atomic="true" id="loginEmailError" style="display: none;"></div>
                             </div>
                             <button type="submit" id="loginEmailSubmitBtn" class="btn btn-primary btn-block">
                                 <span class="btn-text" data-i18n="popup.auth.login_btn">Войти</span>
@@ -130,13 +130,13 @@
                             <div class="form-group">
                                 <div class="label-row">
                                     <label for="loginPassword" data-i18n="popup.auth.password_label">Пароль</label>
-                                    <a href="#" class="forgot-password-link" data-i18n="popup.auth.forgot_password">Забыли пароль?</a>
+                                    <button type="button" id="forgotPasswordBtn" class="forgot-password-link" data-i18n="popup.auth.forgot_password">Забыли пароль?</button>
                                 </div>
                                 <div class="password-input-wrapper">
-                                    <input type="password" id="loginPassword" class="form-input" placeholder="Ваш пароль" data-i18n="[placeholder]popup.auth.password_placeholder" required autocomplete="current-password">
-                                    <button type="button" class="toggle-password" title="Show password" aria-label="Show password" aria-pressed="false"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
+                                    <input type="password" id="loginPassword" class="form-input" placeholder="Ваш пароль" data-i18n="[placeholder]popup.auth.password_placeholder" required autocomplete="current-password" aria-invalid="false" aria-describedby="loginPasswordError">
+                                    <button type="button" class="toggle-password" title="Show password" aria-label="Show password" data-i18n="[aria-label]popup.auth.password_show" aria-pressed="false"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
                                 </div>
-                                <div class="field-error-message" id="loginPasswordError" style="display: none;"></div>
+                                <div class="field-error-message" role="alert" aria-live="polite" aria-atomic="true" id="loginPasswordError" style="display: none;"></div>
                             </div>
                             <button type="submit" id="loginPasswordSubmitBtn" class="btn btn-primary btn-block">
                                 <span class="btn-text" data-i18n="popup.auth.login_btn">Войти</span>
@@ -176,19 +176,19 @@
                             <div class="form-row">
                                 <div class="form-group">
                                     <label for="registerFirstName" data-i18n="popup.auth.first_name_label">Имя</label>
-                                    <input type="text" id="registerFirstName" class="form-input" placeholder="Ваше имя" data-i18n="[placeholder]popup.auth.first_name_placeholder" required autocomplete="given-name">
-                                    <div class="field-error-message" id="registerFirstNameError" style="display: none;"></div>
+                                    <input type="text" id="registerFirstName" class="form-input" placeholder="Ваше имя" data-i18n="[placeholder]popup.auth.first_name_placeholder" required autocomplete="given-name" aria-invalid="false" aria-describedby="registerFirstNameError">
+                                    <div class="field-error-message" role="alert" aria-live="polite" aria-atomic="true" id="registerFirstNameError" style="display: none;"></div>
                                 </div>
                                 <div class="form-group">
                                     <label for="registerLastName" data-i18n="popup.auth.last_name_label">Фамилия</label>
-                                    <input type="text" id="registerLastName" class="form-input" placeholder="Ваша фамилия" data-i18n="[placeholder]popup.auth.last_name_placeholder" required autocomplete="family-name">
-                                    <div class="field-error-message" id="registerLastNameError" style="display: none;"></div>
+                                    <input type="text" id="registerLastName" class="form-input" placeholder="Ваша фамилия" data-i18n="[placeholder]popup.auth.last_name_placeholder" required autocomplete="family-name" aria-invalid="false" aria-describedby="registerLastNameError">
+                                    <div class="field-error-message" role="alert" aria-live="polite" aria-atomic="true" id="registerLastNameError" style="display: none;"></div>
                                 </div>
                             </div>
                             <div class="form-group">
                                 <label for="registerEmail" data-i18n="popup.auth.email_label">Электронная почта</label>
-                                <input type="email" id="registerEmail" class="form-input" placeholder="Ваш адрес электронной почты" data-i18n="[placeholder]popup.auth.email_placeholder" required autocomplete="email">
-                                <div class="field-error-message" id="registerEmailError" style="display: none;"></div>
+                                <input type="email" id="registerEmail" class="form-input" placeholder="Ваш адрес электронной почты" data-i18n="[placeholder]popup.auth.email_placeholder" required autocomplete="email" aria-invalid="false" aria-describedby="registerEmailError">
+                                <div class="field-error-message" role="alert" aria-live="polite" aria-atomic="true" id="registerEmailError" style="display: none;"></div>
                             </div>
                             <button type="submit" id="registerInfoSubmitBtn" class="btn btn-primary btn-block">
                                 <span class="btn-text" data-i18n="popup.auth.register_info">Продолжить</span>
@@ -217,18 +217,18 @@
                             <div class="form-group">
                                 <label for="registerPassword" data-i18n="popup.auth.password_label">Пароль</label>
                                 <div class="password-input-wrapper">
-                                    <input type="password" id="registerPassword" class="form-input" placeholder="Придумайте пароль" data-i18n="[placeholder]popup.auth.password_placeholder" required minlength="6" autocomplete="new-password">
-                                    <button type="button" class="toggle-password" title="Show password" aria-label="Show password" aria-pressed="false"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
+                                    <input type="password" id="registerPassword" class="form-input" placeholder="Придумайте пароль" data-i18n="[placeholder]popup.auth.password_placeholder" required minlength="6" autocomplete="new-password" aria-invalid="false" aria-describedby="registerPasswordError">
+                                    <button type="button" class="toggle-password" title="Show password" aria-label="Show password" data-i18n="[aria-label]popup.auth.password_show" aria-pressed="false"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
                                 </div>
-                                <div class="field-error-message" id="registerPasswordError" style="display: none;"></div>
+                                <div class="field-error-message" role="alert" aria-live="polite" aria-atomic="true" id="registerPasswordError" style="display: none;"></div>
                             </div>
                             <div class="form-group">
                                 <label for="registerConfirmPassword" data-i18n="popup.auth.confirm_password_label">Повторите пароль</label>
                                 <div class="password-input-wrapper">
-                                    <input type="password" id="registerConfirmPassword" class="form-input" placeholder="Повторите пароль" data-i18n="[placeholder]popup.auth.confirm_password_placeholder" required minlength="6" autocomplete="new-password">
-                                    <button type="button" class="toggle-password" title="Show password" aria-label="Show password" aria-pressed="false"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
+                                    <input type="password" id="registerConfirmPassword" class="form-input" placeholder="Повторите пароль" data-i18n="[placeholder]popup.auth.confirm_password_placeholder" required minlength="6" autocomplete="new-password" aria-invalid="false" aria-describedby="registerConfirmPasswordError">
+                                    <button type="button" class="toggle-password" title="Show password" aria-label="Show password" data-i18n="[aria-label]popup.auth.password_show" aria-pressed="false"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
                                 </div>
-                                <div class="field-error-message" id="registerConfirmPasswordError" style="display: none;"></div>
+                                <div class="field-error-message" role="alert" aria-live="polite" aria-atomic="true" id="registerConfirmPasswordError" style="display: none;"></div>
                             </div>
 
                             <button type="submit" id="registerFinalSubmitBtn" class="btn btn-primary btn-block">
@@ -267,46 +267,46 @@
         </div>
 
         <!-- Main Content -->
-        <div class="main-content" id="mainContent" style="display: none;">
-            <!-- Controls Bar (Row 2: 36px) -->
+        <main class="main-content" id="mainContent" style="display: none;">
+            <!-- Rating filters and search -->
             <div class="controls-bar" id="controlsBar">
                 <!-- Chips Layer (Default View) -->
                 <div class="chips-layer" id="chipsLayer">
-                    <div class="filter-chips-group">
-                        <button type="button" class="filter-chip active" id="filterAllRatings" data-filter="all">Все</button>
-                        <button type="button" class="filter-chip" id="filterMyRatings" data-filter="my">Мои</button>
+                    <div class="filter-chips-group" role="group" aria-label="Rating filter" data-i18n="[aria-label]popup.content.filter_label">
+                        <button type="button" class="filter-chip active" id="filterAllRatings" data-filter="all" aria-pressed="true" data-i18n="popup.content.filter_all">Все</button>
+                        <button type="button" class="filter-chip" id="filterMyRatings" data-filter="my" aria-pressed="false" data-i18n="popup.content.filter_my">Мои</button>
                     </div>
-                    <button type="button" id="searchToggleBtn" class="btn-search-toggle" aria-label="Поиск" title="Поиск фильмов">
+                    <button type="button" id="searchToggleBtn" class="btn-search-toggle" aria-label="Поиск фильмов" title="Поиск фильмов" data-i18n="[aria-label]popup.content.search" aria-expanded="false" aria-controls="searchLayer">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                     </button>
                 </div>
 
                 <!-- Search Layer (Active Search View) -->
-                <div class="search-layer" id="searchLayer">
+                <div class="search-layer" id="searchLayer" hidden inert>
                     <div class="search-input-wrapper">
-                        <span class="search-input-icon">
+                        <span class="search-input-icon" aria-hidden="true">
                             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                         </span>
-                        <input type="text" id="searchInput" class="compact-search-input" placeholder="Поиск фильмов..." data-i18n="[placeholder]popup.content.search_placeholder" autocomplete="off">
-                        <button type="button" id="searchCloseBtn" class="search-close-btn" aria-label="Закрыть поиск">
+                        <input type="search" id="searchInput" class="compact-search-input" placeholder="Поиск фильмов..." data-i18n="[placeholder]popup.content.search_placeholder" aria-label="Поиск фильмов" autocomplete="off" aria-controls="searchResults">
+                        <button type="button" id="searchCloseBtn" class="search-close-btn" aria-label="Закрыть поиск" data-i18n="[aria-label]popup.content.search_close">
                             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                         </button>
                     </div>
-                    <div id="searchResults" class="compact-search-results" style="display: none;"></div>
+                    <div id="searchResults" class="popover-surface compact-search-results" style="display: none;"></div>
                 </div>
             </div>
 
             <!-- Feed Section -->
             <div class="feed-section">
-                <div class="feed-content" id="feedContent">
+                <div class="feed-content" id="feedContent" role="region" aria-label="Recent ratings" data-i18n="[aria-label]popup.content.feed_label" tabindex="0" aria-busy="false">
                     <div class="empty-state">
                         <div class="empty-state-icon"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="2" ry="2"></rect><path d="M16 6 22 2"></path><path d="M22 6 2 6"></path><path d="M7 6 2 2"></path><path d="M12 6 7 2"></path><path d="M17 6 12 2"></path></svg></div>
-                        <h3 class="empty-state-title" data-i18n="popup.content.empty_title">No ratings yet</h3>
+                        <h2 class="empty-state-title" data-i18n="popup.content.empty_title">No ratings yet</h2>
                         <p class="empty-state-text" data-i18n="popup.content.empty_text">Start rating movies to see them here!</p>
                     </div>
                     <!-- Infinite Scroll Trigger -->
                     <div id="infiniteScrollTrigger" class="infinite-scroll-trigger" style="display: none; justify-content: center; padding: 12px;">
-                        <div class="app-loader app-loader--inline app-loader--compact" role="status" aria-label="Loading more ratings">
+                        <div class="app-loader app-loader--inline app-loader--compact" role="status" aria-label="Loading more ratings" data-i18n="[aria-label]popup.content.loading_more">
                             <div class="app-loader__indicator" aria-hidden="true"></div>
                         </div>
                     </div>
@@ -318,10 +318,13 @@
                 <div class="app-loader__indicator" aria-hidden="true"></div>
                 <span class="app-loader__label" data-i18n="popup.content.loading">Loading...</span>
             </div>
-        </div>
+        </main>
 
         <!-- Error Message -->
-        <div class="error-message" id="errorMessage" style="display: none;"></div>
+        <div class="error-message" id="errorMessage" style="display: none;" role="alert" aria-live="assertive" aria-atomic="true">
+            <span id="popupStatusText"></span>
+            <button type="button" id="popupStatusDismiss" class="popup-status-dismiss" aria-label="Dismiss message" data-i18n="[aria-label]popup.content.error_dismiss"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m18 6-12 12M6 6l12 12"/></svg></button>
+        </div>
     </div>
 
     <!-- Scripts -->

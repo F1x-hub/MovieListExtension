@@ -823,6 +823,7 @@ class RatingService {
      * @param {number} limit - Maximum number of ratings to return
      * @param {string|DocumentSnapshot} lastDocInput - Last document ID or snapshot for pagination
      * @param {string|null} userId - Optional user ID to filter ratings
+     * @param {Object} options - View-model options and opt-in throwOnError
      * @returns {Promise<Object>} - Ratings and pagination info
      */
     async getAllRatings(limit = 50, lastDocInput = null, userId = null, options = {}) {
@@ -865,6 +866,7 @@ class RatingService {
             };
         } catch (error) {
             console.error('Error getting all ratings:', error);
+            if (options?.throwOnError === true) throw error;
             return { ratings: [], hasMore: false, lastDocId: null, lastDoc: null };
         }
     }

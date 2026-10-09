@@ -10,6 +10,23 @@ const profileStyles = read('src/shared/styles/profile.css');
 const popupHtml = read('src/popup/popup.html');
 const searchHtml = read('src/pages/search/search.html');
 
+const popupDocumentBlock = popupStyles.match(/^\.popup-document\s*\{([^}]+)\}/m)?.[1] || '';
+const popupPageBlock = popupStyles.match(/^\.popup-page\s*\{([^}]+)\}/m)?.[1] || '';
+const sidePanelDocumentBlock = popupStyles.match(/^\.popup-document\.popup-document--sidepanel\s*\{([^}]+)\}/m)?.[1] || '';
+const sidePanelPageBlock = popupStyles.match(/^\.popup-page\.popup-page--sidepanel\s*\{([^}]+)\}/m)?.[1] || '';
+
+assert.match(popupHtml, /<html\b[^>]*class="popup-document"/, 'The initial document must establish popup dimensions before JavaScript starts');
+for (const [name, block] of [['document', popupDocumentBlock], ['body', popupPageBlock]]) {
+    assert.match(block, /min-width:\s*400px;/, `Action popup ${name} must request its intrinsic width`);
+    assert.match(block, /min-height:\s*520px;/, `Action popup ${name} must request its intrinsic height`);
+    assert.doesNotMatch(block, /(?:max-)?(?:width|height):[^;]*\b\d+(?:d|s|l)?v[wh];/, `Action popup ${name} cannot be capped by its initial viewport`);
+}
+for (const [name, block] of [['document', sidePanelDocumentBlock], ['body', sidePanelPageBlock]]) {
+    assert.match(block, /min-width:\s*0;/, `Side panel ${name} must release the popup width minimum`);
+    assert.match(block, /min-height:\s*0;/, `Side panel ${name} must release the popup height minimum`);
+}
+assert.match(popupScript, /document\.documentElement\.classList\.toggle\('popup-document--sidepanel', isSidePanel\)/, 'Document and body must agree on the surface mode');
+
 assert.match(sharedStyles, /\.menu-item\s*\{/);
 assert.match(sharedStyles, /\.menu-item:hover\s*\{/);
 assert.match(sharedStyles, /\.menu-icon\s*\{/);

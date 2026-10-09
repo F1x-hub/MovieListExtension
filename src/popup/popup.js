@@ -6,7 +6,15 @@ import { i18n } from '../shared/i18n/I18n.js';
  */
 class PopupManager {
     constructor() {
-        console.log('🎨 PopupManager: Initializing...');
+        this.feedGeneration = 0;
+        this.renderGeneration = 0;
+        this.searchGeneration = 0;
+        this.authGeneration = 0;
+        this.feedRevision = 0;
+        this.activeUserId = null;
+        this.currentUserProfile = null;
+        this.popupMenus = new Map();
+        this.disposed = false;
         
         this.ratings = [];
         this.searchTimeout = null;
@@ -37,7 +45,461 @@ class PopupManager {
         this.start();
     }
 
+    initializeSurface() {
+        document.body.classList.add('popup-page');
+        let isSidePanel = new URL(window.location.href).searchParams.get('view') === 'sidepanel';
+        if (window.location.protocol === 'chrome-extension:' && chrome.extension?.getViews) {
+            isSidePanel = !chrome.extension.getViews({ type: 'popup' }).includes(window);
+        }
+        document.body.classList.toggle('popup-page--sidepanel', isSidePanel);
+        document.documentElement.classList.toggle('popup-document--sidepanel', isSidePanel);
+    }
+
+    debug(...args) {
+        try {
+            if (localStorage.getItem('popup_debug') === '1') console.debug('[Popup]', ...args);
+        } catch { /* Diagnostics are optional when storage is unavailable. */ }
+    }
+
+    getFeedContext() {
+        return {
+            generation: this.feedGeneration || 0,
+            filter: this.currentFilter,
+            userId: this.activeUserId || firebaseManager.getCurrentUser()?.uid || null
+        };
+    }
+
+    isFeedContextCurrent(context) {
+        const userId = this.activeUserId || firebaseManager.getCurrentUser()?.uid || null;
+        return !this.disposed && context.generation === (this.feedGeneration || 0)
+            && context.filter === this.currentFilter && context.userId === userId;
+    }
+
+    invalidateFeed(clear = false) {
+        this.feedGeneration = (this.feedGeneration || 0) + 1;
+        this.renderGeneration = (this.renderGeneration || 0) + 1;
+        this.isLoadingRatings = false;
+        this.isLoadingMore = false;
+        this.isBackgroundRefreshing = false;
+        this.closePopupMenus();
+        this.unlockTooltip();
+        this.hideTrigger();
+        if (clear) {
+            this.popupMenus?.forEach(menu => menu.remove());
+            this.popupMenus?.clear();
+            document.querySelectorAll('body > .average-score-tooltip').forEach(tooltip => tooltip.remove());
+            this.ratings = [];
+            this.ratingsLoaded = false;
+            this.lastDocId = null;
+            this.lastDoc = null;
+            this.hasMore = true;
+            this.elements.feedContent?.replaceChildren();
+        }
+    }
+
+    syncAccessibleLabels() {
+        document.documentElement.lang = i18n.currentLocale;
+        const backToTop = document.getElementById('backToTopButton');
+        if (backToTop) {
+            const label = i18n.get('popup.content.back_to_top');
+            backToTop.setAttribute('aria-label', label);
+            backToTop.title = label;
+        }
+        document.querySelectorAll('[title][data-i18n]').forEach(element => {
+            if (element.getAttribute('data-i18n').startsWith('[aria-label]')) {
+                element.title = element.getAttribute('aria-label');
+            }
+        });
+        document.querySelectorAll('.toggle-password').forEach(button => {
+            const revealed = button.getAttribute('aria-pressed') === 'true';
+            const label = i18n.get(revealed ? 'popup.auth.password_hide' : 'popup.auth.password_show');
+            button.setAttribute('aria-label', label);
+            button.title = label;
+        });
+        this.elements.filterAllRatings?.setAttribute('aria-pressed', String(this.currentFilter === 'all'));
+        this.elements.filterMyRatings?.setAttribute('aria-pressed', String(this.currentFilter === 'my'));
+    }
+
+    positionOverlay(overlay, anchor, preferAbove = false) {
+        const rect = anchor.getBoundingClientRect();
+        overlay.style.position = 'fixed';
+        const width = overlay.offsetWidth || 190;
+        const height = overlay.offsetHeight || 80;
+        const margin = 8;
+        const below = rect.bottom + 6;
+        const above = rect.top - height - 6;
+        const top = (preferAbove && above >= margin) || below + height > window.innerHeight - margin
+            ? Math.max(margin, above) : below;
+        overlay.style.left = `${Math.max(margin, Math.min(rect.right - width, window.innerWidth - width - margin))}px`;
+        overlay.style.top = `${Math.min(top, Math.max(margin, window.innerHeight - height - margin))}px`;
+    }
+
+    closePopupMenus(restoreFocus = false) {
+        if (restoreFocus) this.activeMenuButton?.focus();
+        this.popupMenus?.forEach(menu => { menu.hidden = true; menu.style.display = 'none'; });
+        document.querySelectorAll('.rating-menu-btn').forEach(button => button.setAttribute('aria-expanded', 'false'));
+        this.activeMenuButton = null;
+    }
+
+    safeImageUrl(value) {
+        const fallback = typeof IconUtils !== 'undefined'
+            ? IconUtils.getCurrentThemeIconPath(48) : chrome.runtime.getURL('src/shared/assets/icons/app/icon48.png');
+        if (typeof value !== 'string' || !value.trim()) return fallback;
+        try {
+            const url = new URL(value, window.location.href);
+            if (url.protocol === 'https:' && !url.username && !url.password) return url.href;
+            if (url.origin === window.location.origin && url.pathname.startsWith('/src/shared/assets/')) return url.href;
+        } catch { /* Untrusted image values fall back to the application icon. */ }
+        return fallback;
+    }
+
+    bindImageFallback(image, source, alt = '') {
+        const fallback = this.safeImageUrl('');
+        const normalized = this.safeImageUrl(source);
+        this.imageFallbackHandlers ||= new WeakMap();
+        const previous = this.imageFallbackHandlers.get(image);
+        if (previous) image.removeEventListener('error', previous);
+        delete image.dataset.fallbackApplied;
+        image.alt = alt;
+        image.decoding = 'async';
+        const handler = () => {
+            if (image.dataset.fallbackApplied === 'true') return;
+            image.dataset.fallbackApplied = 'true';
+            if (image.classList.contains('rating-poster')) image.classList.add('rating-poster--fallback');
+            image.src = fallback;
+        };
+        this.imageFallbackHandlers.set(image, handler);
+        image.addEventListener('error', handler);
+        if (image.classList.contains('rating-poster')) {
+            image.classList.toggle('rating-poster--fallback', normalized.includes('/src/shared/assets/icons/app/'));
+        }
+        image.src = normalized;
+    }
+
+    movieDetailsUrl(movieId) {
+        const id = String(movieId ?? '');
+        return /^\d+$/.test(id) && Number(id) > 0
+            ? chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${encodeURIComponent(id)}`) : null;
+    }
+
+    profileUrl(userId) {
+        return userId ? chrome.runtime.getURL(`src/pages/profile/profile.html?userId=${encodeURIComponent(userId)}`) : null;
+    }
+
+    bindNavigationLink(link) {
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.addEventListener('click', event => {
+            if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+            event.preventDefault();
+            chrome.tabs.create({ url: link.href });
+        });
+    }
+
+    isAuthContextCurrent(userId, generation) {
+        const user = firebaseManager.getCurrentUser();
+        return !this.disposed && this.authGeneration === generation && (!user || user.uid === userId);
+    }
+
+    compactProfile(profile) {
+        const result = {};
+        for (const field of ['displayName', 'username', 'displayNameFormat', 'firstName', 'lastName', 'photoURL']) {
+            if (typeof profile?.[field] === 'string') result[field] = profile[field];
+        }
+        return result;
+    }
+
+    isSearchContextCurrent(query, generation) {
+        return !this.disposed && this.searchGeneration === generation
+            && this.elements.searchInput.value.trim() === query && !this.elements.searchLayer.hidden;
+    }
+
+    showSearchMessage(key) {
+        const message = document.createElement('div');
+        message.className = 'search-result-empty';
+        message.setAttribute('role', 'status');
+        message.textContent = i18n.get(key);
+        this.elements.searchResults.replaceChildren(message);
+        this.elements.searchResults.hidden = false;
+        this.elements.searchResults.style.display = 'block';
+        this.elements.searchInput.setAttribute('aria-expanded', 'true');
+    }
+
+    showSuccess(message) {
+        const status = this.elements.errorMessage;
+        if (!status) return;
+        const text = status.querySelector('#popupStatusText');
+        if (text) text.textContent = message;
+        status.dataset.kind = 'success';
+        status.setAttribute('role', 'status');
+        status.hidden = false;
+        status.style.display = 'flex';
+    }
+
+    dispose() {
+        this.disposed = true;
+        this.invalidateFeed();
+        this.searchGeneration++;
+        clearTimeout(this.searchTimeout);
+        this.activeDialog?.close(false);
+        this.observer?.disconnect();
+        this.popupMenus?.forEach(menu => menu.remove());
+        document.querySelectorAll('body > .average-score-tooltip').forEach(tooltip => tooltip.remove());
+        document.removeEventListener('click', this.dismissClickListener);
+        document.removeEventListener('keydown', this.dismissKeyListener);
+        window.removeEventListener('resize', this.overlayScrollListener);
+        window.removeEventListener('authStateChanged', this.authListener);
+        window.removeEventListener('profileUpdated', this.profileListener);
+        if (this.languageListener) chrome.storage.onChanged.removeListener?.(this.languageListener);
+    }
+
+    renderFeedState(kind) {
+        const state = document.createElement('div');
+        state.className = 'feed-state' + (kind === 'empty' ? ' empty-state' : '');
+        state.dataset.state = kind;
+        state.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+        const title = document.createElement('h3');
+        title.className = 'feed-state__title';
+        const text = document.createElement('p');
+        text.className = 'feed-state__text';
+        const prefix = this.currentFilter === 'my' ? 'empty_my' : 'empty_all';
+        title.textContent = i18n.get(kind === 'loading' ? 'popup.content.loading'
+            : kind === 'error' ? 'popup.content.load_failed' : 'popup.content.' + prefix + '_title');
+        text.textContent = kind === 'empty' ? i18n.get('popup.content.' + prefix + '_text') : '';
+        state.append(title, text);
+        if (kind !== 'loading') {
+            const actions = document.createElement('div');
+            actions.className = 'feed-state__actions';
+            const action = document.createElement(kind === 'error' ? 'button' : 'a');
+            if (kind === 'error') action.type = 'button';
+            action.className = 'btn btn-primary ' + (kind === 'error' ? 'feed-state-retry' : 'feed-state-search');
+            action.textContent = i18n.get(kind === 'error' ? 'popup.content.retry' : 'popup.content.find_movie');
+            if (kind === 'error') action.addEventListener('click', () => this.forceRefreshRatings());
+            else {
+                action.href = chrome.runtime.getURL('src/pages/search/search.html');
+                this.bindNavigationLink(action);
+            }
+            actions.append(action);
+            state.append(actions);
+        }
+        this.elements.feedContent.replaceChildren(state);
+        this.hideTrigger();
+    }
+
+    commitRatingsPage(result, context) {
+        if (!this.isFeedContextCurrent(context)) return false;
+        if (result?.isSuperseded) throw new Error('Ratings result superseded');
+        if (result?.criticalError) throw new Error('Ratings read paused');
+        this.ratings = Array.isArray(result?.ratings) ? result.ratings : [];
+        this.lastDocId = result.lastDocId || null;
+        this.lastDoc = result.lastDoc || null;
+        this.hasMore = result.hasMore ?? this.ratings.length === this.ITEMS_PER_PAGE;
+        this.ratingsLoaded = true;
+        this.feedRevision++;
+        this.renderRatings();
+        this.showMainContent();
+        if (result.isStale) this.showError(i18n.get('popup.content.stale_data'));
+        return true;
+    }
+
+    observeBackgroundRefresh(promise, context, revision) {
+        if (!promise) return;
+        this.isBackgroundRefreshing = true;
+        promise.then(result => {
+            if (!this.isFeedContextCurrent(context) || this.feedRevision !== revision || this.isLoadingMore || result?.isSuperseded) return;
+            const scrollTop = this.elements.feedContent.scrollTop;
+            this.commitRatingsPage(result, context);
+            this.elements.feedContent.scrollTop = scrollTop;
+        }).catch(error => {
+            if (this.isFeedContextCurrent(context) && this.feedRevision === revision) {
+                this.showError(i18n.get('popup.content.stale_data'));
+            }
+            this.debug('Background ratings refresh unavailable', error);
+        }).finally(() => {
+            if (this.isFeedContextCurrent(context)) this.isBackgroundRefreshing = false;
+        });
+    }
+
+    addFeedRetry() {
+        if (this.elements.feedContent.querySelector('.feed-state-retry')) return;
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.className = 'btn btn-secondary feed-state-retry';
+        retry.textContent = i18n.get('popup.content.retry');
+        retry.addEventListener('click', () => this.forceRefreshRatings());
+        this.elements.feedContent.append(retry);
+    }
+
+    async enrichRenderedRatings(items, context, generation) {
+        const current = () => this.isFeedContextCurrent(context) && this.renderGeneration === generation;
+        const requests = [this.preloadAverageRatings(items)];
+        const ownItems = items.some(item => item.userId === context.userId);
+        if (ownItems) requests.push(firebaseManager.getUserService().getUserProfile(context.userId, { throwOnError: true }));
+        const results = await Promise.allSettled(requests);
+        if (!current()) return;
+        const averages = results[0].status === 'fulfilled' ? results[0].value : new Map();
+        const profile = results[1]?.status === 'fulfilled' ? results[1].value : null;
+        for (const item of items) {
+            const card = document.getElementById('rating-' + item.id);
+            if (!card) continue;
+            const movieId = item.movie?.kinopoiskId || item.movieId;
+            const average = averages.get(movieId) || averages.get(Number(movieId));
+            const tooltip = document.getElementById('tooltip-' + item.id);
+            if (tooltip) tooltip.textContent = i18n.get('popup.rating.average') + ': ' +
+                (average?.count > 0 ? String(Number(Number(average.average).toFixed(1))) : i18n.get('popup.rating.no_ratings'));
+            if (profile && item.userId === context.userId) {
+                card.querySelector('.rating-author-name').textContent = Utils.getDisplayName(profile, firebaseManager.getCurrentUser());
+                this.bindImageFallback(card.querySelector('.rating-author-avatar'), profile.photoURL || item.userPhoto);
+            }
+        }
+    }
+
+    openPopupDialog({ title, body, initialFocus, closeId = '', returnFocus = document.activeElement }) {
+        this.activeDialog?.close(false);
+        this.closePopupMenus();
+        this.closeAvatarDropdown(false);
+        this.unlockTooltip();
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay popup-dialog-overlay';
+        const content = document.createElement('section');
+        content.className = 'modal popup-dialog';
+        content.setAttribute('role', 'dialog');
+        content.setAttribute('aria-modal', 'true');
+        const titleId = 'popup-dialog-title';
+        content.setAttribute('aria-labelledby', titleId);
+        content.tabIndex = -1;
+        const header = document.createElement('div');
+        header.className = 'popup-dialog__header';
+        const heading = document.createElement('h2');
+        heading.className = 'popup-dialog__title';
+        heading.id = titleId;
+        heading.textContent = title;
+        const closeButton = document.createElement('button');
+        closeButton.type = 'button';
+        closeButton.className = 'popup-dialog__close';
+        if (closeId) closeButton.id = closeId;
+        closeButton.setAttribute('aria-label', i18n.get('popup.auth.close'));
+        closeButton.innerHTML = Icons.CLOSE;
+        header.append(heading, closeButton);
+        content.append(header, body);
+        overlay.append(content);
+        const container = document.querySelector('.popup-container');
+        const previousInert = Boolean(container?.inert);
+        if (container) container.inert = true;
+        document.body.append(overlay);
+        let closed = false;
+        const focusable = () => [...content.querySelectorAll('button, input, textarea, a[href], [tabindex]')]
+            .filter(element => !element.disabled && !element.hidden && element.tabIndex >= 0);
+        const close = (restoreFocus = true) => {
+            if (closed) return;
+            closed = true;
+            document.removeEventListener('keydown', keydown, true);
+            document.removeEventListener('focusin', focusin);
+            overlay.remove();
+            if (container) container.inert = previousInert;
+            if (this.activeDialog?.overlay === overlay) this.activeDialog = null;
+            if (restoreFocus && returnFocus?.isConnected && !returnFocus.disabled) returnFocus.focus();
+        };
+        const keydown = event => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                close();
+            }
+            if (event.key !== 'Tab') return;
+            const elements = focusable();
+            const first = elements[0] || content;
+            const last = elements.at(-1) || content;
+            if (event.shiftKey && (document.activeElement === first || !content.contains(document.activeElement))) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && (document.activeElement === last || !content.contains(document.activeElement))) {
+                event.preventDefault();
+                first.focus();
+            }
+        };
+        const focusin = event => { if (!content.contains(event.target)) (focusable()[0] || content).focus(); };
+        document.addEventListener('keydown', keydown, true);
+        document.addEventListener('focusin', focusin);
+        closeButton.addEventListener('click', () => close());
+        overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
+        this.activeDialog = { overlay, content, close };
+        (body.querySelector(initialFocus) || focusable()[0] || content).focus();
+        return this.activeDialog;
+    }
+
+    showPasswordResetDialog() {
+        const body = document.createElement('form');
+        body.id = 'passwordResetFormPopup';
+        body.className = 'popup-dialog__body';
+        body.noValidate = true;
+        body.innerHTML = '<p id="passwordResetHelpPopup" class="popup-dialog__help"></p>' +
+            '<div class="popup-dialog__field"><label for="passwordResetEmailPopup"></label>' +
+            '<input id="passwordResetEmailPopup" class="form-input" type="email" autocomplete="email" required aria-invalid="false" aria-describedby="passwordResetHelpPopup passwordResetStatusPopup"></div>' +
+            '<p id="passwordResetStatusPopup" class="popup-dialog__status" role="status" hidden></p>' +
+            '<div class="popup-dialog__footer"><button class="btn btn-primary" type="submit" id="passwordResetSubmitPopup"></button></div>';
+        body.querySelector('label').textContent = i18n.get('popup.password_reset.email_label');
+        body.querySelector('#passwordResetHelpPopup').textContent = i18n.get('popup.password_reset.help');
+        const email = body.querySelector('input');
+        email.placeholder = i18n.get('popup.password_reset.email_placeholder');
+        email.value = this.elements.staticEmail?.value || this.elements.loginEmail?.value || '';
+        const submit = body.querySelector('button');
+        submit.textContent = i18n.get('popup.password_reset.request');
+        const status = body.querySelector('#passwordResetStatusPopup');
+        const dialog = this.openPopupDialog({ title: i18n.get('popup.password_reset.title'), body, initialFocus: '#passwordResetEmailPopup' });
+        let pending = false;
+        email.addEventListener('input', () => { email.setAttribute('aria-invalid', 'false'); status.hidden = true; });
+        body.addEventListener('submit', async event => {
+            event.preventDefault();
+            if (pending || this.activeDialog !== dialog) return;
+            const address = email.value.trim();
+            if (!this.isValidEmail(address)) {
+                email.setAttribute('aria-invalid', 'true');
+                status.className = 'popup-dialog__error';
+                status.setAttribute('role', 'alert');
+                status.textContent = i18n.get('popup.auth.email_invalid');
+                status.hidden = false;
+                email.focus();
+                return;
+            }
+            pending = true;
+            submit.disabled = true;
+            submit.textContent = i18n.get('popup.password_reset.sending');
+            body.setAttribute('aria-busy', 'true');
+            status.hidden = true;
+            try {
+                await firebaseManager.sendPasswordResetEmail(address);
+                if (this.activeDialog !== dialog) return;
+                status.className = 'popup-dialog__status';
+                status.setAttribute('role', 'status');
+                status.textContent = i18n.get('popup.password_reset.success');
+                status.hidden = false;
+            } catch (error) {
+                if (this.activeDialog !== dialog) return;
+                if (error.code === 'auth/user-not-found') {
+                    status.className = 'popup-dialog__status';
+                    status.setAttribute('role', 'status');
+                    status.textContent = i18n.get('popup.password_reset.success');
+                    status.hidden = false;
+                    return;
+                }
+                status.className = 'popup-dialog__error';
+                status.setAttribute('role', 'alert');
+                status.textContent = i18n.get('popup.password_reset.error');
+                status.hidden = false;
+                this.debug('Password reset unavailable', error);
+            } finally {
+                pending = false;
+                submit.disabled = false;
+                submit.textContent = i18n.get('popup.password_reset.request');
+                body.setAttribute('aria-busy', 'false');
+            }
+        });
+    }
+
     async start() {
+        this.initializeSurface();
+        window.addEventListener('pagehide', () => this.dispose(), { once: true });
         // Initialize theme first
         this.initializeTheme();
         
@@ -64,18 +526,16 @@ class PopupManager {
     async initI18n() {
         await i18n.init();
         i18n.translatePage();
-        
-        // Listen for storage changes to update language in real-time
-        chrome.storage.onChanged.addListener((changes) => {
-            if (changes.language) {
-                console.log('PopupManager: Language changed, re-translating...');
-                i18n.currentLocale = changes.language.newValue;
-                i18n.translatePage();
-                if (this.ratings.length > 0) {
-                    this.renderRatings();
-                }
-            }
-        });
+        this.syncAccessibleLabels();
+        this.languageListener = changes => {
+            if (!changes.language || this.disposed) return;
+            i18n.currentLocale = changes.language.newValue;
+            i18n.translatePage();
+            this.syncAccessibleLabels();
+            if (this.ratingsLoaded) this.renderRatings();
+            if (!this.elements.searchLayer.hidden) this.handleSearch({ target: this.elements.searchInput });
+        };
+        chrome.storage.onChanged.addListener(this.languageListener);
     }
 
     initializeTheme() {
@@ -217,20 +677,21 @@ class PopupManager {
 
     showAuthError(message, inputElement = null, errorElement = null) {
         this.clearAuthErrors();
-
-        if (inputElement) {
-            inputElement.classList.add('input-error');
-            inputElement.focus();
-        }
-
         if (errorElement) {
             errorElement.textContent = message;
             errorElement.style.display = 'block';
+            errorElement.hidden = false;
         } else if (this.elements.authErrorMessage) {
             this.elements.authErrorMessage.textContent = message;
             this.elements.authErrorMessage.style.display = 'flex';
         } else {
             this.showError(message);
+        }
+        if (inputElement) {
+            inputElement.classList.add('input-error');
+            inputElement.setAttribute('aria-invalid', 'true');
+            if (errorElement?.id) inputElement.setAttribute('aria-describedby', errorElement.id);
+            inputElement.focus();
         }
     }
 
@@ -239,286 +700,233 @@ class PopupManager {
             this.elements.authErrorMessage.textContent = '';
             this.elements.authErrorMessage.style.display = 'none';
         }
-        document.querySelectorAll('.form-input').forEach(el => el.classList.remove('input-error'));
-        document.querySelectorAll('.field-error-message').forEach(el => {
-            el.textContent = '';
-            el.style.display = 'none';
+        document.querySelectorAll('.form-input').forEach(input => {
+            input.classList.remove('input-error');
+            input.setAttribute('aria-invalid', 'false');
+        });
+        document.querySelectorAll('.field-error-message').forEach(error => {
+            error.textContent = '';
+            error.style.display = 'none';
         });
         this.hideError();
     }
 
     setupEventListeners() {
-        // Logo click handler
-        const popupLogo = document.getElementById('popupLogo');
-        if (popupLogo) {
-            popupLogo.addEventListener('click', (e) => {
-                e.preventDefault();
-                chrome.tabs.create({ url: 'src/pages/home/home.html' });
-            });
-        }
-        
-        // Auth events (click handlers for full keyboard access)
-        if (this.elements.googleLoginBtn) {
-            this.elements.googleLoginBtn.addEventListener('click', () => this.handleGoogleLogin());
-        }
-        if (this.elements.logoutBtn) {
-            this.elements.logoutBtn.addEventListener('click', () => this.handleLogout());
-        }
-        
-        // Two-step login listeners
-        if (this.elements.loginEmailForm) {
-            this.elements.loginEmailForm.addEventListener('submit', (e) => this.handleEmailStep(e));
-        }
-        if (this.elements.loginPasswordForm) {
-            this.elements.loginPasswordForm.addEventListener('submit', (e) => this.handleEmailLogin(e));
-        }
-        if (this.elements.backToEmailBtn) {
-            this.elements.backToEmailBtn.addEventListener('click', (e) => this.goToStep1(e));
-        }
-        
-        // Two-step registration listeners
-        if (this.elements.registerInfoForm) {
-            this.elements.registerInfoForm.addEventListener('submit', (e) => this.handleRegisterStep1(e));
-        }
-        if (this.elements.registerPasswordForm) {
-            this.elements.registerPasswordForm.addEventListener('submit', (e) => this.handleRegisterFinal(e));
-        }
-        if (this.elements.backToRegisterInfoBtn) {
-            this.elements.backToRegisterInfoBtn.addEventListener('click', (e) => this.goToRegisterStep1(e));
-        }
-        if (this.elements.googleRegisterBtn) {
-            this.elements.googleRegisterBtn.addEventListener('click', () => this.handleGoogleLogin());
-        }
-
-        if (this.elements.approvalBackToLoginBtn) {
-            this.elements.approvalBackToLoginBtn.addEventListener('click', (e) => {
-                e.preventDefault();
+        const on = (element, event, callback) => element?.addEventListener(event, callback);
+        on(document.getElementById('popupLogo'), 'click', event => {
+            event.preventDefault();
+            chrome.tabs.create({ url: chrome.runtime.getURL('src/pages/home/home.html') });
+        });
+        on(this.elements.googleLoginBtn, 'click', () => this.handleGoogleLogin());
+        on(this.elements.googleRegisterBtn, 'click', () => this.handleGoogleLogin());
+        on(this.elements.logoutBtn, 'click', () => this.handleLogout());
+        on(this.elements.loginEmailForm, 'submit', event => this.handleEmailStep(event));
+        on(this.elements.loginPasswordForm, 'submit', event => this.handleEmailLogin(event));
+        on(this.elements.backToEmailBtn, 'click', event => this.goToStep1(event));
+        on(this.elements.registerInfoForm, 'submit', event => this.handleRegisterStep1(event));
+        on(this.elements.registerPasswordForm, 'submit', event => this.handleRegisterFinal(event));
+        on(this.elements.backToRegisterInfoBtn, 'click', event => this.goToRegisterStep1(event));
+        on(document.getElementById('forgotPasswordBtn'), 'click', () => this.showPasswordResetDialog());
+        on(this.elements.approvalBackToLoginBtn, 'click', async event => {
+            event.preventDefault();
+            const user = firebaseManager.getCurrentUser();
+            if (!this.approvalCheckUserId || user?.uid !== this.approvalCheckUserId) {
                 this.switchAuthForm('login');
-            });
-        }
-
-        // Clear input error on typing
-        document.querySelectorAll('.form-input').forEach(input => {
-            input.addEventListener('input', () => {
-                input.classList.remove('input-error');
-                const formGroup = input.closest('.form-group');
-                if (formGroup) {
-                    const err = formGroup.querySelector('.field-error-message');
-                    if (err) {
-                        err.textContent = '';
-                        err.style.display = 'none';
-                    }
+                return;
+            }
+            const generation = this.authGeneration;
+            this.setButtonLoading(this.elements.approvalBackToLoginBtn, true, 'popup.content.loading');
+            try {
+                if (await this.validateUserApproval(user.uid) && this.isAuthContextCurrent(user.uid, generation)) {
+                    this.updateAuthUI(true, user);
+                    await this.loadRatings();
                 }
-                if (this.elements.authErrorMessage) {
-                    this.elements.authErrorMessage.style.display = 'none';
-                }
-            });
+            } finally { this.setButtonLoading(this.elements.approvalBackToLoginBtn, false); }
         });
-        
-        // Auth Switching
+        document.querySelectorAll('.form-input').forEach(input => on(input, 'input', () => {
+            input.classList.remove('input-error');
+            input.setAttribute('aria-invalid', 'false');
+            const error = input.closest('.form-group')?.querySelector('.field-error-message');
+            if (error) { error.textContent = ''; error.style.display = 'none'; }
+            if (this.elements.authErrorMessage) this.elements.authErrorMessage.style.display = 'none';
+        }));
         this.setupAuthSwitching();
-
-        // Filter chips events
-        if (this.elements.filterAllRatings) {
-            this.elements.filterAllRatings.addEventListener('click', () => {
-                if (this.currentFilter === 'all') return;
-                this.setFilter('all');
-            });
-        }
-        if (this.elements.filterMyRatings) {
-            this.elements.filterMyRatings.addEventListener('click', () => {
-                if (this.currentFilter === 'my') return;
-                this.setFilter('my');
-            });
-        }
-
-        // Search toggle events
-        if (this.elements.searchToggleBtn) {
-            this.elements.searchToggleBtn.addEventListener('click', () => {
-                this.openSearchLayer();
-            });
-        }
-        if (this.elements.searchCloseBtn) {
-            this.elements.searchCloseBtn.addEventListener('click', () => {
-                this.closeSearchLayer();
-            });
-        }
-         
-        // Search events
-        if (this.elements.searchInput) {
-            this.elements.searchInput.addEventListener('input', (e) => this.handleSearch(e));
-            this.elements.searchInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    this.openSearchPage();
-                }
-            });
-            this.elements.searchInput.addEventListener('blur', () => {
-                // Delay hiding to allow click events on results
-                setTimeout(() => this.hideSearchResults(), 150);
-            });
-        }
-        if (this.elements.searchIconBtn) {
-            this.elements.searchIconBtn.addEventListener('click', () => this.openSearchPage());
-        }
-
-        // Avatar dropdown events
-        if (this.elements.userAvatarBtn) {
-            this.elements.userAvatarBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.toggleAvatarDropdown();
-            });
-        }
-        
-        // Feed events
-        if (this.elements.refreshBtn) {
-            this.elements.refreshBtn.addEventListener('click', () => this.forceRefreshRatings());
-        }
-        if (this.elements.openFullBtn) {
-            this.elements.openFullBtn.addEventListener('click', () => this.openRatingsPage());
-        }
-        if (this.elements.viewAllRatingsBtn) {
-            this.elements.viewAllRatingsBtn.addEventListener('click', () => this.openRatingsPage());
-        }
-        if (this.elements.settingsBtn) {
-            this.elements.settingsBtn.addEventListener('click', () => {
-                this.closeAvatarDropdown();
-                chrome.tabs.create({ url: 'src/pages/settings/settings.html' });
-            });
-        }
-        if (this.elements.profileMenuBtn) {
-            this.elements.profileMenuBtn.addEventListener('click', () => {
-                this.closeAvatarDropdown();
-                const currentUser = firebaseManager.getCurrentUser();
-                if (currentUser) {
-                    this.openUserProfile(currentUser.uid);
-                }
-            });
-        }
-        
-        // Global dismiss for avatar dropdown and tooltips
-        document.addEventListener('click', (e) => {
-            if (this.elements.avatarDropdown && this.elements.avatarDropdown.classList.contains('active')) {
-                if (!e.target.closest('#avatarContainer')) {
-                    this.closeAvatarDropdown();
-                }
-            }
-            if (this.lockedTooltip && !e.target.closest('.rating-score-badge')) {
-                this.unlockTooltip();
+        on(this.elements.filterAllRatings, 'click', () => this.setFilter('all'));
+        on(this.elements.filterMyRatings, 'click', () => this.setFilter('my'));
+        on(this.elements.searchToggleBtn, 'click', () => this.openSearchLayer());
+        on(this.elements.searchCloseBtn, 'click', () => this.closeSearchLayer());
+        on(this.elements.searchInput, 'input', event => this.handleSearch(event));
+        on(this.elements.searchInput, 'keydown', event => {
+            if (event.key === 'Enter') { event.preventDefault(); this.openSearchPage(); }
+            if (event.key === 'ArrowDown') {
+                const first = this.elements.searchResults?.querySelector('a');
+                if (first) { event.preventDefault(); first.focus(); }
             }
         });
-
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                this.closeAvatarDropdown();
-                this.unlockTooltip();
-                if (this.elements.controlsBar?.classList.contains('search-active')) {
-                    this.closeSearchLayer();
-                }
-            }
+        on(this.elements.searchIconBtn, 'click', () => this.openSearchPage());
+        on(this.elements.userAvatarBtn, 'click', () => this.toggleAvatarDropdown());
+        on(this.elements.refreshBtn, 'click', () => this.forceRefreshRatings());
+        on(this.elements.openFullBtn, 'click', () => this.openRatingsPage());
+        on(this.elements.settingsBtn, 'click', () => {
+            this.closeAvatarDropdown();
+            chrome.tabs.create({ url: chrome.runtime.getURL('src/pages/settings/settings.html') });
         });
-
-        // Reset circuit breaker when user manually scrolls feedContent
-        if (this.elements.feedContent) {
-            this.elements.feedContent.addEventListener('scroll', () => {
-                this.consecutiveAutoLoads = 0;
-                if (this.hasMore && !this.isLoadingMore && !this.isCircuitBreakerTripped) {
-                    this.showTrigger();
-                }
-            }, { passive: true });
-        }
-        
-        // Password toggle
+        on(this.elements.profileMenuBtn, 'click', () => {
+            this.closeAvatarDropdown();
+            const user = firebaseManager.getCurrentUser();
+            if (user) this.openUserProfile(user.uid);
+        });
+        on(document.getElementById('popupStatusDismiss'), 'click', () => this.hideError());
+        this.dismissClickListener = event => {
+            if (!event.target.closest('#avatarContainer, #avatarDropdown')) this.closeAvatarDropdown(false);
+            if (!event.target.closest('.rating-menu, .rating-menu-dropdown')) this.closePopupMenus();
+            if (!event.target.closest('.rating-score-badge, .average-score-tooltip')) this.unlockTooltip();
+            if (!event.target.closest('#searchLayer, #searchToggleBtn')) this.hideSearchResults();
+        };
+        this.dismissKeyListener = event => {
+            if (event.key !== 'Escape') return;
+            if (this.activeMenuButton) { event.preventDefault(); this.closePopupMenus(true); return; }
+            if (this.lockedTooltip) { event.preventDefault(); this.unlockTooltip(); return; }
+            if (!this.elements.avatarDropdown?.hidden) { this.closeAvatarDropdown(); return; }
+            if (this.elements.controlsBar?.classList.contains('search-active')) this.closeSearchLayer();
+        };
+        document.addEventListener('click', this.dismissClickListener);
+        document.addEventListener('keydown', this.dismissKeyListener);
+        this.overlayScrollListener = () => {
+            this.closePopupMenus();
+            this.closeAvatarDropdown(false);
+            this.unlockTooltip();
+        };
+        on(this.elements.feedContent, 'scroll', this.overlayScrollListener);
+        const resumePagination = () => {
+            this.consecutiveAutoLoads = 0;
+            if (this.hasMore && !this.isLoadingMore && !this.isCircuitBreakerTripped) this.showTrigger();
+        };
+        on(this.elements.feedContent, 'wheel', resumePagination);
+        on(this.elements.feedContent, 'touchmove', resumePagination);
+        on(this.elements.feedContent, 'keydown', event => {
+            if (['PageDown', 'ArrowDown', 'End', ' '].includes(event.key)) resumePagination();
+        });
+        window.addEventListener('resize', this.overlayScrollListener);
         this.setupPasswordToggles();
-        
-        // Infinite scroll observer
         this.setupIntersectionObserver();
     }
 
     async setFilter(filter) {
+        if (!['all', 'my'].includes(filter) || this.currentFilter === filter) return;
         this.currentFilter = filter;
-        if (this.elements.filterAllRatings) {
-            this.elements.filterAllRatings.classList.toggle('active', filter === 'all');
-        }
-        if (this.elements.filterMyRatings) {
-            this.elements.filterMyRatings.classList.toggle('active', filter === 'my');
-        }
+        this.elements.filterAllRatings?.classList.toggle('active', filter === 'all');
+        this.elements.filterMyRatings?.classList.toggle('active', filter === 'my');
+        this.syncAccessibleLabels();
+        this.invalidateFeed(true);
         await this.loadRatings();
     }
 
     openSearchLayer() {
-        if (this.elements.controlsBar) {
-            this.elements.controlsBar.classList.add('search-active');
-        }
-        if (this.elements.searchInput) {
-            setTimeout(() => this.elements.searchInput?.focus(), 50);
-        }
+        this.closeAvatarDropdown(false);
+        this.elements.searchLayer.hidden = false;
+        this.elements.searchLayer.inert = false;
+        this.elements.chipsLayer.inert = true;
+        this.elements.chipsLayer.hidden = true;
+        this.elements.controlsBar.classList.add('search-active');
+        this.elements.searchToggleBtn?.setAttribute('aria-expanded', 'true');
+        this.elements.searchInput?.focus();
     }
 
-    closeSearchLayer() {
-        if (this.elements.controlsBar) {
-            this.elements.controlsBar.classList.remove('search-active');
+    closeSearchLayer(restoreFocus = true) {
+        clearTimeout(this.searchTimeout);
+        this.searchGeneration = (this.searchGeneration || 0) + 1;
+        this.elements.controlsBar?.classList.remove('search-active');
+        if (this.elements.searchLayer) {
+            this.elements.searchLayer.inert = true;
+            this.elements.searchLayer.hidden = true;
         }
-        if (this.elements.searchInput) {
-            this.elements.searchInput.value = '';
+        if (this.elements.chipsLayer) {
+            this.elements.chipsLayer.hidden = false;
+            this.elements.chipsLayer.inert = false;
         }
+        if (this.elements.searchInput) this.elements.searchInput.value = '';
+        this.elements.searchToggleBtn?.setAttribute('aria-expanded', 'false');
         this.hideSearchResults();
+        if (restoreFocus) this.elements.searchToggleBtn?.focus();
     }
 
     toggleAvatarDropdown() {
-        if (!this.elements.avatarDropdown) return;
-        this.elements.avatarDropdown.classList.toggle('active');
+        const dropdown = this.elements.avatarDropdown;
+        if (!dropdown) return;
+        if (!dropdown.hidden) {
+            this.closeAvatarDropdown();
+            return;
+        }
+        this.closePopupMenus();
+        this.unlockTooltip();
+        document.body.append(dropdown);
+        dropdown.hidden = false;
+        dropdown.inert = false;
+        dropdown.classList.add('active');
+        this.elements.userAvatarBtn?.setAttribute('aria-expanded', 'true');
+        this.positionOverlay(dropdown, this.elements.userAvatarBtn);
+        dropdown.querySelector('button')?.focus();
     }
 
-    closeAvatarDropdown() {
-        if (!this.elements.avatarDropdown) return;
-        this.elements.avatarDropdown.classList.remove('active');
+    closeAvatarDropdown(restoreFocus = true) {
+        const dropdown = this.elements.avatarDropdown;
+        if (!dropdown) return;
+        const containedFocus = dropdown.contains(document.activeElement);
+        dropdown.classList.remove('active');
+        dropdown.hidden = true;
+        dropdown.inert = true;
+        this.elements.userAvatarBtn?.setAttribute('aria-expanded', 'false');
+        if (restoreFocus && containedFocus) this.elements.userAvatarBtn?.focus();
     }
 
     setupScoreBadgeTooltip(ratingDiv, ratingId) {
         const badge = ratingDiv.querySelector('.rating-score-badge');
-        const tooltip = ratingDiv.querySelector(`#tooltip-${ratingId}`);
+        const tooltip = document.getElementById(`tooltip-${ratingId}`) || ratingDiv.querySelector('.average-score-tooltip');
         if (!badge || !tooltip) return;
-
+        tooltip.hidden = true;
+        tooltip.setAttribute('role', 'tooltip');
+        badge.setAttribute('aria-describedby', tooltip.id);
+        badge.setAttribute('aria-expanded', 'false');
+        const show = () => {
+            const clickLocked = this.tooltipClickLocked === tooltip;
+            this.unlockTooltip();
+            if (clickLocked) this.tooltipClickLocked = tooltip;
+            document.body.append(tooltip);
+            tooltip.hidden = false;
+            tooltip.classList.add('active');
+            badge.setAttribute('aria-expanded', 'true');
+            this.lockedTooltip = tooltip;
+            this.tooltipAnchor = badge;
+            this.positionOverlay(tooltip, badge, true);
+        };
+        badge.addEventListener('click', () => {
+            if (this.tooltipClickLocked === tooltip) this.unlockTooltip();
+            else { show(); this.tooltipClickLocked = tooltip; }
+        });
         badge.addEventListener('mouseenter', () => {
-            if (this.lockedTooltip && this.lockedTooltip === tooltip) return;
-            if (this.lockedTooltip && this.lockedTooltip !== tooltip) return;
-            
-            this.tooltipTimeout = setTimeout(() => {
-                tooltip.classList.add('active');
-            }, 220);
+            clearTimeout(this.tooltipTimeout);
+            this.tooltipTimeout = setTimeout(show, 220);
         });
-
         badge.addEventListener('mouseleave', () => {
-            if (this.tooltipTimeout) {
-                clearTimeout(this.tooltipTimeout);
-                this.tooltipTimeout = null;
-            }
-            if (this.lockedTooltip !== tooltip) {
-                tooltip.classList.remove('active');
-            }
+            clearTimeout(this.tooltipTimeout);
+            if (document.activeElement !== badge && this.tooltipClickLocked !== tooltip) this.unlockTooltip();
         });
-
-        badge.addEventListener('mousedown', (e) => {
-            e.stopPropagation();
-            if (this.tooltipTimeout) {
-                clearTimeout(this.tooltipTimeout);
-                this.tooltipTimeout = null;
-            }
-            if (this.lockedTooltip === tooltip) {
-                this.unlockTooltip();
-            } else {
-                this.unlockTooltip();
-                this.lockedTooltip = tooltip;
-                tooltip.classList.add('active');
-            }
-        });
+        badge.addEventListener('focus', show);
+        badge.addEventListener('blur', () => this.unlockTooltip());
     }
 
     unlockTooltip() {
+        clearTimeout(this.tooltipTimeout);
+        this.tooltipTimeout = null;
         if (this.lockedTooltip) {
             this.lockedTooltip.classList.remove('active');
-            this.lockedTooltip = null;
+            this.lockedTooltip.hidden = true;
         }
+        this.tooltipAnchor?.setAttribute('aria-expanded', 'false');
+        this.lockedTooltip = null;
+        this.tooltipClickLocked = null;
+        this.tooltipAnchor = null;
     }
 
     setupIntersectionObserver() {
@@ -531,7 +939,7 @@ class PopupManager {
         this.observer = new IntersectionObserver((entries) => {
             const entry = entries[0];
             if (entry.isIntersecting && this.hasMore && !this.isLoadingMore && this.ratingsLoaded && !this.isCircuitBreakerTripped) {
-                console.log('🔄 Infinite scroll: trigger visible, conditions met → loadMoreRatings()');
+                this.debug('Infinite scroll: loading the next page');
                 this.loadMoreRatings();
             }
         }, options);
@@ -630,129 +1038,50 @@ class PopupManager {
     }
 
     setupPasswordToggles() {
-        document.querySelectorAll('.toggle-password').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.preventDefault();
-                const input = btn.previousElementSibling;
-                if (input && input.tagName === 'INPUT') {
-                    if (input.type === 'password') {
-                        input.type = 'text';
-                        btn.setAttribute('aria-pressed', 'true');
-                        btn.setAttribute('aria-label', 'Hide password');
-                        btn.innerHTML = Icons.EYE_OFF;
-                    } else {
-                        input.type = 'password';
-                        btn.setAttribute('aria-pressed', 'false');
-                        btn.setAttribute('aria-label', 'Show password');
-                        btn.innerHTML = Icons.EYE;
-                    }
-                }
-            });
-        });
+        document.querySelectorAll('.toggle-password').forEach(button => button.addEventListener('click', event => {
+            event.preventDefault();
+            const input = button.previousElementSibling;
+            if (input?.tagName !== 'INPUT') return;
+            const reveal = input.type === 'password';
+            input.type = reveal ? 'text' : 'password';
+            button.setAttribute('aria-pressed', String(reveal));
+            button.setAttribute('aria-label', i18n.get(reveal ? 'popup.auth.password_hide' : 'popup.auth.password_show'));
+            button.title = button.getAttribute('aria-label');
+            button.innerHTML = reveal ? Icons.EYE_OFF : Icons.EYE;
+        }));
     }
 
     setupAuthStateListener() {
-        window.addEventListener('authStateChanged', async (event) => {
+        this.authListener = async event => {
             const { user, isAuthenticated } = event.detail;
-            
-            if (isAuthenticated && user) {
-                // Approval gate check
-                const isApproved = await this.validateUserApproval(user.uid, false);
-                if (!isApproved) {
-                    return;
-                }
-                
-                this.updateAuthUI(true, user, false);
-                
-                // Auto-load ratings when user signs in (only if not already loaded or loading)
-                if (!this.ratingsLoaded && !this.isLoadingRatings) {
-                    console.log('PopupManager: Auth state changed, loading ratings');
-                    this.loadRatings();
-                }
-            } else {
-                // If not authenticated, show auth section immediately
-                this.updateAuthUI(false, null, true);
-            }
-        });
-        
-        // Listen for profile updates to refresh ratings
-        window.addEventListener('profileUpdated', () => {
-            console.log('PopupManager: Profile updated, refreshing ratings');
+            const generation = ++this.authGeneration;
+            if (!isAuthenticated || !user) { this.updateAuthUI(false, null); return; }
+            if (this.activeUserId && this.activeUserId !== user.uid) this.updateAuthUI(false, null);
+            if (!await this.validateUserApproval(user.uid) || !this.isAuthContextCurrent(user.uid, generation)) return;
+            this.updateAuthUI(true, user);
+            if (!this.ratingsLoaded && !this.isLoadingRatings) await this.loadRatings();
+        };
+        this.profileListener = () => {
+            if (!this.activeUserId) return;
+            this.loadUserDisplayPreferences(this.activeUserId);
             this.forceRefreshRatings();
-        });
+        };
+        window.addEventListener('authStateChanged', this.authListener);
+        window.addEventListener('profileUpdated', this.profileListener);
     }
 
     async initializeUI() {
-        console.log('🚀 PopupManager: Initializing UI...');
-        
-        // Check for updates first
         this.checkPendingUpdate();
-
-        // ===== FAST PATH: Check stored auth data FIRST =====
-        // This allows instant loading when user is already authenticated
+        const generation = this.authGeneration;
         const authData = await AuthManager.getAuthData();
-        
-        // Optimistic check: if we have a user stored, we are likely logged in.
-        // Verify approval status with Firestore before granting access to mainContent.
-        if (authData && authData.user) {
-            console.log('✅ PopupManager: Found stored user, checking approval status...');
-            
-            const isApproved = await this.validateUserApproval(authData.user.uid, false);
-            if (!isApproved) {
-                return;
-            }
-
-            // Show authenticated UI immediately
-            this.updateAuthUI(true, authData.user, false);
-            this.elements.authSection.style.display = 'none';
-            this.elements.initialLoading.style.display = 'none';
-            this.elements.mainContent.style.display = 'flex';
-            
-            // Check if token is actually valid for data fetching
-            if (AuthManager.isTokenValid(authData)) {
-                // Load ratings in background
-                this.loadRatings().catch(err => {
-                    console.error('Background ratings load failed:', err);
-                    this.showError('Failed to load ratings');
-                });
-            } else {
-                console.log('⏳ PopupManager: Token expired/invalid, waiting for refresh...');
-                // Show loading state in the feed/content area while we wait for token refresh
-                this.showLoading(true);
-            }
-            
-            return; // Early exit
-        }
-        
-        // ===== SLOW PATH: No valid stored auth in fast path, wait for Firebase initialization =====
-        console.log('⏳ PopupManager: No valid stored auth in fast path, waiting for Firebase...');
-        
-        const currentUser = (typeof firebaseManager !== 'undefined' && firebaseManager.waitForAuthReady)
-            ? await firebaseManager.waitForAuthReady(400)
-            : (firebaseManager?.getCurrentUser() || null);
-        
-        if (currentUser) {
-            console.log('✅ PopupManager: Firebase user found, checking approval status...');
-            const isApproved = await this.validateUserApproval(currentUser.uid, false);
-            if (!isApproved) {
-                return;
-            }
-
-            this.updateAuthUI(true, currentUser, false);
-            this.elements.authSection.style.display = 'none';
-            this.elements.initialLoading.style.display = 'flex';
-            
-            // Load ratings (with loading spinner this time)
-            this.loadRatings().catch(err => {
-                console.error('Ratings load failed:', err);
-                this.showError('Failed to load ratings');
-                this.updateAuthUI(false, null, true);
-            });
-        } else {
-            // No auth anywhere after waiting - show login form
-            console.log('❌ PopupManager: No authentication found, showing login form');
-            this.updateAuthUI(false, null, true);
-        }
+        if (this.disposed || this.authGeneration !== generation) return;
+        const user = authData?.user || (firebaseManager.waitForAuthReady
+            ? await firebaseManager.waitForAuthReady(400) : firebaseManager.getCurrentUser());
+        if (this.disposed || this.authGeneration !== generation) return;
+        if (!user) { this.updateAuthUI(false, null); return; }
+        if (!await this.validateUserApproval(user.uid) || !this.isAuthContextCurrent(user.uid, generation)) return;
+        this.updateAuthUI(true, user);
+        await this.loadRatings();
     }
 
     checkPendingUpdate() {
@@ -989,97 +1318,94 @@ class PopupManager {
     }
 
     async loadUserDisplayPreferences(userId) {
+        const generation = this.authGeneration;
+        const current = () => this.activeUserId === userId && this.isAuthContextCurrent(userId, generation);
         try {
-            // Check if we have cached profile data first to avoid flickering
-            const cachedProfile = await this.getCachedProfile(userId);
-            if (cachedProfile) {
-                this.applyDisplayName(cachedProfile);
-            }
-
-            // Fetch fresh data
-            if (firebaseManager && firebaseManager.getUserService) {
-                const userService = firebaseManager.getUserService();
-                const profile = await userService.getUserProfile(userId);
-                
-                if (profile) {
-                    this.cacheProfile(userId, profile);
-                    this.applyDisplayName(profile);
-                }
-            }
-        } catch (error) {
-            console.error('Error loading user display preferences:', error);
-        }
+            const cached = await this.getCachedProfile(userId);
+            if (!current()) return;
+            if (cached) { this.currentUserProfile = cached; this.applyDisplayName(cached); }
+            const profile = await firebaseManager.getUserService().getUserProfile(userId, { throwOnError: true });
+            if (!current() || !profile) return;
+            this.currentUserProfile = this.compactProfile(profile);
+            this.applyDisplayName(this.currentUserProfile);
+            await this.cacheProfile(userId, profile);
+        } catch (error) { this.debug('Profile display preferences unavailable', error); }
     }
 
     applyDisplayName(profile) {
-        if (!this.elements.userName || !profile) return;
-
-        const format = profile.displayNameFormat || 'fullname';
-        let displayText = profile.displayName || 'User';
-
-        if (format === 'username' && profile.username) {
-            displayText = profile.username;
-        }
-
-        this.elements.userName.textContent = displayText;
-
-        // Also update the "Signed in as: ..." status text
-        if (this.elements.statusText) {
-            this.elements.statusText.textContent = i18n.get('popup.header.signed_in_as').replace('{user}', displayText);
-        }
+        if (!profile || !this.activeUserId) return;
+        const name = Utils.getDisplayName(profile, firebaseManager.getCurrentUser()) || i18n.get('popup.rating.unknown_user');
+        if (this.elements.userName) this.elements.userName.textContent = name;
+        if (this.elements.statusText) this.elements.statusText.textContent = i18n.get('popup.header.signed_in_as').replace('{user}', name);
     }
 
     async getCachedProfile(userId) {
-        return new Promise((resolve) => {
-            chrome.storage.local.get([`user_profile_${userId}`], (result) => {
-                resolve(result[`user_profile_${userId}`] || null);
-            });
-        });
+        const key = 'user_profile_' + userId;
+        const stored = await new Promise(resolve => chrome.storage.local.get([key], resolve));
+        return stored[key] ? this.compactProfile(stored[key]) : null;
     }
 
     cacheProfile(userId, profile) {
-        const key = `user_profile_${userId}`;
-        chrome.storage.local.set({ [key]: profile });
+        const generation = this.authGeneration;
+        const operation = async () => {
+            const stored = await new Promise(resolve => chrome.storage.local.get(['user_profile_index'], resolve));
+            if (this.activeUserId !== userId || !this.isAuthContextCurrent(userId, generation)) return;
+            const previous = Array.isArray(stored.user_profile_index) ? stored.user_profile_index : [];
+            const index = [userId, ...previous.filter(id => id !== userId)].slice(0, 20);
+            const removed = previous.filter(id => !index.includes(id)).map(id => 'user_profile_' + id);
+            if (removed.length) await chrome.storage.local.remove(removed);
+            await chrome.storage.local.set({ ['user_profile_' + userId]: this.compactProfile(profile), user_profile_index: index });
+        };
+        this.profileCacheWritePromise = (this.profileCacheWritePromise || Promise.resolve()).catch(() => {}).then(operation);
+        return this.profileCacheWritePromise;
     }
 
     updateAuthUI(isAuthenticated, user, showContent = true) {
-        if (isAuthenticated) {
-            if (this.elements.authSection) this.elements.authSection.style.display = 'none';
-            if (this.elements.authStatus) this.elements.authStatus.style.display = 'none';
-            if (this.elements.headerActionsGroup) this.elements.headerActionsGroup.style.display = 'flex';
-            
-            // Update user info
-            const displayName = user?.displayName || user?.email?.split('@')[0] || 'User';
-            if (this.elements.userName) this.elements.userName.textContent = displayName;
-            if (this.elements.userAvatar) {
-                if (user?.photoURL) {
-                    this.elements.userAvatar.src = user.photoURL;
-                    this.elements.userAvatar.style.display = 'block';
-                    if (this.elements.userAvatarFallback) this.elements.userAvatarFallback.style.display = 'none';
-                } else {
-                    this.elements.userAvatar.style.display = 'none';
-                    if (this.elements.userAvatarFallback) this.elements.userAvatarFallback.style.display = 'flex';
-                }
-            }
-
-            // Fetch and apply profile preferences (display name format)
-            if (user?.uid) {
-                this.loadUserDisplayPreferences(user.uid);
-            }
-            
-            // Only show main content if explicitly requested
-            if (showContent) {
-                if (this.elements.initialLoading) this.elements.initialLoading.style.display = 'none';
-                if (this.elements.mainContent) this.elements.mainContent.style.display = 'flex';
-            }
-        } else {
-            if (this.elements.initialLoading) this.elements.initialLoading.style.display = 'none';
-            if (this.elements.mainContent) this.elements.mainContent.style.display = 'none';
-            if (this.elements.headerActionsGroup) this.elements.headerActionsGroup.style.display = 'none';
-            if (this.elements.authStatus) this.elements.authStatus.style.display = 'flex';
-            if (this.elements.authSection) this.elements.authSection.style.display = 'block';
-            if (this.elements.statusText) this.elements.statusText.textContent = i18n.get('popup.header.not_authenticated');
+        if (!isAuthenticated || !user) {
+            this.activeUserId = null;
+            this.currentUserProfile = null;
+            this.invalidateFeed(true);
+            this.closeAvatarDropdown(false);
+            this.closeSearchLayer(false);
+            this.activeDialog?.close(false);
+            this.showLoading(false);
+            this.hideError();
+            this.elements.initialLoading.style.display = 'none';
+            this.elements.mainContent.style.display = 'none';
+            this.elements.headerActionsGroup.style.display = 'none';
+            this.elements.authSection.style.display = 'block';
+            this.elements.authStatus.style.display = 'flex';
+            this.elements.statusText.textContent = i18n.get('popup.header.not_authenticated');
+            if (this.elements.userName) this.elements.userName.textContent = '';
+            if (this.elements.userAvatar) { this.elements.userAvatar.removeAttribute('src'); this.elements.userAvatar.style.display = 'none'; }
+            this.approvalCheckUserId = null;
+            return;
         }
+        if (this.activeUserId !== user.uid) {
+            this.invalidateFeed(true);
+            this.currentUserProfile = null;
+            this.closeSearchLayer(false);
+            this.closeAvatarDropdown(false);
+            this.activeDialog?.close(false);
+        }
+        this.activeUserId = user.uid;
+        this.approvalCheckUserId = null;
+        this.elements.authSection.style.display = 'none';
+        this.elements.authStatus.style.display = 'none';
+        this.elements.headerActionsGroup.style.display = 'flex';
+        if (this.elements.userName) this.elements.userName.textContent = user.displayName || i18n.get('popup.rating.unknown_user');
+        if (this.elements.userAvatar) {
+            if (user.photoURL) {
+                this.bindImageFallback(this.elements.userAvatar, user.photoURL, i18n.get('popup.header.avatar_alt'));
+                this.elements.userAvatar.style.display = 'block';
+                this.elements.userAvatarFallback.style.display = 'none';
+            } else {
+                this.elements.userAvatar.style.display = 'none';
+                this.elements.userAvatarFallback.style.display = 'flex';
+            }
+        }
+        this.loadUserDisplayPreferences(user.uid);
+        if (showContent) this.showMainContent();
     }
 
     async handleGoogleLogin() {
@@ -1095,7 +1421,7 @@ class PopupManager {
             const userService = firebaseManager.getUserService();
 
             // Check if profile exists prior to this sign in to determine if it is a new registration
-            const existingProfile = await userService.getUserProfile(user.uid);
+            const existingProfile = await userService.getUserProfile(user.uid, { throwOnError: true });
             const isNewRegistration = !existingProfile;
             
             await userService.createOrUpdateUserProfile(user.uid, {
@@ -1395,196 +1721,140 @@ class PopupManager {
 
     async validateUserApproval(userId, isNewRegistration = false) {
         if (!userId) return false;
-        
+        const generation = this.authGeneration;
         try {
-            const userService = firebaseManager.getUserService();
-            const profile = await userService.getUserProfile(userId);
-            
-            // If approvalStatus is pending or rejected, block access
-            if (profile && profile.approvalStatus === 'pending') {
-                await this.handleApprovalBlocked('pending', isNewRegistration);
+            const profile = await firebaseManager.getUserService().getUserProfile(userId, { throwOnError: true });
+            if (!this.isAuthContextCurrent(userId, generation)) return false;
+            if (!profile) throw new Error('Approval profile unavailable');
+            if (['pending', 'rejected'].includes(profile.approvalStatus)) {
+                await this.handleApprovalBlocked(profile.approvalStatus, isNewRegistration, userId);
                 return false;
             }
-            
-            if (profile && profile.approvalStatus === 'rejected') {
-                await this.handleApprovalBlocked('rejected', isNewRegistration);
-                return false;
-            }
-            
-            // approved OR missing field (legacy fallback) -> allow access
+            if (profile.approvalStatus && profile.approvalStatus !== 'approved') throw new Error('Unknown approval state');
             return true;
         } catch (error) {
-            console.error('[PopupManager] Error validating user approval status:', error);
-            // On unexpected error, do not block unless we know it's pending/rejected
-            return true;
+            if (!this.isAuthContextCurrent(userId, generation)) return false;
+            this.debug('Approval check unavailable', error);
+            this.updateAuthUI(false, null);
+            this.elements.initialLoading.style.display = 'none';
+            this.elements.mainContent.style.display = 'none';
+            this.elements.headerActionsGroup.style.display = 'none';
+            this.elements.authSection.style.display = 'block';
+            this.switchAuthForm('approval');
+            this.approvalCheckUserId = userId;
+            this.elements.approvalStatusTitle.textContent = i18n.get('popup.approval.unavailable_title');
+            this.elements.approvalStatusMessage.textContent = i18n.get('popup.approval.unavailable_msg');
+            this.elements.approvalBackBtnText.textContent = i18n.get('popup.approval.retry');
+            return false;
         }
     }
 
-    async handleApprovalBlocked(status, isNewRegistration = false) {
-        console.warn(`[PopupManager] Approval Gate: User blocked with status "${status}" (newRegistration: ${isNewRegistration})`);
-        
+    async handleApprovalBlocked(status, isNewRegistration = false, userId = null) {
+        const user = firebaseManager.getCurrentUser();
+        if (userId && user && user.uid !== userId) return;
+        this.updateAuthUI(false, null);
         try {
-            // Sign out from Firebase and clear local storage auth data
+            await this.profileCacheWritePromise;
             await AuthManager.clearAuthData();
-            if (typeof firebaseManager !== 'undefined' && firebaseManager.signOut) {
-                await firebaseManager.signOut();
-            }
-        } catch (err) {
-            console.error('[PopupManager] Error during approval blocked sign out:', err);
-        }
-        
-        // Hide main content & loading
-        if (this.elements.mainContent) this.elements.mainContent.style.display = 'none';
-        if (this.elements.initialLoading) this.elements.initialLoading.style.display = 'none';
-        
-        // Update header indicator
-        if (this.elements.statusText) this.elements.statusText.textContent = (typeof i18n !== 'undefined' && i18n.get) ? i18n.get('popup.header.not_authenticated') : 'Не авторизован';
-        
-        // Show auth section with approval card
-        if (this.elements.authSection) this.elements.authSection.style.display = 'block';
+            if (firebaseManager.signOut) await firebaseManager.signOut();
+        } catch (error) { this.debug('Blocked account sign out failed', error); }
+        if (firebaseManager.getCurrentUser()?.uid && firebaseManager.getCurrentUser().uid !== userId) return;
+        this.elements.approvalBackBtnText.textContent = i18n.get('popup.approval.back_to_login');
         this.showApprovalScreen({ status, isNewRegistration });
     }
 
     async handleLogout() {
+        ++this.authGeneration;
+        this.updateAuthUI(false, null);
         try {
-            this.showLoading(true);
-            this.hideError();
-            
-            // Clear ratings cache on logout
-            const ratingsCacheService = firebaseManager.getRatingsCacheService();
-            await ratingsCacheService.clearCache();
-            
-            // Clear AuthManager data (chrome.storage.local)
+            await this.profileCacheWritePromise;
+            await firebaseManager.getRatingsCacheService().clearCache();
             await AuthManager.clearAuthData();
-            
             await firebaseManager.signOut();
-            this.ratings = [];
-            this.ratingsLoaded = false;
-            this.isLoadingRatings = false;
-            this.lastDocId = null;
-            this.hasMore = true;
-            this.isLoadingMore = false;
-            this.hideTrigger();
-            this.renderRatings();
         } catch (error) {
-            this.showError(`${i18n.currentLocale === 'ru' ? 'Ошибка выхода' : 'Logout failed'}: ${error.message}`);
-        } finally {
-            this.showLoading(false);
+            this.debug('Sign out failed', error);
+            this.showError(i18n.get('popup.auth.logout_failed'));
         }
     }
 
-    async handleSearch(e) {
-        const query = e.target.value.trim();
-        
-        if (query.length < 2) {
-            this.hideSearchResults();
-            return;
-        }
-
-        // Debounce search
+    handleSearch(event) {
         clearTimeout(this.searchTimeout);
-        this.searchTimeout = setTimeout(async () => {
-            await this.performSearch(query);
-        }, 300);
+        const generation = ++this.searchGeneration;
+        const query = event.target.value.trim();
+        if (query.length < 2) { this.hideSearchResults(); return; }
+        this.showSearchMessage('popup.content.search_loading');
+        this.searchTimeout = setTimeout(() => this.performSearch(query, generation), 300);
     }
 
-    async performSearch(query) {
-        // Show loading placeholder
-        this.elements.searchResults.innerHTML = '<div class="search-result-loading">Поиск…</div>';
-        this.elements.searchResults.style.display = 'block';
-
+    async performSearch(query, generation = this.searchGeneration) {
+        if (!this.isSearchContextCurrent(query, generation)) return;
+        this.showSearchMessage('popup.content.search_loading');
+        let failed = false;
         try {
-            const kinopoiskService = firebaseManager.getKinopoiskService();
-            const result = await kinopoiskService.searchMovies(query, 1, 5, {
-                skipOffscreen: true,
-                skipFetchScraper: true
-            });
-
+            const result = await firebaseManager.getKinopoiskService().searchMovies(query, 1, 5, { skipOffscreen: true, skipFetchScraper: true });
+            if (!this.isSearchContextCurrent(query, generation)) return;
             const movies = (result?.docs || []).map(doc => ({
                 kinopoiskId: doc.id || doc.kinopoiskId,
-                name: doc.name || doc.alternativeName || 'Без названия',
-                year: doc.year || '',
-                genres: (doc.genres || []).map(g => (typeof g === 'object' ? g.name : g)),
-                posterUrl: doc.poster?.previewUrl || doc.poster?.url || doc.posterUrl || '',
-                votes: doc.votes
-            })).filter(m => m.kinopoiskId);
-
-            if (movies.length > 0) {
-                this.displaySearchResults(movies);
-            } else {
-                // Fallback to Firestore cache
-                const movieCacheService = firebaseManager.getMovieCacheService();
-                const cached = await movieCacheService.searchCachedMovies(query, 5);
-                this.displaySearchResults(cached);
-            }
+                name: doc.name || doc.alternativeName || i18n.get('popup.rating.unknown_movie'),
+                year: doc.year || '', genres: doc.genres || [],
+                posterUrl: doc.poster?.previewUrl || doc.poster?.url || doc.posterUrl || ''
+            })).filter(movie => this.movieDetailsUrl(movie.kinopoiskId));
+            if (movies.length) { this.displaySearchResults(movies); return; }
+        } catch (error) { failed = true; this.debug('Search provider unavailable', error); }
+        if (!this.isSearchContextCurrent(query, generation)) return;
+        try {
+            const cached = await firebaseManager.getMovieCacheService().searchCachedMovies(query, 5);
+            if (!this.isSearchContextCurrent(query, generation)) return;
+            if (failed && !cached?.length) this.showSearchMessage('popup.content.search_error');
+            else this.displaySearchResults(cached);
         } catch (error) {
-            console.warn('Popup search via KP API failed, falling back to cache:', error);
-            try {
-                const movieCacheService = firebaseManager.getMovieCacheService();
-                const cached = await movieCacheService.searchCachedMovies(query, 5);
-                this.displaySearchResults(cached);
-            } catch (cacheError) {
-                console.error('Search fallback also failed:', cacheError);
-                this.hideSearchResults();
-            }
+            if (this.isSearchContextCurrent(query, generation)) this.showSearchMessage('popup.content.search_error');
+            this.debug('Search cache unavailable', error);
         }
     }
 
     displaySearchResults(movies) {
-        if (!movies || movies.length === 0) {
-            this.elements.searchResults.innerHTML = '<div class="search-result-empty">Ничего не найдено</div>';
-            this.elements.searchResults.style.display = 'block';
-            return;
-        }
-
+        const results = this.elements.searchResults;
+        results.replaceChildren();
         const query = this.elements.searchInput.value.toLowerCase().trim();
-        const fallbackIcon = typeof IconUtils !== 'undefined'
-            ? IconUtils.getIconPath(document.body.classList.contains('light-theme') ? 'light' : 'dark', 48)
-            : '/src/shared/assets/icons/app/icon48-white.png';
-
-        const resultsHTML = movies.map(movie => {
-            const name = movie.name || 'Без названия';
-            const nameLower = name.toLowerCase();
-            let relevanceClass = '';
-
-            if (nameLower === query) {
-                relevanceClass = 'exact-match';
-            } else if (nameLower.startsWith(query)) {
-                relevanceClass = 'starts-with';
-            } else if (nameLower.includes(query)) {
-                relevanceClass = 'contains';
-            }
-
-            const genres = Array.isArray(movie.genres) ? movie.genres.slice(0, 2).join(', ') : '';
-            const year = movie.year || '';
-            const meta = [year, genres].filter(Boolean).join(' \u2022 ');
-            const posterSrc = movie.posterUrl || fallbackIcon;
-
-            return `
-                <div class="search-result-item ${relevanceClass}" data-movie-id="${movie.kinopoiskId}">
-                    <img src="${posterSrc}" alt="${this.escapeHtml(name)}" class="search-result-poster" onerror="this.src='${fallbackIcon}'">
-                    <div class="search-result-info">
-                        <h4 class="search-result-title">${this.escapeHtml(name)}</h4>
-                        ${meta ? `<p class="search-result-meta">${this.escapeHtml(meta)}</p>` : ''}
-                    </div>
-                </div>
-            `;
-        }).join('');
-
-        this.elements.searchResults.innerHTML = resultsHTML;
-        this.elements.searchResults.style.display = 'block';
-
-        this.elements.searchResults.querySelectorAll('.search-result-item').forEach(item => {
-            item.addEventListener('mousedown', () => {
-                const movieId = item.dataset.movieId;
-                this.openMovieDetails(movieId);
-            });
-        });
+        for (const movie of movies || []) {
+            const href = this.movieDetailsUrl(movie.kinopoiskId || movie.id);
+            if (!href) continue;
+            const link = document.createElement('a');
+            link.className = 'search-result-item';
+            link.href = href;
+            link.dataset.movieId = String(movie.kinopoiskId || movie.id);
+            const name = String(movie.name || i18n.get('popup.rating.unknown_movie'));
+            if (name.toLowerCase() === query) link.classList.add('exact-match');
+            const poster = document.createElement('img');
+            poster.className = 'search-result-poster';
+            this.bindImageFallback(poster, movie.posterUrl || movie.poster?.previewUrl);
+            const info = document.createElement('div');
+            info.className = 'search-result-info';
+            const title = document.createElement('h4');
+            title.className = 'search-result-title';
+            title.textContent = name;
+            const meta = document.createElement('p');
+            meta.className = 'search-result-meta';
+            const genres = (movie.genres || []).slice(0, 2).map(genre => typeof genre === 'object' ? genre.name : genre).filter(Boolean);
+            meta.textContent = [movie.year, genres.join(', ')].filter(Boolean).join(' · ');
+            info.append(title, meta);
+            link.append(poster, info);
+            this.bindNavigationLink(link);
+            results.append(link);
+        }
+        if (!results.childElementCount) { this.showSearchMessage('popup.content.search_empty'); return; }
+        results.hidden = false;
+        results.style.display = 'block';
+        this.elements.searchInput.setAttribute('aria-expanded', 'true');
     }
 
 
     hideSearchResults() {
+        if (!this.elements.searchResults) return;
+        this.elements.searchResults.hidden = true;
         this.elements.searchResults.style.display = 'none';
+        this.elements.searchInput?.setAttribute('aria-expanded', 'false');
     }
 
     openSearchPage() {
@@ -1600,10 +1870,8 @@ class PopupManager {
     }
 
     openMovieDetails(movieId) {
-        // For now, open in advanced search page with movie ID
-        chrome.tabs.create({ 
-            url: chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`) 
-        });
+        const url = this.movieDetailsUrl(movieId);
+        if (url) chrome.tabs.create({ url });
     }
 
     openRatingsPage() {
@@ -1613,9 +1881,8 @@ class PopupManager {
     }
 
     openUserProfile(userId) {
-        chrome.tabs.create({ 
-            url: chrome.runtime.getURL(`src/pages/profile/profile.html?userId=${userId}`) 
-        });
+        const url = this.profileUrl(userId);
+        if (url) chrome.tabs.create({ url });
     }
 
     openSettings() {
@@ -1623,979 +1890,365 @@ class PopupManager {
     }
 
     async loadRatings() {
-        // Prevent multiple simultaneous calls
-        if (this.isLoadingRatings) {
-            console.log('PopupManager: loadRatings already in progress, skipping');
-            return;
-        }
-
+        if (this.isLoadingRatings || !this.activeUserId || this.disposed) return;
+        const context = this.getFeedContext();
+        this.isLoadingRatings = true;
+        this.consecutiveAutoLoads = 0;
+        this.isCircuitBreakerTripped = false;
+        this.hideError();
+        this.hideTrigger();
+        this.showMainContent();
+        if (!this.ratings.length) this.renderFeedState('loading');
         try {
-            this.isLoadingRatings = true;
-            const startTime = performance.now();
-            console.log('⏱️ PopupManager: Starting loadRatings()');
-            
-            // Reset pagination state for fresh load
-            this.lastDocId = null;
-            this.lastDoc = null;
-            this.hasMore = true;
-            this.isLoadingMore = false;
-            this.consecutiveAutoLoads = 0;
-            this.isCircuitBreakerTripped = false;
-            // Hide trigger spinner — it must never appear during initial load
-            this.hideTrigger();
-            
-            // Hide main content and show initial loading
-            this.elements.mainContent.style.display = 'none';
-            this.elements.initialLoading.style.display = 'flex';
-            this.hideError();
-            
-            // Determine userId based on active filter ('all' vs 'my')
-            const currentUser = firebaseManager.getCurrentUser();
-            const filterUserId = (this.currentFilter === 'my' && currentUser) ? currentUser.uid : null;
-            this.updateAuthUI(true, currentUser, false);
-            
-            // Check if chrome.storage is available
-            if (!chrome || !chrome.storage || !chrome.storage.local) {
-                console.error('PopupManager: chrome.storage.local is not available');
-                throw new Error('Storage not available');
-            }
-            
-            const ratingsCacheService = firebaseManager.getRatingsCacheService();
-            console.log('PopupManager: Got RatingsCacheService instance');
-            
-            const cacheStartTime = performance.now();
-            console.log(`⏱️ [PopupManager] Starting getCachedRatingsWithBackgroundRefresh (filter: ${this.currentFilter}, userId: ${filterUserId})`);
-            
-            // Temporarily wrap refreshCacheInBackground to track isBackgroundRefreshing flag
-            const origRefresh = ratingsCacheService.refreshCacheInBackground.bind(ratingsCacheService);
-            ratingsCacheService.refreshCacheInBackground = async (...args) => {
-                this.isBackgroundRefreshing = true;
-                console.log('🔄 [PopupManager] Background cache refresh started');
-                try {
-                    return await origRefresh(...args);
-                } finally {
-                    this.isBackgroundRefreshing = false;
-                    console.log('✅ [PopupManager] Background cache refresh finished');
-                    // Restore original method
-                    ratingsCacheService.refreshCacheInBackground = origRefresh;
-                }
-            };
-            
-            const result = await ratingsCacheService.getCachedRatingsWithBackgroundRefresh(this.ITEMS_PER_PAGE, null, filterUserId);
-            const cacheEndTime = performance.now();
-            const cacheLoadTime = Math.round(cacheEndTime - cacheStartTime);
-            
-            console.log(`✅ [PopupManager] Got result from cache service in ${cacheLoadTime}ms:`, { 
-                ratingsCount: result.ratings.length, 
-                isFromCache: result.isFromCache,
-                hasMore: result.hasMore,
-                loadTime: `${cacheLoadTime}ms`,
-                userId: filterUserId
-            });
-            
-            this.ratings = result.ratings;
-            this.lastDocId = result.lastDocId;
-            this.lastDoc = result.lastDoc;
-            this.hasMore = result.hasMore !== undefined ? result.hasMore : (result.ratings.length === this.ITEMS_PER_PAGE);
-            
-            // Render ratings (both cached and fresh data)
-            const renderStartTime = performance.now();
-            await this.renderRatings(false); // false = replace content (not append)
-            const renderEndTime = performance.now();
-            const renderTime = Math.round(renderEndTime - renderStartTime);
-            
-            this.ratingsLoaded = true;
-            
-            // Now that first batch is shown, update trigger visibility based on hasMore
-            if (this.hasMore) { this.showTrigger(); } else { this.hideTrigger(); }
-            
-            // Show main content after all ratings are rendered
-            this.showMainContent();
-            
-            // Show feed content with fade in for smooth appearance
-            if (this.elements.feedContent.style.display !== 'none') {
-                this.elements.feedContent.classList.add('fade-in');
-            }
-            
-            // Background refresh is automatically started in getCachedRatingsWithBackgroundRefresh()
-            // if data was loaded from cache, ensuring fresh data for next time
-            
-            const totalTime = Math.round(performance.now() - startTime);
-            
-            // Show cache status in console
-            if (result.isFromCache) {
-                const cacheStats = await ratingsCacheService.getCacheStats();
-                console.log(`🎯 Cached ratings displayed in ${totalTime}ms total (cache: ${cacheLoadTime}ms, render: ${renderTime}ms):`, {
-                    count: this.ratings.length,
-                    cacheAge: `${cacheStats.age} minutes`,
-                    cacheValid: cacheStats.isValid,
-                    performance: {
-                        cacheLoad: `${cacheLoadTime}ms`,
-                        render: `${renderTime}ms`,
-                        total: `${totalTime}ms`
-                    }
-                });
-            } else {
-                console.log(`🌐 Fresh ratings displayed in ${totalTime}ms total (fetch: ${cacheLoadTime}ms, render: ${renderTime}ms):`, {
-                    count: this.ratings.length,
-                    performance: {
-                        fetch: `${cacheLoadTime}ms`,
-                        render: `${renderTime}ms`,
-                        total: `${totalTime}ms`
-                    }
-                });
-            }
+            const service = firebaseManager.getRatingsCacheService();
+            const result = await service.getCachedRatingsWithBackgroundRefresh(this.ITEMS_PER_PAGE, null,
+                context.filter === 'my' ? context.userId : null);
+            if (!this.commitRatingsPage(result, context)) return;
+            this.observeBackgroundRefresh(result.refreshPromise, context, this.feedRevision);
         } catch (error) {
-            // Show main content even on error
-            this.showMainContent();
-            this.showError(`${i18n.currentLocale === 'ru' ? 'Не удалось загрузить оценки' : 'Failed to load ratings'}: ${error.message}`);
+            if (!this.isFeedContextCurrent(context)) return;
+            if (!this.ratings.length) this.renderFeedState('error');
+            this.showError(i18n.get('popup.content.load_failed'));
+            this.debug('Initial ratings read unavailable', error);
         } finally {
-            this.isLoadingRatings = false; // Reset flag
+            if (this.isFeedContextCurrent(context)) this.isLoadingRatings = false;
         }
     }
 
     async loadMoreRatings() {
-        // 🔍 Log 2: state before the guard check
-        console.log('🔄 loadMoreRatings called:', {
-            isLoadingMore: this.isLoadingMore,
-            isBackgroundRefreshing: this.isBackgroundRefreshing,
-            hasMore: this.hasMore,
-            isCircuitBreakerTripped: this.isCircuitBreakerTripped,
-            consecutiveAutoLoads: this.consecutiveAutoLoads,
-            lastDocId: this.lastDocId,
-            lastDocType: this.lastDoc ? typeof this.lastDoc : 'null',
-            lastDocClass: this.lastDoc?.constructor?.name ?? 'null',
-            ratingsCount: this.ratings?.length
-        });
-        
-        if (this.isLoadingMore || !this.hasMore || this.isCircuitBreakerTripped) {
-            console.warn('⛔ loadMoreRatings BLOCKED:', {
-                isLoadingMore: this.isLoadingMore,
-                hasMore: this.hasMore,
-                isCircuitBreakerTripped: this.isCircuitBreakerTripped
-            });
-            return;
-        }
-
+        if (this.disposed || !this.activeUserId || this.isLoadingRatings || this.isLoadingMore || !this.ratingsLoaded
+            || !this.hasMore || this.isCircuitBreakerTripped) return;
         const now = performance.now();
-        if (now - this.lastLoadMoreTime < this.MIN_LOAD_MORE_INTERVAL_MS) {
-            console.warn('⛔ loadMoreRatings THROTTLED: called too quickly');
-            return;
-        }
-
-        if (this.consecutiveAutoLoads >= this.MAX_CONSECUTIVE_AUTO_LOADS) {
-            console.warn(`⛔ loadMoreRatings CIRCUIT BREAKER TRIPPED: ${this.consecutiveAutoLoads} consecutive auto-loads without user scroll. Pausing auto-pagination.`);
-            this.hideTrigger();
-            return;
-        }
-
+        if (now - this.lastLoadMoreTime < this.MIN_LOAD_MORE_INTERVAL_MS) return;
+        if (this.consecutiveAutoLoads >= this.MAX_CONSECUTIVE_AUTO_LOADS) { this.hideTrigger(); return; }
+        const context = this.getFeedContext();
         this.consecutiveAutoLoads++;
         this.lastLoadMoreTime = now;
-        
+        this.isLoadingMore = true;
         try {
-            this.isLoadingMore = true;
-            const cursor = this.lastDoc || this.lastDocId;
-            const currentUser = firebaseManager.getCurrentUser();
-            const filterUserId = (this.currentFilter === 'my' && currentUser) ? currentUser.uid : null;
-
-            console.log('📤 loadMoreRatings: sending cursor to fetchAndCacheRatings:', {
-                cursorType: cursor === null ? 'null' : typeof cursor,
-                cursorIsSnapshot: cursor !== null && typeof cursor === 'object',
-                cursorId: cursor?.id ?? cursor,
-                cursorClass: cursor?.constructor?.name ?? 'N/A',
-                userId: filterUserId
-            });
-            
-            const ratingsCacheService = firebaseManager.getRatingsCacheService();
-            const result = await ratingsCacheService.fetchAndCacheRatings(this.ITEMS_PER_PAGE, cursor, filterUserId);
-            
-            // 🔍 Log 3: what came back
-            console.log('📦 loadMoreRatings: fetchAndCacheRatings result:', {
-                ratingsCount: result?.ratings?.length,
-                newLastDocId: result?.lastDocId,
-                newLastDocType: result?.lastDoc ? typeof result.lastDoc : 'null',
-                newLastDocClass: result?.lastDoc?.constructor?.name ?? 'null',
-                hasMore: result?.hasMore,
-                criticalError: result?.criticalError
-            });
-
-            if (result?.criticalError) {
-                console.warn('🚨 loadMoreRatings: Critical cache/API errors detected (storage quota or 403). Halting pagination.');
-                this.isCircuitBreakerTripped = true;
-                this.hasMore = false;
-                this.hideTrigger();
-                const errMsg = typeof i18n !== 'undefined' && i18n.currentLocale === 'ru'
-                    ? 'Ошибка загрузки данных (лимит API или квота памяти). Пагинация приостановлена.'
-                    : 'Data load error (API quota or storage full). Pagination paused.';
-                this.showError(errMsg);
-                return;
-            }
-            
-            if (result.ratings.length > 0) {
-                const startIndex = this.ratings.length;
-                this.ratings = [...this.ratings, ...result.ratings];
-                // 🔍 Log 1: what we save as cursors
-                console.log('💾 Saving new cursors after loadMore:', {
-                    lastDocId: result.lastDocId,
-                    lastDocType: result.lastDoc ? typeof result.lastDoc : 'null',
-                    lastDocClass: result.lastDoc?.constructor?.name ?? 'null',
-                    hasMore: result.hasMore
-                });
-                this.lastDocId = result.lastDocId;
-                this.lastDoc = result.lastDoc;
-                // Trust the server-side hasMore flag; fallback to count check if missing
-                this.hasMore = (result.hasMore !== undefined)
-                    ? result.hasMore
-                    : (result.ratings.length === this.ITEMS_PER_PAGE);
-                
-                await this.renderRatings(true, startIndex);
-                // renderRatings now handles showTrigger/hideTrigger at the end
-            } else {
-                // Zero results returned — definitely no more data
-                this.hasMore = false;
-                this.hideTrigger();
-            }
-            
+            const result = await firebaseManager.getRatingsCacheService().fetchAndCacheRatings(this.ITEMS_PER_PAGE,
+                this.lastDoc || this.lastDocId, context.filter === 'my' ? context.userId : null);
+            if (!this.isFeedContextCurrent(context) || result?.isSuperseded) return;
+            if (result?.criticalError) { this.isCircuitBreakerTripped = true; throw new Error('Pagination paused'); }
+            const startIndex = this.ratings.length;
+            const ids = new Set(this.ratings.map(item => item.id));
+            this.ratings.push(...(result.ratings || []).filter(item => !ids.has(item.id)));
+            this.lastDocId = result.lastDocId || null;
+            this.lastDoc = result.lastDoc || null;
+            this.hasMore = result.hasMore ?? result.ratings.length === this.ITEMS_PER_PAGE;
+            this.feedRevision++;
+            this.renderRatings(true, startIndex);
         } catch (error) {
-            console.error('❌ Error loading more ratings:', error);
-            this.hasMore = false;
+            if (!this.isFeedContextCurrent(context)) return;
+            this.isCircuitBreakerTripped = true;
             this.hideTrigger();
+            this.showError(i18n.get('popup.content.load_failed'));
+            this.addFeedRetry();
+            this.debug('Ratings pagination unavailable', error);
         } finally {
-            // 🔍 Log 5: finally block always runs
-            console.log('✅ loadMoreRatings finally: isLoadingMore will be reset to false (was:', this.isLoadingMore, ')');
-            this.isLoadingMore = false;
-            console.log('✅ isLoadingMore reset to false');
+            if (this.isFeedContextCurrent(context)) this.isLoadingMore = false;
         }
     }
 
     async forceRefreshRatings() {
-        // Prevent multiple simultaneous calls
-        if (this.isLoadingRatings) {
-            console.log('PopupManager: Ratings loading already in progress, skipping refresh');
-            return;
-        }
-
+        if (this.isLoadingRatings || !this.activeUserId || this.disposed) return;
+        this.invalidateFeed();
+        const context = this.getFeedContext();
+        this.isLoadingRatings = true;
+        this.consecutiveAutoLoads = 0;
+        this.isCircuitBreakerTripped = false;
+        this.hideError();
+        this.showMainContent();
+        this.elements.refreshBtn?.setAttribute('aria-busy', 'true');
+        if (this.elements.refreshBtn) this.elements.refreshBtn.disabled = true;
+        if (!this.ratings.length) this.renderFeedState('loading');
         try {
-            this.isLoadingRatings = true;
-            const startTime = performance.now();
-            this.hideError();
-            
-            // Reset pagination state before refresh
-            this.lastDocId = null;
-            this.lastDoc = null;
-            this.hasMore = true;
-            this.isLoadingMore = false;
-            this.consecutiveAutoLoads = 0;
-            this.isCircuitBreakerTripped = false;
-            this.hideTrigger();
-            
-            console.log('🔄 PopupManager: Force refreshing ratings...');
-            
-            // Hide feed content with fade out
-            await this.hideFeedContentWithFade();
-            
-            // Show loader with fade in
-            await this.showLoadingWithFade();
-            
-            // Clear cache and fetch fresh data
-            const currentUser = firebaseManager.getCurrentUser();
-            const filterUserId = (this.currentFilter === 'my' && currentUser) ? currentUser.uid : null;
-            const ratingsCacheService = firebaseManager.getRatingsCacheService();
-            await ratingsCacheService.clearCache(filterUserId);
-            
-            const fetchStartTime = performance.now();
-            // Force fetch first page for active filter
-            const result = await ratingsCacheService.fetchAndCacheRatings(this.ITEMS_PER_PAGE, null, filterUserId);
-            const fetchEndTime = performance.now();
-            const fetchTime = Math.round(fetchEndTime - fetchStartTime);
-            
-            this.ratings = result.ratings;
-            this.lastDocId = result.lastDocId;
-            this.lastDoc = result.lastDoc;
-            this.hasMore = result.hasMore;
-            
-            this.ratingsLoaded = false; // Prevent premature trigger show inside renderRatings
-            const renderStartTime = performance.now();
-            await this.renderRatings(false); // Replace content
-            const renderEndTime = performance.now();
-            const renderTime = Math.round(renderEndTime - renderStartTime);
-            
-            this.ratingsLoaded = true;
-            
-            // Update trigger visibility now that the refresh is complete
-            if (this.hasMore) { this.showTrigger(); } else { this.hideTrigger(); }
-            
-            // Hide loader with fade out
-            await this.hideLoadingWithFade();
-            
-            // Show updated feed content with fade in
-            await this.showFeedContentWithFade();
-            
-            const totalTime = Math.round(performance.now() - startTime);
-            
-            console.log(`🔄 Ratings force refreshed in ${totalTime}ms total (fetch: ${fetchTime}ms, render: ${renderTime}ms):`, {
-                count: this.ratings.length,
-                performance: {
-                    fetch: `${fetchTime}ms`,
-                    render: `${renderTime}ms`,
-                    total: `${totalTime}ms`
-                }
-            });
+            const result = await firebaseManager.getRatingsCacheService().fetchAndCacheRatings(this.ITEMS_PER_PAGE, null,
+                context.filter === 'my' ? context.userId : null);
+            return this.commitRatingsPage(result, context);
         } catch (error) {
-            // On error, hide loader and show content
-            await this.hideLoadingWithFade();
-            await this.showFeedContentWithFade();
-            this.showError(`${i18n.currentLocale === 'ru' ? 'Не удалось обновить оценки' : 'Failed to refresh ratings'}: ${error.message}`);
+            if (!this.isFeedContextCurrent(context)) return;
+            if (!this.ratings.length) this.renderFeedState('error');
+            else { this.addFeedRetry(); if (this.hasMore) this.showTrigger(); }
+            this.showError(i18n.get('popup.content.load_failed'));
+            this.debug('Ratings refresh unavailable', error);
+            return false;
         } finally {
-            this.isLoadingRatings = false; // Reset flag
+            if (this.isFeedContextCurrent(context)) this.isLoadingRatings = false;
+            // Filter switches may happen while refreshing; they must not leave the button busy.
+            if (this.elements.refreshBtn) this.elements.refreshBtn.disabled = false;
+            this.elements.refreshBtn?.setAttribute('aria-busy', 'false');
         }
     }
 
     async renderRatings(append = false, startIndex = 0) {
-        const startTime = performance.now();
-        console.log(`⏱️ [PopupManager] Starting renderRatings (append=${append}, index=${startIndex})`);
-        
+        const context = this.getFeedContext();
         if (!append) {
-            const clearStart = performance.now();
-            // Clean up any orphaned body-level dropdown clones from setupPopupRatingMenu
-            document.querySelectorAll('body > .rating-menu-dropdown').forEach(m => m.remove());
-            this.elements.feedContent.innerHTML = '';
-            const clearTime = Math.round(performance.now() - clearStart);
-            console.log(`⏱️ [PopupManager] Clear feedContent: ${clearTime}ms`);
-        } else {
-             // If appending, ensure we only process new items
-             // The loop below uses this.ratings, so we can iterate starting from startIndex
+            this.renderGeneration++;
+            this.closePopupMenus();
+            this.unlockTooltip();
+            this.popupMenus.forEach(menu => menu.remove());
+            this.popupMenus.clear();
+            document.querySelectorAll('body > .average-score-tooltip').forEach(tooltip => tooltip.remove());
+            this.elements.feedContent.replaceChildren();
         }
-
-        if (this.ratings.length === 0 && !this.isLoadingMore) {
-            const emptyStateStart = performance.now();
-            this.elements.feedContent.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-state-icon"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #64748b;"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg></div>
-                    <h3 class="empty-state-title" data-i18n="popup.content.empty_title">${i18n.get('popup.content.empty_title')}</h3>
-                    <p class="empty-state-text" data-i18n="popup.content.empty_text">${i18n.get('popup.content.empty_text')}</p>
-                </div>
-            `;
-            const emptyStateTime = Math.round(performance.now() - emptyStateStart);
-            console.log(`⏱️ [PopupManager] Render empty state: ${emptyStateTime}ms`);
-            return;
+        const generation = this.renderGeneration;
+        if (!this.ratings.length) { this.renderFeedState('empty'); return; }
+        const items = append ? this.ratings.slice(startIndex) : this.ratings.slice();
+        for (const item of items) {
+            if (document.getElementById('rating-' + item.id)) continue;
+            this.elements.feedContent.append(this.createRatingElementSync(item, new Map(), this.currentUserProfile));
         }
-
-        const itemsToRender = append ? this.ratings.slice(startIndex) : this.ratings;
-        console.log(`⏱️ [PopupManager] Rendering ${itemsToRender.length} ratings (total: ${this.ratings.length})`);
-        
-        // Pre-load all average ratings in batch to avoid multiple Firebase calls (only for items to render)
-        const averageRatingsStartTime = performance.now();
-        const averageRatingsMap = await this.preloadAverageRatings(itemsToRender);
-        const averageRatingsTime = Math.round(performance.now() - averageRatingsStartTime);
-        console.log(`⏱️ [PopupManager] Pre-loaded average ratings: ${averageRatingsTime}ms`);
-        
-        // Pre-load current user profile once to avoid multiple calls
-        const currentUserProfileStart = performance.now();
-        let currentUserProfile = null;
-        const currentUser = firebaseManager.getCurrentUser();
-        if (currentUser) {
-            try {
-                const userService = firebaseManager.getUserService();
-                currentUserProfile = await userService.getUserProfile(currentUser.uid);
-                const currentUserProfileTime = Math.round(performance.now() - currentUserProfileStart);
-                console.log(`⏱️ [PopupManager] Pre-loaded current user profile: ${currentUserProfileTime}ms`);
-            } catch (error) {
-                const currentUserProfileTime = Math.round(performance.now() - currentUserProfileStart);
-                console.error(`❌ [PopupManager] Error loading current user profile (${currentUserProfileTime}ms):`, error);
-            }
-        }
-        
-        // Process ratings synchronously now that we have all data
-        const renderStart = performance.now();
-        let renderedCount = 0;
-        let skippedCount = 0;
-        let errorCount = 0;
-        
-        for (let i = 0; i < itemsToRender.length; i++) {
-            const rating = itemsToRender[i];
-            const elementStart = performance.now();
-            try {
-                // Check if element already exists to prevent duplicates
-                const existingElement = document.getElementById(`rating-${rating.id}`);
-                if (existingElement) {
-                    console.warn(`⏱️ [PopupManager] Skipping duplicate rating element: rating-${rating.id}`);
-                    skippedCount++;
-                    continue;
-                }
-                
-                const ratingElement = await this.createRatingElementSync(rating, averageRatingsMap, currentUserProfile);
-                ratingElement.style.animationDelay = `${(startIndex + renderedCount) * 35}ms`;
-                this.elements.feedContent.appendChild(ratingElement);
-                renderedCount++;
-                
-                const elementTime = Math.round(performance.now() - elementStart);
-                if (elementTime > 50) {
-                    console.log(`⏱️ [PopupManager] Rating ${i+1}/${itemsToRender.length} rendered in ${elementTime}ms (slow)`);
-                }
-            } catch (error) {
-                errorCount++;
-                const elementTime = Math.round(performance.now() - elementStart);
-                console.error(`❌ [PopupManager] Error creating rating element ${i+1} (${elementTime}ms):`, error);
-                // Continue with other ratings even if one fails
-            }
-        }
-        
-        const renderTime = Math.round(performance.now() - renderStart);
-        const totalTime = Math.round(performance.now() - startTime);
-        console.log(`✅ [PopupManager] Finished rendering ratings in ${totalTime}ms (render: ${renderTime}ms, avg ratings: ${averageRatingsTime}ms, rendered: ${renderedCount}, skipped: ${skippedCount}, errors: ${errorCount})`);
-
-        // Re-attach observer AFTER all cards are in the DOM so the trigger's
-        // position is final. This ensures IntersectionObserver fires correctly
-        // whether the trigger is already in the viewport or not.
-        if (append || this.ratingsLoaded) {
-            if (this.hasMore) {
-                this.showTrigger(); // unobserve → display:flex → observe
-            } else {
-                this.hideTrigger();
-            }
-        }
+        if (this.hasMore && this.ratingsLoaded) this.showTrigger();
+        else this.hideTrigger();
+        // Cards are already visible. Optional averages/profile requests cannot delay the first paint.
+        this.ratingsEnrichment = this.enrichRenderedRatings(items, context, generation)
+            .catch(error => this.debug('Optional rating enrichment unavailable', error));
     }
 
     async preloadAverageRatings(ratingsToLoad = null) {
-        const startTime = performance.now();
-        const targetRatings = ratingsToLoad || this.ratings;
-        const movieIds = [...new Set(targetRatings.map(r => r.movie?.kinopoiskId || r.movieId))];
-        const averageRatingsMap = new Map();
-        
-        console.log(`⏱️ [PopupManager] preloadAverageRatings: ${movieIds.length} unique movies`);
-        
+        const ids = [...new Set((ratingsToLoad || this.ratings).map(item => Number(item.movie?.kinopoiskId || item.movieId)).filter(id => id > 0))];
+        const service = firebaseManager.getRatingsCacheService();
+        let cached;
+        try { cached = await service.getCachedAverageRatings(); } catch (error) { this.debug('Average cache unavailable', error); }
+        const map = cached instanceof Map ? new Map(cached) : new Map();
+        const missing = ids.filter(id => !map.has(id));
+        if (!missing.length) return map;
         try {
-            // First, try to get cached average ratings
-            const cacheReadStart = performance.now();
-            const ratingsCacheService = firebaseManager.getRatingsCacheService();
-            const cachedAverageRatings = await ratingsCacheService.getCachedAverageRatings();
-            const cacheReadTime = Math.round(performance.now() - cacheReadStart);
-            console.log(`⏱️ [PopupManager] Read cached average ratings: ${cacheReadTime}ms`);
-            
-            if (cachedAverageRatings) {
-                const mapStart = performance.now();
-                // Use cached data for movies that are in cache
-                let cachedCount = 0;
-                movieIds.forEach(movieId => {
-                    if (cachedAverageRatings.has(movieId)) {
-                        averageRatingsMap.set(movieId, cachedAverageRatings.get(movieId));
-                        cachedCount++;
-                    }
-                });
-                const mapTime = Math.round(performance.now() - mapStart);
-                console.log(`⏱️ [PopupManager] Mapped cached ratings: ${mapTime}ms (${cachedCount}/${movieIds.length} from cache)`);
-            }
-            
-            // Find movies that are not in cache
-            const missingMovieIds = movieIds.filter(movieId => !averageRatingsMap.has(movieId));
-            
-            if (missingMovieIds.length > 0) {
-                console.log(`⏱️ [PopupManager] Loading average ratings for ${missingMovieIds.length} movies not in cache using batch query`);
-                const ratingService = firebaseManager.getRatingService();
-                
-                // Load missing average ratings using batch query (one request instead of multiple)
-                const fetchStart = performance.now();
-                try {
-                    const batchResults = await ratingService.getBatchMovieAverageRatings(missingMovieIds);
-                    const fetchTime = Math.round(performance.now() - fetchStart);
-                    console.log(`⏱️ [PopupManager] Fetched ${missingMovieIds.length} average ratings via batch: ${fetchTime}ms`);
-                    
-                    // Add new data to map
-                    const addStart = performance.now();
-                    Object.entries(batchResults).forEach(([movieId, averageData]) => {
-                        const movieIdNum = parseInt(movieId);
-                        averageRatingsMap.set(movieIdNum, averageData);
-                    });
-                    const addTime = Math.round(performance.now() - addStart);
-                    console.log(`⏱️ [PopupManager] Added to map: ${addTime}ms`);
-                    
-                    // Cache the newly loaded average ratings
-                    const cacheWriteStart = performance.now();
-                    const newAverageRatingsMap = new Map();
-                    Object.entries(batchResults).forEach(([movieId, averageData]) => {
-                        const movieIdNum = parseInt(movieId);
-                        newAverageRatingsMap.set(movieIdNum, averageData);
-                    });
-                    
-                    // Merge with cached data and update cache
-                    if (cachedAverageRatings) {
-                        cachedAverageRatings.forEach((value, key) => {
-                            newAverageRatingsMap.set(key, value);
-                        });
-                    }
-                    await ratingsCacheService.cacheAverageRatings(newAverageRatingsMap);
-                    const cacheWriteTime = Math.round(performance.now() - cacheWriteStart);
-                    console.log(`⏱️ [PopupManager] Cached average ratings: ${cacheWriteTime}ms`);
-                } catch (error) {
-                    const fetchTime = Math.round(performance.now() - fetchStart);
-                    console.error(`❌ [PopupManager] Error fetching batch average ratings (${fetchTime}ms):`, error);
-                    // Fallback to individual requests if batch fails
-                    console.log(`⏱️ [PopupManager] Fallback to individual requests`);
-                    const fallbackStart = performance.now();
-                    const promises = missingMovieIds.map(async (movieId) => {
-                        try {
-                            const averageData = await ratingService.getMovieAverageRating(movieId);
-                            return { movieId, averageData };
-                        } catch (error) {
-                            console.warn(`❌ [PopupManager] Failed to get average rating for movie ${movieId}:`, error);
-                            return { movieId, averageData: { average: 0, count: 0 } };
-                        }
-                    });
-                    const results = await Promise.all(promises);
-                    results.forEach(({ movieId, averageData }) => {
-                        averageRatingsMap.set(movieId, averageData);
-                    });
-                    const fallbackTime = Math.round(performance.now() - fallbackStart);
-                    console.log(`⏱️ [PopupManager] Fallback completed: ${fallbackTime}ms`);
-                }
-            } else {
-                console.log(`✅ [PopupManager] All average ratings loaded from cache`);
-            }
-            
-        } catch (error) {
-            const totalTime = Math.round(performance.now() - startTime);
-            console.error(`❌ [PopupManager] Error preloading average ratings (${totalTime}ms):`, error);
-            // Fallback: try to load all ratings if cache fails
-            try {
-                console.log(`⏱️ [PopupManager] Fallback: loading all average ratings using batch`);
-                const fallbackStart = performance.now();
-                const ratingService = firebaseManager.getRatingService();
-                const batchResults = await ratingService.getBatchMovieAverageRatings(movieIds);
-                Object.entries(batchResults).forEach(([movieId, averageData]) => {
-                    const movieIdNum = parseInt(movieId);
-                    averageRatingsMap.set(movieIdNum, averageData);
-                });
-                const fallbackTime = Math.round(performance.now() - fallbackStart);
-                console.log(`⏱️ [PopupManager] Fallback completed: ${fallbackTime}ms`);
-            } catch (fallbackError) {
-                const fallbackTime = Math.round(performance.now() - startTime);
-                console.error(`❌ [PopupManager] Error in fallback average ratings loading (${fallbackTime}ms):`, fallbackError);
-            }
-        }
-        
-        const totalTime = Math.round(performance.now() - startTime);
-        console.log(`✅ [PopupManager] preloadAverageRatings completed in ${totalTime}ms (${averageRatingsMap.size} ratings)`);
-        return averageRatingsMap;
+            const data = await firebaseManager.getRatingService().getBatchMovieAverageRatings(missing);
+            for (const [id, value] of Object.entries(data || {})) map.set(Number(id), value);
+            await service.cacheAverageRatings(map);
+        } catch (error) { this.debug('Average ratings unavailable', error); }
+        return map;
     }
 
-    async createRatingElementSync(rating, averageRatingsMap, currentUserProfile = null) {
-        const ratingDiv = document.createElement('div');
-        ratingDiv.className = 'rating-item clickable-rating';
-        
-        const movie = rating.movie;
-        const movieId = movie?.kinopoiskId || rating.movieId;
-        
-        // Add unique ID to prevent duplicates
-        ratingDiv.id = `rating-${rating.id}`;
-        
-        // Add movie ID as data attribute for navigation
-        ratingDiv.dataset.movieId = movieId;
-        const posterUrl = movie?.posterUrl || '/src/shared/assets/icons/app/icon48.png';
-        const movieTitle = movie?.name || 'Unknown Movie';
-        const movieYear = movie?.year || '';
-        const movieGenres = typeof Utils !== 'undefined' && Utils.formatGenres
-            ? Utils.formatGenres(movie?.genres, 2)
-            : (Array.isArray(movie?.genres) ? movie.genres.slice(0, 2).filter(Boolean).join(', ') : '');
-        const timestamp = i18n.formatRelativeTime(rating.createdAt);
-
-        // Get pre-loaded average rating
-        const averageData = averageRatingsMap.get(movieId) || { average: 0, count: 0 };
-        const averageDisplay = averageData.count > 0 
-            ? `${parseFloat(averageData.average.toFixed(1))}` 
-            : (i18n.currentLocale === 'ru' ? 'Нет оценок' : 'No ratings');
-
-        // Get current user photo if this is current user's rating and photo is missing/outdated
-        let userPhoto = rating.userPhoto || '/src/shared/assets/icons/app/icon48.png';
+    createRatingElementSync(rating, averageRatingsMap = new Map(), currentUserProfile = null) {
+        const card = document.createElement('article');
+        card.className = 'rating-item clickable-rating';
+        card.id = 'rating-' + rating.id;
+        const movie = rating.movie || {};
+        const movieId = movie.kinopoiskId || rating.movieId;
+        const movieUrl = this.movieDetailsUrl(movieId);
+        const title = String(movie.name || i18n.get('popup.rating.unknown_movie'));
         const currentUser = firebaseManager.getCurrentUser();
-        let displayUserName = rating.userName || 'Unknown User';
-        
-        if (currentUser && rating.userId === currentUser.uid) {
-            if (currentUser.photoURL && (!rating.userPhoto || rating.userPhoto !== currentUser.photoURL)) {
-                userPhoto = currentUser.photoURL;
-            }
-            
-            // Use pre-loaded current user profile instead of fetching it again
-            if (currentUserProfile && typeof Utils !== 'undefined' && Utils.getDisplayName) {
-                displayUserName = Utils.getDisplayName(currentUserProfile, currentUser);
-            } else if (currentUser.displayName) {
-                displayUserName = currentUser.displayName;
-            }
+        const own = currentUser?.uid === rating.userId;
+        // Only trusted structure/icons use HTML. Every provider/user field is assigned as text or a safe URL.
+        card.innerHTML = '<a class="rating-poster-link"><img class="rating-poster"></a><div class="rating-content">' +
+            '<div class="rating-title-row"><a class="rating-movie-link"><h3 class="rating-movie-title"></h3></a></div>' +
+            '<div class="rating-header-row"><a class="rating-author-group"><img class="rating-author-avatar"><span class="rating-author-name"></span></a>' +
+            '<span class="rating-timestamp"></span><div class="rating-actions-group"><div class="rating-menu">' +
+            '<button type="button" class="rating-menu-btn" aria-haspopup="menu" aria-expanded="false">⋮</button>' +
+            '<div class="popover-surface rating-menu-dropdown" role="menu" hidden>' +
+            '<button type="button" class="menu-item edit-item" role="menuitem" data-action="edit"></button>' +
+            '<button type="button" class="menu-item delete-item" role="menuitem" data-action="delete"></button></div></div>' +
+            '<button type="button" class="rating-score-badge"><span class="score-star" aria-hidden="true">★</span><span class="score-value"></span>' +
+            '<span class="tooltip-surface average-score-tooltip" hidden></span></button></div></div>' +
+            '<div class="rating-context-row"><p class="rating-comment-snippet"><span class="comment-text"></span></p>' +
+            '<p class="rating-genres-snippet"></p></div></div>';
+        for (const link of card.querySelectorAll('.rating-poster-link, .rating-movie-link')) {
+            if (movieUrl) { link.href = movieUrl; this.bindNavigationLink(link); }
+            else link.removeAttribute('href');
         }
-
-        const isCurrentUser = currentUser && rating.userId === currentUser.uid;
-        
-        ratingDiv.innerHTML = `
-            <img src="${posterUrl}" alt="${movieTitle}" class="rating-poster" onerror="Utils.handlePosterError(this)">
-            <div class="rating-content">
-                <!-- Level 1 (18px): Author & Meta + Score & Actions -->
-                <div class="rating-header-row">
-                    <div class="rating-author-group clickable-user" data-user-id="${rating.userId}">
-                        <img src="${userPhoto}" alt="${displayUserName}" class="rating-author-avatar" onerror="Utils.handlePosterError(this)">
-                        <span class="rating-author-name" title="${this.escapeHtml(displayUserName)}">${this.escapeHtml(displayUserName)}</span>
-                        <span class="rating-separator">•</span>
-                        <span class="rating-timestamp">${timestamp}</span>
-                    </div>
-                    <div class="rating-actions-group">
-                        ${isCurrentUser ? `
-                            <div class="rating-menu">
-                                <button class="rating-menu-btn" data-rating-id="${rating.id}" aria-label="Меню отзыва">
-                                    <span>⋮</span>
-                                </button>
-                                <div class="popover-surface rating-menu-dropdown" id="popup-menu-${rating.id}" style="display: none;">
-                                    <button class="menu-item edit-item" data-rating-id="${rating.id}" data-action="edit">
-                                        <span class="menu-icon">${Icons.EDIT}</span>
-                                        <span>${i18n.get('movie_details.edit')}</span>
-                                    </button>
-                                    <button class="menu-item delete-item" data-rating-id="${rating.id}" data-action="delete">
-                                        <span class="menu-icon">${Icons.TRASH}</span>
-                                        <span>${i18n.get('movie_details.delete')}</span>
-                                    </button>
-                                </div>
-                            </div>
-                        ` : ''}
-                        <div class="rating-score-badge" data-rating-id="${rating.id}">
-                            <span class="score-star">★</span>
-                            <span class="score-value">${rating.rating}</span>
-                            <div class="tooltip-surface average-score-tooltip" id="tooltip-${rating.id}">
-                                <span class="tooltip-icon">👥</span>
-                                <span class="tooltip-text">${i18n.currentLocale === 'ru' ? 'Средняя' : 'Avg'}: ${averageDisplay}</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Level 2 (18px): Movie Title + Year -->
-                <div class="rating-title-row">
-                    <h3 class="rating-movie-title" title="${this.escapeHtml(movieTitle)}">
-                        ${this.escapeHtml(movieTitle)}${movieYear ? ` <span class="rating-movie-year">(${movieYear})</span>` : ''}
-                    </h3>
-                </div>
-
-                <!-- Level 3 (18px): Comment (priority) or Genres -->
-                <div class="rating-context-row">
-                    ${(() => {
-                        const normalizedComment = Utils.normalizeRatingComment(rating.comment);
-                        if (normalizedComment) {
-                            return `
-                                <p class="rating-comment-snippet" title="${this.escapeHtml(normalizedComment)}">
-                                    <span class="comment-quote-icon">💬</span>
-                                    <span class="comment-text">${Utils.parseSpoilers(this.escapeHtml(normalizedComment))}</span>
-                                </p>
-                            `;
-                        }
-                        return `
-                            <p class="rating-genres-snippet">${this.escapeHtml(movieGenres || (i18n.currentLocale === 'ru' ? 'Без жанра' : 'No genres'))}</p>
-                        `;
-                    })()}
-                </div>
-            </div>
-        `;
-
-        // Add click handler to navigate to movie detail page (but not if clicking menu, user info, or rating badge)
-        ratingDiv.addEventListener('mousedown', (e) => {
-            if (e.target.closest('.rating-menu') || e.target.closest('.rating-author-group') || e.target.closest('.rating-user-info') || e.target.closest('.rating-score-badge')) {
-                return;
-            }
-            if (movieId) {
-                chrome.tabs.create({ 
-                    url: chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`) 
-                });
-            }
-        });
-
-        // Setup menu listeners if this is current user's rating
-        if (isCurrentUser) {
-            this.setupPopupRatingMenu(ratingDiv, rating.id);
+        card.dataset.movieId = String(movieId || '');
+        const heading = card.querySelector('.rating-movie-title');
+        heading.textContent = title;
+        heading.title = title;
+        if (movie.year) {
+            const year = document.createElement('span');
+            year.className = 'rating-movie-year';
+            year.textContent = ' (' + String(movie.year) + ')';
+            heading.append(year);
         }
-
-        // Setup tooltip listeners (220ms hover intent + click-lock)
-        this.setupScoreBadgeTooltip(ratingDiv, rating.id);
-
-        // Add click handler for user info
-        const userInfo = ratingDiv.querySelector('.rating-author-group') || ratingDiv.querySelector('.rating-user-info');
-        if (userInfo) {
-            userInfo.addEventListener('mousedown', (e) => {
-                e.stopPropagation();
-                this.openUserProfile(rating.userId);
-            });
-        }
-
-        return ratingDiv;
+        this.bindImageFallback(card.querySelector('.rating-poster'), movie.posterUrl || movie.poster?.previewUrl, title);
+        const author = card.querySelector('.rating-author-group');
+        const authorUrl = this.profileUrl(rating.userId);
+        if (authorUrl) { author.href = authorUrl; this.bindNavigationLink(author); }
+        author.querySelector('.rating-author-name').textContent = own && currentUserProfile
+            ? Utils.getDisplayName(currentUserProfile, currentUser)
+            : String(rating.userName || i18n.get('popup.rating.unknown_user'));
+        this.bindImageFallback(author.querySelector('img'), own ? currentUserProfile?.photoURL || currentUser.photoURL || rating.userPhoto : rating.userPhoto);
+        card.querySelector('.rating-timestamp').textContent = i18n.formatRelativeTime(rating.createdAt);
+        const comment = Utils.normalizeRatingComment(rating.comment);
+        card.querySelector('.rating-comment-snippet').hidden = !comment;
+        card.querySelector('.comment-text').innerHTML = Utils.parseSpoilers(this.escapeHtml(comment));
+        const genres = card.querySelector('.rating-genres-snippet');
+        genres.hidden = Boolean(comment);
+        genres.textContent = Utils.formatGenres(movie.genres, 2) || i18n.get('popup.rating.no_genres');
+        const badge = card.querySelector('.rating-score-badge');
+        const score = Number(rating.rating);
+        const scoreText = Number.isFinite(score) ? String(Math.max(1, Math.min(10, score))) : '—';
+        badge.querySelector('.score-value').textContent = scoreText;
+        badge.dataset.ratingId = String(rating.id);
+        badge.setAttribute('aria-label', scoreText + ' / 10. ' + i18n.get('popup.rating.average'));
+        const tooltip = badge.querySelector('.average-score-tooltip');
+        tooltip.id = 'tooltip-' + rating.id;
+        const average = averageRatingsMap.get(movieId) || averageRatingsMap.get(Number(movieId));
+        tooltip.textContent = i18n.get('popup.rating.average') + ': ' +
+            (average?.count ? String(Number(Number(average.average).toFixed(1))) : '…');
+        const menu = card.querySelector('.rating-menu-dropdown');
+        menu.id = 'popup-menu-' + rating.id;
+        const button = card.querySelector('.rating-menu-btn');
+        button.setAttribute('aria-controls', menu.id);
+        button.setAttribute('aria-label', i18n.get('popup.rating.menu'));
+        card.querySelector('.edit-item').textContent = i18n.get('movie_details.edit');
+        card.querySelector('.delete-item').textContent = i18n.get('movie_details.delete');
+        if (own) this.setupPopupRatingMenu(card, rating.id);
+        else card.querySelector('.rating-menu').remove();
+        this.setupScoreBadgeTooltip(card, rating.id);
+        return card;
     }
 
-    setupPopupRatingMenu(ratingDiv, ratingId) {
-        const menuBtn = ratingDiv.querySelector('.rating-menu-btn');
-        let menu = ratingDiv.querySelector(`#popup-menu-${ratingId}`);
-        
-        if (!menuBtn || !menu) return;
-
-        // Move menu to body to avoid parent transform and overflow issues
-        const menuClone = menu.cloneNode(true);
-        menu.remove();
-        document.body.appendChild(menuClone);
-        menu = menuClone;
-        
-        // Store reference for cleanup
-        if (!this.popupMenus) this.popupMenus = new Map();
+    setupPopupRatingMenu(card, ratingId) {
+        const button = card.querySelector('.rating-menu-btn');
+        const menu = card.querySelector('.rating-menu-dropdown');
+        if (!button || !menu) return;
+        document.body.append(menu);
         this.popupMenus.set(ratingId, menu);
-
-        menuBtn.addEventListener('mousedown', (e) => {
-            e.stopPropagation();
-            const isVisible = menu.style.display === 'block';
-            
-            // Close all other menus
-            document.querySelectorAll('.rating-menu-dropdown').forEach(m => {
-                m.style.display = 'none';
-            });
-            
-            if (isVisible) {
-                menu.style.display = 'none';
-            } else {
-                // Calculate position
-                const btnRect = menuBtn.getBoundingClientRect();
-                const menuWidth = 120; // min-width from CSS (120px)
-                
-                menu.style.position = 'fixed';
-                menu.style.top = `${btnRect.bottom + 4}px`;
-                
-                // Position to the left of the button to avoid cutoff
-                const leftPos = btnRect.right - menuWidth;
-                menu.style.left = `${Math.max(8, leftPos)}px`;
-                menu.style.display = 'block';
-            }
+        const items = [...menu.querySelectorAll('button')];
+        const open = () => {
+            this.closePopupMenus();
+            this.closeAvatarDropdown(false);
+            this.unlockTooltip();
+            menu.hidden = false;
+            menu.style.display = 'flex';
+            button.setAttribute('aria-expanded', 'true');
+            this.activeMenuButton = button;
+            this.positionOverlay(menu, button);
+            items[0]?.focus();
+        };
+        button.addEventListener('click', () => menu.hidden ? open() : this.closePopupMenus(true));
+        button.addEventListener('keydown', event => {
+            if (event.key === 'ArrowDown') { event.preventDefault(); open(); }
         });
-
-        const menuItems = menu.querySelectorAll('.menu-item');
-        menuItems.forEach(item => {
-            item.addEventListener('mousedown', async (e) => {
-                e.stopPropagation();
-                const action = item.getAttribute('data-action');
-                menu.style.display = 'none';
-                
-                if (action === 'edit') {
-                    await this.editPopupRating(ratingId);
-                } else if (action === 'delete') {
-                    await this.deletePopupRating(ratingId);
-                }
-            });
+        menu.addEventListener('keydown', event => {
+            const index = items.indexOf(document.activeElement);
+            let target;
+            if (event.key === 'ArrowDown') target = items[(index + 1) % items.length];
+            if (event.key === 'ArrowUp') target = items[(index - 1 + items.length) % items.length];
+            if (event.key === 'Home') target = items[0];
+            if (event.key === 'End') target = items.at(-1);
+            if (target) { event.preventDefault(); target.focus(); }
+            if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); this.closePopupMenus(true); }
+            if (event.key === 'Tab') this.closePopupMenus(true);
         });
-
-        // Close menu when clicking outside
-        if (!this.popupMenuClickHandler) {
-            this.popupMenuClickHandler = (e) => {
-                if (!e.target.closest('.rating-menu') && !e.target.closest('.rating-menu-dropdown')) {
-                    document.querySelectorAll('.rating-menu-dropdown').forEach(m => {
-                        m.style.display = 'none';
-                    });
-                }
-            };
-            document.addEventListener('mousedown', this.popupMenuClickHandler);
-        }
-
-        // Close menu on Escape key
-        if (!this.popupMenuEscapeHandler) {
-            this.popupMenuEscapeHandler = (e) => {
-                if (e.key === 'Escape') {
-                    document.querySelectorAll('.rating-menu-dropdown').forEach(m => {
-                        m.style.display = 'none';
-                    });
-                }
-            };
-            document.addEventListener('keydown', this.popupMenuEscapeHandler);
-        }
-
-        // Close menu on scroll
-        if (!this.popupMenuScrollHandler) {
-            this.popupMenuScrollHandler = () => {
-                document.querySelectorAll('.rating-menu-dropdown').forEach(m => {
-                    m.style.display = 'none';
-                });
-            };
-            // Listen to scroll on feed-content container
-            const feedContent = document.querySelector('.feed-content');
-            if (feedContent) {
-                feedContent.addEventListener('scroll', this.popupMenuScrollHandler);
-            }
-            // Also listen to window scroll
-            window.addEventListener('scroll', this.popupMenuScrollHandler, true);
-        }
+        for (const item of items) item.addEventListener('click', () => {
+            this.closePopupMenus(true);
+            if (item.dataset.action === 'edit') this.editPopupRating(ratingId);
+            if (item.dataset.action === 'delete') this.deletePopupRating(ratingId);
+        });
     }
 
     async editPopupRating(ratingId) {
+        const user = firebaseManager.getCurrentUser();
+        const generation = this.authGeneration;
+        if (!user) { this.showError(i18n.get('navbar.sign_in')); return; }
         try {
-            const currentUser = firebaseManager.getCurrentUser();
-            if (!currentUser) {
-                this.showError(i18n.get('navbar.sign_in'));
-                return;
-            }
-            
-            const ratingDoc = await firebaseManager.db.collection('ratings').doc(ratingId).get();
-            if (!ratingDoc.exists) {
-                this.showError(i18n.currentLocale === 'ru' ? 'Отзыв не найден' : 'Review not found');
-                return;
-            }
-            
-            const ratingData = ratingDoc.data();
-            this.showEditRatingModalPopup(ratingId, ratingData);
-            
+            const doc = await firebaseManager.db.collection('ratings').doc(ratingId).get();
+            if (!this.isAuthContextCurrent(user.uid, generation) || this.activeUserId !== user.uid) return;
+            if (!doc.exists) { this.showError(i18n.get('popup.rating.save_failed')); return; }
+            const data = doc.data();
+            if (data.userId && data.userId !== user.uid) return;
+            this.showEditRatingModalPopup(ratingId, data);
         } catch (error) {
-            console.error('Error editing rating:', error);
-            this.showError(`${i18n.currentLocale === 'ru' ? 'Ошибка при редактировании' : 'Error editing'}: ${error.message}`);
+            if (this.isAuthContextCurrent(user.uid, generation)) this.showError(i18n.get('popup.rating.save_failed'));
+            this.debug('Rating editor unavailable', error);
         }
     }
 
     showEditRatingModalPopup(ratingId, ratingData) {
-        const modal = document.createElement('div');
-        modal.className = 'modal-overlay';
-        modal.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.8);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 10000;
-        `;
-        
-        modal.innerHTML = `
-            <div style="
-                background: #0f172a;
-                padding: 24px;
-                border-radius: 12px;
-                max-width: 500px;
-                width: 90%;
-                color: #e2e8f0;
-            ">
-                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;">
-                    <h3 style="margin:0; font-size:20px;">${i18n.get('ratings.modal.rate_movie')}</h3>
-                    <button id="closeEditModalPopup" style="background:#334155; color:#e2e8f0; border:none; padding:8px 12px; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
-                </div>
-                
-                <form id="editRatingFormPopup">
-                    <div style="margin-bottom:16px;">
-                        <label style="display:block; margin-bottom:8px; color:#94a3b8;">${i18n.get('ratings.modal.your_rating')}: <span id="editRatingValuePopup">${ratingData.rating}</span></label>
-                        <input type="range" id="editRatingSliderPopup" min="1" max="10" value="${ratingData.rating}" style="width:100%;">
-                    </div>
-                    
-                    <div style="margin-bottom:16px;">
-                        <label style="display:block; margin-bottom:8px; color:#94a3b8;">${i18n.get('ratings.modal.share_thoughts')}:</label>
-                        <textarea id="editRatingCommentPopup" rows="4" maxlength="500" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid #334155; background:#0b1220; color:#e2e8f0; resize:vertical;">${this.escapeHtml(Utils.normalizeRatingComment(ratingData.comment))}</textarea>
-                        <div style="text-align:right; margin-top:4px; font-size:12px; color:#94a3b8;">
-                            <span id="editCommentCountPopup">${Utils.normalizeRatingComment(ratingData.comment).length}</span>/500
-                        </div>
-                    </div>
-                    
-                    <div style="display:flex; gap:8px; justify-content:flex-end;">
-                        <button type="button" id="cancelEditBtnPopup" style="background:#334155; color:#e2e8f0; border:none; padding:10px 16px; border-radius:8px; cursor:pointer;">${i18n.get('ratings.modal.cancel')}</button>
-                        <button type="submit" id="saveEditBtnPopup" style="background:#22c55e; color:#062e0f; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-weight:600;">${i18n.get('ratings.modal.save')}</button>
-                    </div>
-                </form>
-            </div>
-        `;
-        
-        document.body.appendChild(modal);
-        
-        const slider = modal.querySelector('#editRatingSliderPopup');
-        const valueDisplay = modal.querySelector('#editRatingValuePopup');
-        const comment = modal.querySelector('#editRatingCommentPopup');
-        const commentCount = modal.querySelector('#editCommentCountPopup');
-        
-        slider.addEventListener('input', (e) => {
-            valueDisplay.textContent = e.target.value;
-        });
-        
-        comment.addEventListener('input', (e) => {
-            commentCount.textContent = e.target.value.length;
-        });
-        
-        const closeModal = () => modal.remove();
-        
-        modal.querySelector('#closeEditModalPopup').addEventListener('mousedown', closeModal);
-        modal.querySelector('#cancelEditBtnPopup').addEventListener('mousedown', closeModal);
-        modal.addEventListener('mousedown', (e) => {
-            if (e.target === modal) closeModal();
-        });
-        
-        modal.querySelector('#editRatingFormPopup').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const newRating = parseInt(slider.value);
+        const user = firebaseManager.getCurrentUser();
+        if (!user) return;
+        const generation = this.authGeneration;
+        const body = document.createElement('form');
+        body.id = 'editRatingFormPopup';
+        body.className = 'popup-dialog__body';
+        body.innerHTML = '<div class="popup-dialog__field"><label for="editRatingSliderPopup"><span class="rating-label"></span>: <output id="editRatingValuePopup" for="editRatingSliderPopup"></output></label>' +
+            '<input type="range" id="editRatingSliderPopup" min="1" max="10" step="1"></div>' +
+            '<div class="popup-dialog__field"><label for="editRatingCommentPopup" class="comment-label"></label>' +
+            '<textarea id="editRatingCommentPopup" class="form-input" rows="4" maxlength="500" aria-describedby="editCommentCountPopup"></textarea>' +
+            '<span id="editCommentCountPopup" class="popup-dialog__count"></span></div>' +
+            '<p class="popup-dialog__error" role="alert" hidden></p>' +
+            '<div class="popup-dialog__footer"><button type="button" id="cancelEditBtnPopup" class="btn btn-secondary"></button>' +
+            '<button type="submit" id="saveEditBtnPopup" class="btn btn-primary"></button></div>';
+        body.querySelector('.rating-label').textContent = i18n.get('popup.rating.edit_rating');
+        body.querySelector('.comment-label').textContent = i18n.get('popup.rating.edit_comment');
+        body.querySelector('#cancelEditBtnPopup').textContent = i18n.get('popup.rating.cancel');
+        const save = body.querySelector('#saveEditBtnPopup');
+        save.textContent = i18n.get('popup.rating.save');
+        const slider = body.querySelector('#editRatingSliderPopup');
+        const value = body.querySelector('#editRatingValuePopup');
+        slider.value = String(Math.max(1, Math.min(10, Number(ratingData.rating) || 1)));
+        value.textContent = slider.value;
+        slider.addEventListener('input', () => { value.textContent = slider.value; });
+        const comment = body.querySelector('#editRatingCommentPopup');
+        comment.value = Utils.normalizeRatingComment(ratingData.comment);
+        const count = body.querySelector('#editCommentCountPopup');
+        const updateCount = () => { count.textContent = i18n.get('popup.rating.comment_count').replace('{count}', String(comment.value.length)); };
+        updateCount();
+        comment.addEventListener('input', updateCount);
+        const dialog = this.openPopupDialog({ title: i18n.get('popup.rating.edit_title'), body,
+            closeId: 'closeEditModalPopup', initialFocus: '#editRatingSliderPopup' });
+        body.querySelector('#cancelEditBtnPopup').addEventListener('click', () => dialog.close());
+        let pending = false;
+        body.addEventListener('submit', async event => {
+            event.preventDefault();
+            if (pending || this.activeDialog !== dialog || !this.isAuthContextCurrent(user.uid, generation)
+                || this.activeUserId !== user.uid) return;
+            pending = true;
+            save.disabled = true;
+            body.setAttribute('aria-busy', 'true');
+            const error = body.querySelector('.popup-dialog__error');
+            error.hidden = true;
+            const newRating = Number(slider.value);
             const newComment = comment.value.trim();
-            
             try {
-                const ratingService = firebaseManager.getRatingService();
-                const currentUser = firebaseManager.getCurrentUser();
-                const userService = firebaseManager.getUserService();
-                
-                const userProfile = await userService.getUserProfile(currentUser.uid);
-                
-                // Get display name based on user preference
-                const displayName = typeof Utils !== 'undefined' && Utils.getDisplayName
-                    ? Utils.getDisplayName(userProfile, currentUser)
-                    : (userProfile?.displayName || currentUser.displayName || currentUser.email);
-                
-                await ratingService.addOrUpdateRating(
-                    currentUser.uid,
-                    displayName,
-                    userProfile?.photoURL || currentUser.photoURL || '',
-                    ratingData.movieId,
-                    newRating,
-                    newComment
-                );
-                
-                closeModal();
-                this.showSuccess(i18n.get('settings.saved'));
-                await this.forceRefreshRatings();
-                
-            } catch (error) {
-                console.error('Error updating rating:', error);
-                this.showError(`${i18n.get('settings.save_failed')}: ${error.message}`);
+                const profile = await firebaseManager.getUserService().getUserProfile(user.uid, { throwOnError: true });
+                if (!this.isAuthContextCurrent(user.uid, generation) || this.activeUserId !== user.uid) return;
+                const name = Utils.getDisplayName(profile, user);
+                await firebaseManager.getRatingService().addOrUpdateRating(user.uid, name,
+                    profile?.photoURL || user.photoURL || '', ratingData.movieId, newRating, newComment);
+                if (!this.isAuthContextCurrent(user.uid, generation) || this.activeUserId !== user.uid) return;
+                dialog.close();
+                const refreshed = await this.forceRefreshRatings();
+                if (this.isAuthContextCurrent(user.uid, generation) && this.activeUserId === user.uid) {
+                    (document.getElementById('rating-' + ratingId)?.querySelector('.rating-menu-btn') || this.elements.refreshBtn)?.focus();
+                    if (refreshed !== false) this.showSuccess(i18n.get('popup.rating.saved'));
+                }
+            } catch (failure) {
+                if (this.activeDialog === dialog) {
+                    error.textContent = i18n.get('popup.rating.save_failed');
+                    error.hidden = false;
+                    save.focus();
+                }
+                this.debug('Rating save unavailable', failure);
+            } finally {
+                pending = false;
+                save.disabled = false;
+                body.setAttribute('aria-busy', 'false');
             }
         });
     }
 
     async deletePopupRating(ratingId) {
+        const user = firebaseManager.getCurrentUser();
+        const generation = this.authGeneration;
+        if (!user) return;
         const confirmed = await ConfirmDialog.confirm({
-            title: i18n.get('confirm_dialog.delete_rating_title'),
-            message: i18n.get('confirm_dialog.delete_rating_message'),
-            confirmLabel: i18n.get('confirm_dialog.delete'),
-            danger: true
+            title: i18n.get('confirm_dialog.delete_rating_title'), message: i18n.get('confirm_dialog.delete_rating_message'),
+            confirmLabel: i18n.get('confirm_dialog.delete'), danger: true
         });
-        
-        if (!confirmed) return;
-        
+        if (!confirmed || !this.isAuthContextCurrent(user.uid, generation) || this.activeUserId !== user.uid) return;
         try {
-            const ratingService = firebaseManager.getRatingService();
-            const currentUser = firebaseManager.getCurrentUser();
-            
-            if (!currentUser) {
-                this.showError(i18n.get('navbar.sign_in'));
-                return;
+            await firebaseManager.getRatingService().deleteRating(user.uid, ratingId);
+            if (!this.isAuthContextCurrent(user.uid, generation) || this.activeUserId !== user.uid) return;
+            const refreshed = await this.forceRefreshRatings();
+            if (this.isAuthContextCurrent(user.uid, generation) && this.activeUserId === user.uid) {
+                this.elements.refreshBtn?.focus();
+                if (refreshed !== false) this.showSuccess(i18n.get('popup.rating.deleted'));
             }
-            
-            await ratingService.deleteRating(currentUser.uid, ratingId);
-            
-            const ratingCard = document.getElementById(`rating-${ratingId}`);
-            if (ratingCard) {
-                ratingCard.style.transition = 'opacity 0.3s, transform 0.3s';
-                ratingCard.style.opacity = '0';
-                ratingCard.style.transform = 'translateX(-20px)';
-                
-                setTimeout(async () => {
-                    ratingCard.remove();
-                    await this.forceRefreshRatings();
-                }, 300);
-            }
-            
-            this.showSuccess(i18n.get('movie_card.remove'));
-            
         } catch (error) {
-            console.error('Error deleting rating:', error);
-            this.showError(`${i18n.currentLocale === 'ru' ? 'Ошибка при удалении' : 'Error deleting'}: ${error.message}`);
+            if (this.isAuthContextCurrent(user.uid, generation)) this.showError(i18n.get('popup.rating.delete_failed'));
+            this.debug('Rating delete unavailable', error);
         }
     }
 
@@ -2642,205 +2295,11 @@ class PopupManager {
             // Диагностика слоев для определения проблемы с z-index
             // Используем небольшую задержку, чтобы DOM успел обновиться
             setTimeout(() => {
-                this.diagnoseLayers(loading);
                 resolve();
             }, 100);
         });
     }
 
-    diagnoseLayers(loadingElement) {
-        console.log('🔍 ========== LAYER DIAGNOSTICS ==========');
-        
-        // Information about the loader itself
-        const loadingRect = loadingElement.getBoundingClientRect();
-        const loadingStyles = window.getComputedStyle(loadingElement);
-        console.log('📦 LOADER ELEMENT:');
-        console.log('  ID:', loadingElement.id);
-        console.log('  Class:', loadingElement.className);
-        console.log('  z-index:', loadingStyles.zIndex);
-        console.log('  position:', loadingStyles.position);
-        console.log('  display:', loadingStyles.display);
-        console.log('  visibility:', loadingStyles.visibility);
-        console.log('  opacity:', loadingStyles.opacity);
-        console.log('  rect:', `top:${Math.round(loadingRect.top)} left:${Math.round(loadingRect.left)} width:${Math.round(loadingRect.width)} height:${Math.round(loadingRect.height)}`);
-        console.log('  parent:', loadingElement.parentElement?.tagName + '.' + (loadingElement.parentElement?.className || 'no class'));
-
-        // Check all parent elements
-        let parent = loadingElement.parentElement;
-        let level = 1;
-        console.log('\n📚 PARENT ELEMENTS:');
-        while (parent && parent !== document.body) {
-            const parentStyles = window.getComputedStyle(parent);
-            const parentRect = parent.getBoundingClientRect();
-            console.log(`  Level ${level}:`);
-            console.log('    Tag:', parent.tagName);
-            console.log('    ID:', parent.id || '(no id)');
-            console.log('    Class:', parent.className || '(no class)');
-            console.log('    z-index:', parentStyles.zIndex);
-            console.log('    position:', parentStyles.position);
-            console.log('    overflow:', parentStyles.overflow);
-            console.log('    overflowY:', parentStyles.overflowY);
-            console.log('    transform:', parentStyles.transform || 'none');
-            console.log('    rect:', `top:${Math.round(parentRect.top)} left:${Math.round(parentRect.left)} width:${Math.round(parentRect.width)} height:${Math.round(parentRect.height)}`);
-            parent = parent.parentElement;
-            level++;
-        }
-
-        // Check all elements with z-index in popup-container
-        const popupContainer = document.querySelector('.popup-container');
-        if (popupContainer) {
-            console.log('\n🎯 ELEMENTS WITH Z-INDEX IN POPUP:');
-            const allElements = popupContainer.querySelectorAll('*');
-            const elementsWithZIndex = [];
-            
-            allElements.forEach(el => {
-                const styles = window.getComputedStyle(el);
-                const zIndex = styles.zIndex;
-                if (zIndex !== 'auto' && zIndex !== '0') {
-                    const rect = el.getBoundingClientRect();
-                    elementsWithZIndex.push({
-                        element: el,
-                        tag: el.tagName,
-                        id: el.id || '(no id)',
-                        className: el.className || '(no class)',
-                        zIndex: zIndex,
-                        position: styles.position,
-                        display: styles.display,
-                        rect: {
-                            top: Math.round(rect.top),
-                            left: Math.round(rect.left),
-                            width: Math.round(rect.width),
-                            height: Math.round(rect.height)
-                        }
-                    });
-                }
-            });
-
-            // Sort by z-index
-            elementsWithZIndex.sort((a, b) => {
-                const zA = parseInt(a.zIndex) || 0;
-                const zB = parseInt(b.zIndex) || 0;
-                return zB - zA;
-            });
-
-            elementsWithZIndex.forEach((item, index) => {
-                console.log(`  ${index + 1}. ${item.tag}${item.id ? '#' + item.id : ''}${item.className ? '.' + item.className.split(' ').join('.') : ''}`);
-                console.log('     z-index:', item.zIndex, '| position:', item.position, '| display:', item.display);
-                console.log('     rect:', `top:${item.rect.top} left:${item.rect.left} width:${item.rect.width} height:${item.rect.height}`);
-            });
-        }
-
-        // Check elements that might overlap the loader by coordinates
-        console.log('\n📍 ELEMENTS THAT MIGHT OVERLAP LOADER:');
-        const loadingCenterX = loadingRect.left + loadingRect.width / 2;
-        const loadingCenterY = loadingRect.top + loadingRect.height / 2;
-        console.log('  Loader center:', `x:${Math.round(loadingCenterX)} y:${Math.round(loadingCenterY)}`);
-        
-        const allElementsInPopup = popupContainer ? popupContainer.querySelectorAll('*') : [];
-        const overlappingElements = [];
-        
-        allElementsInPopup.forEach(el => {
-            if (el === loadingElement || el.contains(loadingElement)) return;
-            
-            const rect = el.getBoundingClientRect();
-            const styles = window.getComputedStyle(el);
-            
-            // Check if element overlaps the center of the loader
-            const overlapsX = rect.left <= loadingCenterX && rect.right >= loadingCenterX;
-            const overlapsY = rect.top <= loadingCenterY && rect.bottom >= loadingCenterY;
-            
-            if (overlapsX && overlapsY && styles.display !== 'none' && styles.visibility !== 'hidden') {
-                const zIndex = parseInt(styles.zIndex) || 0;
-                const loadingZIndex = parseInt(loadingStyles.zIndex) || 0;
-                
-                overlappingElements.push({
-                    element: el,
-                    tag: el.tagName,
-                    id: el.id || '(no id)',
-                    className: el.className || '(no class)',
-                    zIndex: styles.zIndex,
-                    zIndexNum: zIndex,
-                    position: styles.position,
-                    display: styles.display,
-                    rect: {
-                        top: Math.round(rect.top),
-                        left: Math.round(rect.left),
-                        width: Math.round(rect.width),
-                        height: Math.round(rect.height)
-                    },
-                    overlapsLoader: zIndex >= loadingZIndex
-                });
-            }
-        });
-
-        overlappingElements.sort((a, b) => {
-            return b.zIndexNum - a.zIndexNum;
-        });
-
-        if (overlappingElements.length > 0) {
-            overlappingElements.forEach((item, index) => {
-                const status = item.overlapsLoader ? '[OVERLAPS]' : '[BELOW]';
-                console.log(`  ${index + 1}. ${status} - ${item.tag}${item.id ? '#' + item.id : ''}${item.className ? '.' + item.className.split(' ').join('.') : ''}`);
-                console.log('     z-index:', item.zIndex, `(${item.zIndexNum})`, '| position:', item.position, '| display:', item.display);
-                console.log('     rect:', `top:${item.rect.top} left:${item.rect.left} width:${item.rect.width} height:${item.rect.height}`);
-            });
-        } else {
-            console.log('  ✅ No elements overlapping loader');
-        }
-
-        // Additional check: elements above loader by z-index in same area
-        console.log('\n🔎 ELEMENTS WITH HIGH Z-INDEX IN LOADER AREA:');
-        const loaderTop = loadingRect.top;
-        const loaderBottom = loadingRect.bottom;
-        const loaderLeft = loadingRect.left;
-        const loaderRight = loadingRect.right;
-        
-        const highZIndexElements = [];
-        allElementsInPopup.forEach(el => {
-            if (el === loadingElement || el.contains(loadingElement)) return;
-            
-            const rect = el.getBoundingClientRect();
-            const styles = window.getComputedStyle(el);
-            const zIndex = parseInt(styles.zIndex) || 0;
-            const loadingZIndex = parseInt(loadingStyles.zIndex) || 0;
-            
-            // Check if element intersects with loader area
-            const intersectsX = !(rect.right < loaderLeft || rect.left > loaderRight);
-            const intersectsY = !(rect.bottom < loaderTop || rect.top > loaderBottom);
-            
-            if (intersectsX && intersectsY && zIndex >= loadingZIndex && styles.display !== 'none' && styles.visibility !== 'hidden') {
-                highZIndexElements.push({
-                    element: el,
-                    tag: el.tagName,
-                    id: el.id || '(no id)',
-                    className: el.className || '(no class)',
-                    zIndex: styles.zIndex,
-                    zIndexNum: zIndex,
-                    position: styles.position,
-                    rect: {
-                        top: Math.round(rect.top),
-                        left: Math.round(rect.left),
-                        width: Math.round(rect.width),
-                        height: Math.round(rect.height)
-                    }
-                });
-            }
-        });
-
-        highZIndexElements.sort((a, b) => b.zIndexNum - a.zIndexNum);
-
-        if (highZIndexElements.length > 0) {
-            highZIndexElements.forEach((item, index) => {
-                console.log(`  ⚠️ ${index + 1}. ${item.tag}${item.id ? '#' + item.id : ''}${item.className ? '.' + item.className.split(' ').join('.') : ''}`);
-                console.log('     z-index:', item.zIndex, `(${item.zIndexNum})`, '| position:', item.position);
-                console.log('     rect:', `top:${item.rect.top} left:${item.rect.left} width:${item.rect.width} height:${item.rect.height}`);
-            });
-        } else {
-            console.log('  ✅ No elements with high z-index in loader area');
-        }
-
-        console.log('🔍 =========================================\n');
-    }
 
     hideLoadingWithFade() {
         return new Promise((resolve) => {
@@ -2859,17 +2318,26 @@ class PopupManager {
     showMainContent() {
         this.elements.initialLoading.style.display = 'none';
         this.elements.mainContent.style.display = 'flex';
-        this.elements.loading.style.display = 'none';
+        this.showLoading(false);
     }
 
     showError(message) {
-        this.elements.errorMessage.textContent = message;
-        this.elements.errorMessage.style.display = 'block';
-        setTimeout(() => this.hideError(), 5000);
+        const status = this.elements.errorMessage;
+        if (!status) return;
+        const text = status.querySelector('#popupStatusText');
+        if (text) text.textContent = message;
+        status.dataset.kind = 'error';
+        status.setAttribute('role', 'alert');
+        status.hidden = false;
+        status.style.display = 'flex';
     }
 
     hideError() {
+        if (!this.elements.errorMessage) return;
+        this.elements.errorMessage.hidden = true;
         this.elements.errorMessage.style.display = 'none';
+        const text = this.elements.errorMessage.querySelector('#popupStatusText');
+        if (text) text.textContent = '';
     }
 
     compareVersions(v1, v2) {

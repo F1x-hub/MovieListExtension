@@ -367,7 +367,9 @@
         if (!video || roomSyncTelemetryVideo === video) return;
         clearRoomSyncTelemetry();
         roomSyncTelemetryVideo = video;
-        ['loadedmetadata', 'play', 'pause', 'seeking', 'seeked', 'ended', 'timeupdate'].forEach(kind => {
+        // waiting/playing/canplay let the room pause everyone while one
+        // member is still loading.
+        ['loadedmetadata', 'play', 'pause', 'seeking', 'seeked', 'ended', 'timeupdate', 'waiting', 'playing', 'canplay'].forEach(kind => {
             const listener = () => emitRoomSyncTelemetry(kind);
             video.addEventListener(kind, listener);
             roomSyncTelemetryDisposers.push(() => video.removeEventListener(kind, listener));

@@ -18,7 +18,16 @@ class FavoriteService {
         try {
             if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
                 const cacheKey = `bookmarks_cache_${userId}`;
-                await chrome.storage.local.remove([cacheKey]);
+                await chrome.storage.local.remove([
+                    cacheKey,
+                    `home_personal_preview_v1_${userId}`,
+                    `home_personal_preview_v2_${userId}`
+                ]);
+                // A revision event also reaches an open Home page when no
+                // preview has been cached yet. In-flight older reads expire.
+                await chrome.storage.local.set({
+                    [`home_personal_preview_revision_${userId}`]: `${Date.now()}-${Math.random()}`
+                });
                 console.log('FavoriteService: Bookmarks cache invalidated for', userId);
             }
         } catch (error) {
@@ -48,6 +57,17 @@ class FavoriteService {
             }
 
             const movieId = movieData.movieId || movieData.id;
+            const canonicalKinopoiskId = Number(movieData.kinopoiskId);
+            const suppliedMovieId = Number(movieId);
+            if (Number.isSafeInteger(canonicalKinopoiskId) && canonicalKinopoiskId > 0
+                && Number.isSafeInteger(suppliedMovieId) && suppliedMovieId > 0
+                && canonicalKinopoiskId !== suppliedMovieId) {
+                console.warn('FavoriteService: Refusing bookmark with conflicting movie IDs', {
+                    movieId: suppliedMovieId,
+                    kinopoiskId: canonicalKinopoiskId
+                });
+                throw new Error('Movie ID conflicts with Kinopoisk ID');
+            }
             const docId = `${userId}_${movieId}`;
             const favoriteRef = this.db.collection(this.collection).doc(docId);
 
@@ -371,4 +391,3 @@ if (typeof module !== 'undefined' && module.exports) {
 if (typeof window !== 'undefined') {
     window.FavoriteService = FavoriteService;
 }
-

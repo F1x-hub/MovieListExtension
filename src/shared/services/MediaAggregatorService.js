@@ -324,7 +324,8 @@ class MediaAggregatorService {
         let verifiedAt = null;
 
         // 1. Detect HARD CONTRADICTION between KP declared TMDB ID and candidate TMDB ID
-        const kpDeclaredTmdb = Number(kpMovie?.externalId?.tmdb);
+        const isSyntheticTmdbOnly = kpMovie?.provenance === 'synthetic-tmdb-only';
+        const kpDeclaredTmdb = isSyntheticTmdbOnly ? 0 : Number(kpMovie?.externalId?.tmdb);
         const candidateTmdb = Number(options.candidateTmdbId || (tmdbData ? (tmdbData.tmdbId || tmdbData.id) : null));
         
         const hasTrustedReverseMapping = options.identityStatus === 'VERIFIED' &&
@@ -371,7 +372,8 @@ class MediaAggregatorService {
             verifiedAt = options.verifiedAt || new Date().toISOString();
         }
         // 5. Legacy compatibility resolution
-        else if (options.isLegacyResolved || options.status === 'resolved' || options.verificationMethod === 'legacy_resolved') {
+        else if (!isSyntheticTmdbOnly
+            && (options.isLegacyResolved || options.status === 'resolved' || options.verificationMethod === 'legacy_resolved')) {
             status = 'VERIFIED';
             verificationMethod = 'legacy_resolved';
             verificationSource = 'system_legacy';
@@ -1488,6 +1490,7 @@ class MediaAggregatorService {
                 year: Number(options.year || tmdbData?.year || String(tmdbData?.release_date || '').slice(0, 4)) || null,
                 type: options.mediaType === 'tv' ? 'tv-series' : 'movie',
                 externalId: { tmdb: candidateTmdbId },
+                provenance: 'synthetic-tmdb-only',
                 genres: [],
                 countries: [],
                 persons: []
@@ -1525,6 +1528,18 @@ class MediaAggregatorService {
 
         if (!kpMovie) {
             throw new Error(`KP_ENTITY_NOT_FOUND: Failed to get Kinopoisk entity for ID ${numKpId}`);
+        }
+
+        // Show usable KP metadata before optional identity/TMDB enrichment.
+        if (typeof options.onBaseMovie === 'function') {
+            const baseMovie = MediaAggregatorService.aggregate(kpMovie, null, { kinopoiskId: numKpId });
+            if (MediaAggregatorService.isRenderable(baseMovie)) {
+                try {
+                    options.onBaseMovie(baseMovie);
+                } catch (renderError) {
+                    console.warn('[MediaAggregator] Base metadata callback failed:', renderError);
+                }
+            }
         }
 
         // 3. Resolve trusted TMDB ID
@@ -1659,11 +1674,8 @@ class MediaAggregatorService {
 
         // 6. Cache the unified DTO if renderable
         if (this.movieCacheService && MediaAggregatorService.isRenderable(unifiedDto)) {
-            try {
-                await this.movieCacheService.cacheMovie(unifiedDto);
-            } catch (cacheWriteErr) {
-                console.warn(`[MediaAggregator] Failed caching unified DTO for ${numKpId}:`, cacheWriteErr);
-            }
+            void Promise.resolve().then(() => this.movieCacheService.cacheMovie(unifiedDto))
+                .catch(cacheWriteErr => console.warn(`[MediaAggregator] Failed caching unified DTO for ${numKpId}:`, cacheWriteErr));
         }
 
         // Observability

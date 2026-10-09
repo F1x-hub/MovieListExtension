@@ -1,5 +1,7 @@
 const assert = require('node:assert/strict');
 const {
+  closeRoomLive,
+  extendRoomAccess,
   STAGING_MAX_INVITE_USES,
   STAGING_MAX_PARTICIPANTS,
   createWatchRoomsStagingHandler,
@@ -108,6 +110,46 @@ const rtdb = {
   assert.equal(createdRoomArgs.maxParticipants, STAGING_MAX_PARTICIPANTS);
   assert.equal(createdRoomArgs.maxUses, STAGING_MAX_INVITE_USES);
   assert.equal(response.statusCode, 201);
+
+  const endUpdates = [];
+  const endRtdb = {
+    ref(path = '') {
+      return {
+        once: async () => ({ val: () => (path === 'roomLive/ended-room/members'
+          ? { owner: { role: 'owner' }, viewer: { role: 'viewer' } }
+          : null) }),
+        update: async (value) => endUpdates.push(value),
+      };
+    },
+  };
+  let endArgs;
+  const endHandler = createWatchRoomsStagingHandler({
+    verifyIdToken: async () => ({ uid: 'owner', name: 'Owner' }),
+    getRealtimeDatabase: () => endRtdb,
+    service: {
+      endRoom: async (args) => { endArgs = args; return { roomId: args.roomId, state: 'ended' }; },
+    },
+  });
+  const endResponse = { ...response, statusCode: 200, body: null };
+  await endHandler({
+    method: 'POST',
+    body: { action: 'end', requestId: 'handler-end-000001', roomId: 'ended-room' },
+    get(header) { return header === 'authorization' ? 'Bearer token' : ''; },
+  }, endResponse);
+  assert.equal(endArgs.actorUid, 'owner');
+  assert.equal(endResponse.statusCode, 200);
+  assert.deepEqual(endUpdates, [{
+    'roomLive/ended-room': null,
+    'roomAccess/owner/ended-room': null,
+    'roomAccess/viewer/ended-room': null,
+  }], 'ending a room removes the live branch and every member access entry');
+  await extendRoomAccess(endRtdb, { roomId: 'ended-room', expiresAtMs: 123_456 });
+  assert.deepEqual(endUpdates.at(-1), {
+    'roomAccess/owner/ended-room/expiresAtMs': 123_456,
+    'roomAccess/viewer/ended-room/expiresAtMs': 123_456,
+  }, 'an extension moves every member access expiry');
+  await closeRoomLive(endRtdb, { roomId: 'empty-room' });
+  assert.deepEqual(endUpdates.at(-1), { 'roomLive/empty-room': null });
   console.log('watchRoomsStagingHandler.test.cjs: staging ACL is immediately mirrored to RTDB');
 })().catch((error) => {
   console.error(error);

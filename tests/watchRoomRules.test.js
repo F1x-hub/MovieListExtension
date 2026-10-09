@@ -27,6 +27,14 @@ for (const field of ['revision', 'phase', 'basePositionMs', 'effectiveAtMs', 'up
     assert.strictEqual(roomLive.state[field]['.write'].includes("role').val() === 'owner'"), true, `${field} retains owner timeline access`);
     assert.strictEqual(roomLive.state[field]['.write'].includes("role').val() === 'controller'"), true, `${field} permits delegated timeline access`);
 }
+assert.strictEqual(roomLive.state.selection['.write'].includes("role').val() === 'owner'"), true,
+    'the owner shares the room episode');
+assert.strictEqual(roomLive.state.selection['.write'].includes("role').val() === 'controller'"), true,
+    'a controller shares the room episode with its timeline');
+assert.strictEqual(roomLive.state.selection['.validate'].includes("hasChildren(['seasonNumber', 'episodeNumber'])"), true);
+assert.strictEqual(roomLive.state.selection['.validate'].includes("child('episodeNumber').val() <= 100000"), true);
+assert.strictEqual(roomLive.state.selection.$other['.validate'], false,
+    'the room episode carries only canonical season and episode numbers');
 assert.strictEqual(roomLive.presence.$uid['.validate'].includes("root.child('roomAccess')"), true);
 assert.strictEqual(roomLive.presence.$uid['.write'].includes('auth.uid === $uid'), true);
 assert.strictEqual(roomLive.presence.$uid['.write'].includes("child('expiresAtMs').val() > now"), true);
