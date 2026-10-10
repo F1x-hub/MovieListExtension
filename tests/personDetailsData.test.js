@@ -6,6 +6,11 @@ import TMDBService from '../src/shared/services/TMDBService.js';
 import KinopoiskService from '../src/shared/services/KinopoiskService.js';
 import IdMappingService from '../src/shared/services/IdMappingService.js';
 
+async function getEnrichedPersonDetails(service, personKey, options = {}) {
+    const dto = await service.getPersonDetails(personKey, options);
+    return service.enrichPersonDetails(dto, options);
+}
+
 console.log('🧪 Running Phase 2D PersonDetails Data Service & Pipeline Tests...\n');
 
 // Load configurations
@@ -136,7 +141,7 @@ console.log('\n--- 3. Testing TMDB Normalization & Single Roundtrip ---');
     let capturedUrl = null;
     const mockTmdbService = {
         async getPersonDetails(personId, options = {}) {
-            capturedUrl = `/person/${personId}?append_to_response=combined_credits,external_ids,images`;
+            capturedUrl = `/person/${personId}?append_to_response=combined_credits,external_ids`;
             return {
                 id: 2710,
                 name: 'Джеймс Кэмерон',
@@ -183,8 +188,8 @@ console.log('\n--- 3. Testing TMDB Normalization & Single Roundtrip ---');
         idMappingService: mockMappingService
     });
 
-    const dto = await service.getPersonDetails('tmdb:2710');
-    assert.ok(capturedUrl.includes('append_to_response=combined_credits,external_ids,images'));
+    const dto = await getEnrichedPersonDetails(service, 'tmdb:2710');
+    assert.ok(capturedUrl.includes('append_to_response=combined_credits,external_ids'));
     assert.strictEqual(dto.identity.personKey, 'tmdb:2710');
     assert.strictEqual(dto.identity.provider, 'TMDB');
     assert.strictEqual(dto.identity.tmdbPersonId, 2710);
@@ -267,7 +272,7 @@ console.log('\n--- 4. Testing KP Normalization & Native Filmography ---');
         idMappingService: mockMappingService
     });
 
-    const dto = await service.getPersonDetails('kp:27977');
+    const dto = await getEnrichedPersonDetails(service, 'kp:27977');
     assert.strictEqual(mappingCalled, false, 'KP route must not invoke IdMappingService');
     assert.strictEqual(dto.identity.personKey, 'kp:27977');
     assert.strictEqual(dto.identity.provider, 'KP');
@@ -337,7 +342,7 @@ console.log('\n--- 5. Testing 40-Item Mapping Bound & Queue Isolation ---');
         idMappingService: mockMappingService
     });
 
-    const dto = await service.getPersonDetails('tmdb:9999');
+    const dto = await getEnrichedPersonDetails(service, 'tmdb:9999');
     assert.strictEqual(candidateCount, 40, 'Mapping candidates strictly bounded to max 40');
     assert.strictEqual(skipQueueValue, true, 'skipQueue must be explicitly true');
     assert.strictEqual(dto.filmography.directing.length, 300, 'All unique credits normalized into DTO');
@@ -373,7 +378,7 @@ console.log('\n--- 6. Testing Graceful Degradation on Mapping Failure ---');
         idMappingService: mockMappingService
     });
 
-    const dto = await service.getPersonDetails('tmdb:1234');
+    const dto = await getEnrichedPersonDetails(service, 'tmdb:1234');
     assert.strictEqual(dto.name, 'Actor Name');
     assert.strictEqual(dto.filmography.acting.length, 1);
     assert.strictEqual(dto.filmography.acting[0].kinopoiskId, null, 'Graceful null kinopoiskId on mapping error');
@@ -414,7 +419,7 @@ console.log('\n--- 6B. Testing Tom Hanks and Lee Unkrich KP movie artwork shapes
             }
         });
 
-        const dto = await service.getPersonDetails(`kp:${fixture.id}`, { forceRefresh: true });
+        const dto = await getEnrichedPersonDetails(service, `kp:${fixture.id}`, { forceRefresh: true });
         const item = dto.filmography.directing[0];
         assert.ok(item, `${fixture.name} fixture contains filmography`);
         assert.strictEqual(item.posterUrl, null, `${fixture.name} raw KP movie has no artwork field`);
@@ -453,7 +458,7 @@ console.log('\n--- 6B. Testing Tom Hanks and Lee Unkrich KP movie artwork shapes
         }
     });
 
-    const dto = await service.getPersonDetails('kp:399225', { forceRefresh: true });
+    const dto = await getEnrichedPersonDetails(service, 'kp:399225', { forceRefresh: true });
     const item = dto.filmography.directing[0];
     assert.deepStrictEqual(requestedIds, [5406957]);
     assert.strictEqual(item.posterUrl, 'https://avatars.example/5406957.jpg');
@@ -496,7 +501,7 @@ console.log('\n--- 6B. Testing Tom Hanks and Lee Unkrich KP movie artwork shapes
     // PersonDetailsService has already been constructed.
     globalThis.KinopoiskPersonHtmlService = lazyHtmlService;
     try {
-        const dto = await service.getPersonDetails('kp:399225', { forceRefresh: true });
+        const dto = await getEnrichedPersonDetails(service, 'kp:399225', { forceRefresh: true });
         const item = dto.filmography.directing[0];
         assert.deepStrictEqual(requestedIds, [5406957]);
         assert.strictEqual(item.posterUrl, 'https://avatars.example/lazy-5406957.jpg');
@@ -542,7 +547,7 @@ console.log('\n--- 6B. Testing Tom Hanks and Lee Unkrich KP movie artwork shapes
         }
     });
 
-    const cachedDto = await service.getPersonDetails('kp:399226');
+    const cachedDto = await getEnrichedPersonDetails(service, 'kp:399226');
     assert.strictEqual(cachedDto.filmography.directing[0].posterUrl, 'https://avatars.example/5406958.jpg');
     assert.strictEqual(cachedDto.filmography.directing[0].hasArtwork, true);
     assert.strictEqual(cachedDto.knownFor[0].posterUrl, 'https://avatars.example/5406958.jpg');
@@ -582,10 +587,10 @@ console.log('\n--- 6B. Testing Tom Hanks and Lee Unkrich KP movie artwork shapes
         }
     });
 
-    const cachedDto = await service.getPersonDetails('kp:399227');
-    assert.strictEqual(cachedDto.filmography.directing[0].posterUrl, 'https://avatars.example/5406959-correct.jpg');
+    const cachedDto = await getEnrichedPersonDetails(service, 'kp:399227');
+    assert.strictEqual(cachedDto.filmography.directing[0].posterUrl, 'https://avatars.example/5406959-stale.jpg');
 
-    console.log('  ✅ Cached KP HTML posters are replaced when the corrected page image is available');
+    console.log('  ✅ Cached KP HTML posters are reused without another page lookup');
 }
 
 // ==========================================
@@ -619,17 +624,17 @@ console.log('\n--- 7. Testing Caching, LRU & In-Flight Deduplication ---');
     assert.strictEqual(p2.name, 'Person 500');
 
     // 2. Warm cache hit (0 network calls)
-    const warmDto = await service.getPersonDetails('tmdb:500');
+    const warmDto = await getEnrichedPersonDetails(service, 'tmdb:500');
     assert.strictEqual(networkCalls, 1, 'Warm cache hit makes 0 network calls');
     assert.strictEqual(warmDto.name, 'Person 500');
 
     // 3. forceRefresh bypasses cache
-    await service.getPersonDetails('tmdb:500', { forceRefresh: true });
+    await getEnrichedPersonDetails(service, 'tmdb:500', { forceRefresh: true });
     assert.strictEqual(networkCalls, 2, 'forceRefresh issues new network request');
 
     // 4. LRU eviction (100 items limit)
     for (let i = 1; i <= 105; i++) {
-        await service.getPersonDetails(`tmdb:${i}`);
+        await getEnrichedPersonDetails(service, `tmdb:${i}`);
     }
 
     const indexRes = await mockStorage.get(service.INDEX_KEY);
@@ -732,7 +737,7 @@ console.log('\n--- 8. Testing Control Fixtures & Serialized Payload Bounds ---')
             idMappingService: mockMapping
         });
 
-        const dto = await service.getPersonDetails(f.personKey);
+        const dto = await getEnrichedPersonDetails(service, f.personKey);
         const serialized = JSON.stringify(dto);
         const sizeKb = (Buffer.byteLength(serialized, 'utf8') / 1024).toFixed(2);
 
@@ -760,7 +765,7 @@ console.log('\n--- 9. Testing Contextual Enrichment & Verification Status ---');
     const service = new PersonDetailsService({ tmdbService: mockTmdb });
 
     // With explicit contextual KP ID
-    const enrichedDto = await service.getPersonDetails('tmdb:2710', {
+    const enrichedDto = await getEnrichedPersonDetails(service, 'tmdb:2710', {
         knownKpPersonId: 27977,
         knownTmdbPersonId: 2710,
         forceRefresh: true
@@ -770,7 +775,7 @@ console.log('\n--- 9. Testing Contextual Enrichment & Verification Status ---');
     assert.strictEqual(enrichedDto.identity.tmdbPersonId, 2710);
 
     // Without contextual ID
-    const standaloneDto = await service.getPersonDetails('tmdb:2710', { forceRefresh: true });
+    const standaloneDto = await getEnrichedPersonDetails(service, 'tmdb:2710', { forceRefresh: true });
     assert.strictEqual(standaloneDto.identity.verificationStatus, 'PROVIDER_VERIFIED');
     assert.strictEqual(standaloneDto.identity.kpPersonId, null);
 

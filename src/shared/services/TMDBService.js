@@ -1268,7 +1268,7 @@ class TMDBService {
 
         const language = options.language || this.defaultLanguage;
         const signal = options.signal || null;
-        const append = 'combined_credits,external_ids,images';
+        const append = 'combined_credits,external_ids';
 
         const params = new URLSearchParams({
             language,

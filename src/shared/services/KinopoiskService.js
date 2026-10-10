@@ -2250,18 +2250,34 @@ class KinopoiskService {
             throw new Error(`Invalid Kinopoisk person ID: ${personId}`);
         }
 
-        const signal = options.signal || null;
         const url = `${this.baseUrl}/person/${encodeURIComponent(numId)}`;
-
-        const response = await this._fetchWithRotation(url, { method: 'GET', signal });
-
-        if (!response.ok) {
-            const err = new Error(`Kinopoisk person request failed: HTTP ${response.status}`);
-            err.status = response.status;
-            throw err;
+        const controller = new AbortController();
+        const abort = () => controller.abort(options.signal?.reason);
+        if (options.signal?.aborted) abort();
+        else options.signal?.addEventListener('abort', abort, { once: true });
+        const timer = setTimeout(() => controller.abort(new DOMException('Kinopoisk person deadline', 'TimeoutError')), options.timeoutMs ?? 9000);
+        let rejectAbort;
+        const cancelled = new Promise((_, reject) => {
+            rejectAbort = () => reject(controller.signal.reason);
+            if (controller.signal.aborted) rejectAbort();
+            else controller.signal.addEventListener('abort', rejectAbort, { once: true });
+        });
+        try {
+            return await Promise.race([(async () => {
+                if (controller.signal.aborted) throw controller.signal.reason;
+                const response = await this._fetchWithRotation(url, { method: 'GET', signal: controller.signal });
+                if (!response.ok) {
+                    const err = new Error(`Kinopoisk person request failed: HTTP ${response.status}`);
+                    err.status = response.status;
+                    throw err;
+                }
+                return await response.json();
+            })(), cancelled]);
+        } finally {
+            clearTimeout(timer);
+            options.signal?.removeEventListener('abort', abort);
+            controller.signal.removeEventListener('abort', rejectAbort);
         }
-
-        return await response.json();
     }
 }
 
