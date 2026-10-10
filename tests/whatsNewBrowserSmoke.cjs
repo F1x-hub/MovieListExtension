@@ -98,10 +98,15 @@ window.ready = true;
             return route.continue();
         });
         await page.addInitScript(version => {
-            const storage = {get: async () => ({language:'ru',whatsNewV1:{seenVersion:version}}),set:async () => {}};
+            const listeners = new Set();
+            const state = {language:'ru',whatsNewV1:{seenVersion:'1.3.0'}};
+            const storage = {get: async () => structuredClone(state),set:async patch => {
+                Object.assign(state, patch);
+                for (const listener of listeners) listener(Object.fromEntries(Object.entries(patch).map(([key,newValue]) => [key,{newValue}])), 'local');
+            }};
             window.chrome = {runtime:{getManifest:()=>({version}),getURL:value=>value,
-                sendMessage:async()=>({safe:true}),onMessage:{addListener(){}}},
-            storage:{local:storage,sync:storage,onChanged:{addListener(){},removeListener(){}}}};
+                sendMessage:async()=>({safe:false}),onMessage:{addListener(){}}},
+            storage:{local:storage,sync:storage,onChanged:{addListener:fn=>listeners.add(fn),removeListener:fn=>listeners.delete(fn)}}};
         }, currentVersion);
         await page.goto(`http://127.0.0.1:${server.address().port}/src/pages/settings/settings.html?whatsNewPreview=draft`);
         await page.waitForSelector('.whats-new-version-panel.is-open');
@@ -109,6 +114,38 @@ window.ready = true;
         await page.evaluate(() => window.i18n.setLanguage('en', {persist:false}));
         await checkLayout(page);
         console.log('Settings HTML with real page scripts and mocked Chrome/network: preview layout passed');
+        await page.goto(`http://127.0.0.1:${server.address().port}/src/pages/settings/settings.html`);
+        await page.waitForFunction(() => document.getElementById('whatsNewBadge')?.hidden === false);
+        await page.evaluate(() => {
+            document.querySelectorAll('.settings-pane').forEach(pane => pane.classList.toggle('active', pane.id === 'pane-updates'));
+        });
+        assert.equal(await page.locator('#pane-updates #whatsNewButton').count(), 1);
+        assert.equal(await page.locator('#pane-appearance #whatsNewButton').count(), 0);
+        await page.evaluate(async () => {
+            window.whatsNewProbeCalls = 0;
+            chrome.runtime.sendMessage = () => {
+                window.whatsNewProbeCalls++;
+                return new Promise(() => {});
+            };
+            const {showWhatsNew} = await import('/src/shared/components/WhatsNewDialog.js');
+            void showWhatsNew();
+        });
+        await page.waitForFunction(() => window.whatsNewProbeCalls > 0);
+        for (const width of [1280, 390]) {
+            await page.setViewportSize({width,height:900});
+            const geometry = await page.locator('.whats-new-settings-row').evaluate(row => {
+                const text = row.querySelector('.setting-info').getBoundingClientRect();
+                const button = row.querySelector('button').getBoundingClientRect();
+                return {textRight:text.right,textBottom:text.bottom,buttonLeft:button.left,buttonTop:button.top};
+            });
+            assert(width < 560 ? geometry.buttonTop >= geometry.textBottom : geometry.buttonLeft >= geometry.textRight);
+        }
+        await page.locator('#whatsNewButton').click();
+        await page.waitForSelector('.whats-new-version-panel.is-open');
+        await checkLayout(page);
+        await page.locator('[data-whats-new="done"]').click();
+        await page.waitForFunction(() => document.getElementById('whatsNewBadge').hidden);
+        console.log('Settings Updates field: desktop/mobile layout, manual opening despite hung background and unread badge acknowledgement passed');
         await page.close();
     } finally {
         await browser.close();

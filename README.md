@@ -299,7 +299,7 @@ keeps npm-compatible three-component semver metadata.
 
 ### Features
 
-- Show localized release notes after an update as a version accordion: the latest release opens first, older releases stay collapsed, and Settings offers the same history plus preview support for future drafts. Version 1.3.6 includes six highlights in Russian and English. Dates use compact localized labels. Acknowledgement is shared across open pages; release packaging validates the catalog against the manifest version.
+- Show localized release notes after an update as a version accordion: the latest release opens first, older releases stay collapsed, and the Updates section in Settings offers the same history with an unread badge plus preview support for future drafts. Playback checks have bounded waits, and manual opening remains available during an automatic check. Version 1.3.6 includes six highlights in Russian and English. Dates use compact localized labels. Acknowledgement is shared across open pages; release packaging validates the catalog against the manifest version.
 
 - Browse seasons through keyboard-accessible tabs, a community episode rating chart and one selected episode card with playback, watched state and independent personal rating stars.
 - Users can rate released episodes independently of the title rating; setting an episode score also marks it watched, and changing or removing that score preserves the watched mark. Private scores feed public community episode averages through `aggregateSeriesEpisodeRatings`; the season chart, summary and episode card show these user averages. The `aggregateSeriesEpisodeRatings` function (europe-west1) and the updated Firestore rules were deployed to `movielistdb-13208` on 2026-10-10.

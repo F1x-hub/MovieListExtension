@@ -1,4 +1,5 @@
 import { i18n } from '../../shared/i18n/I18n.js';
+import { bindWhatsNewSettings } from '../../shared/components/WhatsNewSettings.js';
 
 const SUBTITLE_APPEARANCE_STORAGE_KEY = 'movieExtensionSubtitleAppearanceV1';
 const EXTENSION_UPDATE_STATE_STORAGE_KEY = 'extension_update_state_v2';
@@ -200,8 +201,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const previewWhatsNew = new URLSearchParams(window.location.search).get('whatsNewPreview') === 'draft';
     const openWhatsNew = () => import('../../shared/components/WhatsNewDialog.js')
         .then(module => module.showWhatsNew({ manual: true, preview: previewWhatsNew }))
-        .catch(error => console.warn('[Settings] Release notes unavailable:', error));
-    document.getElementById('whatsNewButton')?.addEventListener('click', openWhatsNew);
+        .catch(error => {
+            console.error('[Settings] Release notes unavailable:', error);
+            showToast(i18n.get('whats_new.open_failed'), true);
+        });
+    bindWhatsNewSettings({ openDialog: openWhatsNew });
     if (previewWhatsNew) void openWhatsNew();
     // Initialize Navigation
     const nav = new Navigation('navbar');
