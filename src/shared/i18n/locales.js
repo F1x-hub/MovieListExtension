@@ -1,9 +1,9 @@
 export const locales = {
     en: {
         whats_new: {
-            title: 'What’s new in version {version}', draft: 'Next version · Preview',
+            title: 'What’s new', draft: 'Next version draft', version: 'Version {version}', new: 'New', more: 'Show more',
             done: 'Got it', close: 'Close release notes', open: 'What’s new',
-            earlier: 'And earlier changes · View full history', empty: 'No release notes yet.'
+            empty: 'No release notes yet.'
         },
         games: {
             modal: {
@@ -1232,9 +1232,9 @@ export const locales = {
     },
     ru: {
         whats_new: {
-            title: 'Что нового в версии {version}', draft: 'Следующая версия · Предпросмотр',
+            title: 'Что нового', draft: 'Черновик следующей версии', version: 'Версия {version}', new: 'Новое', more: 'Показать ещё',
             done: 'Понятно', close: 'Закрыть новости', open: 'Что нового',
-            earlier: 'И более ранние изменения · Вся история', empty: 'Новостей о выпусках пока нет.'
+            empty: 'Новостей о выпусках пока нет.'
         },
         games: {
             modal: {
