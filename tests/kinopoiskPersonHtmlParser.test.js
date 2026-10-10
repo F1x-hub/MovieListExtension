@@ -284,6 +284,7 @@ const ssrSearchHtml = `<script>window.Ya.__ssr_initial_data = ${JSON.stringify({
     });
 
     const dto = await personService.getPersonDetails('tmdb:31', { forceRefresh: true });
+    await personService.enrichPersonDetails(dto);
     assert.strictEqual(dto.filmography.acting[0].kinopoiskId, 448);
     assert.strictEqual(dto._meta.mappedCount, 1);
     assert.strictEqual(mappingFallbackCalled, false, 'HTML mapping must bypass API mapping fallback');

@@ -344,7 +344,7 @@ console.log('\n--- 6. Testing Filmography Filters & Initial 20-Item Bounds ---')
     const unmappedCard = controller.createPersonMovieCard(unmappedPerson.filmography.acting[0]);
     assert.strictEqual(unmappedCard.tagName, 'DIV', 'Unmapped item renders as a canonical card root');
     assert.ok(unmappedCard.className.includes('movie-card-component'), 'Unmapped item uses the canonical card root');
-    assert.ok(unmappedCard.querySelector('[data-action="view-details"]').href.includes('new-search'), 'Unmapped item links to provider search');
+    assert.ok(unmappedCard.querySelector('[data-action="view-details"]').href.includes('resolveTmdbId=999'), 'Unmapped item uses the internal TMDB resolution route');
     const mappedCard = controller.createPersonMovieCard({ kinopoiskId: 123, name: 'Mapped movie' });
     assert.strictEqual(mappedCard.tagName, 'DIV', 'Mapped item renders as a canonical card root');
     assert.ok(mappedCard.className.includes('movie-card-component'), 'Mapped item uses the canonical card root');

@@ -9,7 +9,7 @@
  * - Canonical PersonDetailsDTO normalization
  * - Filmography normalization, category mapping, and deduplication
  * - Bounded (max 40) TMDB filmography -> Kinopoisk media ID batch mapping with strict queue isolation (skipQueue: true)
- * - Deterministic Known-For ranking (max 10, verified KP IDs only)
+ * - Deterministic Known-For ranking (max 10, any valid provider identity)
  * - Adult and explicit content filtering
  * - Graceful degradation on mapping failure
  */
@@ -40,6 +40,7 @@ class PersonDetailsService {
 
         // In-flight Promise deduplication: Map<personKey, Promise<PersonDetailsDTO>>
         this.inFlightRequests = new Map();
+        this.inFlightSignals = new Map();
 
         // Memory cache fallback for test/non-extension environments
         this._memoryCache = new Map();
@@ -132,7 +133,7 @@ class PersonDetailsService {
         const normalizedKey = parsed.personKey;
 
         // In-flight Promise deduplication
-        if (this.inFlightRequests.has(normalizedKey)) {
+        if (this.inFlightRequests.has(normalizedKey) && !this.inFlightSignals.get(normalizedKey)?.aborted) {
             return this.inFlightRequests.get(normalizedKey);
         }
 
@@ -142,39 +143,16 @@ class PersonDetailsService {
                 if (!options.forceRefresh) {
                     const cached = await this._readCache(normalizedKey);
                     if (cached) {
-                        const htmlService = parsed.provider === 'KP'
-                            ? this._ensureKinopoiskPersonHtmlService()
-                            : null;
-                        if (htmlService && typeof htmlService.getMoviePostersByIds === 'function') {
-                            // `knownFor` is serialized as a separate array, so its items no
-                            // longer share object references with `filmography` after a cache
-                            // round-trip. Enrich both collections in the same lookup pass.
-                            const posterCount = await this._applyKinopoiskHtmlPosters(
-                                cached.filmography,
-                                options,
-                                htmlService,
-                                cached.knownFor
-                            );
-                            console.info('[PersonDetails] Kinopoisk HTML posters', {
-                                source: 'cached',
-                                itemCount: Object.values(cached.filmography || {}).flat().length,
-                                posterCount
-                            });
-                            if (posterCount > 0 && !options.signal?.aborted) {
-                                await this._writeCache(normalizedKey, cached);
-                            }
-                        } else if (parsed.provider === 'KP') {
-                            console.warn('[PersonDetails] Kinopoisk HTML poster service unavailable', {
-                                source: 'cached',
-                                serviceType: typeof htmlService
-                            });
-                        }
+                        cached.identity.personKey = normalizedKey;
+                        cached._meta ||= {};
                         return cached;
                     }
                 }
 
                 // Execute provider-specific fetch and normalization
                 const dto = await this._fetchAndNormalize(parsed, options);
+
+                dto._meta.enrichment = { version: 1, status: 'pending' };
 
                 // Write to cache (only if not aborted)
                 if (!options.signal?.aborted) {
@@ -183,12 +161,143 @@ class PersonDetailsService {
 
                 return dto;
             } finally {
-                this.inFlightRequests.delete(normalizedKey);
+                if (this.inFlightRequests.get(normalizedKey) === fetchPromise) {
+                    this.inFlightRequests.delete(normalizedKey);
+                    this.inFlightSignals.delete(normalizedKey);
+                }
             }
         })();
 
         this.inFlightRequests.set(normalizedKey, fetchPromise);
+        this.inFlightSignals.set(normalizedKey, options.signal);
         return fetchPromise;
+    }
+
+    /**
+     * Background enrichment; the base DTO is already usable and cached as pending.
+     * Only a completed current-version enrichment can suppress later network work.
+     */
+    async enrichPersonDetails(dto, options = {}) {
+        if (dto._meta?.enrichment?.version === 1 && dto._meta.enrichment.status === 'complete') return dto;
+        const controller = new AbortController();
+        const abort = () => controller.abort(options.signal?.reason);
+        if (options.signal?.aborted) abort();
+        else options.signal?.addEventListener('abort', abort, { once: true });
+        const timer = setTimeout(() => controller.abort(new DOMException('Person enrichment deadline', 'TimeoutError')), options.timeoutMs ?? 10000);
+        const signal = controller.signal;
+        // Mutate a working copy so late provider completion cannot touch the visible DTO.
+        const work = JSON.parse(JSON.stringify(dto));
+        work._meta ||= {};
+        const publish = () => {
+            if (signal.aborted) return;
+            dto.filmography = work.filmography;
+            dto.knownFor = work.knownFor;
+            dto._meta = work._meta;
+            options.onUpdate?.(dto);
+        };
+        let rejectAbort;
+        const cancelled = new Promise((_, reject) => {
+            rejectAbort = () => reject(signal.reason || new DOMException('Aborted', 'AbortError'));
+            if (signal.aborted) rejectAbort();
+            else signal.addEventListener('abort', rejectAbort, { once: true });
+        });
+        try {
+            await Promise.race([
+                this._enrichPerson(work, { signal, onUpdate: publish }),
+                cancelled
+            ]);
+            if (signal.aborted) throw signal.reason;
+            work._meta.enrichment = { version: 1, status: 'complete' };
+            publish();
+        } catch (error) {
+            controller.abort(error);
+            dto._meta.enrichment = { version: 1, status: 'partial' };
+            console.warn('[PersonDetails] Background enrichment incomplete:', error?.message || error);
+        } finally {
+            clearTimeout(timer);
+            options.signal?.removeEventListener('abort', abort);
+            signal.removeEventListener('abort', rejectAbort);
+        }
+        if (!options.signal?.aborted) await this._writeCache(dto.identity.personKey, dto);
+        return dto;
+    }
+
+    async _enrichPerson(dto, options) {
+        if (options.signal.aborted) throw options.signal.reason;
+        const filmography = dto.filmography || {};
+        if (dto.identity.provider === 'KP') {
+            const htmlService = this._ensureKinopoiskPersonHtmlService();
+            if (!htmlService?.getMoviePostersByIds) throw new Error('Kinopoisk HTML poster service unavailable');
+            await this._applyKinopoiskHtmlPosters(filmography, options, htmlService, dto.knownFor);
+            return;
+        }
+
+        const mediaKey = item => `${item.providerMediaType || 'movie'}:${item.tmdbId}`;
+        const unique = new Map();
+        for (const item of Object.values(filmography).flat()) {
+            if (!unique.has(mediaKey(item))) unique.set(mediaKey(item), item);
+        }
+        const uniqueMediaList = [...unique.values()];
+        uniqueMediaList.sort((a, b) => this._calculateMediaMappingScore(b) - this._calculateMediaMappingScore(a));
+        const mappingCandidates = uniqueMediaList.slice(0, this.MAX_MAPPING_CANDIDATES);
+        if (!mappingCandidates.length) return;
+        const publish = () => {
+            if (options.signal.aborted) return;
+            // Category entries and cached Known-For entries have independent references.
+            for (const item of [...Object.values(filmography).flat(), ...(dto.knownFor || [])]) {
+                const mapped = unique.get(mediaKey(item));
+                if (mapped?.kinopoiskId) item.kinopoiskId = mapped.kinopoiskId;
+                item.hasNavigationTarget = this._hasNavigationTarget(item);
+            }
+            dto._meta.mappedCount = uniqueMediaList.filter(item => this._hasNavigationTarget(item)).length;
+            dto._meta.unmappedCount = uniqueMediaList.length - dto._meta.mappedCount;
+            options.onUpdate?.();
+        };
+
+        // Preserve existing matching rules and queue isolation; all discovery is background work.
+        const htmlService = this._ensureKinopoiskPersonHtmlService();
+        const htmlPerson = htmlService?.getPersonFilmography
+            ? await htmlService.getPersonFilmography([dto.name, dto.originalName], { signal: options.signal })
+            : null;
+        if (options.signal.aborted) throw options.signal.reason;
+        if (htmlPerson?.items?.length > 0) {
+            this._applyKinopoiskHtmlMapping(filmography, htmlPerson.items);
+            publish();
+            await this._applyKinopoiskHtmlTitleMapping(mappingCandidates, { ...options, onUpdate: publish });
+            publish();
+            return;
+        }
+        if (!this.idMappingService) throw new Error('Person filmography mapping service unavailable');
+        const batchInputs = mappingCandidates.map(item => ({
+            id: item.tmdbId,
+            tmdbId: item.tmdbId,
+            mediaType: item.providerMediaType,
+            title: item.name || item.originalName || '',
+            originalTitle: item.originalName || item.name || '',
+            releaseDate: item.releaseDate,
+            year: item.year,
+            voteAverage: item.rating,
+            voteCount: item.voteCount,
+            posterPath: item.posterUrl ? item.posterUrl.replace('https://image.tmdb.org/t/p/w342', '') : null
+        }));
+        const mappingMap = await this.idMappingService.resolveBatch(batchInputs, {
+            skipQueue: true,
+            context: 'person-filmography',
+            signal: options.signal
+        });
+        if (options.signal.aborted) throw options.signal.reason;
+        for (const item of uniqueMediaList) {
+            const key = this.idMappingService.buildKey?.(item.providerMediaType || 'movie', item.tmdbId) || mediaKey(item);
+            const resolved = mappingMap.get(key) || mappingMap.get(item.tmdbId)
+                || mappingMap.get(String(item.tmdbId)) || mappingMap.get(Number(item.tmdbId));
+            if (resolved?.kinopoiskId && Number(resolved.kinopoiskId) > 0) {
+                item.kinopoiskId = Number(resolved.kinopoiskId);
+            }
+        }
+        publish();
+        if ([...mappingMap.values()].some(item => item?.status === 'unresolved')) {
+            throw new Error('Person filmography mapping temporarily unavailable');
+        }
     }
 
     /**
@@ -361,85 +470,9 @@ class PersonDetailsService {
 
         // Deterministically rank all unique media candidates to select Top 40 for initial mapping
         uniqueMediaList.sort((a, b) => this._calculateMediaMappingScore(b) - this._calculateMediaMappingScore(a));
-        const mappingCandidates = uniqueMediaList.slice(0, this.MAX_MAPPING_CANDIDATES);
 
         let mappedCount = 0;
         let unmappedCount = 0;
-
-        // 4. Resolve native Kinopoisk IDs from the person HTML first. This avoids
-        // one API matching attempt per film when the SSR payload is available.
-        let htmlMappingUsed = false;
-        const htmlService = this._ensureKinopoiskPersonHtmlService();
-        if (htmlService) {
-            try {
-                const htmlPerson = await htmlService.getPersonFilmography(
-                    [raw.name, raw.original_name],
-                    { signal: options.signal }
-                );
-                if (htmlPerson?.items?.length > 0) {
-                    const matchedCount = this._applyKinopoiskHtmlMapping(filmography, htmlPerson.items);
-                    htmlMappingUsed = true;
-                    console.info(`[PersonDetails] Kinopoisk HTML mapping: ${matchedCount} matches from ${htmlPerson.items.length} records`);
-
-                    if (typeof htmlService.findMovieByTitle === 'function') {
-                        const titleFallbackCount = await this._applyKinopoiskHtmlTitleMapping(mappingCandidates);
-                        console.info(`[PersonDetails] Kinopoisk HTML title fallback: ${titleFallbackCount} additional matches from ${mappingCandidates.length} candidates`);
-                    }
-                }
-            } catch (htmlMappingErr) {
-                console.warn(`PersonDetailsService: HTML mapping degraded gracefully for ${parsed.personKey}:`, htmlMappingErr.message);
-            }
-        }
-
-        // 5. Existing API mapping fallback with Queue Isolation
-        if (!htmlMappingUsed && this.idMappingService && mappingCandidates.length > 0) {
-            const batchInputs = mappingCandidates.map(c => ({
-                id: c.tmdbId,
-                tmdbId: c.tmdbId,
-                mediaType: c.providerMediaType,
-                title: c.name || c.originalName || '',
-                originalTitle: c.originalName || c.name || '',
-                releaseDate: c.releaseDate,
-                year: c.year,
-                voteAverage: c.rating,
-                voteCount: c.voteCount,
-                posterPath: c.posterUrl ? c.posterUrl.replace('https://image.tmdb.org/t/p/w342', '') : null
-            }));
-
-            try {
-                const mappingMap = await this.idMappingService.resolveBatch(batchInputs, {
-                    skipQueue: true,
-                    context: 'person-filmography'
-                });
-
-                // Apply mapped KP IDs back to all categories in filmography and uniqueMediaList
-                for (const category of Object.keys(filmography)) {
-                    for (const item of filmography[category]) {
-                        const key = (this.idMappingService && typeof this.idMappingService.buildKey === 'function')
-                            ? this.idMappingService.buildKey(item.providerMediaType || 'movie', item.tmdbId)
-                            : `${item.providerMediaType || 'movie'}:${item.tmdbId}`;
-                        const resolved = mappingMap.get(key) || mappingMap.get(item.tmdbId) || mappingMap.get(String(item.tmdbId)) || mappingMap.get(Number(item.tmdbId));
-                        if (resolved && resolved.kinopoiskId && Number(resolved.kinopoiskId) > 0) {
-                            item.kinopoiskId = Number(resolved.kinopoiskId);
-                        }
-                        item.hasNavigationTarget = this._hasNavigationTarget(item);
-                    }
-                }
-                for (const item of uniqueMediaList) {
-                    const key = (this.idMappingService && typeof this.idMappingService.buildKey === 'function')
-                        ? this.idMappingService.buildKey(item.providerMediaType || 'movie', item.tmdbId)
-                        : `${item.providerMediaType || 'movie'}:${item.tmdbId}`;
-                    const resolved = mappingMap.get(key) || mappingMap.get(item.tmdbId) || mappingMap.get(String(item.tmdbId)) || mappingMap.get(Number(item.tmdbId));
-                    if (resolved && resolved.kinopoiskId && Number(resolved.kinopoiskId) > 0) {
-                        item.kinopoiskId = Number(resolved.kinopoiskId);
-                    }
-                    item.hasNavigationTarget = this._hasNavigationTarget(item);
-                }
-            } catch (mappingErr) {
-                // Graceful degradation: media mapping failure does not break core person details
-                console.warn(`PersonDetailsService: Batch mapping degraded gracefully for ${parsed.personKey}:`, mappingErr.message);
-            }
-        }
 
         // Count mapped and unmapped across unique items
         for (const item of uniqueMediaList) {
@@ -447,7 +480,7 @@ class PersonDetailsService {
             else unmappedCount++;
         }
 
-        // 6. Select Known-For (Top 10 items with verified Kinopoisk IDs)
+        // Select Known-For independently of background Kinopoisk mapping.
         const verifiedCandidates = uniqueMediaList.filter(item => this._isRenderableItem(item) && !item.adult);
         verifiedCandidates.sort((a, b) => this._calculateKnownForScore(b, knownForDepartment) - this._calculateKnownForScore(a, knownForDepartment));
         const knownFor = verifiedCandidates.slice(0, this.MAX_KNOWN_FOR);
@@ -628,28 +661,6 @@ class PersonDetailsService {
             });
         }
 
-        // Resolve every native KP ID through its individual public movie page.
-        // The person API can expose a non-poster promo image, so its artwork
-        // must not suppress the authoritative movie-page lookup.
-        const htmlService = this._ensureKinopoiskPersonHtmlService();
-        if (htmlService && typeof htmlService.getMoviePostersByIds === 'function') {
-            try {
-                const posterCount = await this._applyKinopoiskHtmlPosters(filmography, options, htmlService);
-                console.info('[PersonDetails] Kinopoisk HTML posters', {
-                    source: 'fresh',
-                    itemCount: Object.values(filmography).flat().length,
-                    posterCount
-                });
-            } catch (posterError) {
-                console.warn(`PersonDetailsService: HTML poster enrichment degraded gracefully for ${parsed.personKey}:`, posterError.message);
-            }
-        } else {
-            console.warn('[PersonDetails] Kinopoisk HTML poster service unavailable', {
-                source: 'fresh',
-                serviceType: typeof htmlService
-            });
-        }
-
         // Collect all unique KP items for Known For
         const allKpItemsMap = new Map();
         for (const cat of Object.keys(filmography)) {
@@ -716,33 +727,36 @@ class PersonDetailsService {
         const posterService = htmlService || this._ensureKinopoiskPersonHtmlService();
         if (!posterService || typeof posterService.getMoviePostersByIds !== 'function') return 0;
         const items = [
-            ...Object.values(filmography).flat(),
-            ...(Array.isArray(additionalItems) ? additionalItems : [])
+            ...(Array.isArray(additionalItems) ? additionalItems : []),
+            ...Object.values(filmography).flatMap(list => list.slice(0, 20)),
+            ...Object.values(filmography).flat()
         ];
-        const ids = [...new Set(items
+        const ids = [...new Set(items.filter(item => item.posterSource !== 'kp-html')
             .map(item => Number(item.kinopoiskId))
             .filter(id => Number.isSafeInteger(id) && id > 0))];
         if (ids.length === 0) return 0;
-
-        const posterMap = await posterService.getMoviePostersByIds(ids, {
-            signal: options.signal
-        });
         let enrichedCount = 0;
         const enrichedIds = new Set();
-
-        for (const item of items) {
-            const id = Number(item.kinopoiskId);
-            const posterUrl = posterMap instanceof Map ? posterMap.get(id) : posterMap?.[id];
-            if (!this._isValidArtworkUrl(posterUrl)) continue;
-
-            item.posterUrl = posterUrl;
-            item.posterSource = 'kp-html';
-            item.hasArtwork = true;
+        const apply = (id, posterUrl) => {
+            if (options.signal?.aborted || enrichedIds.has(id) || !this._isValidArtworkUrl(posterUrl)) return;
+            for (const item of items) {
+                if (Number(item.kinopoiskId) !== Number(id)) continue;
+                item.posterUrl = posterUrl;
+                item.posterSource = 'kp-html';
+                item.hasArtwork = true;
+            }
             if (!enrichedIds.has(id)) {
                 enrichedIds.add(id);
                 enrichedCount++;
             }
-        }
+            options.onUpdate?.();
+        };
+        const posterMap = await posterService.getMoviePostersByIds(ids, {
+            signal: options.signal,
+            onPoster: apply,
+            reportFailure: true
+        });
+        for (const id of ids) apply(id, posterMap instanceof Map ? posterMap.get(id) : posterMap?.[id]);
 
         return enrichedCount;
     }
@@ -939,7 +953,7 @@ class PersonDetailsService {
      * @returns {Promise<number>}
      * @private
      */
-    async _applyKinopoiskHtmlTitleMapping(candidates) {
+    async _applyKinopoiskHtmlTitleMapping(candidates, options = {}) {
         const htmlService = this._ensureKinopoiskPersonHtmlService();
         if (!htmlService || typeof htmlService.findMovieByTitle !== 'function') return 0;
         const unresolved = candidates.filter(item => !this._hasNavigationTarget(item));
@@ -948,17 +962,35 @@ class PersonDetailsService {
         let nextIndex = 0;
         let matchedCount = 0;
         const worker = async () => {
-            while (nextIndex < unresolved.length) {
+            while (nextIndex < unresolved.length && !options.signal?.aborted) {
                 const item = unresolved[nextIndex++];
-                const match = await htmlService.findMovieByTitle(
-                    [item.name, item.originalName],
-                    item.year
-                );
+                const requestKey = `person-filmography:${Date.now()}:${item.providerMediaType}:${item.tmdbId}`;
+                const cancel = () => {
+                    try {
+                        globalThis.chrome?.runtime?.sendMessage?.({
+                            type: 'KINOPOISK_OFFSCREEN_CANCEL', requestKey
+                        })?.catch?.(() => {});
+                    } catch { /* Best-effort; signal guards also discard late results. */ }
+                };
+                options.signal?.addEventListener('abort', cancel, { once: true });
+                let match;
+                try {
+                    match = await htmlService.findMovieByTitle(
+                        [item.name, item.originalName],
+                        item.year,
+                        { ...options, requestKey, mediaType: item.providerMediaType, reportFailure: true }
+                    );
+                } finally {
+                    options.signal?.removeEventListener('abort', cancel);
+                }
+                if (options.signal?.aborted) throw options.signal.reason;
+                if (match?.failed) throw new Error('Kinopoisk title lookup unavailable');
                 if (!match?.kinopoiskId) continue;
 
                 item.kinopoiskId = Number(match.kinopoiskId);
                 item.hasNavigationTarget = this._hasNavigationTarget(item);
                 matchedCount++;
+                options.onUpdate?.();
                 console.log('[PersonDetails] Kinopoisk HTML title match', {
                     title: item.name || item.originalName || null,
                     year: item.year || null,
@@ -967,7 +999,7 @@ class PersonDetailsService {
             }
         };
 
-        const workerCount = Math.min(4, unresolved.length);
+        const workerCount = Math.min(2, unresolved.length);
         await Promise.all(Array.from({ length: workerCount }, () => worker()));
         return matchedCount;
     }

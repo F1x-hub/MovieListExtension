@@ -49,6 +49,8 @@ class PersonDetailsPageController {
 
         // State
         this.currentPerson = null;
+        this.personRequestController = null;
+        window.addEventListener?.('pagehide', () => this.personRequestController?.abort());
         this.activeMediaFilter = 'all'; // 'all' | 'movie' | 'tv'
         this.categoryVisibleCounts = {
             acting: 20,
@@ -109,6 +111,9 @@ class PersonDetailsPageController {
      * @param {string} personKey
      */
     async loadPerson(personKey) {
+        this.personRequestController?.abort();
+        const request = new AbortController();
+        this.personRequestController = request;
         this.showLoading();
 
         try {
@@ -120,12 +125,23 @@ class PersonDetailsPageController {
                 }
             }
 
-            const person = await this.personDetailsService.getPersonDetails(personKey);
+            const person = await this.personDetailsService.getPersonDetails(personKey, { signal: request.signal });
+            if (request.signal.aborted || this.personRequestController !== request) return;
             this.currentPerson = person;
 
             this.renderPerson(person);
             this.showContent();
+            // Start only after the base page is mounted; updates preserve the page and carousel track.
+            this.personDetailsService.enrichPersonDetails?.(person, {
+                signal: request.signal,
+                onUpdate: updated => {
+                    if (!request.signal.aborted && this.personRequestController === request) {
+                        this.updateEnrichedCards(updated);
+                    }
+                }
+            }).catch(error => console.warn('[PersonDetails] Enrichment failed:', error.message));
         } catch (err) {
+            if (request.signal.aborted || this.personRequestController !== request) return;
             console.error('Failed to load person details:', err);
             if (err.code === 'INVALID_PERSON_KEY') {
                 this.renderError('INVALID_KEY', this.i18n.get('person_details.invalid_link'), err);
@@ -773,7 +789,7 @@ class PersonDetailsPageController {
 
             gridEl.innerHTML = '';
             for (const item of visibleItems) {
-                const cardEl = this.createPersonMovieCard(item);
+                const cardEl = this.createPersonMovieCard(item, { lazyPoster: true });
                 if (cardEl) gridEl.appendChild(cardEl);
             }
         }
@@ -942,7 +958,7 @@ class PersonDetailsPageController {
      * @param {Object} item - FilmographyItemDTO
      * @returns {HTMLElement|null}
      */
-    createPersonMovieCard(item) {
+    createPersonMovieCard(item, { lazyPoster = false } = {}) {
         const hasNavigationTarget = this.hasNavigationTarget(item);
 
         if (!window.MovieCard || typeof window.MovieCard.create !== 'function') {
@@ -954,6 +970,7 @@ class PersonDetailsPageController {
                 id: hasNavigationTarget ? item.kinopoiskId : null,
                 kinopoiskId: hasNavigationTarget ? item.kinopoiskId : null,
                 tmdbId: item.tmdbId || null,
+                mediaType: item.providerMediaType || 'movie',
                 isTmdbOnly: !hasNavigationTarget,
                 name: item.name || item.originalName,
                 alternativeName: item.originalName,
@@ -966,6 +983,7 @@ class PersonDetailsPageController {
         };
         const card = window.MovieCard.create(cardData, {
             variant: 'search',
+            lazyPoster,
             showGenres: false,
             showDescription: false,
             showThreeDotMenu: hasNavigationTarget,
@@ -975,6 +993,9 @@ class PersonDetailsPageController {
             showWatched: hasNavigationTarget
         });
 
+        card.dataset.personMediaKey = this.personMediaKey(item);
+        card.dataset.personCardState = this.personCardState(item);
+        card.dataset.lazyPoster = String(lazyPoster);
         if (!item.posterUrl) {
             this.replacePersonMoviePosterFallback(card);
         }
@@ -997,6 +1018,29 @@ class PersonDetailsPageController {
             this.applyKinopoiskSearchNavigation(card, item);
         }
         return card;
+    }
+
+    personMediaKey(item) {
+        return item.tmdbId ? `tmdb:${item.providerMediaType || 'movie'}:${item.tmdbId}` : `kp:${item.kinopoiskId}`;
+    }
+
+    personCardState(item) {
+        return JSON.stringify([item.kinopoiskId || null, item.posterUrl || null, item.posterSource || null]);
+    }
+
+    updateEnrichedCards(person) {
+        this.currentPerson = person;
+        const items = new Map([...Object.values(person.filmography || {}).flat(), ...(person.knownFor || [])]
+            .map(item => [this.personMediaKey(item), item]));
+        for (const card of this.personContainer?.querySelectorAll?.('[data-person-media-key]') || []) {
+            const item = items.get(card.dataset.personMediaKey);
+            if (!item || card.dataset.personCardState === this.personCardState(item)) continue;
+            const replacement = this.createPersonMovieCard(item, { lazyPoster: card.dataset.lazyPoster === 'true' });
+            const track = card.parentElement;
+            const scrollLeft = track?.scrollLeft;
+            card.replaceWith(replacement);
+            if (track) track.scrollLeft = scrollLeft;
+        }
     }
 
     getPersonMoviePosterPlaceholder() {
@@ -1024,18 +1068,28 @@ class PersonDetailsPageController {
         const title = item.name || item.originalName || '';
         if (!title) return card;
 
-        const searchUrl = `https://www.kinopoisk.ru/new-search/?text=${encodeURIComponent(title)}`;
+        const params = new URLSearchParams({
+            resolveTmdbId: String(item.tmdbId || ''),
+            source: 'home-tmdb-only',
+            title,
+            originalTitle: item.originalName || '',
+            year: String(item.year || ''),
+            mediaType: item.providerMediaType || 'movie'
+        });
+        const searchUrl = item.tmdbId
+            ? `../movie-details/movie-details.html?${params.toString()}`
+            : `https://www.kinopoisk.ru/new-search/?text=${encodeURIComponent(title)}`;
         const links = card.querySelectorAll?.('[data-action="view-details"]') || [];
         links.forEach(link => {
             link.setAttribute('href', searchUrl);
-            link.setAttribute('data-external-search', 'kinopoisk');
-            link.setAttribute('title', `${title} — поиск на Кинопоиске`);
+            if (!item.tmdbId) link.setAttribute('data-external-search', 'kinopoisk');
+            link.setAttribute('title', item.tmdbId ? title : `${title} — поиск на Кинопоиске`);
         });
 
         if (card.tagName === 'A' && typeof card.setAttribute === 'function') {
             card.setAttribute('href', searchUrl);
             card.setAttribute('data-action', 'view-details');
-            card.setAttribute('data-external-search', 'kinopoisk');
+            if (!item.tmdbId) card.setAttribute('data-external-search', 'kinopoisk');
         }
 
         return card;

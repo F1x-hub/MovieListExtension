@@ -10,6 +10,7 @@ class KinopoiskPersonHtmlService {
         this.baseUrl = options.baseUrl || 'https://www.kinopoisk.ru';
         this.fetchImpl = options.fetchImpl || (typeof fetch === 'function' ? fetch.bind(globalThis) : null);
         this.kinopoiskService = options.kinopoiskService || null;
+        this.requestTimeoutMs = options.requestTimeoutMs ?? 9000;
         this.movieSearchCache = new Map();
         this.movieSearchInFlight = new Map();
         this.movieSearchBlocked = false;
@@ -31,7 +32,8 @@ class KinopoiskPersonHtmlService {
         try {
             const searchHtml = await this._fetchHtml(
                 `${this.baseUrl}/new-search/?text=${encodeURIComponent(candidateNames[0].trim())}`,
-                'KinopoiskPersonHtmlService.search'
+                'KinopoiskPersonHtmlService.search',
+                options
             );
             const personId = this.parsePersonSearchHtml(searchHtml, candidateNames);
             if (!personId) {
@@ -86,7 +88,7 @@ class KinopoiskPersonHtmlService {
         }
 
         const request = (async () => {
-            const cached = await this._readMoviePosterCache(numericId);
+            const cached = options.posterCache?.get(numericId) || await this._readMoviePosterCache(numericId);
             if (cached.hit) {
                 this.moviePosterCache.set(numericId, cached.posterUrl);
                 return cached.posterUrl;
@@ -98,7 +100,9 @@ class KinopoiskPersonHtmlService {
                     'KinopoiskPersonHtmlService.moviePosterPage',
                     options
                 );
+                if (options.signal?.aborted) throw options.signal.reason;
                 const posterUrl = this.parseMoviePosterHtml(html, numericId);
+                if (!posterUrl && options.reportFailure) throw new Error('Movie page has no valid poster');
                 this.moviePosterCache.set(numericId, posterUrl);
                 await this._writeMoviePosterCache(numericId, posterUrl);
                 return posterUrl;
@@ -107,6 +111,7 @@ class KinopoiskPersonHtmlService {
                     kinopoiskId: numericId,
                     message: error.message
                 });
+                if (options.reportFailure) throw error;
                 return null;
             }
         })().finally(() => this.moviePosterInFlight.delete(numericId));
@@ -128,16 +133,42 @@ class KinopoiskPersonHtmlService {
         const result = new Map();
         if (ids.length === 0) return result;
 
+        // One storage read for the batch, including negative cached results.
+        const posterCache = new Map();
+        if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+            const keys = ids.map(id => this.MOVIE_POSTER_CACHE_PREFIX + id);
+            try {
+                const entries = await chrome.storage.local.get(keys);
+                for (const id of ids) {
+                    const entry = entries[this.MOVIE_POSTER_CACHE_PREFIX + id];
+                    posterCache.set(id, entry && Date.now() - entry.timestamp < this.MOVIE_POSTER_CACHE_TTL
+                        ? { hit: true, posterUrl: this._normalizeArtworkUrl(entry.posterUrl) }
+                        : { hit: false });
+                }
+            } catch { /* Per-ID reads remain available if storage failed. */ }
+        }
         let nextIndex = 0;
+        let failed = false;
         const workerCount = Math.min(2, ids.length);
         const worker = async () => {
-            while (nextIndex < ids.length) {
+            while (nextIndex < ids.length && !options.signal?.aborted) {
                 const id = ids[nextIndex++];
-                result.set(id, await this.getMoviePosterById(id, options));
+                let poster;
+                try {
+                    poster = await this.getMoviePosterById(id, { ...options, posterCache });
+                } catch {
+                    failed = true;
+                    continue;
+                }
+                if (options.signal?.aborted) throw options.signal.reason;
+                result.set(id, poster);
+                options.onPoster?.(id, poster);
             }
         };
 
         await Promise.all(Array.from({ length: workerCount }, () => worker()));
+        if (options.signal?.aborted) throw options.signal.reason;
+        if (failed) throw new Error('Some Kinopoisk poster requests failed');
         return result;
     }
 
@@ -200,7 +231,6 @@ class KinopoiskPersonHtmlService {
             .map(title => title.trim())
             .filter((title, index, values) => values.indexOf(title) === index);
         if (candidateTitles.length === 0) return null;
-        if (this.movieSearchBlocked) return null;
 
         const sourceName = options.sourceName || 'KinopoiskPersonHtmlService.movieSearch';
         // A technical failure (timeout, blocked page, network) is not "this
@@ -211,6 +241,7 @@ class KinopoiskPersonHtmlService {
             this._kpTrace('search:failed', { searchTitle: candidateTitles[0], reason });
             return options.reportFailure ? { failed: true, reason } : null;
         };
+        if (this.movieSearchBlocked) return technicalFailure('SSO_BLOCKED');
 
         const searchTitle = candidateTitles[0];
         const cacheKey = `${this._normalizeMovieTitle(searchTitle)}|${Number(year) || ''}|${options.mediaType || ''}|${options.allowYearTolerance ? 'tolerant' : 'strict'}|${Number(options.maxYearDelta) || ''}|${options.requireRating ? 'rating' : 'identity'}`;
@@ -339,7 +370,8 @@ class KinopoiskPersonHtmlService {
             this._kpTrace('search:html-request', { searchTitle });
             const html = await this._fetchHtml(
                 `${this.baseUrl}/new-search/?text=${encodeURIComponent(searchTitle)}`,
-                sourceName
+                sourceName,
+                options
             );
             const responseDiagnostics = {
                 title: searchTitle,
@@ -390,21 +422,38 @@ class KinopoiskPersonHtmlService {
             throw new Error('fetch is not available');
         }
 
-        globalThis.quotaTracker?.track(sourceName, 'network');
-        const requestOptions = {
-            credentials: 'include',
-            headers: { Accept: 'text/html,application/xhtml+xml' }
-        };
-        if (options.signal) requestOptions.signal = options.signal;
-        const response = await this.fetchImpl(url, requestOptions);
-
-        if (!response.ok) {
-            const error = new Error(`Kinopoisk HTML request failed: HTTP ${response.status}`);
-            error.status = response.status;
-            throw error;
+        const controller = new AbortController();
+        const abort = () => controller.abort(options.signal?.reason);
+        if (options.signal?.aborted) abort();
+        else options.signal?.addEventListener('abort', abort, { once: true });
+        const timer = setTimeout(() => controller.abort(new DOMException('Kinopoisk HTML deadline', 'TimeoutError')), this.requestTimeoutMs);
+        let rejectAbort;
+        const cancelled = new Promise((_, reject) => {
+            rejectAbort = () => reject(controller.signal.reason);
+            if (controller.signal.aborted) rejectAbort();
+            else controller.signal.addEventListener('abort', rejectAbort, { once: true });
+        });
+        try {
+            return await Promise.race([(async () => {
+                if (controller.signal.aborted) throw controller.signal.reason;
+                globalThis.quotaTracker?.track(sourceName, 'network');
+                const response = await this.fetchImpl(url, {
+                    credentials: 'include',
+                    headers: { Accept: 'text/html,application/xhtml+xml' },
+                    signal: controller.signal
+                });
+                if (!response.ok) {
+                    const error = new Error(`Kinopoisk HTML request failed: HTTP ${response.status}`);
+                    error.status = response.status;
+                    throw error;
+                }
+                return await response.text();
+            })(), cancelled]);
+        } finally {
+            clearTimeout(timer);
+            options.signal?.removeEventListener('abort', abort);
+            controller.signal.removeEventListener('abort', rejectAbort);
         }
-
-        return response.text();
     }
 
     /**
