@@ -1285,6 +1285,16 @@ class FirebaseManager {
         return this.ratingService;
     }
 
+    getSeriesEpisodeRatingService() {
+        if (!this.seriesEpisodeRatingService) {
+            if (typeof SeriesEpisodeRatingService === 'undefined') {
+                throw new Error('SeriesEpisodeRatingService class not found. Check if SeriesEpisodeRatingService.js is loaded.');
+            }
+            this.seriesEpisodeRatingService = new SeriesEpisodeRatingService(this);
+        }
+        return this.seriesEpisodeRatingService;
+    }
+
     getCommentReactionService() {
         if (!this.commentReactionService) {
             if (typeof CommentReactionService === 'undefined') {

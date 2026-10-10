@@ -1798,6 +1798,7 @@ class TMDBService {
 
         return {
             tmdbId: Number(tmdbId),
+            tmdbEpisodeId: Number.isInteger(Number(rawEp.id)) && Number(rawEp.id) > 0 ? Number(rawEp.id) : null,
             seasonNumber: Number(seasonNumber),
             episodeNumber: epNum,
             name: (rawEp.name || `Серия ${epNum}`).trim(),

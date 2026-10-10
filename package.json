@@ -46,6 +46,7 @@
     "test:rating-uniqueness": "node tests/ratingUniquenessContract.test.js",
   "test:rating-integrity": "npm run test:rating-uniqueness && node tests/ratingAggregation.test.cjs && node tests/ratingProjectionService.test.cjs && node tests/ratingIntegrityService.test.cjs && node tests/ratingProjectionRules.test.cjs && node tests/ratingClientProjectionContract.test.cjs && node tests/ratingServiceDedup.test.cjs",
   "test:rating-review": "node tests/ratingReviewContract.test.cjs && node tests/ratingReviewService.test.cjs && node tests/ratingReviewAggregateTrigger.test.cjs",
+  "test:series-episode-ratings": "node tests/seriesEpisodeRatings.test.cjs && node tests/seriesEpisodeRatingsContract.test.cjs && node tests/seriesEpisodeRatingTransitions.test.cjs",
   "test-movie-card-menu": "node tests/movieCardMenu.test.js",
     "test-modal-contract": "node tests/modalContract.test.js",
     "test-dropdown-contract": "node tests/dropdownContract.test.js",

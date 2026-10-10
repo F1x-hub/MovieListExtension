@@ -63,6 +63,13 @@ service cloud.firestore {
       return data.userId is string
         && data.movieId is int && data.movieId > 0
         && data.rating is int && data.rating >= 1 && data.rating <= 10
+        && (!('ratingSource' in data) || data.ratingSource in ['episodes', 'manual'])
+        && (!('episodeAverage' in data) || data.episodeAverage is number
+          && data.episodeAverage >= 1 && data.episodeAverage <= 10)
+        && (!('episodesRatedCount' in data) || data.episodesRatedCount is int
+          && data.episodesRatedCount >= 1 && data.episodesRatedCount <= 3000)
+        && (!(('ratingSource' in data) && data.ratingSource == 'episodes')
+          || (('episodeAverage' in data) && ('episodesRatedCount' in data)))
         && data.comment is string && data.comment.size() <= 500
         && (!('review' in data) || data.review is string && data.review.size() <= 5000)
         && (!('contentUpdatedAt' in data) || data.contentUpdatedAt is timestamp)
@@ -80,6 +87,61 @@ service cloud.firestore {
       && request.resource.data.userId == resource.data.userId
       && request.resource.data.movieId == resource.data.movieId
       && request.resource.data.rating == resource.data.rating;
+    }
+
+    function seriesEpisodeRatingPath(seriesRatingId) {
+      return /databases/$(database)/documents/seriesEpisodeRatings/$(seriesRatingId);
+    }
+
+    function hasOwnSeriesEpisodeRatingId(seriesRatingId) {
+      return isAuthenticated()
+        && seriesRatingId.matches('^' + request.auth.uid + '_[0-9]+$');
+    }
+
+    function isValidEpisodeRatingEntry(entry) {
+      return entry is map
+        && entry.keys().hasOnly(['r', 't', 'id'])
+        && entry.r is int && entry.r >= 1 && entry.r <= 10
+        && entry.t is timestamp
+        && (!('id' in entry) || entry.id is int && entry.id > 0);
+    }
+
+    function isValidSeriesEpisodeRatingData(seriesRatingId, data) {
+      return data.keys().hasOnly([
+          'userId', 'movieId', 'tmdbId', 'episodes', 'ratingSum',
+          'ratedCount', 'mode', 'manualBackup', 'lastKey', 'updatedAt'
+        ])
+        && data.userId is string
+        && data.userId == request.auth.uid
+        && data.movieId is int && data.movieId > 0
+        && seriesRatingId == request.auth.uid + '_' + string(data.movieId)
+        && (data.tmdbId == null || data.tmdbId is int && data.tmdbId > 0)
+        && data.episodes is map && data.episodes.size() <= 3000
+        && data.ratedCount is int && data.ratedCount == data.episodes.size()
+        && data.ratedCount >= 1
+        && data.ratingSum is int
+        && data.ratingSum >= data.ratedCount
+        && data.ratingSum <= data.ratedCount * 10
+        && data.mode in ['episodes', 'manual']
+        && (data.manualBackup == null || (
+          data.manualBackup is map
+          && data.manualBackup.keys().hasOnly(['rating', 'ratedAt'])
+          && data.manualBackup.rating is int
+          && data.manualBackup.rating >= 1 && data.manualBackup.rating <= 10
+          && (!('ratedAt' in data.manualBackup)
+            || data.manualBackup.ratedAt == null || data.manualBackup.ratedAt is timestamp)
+        ))
+        && data.lastKey is string
+        && data.lastKey.matches('^[0-9]{1,3}:[0-9]{1,5}$')
+        && data.updatedAt is timestamp;
+    }
+
+    function hasOneValidEpisodeRatingChange() {
+      let changedEpisodes = request.resource.data.episodes.diff(resource.data.episodes).affectedKeys();
+      return changedEpisodes.size() <= 1
+        && changedEpisodes.hasOnly([request.resource.data.lastKey])
+        && (!request.resource.data.episodes.keys().hasAny([request.resource.data.lastKey])
+          || isValidEpisodeRatingEntry(request.resource.data.episodes[request.resource.data.lastKey]));
     }
 
     function hasReviewReportTarget(data) {
@@ -273,6 +335,41 @@ service cloud.firestore {
           && request.resource.data.userId == resource.data.userId
         ));
       allow delete: if (isApprovedUser() && resource.data.userId == request.auth.uid) || isAdmin();
+    }
+
+    // Private episode ratings. A missing deterministic document is readable
+    // only by its owner so the first write can use a Firestore transaction.
+    match /seriesEpisodeRatings/{seriesRatingId} {
+      allow get: if (hasOwnSeriesEpisodeRatingId(seriesRatingId)
+          && !exists(seriesEpisodeRatingPath(seriesRatingId)))
+        || (isAuthenticated()
+          && resource.data.userId == request.auth.uid
+          && seriesRatingId == request.auth.uid + '_' + string(resource.data.movieId));
+      allow list: if false;
+      allow create: if isApprovedUser()
+        && hasOwnSeriesEpisodeRatingId(seriesRatingId)
+        && isValidSeriesEpisodeRatingData(seriesRatingId, request.resource.data)
+        && request.resource.data.mode == 'episodes'
+        && request.resource.data.episodes.size() == 1
+        && request.resource.data.ratedCount == 1
+        && request.resource.data.ratingSum
+          == request.resource.data.episodes[request.resource.data.lastKey].r
+        && request.resource.data.episodes.keys().hasAny([request.resource.data.lastKey])
+        && isValidEpisodeRatingEntry(request.resource.data.episodes[request.resource.data.lastKey]);
+      allow update: if isApprovedUser()
+        && hasOwnSeriesEpisodeRatingId(seriesRatingId)
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.movieId == resource.data.movieId
+        && isValidSeriesEpisodeRatingData(seriesRatingId, request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'tmdbId', 'episodes', 'ratingSum', 'ratedCount', 'mode',
+          'manualBackup', 'lastKey', 'updatedAt'
+        ])
+        && hasOneValidEpisodeRatingChange();
+      allow delete: if isApprovedUser()
+        && hasOwnSeriesEpisodeRatingId(seriesRatingId)
+        && resource.data.userId == request.auth.uid;
     }
 
     // One deterministic document per user and comment may contain up to three

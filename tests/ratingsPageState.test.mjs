@@ -391,6 +391,7 @@ const doc = (id, seconds, extra = {}) => ({ id: String(id), kinopoiskId: id, las
             allRaters: [{ userId: 'alice', rating: 7, comment: 'ok' }],
             movie: { kinopoiskId: 5, name: 'Film', lastRatingUpdatedAt: createdAt }
         }];
+        page.filteredMovies = page.movies;
         page.selectedMovie = page.movies[0].movie;
         page.elements = { ...page.elements, ratingSlider: { value: '7' }, ratingComment: { value: 'better words' }, ratingModal: { style: {} } };
         page.applyFilters = () => {};
@@ -413,6 +414,67 @@ const doc = (id, seconds, extra = {}) => ({ id: String(id), kinopoiskId: id, las
     await newScore.page.saveRating();
     assert.notEqual(newScore.page.movies[0].createdAt, newScore.createdAt, 'A new score moves the card to the top');
     assert.equal(newScore.page.recentLocalEdits.has('5'), true, 'Its listener echo will not be marked as new');
+}
+
+// L7. Editing text on an episode aggregate preserves its derived mode; changing
+// the score explicitly saves a manual rating and never calls the generic writer.
+{
+    const makeEpisodeSavePage = score => {
+        const page = createLivePage();
+        page.currentUser = { uid: 'alice' };
+        page.userProfilesMap.set('alice', { displayName: 'Alice', photoURL: 'a.png' });
+        page.selectedMovie = { kinopoiskId: 77, name: 'Series', type: 'TV_SERIES' };
+        page.selectedRatingSeriesEpisodeState = { ratedCount: 12, mode: 'episodes' };
+        page.selectedRatingDocumentId = 'alice_77';
+        page.elements = {
+            ratingSlider: { value: String(score) },
+            ratingComment: { value: 'new comment' },
+            ratingModal: makeElement(),
+            saveRatingBtn: makeElement()
+        };
+        page.movies = [{
+            id: 'alice_77', movieId: 77, rating: 8, myRating: 8, myComment: 'old comment',
+            myRatingSource: 'episodes', myEpisodeAverage: 8.4, myEpisodesRatedCount: 12,
+            allRaters: [{
+                id: 'alice_77', userId: 'alice', rating: 8, comment: 'old comment',
+                ratingSource: 'episodes', episodeAverage: 8.4, episodesRatedCount: 12
+            }],
+            movie: page.selectedMovie
+        }];
+        page.filteredMovies = page.movies;
+        page.applyFilters = () => {};
+        page.closeRatingModal = () => {};
+        page.t = key => key;
+        page.recentLocalEdits = new Map();
+        return page;
+    };
+    let textWrites = 0;
+    let genericWrites = 0;
+    let manualWrites = 0;
+    globalThis.firebaseManager.getRatingService = () => ({
+        updateRatingText: async () => { textWrites++; },
+        addOrUpdateRating: async () => { genericWrites++; return { id: 'alice_77' }; }
+    });
+    globalThis.firebaseManager.getSeriesEpisodeRatingService = () => ({
+        saveManualRating: async () => { manualWrites++; }
+    });
+    globalThis.Utils.showToast = () => {};
+
+    const commentEdit = makeEpisodeSavePage(8);
+    await commentEdit.saveRating();
+    assert.equal(textWrites, 1, 'A comment-only edit writes only rating text');
+    assert.equal(manualWrites, 0);
+    assert.equal(genericWrites, 0, 'The generic writer is skipped for aggregate comment edits');
+    assert.equal(commentEdit.movies[0].myRatingSource, 'episodes');
+    assert.equal(commentEdit.movies[0].myEpisodeAverage, 8.4);
+
+    const scoreEdit = makeEpisodeSavePage(9);
+    await scoreEdit.saveRating();
+    assert.equal(manualWrites, 1, 'A changed score uses the explicit manual-mode transition');
+    assert.equal(textWrites, 1, 'The manual transition owns comment text too');
+    assert.equal(genericWrites, 0, 'Manual transition does not call addOrUpdateRating afterward');
+    assert.equal(scoreEdit.movies[0].myRatingSource, 'manual');
+    assert.equal(scoreEdit.movies[0].myEpisodeAverage, 0);
 }
 
 // --- Films whose movie document has no title/poster ---
@@ -535,6 +597,7 @@ const doc = (id, seconds, extra = {}) => ({ id: String(id), kinopoiskId: id, las
     globalThis.Utils.showToast = () => {};
     const original = { movieId: 1, movie: { kinopoiskId: 1, name: 'A' }, rating: 5, myRating: 5, allRaters: [{ userId: 'alice', rating: 5 }] };
     page.movies = [original, { movieId: 2, movie: { kinopoiskId: 2, name: 'B' } }];
+    page.filteredMovies = page.movies;
 
     let writes = 0;
     let rejectWrite;

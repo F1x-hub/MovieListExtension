@@ -57,6 +57,19 @@ class MovieDetailsManager {
         this.originalRating = 0;
         this.isReviewVisible = false;
         this.currentRatingId = null;
+        this.currentPersonalRating = null;
+        this.currentSeriesEpisodeRatings = {
+            exists: false,
+            episodes: {},
+            ratingSum: 0,
+            ratedCount: 0,
+            mode: 'manual',
+            manualBackup: null
+        };
+        this.episodeRatingsPermissionDeniedMovieId = null;
+        this.seriesRatingEditMode = 'normal';
+        this.episodeRatingUiVersion = 0;
+        this.isEpisodeRatingMutationPending = false;
         this.originalRatingComment = '';
         this.originalRatingReview = '';
         this.ratingReviewTouched = false;
@@ -342,6 +355,11 @@ class MovieDetailsManager {
             ratingMovieMeta: document.getElementById('ratingMovieMeta'),
             ratingStars: document.getElementById('ratingStars'),
             ratingStatus: document.getElementById('ratingStatus'),
+            seriesAggregateRatingNotice: document.getElementById('seriesAggregateRatingNotice'),
+            seriesAggregateRatingText: document.getElementById('seriesAggregateRatingText'),
+            setManualSeriesRatingBtn: document.getElementById('setManualSeriesRatingBtn'),
+            restoreEpisodeAggregateBtn: document.getElementById('restoreEpisodeAggregateBtn'),
+            deleteSeriesRatingBtn: document.getElementById('deleteSeriesRatingBtn'),
             writeReviewBtn: document.getElementById('writeReviewBtn'),
             reviewContainer: document.getElementById('reviewContainer'),
             ratingComment: document.getElementById('ratingComment'),
@@ -559,6 +577,10 @@ class MovieDetailsManager {
         if (this.elements.saveRatingBtn) {
             this.elements.saveRatingBtn.addEventListener('click', () => this.saveRating());
         }
+        this.elements.setManualSeriesRatingBtn?.addEventListener('click', () => this.enterManualSeriesRatingMode());
+        this.elements.restoreEpisodeAggregateBtn?.addEventListener('click', () => this.restoreEpisodeAggregateFromModal());
+        this.elements.deleteSeriesRatingBtn?.addEventListener('click', () => this.deleteSeriesRatingFromModal());
+        this.elements.movieDetailsContainer?.addEventListener('keydown', event => this.handleEpisodeRatingKeydown(event));
 
         // Video Player Modal
         if (this.elements.closeVideoBtn) {
@@ -794,6 +816,18 @@ class MovieDetailsManager {
                 this.deleteUserRating(ratingId);
             } else if (action === 'read-rating-review' && ratingId) {
                 this.openReviewReaderByRatingId(ratingId);
+            } else if (action === 'episode-rating-open') {
+                e.preventDefault();
+                e.stopPropagation();
+                this.toggleEpisodeRatingPopover(actionBtn);
+            } else if (action === 'episode-rating-choice') {
+                e.preventDefault();
+                e.stopPropagation();
+                void this.changeEpisodeRating(actionBtn, Number(actionBtn.getAttribute('data-rating')));
+            } else if (action === 'episode-rating-remove') {
+                e.preventDefault();
+                e.stopPropagation();
+                void this.changeEpisodeRating(actionBtn, null);
             } else if (action === 'toggle-season') {
                 const seasonNumber = Number(actionBtn.getAttribute('data-season-number'));
                 const tmdbId = actionBtn.getAttribute('data-tmdb-id');
@@ -2018,6 +2052,13 @@ class MovieDetailsManager {
         const uid = this.currentUser.uid;
         const userService = firebaseManager.getUserService?.();
         const ratingService = firebaseManager.getRatingService?.();
+        const canReadEpisodeRatings = typeof isSeriesMedia === 'function'
+            && isSeriesMedia(this.selectedMovie)
+            && Number.isInteger(Number(movieId))
+            && Number(movieId) > 0;
+        const seriesEpisodeRatingService = canReadEpisodeRatings
+            ? firebaseManager.getSeriesEpisodeRatingService?.()
+            : null;
         const favoriteService = firebaseManager.getFavoriteService?.();
         const read = async (category, purpose, loader) => {
             const request = this.perf?.requestStart(category, { purpose });
@@ -2030,8 +2071,11 @@ class MovieDetailsManager {
                 return this.collectionService.getCollections();
             }) : Promise.resolve([]);
         const ratingPromise = ratingService ? read('FIREBASE_RATING', 'current-user-rating', () => ratingService.getRating(uid, movieId)) : Promise.resolve(null);
+        const episodeRatingPromise = seriesEpisodeRatingService
+            ? read('FIREBASE_RATING', 'series-episode-ratings', () => seriesEpisodeRatingService.getEpisodeRatings(uid, movieId))
+            : Promise.resolve(null);
         const bookmarkPromise = favoriteService ? read('FIREBASE_BOOKMARK', 'current-user-bookmark', () => favoriteService.getBookmark(uid, movieId)) : Promise.resolve(null);
-        const results = await Promise.allSettled([profilePromise, collectionsPromise, ratingPromise, bookmarkPromise]);
+        const results = await Promise.allSettled([profilePromise, collectionsPromise, ratingPromise, bookmarkPromise, episodeRatingPromise]);
 
         if (this.isPageContextCurrent(pageContext) && results[0].status === 'fulfilled') {
             this.isAdmin = results[0].value?.isAdmin === true;
@@ -2051,6 +2095,13 @@ class MovieDetailsManager {
         if (this.isPageContextCurrent(pageContext) && results[3].status === 'fulfilled') {
             this.patchBookmarkState(results[3].value, favoriteService, pageContext);
             this.perf?.mark('md:bookmark-state-ready');
+        }
+        if (this.isPageContextCurrent(pageContext) && results[4].status === 'fulfilled' && results[4].value) {
+            this.patchSeriesEpisodeRatings(results[4].value, pageContext);
+        } else if (this.isPageContextCurrent(pageContext) && results[4].status === 'rejected'
+            && this.isEpisodeRatingsPermissionDenied(results[4].reason)) {
+            this.episodeRatingsPermissionDeniedMovieId = String(movieId);
+            this.updateSeriesEpisodeRatingUI();
         }
         results.filter(result => result.status === 'rejected').forEach(result => {
             console.warn('[MovieDetails] Personal state read failed:', result.reason);
@@ -2098,8 +2149,510 @@ class MovieDetailsManager {
     patchPersonalRating(rating, pageContext) {
         if (!this.isPageContextCurrent(pageContext)) return;
         const button = this.elements.movieDetailsContainer?.querySelector('.rate-movie-btn');
-        if (button) button.dataset.userRating = rating?.rating ? String(rating.rating) : '';
+        this.currentPersonalRating = rating || null;
+        if (button) {
+            const score = this.getPersonalRatingDisplayValue(rating);
+            if (score > 0) button.dataset.userRating = String(score);
+            else delete button.dataset.userRating;
+            const label = button.querySelector('.rate-movie-label');
+            if (label) {
+                if (rating?.ratingSource === 'episodes' && Number(rating.episodeAverage) > 0) {
+                    label.textContent = this.formatMovieDetailsText('movie_details.series_episode_summary_short', {
+                        rating: Number(rating.episodeAverage).toFixed(1),
+                        count: Number(rating.episodesRatedCount) || 0
+                    });
+                } else if (Number(rating?.rating) > 0 && typeof isSeriesMedia === 'function' && isSeriesMedia(this.selectedMovie)) {
+                    label.textContent = this.formatMovieDetailsText('movie_details.series_manual_summary', {
+                        rating: Number(rating.rating)
+                    });
+                } else {
+                    label.textContent = i18n.get('movie_details.rate_title');
+                }
+            }
+        }
         this.currentRating = Number(rating?.rating) || 0;
+        this.updateSeriesEpisodeRatingUI();
+    }
+
+    formatMovieDetailsText(key, values = {}) {
+        let text = typeof i18n !== 'undefined' && i18n?.get ? i18n.get(key) : key;
+        Object.entries(values).forEach(([name, value]) => {
+            text = text.split('{' + name + '}').join(String(value));
+        });
+        return text;
+    }
+
+    getPersonalRatingDisplayValue(rating = this.currentPersonalRating) {
+        if (rating?.ratingSource === 'episodes' && Number.isFinite(Number(rating.episodeAverage))) {
+            return Number(rating.episodeAverage);
+        }
+        return Number(rating?.rating) || 0;
+    }
+
+    hasEpisodeRatingAccess() {
+        const movie = this.selectedMovie;
+        return Boolean(this.currentUser
+            && typeof isSeriesMedia === 'function'
+            && isSeriesMedia(movie)
+            && Number.isInteger(Number(movie?.kinopoiskId))
+            && Number(movie.kinopoiskId) > 0
+            && Number.isInteger(Number(movie?.tmdbId || movie?.externalId?.tmdb))
+            && Number(movie.tmdbId || movie.externalId?.tmdb) > 0);
+    }
+
+    getEpisodeRatingKey(seasonNumber, episodeNumber) {
+        if (typeof SeriesEpisodeRatingService === 'undefined') return null;
+        try {
+            return SeriesEpisodeRatingService.getEpisodeKey(seasonNumber, episodeNumber);
+        } catch {
+            return null;
+        }
+    }
+
+    getEpisodeRatingFor(seasonNumber, episodeNumber) {
+        const key = this.getEpisodeRatingKey(seasonNumber, episodeNumber);
+        return key ? this.currentSeriesEpisodeRatings?.episodes?.[key] || null : null;
+    }
+
+    getSeasonEpisodeRatingStats(seasonNumber) {
+        const prefix = String(Number(seasonNumber)) + ':';
+        const ratings = Object.entries(this.currentSeriesEpisodeRatings?.episodes || {})
+            .filter(([key, entry]) => key.startsWith(prefix) && Number.isInteger(Number(entry?.r)))
+            .map(([, entry]) => Number(entry.r));
+        if (ratings.length === 0) return null;
+        const avg10 = Math.round((ratings.reduce((sum, rating) => sum + rating, 0) * 10) / ratings.length);
+        return { rating: avg10 / 10, count: ratings.length };
+    }
+
+    getSeriesEpisodeSummaryText() {
+        if (typeof isSeriesMedia !== 'function' || !isSeriesMedia(this.selectedMovie)) return '';
+        if (!this.currentUser) {
+            return Number(this.selectedMovie?.tmdbId || this.selectedMovie?.externalId?.tmdb) > 0
+                && !(Number(this.selectedMovie?.kinopoiskId) > 0)
+                ? i18n.get('movie_details.series_episode_tmdb_only_hint')
+                : '';
+        }
+        if (this.hasEpisodeRatingsPermissionDenied()) {
+            return i18n.get('movie_details.series_episode_rules_error');
+        }
+        const rating = this.currentPersonalRating;
+        if (rating?.ratingSource === 'episodes' && Number(rating.episodeAverage) > 0) {
+            return this.formatMovieDetailsText('movie_details.series_episode_summary', {
+                rating: Number(rating.episodeAverage).toFixed(1),
+                count: Number(rating.episodesRatedCount) || 0
+            });
+        }
+        if (Number(rating?.rating) > 0 && typeof isSeriesMedia === 'function' && isSeriesMedia(this.selectedMovie)) {
+            const episodeCount = Number(this.currentSeriesEpisodeRatings?.ratedCount) || 0;
+            return episodeCount > 0
+                ? this.formatMovieDetailsText('movie_details.series_manual_with_episodes', {
+                    rating: Number(rating.rating),
+                    count: episodeCount
+                })
+                : this.formatMovieDetailsText('movie_details.series_manual_summary', { rating: Number(rating.rating) });
+        }
+        const episodeCount = Number(this.currentSeriesEpisodeRatings?.ratedCount) || 0;
+        if (episodeCount > 0 && this.currentSeriesEpisodeRatings?.mode === 'episodes') {
+            const aggregate = SeriesEpisodeRatingService.calculateAggregate(
+                this.currentSeriesEpisodeRatings.ratingSum,
+                episodeCount
+            );
+            if (aggregate) {
+                return this.formatMovieDetailsText('movie_details.series_episode_summary', {
+                    rating: aggregate.episodeAverage.toFixed(1),
+                    count: episodeCount
+                });
+            }
+        }
+        if (this.hasEpisodeRatingAccess()) return i18n.get('movie_details.series_episode_hint');
+        if (this.currentUser && typeof isSeriesMedia === 'function' && isSeriesMedia(this.selectedMovie)
+            && Number(this.selectedMovie?.tmdbId || this.selectedMovie?.externalId?.tmdb) > 0
+            && !(Number(this.selectedMovie?.kinopoiskId) > 0)) {
+            return i18n.get('movie_details.series_episode_tmdb_only_hint');
+        }
+        return '';
+    }
+
+    updateSeriesEpisodeRatingUI() {
+        const summary = document.getElementById('seriesEpisodeRatingSummary');
+        if (summary) {
+            summary.textContent = this.getSeriesEpisodeSummaryText();
+            summary.hidden = !summary.textContent;
+        }
+        const episodeRatingsUnavailable = this.hasEpisodeRatingsPermissionDenied();
+        document.querySelectorAll('.season-card__episode-average').forEach(element => {
+            if (episodeRatingsUnavailable) {
+                element.textContent = '';
+                element.hidden = true;
+                return;
+            }
+            const stats = this.getSeasonEpisodeRatingStats(element.dataset.seasonNumber);
+            element.textContent = stats
+                ? this.formatMovieDetailsText('movie_details.series_episode_season_average', {
+                    rating: stats.rating.toFixed(1),
+                    count: stats.count
+                })
+                : '';
+            element.hidden = !stats;
+        });
+        if (this.hasEpisodeRatingAccess() && !this.hasEpisodeRatingsPermissionDenied()) this.ensureEpisodeRatingControls();
+        else document.querySelectorAll('.episode-rating-control').forEach(control => control.remove());
+        document.querySelectorAll('.episode-rating-control').forEach(control => {
+            const seasonNumber = Number(control.dataset.seasonNumber);
+            const episodeNumber = Number(control.dataset.episodeNumber);
+            const score = Number(this.getEpisodeRatingFor(seasonNumber, episodeNumber)?.r) || 0;
+            const trigger = control.querySelector('[data-action="episode-rating-open"]');
+            const removeButton = control.querySelector('[data-action="episode-rating-remove"]');
+            if (trigger) {
+                trigger.textContent = score > 0
+                    ? this.formatMovieDetailsText('movie_details.series_episode_value', { rating: score })
+                    : i18n.get('movie_details.series_episode_rate');
+                trigger.setAttribute('aria-label', this.formatMovieDetailsText('movie_details.series_episode_aria', {
+                    episode: 'S' + seasonNumber + 'E' + episodeNumber
+                }));
+                trigger.dataset.currentRating = String(score);
+            }
+            if (removeButton) removeButton.hidden = score <= 0;
+            if (trigger) {
+                trigger.disabled = this.isEpisodeRatingMutationPending || control.dataset.released !== 'true';
+                trigger.setAttribute('aria-disabled', String(trigger.disabled));
+            }
+            control.querySelectorAll('[data-action="episode-rating-choice"], [data-action="episode-rating-remove"]').forEach(button => {
+                button.disabled = this.isEpisodeRatingMutationPending;
+            });
+            control.querySelectorAll('[data-action="episode-rating-choice"]').forEach(button => {
+                button.setAttribute('aria-pressed', String(Number(button.dataset.rating) === score));
+            });
+        });
+        this.updateRatingModalSeriesState();
+    }
+
+    ensureEpisodeRatingControls() {
+        if (!this.hasEpisodeRatingAccess()) return;
+        document.querySelectorAll('.episode-card[data-season-number][data-episode-number]').forEach(card => {
+            if (card.querySelector('.episode-rating-control')) return;
+            const metaRow = card.querySelector('.episode-meta-row');
+            if (!metaRow) return;
+            const seasonNumber = Number(card.dataset.seasonNumber);
+            const episodeNumber = Number(card.dataset.episodeNumber);
+            const episode = {
+                seasonNumber,
+                episodeNumber,
+                airDate: card.dataset.airDate || null,
+                tmdbEpisodeId: Number(card.dataset.tmdbEpisodeId) || null
+            };
+            const control = document.createElement('div');
+            control.innerHTML = this.renderEpisodeRatingControl(episode, card.dataset.seasonAirDate || null);
+            if (control.firstElementChild) metaRow.appendChild(control.firstElementChild);
+        });
+    }
+
+    updateRatingModalSeriesState() {
+        if (!this.elements?.ratingModal) return;
+        const isSeries = typeof isSeriesMedia === 'function' && isSeriesMedia(this.selectedMovie);
+        const episodeCount = Number(this.currentSeriesEpisodeRatings?.ratedCount)
+            || Number(this.currentPersonalRating?.episodesRatedCount) || 0;
+        const hasEpisodeRatings = this.hasEpisodeRatingAccess()
+            && !this.hasEpisodeRatingsPermissionDenied()
+            && episodeCount > 0;
+        const isAggregateMode = hasEpisodeRatings
+            && (this.currentSeriesEpisodeRatings?.mode === 'episodes' || this.currentPersonalRating?.ratingSource === 'episodes')
+            && this.seriesRatingEditMode !== 'manual';
+        const seriesNoticeText = this.seriesRatingEditMode === 'manual'
+            ? this.formatMovieDetailsText('movie_details.series_episode_manual_edit_hint')
+            : this.getSeriesEpisodeSummaryText();
+        if (this.elements.seriesAggregateRatingNotice) {
+            this.elements.seriesAggregateRatingNotice.hidden = !isSeries || !this.currentUser || !seriesNoticeText;
+            if (this.elements.seriesAggregateRatingText) this.elements.seriesAggregateRatingText.textContent = seriesNoticeText;
+        }
+        if (this.elements.ratingStars) this.elements.ratingStars.hidden = isAggregateMode;
+        if (this.elements.ratingStatus) {
+            this.elements.ratingStatus.textContent = this.seriesRatingEditMode === 'manual'
+                ? i18n.get('movie_details.series_episode_manual_edit_hint')
+                : isAggregateMode ? this.getSeriesEpisodeSummaryText() : i18n.get('movie_details.rating_prompt');
+        }
+        if (this.elements.setManualSeriesRatingBtn) {
+            this.elements.setManualSeriesRatingBtn.hidden = !isAggregateMode;
+            this.elements.setManualSeriesRatingBtn.textContent = i18n.get('movie_details.series_episode_manual_action');
+        }
+        if (this.elements.restoreEpisodeAggregateBtn) {
+            const canRestore = hasEpisodeRatings && this.currentSeriesEpisodeRatings?.mode === 'manual';
+            this.elements.restoreEpisodeAggregateBtn.hidden = !canRestore;
+            this.elements.restoreEpisodeAggregateBtn.textContent = i18n.get('movie_details.series_episode_restore_action');
+        }
+        if (this.elements.deleteSeriesRatingBtn) {
+            const hasKinopoiskId = Number(this.selectedMovie?.kinopoiskId) > 0;
+            this.elements.deleteSeriesRatingBtn.hidden = !(isSeries && hasKinopoiskId && (episodeCount > 0 || this.currentPersonalRating));
+            this.elements.deleteSeriesRatingBtn.textContent = i18n.get('movie_details.series_episode_delete_rating');
+        }
+    }
+
+    enterManualSeriesRatingMode() {
+        const episodeCount = Number(this.currentSeriesEpisodeRatings?.ratedCount)
+            || Number(this.currentPersonalRating?.episodesRatedCount) || 0;
+        if (!this.hasEpisodeRatingAccess() || episodeCount < 1) return;
+        this.seriesRatingEditMode = 'manual';
+        this.currentRating = 0;
+        this.updateStarVisuals(0, false);
+        this.updateRatingModalSeriesState();
+        this.elements.ratingStars?.querySelector('.star-rating-btn')?.focus();
+    }
+
+    async restoreEpisodeAggregateFromModal() {
+        try {
+            const service = firebaseManager.getSeriesEpisodeRatingService();
+            const user = firebaseManager.getCurrentUser();
+            const result = await service.restoreEpisodeAggregate({
+                userId: user.uid,
+                movieId: Number(this.selectedMovie?.kinopoiskId),
+                tmdbId: Number(this.selectedMovie?.tmdbId || this.selectedMovie?.externalId?.tmdb) || null,
+                movieData: this.selectedMovie,
+                userName: user.displayName || user.email || '',
+                userPhoto: user.photoURL || ''
+            });
+            this.seriesRatingEditMode = 'aggregate';
+            this.currentSeriesEpisodeRatings = result.state;
+            this.patchPersonalRating(result.rating, this.capturePageContext(this.selectedMovie));
+            this.updateRatingModalSeriesState();
+            Utils.showToast(i18n.get('movie_details.series_episode_saved'), 'success');
+        } catch (error) {
+            this.showSeriesEpisodeMutationError(error);
+        }
+    }
+
+    async deleteSeriesRatingFromModal(options = {}) {
+        const episodeCount = Number(this.currentSeriesEpisodeRatings?.ratedCount)
+            || Number(this.currentPersonalRating?.episodesRatedCount) || 0;
+        if (episodeCount > 0 && !window.confirm(this.formatMovieDetailsText('movie_details.series_episode_delete_confirm', { count: episodeCount }))) return;
+        try {
+            const service = firebaseManager.getSeriesEpisodeRatingService();
+            const user = firebaseManager.getCurrentUser();
+            const result = await service.deleteSeriesRating({
+                userId: user.uid,
+                movieId: Number(this.selectedMovie?.kinopoiskId)
+            });
+            this.currentSeriesEpisodeRatings = result.state;
+            this.patchPersonalRating(null, this.capturePageContext(this.selectedMovie));
+            if (options.ratingId) {
+                document.querySelector(`[data-rating-id="${CSS.escape(String(options.ratingId))}"]`)?.remove();
+            }
+            this.closeRatingModal();
+            Utils.showToast(i18n.get('movie_details.series_episode_removed'), 'success');
+        } catch (error) {
+            this.showSeriesEpisodeMutationError(error);
+        }
+    }
+
+    showSeriesEpisodeMutationError(error) {
+        console.error('[MovieDetails] Series episode rating update failed:', error);
+        const permissionDenied = this.isEpisodeRatingsPermissionDenied(error);
+        Utils.showToast(i18n.get(permissionDenied ? 'movie_details.series_episode_rules_error' : 'movie_details.series_episode_save_error'), 'error');
+    }
+
+    isEpisodeRatingsPermissionDenied(error) {
+        return error?.code === 'permission-denied'
+            || /permission-denied|insufficient permissions/i.test(String(error?.message || ''));
+    }
+
+    hasEpisodeRatingsPermissionDenied() {
+        return this.episodeRatingsPermissionDeniedMovieId !== null
+            && String(this.episodeRatingsPermissionDeniedMovieId) === String(this.selectedMovie?.kinopoiskId);
+    }
+
+    patchSeriesEpisodeRatings(state, pageContext) {
+        if (!this.isPageContextCurrent(pageContext)) return;
+        this.episodeRatingsPermissionDeniedMovieId = null;
+        this.currentSeriesEpisodeRatings = state || {
+            exists: false,
+            episodes: {},
+            ratingSum: 0,
+            ratedCount: 0,
+            mode: 'manual',
+            manualBackup: null
+        };
+        this.updateSeriesEpisodeRatingUI();
+    }
+
+    isEpisodeReleasedForRating(episode, seasonAirDate = null) {
+        const now = new Date();
+        const episodeDate = episode?.airDate ? new Date(episode.airDate) : null;
+        if (episodeDate && !Number.isNaN(episodeDate.getTime()) && episodeDate > now) return false;
+        if (!episode?.airDate && seasonAirDate) {
+            const seasonDate = new Date(seasonAirDate);
+            if (!Number.isNaN(seasonDate.getTime()) && seasonDate > now) return false;
+        }
+        return true;
+    }
+
+    renderEpisodeRatingControl(episode, seasonAirDate = null) {
+        if (!this.hasEpisodeRatingAccess()) return '';
+        const seasonNumber = Number(episode?.seasonNumber);
+        const episodeNumber = Number(episode?.episodeNumber);
+        const released = this.isEpisodeReleasedForRating(episode, seasonAirDate);
+        const episodeLabel = `S${seasonNumber}E${episodeNumber}`;
+        const ariaLabel = this.formatMovieDetailsText('movie_details.series_episode_aria', { episode: episodeLabel });
+        const tmdbEpisodeId = Number(episode?.tmdbEpisodeId) || 0;
+        const ratingButtons = Array.from({ length: 10 }, (_, index) => {
+            const rating = index + 1;
+            const ratingAria = this.formatMovieDetailsText('movie_details.series_episode_rate_value_aria', { episode: episodeLabel, rating });
+            return `<button type="button" class="episode-rating-choice" data-action="episode-rating-choice" data-rating="${rating}" aria-label="${this.escapeHtml(ratingAria)}" aria-pressed="false">${rating}</button>`;
+        }).join('');
+        return `
+            <div class="episode-rating-control" data-season-number="${seasonNumber}" data-episode-number="${episodeNumber}" data-tmdb-episode-id="${tmdbEpisodeId}" data-released="${released ? 'true' : 'false'}"${!released ? ` title="${this.escapeHtml(i18n.get('movie_details.series_episode_unreleased'))}"` : ''}>
+                <button type="button" class="episode-rating-trigger" data-action="episode-rating-open" aria-label="${this.escapeHtml(ariaLabel)}" aria-haspopup="true" aria-expanded="false"${!released ? ' disabled aria-disabled="true"' : ''}>${this.escapeHtml(i18n.get('movie_details.series_episode_rate'))}</button>
+                <div class="episode-rating-popover" role="group" aria-label="${this.escapeHtml(ariaLabel)}" hidden>
+                    <div class="episode-rating-scale">${ratingButtons}</div>
+                    <button type="button" class="episode-rating-remove" data-action="episode-rating-remove" hidden>${this.escapeHtml(i18n.get('movie_details.series_episode_remove_rating'))}</button>
+                </div>
+            </div>`;
+    }
+
+    toggleEpisodeRatingPopover(trigger) {
+        const control = trigger?.closest('.episode-rating-control');
+        if (!control || trigger.disabled || control.dataset.released !== 'true') return;
+        const popover = control.querySelector('.episode-rating-popover');
+        const shouldOpen = popover?.hidden !== false;
+        document.querySelectorAll('.episode-rating-control.is-open').forEach(openControl => {
+            openControl.classList.remove('is-open');
+            openControl.querySelector('.episode-rating-popover')?.setAttribute('hidden', '');
+            openControl.querySelector('[data-action="episode-rating-open"]')?.setAttribute('aria-expanded', 'false');
+        });
+        if (!popover || !shouldOpen) return;
+        popover.hidden = false;
+        control.classList.add('is-open');
+        trigger.setAttribute('aria-expanded', 'true');
+        const selectedRating = Number(trigger.dataset.currentRating) || 0;
+        (popover.querySelector(`[data-rating="${selectedRating}"]`) || popover.querySelector('[data-action="episode-rating-choice"]'))?.focus();
+    }
+
+    handleEpisodeRatingKeydown(event) {
+        const control = event.target?.closest?.('.episode-rating-control');
+        if (!control) return;
+        const popover = control.querySelector('.episode-rating-popover');
+        if (!popover || popover.hidden) return;
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            control.classList.remove('is-open');
+            popover.hidden = true;
+            const trigger = control.querySelector('[data-action="episode-rating-open"]');
+            trigger?.setAttribute('aria-expanded', 'false');
+            trigger?.focus();
+            return;
+        }
+        const choices = [...popover.querySelectorAll('[data-action="episode-rating-choice"]')];
+        const currentIndex = choices.indexOf(event.target);
+        if (currentIndex < 0) return;
+        const targetIndex = {
+            ArrowLeft: Math.max(0, currentIndex - 1),
+            ArrowUp: Math.max(0, currentIndex - 1),
+            ArrowRight: Math.min(choices.length - 1, currentIndex + 1),
+            ArrowDown: Math.min(choices.length - 1, currentIndex + 1),
+            Home: 0,
+            End: choices.length - 1
+        }[event.key];
+        if (targetIndex === undefined) return;
+        event.preventDefault();
+        choices[targetIndex]?.focus();
+    }
+
+    applyOptimisticEpisodeRating(seasonNumber, episodeNumber, rating) {
+        const previousState = this.currentSeriesEpisodeRatings;
+        const previousRating = this.currentPersonalRating;
+        const key = SeriesEpisodeRatingService.getEpisodeKey(seasonNumber, episodeNumber);
+        const episodes = { ...(previousState?.episodes || {}) };
+        if (rating === null) delete episodes[key];
+        else episodes[key] = { r: rating, t: new Date() };
+        const totals = SeriesEpisodeRatingService.calculateTotals(episodes);
+        let mode = previousState?.mode || 'manual';
+        if (totals.ratedCount > 0 && !(Number(previousState?.ratedCount) > 0)) mode = 'episodes';
+        this.currentSeriesEpisodeRatings = {
+            ...(previousState || {}), exists: totals.ratedCount > 0, episodes,
+            ratingSum: totals.ratingSum, ratedCount: totals.ratedCount,
+            mode: totals.ratedCount > 0 ? mode : 'manual'
+        };
+        if (mode === 'episodes' && totals.ratedCount > 0) {
+            const aggregate = SeriesEpisodeRatingService.calculateAggregate(totals.ratingSum, totals.ratedCount);
+            this.currentPersonalRating = {
+                ...(previousRating || {}), rating: aggregate.rating, ratingSource: 'episodes',
+                episodeAverage: aggregate.episodeAverage, episodesRatedCount: totals.ratedCount
+            };
+        } else if (previousRating && mode === 'manual') {
+            this.currentPersonalRating = { ...previousRating };
+        } else if (mode === 'episodes' && totals.ratedCount === 0) {
+            const backup = previousState?.manualBackup;
+            if (backup?.rating) {
+                this.currentPersonalRating = { ...(previousRating || {}), rating: Number(backup.rating), ratingSource: 'manual' };
+                delete this.currentPersonalRating.episodeAverage;
+                delete this.currentPersonalRating.episodesRatedCount;
+            } else if (previousRating?.comment || previousRating?.review) {
+                this.currentPersonalRating = { ...previousRating, ratingSource: 'manual' };
+                delete this.currentPersonalRating.episodeAverage;
+                delete this.currentPersonalRating.episodesRatedCount;
+            } else {
+                this.currentPersonalRating = null;
+            }
+        }
+        this.patchPersonalRating(this.currentPersonalRating, this.capturePageContext(this.selectedMovie));
+        return { previousState, previousRating };
+    }
+
+    async changeEpisodeRating(button, rating) {
+        if (!this.hasEpisodeRatingAccess()) return;
+        const pageContext = this.capturePageContext(this.selectedMovie);
+        const control = button?.closest('.episode-rating-control');
+        if (!control) return;
+        if (rating !== null && control.dataset.released !== 'true') {
+            Utils.showToast(i18n.get('movie_details.series_episode_unreleased'), 'warning');
+            return;
+        }
+        const seasonNumber = Number(control.dataset.seasonNumber);
+        const episodeNumber = Number(control.dataset.episodeNumber);
+        const requestVersion = ++this.episodeRatingUiVersion;
+        const { previousState, previousRating } = this.applyOptimisticEpisodeRating(seasonNumber, episodeNumber, rating);
+        this.isEpisodeRatingMutationPending = true;
+        this.updateSeriesEpisodeRatingUI();
+        control.querySelector('.episode-rating-popover').hidden = true;
+        control.classList.remove('is-open');
+        control.querySelector('[data-action="episode-rating-open"]')?.setAttribute('aria-expanded', 'false');
+        control.querySelector('[data-action="episode-rating-open"]')?.focus();
+        try {
+            const service = firebaseManager.getSeriesEpisodeRatingService();
+            const movieId = Number(this.selectedMovie.kinopoiskId);
+            const common = {
+                userId: this.currentUser.uid,
+                userName: this.currentUser.displayName || this.currentUser.email || '',
+                userPhoto: this.currentUser.photoURL || '',
+                movieId,
+                tmdbId: Number(this.selectedMovie.tmdbId || this.selectedMovie.externalId?.tmdb) || null,
+                tmdbEpisodeId: Number(control.dataset.tmdbEpisodeId) || null,
+                seasonNumber,
+                episodeNumber,
+                movieData: this.selectedMovie
+            };
+            const result = rating === null
+                ? await service.removeEpisodeRating(common)
+                : await service.setEpisodeRating({ ...common, rating });
+            if (requestVersion !== this.episodeRatingUiVersion || !this.isPageContextCurrent(pageContext)) return;
+            this.currentSeriesEpisodeRatings = result.state;
+            this.patchPersonalRating(result.rating || null, pageContext);
+            if (result.commentFallback) Utils.showToast(i18n.get('movie_details.series_episode_comment_fallback'), 'info');
+            else Utils.showToast(i18n.get(rating === null ? 'movie_details.series_episode_removed' : 'movie_details.series_episode_saved'), 'success');
+        } catch (error) {
+            if (requestVersion === this.episodeRatingUiVersion && this.isPageContextCurrent(pageContext)) {
+                this.currentSeriesEpisodeRatings = previousState;
+                this.patchPersonalRating(previousRating, pageContext);
+            }
+            if (this.isPageContextCurrent(pageContext)) {
+                const permissionDenied = error?.code === 'permission-denied' || /permission|insufficient permissions/i.test(String(error?.message || ''));
+                Utils.showToast(i18n.get(permissionDenied ? 'movie_details.series_episode_rules_error' : 'movie_details.series_episode_save_error'), 'error');
+            }
+        } finally {
+            if (requestVersion === this.episodeRatingUiVersion && this.isPageContextCurrent(pageContext)) {
+                this.isEpisodeRatingMutationPending = false;
+                this.updateSeriesEpisodeRatingUI();
+                control.querySelector('[data-action="episode-rating-open"]')?.focus();
+            }
+        }
     }
 
     setProtectedControlsEnabled(enabled) {
@@ -2138,8 +2691,11 @@ class MovieDetailsManager {
             this.recommendationPosterObserver = null;
         }
         this.beginPageGeneration(movie?.kinopoiskId || movie?.id);
-        const previousMovieId = this.selectedMovie?.kinopoiskId;
-        if (previousMovieId && String(previousMovieId) !== String(movie.kinopoiskId)) {
+        const previousMovieKey = String(this.selectedMovie?.kinopoiskId || this.selectedMovie?.tmdbId || '');
+        const nextMovieKey = String(movie?.kinopoiskId || movie?.tmdbId || '');
+        if (previousMovieKey && previousMovieKey !== nextMovieKey) {
+            this.episodeRatingUiVersion += 1;
+            this.isEpisodeRatingMutationPending = false;
             this.destroyPlayer();
             this.resetPlayerRegistry();
             this.currentSources = [];
@@ -2147,6 +2703,12 @@ class MovieDetailsManager {
             this.currentVideoUrl = '';
             this.videoModalMovie = null;
             this.isPlaying = false;
+            this.currentPersonalRating = null;
+            this.currentSeriesEpisodeRatings = {
+                exists: false, episodes: {}, ratingSum: 0, ratedCount: 0, mode: 'manual', manualBackup: null
+            };
+            this.episodeRatingsPermissionDeniedMovieId = null;
+            this.seriesRatingEditMode = 'normal';
         }
 
         this.selectedMovie = movie;
@@ -2821,9 +3383,9 @@ class MovieDetailsManager {
                                 <span class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
                                 ${i18n.get('movie_details.watch_movie')}
                             </button>
-                            <button class="btn btn-secondary btn-lg rate-movie-btn" data-movie-id="${movie.kinopoiskId}">
+                            <button class="btn btn-secondary btn-lg rate-movie-btn" data-movie-id="${movie.kinopoiskId}"${typeof isSeriesMedia === 'function' && isSeriesMedia(movie) && !(Number(movie.kinopoiskId) > 0) ? ` disabled aria-disabled="true" title="${this.escapeHtml(i18n.get('movie_details.series_rating_disabled_hint'))}"` : ''}>
                                 <span class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></span>
-                                ${i18n.get('movie_details.rate_title')}
+                                <span class="rate-movie-label">${i18n.get('movie_details.rate_title')}</span>
                             </button>
                             ${this.isAdmin && this.authVerified ? this.renderAnnounceButton(movie.kinopoiskId) : ''}
                         </div>
@@ -5390,6 +5952,12 @@ class MovieDetailsManager {
             if (!user) {
                 console.info('[RatingsListener] No authenticated user, loading public comments');
                 this.currentUser = null;
+                this.currentPersonalRating = null;
+                this.currentSeriesEpisodeRatings = {
+                    exists: false, episodes: {}, ratingSum: 0, ratedCount: 0, mode: 'manual', manualBackup: null
+                };
+                this.patchPersonalRating(null, this.capturePageContext(this.selectedMovie));
+                this.updateSeriesEpisodeRatingUI();
                 await this._startSnapshot(movieId, null, ratingsSection, loadingEl, contentEl);
                 return;
             }
@@ -5409,7 +5977,21 @@ class MovieDetailsManager {
         }
 
         this._currentMovieId = movieId;
+        const previousUid = this.currentUser?.uid || null;
         this.currentUser = currentUser;
+        if (previousUid !== (currentUser?.uid || null)) {
+            this.episodeRatingUiVersion += 1;
+            this.isEpisodeRatingMutationPending = false;
+            this.currentPersonalRating = null;
+            this.currentSeriesEpisodeRatings = {
+                exists: false, episodes: {}, ratingSum: 0, ratedCount: 0, mode: 'manual', manualBackup: null
+            };
+            this.patchPersonalRating(null, this.capturePageContext(this.selectedMovie));
+            this.updateSeriesEpisodeRatingUI();
+            if (currentUser && this.selectedMovie && String(this.selectedMovie.kinopoiskId) === String(movieId)) {
+                void this.loadPersonalState(movieId).catch(error => console.warn('[MovieDetails] Failed to refresh personal state after auth change:', error));
+            }
+        }
         const userService = firebaseManager.getUserService();
 
         // Флаг первого снимка — нужен, чтобы отобразить спиннер только однажды
@@ -5891,6 +6473,28 @@ class MovieDetailsManager {
     }
 
     async deleteUserRating(ratingId) {
+        const isKinopoiskSeries = typeof isSeriesMedia === 'function'
+            && isSeriesMedia(this.selectedMovie)
+            && Number(this.selectedMovie?.kinopoiskId) > 0;
+        if (isKinopoiskSeries && this.currentUser?.uid) {
+            try {
+                const episodeService = firebaseManager.getSeriesEpisodeRatingService();
+                const episodeState = await episodeService.getEpisodeRatings(
+                    this.currentUser.uid,
+                    Number(this.selectedMovie.kinopoiskId)
+                );
+                this.currentSeriesEpisodeRatings = episodeState;
+                if (Number(episodeState?.ratedCount) > 0) {
+                    await this.deleteSeriesRatingFromModal({ ratingId });
+                    return;
+                }
+            } catch (error) {
+                if (this.currentPersonalRating?.ratingSource === 'episodes') {
+                    this.showSeriesEpisodeMutationError(error);
+                    return;
+                }
+            }
+        }
         const confirmed = await window.ConfirmDialog.confirm({
             title: 'Удалить отзыв?',
             message: 'Оценка, комментарий и рецензия к этому фильму будут удалены без возможности восстановления.',
@@ -5952,8 +6556,39 @@ class MovieDetailsManager {
         }
         
         const ratingService = firebaseManager.getRatingService();
-        const existingRating = await ratingService.getRating(currentUser.uid, movie.kinopoiskId);
+        let episodeRatingReadError = null;
+        const episodeRatingPromise = this.hasEpisodeRatingAccess()
+            ? firebaseManager.getSeriesEpisodeRatingService().getEpisodeRatings(currentUser.uid, movie.kinopoiskId)
+                .catch(error => {
+                    episodeRatingReadError = error;
+                    console.warn('[MovieDetails] Could not load episode ratings for the rating dialog:', error?.message || error);
+                    if (this.isEpisodeRatingsPermissionDenied(error)) {
+                        this.episodeRatingsPermissionDeniedMovieId = String(movie.kinopoiskId);
+                        this.updateSeriesEpisodeRatingUI();
+                    }
+                    return null;
+                })
+            : Promise.resolve(null);
+        const [existingRating, episodeRatings] = await Promise.all([
+            ratingService.getRating(currentUser.uid, movie.kinopoiskId),
+            episodeRatingPromise
+        ]);
+        if (episodeRatings) {
+            this.episodeRatingsPermissionDeniedMovieId = null;
+            this.currentSeriesEpisodeRatings = episodeRatings;
+        }
+        if (episodeRatingReadError && existingRating?.ratingSource === 'episodes') {
+            this.showSeriesEpisodeMutationError(episodeRatingReadError);
+            return;
+        }
         this.currentRatingId = existingRating?.id || null;
+        this.currentPersonalRating = existingRating || null;
+        const hasEpisodeRatings = this.hasEpisodeRatingAccess()
+            && !this.hasEpisodeRatingsPermissionDenied()
+            && (Number(this.currentSeriesEpisodeRatings?.ratedCount) > 0 || Number(existingRating?.episodesRatedCount) > 0);
+        this.seriesRatingEditMode = hasEpisodeRatings
+            ? (this.currentSeriesEpisodeRatings?.mode === 'episodes' || existingRating?.ratingSource === 'episodes' ? 'aggregate' : 'manual')
+            : 'normal';
         
         if (existingRating) {
             this.currentRating = existingRating.rating;
@@ -5988,6 +6623,7 @@ class MovieDetailsManager {
             this.elements.reviewContainer.style.display = 'none';
         }
         
+        this.updateRatingModalSeriesState();
         this.openAccessibleDialog(this.elements.ratingModal);
     }
 
@@ -6026,12 +6662,30 @@ class MovieDetailsManager {
                 return;
             }
 
-            if (this.currentRatingId && this.originalRating === Number(this.currentRating) && (commentChanged || reviewChanged)) {
+            const hasEpisodeRatings = this.hasEpisodeRatingAccess()
+                && (Number(this.currentSeriesEpisodeRatings?.ratedCount) > 0 || Number(this.currentPersonalRating?.episodesRatedCount) > 0);
+            if (hasEpisodeRatings && this.seriesRatingEditMode === 'manual') {
+                const service = firebaseManager.getSeriesEpisodeRatingService();
+                const result = await service.saveManualRating({
+                    userId: currentUser.uid,
+                    userName: displayName,
+                    userPhoto: userProfile?.photoURL || '',
+                    movieId: Number(this.selectedMovie.kinopoiskId),
+                    tmdbId: Number(this.selectedMovie.tmdbId || this.selectedMovie.externalId?.tmdb) || null,
+                    rating: Number(this.currentRating),
+                    comment,
+                    ...(reviewChanged || this.ratingReviewTouched ? { review } : {}),
+                    updateText: commentChanged || reviewChanged || this.ratingReviewTouched,
+                    movieData: this.selectedMovie
+                });
+                this.currentSeriesEpisodeRatings = result.state;
+                this.patchPersonalRating(result.rating, this.capturePageContext(this.selectedMovie));
+            } else if (this.currentRatingId && this.originalRating === Number(this.currentRating) && (commentChanged || reviewChanged)) {
                 const patch = {};
                 if (commentChanged) patch.comment = comment;
                 if (reviewChanged || this.ratingReviewTouched) patch.review = review;
                 await ratingService.updateRatingText(currentUser.uid, this.currentRatingId, patch);
-            } else {
+            } else if (Number(this.currentRating) !== Number(this.originalRating) || !this.currentRatingId) {
                 const reviewOptions = reviewChanged || this.ratingReviewTouched ? { review } : {};
                 await ratingService.addOrUpdateRating(
                     currentUser.uid, displayName, userProfile?.photoURL || '',
@@ -11937,6 +12591,7 @@ class MovieDetailsManager {
         const totalCount = normalSeasons.length > 0 ? normalSeasons.length : seasons.length;
 
         const continueBannerHtml = this.renderSeasonsContinueBanner(this.selectedMovie, progress, watchTarget, seasons);
+        const seriesRatingSummary = this.getSeriesEpisodeSummaryText();
 
         return `
             <div class="seasons-container">
@@ -11944,6 +12599,7 @@ class MovieDetailsManager {
                     <h3 class="seasons-tab-title">Сезоны</h3>
                     <span class="seasons-tab-count">${totalCount} ${this.getPluralSeasons(totalCount)}</span>
                 </div>
+                <p id="seriesEpisodeRatingSummary" class="series-episode-rating-summary" aria-live="polite"${seriesRatingSummary ? '' : ' hidden'}>${this.escapeHtml(seriesRatingSummary)}</p>
 
                 ${continueBannerHtml}
 
@@ -12030,6 +12686,7 @@ class MovieDetailsManager {
                                         </div>
                                         <div class="season-badges-row">
                                             <span class="season-episodes-badge">${s.episodeCount || 0} ${this.getPluralEpisodes(s.episodeCount || 0)}</span>
+                                            <span class="season-card__episode-average" data-season-number="${Number(s.number)}" hidden></span>
                                             ${completedBadgeHtml}
                                             ${s.airDate ? `<span class="season-air-date">Премьера: <strong>${this.escapeHtml(this.formatDate(s.airDate))}</strong></span>` : ''}
                                         </div>
@@ -12054,7 +12711,7 @@ class MovieDetailsManager {
                             </div>
 
                             <div id="season-episodes-${s.number}" class="season-episodes-panel" style="display: none;" role="region" aria-label="Список серий">
-                                ${Array.isArray(s.episodes) && s.episodes.length > 0 ? this.renderEpisodesList(s.episodes, nextEpisode, progress, watchTarget, history, currentSelection) : ''}
+                                ${Array.isArray(s.episodes) && s.episodes.length > 0 ? this.renderEpisodesList(s.episodes, nextEpisode, progress, watchTarget, history, currentSelection, s.airDate) : ''}
                             </div>
                         </div>
                     `;}).join('')}
@@ -12124,18 +12781,22 @@ class MovieDetailsManager {
             </div>
         `;
 
+        const pageContext = this.capturePageContext(this.selectedMovie);
         try {
             const tmdbService = (typeof firebaseManager !== 'undefined' && firebaseManager.getTMDBService)
                 ? firebaseManager.getTMDBService()
                 : (this.tmdbService || new TMDBService());
 
             const seasonData = await tmdbService.getSeasonDetails(numTmdbId, seasonNumber, { forceRefresh: forceRefetch });
+            if (pageContext?.kinopoiskId && !this.isPageContextCurrent(pageContext)) return;
             if (seasonData && Array.isArray(seasonData.episodes) && seasonData.episodes.length > 0) {
-                panel.innerHTML = this.renderEpisodesList(seasonData.episodes, this.selectedMovie?.nextEpisode, this.currentProgressRecord, this.currentWatchTarget, this.currentEpisodeHistory, this.playbackController?.currentSelection);
+                const seasonAirDate = this.selectedMovie?.seasons?.find(season => Number(season.number) === Number(seasonNumber))?.airDate || seasonData.airDate || null;
+                panel.innerHTML = this.renderEpisodesList(seasonData.episodes, this.selectedMovie?.nextEpisode, this.currentProgressRecord, this.currentWatchTarget, this.currentEpisodeHistory, this.playbackController?.currentSelection, seasonAirDate);
             } else {
                 panel.innerHTML = '<div class="season-empty-notice">Информация о сериях отсутствует</div>';
             }
         } catch (err) {
+            if (pageContext?.kinopoiskId && !this.isPageContextCurrent(pageContext)) return;
             console.warn(`[MovieDetails] Failed to load season ${seasonNumber} details:`, err);
             panel.innerHTML = `
                 <div class="season-error-box">
@@ -12197,7 +12858,7 @@ class MovieDetailsManager {
         });
     }
 
-    renderEpisodesList(episodes, nextEpisode = null, progress = this.currentProgressRecord, watchTarget = this.currentWatchTarget, history = this.currentEpisodeHistory, currentSelection = this.playbackController?.currentSelection) {
+    renderEpisodesList(episodes, nextEpisode = null, progress = this.currentProgressRecord, watchTarget = this.currentWatchTarget, history = this.currentEpisodeHistory, currentSelection = this.playbackController?.currentSelection, seasonAirDate = null) {
         if (!Array.isArray(episodes) || episodes.length === 0) return '';
         const now = new Date();
 
@@ -12269,7 +12930,7 @@ class MovieDetailsManager {
                     }
 
                     return `
-                        <div class="${cardClass}">
+                        <div class="${cardClass}" data-season-number="${epSeason}" data-episode-number="${epEpisode}" data-air-date="${this.escapeHtml(ep.airDate || '')}" data-season-air-date="${this.escapeHtml(seasonAirDate || '')}" data-tmdb-episode-id="${Number(ep.tmdbEpisodeId) || 0}">
                             <div class="episode-card-header">
                                 <div class="episode-title-group">
                                     <span class="episode-code">S${ep.seasonNumber}E${ep.episodeNumber}</span>
@@ -12321,6 +12982,8 @@ class MovieDetailsManager {
                                     </button>
                                 ` : ''}
                             </div>
+
+                            ${this.renderEpisodeRatingControl(ep, seasonAirDate)}
 
                             ${ep.overview ? `<p class="episode-overview">${this.escapeHtml(ep.overview)}</p>` : ''}
                         </div>
@@ -12374,18 +13037,21 @@ class MovieDetailsManager {
      */
     async refreshSeasonsProgress() {
         if (!this.selectedMovie) return;
-        const isSeries = Boolean(this.selectedMovie.isSeries || (this.selectedMovie.type && ['tv-series', 'mini-series', 'animated-series', 'tv'].includes(this.selectedMovie.type)));
+        const movie = this.selectedMovie;
+        const pageContext = this.capturePageContext(movie);
+        const isSeries = typeof isSeriesMedia === 'function' && isSeriesMedia(movie);
         if (!isSeries) return;
 
-        if (this.selectedMovie.kinopoiskId) {
+        if (movie.kinopoiskId) {
             try {
                 const [progress, history] = await Promise.all([
-                    this.progressService ? this.progressService.getProgress(this.selectedMovie.kinopoiskId) : Promise.resolve(null),
-                    this.episodeHistoryService ? this.episodeHistoryService.getHistory(this.selectedMovie.kinopoiskId) : Promise.resolve({})
+                    this.progressService ? this.progressService.getProgress(movie.kinopoiskId) : Promise.resolve(null),
+                    this.episodeHistoryService ? this.episodeHistoryService.getHistory(movie.kinopoiskId) : Promise.resolve({})
                 ]);
+                if (!this.isPageContextCurrent(pageContext)) return;
                 this.currentProgressRecord = progress;
                 this.currentEpisodeHistory = history || {};
-                this.currentWatchTarget = this.resolveWatchTarget(this.selectedMovie, this.currentProgressRecord);
+                this.currentWatchTarget = this.resolveWatchTarget(movie, this.currentProgressRecord);
             } catch (e) {
                 console.warn('[MovieDetails] Failed to refresh seasons progress and history:', e);
             }
@@ -12398,7 +13064,7 @@ class MovieDetailsManager {
                 const openBtn = tabPane.querySelector('.season-expand-btn[aria-expanded="true"]');
                 const openSeasonNum = openBtn ? Number(openBtn.getAttribute('data-season-number')) : null;
 
-                tabPane.innerHTML = this.renderSeasonsTab(seasons, this.selectedMovie.nextEpisode, this.selectedMovie.lastEpisode, this.selectedMovie.tmdbId, this.currentProgressRecord, this.currentWatchTarget, this.currentEpisodeHistory, this.playbackController?.currentSelection);
+                tabPane.innerHTML = this.renderSeasonsTab(seasons, movie.nextEpisode, movie.lastEpisode, movie.tmdbId, this.currentProgressRecord, this.currentWatchTarget, this.currentEpisodeHistory, this.playbackController?.currentSelection);
 
                 if (openSeasonNum != null) {
                     const newBtn = tabPane.querySelector(`.season-expand-btn[data-season-number="${openSeasonNum}"]`);

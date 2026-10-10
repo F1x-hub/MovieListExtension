@@ -299,6 +299,7 @@ keeps npm-compatible three-component semver metadata.
 
 ### Features
 
+- Users can rate individual released episodes for Kinopoisk-linked TMDB series. Private episode ratings are stored in `seriesEpisodeRatings/{uid}_{kpId}`; the public `ratings` document keeps its integer score while `episodeAverage` and `episodesRatedCount` expose the computed average. Changing a series score through any rating entry point switches it to manual mode while retaining private episode scores; deleting the series rating from Movie Details can remove both in one confirmed action. The required Firestore rules were deployed on 2026-10-10.
 - Restore passwords from the popup through a labeled email dialog with duplicate-send protection and localized feedback.
 - Watch rooms can be left and ended. A member's new "Выйти" button leaves the room; for the owner it becomes "Завершить" and, after a confirmation, ends the room for everyone: the new `end` action of `watchRoomsStaging` marks the room ended and immediately expired (invites stop working, the scheduled cleanup removes it) and deletes the live RTDB room together with every member's access, so all players leave it at once. Requires deploying the updated `watchRoomsStaging` function.
 - Returning to a watch room after a reload. The tab remembers its room (session storage, until the room ends or the tab closes) and rejoins it as soon as the player is ready, without using an invite place; the owner gets the invite code back. Ending, leaving, expiry, or a refused rejoin forget the room.
