@@ -16,6 +16,12 @@ const ratingsHtml = readProjectFile('src/pages/ratings/ratings.html');
 const ratingsJs = readProjectFile('src/pages/ratings/ratings.js');
 const ratingsCss = readProjectFile('src/shared/styles/ratings.css');
 const backgroundJs = readProjectFile('src/background/background.js');
+const movieCardJs = readProjectFile('src/shared/components/MovieCard.js');
+
+assertNotPresent(ratingsJs, /getSeriesEpisodeRatingService|episodeAverage|ratingSource|episodesRatedCount/, 'Title ratings must ignore legacy episode metadata and never access episode ratings');
+assertNotPresent(ratingsHtml, /seriesEpisodeEditHint/, 'The title rating modal must have no episode aggregate hint');
+assertNotPresent(movieCardJs, /userRatingDisplay|userRatingCaption|mc-badge-user-caption/, 'MovieCard must render the title rating without episode overrides or captions');
+assert.match(movieCardJs, /const displayedUserRating = this\.normalizeRating\(rating\)/, 'MovieCard must use the ordinary title rating');
 
 for (const id of ['resultsInfo', 'loadingSection', 'moviesGrid', 'emptyState', 'errorState']) {
     assert.match(ratingsHtml, new RegExp(`id=["']${id}["']`), `Ratings page must keep ${id}`);

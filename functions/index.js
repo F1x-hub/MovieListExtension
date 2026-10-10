@@ -1,4 +1,5 @@
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
+const { rebuildSeriesEpisodeStats } = require("./seriesEpisodeAggregation");
 const { onRequest } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret, defineString } = require("firebase-functions/params");
@@ -266,6 +267,18 @@ exports.cleanupExpiredWatchRoomsStaging = onSchedule(
     getRealtimeDatabase: getWatchRoomStagingDatabase,
   }).run()
 );
+
+/**
+ * Rebuild public episode statistics after a private episode-rating write.
+ */
+exports.aggregateSeriesEpisodeRatings = onDocumentWritten("seriesEpisodeRatings/{docId}", async event => {
+  const after = event.data?.after?.exists ? event.data.after.data() : null;
+  const before = event.data?.before?.exists ? event.data.before.data() : null;
+  const movieIds = new Set([after?.movieId, before?.movieId]);
+  for (const movieId of movieIds) {
+    await rebuildSeriesEpisodeStats(db, movieId, () => FieldValue.serverTimestamp());
+  }
+});
 
 /**
  * Trigger on Firestore ratings document create, update, or delete (v2).

@@ -299,7 +299,8 @@ keeps npm-compatible three-component semver metadata.
 
 ### Features
 
-- Users can rate individual released episodes for Kinopoisk-linked TMDB series. Private episode ratings are stored in `seriesEpisodeRatings/{uid}_{kpId}`; the public `ratings` document keeps its integer score while `episodeAverage` and `episodesRatedCount` expose the computed average. Changing a series score through any rating entry point switches it to manual mode while retaining private episode scores; deleting the series rating from Movie Details can remove both in one confirmed action. The required Firestore rules were deployed on 2026-10-10.
+- Browse seasons through keyboard-accessible tabs, a community episode rating chart and one selected episode card with playback, watched state and independent personal rating stars.
+- Users can rate released episodes independently of the title rating; setting an episode score also marks it watched, and changing or removing that score preserves the watched mark. Private scores feed public community episode averages through `aggregateSeriesEpisodeRatings`; the season chart, summary and episode card show these user averages. The `aggregateSeriesEpisodeRatings` function (europe-west1) and the updated Firestore rules were deployed to `movielistdb-13208` on 2026-10-10.
 - Restore passwords from the popup through a labeled email dialog with duplicate-send protection and localized feedback.
 - Watch rooms can be left and ended. A member's new "Выйти" button leaves the room; for the owner it becomes "Завершить" and, after a confirmation, ends the room for everyone: the new `end` action of `watchRoomsStaging` marks the room ended and immediately expired (invites stop working, the scheduled cleanup removes it) and deletes the live RTDB room together with every member's access, so all players leave it at once. Requires deploying the updated `watchRoomsStaging` function.
 - Returning to a watch room after a reload. The tab remembers its room (session storage, until the room ends or the tab closes) and rejoins it as soon as the player is ready, without using an invite place; the owner gets the invite code back. Ending, leaving, expiry, or a refused rejoin forget the room.
@@ -318,6 +319,7 @@ keeps npm-compatible three-component semver metadata.
 
 ### Fixes
 
+- Keep episode rating actions correctly hidden and preserve readable resume buttons in both themes.
 - Verify Home TMDB-to-Kinopoisk navigation against observed title, year and media type; personal cards use the bookmark's `movieId` ahead of legacy nested IDs, old preview caches are bypassed, and conflicting rating identities cannot change the card link or ratings.
 - Home reserves both personal-section headings and card grids while authentication restores, then reuses the mounted sections. A versioned preview cache is isolated by user and invalidated by bookmark changes or account transitions; unchanged responses preserve card nodes, focus and ratings. Personal and community cards now enter rating enrichment after mounting, and known provider ratings survive failed or empty enrichment responses.
 - Movie Details restores authentication for up to 15 seconds and distinguishes a connection timeout from a signed-out session. Local cached cards stay visible while stale metadata refreshes, without a Firestore read before first paint; usable Kinopoisk metadata appears before optional TMDB enrichment. Failed aggregation does not repeat the Kinopoisk request, loading has a bounded deadline, and cache writes no longer delay rendering.

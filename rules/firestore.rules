@@ -68,8 +68,6 @@ service cloud.firestore {
           && data.episodeAverage >= 1 && data.episodeAverage <= 10)
         && (!('episodesRatedCount' in data) || data.episodesRatedCount is int
           && data.episodesRatedCount >= 1 && data.episodesRatedCount <= 3000)
-        && (!(('ratingSource' in data) && data.ratingSource == 'episodes')
-          || (('episodeAverage' in data) && ('episodesRatedCount' in data)))
         && data.comment is string && data.comment.size() <= 500
         && (!('review' in data) || data.review is string && data.review.size() <= 5000)
         && (!('contentUpdatedAt' in data) || data.contentUpdatedAt is timestamp)
@@ -108,29 +106,14 @@ service cloud.firestore {
 
     function isValidSeriesEpisodeRatingData(seriesRatingId, data) {
       return data.keys().hasOnly([
-          'userId', 'movieId', 'tmdbId', 'episodes', 'ratingSum',
-          'ratedCount', 'mode', 'manualBackup', 'lastKey', 'updatedAt'
+          'userId', 'movieId', 'tmdbId', 'episodes', 'lastKey', 'updatedAt'
         ])
         && data.userId is string
         && data.userId == request.auth.uid
         && data.movieId is int && data.movieId > 0
         && seriesRatingId == request.auth.uid + '_' + string(data.movieId)
         && (data.tmdbId == null || data.tmdbId is int && data.tmdbId > 0)
-        && data.episodes is map && data.episodes.size() <= 3000
-        && data.ratedCount is int && data.ratedCount == data.episodes.size()
-        && data.ratedCount >= 1
-        && data.ratingSum is int
-        && data.ratingSum >= data.ratedCount
-        && data.ratingSum <= data.ratedCount * 10
-        && data.mode in ['episodes', 'manual']
-        && (data.manualBackup == null || (
-          data.manualBackup is map
-          && data.manualBackup.keys().hasOnly(['rating', 'ratedAt'])
-          && data.manualBackup.rating is int
-          && data.manualBackup.rating >= 1 && data.manualBackup.rating <= 10
-          && (!('ratedAt' in data.manualBackup)
-            || data.manualBackup.ratedAt == null || data.manualBackup.ratedAt is timestamp)
-        ))
+        && data.episodes is map && data.episodes.size() >= 1 && data.episodes.size() <= 3000
         && data.lastKey is string
         && data.lastKey.matches('^[0-9]{1,3}:[0-9]{1,5}$')
         && data.updatedAt is timestamp;
@@ -339,6 +322,11 @@ service cloud.firestore {
 
     // Private episode ratings. A missing deterministic document is readable
     // only by its owner so the first write can use a Firestore transaction.
+    match /seriesEpisodeStats/{movieId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     match /seriesEpisodeRatings/{seriesRatingId} {
       allow get: if (hasOwnSeriesEpisodeRatingId(seriesRatingId)
           && !exists(seriesEpisodeRatingPath(seriesRatingId)))
@@ -349,11 +337,7 @@ service cloud.firestore {
       allow create: if isApprovedUser()
         && hasOwnSeriesEpisodeRatingId(seriesRatingId)
         && isValidSeriesEpisodeRatingData(seriesRatingId, request.resource.data)
-        && request.resource.data.mode == 'episodes'
         && request.resource.data.episodes.size() == 1
-        && request.resource.data.ratedCount == 1
-        && request.resource.data.ratingSum
-          == request.resource.data.episodes[request.resource.data.lastKey].r
         && request.resource.data.episodes.keys().hasAny([request.resource.data.lastKey])
         && isValidEpisodeRatingEntry(request.resource.data.episodes[request.resource.data.lastKey]);
       allow update: if isApprovedUser()
@@ -362,10 +346,6 @@ service cloud.firestore {
         && request.resource.data.userId == resource.data.userId
         && request.resource.data.movieId == resource.data.movieId
         && isValidSeriesEpisodeRatingData(seriesRatingId, request.resource.data)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'tmdbId', 'episodes', 'ratingSum', 'ratedCount', 'mode',
-          'manualBackup', 'lastKey', 'updatedAt'
-        ])
         && hasOneValidEpisodeRatingChange();
       allow delete: if isApprovedUser()
         && hasOwnSeriesEpisodeRatingId(seriesRatingId)

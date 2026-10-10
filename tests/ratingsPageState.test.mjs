@@ -416,16 +416,14 @@ const doc = (id, seconds, extra = {}) => ({ id: String(id), kinopoiskId: id, las
     assert.equal(newScore.page.recentLocalEdits.has('5'), true, 'Its listener echo will not be marked as new');
 }
 
-// L7. Editing text on an episode aggregate preserves its derived mode; changing
-// the score explicitly saves a manual rating and never calls the generic writer.
+// L7. Legacy aggregate metadata is ignored: title score and text edits always
+// use the ordinary title writer without touching private episode ratings.
 {
     const makeEpisodeSavePage = score => {
         const page = createLivePage();
         page.currentUser = { uid: 'alice' };
         page.userProfilesMap.set('alice', { displayName: 'Alice', photoURL: 'a.png' });
         page.selectedMovie = { kinopoiskId: 77, name: 'Series', type: 'TV_SERIES' };
-        page.selectedRatingSeriesEpisodeState = { ratedCount: 12, mode: 'episodes' };
-        page.selectedRatingDocumentId = 'alice_77';
         page.elements = {
             ratingSlider: { value: String(score) },
             ratingComment: { value: 'new comment' },
@@ -448,33 +446,24 @@ const doc = (id, seconds, extra = {}) => ({ id: String(id), kinopoiskId: id, las
         page.recentLocalEdits = new Map();
         return page;
     };
-    let textWrites = 0;
     let genericWrites = 0;
-    let manualWrites = 0;
     globalThis.firebaseManager.getRatingService = () => ({
-        updateRatingText: async () => { textWrites++; },
         addOrUpdateRating: async () => { genericWrites++; return { id: 'alice_77' }; }
     });
-    globalThis.firebaseManager.getSeriesEpisodeRatingService = () => ({
-        saveManualRating: async () => { manualWrites++; }
-    });
+    globalThis.firebaseManager.getSeriesEpisodeRatingService = () => {
+        throw new Error('Title editing must not access episode ratings');
+    };
     globalThis.Utils.showToast = () => {};
 
     const commentEdit = makeEpisodeSavePage(8);
     await commentEdit.saveRating();
-    assert.equal(textWrites, 1, 'A comment-only edit writes only rating text');
-    assert.equal(manualWrites, 0);
-    assert.equal(genericWrites, 0, 'The generic writer is skipped for aggregate comment edits');
-    assert.equal(commentEdit.movies[0].myRatingSource, 'episodes');
-    assert.equal(commentEdit.movies[0].myEpisodeAverage, 8.4);
+    assert.equal(genericWrites, 1, 'Comment edits use the title writer');
+    assert.deepEqual(commentEdit.getMyRating(commentEdit.movies[0]), { rating: 8, comment: 'new comment' });
 
     const scoreEdit = makeEpisodeSavePage(9);
     await scoreEdit.saveRating();
-    assert.equal(manualWrites, 1, 'A changed score uses the explicit manual-mode transition');
-    assert.equal(textWrites, 1, 'The manual transition owns comment text too');
-    assert.equal(genericWrites, 0, 'Manual transition does not call addOrUpdateRating afterward');
-    assert.equal(scoreEdit.movies[0].myRatingSource, 'manual');
-    assert.equal(scoreEdit.movies[0].myEpisodeAverage, 0);
+    assert.equal(genericWrites, 2, 'Score edits use the same title writer');
+    assert.deepEqual(scoreEdit.getMyRating(scoreEdit.movies[0]), { rating: 9, comment: 'new comment' });
 }
 
 // --- Films whose movie document has no title/poster ---

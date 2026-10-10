@@ -1275,9 +1275,9 @@ console.log('\n--- 6. Testing MediaAggregatorService async getMovieDetails flow 
     assert.strictEqual(boundedSeason.episodes.length, 500, 'Season episodes must be bounded to max 500');
 
     // 9.4 Test In-flight Request Deduplication
-    let fetchCalls = 0;
-    tmdbServiceInstance._fetchSeasonDetails = async () => {
-        fetchCalls++;
+    const fetchCalls = [];
+    tmdbServiceInstance._fetchSeasonDetails = async (_id, _season, language) => {
+        fetchCalls.push(language);
         await new Promise(r => setTimeout(r, 20));
         return rawSeason1;
     };
@@ -1285,7 +1285,7 @@ console.log('\n--- 6. Testing MediaAggregatorService async getMovieDetails flow 
     const p1 = tmdbServiceInstance.getSeasonDetails(94997, 1, { forceRefresh: true });
     const p2 = tmdbServiceInstance.getSeasonDetails(94997, 1, { forceRefresh: true });
     const [res1, res2] = await Promise.all([p1, p2]);
-    assert.strictEqual(fetchCalls, 1, 'Concurrent double-click on same season must trigger only 1 fetch call');
+    assert.deepStrictEqual(fetchCalls, ['ru-RU', 'en-US'], 'Concurrent season requests share one Russian fetch and one missing-data fallback');
     assert.strictEqual(res1.tmdbId, 94997);
     assert.strictEqual(res2.tmdbId, 94997);
 

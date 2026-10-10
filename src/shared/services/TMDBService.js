@@ -1402,7 +1402,7 @@ class TMDBService {
             const key = this.getSeasonCacheKey(tmdbId, seasonNumber);
             const res = await chrome.storage.local.get(key);
             const entry = res[key];
-            if (!entry || entry.schemaVersion !== 1 || !entry.data || !entry.fetchedAt) {
+            if (!entry || entry.schemaVersion !== 2 || !entry.data || !entry.fetchedAt) {
                 return null;
             }
 
@@ -1436,7 +1436,7 @@ class TMDBService {
         try {
             const key = this.getSeasonCacheKey(tmdbId, seasonNumber);
             const entry = {
-                schemaVersion: 1,
+                schemaVersion: 2,
                 tmdbId: Number(tmdbId),
                 seasonNumber: Number(seasonNumber),
                 fetchedAt: Date.now(),
@@ -1504,11 +1504,13 @@ class TMDBService {
                 if (!rawSeason) return null;
 
                 // If Russian overview or episode titles are missing, fetch English fallback
-                if (!rawSeason.overview?.trim() && language !== 'en-US') {
+                const isPlaceholderName = name => !name?.trim() || /^(Эпизод|Серия|Episode)\s*\d+$/i.test(name.trim());
+                const needsFallback = !rawSeason.overview?.trim() || rawSeason.episodes?.some(ep => !ep.overview?.trim() || isPlaceholderName(ep.name));
+                if (needsFallback && language !== 'en-US') {
                     try {
                         const englishSeason = await this._fetchSeasonDetails(numTmdbId, numSeasonNumber, 'en-US');
                         if (englishSeason) {
-                            rawSeason.overview = englishSeason.overview || rawSeason.overview;
+                            if (!rawSeason.overview?.trim()) rawSeason.overview = englishSeason.overview || rawSeason.overview;
                             if (Array.isArray(rawSeason.episodes) && Array.isArray(englishSeason.episodes)) {
                                 const enEpMap = new Map(englishSeason.episodes.map(e => [e.episode_number, e]));
                                 for (const ep of rawSeason.episodes) {
@@ -1517,7 +1519,7 @@ class TMDBService {
                                         if (!ep.overview?.trim() && enEp.overview?.trim()) {
                                             ep.overview = enEp.overview;
                                         }
-                                        if (!ep.name?.trim() && enEp.name?.trim()) {
+                                        if (isPlaceholderName(ep.name) && enEp.name?.trim()) {
                                             ep.name = enEp.name;
                                         }
                                     }

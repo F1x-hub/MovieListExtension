@@ -129,141 +129,58 @@ function createHarness() {
 const movie = { kinopoiskId: 77, name: 'Test title', posterUrl: 'poster.jpg' };
 
 async function run() {
-    {
-        const { db, service } = createHarness();
-        db.seed('ratings', 'alice_77', {
-            userId: 'alice', movieId: 77, rating: 4, comment: 'old'
-        });
-        await service.addOrUpdateRating('alice', 'Alice', '', 77, 8, 'new', movie);
-        assert.equal(db.transactions[0].reads.length, 1);
-        assert.deepEqual(db.transactions[0].reads, ['ratings'], 'ordinary ratings do not read the episode collection');
-    }
-
-    {
+    for (const source of [undefined, 'episodes', 'manual']) {
         const { db, service, cacheClears } = createHarness();
-        const createdAt = new Date('2025-01-01T00:00:00.000Z');
-        db.seed('ratings', 'alice_77', {
-            userId: 'alice', movieId: 77, rating: 8, ratingSource: 'episodes',
-            episodeAverage: 8.4, episodesRatedCount: 12, comment: 'Keep comment',
-            review: 'Keep review', isFavorite: true, favoritedAt: createdAt, createdAt
-        });
-        db.seed('seriesEpisodeRatings', 'alice_77', {
-            userId: 'alice', movieId: 77, tmdbId: 123, episodes: { '1:1': { r: 8, t: createdAt } },
-            ratingSum: 8, ratedCount: 1, mode: 'episodes', manualBackup: null,
-            lastKey: '1:1', updatedAt: createdAt
-        });
-        const result = await service.addOrUpdateRating('alice', 'Alice', '', 77, 6, 'Updated text', movie);
+        const createdAt = new Date('2025-01-01');
+        const title = { userId: 'alice', movieId: 77, rating: 8,
+            review: 'Keep review', isFavorite: true, createdAt, favoritedAt: createdAt,
+            ...(source ? { ratingSource: source, episodeAverage: 8.4, episodesRatedCount: 12 } : {}) };
+        const privateDocument = { userId: 'alice', movieId: 77,
+            episodes: { '1:1': { r: 8, t: createdAt } }, mode: 'episodes', manualBackup: { rating: 3 } };
+        db.seed('ratings', 'alice_77', title);
+        db.seed('seriesEpisodeRatings', 'alice_77', privateDocument);
+        db.deniedTransactionCollections.add('seriesEpisodeRatings');
+        const result = await service.addOrUpdateRating('alice', 'Alice', '', 77, 6, 'new', movie);
+        assert.deepEqual(db.transactions[0].reads, ['ratings'], 'title changes never read private episodes');
         const rating = db.read({ collectionName: 'ratings', id: 'alice_77' });
-        const episodeState = db.read({ collectionName: 'seriesEpisodeRatings', id: 'alice_77' });
-        assert.deepEqual(db.transactions[0].reads, ['ratings', 'seriesEpisodeRatings']);
         assert.equal(rating.rating, 6);
-        assert.equal(rating.ratingSource, 'manual');
-        assert.equal('episodeAverage' in rating, false);
-        assert.equal('episodesRatedCount' in rating, false);
-        assert.equal(rating.comment, 'Updated text');
         assert.equal(rating.review, 'Keep review');
         assert.equal(rating.isFavorite, true);
         assert.deepEqual(rating.createdAt, createdAt);
-        assert.equal(episodeState.mode, 'manual');
-        assert.equal(episodeState.manualBackup.rating, 6);
-        assert.deepEqual(episodeState.episodes, { '1:1': { r: 8, t: createdAt } });
-        assert.equal(result.ratingSource, 'manual');
-        assert.equal('episodeAverage' in result, false);
-        assert.deepEqual(cacheClears, ['alice_77']);
+        for (const key of ['ratingSource', 'episodeAverage', 'episodesRatedCount']) {
+            assert.equal(key in rating, false);
+            assert.equal(key in result, false);
+        }
+        assert.deepEqual(db.read({ collectionName: 'seriesEpisodeRatings', id: 'alice_77' }), privateDocument);
+        assert.deepEqual(cacheClears, [], 'public mutation does not invalidate independent private cache');
+        await service.deleteRating('alice', 'alice_77');
+        assert.deepEqual(db.directReads, ['ratings']);
+        assert.equal(db.transactions.length, 1, 'delete uses original direct path');
+        assert.equal(db.read({ collectionName: 'ratings', id: 'alice_77' }), null);
+        assert.deepEqual(db.read({ collectionName: 'seriesEpisodeRatings', id: 'alice_77' }), privateDocument);
     }
-
     {
         const { db, service } = createHarness();
-        db.seed('ratings', 'alice_77', {
-            userId: 'alice', movieId: 77, rating: 8, ratingSource: 'episodes',
-            episodeAverage: 8.4, episodesRatedCount: 12, comment: ''
-        });
+        db.seed('ratings', 'alice_77', { userId: 'alice', movieId: 77, rating: 5, episodeAverage: 5.2 });
         await service.addOrUpdateRating('alice', 'Alice', '', 77, 7, '', movie);
-        const rating = db.read({ collectionName: 'ratings', id: 'alice_77' });
-        assert.equal(rating.ratingSource, 'manual');
-        assert.equal('episodeAverage' in rating, false, 'episode display fields are removed even if private state is missing');
-        assert.equal(db.transactions[0].reads.includes('seriesEpisodeRatings'), true);
+        assert.equal('episodeAverage' in db.read({ collectionName: 'ratings', id: 'alice_77' }), false,
+            'partial legacy metadata is cleaned even without ratingSource');
     }
-
     {
         const { db, service } = createHarness();
-        db.seed('ratings', 'alice_77', {
-            userId: 'alice', movieId: 77, rating: 7, ratingSource: 'manual',
-            comment: 'manual mode', createdAt: new Date('2025-01-01T00:00:00.000Z')
-        });
-        db.seed('seriesEpisodeRatings', 'alice_77', {
-            userId: 'alice', movieId: 77, tmdbId: 123, episodes: { '1:1': { r: 8, t: new Date() } },
-            ratingSum: 8, ratedCount: 1, mode: 'manual', manualBackup: { rating: 4 },
-            lastKey: '1:1', updatedAt: new Date()
-        });
-
-        await service.addOrUpdateRating('alice', 'Alice', '', 77, 9, 'updated manual', movie);
-        const rating = db.read({ collectionName: 'ratings', id: 'alice_77' });
-        const episodeState = db.read({ collectionName: 'seriesEpisodeRatings', id: 'alice_77' });
-        assert.deepEqual(db.transactions[0].reads, ['ratings', 'seriesEpisodeRatings']);
-        assert.equal(rating.ratingSource, 'manual');
-        assert.equal(episodeState.mode, 'manual', 'A manual rating update does not re-enable aggregate mode');
-        assert.equal(episodeState.manualBackup.rating, 9, 'R2: the restore backup follows the latest manual score');
-        assert.equal(episodeState.manualBackup.ratedAt instanceof Date, true);
-        assert.deepEqual(episodeState.episodes, { '1:1': { r: 8, t: episodeState.episodes['1:1'].t } });
+        service.invalidateRatingTextCaches = async () => {};
+        db.seed('ratings', 'alice_77', { userId: 'alice', movieId: 77, rating: 8,
+            ratingSource: 'episodes', episodeAverage: 8.4, episodesRatedCount: 12 });
+        const result = await service.updateRatingText('alice', 'alice_77', { comment: 'text only' });
+        assert.equal(result.rating, 8);
+        const stored = db.read({ collectionName: 'ratings', id: 'alice_77' });
+        for (const key of ['ratingSource', 'episodeAverage', 'episodesRatedCount']) {
+            assert.equal(key in stored, false);
+            assert.equal(key in result, false);
+        }
+        assert.deepEqual(db.transactions[0].reads, ['ratings']);
+        assert.equal('episodeAverage' in service.toRatingViewModel({ rating: 8, episodeAverage: 8.4 }), false);
     }
-
-    {
-        const { db, service } = createHarness();
-        db.seed('ratings', 'alice_77', {
-            userId: 'alice', movieId: 77, rating: 7, comment: 'ordinary movie rating'
-        });
-        await service.deleteRating('alice', 'alice_77');
-        assert.deepEqual(db.directReads, ['ratings'], 'R1: deletion uses one rating read and no episode-collection read');
-        assert.equal(db.transactions.length, 0, 'Legacy deletion stays on the original direct-delete path');
-        assert.equal(db.read({ collectionName: 'seriesEpisodeRatings', id: 'alice_77' }), null);
-        assert.equal(db.read({ collectionName: 'ratings', id: 'alice_77' }), null);
-    }
-
-    {
-        const { db, service, cacheClears } = createHarness();
-        db.seed('ratings', 'alice_77', {
-            userId: 'alice', movieId: 77, rating: 6, ratingSource: 'episodes',
-            episodeAverage: 8, episodesRatedCount: 1, comment: 'remove'
-        });
-        db.seed('seriesEpisodeRatings', 'alice_77', {
-            userId: 'alice', movieId: 77, tmdbId: 123, episodes: { '1:1': { r: 8, t: new Date() } },
-            ratingSum: 8, ratedCount: 1, mode: 'episodes', manualBackup: { rating: 5 },
-            lastKey: '1:1', updatedAt: new Date()
-        });
-        await service.deleteRating('alice', 'alice_77');
-        const episodeState = db.read({ collectionName: 'seriesEpisodeRatings', id: 'alice_77' });
-        assert.equal(db.read({ collectionName: 'ratings', id: 'alice_77' }), null);
-        assert.deepEqual(episodeState.episodes, { '1:1': { r: 8, t: episodeState.episodes['1:1'].t } });
-        assert.equal(episodeState.mode, 'manual');
-        assert.equal(episodeState.manualBackup, null);
-        assert.deepEqual(cacheClears, ['alice_77']);
-        assert.deepEqual(db.transactions[0].reads, ['ratings', 'seriesEpisodeRatings']);
-    }
-
-    {
-        const { db, service, cacheClears } = createHarness();
-        db.deniedTransactionCollections.add('seriesEpisodeRatings');
-        db.seed('ratings', 'alice_77', {
-            userId: 'alice', movieId: 77, rating: 5, ratingSource: 'manual'
-        });
-        db.seed('seriesEpisodeRatings', 'alice_77', {
-            userId: 'alice', movieId: 77, episodes: { '1:1': { r: 8, t: new Date() } },
-            ratingSum: 8, ratedCount: 1, mode: 'manual', manualBackup: { rating: 4 }, lastKey: '1:1'
-        });
-
-        await service.addOrUpdateRating('alice', 'Alice', '', 77, 9, '', movie);
-        const rating = db.read({ collectionName: 'ratings', id: 'alice_77' });
-        assert.equal(rating.rating, 9,
-            'R3: a manual title rating remains writable if private episode rules deny the state read');
-        assert.equal(rating.ratingSource, 'manual');
-        assert.deepEqual(cacheClears, ['alice_77']);
-    }
-
-    console.log('seriesEpisodeRatingTransitions.test.cjs: all tests passed');
+    console.log('seriesEpisodeRatingTransitions.test.cjs: independent title isolation tests passed');
 }
-
-run().catch(error => {
-    console.error(error);
-    process.exitCode = 1;
-});
+run().catch(error => { console.error(error); process.exitCode = 1; });

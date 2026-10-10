@@ -2,6 +2,10 @@
   "name": "functions",
   "description": "Cloud Functions for MovieList Extension",
   "main": "index.js",
+  "scripts": {
+    "lint": "node --check index.js && node ../node_modules/eslint/bin/eslint.js --config eslint.config.cjs seriesEpisodeAggregation.js tests/seriesEpisodeAggregation.test.cjs",
+    "test": "node tests/seriesEpisodeAggregation.test.cjs"
+  },
   "dependencies": {
     "@google-cloud/monitoring": "^6.0.0",
     "@google-cloud/secret-manager": "^6.0.0",

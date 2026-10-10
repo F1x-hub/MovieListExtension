@@ -1,6 +1,7 @@
 import assert from 'node:assert';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { JSDOM } from 'jsdom';
 import { i18n } from '../src/shared/i18n/I18n.js';
 import SeriesEpisodeRatingService from '../src/shared/services/SeriesEpisodeRatingService.js';
 
@@ -117,22 +118,7 @@ const mockDocElements = new Map();
 const documentStub = {
     activeButtons: [],
     querySelector: (sel) => mockDocElements.get(sel) || null,
-    querySelectorAll: (sel) => {
-        if (sel === '.season-card') {
-            return Array.from(mockDocElements.values()).filter(el => el.classList && el.classList.contains('season-card'));
-        }
-        if (sel === '.season-pill-btn') {
-            return Array.from(mockDocElements.values()).filter(el => el.classList && el.classList.contains('season-pill-btn'));
-        }
-        if (sel.startsWith('.season-expand-btn')) {
-            const btns = Array.from(mockDocElements.values()).filter(el => el.classList && el.classList.contains('season-expand-btn'));
-            if (sel.includes('[aria-expanded="true"]')) {
-                return btns.filter(b => b.getAttribute('aria-expanded') === 'true');
-            }
-            return btns;
-        }
-        return [];
-    },
+    querySelectorAll: () => [],
     getElementById: (id) => mockDocElements.get(`#${id}`) || null,
     createElement: (tag) => new MockElement(tag),
     body: new MockElement('body'),
@@ -160,7 +146,10 @@ const escapeHtmlHelper = (t) => {
         .replace(/'/g, '&#039;');
 };
 
+const utilsContext = vm.createContext({ module: { exports: {} } });
+vm.runInContext(fs.readFileSync(new URL('../src/shared/utils/Utils.js', import.meta.url), 'utf8'), utilsContext);
 const utilsStub = {
+    selectRussianPlural: utilsContext.module.exports.selectRussianPlural,
     createPageStateManager: () => ({}),
     escapeHtml: escapeHtmlHelper,
     normalizeRatingComment: (v) => (typeof v === 'string' ? v.trim() : ''),
@@ -203,6 +192,12 @@ manager.escapeHtml = escapeHtmlHelper;
 manager.getPluralSeasons = MovieDetailsManager.prototype.getPluralSeasons;
 
 const css = fs.readFileSync('src/pages/movie-details/movie-details.css', 'utf8');
+assert(/\.episode-rating-control\s*\{[^}]*justify-content:\s*center;[^}]*text-align:\s*center;/s.test(css), 'the whole rating group is centered');
+assert(/\.episode-rating-value\s*\{[^}]*flex:\s*0 0 5ch;[^}]*width:\s*5ch;/s.test(css), 'the value has a permanent slot');
+assert(/\.episode-rating-remove-slot\s*\{[^}]*flex:\s*0 0 32px;/s.test(css), 'hidden removal does not shift the stars');
+assert(/\.episode-rating-message\s*\{[^}]*flex-basis:\s*100%;[^}]*text-align:\s*center;/s.test(css), 'access and future messages are centered');
+assert(source.includes('<span class="episode-rating-remove-slot"><button'), 'removal keeps its slot even when hidden');
+assert(/@media \(max-width: 420px\)[\s\S]*\.episode-rating-scale\s*\{[^}]*repeat\(5,/s.test(css), 'mobile stars retain the centered two-row layout');
 
 // =========================================================================
 // PART 44: RATINGS TESTS (Tests 1 - 8)
@@ -316,247 +311,442 @@ console.log('  ✅ 8. Rating provider isolation preserved with 0 cross-contamina
 
 
 // =========================================================================
-// PART 45: SEASONS TESTS (Tests 9 - 28)
-// =========================================================================
-console.log('\n--- Part 45: Testing Seasons Redesign & Visual UX ---');
-
-// Build 18 seasons + specials fixture (It's Always Sunny in Philadelphia)
-const eighteenSeasons = [];
-for (let i = 1; i <= 18; i++) {
-    eighteenSeasons.push({
-        number: i,
-        name: `Сезон ${i}`,
-        episodeCount: i === 1 ? 7 : (i === 18 ? 8 : 10),
-        airDate: i === 1 ? '2005-08-04' : `20${(5 + i).toString().padStart(2, '0')}-01-15`,
-        overview: `Описание сезона ${i} сериала.`,
-        posterUrl: `https://image.tmdb.org/t/p/w500/season_${i}.jpg`,
-        isSpecial: false
-    });
-}
-eighteenSeasons.push({
-    number: 0,
-    name: 'Спецвыпуски',
-    episodeCount: 5,
-    airDate: '2006-01-01',
-    overview: 'Дополнительные материалы и неудачные дубли.',
-    posterUrl: 'https://image.tmdb.org/t/p/w500/season_0.jpg',
-    isSpecial: true
-});
-
-const nextEpisodeFixture = {
-    seasonNumber: 18,
-    episodeNumber: 9,
-    name: 'The Gang Goes to Europe',
-    airDate: '2026-09-01'
-};
-
-const seasonsHtml18 = manager.renderSeasonsTab(eighteenSeasons, nextEpisodeFixture, null, 2710);
-
-// 9. 18 season selector renders 18 + specials
-assert(seasonsHtml18.includes('class="seasons-nav-pills"'), '9. Nav pills container must be rendered');
-for (let i = 1; i <= 18; i++) {
-    assert(seasonsHtml18.includes(`data-season-number="${i}"`), `9. Pill for season ${i} must exist`);
-}
-assert(seasonsHtml18.includes('Спецвыпуски'), '9. Specials pill must exist');
-console.log('  ✅ 9. 18 season selector renders 18 numerical pills + specials pill');
-
-// 10. active season visually marked
-assert(seasonsHtml18.includes('class="season-pill-btn active"'), '10. Season 1 pill has active class');
-assert(seasonsHtml18.includes('aria-selected="true"'), '10. Season 1 pill has aria-selected="true"');
-console.log('  ✅ 10. Active season pill visually and semantically marked (active, aria-selected="true")');
-
-// 11. season pill uses no native default contract
-assert(css.includes('appearance: none;'), '11. CSS resets appearance');
-assert(css.includes('.season-pill-btn {'), '11. CSS contains .season-pill-btn class');
-assert(css.includes('border-radius: var(--radius-md, 8px);') || css.includes('border-radius: 8px'), '11. CSS uses rounded radius token');
-console.log('  ✅ 11. Season pills explicitly styled with Obsidian-Zinc tokens (no native button styling)');
-
-// 12. selected season panel renders
-assert(seasonsHtml18.includes('class="season-card'), '12. Season card rendered');
-assert(seasonsHtml18.includes('season-card--active'), '12. Active season card marked with season-card--active');
-assert(seasonsHtml18.includes('class="season-main-row"'), '12. Main row side-by-side layout container rendered');
-console.log('  ✅ 12. Selected season panel renders structured layout');
-
-// 13. season poster bounded
-assert(seasonsHtml18.includes('class="season-poster-wrapper"'), '13. Season poster wrapper rendered');
-assert(css.includes('.season-poster-wrapper {'), '13. CSS specifies .season-poster-wrapper');
-assert(css.includes('width: 150px;') || css.includes('flex: 0 0 150px;'), '13. Season poster bounded to 150px');
-console.log('  ✅ 13. Season poster bounded to compact width (150px) with 2:3 aspect ratio');
-
-// 14. episode count renders
-assert(seasonsHtml18.includes('7 серий'), '14. Correctly pluralized episode count rendered (7 серий)');
-console.log('  ✅ 14. Episode count accurately rendered and pluralized');
-
-// 15. premiere date renders
-assert(seasonsHtml18.includes('04.08.2005'), '15. Formatted premiere date 04.08.2005 rendered');
-console.log('  ✅ 15. Premiere date formatted with dd.mm.yyyy format');
-
-// 16. Show Episodes retained
-assert(seasonsHtml18.includes('data-action="toggle-season"'), '16. Toggle season button present');
-assert(seasonsHtml18.includes('Показать серии'), '16. "Показать серии" text present');
-console.log('  ✅ 16. Show Episodes toggle button retained');
-
-// 17. selecting season does not fetch episodes
-// Setup mock DOM cards for manager.handleSeasonPillSelect
-const pill1 = new MockElement('button');
-pill1.classList.add('season-pill-btn', 'active');
-pill1.setAttribute('data-season-number', '1');
-mockDocElements.set('.season-pill-btn[data-season-number="1"]', pill1);
-
-const pill2 = new MockElement('button');
-pill2.classList.add('season-pill-btn');
-pill2.setAttribute('data-season-number', '2');
-mockDocElements.set('.season-pill-btn[data-season-number="2"]', pill2);
-
-const card1 = new MockElement('div');
-card1.classList.add('season-card', 'season-card--active');
-card1.setAttribute('data-season-number', '1');
-mockDocElements.set('.season-card[data-season-number="1"]', card1);
-
-const card2 = new MockElement('div');
-card2.classList.add('season-card');
-card2.setAttribute('data-season-number', '2');
-card2.style.display = 'none';
-mockDocElements.set('.season-card[data-season-number="2"]', card2);
-
-const card3 = new MockElement('div');
-card3.classList.add('season-card');
-card3.setAttribute('data-season-number', '3');
-card3.style.display = 'none';
-mockDocElements.set('.season-card[data-season-number="3"]', card3);
-
-let networkCallMade = false;
-manager.handleSeasonPillSelect(2);
-assert.strictEqual(networkCallMade, false, '17. Selecting season pill must cause ZERO network calls');
-assert.strictEqual(card2.style.display, '', '17. Season 2 card shown');
-assert.strictEqual(card1.style.display, 'none', '17. Season 1 card hidden');
-console.log('  ✅ 17. Selecting season switches DOM panels with 0 network calls');
-
-// 18. expanding season fetches lazily
-let lazyFetchSeason = null;
-manager.tmdbService = {
-    getSeasonDetails: async (tmdbId, seasonNumber) => {
-        lazyFetchSeason = seasonNumber;
-        return {
-            episodes: [
-                { episodeNumber: 1, name: 'Charlie Gets Crippled', airDate: '2006-06-29', voteAverage: 8.4, seasonNumber: 2 }
-            ]
-        };
-    }
-};
-const toggleBtnS2 = new MockElement('button');
-toggleBtnS2.classList.add('season-expand-btn');
-card2.appendChild(toggleBtnS2);
-mockDocElements.set('.season-card[data-season-number="2"] .season-expand-btn', toggleBtnS2);
-
-await manager.toggleSeasonEpisodes(toggleBtnS2, 2, 2710, 10);
-assert.strictEqual(lazyFetchSeason, 2, '18. Lazy fetch invoked TMDBService for season 2');
-const panel2 = card2.querySelector('.season-episodes-panel');
-assert(panel2.innerHTML.includes('Charlie Gets Crippled'), '18. Episode rendered into panel');
-console.log('  ✅ 18. Expanding season triggers lazy episode fetch via TMDBService');
-
-// 19. one open season invariant preserved
-const toggleBtnS3 = new MockElement('button');
-toggleBtnS3.classList.add('season-expand-btn');
-card3.appendChild(toggleBtnS3);
-mockDocElements.set('.season-card[data-season-number="3"] .season-expand-btn', toggleBtnS3);
-
-manager.tmdbService.getSeasonDetails = async () => ({
-    episodes: [{ episodeNumber: 1, name: 'The Gang Broke Dee', seasonNumber: 3 }]
-});
-await manager.toggleSeasonEpisodes(toggleBtnS3, 3, 2710, 10);
-assert.strictEqual(toggleBtnS3.getAttribute('aria-expanded'), 'true', '19. Season 3 expanded');
-assert.strictEqual(toggleBtnS2.getAttribute('aria-expanded'), 'false', '19. Season 2 collapsed');
-console.log('  ✅ 19. Single expanded season accordion invariant strictly enforced');
-
-// 20. single-season series may omit selector
-const singleSeason = [{
-    number: 1,
-    name: 'Сезон 1',
-    episodeCount: 10,
-    airDate: '2023-01-15',
-    overview: 'Единственный сезон сериала.',
-    posterUrl: 'https://image.tmdb.org/t/p/w500/s1.jpg',
-    isSpecial: false
-}];
-const singleSeasonHtml = manager.renderSeasonsTab(singleSeason, null, null, 999);
-assert(!singleSeasonHtml.includes('class="seasons-nav-pills"'), '20. Single season without specials omits redundant pill selector');
-assert(singleSeasonHtml.includes('class="season-card season-card--active"'), '20. Single season summary card rendered directly');
-console.log('  ✅ 20. Single-season series without specials omits redundant pill selector');
-
-// 21. specials display correctly
-const singlePlusSpecials = [
-    { number: 1, name: 'Сезон 1', episodeCount: 8, airDate: '2020-01-01', isSpecial: false },
-    { number: 0, name: 'Спецвыпуски', episodeCount: 2, airDate: '2021-01-01', isSpecial: true }
+// IMDb-style seasons browser exercises the live production methods.
+const eighteenSeasons = Array.from({ length: 18 }, (_, index) => ({ number: index + 1, episodeCount: 8, airDate: '2020-01-01' }));
+eighteenSeasons.unshift({ number: 0, isSpecial: true, episodeCount: 2 });
+const singleSeason = [eighteenSeasons[1]];
+manager.selectedMovie = { kinopoiskId: 777, tmdbId: 888, type: 'TV_SERIES', seasons: eighteenSeasons };
+const seasonsHtml18 = manager.renderSeasonsTab(eighteenSeasons, null, null, 888);
+const seasonsDom = new JSDOM(seasonsHtml18).window.document;
+const tabs = [...seasonsDom.querySelectorAll('[role="tablist"] [role="tab"]')];
+assert.equal(tabs.length, 19, 'every normal season plus specials gets a tab');
+assert.equal(tabs.at(-1).getAttribute('data-season-number'), '0', 'specials sort last');
+assert.equal(tabs.filter(tab => tab.getAttribute('aria-selected') === 'true').length, 1);
+assert(!seasonsHtml18.includes('season-expand-btn'), 'accordion actions are removed');
+assert(!seasonsHtml18.includes('season-card'), 'poster season cards are removed');
+assert(manager.renderSeasonsTab(singleSeason, null, null, 888).includes('role="tablist"'), 'one season still has a tab');
+assert(seasonsHtml18.includes('18 сезонов'));
+const episodes = [
+    { seasonNumber: 1, episodeNumber: 1, name: '<Pilot>', overview: '<script>bad()</script>', airDate: '2020-01-01', runtime: 24, voteAverage: 8, voteCount: 100 },
+    { seasonNumber: 1, episodeNumber: 2, name: 'Second', airDate: '2020-01-02', voteAverage: 9, voteCount: 300 },
+    { seasonNumber: 1, episodeNumber: 3, name: 'No votes', airDate: '2020-01-03', voteAverage: 7, voteCount: 0 },
+    { seasonNumber: 1, episodeNumber: 4, name: 'Future', airDate: '2099-01-01', voteAverage: 10, voteCount: 900 }
 ];
-const singlePlusSpecialsHtml = manager.renderSeasonsTab(singlePlusSpecials, null, null, 888);
-assert(singlePlusSpecialsHtml.includes('class="seasons-nav-pills"'), '21. Season 1 + Specials retains selector');
-assert(singlePlusSpecialsHtml.includes('Спецвыпуски'), '21. Specials pill present');
-assert(singlePlusSpecialsHtml.includes('Спецматериалы'), '21. Specials badge present on card');
-console.log('  ✅ 21. Specials display correctly with dedicated pill and badge');
+manager.selectedMovie = { kinopoiskId: 777, tmdbId: 888, type: 'TV_SERIES' };
+manager.publicEpisodeStats = { movieId: 777, episodes: {
+    '1:1': { sum: 800, count: 100, avg: 8 }, '1:2': { sum: 2700, count: 300, avg: 9 }, '1:4': { sum: 9000, count: 900, avg: 10 }
+} };
+const stats = manager.getSeasonEpisodeChartStats(episodes, '2020-01-01');
+assert.equal(stats.average, 8.5, 'mean counts released episodes with votes equally');
+assert.equal(stats.votes, 400, 'future and zero-vote episodes do not contribute votes');
+assert.equal(manager.getEpisodeChartHeight(episodes[2], stats), 22);
+assert.equal(manager.getEpisodeChartHeight(episodes[3], stats), 22);
+assert(manager.getEpisodeChartHeight(episodes[1], stats) > manager.getEpisodeChartHeight(episodes[0], stats));
+assert.equal(manager.getEpisodeChartHeight(episodes[1], stats), 60);
+assert.equal(stats.minRating, 8);
+assert.equal(stats.maxRating, 9);
+assert(Math.abs(manager.getEpisodeChartHeight(episodes[0], stats) - (22 + 0.3 / 1.3 * 38)) < 1e-9);
+assert.equal(manager.getEpisodeChartRatingHeight(0, stats), 22, 'values below lo clamp to the minimum');
+const equalStats = { ...stats, minRating: 8, maxRating: 8, average: 8 };
+assert.equal(manager.getEpisodeChartHeight(episodes[0], equalStats), 41, 'equal scores have middle-height bars');
+assert.equal(manager.getSeasonEpisodeChartStats([episodes[2]]).votes, 0);
+const resumed = manager.getDefaultSeasonEpisode(eighteenSeasons, { season: 2, episode: 3, timestamp: 20 }, null, {});
+assert.equal(resumed.seasonNumber, 2); assert.equal(resumed.episodeNumber, 3);
+assert.equal(manager.getDefaultSeasonEpisode(eighteenSeasons, null, null, {}).seasonNumber, 1);
+const targeted = manager.getDefaultSeasonEpisode(eighteenSeasons, null, { seasonNumber: 3, episodeNumber: 5 }, {});
+assert.equal(targeted.seasonNumber, 3);
+assert.equal(targeted.episodeNumber, 5);
+const historyDefault = manager.getDefaultSeasonEpisode(eighteenSeasons, null, null, { '2:4': { completedAt: 100 } });
+assert.equal(historyDefault.seasonNumber, 2, 'last watched season is used without a resume target');
+assert.equal(historyDefault.episodeNumber, 4);
+manager.seasonsBrowserSeason = 1;
+manager.seasonsBrowserEpisode = 1;
+const chartHtml = manager.renderEpisodesList(episodes, null, null, null, { '1:2': { completed: true } }, null, '2020-01-01');
+const chartDoc = new JSDOM(chartHtml).window.document;
+const averageLine = chartDoc.querySelector('.episode-chart-average');
+assert.equal(averageLine.getAttribute('aria-hidden'), 'true');
+assert(Math.abs(Number(averageLine.style.getPropertyValue('--episode-bar-position')) - (8.5 - 7.7) / (9 - 7.7)) < 1e-6, 'mean uses exactly the bar-height scale');
+assert(!new JSDOM(manager.renderEpisodesList([episodes[2]], null, null, null, {}, null)).window.document.querySelector('.episode-chart-average'), 'no votes means no mean line');
+assert(!chartDoc.querySelector('.episode-column-bar .episode-column-markers'), 'markers never obscure scores');
+assert.equal(chartDoc.querySelectorAll('.episode-column-label .episode-column-markers').length, episodes.length);
+assert(/\.episode-column\s*\{[^}]*flex:\s*1 1 0;[^}]*min-width:\s*56px/s.test(css), 'columns fill available width with a fixed minimum');
+assert(/\.episode-chart-average\s*\{[^}]*bottom:\s*calc\(28px \+ 22px \+ var\(--episode-bar-position\) \* var\(--episode-height-range\)\)/s.test(css));
+assert(css.includes('--episode-graph-height: 64px') && css.includes('--episode-graph-height: 56px'));
+assert(!/\.episode-column\.is-selected \.episode-column-score\s*\{/.test(css), 'selected score has no inner plaque');
+assert.equal(chartDoc.querySelectorAll('.episode-detail').length, 1, 'only selected episode has a detail card');
+assert(chartHtml.includes('8.5'));
+assert(chartHtml.includes('&lt;Pilot&gt;'));
+assert(!chartDoc.querySelector('script'), 'TMDB descriptions are escaped');
+assert(!chartHtml.includes('TMDB'), 'season score UI never uses TMDB votes or labels');
+assert(chartDoc.querySelector('.episode-community-score').textContent.includes('8.0'));
+const oldPublicStats = manager.publicEpisodeStats;
+for (const [count, form, episodeForm, seasonForm] of [
+    [1, 'оценка', 'серия', 'сезон'], [2, 'оценки', 'серии', 'сезона'],
+    [5, 'оценок', 'серий', 'сезонов'], [11, 'оценок', 'серий', 'сезонов'],
+    [21, 'оценка', 'серия', 'сезон'], [22, 'оценки', 'серии', 'сезона'],
+    [25, 'оценок', 'серий', 'сезонов']
+]) {
+    assert.equal(manager.getPluralRatings(count), form);
+    assert(manager.getEpisodeSeasonSummary([], { average: 9, votes: count }, 1).endsWith(`${count} ${form}`));
+    manager.publicEpisodeStats = { movieId: 777, episodes: { '1:1': { sum: count * 9, count, avg: 9 } } };
+    assert(manager.getCommunityEpisodeLabel({ seasonNumber: 1, episodeNumber: 1 }).endsWith(`${count} ${form}`));
+    assert.equal(manager.getPluralEpisodes(count), episodeForm);
+    assert.equal(manager.getPluralSeasons(count), seasonForm);
+}
+assert.equal(manager.getPluralRatings(1001), 'оценок', 'compact thousands use the genitive plural');
+manager.publicEpisodeStats = oldPublicStats;
+manager.publicEpisodeStats = { movieId: 777, episodes: {} };
+const absentStatsHtml = manager.renderEpisodesList(episodes);
+assert(absentStatsHtml.includes('оценок пока нет'));
+assert(!new JSDOM(absentStatsHtml).window.document.querySelector('.episode-chart-average'));
+manager.publicEpisodeStats = oldPublicStats;
+manager.selectedMovie.backdropUrl = 'https://example.com/backdrop.jpg';
+assert(manager.renderSelectedEpisode(episodes[0]).includes('episode-still-placeholder-label'));
+assert(manager.renderSelectedEpisode(episodes[0]).includes('https://example.com/backdrop.jpg'));
+delete manager.selectedMovie.backdropUrl;
+assert(manager.renderSelectedEpisode(episodes[0]).includes('Кадр отсутствует'));
+assert(/\.episode-column\s*\{[^}]*border:\s*0 !important;[^}]*box-shadow:\s*none !important;/s.test(css));
+assert(!chartHtml.includes('episode-rating-popover'), 'direct stars replace the old popover');
+assert(css.includes('overflow-x: auto'));
+assert(css.includes(':focus-visible'));
+console.log('  ✅ Season tabs, community mean, bar heights, defaults and safe single-card rendering');
 
-// 22. empty season disables expansion
-const emptySeason = [{
-    number: 19,
-    name: 'Сезон 19',
-    episodeCount: 0,
-    airDate: '2027-01-01',
-    isSpecial: false
-}];
-const emptySeasonHtml = manager.renderSeasonsTab(emptySeason, null, null, 777);
-assert(emptySeasonHtml.includes('Серии пока не опубликованы'), '22. Empty season shows muted empty notice');
-assert(!emptySeasonHtml.includes('data-action="toggle-season"'), '22. Empty season omits active toggle button');
-console.log('  ✅ 22. Empty season (0 episodes) disables expansion and shows muted notice');
+// Real DOM tests exercise loading, keyboard selection and non-disruptive progress updates.
+context.isSeriesMedia = movie => movie?.type === 'TV_SERIES';
+const browser = Object.create(MovieDetailsManager.prototype);
+browser.escapeHtml = escapeHtmlHelper;
+browser.selectedMovie = { kinopoiskId: 777, tmdbId: 888, type: 'TV_SERIES' };
+browser.publicEpisodeStats = oldPublicStats;
+browser.currentEpisodeHistory = {};
+browser.capturePageContext = () => ({});
+browser.isPageContextCurrent = () => true;
+browser.playbackController = { currentSelection: null };
+const browserSeasons = [{ number: 1, episodeCount: 4, airDate: '2020-01-01' }, { number: 2, episodeCount: 2, airDate: '2020-01-01' }];
+const browserDom = new JSDOM(`<div id="tab-seasons">${browser.renderSeasonsTab(browserSeasons, null, null, 888)}</div>`);
+context.document = browserDom.window.document;
+const detailCalls = [];
+browser.tmdbService = { async getSeasonDetails(id, seasonNumber, options) {
+    detailCalls.push({ id, seasonNumber, options });
+    return { airDate: '2020-01-01', episodes: episodes.map(ep => ({ ...ep, seasonNumber })) };
+} };
+await browser.loadSelectedSeason();
+assert.equal(detailCalls.length, 1, 'first selected season lazily loads once');
+assert.equal(browser.seasonsBrowserEpisode, 1);
+const liveDoc = browserDom.window.document;
+const publicBefore = browser.publicEpisodeStats;
+browser.adjustPublicEpisodeScore(1, 1, 8, 10);
+assert.equal(browser.publicEpisodeStats.episodes['1:1'].sum, 802);
+assert.equal(browser.publicEpisodeStats.episodes['1:1'].count, 100);
+browser.adjustPublicEpisodeScore(1, 3, null, 7);
+assert.equal(browser.publicEpisodeStats.episodes['1:3'].avg, 7);
+assert(liveDoc.querySelector('.season-browser-summary').textContent.includes('401'));
+browser.adjustPublicEpisodeScore(1, 3, 7, null);
+assert(!browser.publicEpisodeStats.episodes['1:3']);
+browser.publicEpisodeStats = publicBefore;
+browser.refreshEpisodeCommunityUI();
+let statsReads = 0;
+context.firebaseManager = { db: { collection(name) {
+    assert.equal(name, 'seriesEpisodeStats');
+    return { doc(id) { assert.equal(id, '777'); return { async get() { statsReads++; return { exists: true, data: () => publicBefore }; } }; } };
+} } };
+await browser.loadPublicEpisodeStats(browser.selectedMovie);
+await browser.loadPublicEpisodeStats(browser.selectedMovie);
+assert.equal(statsReads, 1, 'one public read per page, including guests');
+assert.equal(browser.getPublicEpisodeScore(episodes[0]).avg, 8);
+await browser.loadPublicEpisodeStats({ kinopoiskId: 778, type: 'movie' });
+assert.equal(statsReads, 1, 'films do not read episode aggregates');
+browser.pageGeneration = 2;
+context.firebaseManager.db.collection = () => ({ doc: () => ({ async get() { throw new Error('permission-denied'); } }) });
+await browser.loadPublicEpisodeStats(browser.selectedMovie);
+assert.equal(browser.getPublicEpisodeScore(episodes[0]), null, 'failed public reads leave an empty usable catalog');
+browser.pageGeneration = 3;
+context.firebaseManager.db.collection = () => ({ doc: () => ({ async get() { return { exists: false }; } }) });
+await browser.loadPublicEpisodeStats(browser.selectedMovie);
+assert.equal(browser.getPublicEpisodeScore(episodes[0]), null, 'missing aggregate documents mean no ratings');
+browser.publicEpisodeStats = publicBefore;
+browser.refreshEpisodeCommunityUI();
+const chartRoot = liveDoc.querySelector('.episode-chart');
+Object.defineProperties(chartRoot, {
+    clientWidth: { configurable: true, value: 600 },
+    scrollWidth: { configurable: true, value: 600 }
+});
+chartRoot.scrollLeft = 15;
+browser.updateEpisodeChartScrollControls();
+assert([...liveDoc.querySelectorAll('.episode-chart-scroll')].every(button => button.hidden), 'fitting columns never show scroll arrows');
+Object.defineProperty(chartRoot, 'scrollWidth', { configurable: true, value: 900 });
+chartRoot.scrollLeft = 0;
+browser.updateEpisodeChartScrollControls();
+assert(liveDoc.querySelector('[data-action="scroll-episode-chart"][data-direction="prev"]').hidden);
+assert(!liveDoc.querySelector('[data-action="scroll-episode-chart"][data-direction="next"]').hidden);
+chartRoot.scrollLeft = 300;
+browser.updateEpisodeChartScrollControls();
+assert(!liveDoc.querySelector('[data-action="scroll-episode-chart"][data-direction="prev"]').hidden);
+assert(liveDoc.querySelector('[data-action="scroll-episode-chart"][data-direction="next"]').hidden);
+const cardRoot = liveDoc.querySelector('.episode-detail');
+browser.selectSeasonEpisode(2, { scroll: false });
+assert.equal(browser.seasonsBrowserEpisode, 2);
+assert.equal(liveDoc.querySelector('.episode-column.is-selected').dataset.episodeNumber, '2');
+assert.equal(liveDoc.querySelector('.episode-title').textContent, 'Second');
+assert.equal(liveDoc.querySelector('.episode-chart'), chartRoot, 'episode selection preserves chart DOM');
+let prevented = false;
+browser.handleSeasonsBrowserKeydown({ target: liveDoc.querySelector('.episode-column.is-selected'), key: 'End', preventDefault() { prevented = true; } });
+assert(prevented);
+assert.equal(browser.seasonsBrowserEpisode, 4, 'End selects final episode');
+browser.handleSeasonsBrowserKeydown({ target: liveDoc.querySelector('.episode-column.is-selected'), key: 'Home', preventDefault() {} });
+assert.equal(browser.seasonsBrowserEpisode, 1);
+await browser.navigateSeasonEpisode('next');
+assert.equal(browser.seasonsBrowserEpisode, 2);
+browser.selectSeasonEpisode(4, { scroll: false });
+await browser.navigateSeasonEpisode('next');
+assert.equal(browser.seasonsBrowserSeason, 2, 'next on final episode advances season');
+assert.equal(browser.seasonsBrowserEpisode, 1, 'next season starts with its first released episode');
+await browser.navigateSeasonEpisode('prev');
+assert.equal(browser.seasonsBrowserSeason, 1);
+assert.equal(browser.seasonsBrowserEpisode, 4, 'previous at start goes to prior season final episode');
+assert.equal(detailCalls.length, 2, 'returning to a loaded season uses in-memory cache');
+await browser.handleSeasonPillSelect(1);
+browser.selectSeasonEpisode(1, { scroll: false });
+const stableChart = liveDoc.querySelector('.episode-chart');
+const stableCard = liveDoc.querySelector('.episode-detail');
+browser.currentProgressRecord = { season: 1, episode: 1, timestamp: 30, duration: 100, completed: false };
+browser.currentEpisodeHistory = { '1:1': { cAt: 100 } };
+browser.updateSeasonsBrowserState();
+assert.equal(liveDoc.querySelector('.episode-chart'), stableChart);
+assert.equal(liveDoc.querySelector('.episode-detail'), stableCard, 'progress patches existing detail card');
+assert.equal(liveDoc.querySelector('[data-marker="watched"]').hidden, false);
+assert.equal(liveDoc.querySelector('[data-marker="resume"]').hidden, false, 'rewatch supports watched and resume together');
+assert.equal(liveDoc.querySelector('[data-action="toggle-episode-watched"]').getAttribute('aria-pressed'), 'true');
+assert.equal(liveDoc.querySelector('[data-action="play-episode"]').dataset.timestamp, '30');
+browser.progressService = { async getProgress() { return { season: 1, episode: 1, timestamp: 40, duration: 100 }; } };
+browser.episodeHistoryService = { async getHistory() { return { '1:1': { cAt: 100 } }; } };
+await browser.refreshSeasonsProgress();
+assert.equal(liveDoc.querySelector('.episode-chart'), stableChart, 'refresh keeps the strip DOM and scroll state');
+assert.equal(liveDoc.querySelector('.episode-detail'), stableCard, 'refresh patches existing card');
+assert.equal(liveDoc.querySelector('[data-action="play-episode"]').dataset.timestamp, '40');
+browser.playbackController.currentSelection = { kinopoiskId: 777, seasonNumber: 1, episodeNumber: 2 };
+browser.updateActiveEpisodePlayingState(browser.playbackController.currentSelection);
+assert.equal(browser.seasonsBrowserEpisode, 2, 'player switches select matching open-season episode');
+assert.equal(liveDoc.querySelector('.episode-chart'), stableChart);
+browser.updateActiveEpisodePlayingState({ kinopoiskId: 777, seasonNumber: 2, episodeNumber: 3 });
+assert.equal(browser.seasonsBrowserSeason, 1, 'player switching another season does not replace browsing season');
 
-// 23. nextEpisode Hero preserved
-const heroNextEpMovie = {
-    kinopoiskId: 401515,
-    name: "It's Always Sunny",
-    type: 'tv-series',
-    isSeries: true,
-    nextEpisode: nextEpisodeFixture
+// A failed load has a visible retry, with a forced fetch that can recover.
+browser.tmdbService.getSeasonDetails = async () => { throw new Error('offline'); };
+await browser.loadSelectedSeason(1, { forceRefresh: true });
+assert(liveDoc.querySelector('[data-action="retry-season"]'));
+let forced = false;
+browser.tmdbService.getSeasonDetails = async (id, seasonNumber, options) => {
+    forced = options.forceRefresh;
+    return { episodes: episodes.map(ep => ({ ...ep, seasonNumber })) };
 };
-const heroNextEpHtml = manager.renderHeroNextEpisode(heroNextEpMovie);
-assert(heroNextEpHtml.includes('hero-next-episode-card'), '23. Hero nextEpisode card rendered');
-assert(heroNextEpHtml.includes('S18E9'), '23. S18E9 code in hero card');
-assert(heroNextEpHtml.includes('The Gang Goes to Europe'), '23. Title in hero card');
-console.log('  ✅ 23. Hero nextEpisode promotion card 100% preserved');
+await browser.loadSelectedSeason(1, { forceRefresh: true });
+assert(forced);
+assert(liveDoc.querySelector('.episode-detail'));
 
-// 24. duplicate Seasons nextEpisode banner removed
-assert(!seasonsHtml18.includes('class="next-episode-banner"'), '24. Duplicate next-episode-banner removed from Seasons tab');
-console.log('  ✅ 24. Duplicate next-episode-banner removed from Seasons tab');
+// A slower response for an old selection never paints over the current season.
+let releaseOld;
+browser.tmdbService.getSeasonDetails = (id, seasonNumber) => seasonNumber === 1
+    ? new Promise(resolve => { releaseOld = resolve; })
+    : Promise.resolve({ episodes: [{ ...episodes[0], seasonNumber: 2, name: 'Current season' }] });
+const oldLoad = browser.loadSelectedSeason(1, { forceRefresh: true });
+await browser.handleSeasonPillSelect(2, { forceRefresh: true });
+releaseOld({ episodes: [{ ...episodes[0], name: 'Stale season' }] });
+await oldLoad;
+assert.equal(liveDoc.querySelector('.episode-title').textContent, 'Current season');
+assert.equal(browser.seasonsBrowserSeason, 2);
 
-// 25. horizontal overflow contained inside selector
-assert(css.includes('.seasons-nav-pills {'), '25. .seasons-nav-pills in CSS');
-assert(css.includes('overflow-x: auto;'), '25. overflow-x: auto specified for pill rail');
-console.log('  ✅ 25. Horizontal overflow contained inside scrollable pill rail');
+// Returning to an in-flight season shares the fetch and still paints the latest request.
+let releaseShared;
+let sharedCalls = 0;
+browser.seasonsBrowserCache.delete(1);
+browser.tmdbService.getSeasonDetails = () => {
+    sharedCalls += 1;
+    return new Promise(resolve => { releaseShared = resolve; });
+};
+const firstShared = browser.handleSeasonPillSelect(1);
+const secondShared = browser.handleSeasonPillSelect(1);
+assert.equal(sharedCalls, 1);
+releaseShared({ episodes: [{ ...episodes[0], name: 'Shared season' }] });
+await Promise.all([firstShared, secondShared]);
+assert.equal(liveDoc.querySelector('.episode-title').textContent, 'Shared season');
+assert.equal(liveDoc.querySelector('#season-browser-panel').hasAttribute('aria-busy'), false);
 
-// 26. no body overflow
-assert(css.includes('box-sizing: border-box;'), '26. box-sizing: border-box specified');
-assert(css.includes('max-width: 100%;'), '26. max-width: 100% bounds pill rail');
-console.log('  ✅ 26. Zero body overflow contracts verified');
+// A forced replacement must remain cached even when the older fetch finishes last.
+let releaseSuperseded, releaseReplacement;
+browser.tmdbService.getSeasonDetails = () => new Promise(resolve => {
+    if (!releaseSuperseded) releaseSuperseded = resolve;
+    else releaseReplacement = resolve;
+});
+const superseded = browser.loadSelectedSeason(1, { forceRefresh: true });
+const replacement = browser.loadSelectedSeason(1, { forceRefresh: true });
+releaseReplacement({ episodes: [{ ...episodes[0], name: 'Replacement season' }] });
+await replacement;
+releaseSuperseded({ episodes: [{ ...episodes[0], name: 'Superseded season' }] });
+await superseded;
+assert.equal(liveDoc.querySelector('.episode-title').textContent, 'Replacement season');
+assert.equal(browser.seasonsBrowserCache.get(1).episodes[0].name, 'Replacement season');
 
-// 27. keyboard/focus states retained
-assert(css.includes('.season-pill-btn:focus-visible'), '27. :focus-visible ring for season pills');
-assert(seasonsHtml18.includes('role="tab"'), '27. ARIA role tab present');
-assert(seasonsHtml18.includes('role="tablist"'), '27. ARIA role tablist present');
-console.log('  ✅ 27. Keyboard focus-visible rings and ARIA attributes retained');
+// Keyboard stars choose adjacent values and stop at the ends of the scale.
+browser.currentUser = { uid: 'user' };
+liveDoc.querySelector('.episode-rating-slot').innerHTML = browser.renderEpisodeRatingControl(episodes[0]);
+const chosen = [];
+browser.changeEpisodeRating = async (button, score) => { chosen.push(score); };
+const radios = [...liveDoc.querySelectorAll('[role="radio"]')];
+assert.equal(radios.length, 10);
+browser.handleEpisodeRatingKeydown({ target: radios[0], key: 'ArrowRight', preventDefault() {} });
+browser.handleEpisodeRatingKeydown({ target: radios[1], key: 'End', preventDefault() {} });
+assert.deepEqual(chosen, [2, 10]);
+browser.previewEpisodeStars(radios[0].closest('.episode-rating-control'), 4);
+assert.equal(radios.filter(star => star.classList.contains('is-filled')).length, 4, 'hover preview fills up to the hovered value');
+const seasonKeys = [];
+browser.handleSeasonPillSelect = async season => { seasonKeys.push(season); };
+const seasonTabs = [...liveDoc.querySelectorAll('.season-tab')];
+browser.handleSeasonsBrowserKeydown({ target: seasonTabs[0], key: 'ArrowRight', preventDefault() {} });
+browser.handleSeasonsBrowserKeydown({ target: seasonTabs[1], key: 'Home', preventDefault() {} });
+assert.deepEqual(seasonKeys, [2, 1], 'season arrows and Home load the targeted tab');
+context.document = documentStub;
+console.log('  ✅ Lazy cache, retry/race, navigation, keyboard and targeted progress state');
 
-// 28. long series remains usable
-assert(seasonsHtml18.includes('18 сезонов'), '28. Total count of 18 seasons cleanly communicated');
-console.log('  ✅ 28. Long-running series (18 seasons) tested and verified');
-
-// 29. The first optimistic episode rating works before the private document load completes.
+// Episode updates are independent, including before the private read completes.
+context.isSeriesMedia = movie => movie?.type === 'TV_SERIES';
+manager.currentUser = { uid: 'user' };
+manager.selectedMovie = { kinopoiskId: 777, tmdbId: 888, type: 'TV_SERIES' };
 manager.currentSeriesEpisodeRatings = null;
-manager.currentPersonalRating = null;
-manager.selectedMovie = { kinopoiskId: 777, type: 'TV_SERIES' };
-manager.capturePageContext = () => ({ movieId: 777 });
-manager.patchPersonalRating = rating => { manager.optimisticPatchedRating = rating; };
+manager.currentPersonalRating = { rating: 8, ratingSource: 'episodes', episodeAverage: 8.4, episodesRatedCount: 12 };
+const titleRating = manager.currentPersonalRating;
+manager.currentRating = 8;
 manager.applyOptimisticEpisodeRating(1, 1, 9);
-assert.equal(manager.currentSeriesEpisodeRatings.mode, 'episodes', '29. A missing previous state enters aggregate mode');
-assert.equal(manager.currentSeriesEpisodeRatings.ratedCount, 1);
-assert.equal(manager.currentPersonalRating.ratingSource, 'episodes');
-assert.equal(manager.currentPersonalRating.episodeAverage, 9);
-console.log('  ✅ 29. First optimistic episode rating renders without waiting for the private state read');
+assert.equal(manager.currentSeriesEpisodeRatings.episodes['1:1'].r, 9);
+assert.equal(manager.currentPersonalRating, titleRating, 'episode writes leave the title rating untouched');
+assert.equal(manager.currentRating, 8);
+assert.equal(manager.getPersonalRatingDisplayValue(titleRating), 8, 'legacy average is ignored');
+manager.applyOptimisticEpisodeRating(1, 1, null);
+assert.equal(manager.currentSeriesEpisodeRatings.exists, false);
+assert.equal(manager.currentPersonalRating, titleRating, 'last episode removal preserves the title rating');
 
-console.log('\n🎉 ALL 29 MovieDetails Rating + Seasons Refinement Tests Passed Successfully!\n');
+const label = new MockElement();
+const rateButton = new MockElement('button');
+rateButton.querySelector = selector => selector === '.rate-movie-label' ? label : null;
+manager.elements = { movieDetailsContainer: { querySelector: () => rateButton } };
+manager.isPageContextCurrent = () => true;
+manager.patchPersonalRating(titleRating, {});
+assert.equal(label.textContent, 'Ваша оценка: 8/10');
+manager.selectedMovie.type = 'movie';
+manager.patchPersonalRating({ rating: 7 }, {});
+assert.equal(label.textContent, 'Ваша оценка: 7/10', 'all media use the same title label');
+manager.patchPersonalRating(null, {});
+assert.equal(label.textContent, 'Оценить');
+manager.selectedMovie.type = 'TV_SERIES';
+assert(!manager.renderSeasonsTab(singleSeason, null, null, 888).includes('seriesEpisodeRatingSummary'));
+assert(!manager.renderSeasonsTab(singleSeason, null, null, 888).includes('season-card__episode-average'));
+manager.episodeRatingsPermissionDeniedMovieId = null;
+manager.currentSeriesEpisodeRatings = { episodes: { '1:1': { r: 8 } }, exists: true };
+const ratedEpisodeHtml = manager.renderEpisodesList([{
+    seasonNumber: 1, episodeNumber: 1, name: 'Pilot', airDate: '2020-01-01', runtime: 24
+}]);
+const ratedDoc = new JSDOM(ratedEpisodeHtml).window.document;
+assert.equal(ratedDoc.querySelectorAll('[role="radiogroup"]').length, 1);
+assert.equal(ratedDoc.querySelectorAll('[role="radio"]').length, 10);
+assert(ratedEpisodeHtml.includes('Вы ★ 8'));
+assert.equal(ratedDoc.querySelector('[data-rating="8"]').getAttribute('aria-checked'), 'true');
+assert(ratedDoc.querySelector('[data-action="episode-rating-remove"]'));
+manager.currentUser = null;
+assert(manager.renderEpisodeRatingControl(episodes[0]).includes('Войдите'), 'guest gets sign-in guidance');
+manager.currentUser = { uid: 'user' };
+manager.selectedMovie.kinopoiskId = null;
+assert(!manager.renderEpisodeRatingControl(episodes[0]).includes('role="radio"'), 'TMDB-only series cannot be rated');
+manager.selectedMovie.kinopoiskId = 777;
+const futureRatingDoc = new JSDOM(manager.renderEpisodeRatingControl(episodes[3])).window.document;
+assert([...futureRatingDoc.querySelectorAll('[role="radio"]')].every(star => star.disabled), 'future episode stars are disabled');
+
+// A denied private write rolls back only the episode state.
+const beforeDeniedWrite = manager.currentSeriesEpisodeRatings;
+const publicBeforeDeniedWrite = manager.publicEpisodeStats;
+const beforeTitleRating = manager.currentPersonalRating;
+const trigger = { setAttribute() {}, focus() {} };
+const popover = {};
+const control = {
+    dataset: { seasonNumber: '1', episodeNumber: '1', released: 'true' },
+    classList: { remove() {} },
+    querySelector: selector => selector === '.episode-rating-popover' ? popover : trigger
+};
+manager.episodeRatingUiVersion = 0;
+manager.capturePageContext = () => ({});
+context.firebaseManager = { getSeriesEpisodeRatingService: () => ({
+    async setEpisodeRating() { throw Object.assign(new Error('permission-denied'), { code: 'permission-denied' }); }
+}) };
+let toastMessage = '';
+context.Utils.showToast = message => { toastMessage = message; };
+await manager.changeEpisodeRating({ closest: () => control }, 9);
+assert.equal(manager.currentSeriesEpisodeRatings, beforeDeniedWrite);
+assert.equal(manager.publicEpisodeStats, publicBeforeDeniedWrite, 'failed writes roll back the public optimistic contribution');
+assert.equal(manager.currentPersonalRating, beforeTitleRating);
+assert.equal(manager.isEpisodeRatingMutationPending, false);
+assert.equal(toastMessage, i18n.get('movie_details.series_episode_rules_error'));
+assert(/\.episode-detail-nav\s*\{[^}]*top:\s*50%;[^}]*translateY\(-50%\)/s.test(css));
+assert(!/\.episode-detail(?:\:hover|\:focus-within)[^{]*\.episode-detail-nav/.test(css), 'neither arrow relies on hover');
+assert(!/\.episode-detail-nav\[data-direction="prev"\]\s*\{[^}]*opacity:\s*0/s.test(css));
+const selectedStyle = css.match(/\.episode-column\.is-selected \.episode-column-bar\s*\{([^}]+)\}/)[1];
+assert(selectedStyle.includes('background: var(--ui-color-interactive)'));
+assert(selectedStyle.includes('color: var(--ui-color-page)'));
+assert(!selectedStyle.includes('warning') && !selectedStyle.includes('gradient'));
+assert(css.includes('.episode-column:focus-visible .episode-column-label'));
+const boundaryDoc = new JSDOM(manager.renderSelectedEpisode({ seasonNumber: 1, episodeNumber: 1, name: 'Only', airDate: '2020-01-01' })).window.document;
+const boundaryArrows = [...boundaryDoc.querySelectorAll('.episode-detail-nav')];
+assert.equal(boundaryArrows.length, 2);
+assert(boundaryArrows.every(button => !button.hidden && button.disabled && button.getAttribute('aria-disabled') === 'true'));
+
+// Saved ratings mark watched once, and removing/changing a rating never toggles it off.
+let markCalls = 0, ratingWrites = 0, refreshed = 0;
+manager.currentEpisodeHistory = {};
+manager.refreshSeasonsProgress = async () => { refreshed++; };
+manager.episodeHistoryService = {
+    async markCompleted(movieId, season, episode, options) {
+        markCalls++;
+        assert.equal(options.source, 'MANUAL');
+        return { [`${season}:${episode}`]: { cAt: 123 } };
+    },
+    async unmarkCompleted() { throw new Error('rating must never unmark watched'); }
+};
+context.firebaseManager = { getSeriesEpisodeRatingService: () => ({
+    async setEpisodeRating({ rating }) { ratingWrites++; return { state: { episodes: { '1:1': { r: rating } } } }; },
+    async removeEpisodeRating() { return { state: { episodes: {} } }; }
+}) };
+await manager.changeEpisodeRating({ closest: () => control }, 9);
+assert.equal(markCalls, 1);
+assert.equal(refreshed, 1);
+assert(manager.currentEpisodeHistory['1:1']);
+await manager.changeEpisodeRating({ closest: () => control }, 7);
+await manager.changeEpisodeRating({ closest: () => control }, null);
+assert.equal(markCalls, 1);
+assert(manager.currentEpisodeHistory['1:1'], 'removal preserves completion');
+
+// Concurrent star clicks share one rating mutation and one watched write.
+manager.currentEpisodeHistory = {};
+let finishMark;
+manager.episodeHistoryService.markCompleted = async () => {
+    markCalls++;
+    return new Promise(resolve => { finishMark = resolve; });
+};
+const rapid = manager.changeEpisodeRating({ closest: () => control }, 8);
+await manager.changeEpisodeRating({ closest: () => control }, 10);
+await Promise.resolve();
+assert.equal(ratingWrites, 3, 'pending star clicks do not duplicate the transaction');
+assert.equal(markCalls, 2);
+finishMark({ '1:1': { cAt: 456 } });
+await rapid;
+
+manager.currentEpisodeHistory = {};
+manager.episodeHistoryService.markCompleted = async () => { throw new Error('storage offline'); };
+await manager.changeEpisodeRating({ closest: () => control }, 6);
+assert.equal(manager.currentSeriesEpisodeRatings.episodes['1:1'].r, 6, 'watched failure does not roll back a saved score');
+assert.equal(toastMessage, i18n.get('movie_details.series_episode_watched_error'));
+const marksBeforeFuture = markCalls;
+control.dataset.released = 'false';
+await manager.changeEpisodeRating({ closest: () => control }, 9);
+assert.equal(markCalls, marksBeforeFuture);
+assert.equal(manager.currentSeriesEpisodeRatings.episodes['1:1'].r, 6);
+control.dataset.released = 'true';
+console.log('  ✅ Independent title ratings, personal badges and inline episode rating controls passed');
+
+console.log('\n🎉 MovieDetails Rating + Seasons Refinement Tests Passed Successfully!\n');

@@ -130,7 +130,10 @@ const escapeHtmlHelper = (t) => {
         .replace(/'/g, '&#039;');
 };
 
+const utilsContext = vm.createContext({ module: { exports: {} } });
+vm.runInContext(fs.readFileSync(new URL('../src/shared/utils/Utils.js', import.meta.url), 'utf8'), utilsContext);
 const utilsStub = {
+    selectRussianPlural: utilsContext.module.exports.selectRussianPlural,
     createPageStateManager: () => ({}),
     escapeHtml: escapeHtmlHelper,
     normalizeRatingComment: (v) => {
@@ -1233,10 +1236,10 @@ const seriesWithTmdbSeasons = {
 manager.resolveAndRenderSeasons(seriesWithTmdbSeasons);
 assert.strictEqual(scraperCalledCount, 0, 'Scraper must NOT be called when TMDB structured seasons exist');
 assert.strictEqual(tabBtnStub.style.display, 'inline-block', 'Seasons tab button displayed');
-assert(tabPaneStub.innerHTML.includes('Сезон 1'), 'Rendered season 1');
-assert(tabPaneStub.innerHTML.includes('Сезон 2'), 'Rendered season 2');
-assert(tabPaneStub.innerHTML.includes('10 серий'), 'Rendered Russian pluralized episode count');
-assert(tabPaneStub.innerHTML.includes('8 серий'), 'Rendered Russian pluralized episode count');
+assert(tabPaneStub.innerHTML.includes('data-season-number="1"'), 'Rendered season 1 tab');
+assert(tabPaneStub.innerHTML.includes('data-season-number="2"'), 'Rendered season 2 tab');
+assert(tabPaneStub.innerHTML.includes('role="tablist"'), 'Season navigation exposes tab semantics');
+assert(!tabPaneStub.innerHTML.includes('season-expand-btn'), 'Accordion controls are removed');
 assert(tabPaneStub.innerHTML.includes('Сезоны'), 'Rendered seasons tab header');
 assert(tabPaneStub.innerHTML.includes('2 сезона'), 'Rendered total season count');
 console.log('  ✅ 22.1 TMDB structured seasons render synchronously with 0 scraper calls');
@@ -1259,8 +1262,8 @@ const seriesWithKpSeasonsInfo = {
 manager.resolveAndRenderSeasons(seriesWithKpSeasonsInfo);
 assert.strictEqual(scraperCalledCount, 0, 'Scraper must NOT be called when KP structured seasonsInfo exists');
 assert.strictEqual(tabBtnStub.style.display, 'inline-block', 'Seasons tab button displayed');
-assert(tabPaneStub.innerHTML.includes('Сезон 1'), 'Rendered season 1 from KP');
-assert(tabPaneStub.innerHTML.includes('7 серий'), 'Rendered 7 episodes');
+assert(tabPaneStub.innerHTML.includes('data-season-number="1"'), 'Rendered season 1 from KP');
+assert(tabPaneStub.innerHTML.includes('role="tablist"'), 'KP metadata retains season navigation');
 console.log('  ✅ 22.2 KP structured seasonsInfo renders with 0 scraper calls');
 
 // 22.3 Scraper fallback invoked when structured data is empty
@@ -1295,8 +1298,8 @@ const seriesWithSpecials = {
 };
 
 const htmlSeasons = manager.renderSeasonsTab(seriesWithSpecials.seasons, null, seriesWithSpecials.lastEpisode);
-assert(htmlSeasons.includes('badge-special">Спецматериалы</span>'), 'Special season marked with special badge');
-assert(htmlSeasons.includes('season-pill-btn--specials'), 'Rendered specials navigation pill');
+assert(htmlSeasons.includes('Спецвыпуски'), 'Specials have a dedicated final tab');
+assert(htmlSeasons.includes('data-season-number="0"'), 'Specials retain season-zero identity');
 console.log('  ✅ 23.1 Special season 0 and navigation pills render correctly');
 
 // =========================================================================
@@ -1316,174 +1319,18 @@ assert.doesNotThrow(() => {
 console.log('  ✅ 24.1 Scraper failure handled gracefully without breaking page');
 
 // =========================================================================
-// 25. Phase 1F: Lazy Season Expand & Request Invariants
-// =========================================================================
-console.log('\n--- 25. Testing Phase 1F: Lazy Season Expand & Request Invariants ---');
-
-let tmdbSeasonDetailsCalls = [];
-manager.tmdbService = {
-    getSeasonDetails: async (tmdbId, seasonNumber, options = {}) => {
-        tmdbSeasonDetailsCalls.push({ tmdbId, seasonNumber, options });
-        return {
-            tmdbId: Number(tmdbId),
-            seasonNumber: Number(seasonNumber),
-            name: `Сезон ${seasonNumber}`,
-            overview: `Описание сезона ${seasonNumber}`,
-            posterUrl: `https://image.tmdb.org/t/p/w500/season_${seasonNumber}.jpg`,
-            airDate: '2022-08-21',
-            episodes: [
-                {
-                    tmdbId: Number(tmdbId),
-                    seasonNumber: Number(seasonNumber),
-                    episodeNumber: 1,
-                    name: 'Наследники Дракона',
-                    overview: 'Король Визерис выбирает наследника.',
-                    airDate: '2022-08-21',
-                    runtime: 66,
-                    stillUrl: 'https://image.tmdb.org/t/p/w500/ep1.jpg',
-                    voteAverage: 8.4,
-                    voteCount: 250,
-                    episodeType: 'standard',
-                    source: 'tmdb'
-                },
-                {
-                    tmdbId: Number(tmdbId),
-                    seasonNumber: Number(seasonNumber),
-                    episodeNumber: 2,
-                    name: '', // Missing title -> fallback
-                    overview: null, // Missing overview -> hidden
-                    airDate: '2026-12-31', // Future episode -> upcoming badge
-                    runtime: 58,
-                    stillUrl: null,
-                    voteAverage: null,
-                    voteCount: null,
-                    episodeType: 'standard',
-                    source: 'tmdb'
-                }
-            ]
-        };
-    }
-};
-
-// 25.1 Initial TV load renders summaries with ZERO season-detail requests
-tmdbSeasonDetailsCalls = [];
-const tvSeriesMovie = {
-    kinopoiskId: 1317565,
-    tmdbId: 94997,
-    name: 'Дом Дракона',
-    isSeries: true,
-    seasons: [
-        { number: 1, name: 'Сезон 1', episodeCount: 10, airDate: '2022-08-21', isSpecial: false },
-        { number: 2, name: 'Сезон 2', episodeCount: 8, airDate: '2024-06-16', isSpecial: false }
-    ],
-    nextEpisode: { seasonNumber: 1, episodeNumber: 2, name: 'Серия 2' }
-};
-
-manager.selectedMovie = tvSeriesMovie;
-manager.resolveAndRenderSeasons(tvSeriesMovie);
-assert.strictEqual(tmdbSeasonDetailsCalls.length, 0, 'Initial series load must make EXACTLY 0 season detail requests');
-console.log('  ✅ 25.1 Initial series load executes 0 episode requests');
-
-// 25.2 User clicks "Показать серии" on Season 1 -> EXACTLY 1 request made
-const s1Card = new MockElement();
-const s1Panel = new MockElement();
-s1Panel.className = 'season-episodes-panel';
-s1Card.appendChild(s1Panel);
-
-const s1Btn = new MockElement();
-s1Btn.setAttribute('data-action', 'toggle-season');
-s1Btn.setAttribute('data-season-number', '1');
-s1Btn.setAttribute('data-tmdb-id', '94997');
-s1Btn.setAttribute('data-episode-count', '10');
-s1Btn.setAttribute('aria-expanded', 'false');
-const s1BtnText = new MockElement();
-s1BtnText.className = 'season-expand-text';
-s1BtnText.textContent = 'Показать серии';
-s1Btn.appendChild(s1BtnText);
-s1Card.appendChild(s1Btn);
-
-await manager.toggleSeasonEpisodes(s1Btn, 1, 94997, 10);
-assert.strictEqual(tmdbSeasonDetailsCalls.length, 1, 'Clicking Season 1 triggers exactly 1 TMDB season request');
-assert.strictEqual(s1Btn.getAttribute('aria-expanded'), 'true', 'Button aria-expanded is true');
-assert.strictEqual(s1BtnText.textContent, 'Скрыть серии', 'Button text toggles to Скрыть серии');
-assert(s1Panel.innerHTML.includes('Наследники Дракона'), 'Season 1 episodes rendered in panel');
-console.log('  ✅ 25.2 Expanding Season 1 executes exactly 1 lazy request');
-
-// 25.3 User collapses and reopens Season 1 -> 0 extra requests (already loaded in DOM / cached)
-await manager.toggleSeasonEpisodes(s1Btn, 1, 94997, 10);
-assert.strictEqual(s1Btn.getAttribute('aria-expanded'), 'false', 'Button aria-expanded is false after collapse');
-assert.strictEqual(s1BtnText.textContent, 'Показать серии', 'Button text toggles back to Показать серии');
-
-await manager.toggleSeasonEpisodes(s1Btn, 1, 94997, 10);
-assert.strictEqual(tmdbSeasonDetailsCalls.length, 1, 'Reopening already populated season executes 0 extra requests');
-console.log('  ✅ 25.3 Reopening season panel avoids redundant network calls');
-
-// =========================================================================
-// 26. Phase 1F: Normalized Episode Card UI & Ordering
-// =========================================================================
-console.log('\n--- 26. Testing Phase 1F: Normalized Episode Card UI & Ordering ---');
-
-assert(s1Panel.innerHTML.includes('S1E1'), 'Episode code S1E1 present');
-assert(s1Panel.innerHTML.includes('S1E2'), 'Episode code S1E2 present');
-assert(s1Panel.innerHTML.includes('Серия 2'), 'Missing title cleanly falls back to "Серия 2" (no null/undefined)');
-assert(!s1Panel.innerHTML.includes('null'), 'No "null" literals rendered in episode list');
-assert(s1Panel.innerHTML.includes('8.4'), 'TMDB episode rating badge rendered with rating');
-assert(s1Panel.innerHTML.includes('badge-upcoming">Ожидается</span>'), 'Future episode marked with upcoming badge');
-assert(s1Panel.innerHTML.includes('badge-schedule-next') || s1Panel.innerHTML.includes('badge-next-episode'), 'Aligned with movie.nextEpisode (S1E2)');
-assert(s1Panel.innerHTML.includes('https://image.tmdb.org/t/p/w500/ep1.jpg'), 'Episode still image rendered with w500 URL');
-assert(s1Panel.innerHTML.includes('data-fallback="poster"'), 'CSP safe image fallback attribute present');
-console.log('  ✅ 26.1 Normalized episode card formatting, badges, fallbacks, and next episode alignment verified');
-
-// =========================================================================
-// 27. Phase 1F: Empty Season, Specials & Error Retry States
-// =========================================================================
-console.log('\n--- 27. Testing Phase 1F: Empty Season, Specials & Error Retry States ---');
-
-// 27.1 Empty future season with 0 episodes -> Notice displayed without network call
-const emptyBtn = new MockElement();
-const emptyCard = new MockElement();
-const emptyPanel = new MockElement();
-emptyPanel.className = 'season-episodes-panel';
-emptyCard.appendChild(emptyPanel);
-emptyCard.appendChild(emptyBtn);
-
-const initialCallsCount = tmdbSeasonDetailsCalls.length;
-await manager.toggleSeasonEpisodes(emptyBtn, 3, 94997, 0);
-assert.strictEqual(tmdbSeasonDetailsCalls.length, initialCallsCount, 'Season with 0 episodes makes 0 network calls');
-assert(emptyPanel.innerHTML.includes('Серии пока не опубликованы'), 'Empty future season notice rendered');
-console.log('  ✅ 27.1 Announced future season with 0 episodes avoids useless requests');
-
-// 27.2 Network error during season fetch -> Error message and Retry button rendered
-manager.tmdbService.getSeasonDetails = async () => {
-    throw new Error('HTTP 500 Internal Server Error');
-};
-
-const errBtn = new MockElement();
-const errCard = new MockElement();
-const errPanel = new MockElement();
-errPanel.className = 'season-episodes-panel';
-errCard.appendChild(errPanel);
-errCard.appendChild(errBtn);
-
-await manager.toggleSeasonEpisodes(errBtn, 2, 94997, 8);
-assert(errPanel.innerHTML.includes('Не удалось загрузить серии этого сезона'), 'Error message rendered');
-assert(errPanel.innerHTML.includes('data-action="retry-season"'), 'Retry button present');
-
-// 27.3 Retry button refetches with forceRefresh
-let retriedWithForce = false;
-manager.tmdbService.getSeasonDetails = async (tmdbId, seasonNumber, options) => {
-    if (options.forceRefresh) retriedWithForce = true;
-    return {
-        tmdbId,
-        seasonNumber,
-        episodes: [{ seasonNumber, episodeNumber: 1, name: 'Восстановленный эпизод' }]
-    };
-};
-
-await manager.toggleSeasonEpisodes(errBtn, 2, 94997, 8, true);
-assert.strictEqual(retriedWithForce, true, 'Retry action forces fresh refetch');
-assert(errPanel.innerHTML.includes('Восстановленный эпизод'), 'Refetched episodes successfully rendered on retry');
-console.log('  ✅ 27.2 & 27.3 Season fetch failure handled gracefully with working retry flow');
+// 25–27. Season detail loading delegates through the new selected-season path.
+console.log('--- Season selection uses the lazy detail loader ---');
+{
+    const browserManager = Object.create(MovieDetailsManager.prototype);
+    browserManager.seasonsBrowserSeasons = [{ number: 1 }, { number: 2 }];
+    const calls = [];
+    browserManager.loadSelectedSeason = async (...args) => { calls.push(args); };
+    await browserManager.handleSeasonPillSelect(2);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0][0], 2);
+    console.log('  ✅ Selecting a season invokes the new lazy loading path');
+}
 
 // =========================================================================
 // 28. Phase 1G: Hero Next-Episode Promotion & Media-Type Safety
@@ -1777,104 +1624,12 @@ assert(dedupGalleryHtml.includes('CLIP_KEY_3'), 'Secondary clip retained in vide
 console.log('  ✅ 32.1 Primary trailer is cleanly excluded from secondary video gallery to eliminate duplication');
 
 // =========================================================================
-// 33. DEF-01: handleSeasonPillSelect — long-series season pill navigation
-// =========================================================================
-console.log('\n--- 33. Testing DEF-01: handleSeasonPillSelect (Phase 1H P0) ---');
-
-{
-    const pillManager = Object.create(MovieDetailsManager.prototype);
-    pillManager.escapeHtml = escapeHtmlHelper;
-
-    // Build a minimal DOM: 3 season cards, 3 pill buttons
-    const makeCard = (num, active) => {
-        const card = new MockElement();
-        card.setAttribute('data-season-number', String(num));
-        card.className = active ? 'season-card season-card--active' : 'season-card season-card--hidden';
-        card.classList._classes = new Set(active
-            ? ['season-card', 'season-card--active']
-            : ['season-card', 'season-card--hidden']);
-        card.style.display = active ? '' : 'none';
-
-        // Add a fake expand button to test collapse-on-switch
-        const btn = new MockElement();
-        btn.setAttribute('aria-expanded', active ? 'true' : 'false');
-        btn.className = 'season-expand-btn';
-        btn.classList._classes = new Set(['season-expand-btn', ...(active ? ['active'] : [])]);
-        const txt = new MockElement();
-        txt.className = 'season-expand-text';
-        txt.textContent = active ? 'Скрыть серии' : 'Показать серии';
-        btn.querySelector = (sel) => sel.includes('season-expand-text') ? txt : null;
-        card.querySelector = (sel) => {
-            if (sel.includes('.season-expand-btn[aria-expanded="true"]')) return active ? btn : null;
-            if (sel.includes('.season-episodes-panel')) return null;
-            return null;
-        };
-        return card;
-    };
-
-    const makePill = (num, active) => {
-        const pill = new MockElement();
-        pill.setAttribute('data-season-number', String(num));
-        pill.className = active ? 'season-pill-btn active' : 'season-pill-btn';
-        pill.classList._classes = new Set(['season-pill-btn', ...(active ? ['active'] : [])]);
-        pill.setAttribute('aria-selected', active ? 'true' : 'false');
-        return pill;
-    };
-
-    const cards = [makeCard(1, true), makeCard(2, false), makeCard(3, false)];
-    const pills = [makePill(1, true), makePill(2, false), makePill(3, false)];
-
-    const allCards = [...cards];
-    const allPills = [...pills];
-
-    // Wire document.querySelectorAll to return our mocks
-    const origQSA = documentStub.querySelectorAll;
-    documentStub.querySelectorAll = (sel) => {
-        if (sel === '.season-pill-btn') return allPills;
-        if (sel === '.season-card') return allCards;
-        if (sel && sel.includes('season-expand-btn')) return documentStub.activeButtons;
-        return [];
-    };
-
-    // Select season 2
-    pillManager.handleSeasonPillSelect(2);
-
-    // Pill 2 must become active
-    assert.strictEqual(pills[1].getAttribute('aria-selected'), 'true', 'Pill 2: aria-selected=true after selection');
-    assert(pills[1].classList._classes.has('active'), 'Pill 2: active class set');
-
-    // Pill 1 must lose active
-    assert.strictEqual(pills[0].getAttribute('aria-selected'), 'false', 'Pill 1: aria-selected=false after deselection');
-    assert(!pills[0].classList._classes.has('active'), 'Pill 1: active class removed');
-
-    // Card 2 must be visible
-    assert(cards[1].classList._classes.has('season-card--active'), 'Card 2: season-card--active set');
-    assert(!cards[1].classList._classes.has('season-card--hidden'), 'Card 2: season-card--hidden removed');
-    assert.strictEqual(cards[1].style.display, '', 'Card 2: display cleared (visible)');
-
-    // Card 1 must be hidden
-    assert(cards[0].classList._classes.has('season-card--hidden'), 'Card 1: season-card--hidden set');
-    assert(!cards[0].classList._classes.has('season-card--active'), 'Card 1: season-card--active removed');
-    assert.strictEqual(cards[0].style.display, 'none', 'Card 1: display=none');
-
-    console.log('  ✅ 33.1 Season pill select shows correct card and hides others with correct ARIA states');
-
-    // Select season 3 (no-expand btn in card 3 since it was never active)
-    pillManager.handleSeasonPillSelect(3);
-    assert(cards[2].classList._classes.has('season-card--active'), 'Card 3: season-card--active set');
-    assert.strictEqual(cards[2].style.display, '', 'Card 3: display cleared');
-    assert(cards[1].classList._classes.has('season-card--hidden'), 'Card 2: now hidden after switching to 3');
-
-    console.log('  ✅ 33.2 Sequential pill selection navigates correctly between seasons');
-
-    // No-op for invalid input
-    assert.doesNotThrow(() => pillManager.handleSeasonPillSelect(null), 'null seasonNumber is a safe no-op');
-    assert.doesNotThrow(() => pillManager.handleSeasonPillSelect(NaN), 'NaN seasonNumber is a safe no-op');
-
-    console.log('  ✅ 33.3 Invalid season numbers are safe no-ops');
-
-    documentStub.querySelectorAll = origQSA;
-}
+// 33. Old card visibility navigation is replaced by a single selected panel.
+console.log('--- New seasons navigation contract ---');
+assert.equal(typeof MovieDetailsManager.prototype.loadSelectedSeason, 'function');
+assert.equal(typeof MovieDetailsManager.prototype.selectSeasonEpisode, 'function');
+assert.equal(typeof MovieDetailsManager.prototype.navigateSeasonEpisode, 'function');
+assert.equal(typeof MovieDetailsManager.prototype.handleSeasonsBrowserKeydown, 'function');
 
 // =========================================================================
 // 34. DEF-02: Status badge template class + SWR patch fix

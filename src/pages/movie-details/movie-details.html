@@ -79,11 +79,6 @@
                 <!-- Rating Container -->
                 <div class="rating-stars-container">
                     <p id="ratingStatus" class="rating-status" aria-live="polite">Выберите оценку</p>
-                    <div id="seriesAggregateRatingNotice" class="series-aggregate-rating-notice" hidden>
-                        <p id="seriesAggregateRatingText" aria-live="polite"></p>
-                        <button id="setManualSeriesRatingBtn" class="btn btn-secondary" type="button"></button>
-                        <button id="restoreEpisodeAggregateBtn" class="btn btn-secondary" type="button" hidden></button>
-                    </div>
                     <div class="stars-wrapper" id="ratingStars" role="group" aria-label="Оценка от 1 до 10" aria-describedby="ratingStatus">
                         <!-- Stars will be injected by JS -->
                     </div>
@@ -117,7 +112,6 @@
 
             <!-- Footer -->
             <div class="rating-modal-footer">
-                <button id="deleteSeriesRatingBtn" class="btn btn-danger" type="button" hidden></button>
                 <button id="cancelRatingBtn" class="btn btn-secondary" data-i18n="movie_details.cancel">Cancel</button>
                 <button id="saveRatingBtn" class="btn btn-accent" data-i18n="movie_details.save_rating">Save Rating</button>
             </div>

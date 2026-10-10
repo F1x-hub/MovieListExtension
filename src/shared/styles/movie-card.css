@@ -1125,16 +1125,6 @@ span.mc-user-name.mc-skeleton {
     justify-content: center;
 }
 
-.mc-badge-user-caption {
-    flex-basis: 100%;
-    color: var(--ui-color-content-muted);
-    font-size: 8px;
-    font-weight: 600;
-    line-height: 1.15;
-    text-align: center;
-    white-space: nowrap;
-}
-
 .mc-badge-loading {
     min-width: 54px;
     min-height: 16px;
