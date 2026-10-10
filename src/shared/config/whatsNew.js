@@ -1,6 +1,6 @@
 export const whatsNew = [
     {
-        id: 'next', version: 'next', draft: true, date: '2026-10-10',
+        id: '1.3.6', version: '1.3.6', date: '2026-10-10',
         highlights: [
             { id: 'seasons', title: { ru: 'Удобнее выбирать серии', en: 'Find your next episode more easily' }, text: { ru: 'Переключайте сезоны, смотрите оценки сообщества и открывайте нужную серию в одной карточке.', en: 'Switch seasons, see community ratings and open an episode in one clear card.' } },
             { id: 'episode-ratings', title: { ru: 'Оценивайте каждую серию отдельно', en: 'Rate episodes individually' }, text: { ru: 'Оценки серий не меняют вашу оценку всего сериала. Поставленная оценка также отмечает серию просмотренной.', en: 'Episode scores stay separate from your rating of the whole series. Rating an episode also marks it as watched.' } },

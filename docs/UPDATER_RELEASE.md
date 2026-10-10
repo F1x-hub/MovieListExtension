@@ -45,8 +45,8 @@ To publish a version:
    in Russian and English. For a deliberately quiet patch, add an explicit
    `skipAnnouncement: true` entry instead. Run `node scripts/validate-whats-new.cjs`.
    Drafts remain preview-only and are never treated as published announcements.
-   The six bilingual highlights currently in the `next` draft were approved by
-   the owner on 2026-10-10; keep their text unchanged until finalizing its version.
+   The six bilingual highlights approved by the owner on 2026-10-10 are published
+   under `1.3.6`, with their approved text unchanged.
 2. Commit the change and create a matching tag such as `v1.3.3`.
 3. Push the tag. `.github/workflows/release.yml` builds the extension, removes local
    configuration, publishes the self-contained setup executable, and signs the

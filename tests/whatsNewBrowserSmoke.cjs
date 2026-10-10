@@ -5,6 +5,7 @@ const path = require('node:path');
 const { chromium } = require('playwright');
 
 const root = path.resolve(__dirname, '..');
+const currentVersion = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8')).version;
 async function checkLayout(page) {
     await page.waitForFunction(() => {
         const panel = document.querySelector('.whats-new-version-panel');
@@ -33,8 +34,8 @@ const fixture = (prefix, preview) => `<!doctype html><html><head>${[
     'shared/styles/navigation.css', 'pages/settings/settings.css'
 ].map(file => `<link rel="stylesheet" href="/${prefix}/${file}">`).join('')}</head>
 <body class="settings-page-body"><script>
-window.chrome = { runtime: { getManifest: () => ({version:'1.3.5'}) }, storage: {
- local: {get: async () => ({whatsNewV1:{seenVersion:'1.3.5'}}), set: async () => {}},
+window.chrome = { runtime: { getManifest: () => ({version:'${currentVersion}'}) }, storage: {
+ local: {get: async () => ({whatsNewV1:{seenVersion:'${currentVersion}'}}), set: async () => {}},
  sync: {get: async () => ({language:'ru'})},
  onChanged: {addListener() {}, removeListener() {}}
 }};
@@ -86,7 +87,7 @@ window.ready = true;
             await page.goto(`http://127.0.0.1:${server.address().port}/fixture?prefix=${prefix}&preview=false`);
             await page.waitForFunction(() => window.ready);
             await checkLayout(page);
-            assert((await page.locator('.whats-new-version-toggle').first().textContent()).includes('Версия 1.3.5'));
+            assert((await page.locator('.whats-new-version-toggle').first().textContent()).includes(`Версия ${currentVersion}`));
             console.log(`${prefix}: published history opens newest version`);
             await page.close();
         }
@@ -96,12 +97,12 @@ window.ready = true;
             if (url.hostname !== '127.0.0.1' || url.pathname.includes('/libs/firebase')) return route.fulfill({body:'',contentType:'text/javascript'});
             return route.continue();
         });
-        await page.addInitScript(() => {
-            const storage = {get: async () => ({language:'ru',whatsNewV1:{seenVersion:'1.3.5'}}),set:async () => {}};
-            window.chrome = {runtime:{getManifest:()=>({version:'1.3.5'}),getURL:value=>value,
+        await page.addInitScript(version => {
+            const storage = {get: async () => ({language:'ru',whatsNewV1:{seenVersion:version}}),set:async () => {}};
+            window.chrome = {runtime:{getManifest:()=>({version}),getURL:value=>value,
                 sendMessage:async()=>({safe:true}),onMessage:{addListener(){}}},
             storage:{local:storage,sync:storage,onChanged:{addListener(){},removeListener(){}}}};
-        });
+        }, currentVersion);
         await page.goto(`http://127.0.0.1:${server.address().port}/src/pages/settings/settings.html?whatsNewPreview=draft`);
         await page.waitForSelector('.whats-new-version-panel.is-open');
         await checkLayout(page);
