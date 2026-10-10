@@ -238,6 +238,7 @@ class RatingService {
             const resolvedMovieData = await this.resolveMovieDataForRating(movieId, movieData);
 
             let result;
+            let episodeRatingsBecameManual = false;
 
             await this.db.runTransaction(async (transaction) => {
                 // The rating event is the write owner. The Cloud Function trigger
@@ -257,6 +258,38 @@ class RatingService {
 
                 const actualExistingData = ratingDoc.exists ? ratingDoc.data() : null;
 
+                const episodeRatingSource = actualExistingData?.ratingSource;
+                if (episodeRatingSource === 'episodes' || episodeRatingSource === 'manual') {
+                    const episodeRef = this.db.collection('seriesEpisodeRatings')
+                        .doc(this.getRatingDocumentId(userId, movieId));
+                    let episodeDoc = null;
+                    try {
+                        episodeDoc = await transaction.get(episodeRef);
+                    } catch (error) {
+                        const permissionDenied = error?.code === 'permission-denied'
+                            || /permission-denied|insufficient permissions/i.test(String(error?.message || ''));
+                        if (episodeRatingSource !== 'manual' || !permissionDenied) throw error;
+                        // Keep ordinary manual title ratings usable when the private
+                        // collection rules are unavailable. Episode ratings cannot
+                        // be edited without this state, so only manualBackup may lag.
+                    }
+                    const ratedAt = firebase.firestore.FieldValue.serverTimestamp();
+                    if (episodeDoc?.exists) {
+                        const episodePatch = {
+                            manualBackup: { rating: ratingVal, ratedAt },
+                            updatedAt: ratedAt
+                        };
+                        if (episodeRatingSource === 'episodes') episodePatch.mode = 'manual';
+                        transaction.update(episodeRef, episodePatch);
+                    }
+                    ratingData.ratingSource = 'manual';
+                    if (episodeRatingSource === 'episodes') {
+                        ratingData.episodeAverage = firebase.firestore.FieldValue.delete();
+                        ratingData.episodesRatedCount = firebase.firestore.FieldValue.delete();
+                    }
+                    episodeRatingsBecameManual = true;
+                }
+
                 if (hasReviewOption) {
                     ratingData.review = normalizedReview;
                 }
@@ -268,6 +301,10 @@ class RatingService {
 
                     transaction.update(ratingRef, ratingData);
                     result = { id: ratingRef.id, ...ratingData };
+                    if (episodeRatingsBecameManual) {
+                        delete result.episodeAverage;
+                        delete result.episodesRatedCount;
+                    }
                     if (!hasReviewOption && Object.prototype.hasOwnProperty.call(actualExistingData, 'review')) {
                         result.review = actualExistingData.review;
                     }
@@ -282,6 +319,12 @@ class RatingService {
 
                 }
             });
+
+            if (episodeRatingsBecameManual) {
+                if (typeof window !== 'undefined') {
+                    window.firebaseManager?.seriesEpisodeRatingService?.clearEpisodeRatingsCache?.(userId, movieId);
+                }
+            }
 
             // Always cache movie metadata when rating to ensure name, poster, and flags are set in Firestore
             if (resolvedMovieData) {
@@ -964,10 +1007,18 @@ class RatingService {
 
             const ratingData = ratingDoc.data();
             const movieId = ratingData?.movieId;
+            const hasEpisodeRatingSource = ratingData?.ratingSource === 'episodes'
+                || ratingData?.ratingSource === 'manual';
+            let hasEpisodeRatings = false;
 
-            if (movieId) {
+            if (movieId && hasEpisodeRatingSource) {
+                const episodeRef = this.db.collection('seriesEpisodeRatings')
+                    .doc(this.getRatingDocumentId(userId, movieId));
                 await this.db.runTransaction(async (transaction) => {
-                    const freshRatingDoc = await transaction.get(ratingRef);
+                    const [freshRatingDoc, episodeDoc] = await Promise.all([
+                        transaction.get(ratingRef),
+                        transaction.get(episodeRef)
+                    ]);
                     if (!freshRatingDoc.exists) {
                         return;
                     }
@@ -975,9 +1026,25 @@ class RatingService {
                     // event is enough; client-side subtraction is race-prone and
                     // can resurrect stale counts or remove a live projection.
                     transaction.delete(ratingRef);
+                    if (episodeDoc.exists) {
+                        transaction.update(episodeRef, {
+                            mode: 'manual',
+                            manualBackup: null,
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                        hasEpisodeRatings = true;
+                    }
                 });
             } else {
+                // Legacy and ordinary manual ratings predate episode state. Keep
+                // their original delete path so older Firestore rules still work.
                 await ratingRef.delete();
+            }
+
+            if (hasEpisodeRatings) {
+                if (typeof window !== 'undefined') {
+                    window.firebaseManager?.seriesEpisodeRatingService?.clearEpisodeRatingsCache?.(userId, movieId);
+                }
             }
             
             // Invalidate cache

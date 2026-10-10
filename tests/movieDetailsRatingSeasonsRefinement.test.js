@@ -2,6 +2,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { i18n } from '../src/shared/i18n/I18n.js';
+import SeriesEpisodeRatingService from '../src/shared/services/SeriesEpisodeRatingService.js';
 
 console.log('🧪 Running MovieDetails Rating + Seasons UX Refinement Tests...\n');
 
@@ -195,6 +196,7 @@ vm.runInContext(fs.readFileSync(new URL('../src/pages/movie-details/MetaRenderer
 vm.runInContext(source, context);
 
 const MovieDetailsManager = context.window.MovieDetailsManager;
+context.SeriesEpisodeRatingService = SeriesEpisodeRatingService;
 const manager = Object.create(MovieDetailsManager.prototype);
 manager.isAdmin = false;
 manager.escapeHtml = escapeHtmlHelper;
@@ -544,4 +546,17 @@ console.log('  ✅ 27. Keyboard focus-visible rings and ARIA attributes retained
 assert(seasonsHtml18.includes('18 сезонов'), '28. Total count of 18 seasons cleanly communicated');
 console.log('  ✅ 28. Long-running series (18 seasons) tested and verified');
 
-console.log('\n🎉 ALL 28 MovieDetails Rating + Seasons Refinement Tests Passed Successfully!\n');
+// 29. The first optimistic episode rating works before the private document load completes.
+manager.currentSeriesEpisodeRatings = null;
+manager.currentPersonalRating = null;
+manager.selectedMovie = { kinopoiskId: 777, type: 'TV_SERIES' };
+manager.capturePageContext = () => ({ movieId: 777 });
+manager.patchPersonalRating = rating => { manager.optimisticPatchedRating = rating; };
+manager.applyOptimisticEpisodeRating(1, 1, 9);
+assert.equal(manager.currentSeriesEpisodeRatings.mode, 'episodes', '29. A missing previous state enters aggregate mode');
+assert.equal(manager.currentSeriesEpisodeRatings.ratedCount, 1);
+assert.equal(manager.currentPersonalRating.ratingSource, 'episodes');
+assert.equal(manager.currentPersonalRating.episodeAverage, 9);
+console.log('  ✅ 29. First optimistic episode rating renders without waiting for the private state read');
+
+console.log('\n🎉 ALL 29 MovieDetails Rating + Seasons Refinement Tests Passed Successfully!\n');

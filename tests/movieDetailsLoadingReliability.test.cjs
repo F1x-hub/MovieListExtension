@@ -5,11 +5,19 @@ const vm = require('node:vm');
 const quiet = { log() {}, warn() {}, error() {}, info() {} };
 const context = vm.createContext({
     window: { location: { search: '?movieId=101' } },
-    document: { addEventListener() {} },
+    document: { addEventListener() {}, getElementById: () => null, querySelectorAll: () => [] },
     console: quiet, URLSearchParams, setTimeout, clearTimeout, Set, Map,
     chrome: { storage: { local: { get: async () => ({}) } } },
     localStorage: { getItem: () => null }
 });
+context.i18n = { get: key => key };
+context.isSeriesMedia = media => media?.type === 'TV_SERIES';
+context.RatingConfig = { normalizeComment: value => String(value || '').trim() };
+context.Utils = {
+    normalizeRatingComment: value => String(value || '').trim(),
+    normalizeRatingReview: value => String(value || '').trim(),
+    showToast() {}
+};
 vm.runInContext(fs.readFileSync('src/pages/movie-details/movie-details.js', 'utf8')
     .replace(/^import .*;\r?$/gm, ''), context);
 vm.runInContext(fs.readFileSync('src/shared/errors/ErrorPresentation.js', 'utf8'), context);
@@ -197,6 +205,60 @@ function firebase(services = {}) {
             assert.equal(writes.length, 0, `${method} must abort after the selected ${changedContext} changes`);
         }
     }
+
+    // A denied private episode-state read must not block the ordinary title rating flow.
+    const permissionDenied = Object.assign(new Error('Missing or insufficient permissions.'), {
+        code: 'permission-denied'
+    });
+    const legacyRating = { id: 'user-a_101', rating: 5, comment: 'old comment' };
+    let addOrUpdateCalls = 0;
+    let ratingReadCalls = 0;
+    let personalRatingPatchCalls = 0;
+    firebase({
+        getUserService: () => ({ getUserProfile: async () => ({ displayName: 'User' }) }),
+        getRatingService: () => ({
+            getRating: async () => { ratingReadCalls++; return legacyRating; },
+            addOrUpdateRating: async () => { addOrUpdateCalls++; }
+        }),
+        getSeriesEpisodeRatingService: () => ({ getEpisodeRatings: async () => { throw permissionDenied; } }),
+        getFavoriteService: () => ({ getBookmark: async () => null })
+    });
+    const deniedDetails = manager();
+    deniedDetails.loadPersonalState = prototype.loadPersonalState;
+    deniedDetails.currentUser = { uid: 'user-a' };
+    deniedDetails.selectedMovie = { kinopoiskId: 101, tmdbId: 202, type: 'TV_SERIES', name: 'Series' };
+    deniedDetails.capturePageContext = () => ({ movieId: '101' });
+    deniedDetails.isPageContextCurrent = () => true;
+    deniedDetails.patchAdminControl = () => {};
+    deniedDetails.patchCollectionsMenu = () => {};
+    deniedDetails.patchBookmarkState = () => {};
+    deniedDetails.patchPersonalRating = rating => {
+        personalRatingPatchCalls++;
+        deniedDetails.currentPersonalRating = rating;
+        deniedDetails.currentRating = Number(rating?.rating) || 0;
+    };
+    deniedDetails.updateSeriesEpisodeRatingUI = () => {};
+    await deniedDetails.loadPersonalState(101);
+    assert.equal(ratingReadCalls, 1);
+    assert.equal(personalRatingPatchCalls, 1);
+    assert.equal(deniedDetails.currentPersonalRating, legacyRating,
+        'the title rating is patched even when the private episode read is denied');
+    assert.equal(deniedDetails.hasEpisodeRatingsPermissionDenied(), true);
+    assert.equal(deniedDetails.getSeriesEpisodeSummaryText(), 'movie_details.series_episode_rules_error');
+
+    deniedDetails.elements = {
+        ratingComment: { value: 'updated comment' },
+        ratingReview: { value: '' }
+    };
+    deniedDetails.currentRating = 7;
+    deniedDetails.originalRating = 5;
+    deniedDetails.currentRatingId = legacyRating.id;
+    deniedDetails.originalRatingComment = 'old comment';
+    deniedDetails.originalRatingReview = '';
+    deniedDetails.closeRatingModal = () => {};
+    deniedDetails.loadPersonalState = async () => {};
+    await deniedDetails.saveRating();
+    assert.equal(addOrUpdateCalls, 1, 'an ordinary title score remains saveable after the denied episode read');
 
     console.log('Movie Details loading reliability tests passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

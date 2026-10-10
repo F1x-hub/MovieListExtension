@@ -16,6 +16,7 @@ class MovieCard {
         kpRating = 0,
         imdbRating = 0,
         userRating = 0,
+        userRatingCaption = '',
         showSkeleton = false,
         showUnavailable = false,
         kpPending = false,
@@ -39,7 +40,7 @@ class MovieCard {
             ` : ''}
             ${user > 0 ? `
                 <span class="mc-badge mc-badge-user" title="${window.i18n?.get('movie_card.my_rating') || 'Моя оценка'}: ${this.formatRating(user)}">
-                    <span class="mc-badge-star"><svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></span> ${this.formatRating(user)}
+                    <span class="mc-badge-star"><svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></span> ${this.formatRating(user)}${userRatingCaption ? `<small class="mc-badge-user-caption">${this.escapeHtml(userRatingCaption)}</small>` : ''}
                 </span>
             ` : ''}
             ${(showSkeleton || kpPending) && kp <= 0 ? `
@@ -89,6 +90,7 @@ class MovieCard {
             kpRating: ratings.kpRating,
             imdbRating: ratings.imdbRating,
             userRating: ratings.userRating ?? card.dataset.userRating,
+            userRatingCaption: ratings.userRatingCaption ?? card.dataset.userRatingCaption ?? '',
             kpPending: ratings.kpState === 'pending' || ratings.kpPending === true,
             imdbPending: ratings.imdbState === 'pending' || ratings.imdbPending === true,
             kpUnavailable: ratings.kpState === 'unavailable' || ratings.kpUnavailable === true,
@@ -131,7 +133,9 @@ class MovieCard {
             movieCollections = [],     // New: List of collection IDs this movie is in
             showRatingSkeleton = false,
             lazyPoster = false,
-            deferPoster = false
+            deferPoster = false,
+            userRatingDisplay = null,
+            userRatingCaption = ''
         } = options;
 
         const isSearchVariant = variant === 'search';
@@ -181,6 +185,7 @@ class MovieCard {
 
         const description = movie.description || '';
         const rating = data.rating || 0;
+        const displayedUserRating = this.normalizeRating(userRatingDisplay ?? rating);
         const averageRating = data.averageRating || 0;
         const ratingsCount = data.ratingsCount || 0;
         const kinopoiskRating = this.normalizeRating(movie.kpRating || movie.ratingKp || movie.ratingKinopoisk 
@@ -235,7 +240,8 @@ class MovieCard {
         if (imdbRating > 0) card.dataset.imdbRating = String(imdbRating);
         const imdbId = movie.imdbId || data.imdbId;
         if (/^tt\d{7,10}$/.test(imdbId || '')) card.dataset.imdbId = imdbId;
-        if (rating > 0) card.dataset.userRating = String(rating);
+        if (displayedUserRating > 0) card.dataset.userRating = String(displayedUserRating);
+        if (userRatingCaption) card.dataset.userRatingCaption = userRatingCaption;
         card.dataset.movieTitle = title;
         if (movie.alternativeName) card.dataset.movieOriginalTitle = movie.alternativeName;
         if (movie.englishTitle) card.dataset.movieEnglishTitle = movie.englishTitle;
@@ -260,7 +266,7 @@ class MovieCard {
                          class="mc-poster"${posterLoadingAttributes}${posterDeferredAttributes}>
                     <div class="mc-poster-overlay"></div>
                     
-                    <div class="mc-badges-overlay" aria-label="${this.escapeHtml(this.t('ratings_label', 'Рейтинги'))}">${this.renderCompactRatingBadges({ kpRating: kinopoiskRating, imdbRating, userRating: rating, showSkeleton: showRatingSkeleton })}</div>
+                    <div class="mc-badges-overlay" aria-label="${this.escapeHtml(this.t('ratings_label', 'Рейтинги'))}">${this.renderCompactRatingBadges({ kpRating: kinopoiskRating, imdbRating, userRating: displayedUserRating, userRatingCaption, showSkeleton: showRatingSkeleton })}</div>
                 </a>
                 
                 ${showThreeDotMenu ? `

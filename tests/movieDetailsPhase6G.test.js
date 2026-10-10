@@ -5,7 +5,7 @@ const source = fs.readFileSync(new URL('../src/pages/movie-details/movie-details
 
 assert(source.includes('this.loadPersonalState(movieId);'), 'personal state must start after movie load');
 assert(source.includes('this.createDetailedMovieCard(movie, null, null)'), 'base render must use neutral personal state');
-assert(source.includes('Promise.allSettled([profilePromise, collectionsPromise, ratingPromise, bookmarkPromise])'), 'personal reads must settle independently');
+assert(source.includes('Promise.allSettled([profilePromise, collectionsPromise, ratingPromise, bookmarkPromise, episodeRatingPromise])'), 'personal reads must settle independently');
 assert(source.includes('loadFramesInBackground(movieId, movie, pageContext, kinopoiskService)'), 'frames must be post-render enrichment');
 assert(source.includes('patchPersonalRating') && source.includes('patchBookmarkState'), 'personal results need owned patch methods');
 assert(source.includes('patchCollectionsMenu') && source.includes('patchAdminControl'), 'profile and collection results need owned patch methods');
