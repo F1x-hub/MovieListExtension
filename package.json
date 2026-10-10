@@ -21,6 +21,7 @@
     "generate-update-metadata": "node scripts/generate-update-metadata.js",
     "generate-update-signing-key": "node scripts/generate-update-signing-key.js",
     "lint": "eslint \"src/**/*.js\" \"content-scripts/**/*.js\"",
+    "test:whats-new": "node tests/whatsNew.test.mjs",
     "test:admin": "node tests/adminAccessibilityContract.test.js && node tests/adminFirestoreUsageContract.test.js && node tests/adminApprovals.test.js && node tests/adminIdentityWorkspace.test.js && node tests/commentReactionConfig.test.js",
     "test:random-marathon": "node tests/randomMarathonFunction.test.cjs && node tests/randomMarathonClient.test.cjs && node tests/randomMarathonContract.test.js",
     "test:random-wheel": "node tests/randomWheelAudio.test.js && node tests/randomPageHardening.test.js && node tests/randomMarathonContract.test.js",

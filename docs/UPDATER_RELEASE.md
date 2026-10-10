@@ -40,6 +40,11 @@ secret `UPDATE_SIGNING_PRIVATE_KEY`; never commit the private file.
 To publish a version:
 
 1. Update the extension `manifest.json` to a three-component Chrome version such as `1.3.3`.
+   Finalize `src/shared/config/whatsNew.js` for that exact version: move the approved
+   `next` draft to the real version, remove `draft`, and supply 3–6 short highlights
+   in Russian and English. For a deliberately quiet patch, add an explicit
+   `skipAnnouncement: true` entry instead. Run `node scripts/validate-whats-new.cjs`.
+   Drafts remain preview-only and are never treated as published announcements.
 2. Commit the change and create a matching tag such as `v1.3.3`.
 3. Push the tag. `.github/workflows/release.yml` builds the extension, removes local
    configuration, publishes the self-contained setup executable, and signs the

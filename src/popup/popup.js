@@ -509,6 +509,8 @@ class PopupManager {
         
         // Initialize i18n BEFORE loading UI
         await this.initI18n();
+        void import('../shared/components/WhatsNewDialog.js').then(module => module.showWhatsNew())
+            .catch(error => console.warn('[Popup] Release notes unavailable:', error));
         
         // Then initialize UI which might load ratings
         await this.initializeUI();

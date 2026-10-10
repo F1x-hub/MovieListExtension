@@ -1,5 +1,10 @@
 export const locales = {
     en: {
+        whats_new: {
+            title: 'What’s new in version {version}', draft: 'Next version · Preview',
+            done: 'Got it', close: 'Close release notes', open: 'What’s new',
+            earlier: 'And earlier changes · View full history', empty: 'No release notes yet.'
+        },
         games: {
             modal: {
                 eyebrow: "MINI-GAMES",
@@ -1226,6 +1231,11 @@ export const locales = {
         }
     },
     ru: {
+        whats_new: {
+            title: 'Что нового в версии {version}', draft: 'Следующая версия · Предпросмотр',
+            done: 'Понятно', close: 'Закрыть новости', open: 'Что нового',
+            earlier: 'И более ранние изменения · Вся история', empty: 'Новостей о выпусках пока нет.'
+        },
         games: {
             modal: {
                 eyebrow: "МИНИ-ИГРЫ",
