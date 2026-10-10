@@ -77,7 +77,6 @@
 
                         <div class="settings-section">
                             <h3 class="section-title" data-i18n="settings.display_mode.title">Display Mode</h3>
-                            <button type="button" class="btn btn-secondary" id="whatsNewButton" data-i18n="whats_new.open">Что нового</button>
                             <p class="section-description" data-i18n="settings.display_mode.description">Choose how you want to interact with the extension.</p>
                             
                             <div class="mode-options">
@@ -285,6 +284,13 @@
                         </div>
 
                         <div class="settings-section updates-settings-section">
+                            <div class="setting-group-row whats-new-settings-row">
+                                <div class="setting-info">
+                                    <h3 class="setting-title whats-new-settings-title"><span data-i18n="whats_new.title">Что нового</span><span id="whatsNewBadge" class="whats-new-settings-badge" data-i18n="whats_new.new" hidden>Новое</span></h3>
+                                    <p class="setting-desc" data-i18n="whats_new.description">Изменения в последних версиях расширения</p>
+                                </div>
+                                <button type="button" class="btn btn-secondary" id="whatsNewButton" data-i18n="whats_new.open_button">Открыть</button>
+                            </div>
                             <div class="setting-group-row updates-preferences-row">
                                 <div class="setting-info">
                                     <h3 class="setting-title" data-i18n="settings.updates.title">Автоматические обновления</h3>

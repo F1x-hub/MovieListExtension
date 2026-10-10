@@ -3,6 +3,8 @@ export const locales = {
         whats_new: {
             title: 'What’s new', draft: 'Next version draft', version: 'Version {version}', new: 'New', more: 'Show more',
             done: 'Got it', close: 'Close release notes', open: 'What’s new',
+            description: 'Changes in recent versions of the extension', open_button: 'Open',
+            open_failed: 'Could not open release notes. Please try again.',
             empty: 'No release notes yet.'
         },
         games: {
@@ -1234,6 +1236,8 @@ export const locales = {
         whats_new: {
             title: 'Что нового', draft: 'Черновик следующей версии', version: 'Версия {version}', new: 'Новое', more: 'Показать ещё',
             done: 'Понятно', close: 'Закрыть новости', open: 'Что нового',
+            description: 'Изменения в последних версиях расширения', open_button: 'Открыть',
+            open_failed: 'Не удалось открыть новости. Попробуйте ещё раз.',
             empty: 'Новостей о выпусках пока нет.'
         },
         games: {

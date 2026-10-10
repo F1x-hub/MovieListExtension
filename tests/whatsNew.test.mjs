@@ -4,6 +4,8 @@ import { JSDOM } from 'jsdom';
 import '../src/shared/services/WhatsNewService.js';
 import { WhatsNewDialog, canShowWhatsNew } from '../src/shared/components/WhatsNewDialog.js';
 import { locales } from '../src/shared/i18n/locales.js';
+import { bindWhatsNewSettings } from '../src/shared/components/WhatsNewSettings.js';
+import '../src/shared/services/WhatsNewPlaybackService.js';
 import gate from '../scripts/validate-whats-new.cjs';
 
 const Service = globalThis.WhatsNewService;
@@ -103,6 +105,60 @@ function environment(storage, url = 'https://extension.test/src/popup/popup.html
         dialog: new WhatsNewDialog({ service, document: dom.window.document, chrome, locale }) };
 }
 const shared = store({ whatsNewV1: { seenVersion: '1.3.5' } });
+const hung = environment(store({whatsNewV1:{seenVersion:'1.3.5'}}));
+let completeProbe;
+hung.chrome.runtime.sendMessage = () => new Promise(resolve => { completeProbe = resolve; });
+hung.dialog.playbackTimeoutMs = 30;
+const autoAttempt = hung.dialog.open();
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(hung.dialog.opening, true);
+await hung.dialog.open({manual:true});
+assert(hung.dialog.root, 'manual opening bypasses a pending automatic attempt');
+const manualRoot = hung.dialog.root;
+completeProbe({safe:true}); await autoAttempt;
+assert.equal(hung.dialog.root, manualRoot, 'stale automatic response cannot replace the manual dialog');
+await hung.dialog.close(false);
+const timed = environment(store({whatsNewV1:{seenVersion:'1.3.5'}}));
+timed.dialog.playbackTimeoutMs = 20;
+timed.chrome.runtime.sendMessage = () => new Promise(() => {});
+await timed.dialog.open();
+assert.equal(timed.dialog.opening, false);
+assert.equal(timed.dialog.root, null);
+timed.chrome.runtime.sendMessage = async () => ({safe:true});
+await timed.dialog.open(); assert(timed.dialog.root, 'next automatic attempt works after timeout');
+await timed.dialog.close(false);
+const renderFailure = environment(store());
+renderFailure.dialog.render = () => { throw new Error('render failed'); };
+const originalError = console.error; console.error = () => {};
+try {
+    await assert.rejects(renderFailure.dialog.open({manual:true}), /render failed/);
+    assert.equal(renderFailure.dialog.opening, false);
+    assert.equal(renderFailure.dialog.root, null);
+} finally { console.error = originalError; }
+const probes = [];
+const playbackChrome = {runtime:{getURL:()=> 'chrome-extension://self/',sendMessage: (_message, callback) => callback({isPlaying:false})},
+    offscreen:{hasDocument:async()=>false}, tabs:{query:async()=>[
+        {id:1,url:'chrome-extension://self/src/pages/movie-details/movie-details.html',status:'complete'},
+        {id:2,url:'https://silent.test',status:'complete'},
+        {id:3,url:'https://discarded.test',status:'complete',discarded:true},
+        {id:4,url:'https://loading.test',status:'loading'},
+        {id:5,url:'chrome://settings',status:'complete'}
+    ],sendMessage:id=>probes.push(id)}};
+const started = Date.now();
+assert.deepEqual(await globalThis.WhatsNewPlaybackService.inspect(playbackChrome, 1, {timeoutMs:50,probeTimeoutMs:20}), {safe:false});
+assert(Date.now()-started < 300, 'silent tab has a bounded background response');
+assert.deepEqual(probes,[2], 'sender, discarded, loading and non-web tabs are excluded');
+playbackChrome.tabs.query = () => new Promise(() => {});
+assert.deepEqual(await globalThis.WhatsNewPlaybackService.inspect(playbackChrome, 1, {timeoutMs:20}), {safe:false});
+playbackChrome.tabs.query = async () => [{id:2,url:'https://normal.test',status:'complete'}];
+playbackChrome.tabs.sendMessage = (_id,_message,callback) => callback({isPlaying:false});
+assert.deepEqual(await globalThis.WhatsNewPlaybackService.inspect(playbackChrome, 1), {safe:true});
+playbackChrome.tabs.sendMessage = (_id,_message,callback) => callback({isPlaying:true});
+assert.deepEqual(await globalThis.WhatsNewPlaybackService.inspect(playbackChrome, 1), {safe:false});
+playbackChrome.tabs.query = async () => [];
+playbackChrome.offscreen.hasDocument = async () => true;
+playbackChrome.runtime.sendMessage = (_message,callback) => callback({isPlaying:true});
+assert.deepEqual(await globalThis.WhatsNewPlaybackService.inspect(playbackChrome, 1), {safe:false});
 const first = environment(shared), second = environment(shared);
 first.document.querySelector('#trigger').focus();
 await first.dialog.open(); await second.dialog.open();
@@ -223,9 +279,34 @@ const popup = fs.readFileSync('src/popup/popup.js', 'utf8');
 assert(popup.indexOf('await this.initI18n()') < popup.indexOf("import('../shared/components/WhatsNewDialog.js')"));
 const settings = fs.readFileSync('src/pages/settings/settings.js', 'utf8');
 assert(settings.includes("get('whatsNewPreview') === 'draft'"));
+const settingsDom = new JSDOM(fs.readFileSync('src/pages/settings/settings.html', 'utf8'));
+const settingsButton = settingsDom.window.document.getElementById('whatsNewButton');
+assert(settingsButton.closest('#pane-updates .updates-settings-section'));
+assert.equal(settingsDom.window.document.querySelectorAll('#whatsNewButton').length, 1);
+const settingsStore = store({ whatsNewV1: { seenVersion: '1.3.5' } });
+const settingsService = make(settingsStore);
+let settingsOpened = 0;
+const disposeSettings = bindWhatsNewSettings({ document: settingsDom.window.document,
+    chrome: {storage:{onChanged:{addListener: fn => settingsStore.listeners.add(fn), removeListener: fn => settingsStore.listeners.delete(fn)}}},
+    service: settingsService, openDialog: () => settingsOpened++ });
+await new Promise(resolve => setImmediate(resolve));
+const settingsBadge = settingsDom.window.document.getElementById('whatsNewBadge');
+assert.equal(settingsBadge.hidden, false);
+assert.equal(settingsStore.writes, 0, 'badge detection must not acknowledge');
+settingsButton.click(); assert.equal(settingsOpened, 1);
+await settingsService.acknowledge();
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(settingsBadge.hidden, true, 'acknowledgement hides badge through storage change');
+assert.equal(await make(store()).hasUnseenRelease(), false, 'missing baseline stays quiet without writes');
+assert.equal(await make(store({whatsNewV1:{seenVersion:'1.3.6'}})).hasUnseenRelease(), false);
+assert.equal(await make(store({whatsNewV1:{seenVersion:'1.3.7'}})).hasUnseenRelease(), false);
+assert.equal(await make(store({whatsNewV1:{seenVersion:'1.3.5'}}), '1.3.6', [{...entry('next'),draft:true},entry('1.3.7')]).hasUnseenRelease(), false);
+disposeSettings(); assert.equal(settingsStore.listeners.size, 0);
+assert.equal(locales.ru.whats_new.open_button, 'Открыть');
+assert.equal(locales.en.whats_new.open_button, 'Open');
 assert(!fs.readFileSync('src/shared/components/WhatsNewDialog.js', 'utf8').includes('innerHTML'));
 const background = fs.readFileSync('src/background/background.js', 'utf8');
 assert(background.indexOf('observeInstallation(details)') < background.indexOf('UpdateService.confirmInstalled(details)'));
-assert(background.includes('UpdateService.inspectPlaybackSafety().then(sendResponse)'));
+assert(background.includes('WhatsNewPlaybackService.inspect(chrome, sender.tab?.id).then(sendResponse)'));
 assert(fs.readFileSync('scripts/package-release.js', 'utf8').indexOf('validateCurrent()') < fs.readFileSync('scripts/package-release.js', 'utf8').indexOf("run('npm'"));
 console.log('WhatsNew service, dialog, localization, preview and release contracts passed');

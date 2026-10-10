@@ -44,6 +44,11 @@
         history({ preview = false } = {}) {
             return preview ? [...this.entries.filter(entry => entry.draft), ...this.published()] : this.published();
         }
+        async hasUnseenRelease() {
+            const { seenVersion } = await this.read();
+            return WhatsNewService.validVersion(seenVersion)
+                && this.published().some(entry => WhatsNewService.compare(entry.version, seenVersion) > 0);
+        }
         async pending() {
             const state = await this.read();
             if (!WhatsNewService.validVersion(state.seenVersion)) {

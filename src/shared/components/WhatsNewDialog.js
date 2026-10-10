@@ -17,12 +17,14 @@ export function canShowWhatsNew(document, pathname) {
 }
 
 export class WhatsNewDialog {
-    constructor({ service, document = globalThis.document, chrome = globalThis.chrome, locale = i18n } = {}) {
+    constructor({ service, document = globalThis.document, chrome = globalThis.chrome, locale = i18n, playbackTimeoutMs = 1500 } = {}) {
         this.service = service || new globalThis.WhatsNewService({ entries: whatsNew });
         this.document = document;
         this.chrome = chrome;
         this.locale = locale;
         this.root = null;
+        this.attempt = 0;
+        this.playbackTimeoutMs = playbackTimeoutMs;
         this.onStorage = (changes, area) => {
             if (area === 'sync' && changes.language) this.render(changes.language.newValue);
             if (area === 'local' && changes.whatsNewV1?.newValue?.seenVersion && this.root && !this.preview) {
@@ -42,16 +44,24 @@ export class WhatsNewDialog {
         return node;
     }
     async open({ manual = false, preview = false } = {}) {
-        if (this.root || this.opening) return;
+        if (this.root || (this.opening && (!manual || this.openingManual))) return;
+        const attempt = ++this.attempt;
         this.opening = true;
+        this.openingManual = manual;
         try {
             if (!manual && !canShowWhatsNew(this.document, this.document.location.pathname)) return;
             if (!manual) {
-                const result = await this.chrome.runtime.sendMessage({ type: 'WHATS_NEW_PLAYBACK_SAFE' });
+                let timer;
+                const result = await Promise.race([
+                    Promise.resolve().then(() => this.chrome.runtime.sendMessage({ type: 'WHATS_NEW_PLAYBACK_SAFE' })).catch(() => ({ safe: false })),
+                    new Promise(resolve => { timer = setTimeout(() => resolve({ safe: false }), this.playbackTimeoutMs); })
+                ]).finally(() => clearTimeout(timer));
+                if (attempt !== this.attempt) return;
                 if (!result?.safe || !canShowWhatsNew(this.document, this.document.location.pathname)) return;
             }
             const selection = manual ? { entries: this.service.history({ preview }),
                 seenVersion: (await this.service.read().catch(() => ({}))).seenVersion } : await this.service.pending();
+            if (attempt !== this.attempt) return;
             if (!manual && !selection.entries.length) return;
             this.preview = preview;
             this.entries = selection.entries;
@@ -78,14 +88,17 @@ export class WhatsNewDialog {
             // Another surface may acknowledge while this one awaits its state read.
             if (!manual) {
                 const latest = await this.service.read();
+                if (attempt !== this.attempt) return;
                 if (globalThis.WhatsNewService.validVersion(latest.seenVersion)
                     && globalThis.WhatsNewService.compare(latest.seenVersion, this.service.version) >= 0) await this.close(false);
             }
         } catch (error) {
-            console.warn('[WhatsNew] Could not open release notes:', error);
+            if (attempt !== this.attempt) return;
+            console.error('[WhatsNew] Could not open release notes:', error);
             if (this.root) await this.close(false);
+            if (manual) throw error;
         } finally {
-            this.opening = false;
+            if (attempt === this.attempt) this.opening = false;
         }
     }
     render(lang = this.language) {
