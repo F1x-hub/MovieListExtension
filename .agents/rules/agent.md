@@ -50,6 +50,13 @@ movie-rating-extension/
 
 ## Architecture
 
+- **Release notes**: `WhatsNewService` stores installation acknowledgement in
+  `chrome.storage.local.whatsNewV1`; `WhatsNewDialog` opens from Navigation and
+  popup after language initialization, independently of auth/Firebase. Settings
+  offers full history and `?whatsNewPreview=draft` read-only preview. Draft catalog
+  entries never appear automatically; release packaging validates exact manifest
+  coverage before building. Admin and service surfaces are excluded.
+
 - **Windows updater boundary**: `UpdateService` owns update state and user-visible
   status in the extension. `com.movielist.updater` is a separate Native Messaging
   host; it validates signed release metadata, downloads and stages ZIPs, replaces the

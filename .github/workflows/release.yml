@@ -37,6 +37,9 @@ jobs:
       - name: Run updater contract tests
         run: npm run test:random-marathon && npm run test:update-service && npm run test:package-release && npm run test-popup-surface-contract && npm run test:updater-setup && node tests/updateMirror.test.cjs
 
+      - name: Validate localized release notes
+        run: npm run test:whats-new && node scripts/validate-whats-new.cjs
+
       - name: Build and package extension
         run: npm run package-release
 

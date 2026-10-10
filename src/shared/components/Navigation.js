@@ -61,6 +61,10 @@ class Navigation {
         if (this.i18n) {
             this.i18n.translatePage(); // Translate newly inserted navigation
         }
+        if (this.currentPage !== 'admin') {
+            void import('./WhatsNewDialog.js').then(module => module.showWhatsNew())
+                .catch(error => console.warn('Navigation: release notes unavailable', error));
+        }
     }
 
     /**

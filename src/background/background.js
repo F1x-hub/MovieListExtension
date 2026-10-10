@@ -6,6 +6,7 @@ try {
     importScripts('../shared/config/theNumbersMappings.js');
     importScripts('../shared/services/TheNumbersService.js');
     importScripts('../shared/services/UpdateService.js');
+    importScripts('../shared/services/WhatsNewService.js');
 } catch (e) {
     console.error('Failed to import scripts:', e);
 }
@@ -28,6 +29,10 @@ async function removeRetiredRatingsPosterCache() {
 void removeRetiredRatingsPosterCache();
 
 chrome.runtime.onInstalled.addListener((details) => {
+    // Capture the update baseline independently of native activation confirmation.
+    if (typeof WhatsNewService !== 'undefined') {
+        void new WhatsNewService().observeInstallation(details).catch(error => console.warn('[WhatsNew] Installation state failed:', error));
+    }
     console.log('Movie Rating Extension installed');
     updateIconFromStorage();
     setupTheNumbersRefreshAlarm();
@@ -692,6 +697,14 @@ async function removeFromWatchlistViaAPI(userId, movieId) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'WHATS_NEW_PLAYBACK_SAFE') {
+        if (sender.id !== chrome.runtime.id || typeof UpdateService === 'undefined') {
+            sendResponse({ safe: false });
+            return;
+        }
+        UpdateService.inspectPlaybackSafety().then(sendResponse).catch(() => sendResponse({ safe: false }));
+        return true;
+    }
     if (message.action === 'getWatchlistByStatus') {
         (async () => {
             try {

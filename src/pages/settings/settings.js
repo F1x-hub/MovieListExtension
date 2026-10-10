@@ -197,6 +197,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Initialize I18n
     await i18n.init();
     i18n.translatePage();
+    const previewWhatsNew = new URLSearchParams(window.location.search).get('whatsNewPreview') === 'draft';
+    const openWhatsNew = () => import('../../shared/components/WhatsNewDialog.js')
+        .then(module => module.showWhatsNew({ manual: true, preview: previewWhatsNew }))
+        .catch(error => console.warn('[Settings] Release notes unavailable:', error));
+    document.getElementById('whatsNewButton')?.addEventListener('click', openWhatsNew);
+    if (previewWhatsNew) void openWhatsNew();
     // Initialize Navigation
     const nav = new Navigation('navbar');
     nav.render();

@@ -810,6 +810,7 @@
     }
 
     global.UpdateService = {
+        inspectPlaybackSafety,
         exportDiagnostics,
         applyUpdate,
         checkForUpdates,

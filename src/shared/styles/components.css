@@ -470,6 +470,42 @@
 }
 
 /* Modal Components */
+.whats-new-overlay {
+    padding: 12px;
+    box-sizing: border-box;
+}
+
+.whats-new-surface {
+    display: flex;
+    flex-direction: column;
+    width: min(560px, 100%);
+    max-height: min(680px, calc(100dvh - 24px));
+    min-height: 0;
+    background: var(--ui-color-surface);
+    color: var(--ui-color-content);
+    border: 1px solid var(--ui-color-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.whats-new-header,
+.whats-new-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    flex-shrink: 0;
+}
+
+.whats-new-header h2 { margin: 0; font-size: 18px; line-height: 1.35; }
+.whats-new-footer { justify-content: flex-end; border-top: 1px solid var(--ui-color-border); }
+.whats-new-body { padding: 0 16px 14px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.whats-new-list { margin: 0; padding-left: 18px; }
+.whats-new-list li { margin: 0 0 14px; font-size: 13px; line-height: 1.5; }
+.whats-new-list p { margin: 4px 0 0; color: var(--ui-color-content-muted); }
+.whats-new-overlay button:focus-visible { outline: 2px solid var(--ui-color-interactive); outline-offset: 2px; }
+
 .modal-overlay {
     position: fixed;
     top: 0;

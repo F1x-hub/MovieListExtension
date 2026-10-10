@@ -6,6 +6,7 @@ const { spawnSync } = require('child_process');
 const root = path.join(__dirname, '..');
 const dist = path.join(root, 'dist');
 const manifestPath = path.join(dist, 'manifest.json');
+require('./validate-whats-new.cjs').validateCurrent();
 
 function fail(message) {
     console.error(`[release] ${message}`);
