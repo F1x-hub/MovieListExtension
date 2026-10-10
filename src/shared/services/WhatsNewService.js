@@ -37,32 +37,25 @@
             }
         }
         published() {
-            return this.entries.filter(entry => !entry.draft && !entry.skipAnnouncement
+            return this.entries.filter(entry => !entry.draft && entry.highlights?.length
                 && WhatsNewService.validVersion(entry.version) && WhatsNewService.compare(entry.version, this.version) <= 0)
                 .sort((a, b) => WhatsNewService.compare(b.version, a.version));
         }
         history({ preview = false } = {}) {
-            return preview ? this.entries.filter(entry => entry.draft) : this.published();
+            return preview ? [...this.entries.filter(entry => entry.draft), ...this.published()] : this.published();
         }
         async pending() {
             const state = await this.read();
             if (!WhatsNewService.validVersion(state.seenVersion)) {
                 await this.acknowledge();
-                return { entries: [], truncated: false };
+                return { entries: [] };
             }
-            if (WhatsNewService.compare(state.seenVersion, this.version) >= 0) return { entries: [], truncated: false };
-            const eligible = this.published().filter(entry => WhatsNewService.compare(entry.version, state.seenVersion) > 0);
-            let budget = 12;
-            const entries = eligible.slice(0, 3).map(entry => {
-                const highlights = entry.highlights.slice(0, budget);
-                budget -= highlights.length;
-                return { ...entry, highlights };
-            }).filter(entry => entry.highlights.length);
-            const shown = entries.reduce((sum, entry) => sum + entry.highlights.length, 0);
-            const total = eligible.reduce((sum, entry) => sum + entry.highlights.length, 0);
-            if (!entries.length && this.entries.some(entry => !entry.draft && entry.skipAnnouncement
+            if (WhatsNewService.compare(state.seenVersion, this.version) >= 0) return { entries: [] };
+            const history = this.published();
+            const hasNew = history.some(entry => !entry.skipAnnouncement && WhatsNewService.compare(entry.version, state.seenVersion) > 0);
+            if (!hasNew && this.entries.some(entry => !entry.draft && entry.skipAnnouncement
                 && WhatsNewService.compare(entry.version, this.version) === 0)) await this.acknowledge();
-            return { entries, truncated: shown < total };
+            return { entries: hasNew ? history : [], seenVersion: state.seenVersion };
         }
         async acknowledge() {
             const state = await this.read();

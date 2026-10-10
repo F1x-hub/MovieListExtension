@@ -50,11 +50,14 @@ export class WhatsNewDialog {
                 const result = await this.chrome.runtime.sendMessage({ type: 'WHATS_NEW_PLAYBACK_SAFE' });
                 if (!result?.safe || !canShowWhatsNew(this.document, this.document.location.pathname)) return;
             }
-            const selection = manual ? { entries: this.service.history({ preview }), truncated: false } : await this.service.pending();
+            const selection = manual ? { entries: this.service.history({ preview }),
+                seenVersion: (await this.service.read().catch(() => ({}))).seenVersion } : await this.service.pending();
             if (!manual && !selection.entries.length) return;
             this.preview = preview;
             this.entries = selection.entries;
-            this.truncated = selection.truncated;
+            this.seenVersion = selection.seenVersion;
+            this.visibleCount = 10;
+            this.expanded = new Set(this.entries[0] ? [this.entries[0].id] : []);
             this.trigger = this.document.activeElement;
             this.language = this.locale.currentLocale;
             this.root = this.node('div', 'modal-overlay whats-new-overlay');
@@ -92,8 +95,7 @@ export class WhatsNewDialog {
         const scroll = this.root.querySelector('.whats-new-body')?.scrollTop || 0;
         const surface = this.node('section', 'whats-new-surface');
         const header = this.node('header', 'whats-new-header');
-        const titleVersion = this.entries.length === 1 ? this.entries[0].version : this.service.version;
-        const title = this.node('h2', '', this.preview ? this.text('draft') : this.text('title').replace('{version}', titleVersion));
+        const title = this.node('h2', '', this.text('title'));
         title.id = 'whatsNewTitle';
         const close = this.node('button', 'btn btn-secondary', '×');
         close.type = 'button'; close.dataset.whatsNew = 'close';
@@ -102,8 +104,45 @@ export class WhatsNewDialog {
         header.append(title, close);
         const body = this.node('div', 'whats-new-body');
         if (!this.entries.length) body.append(this.node('p', '', this.text('empty')));
-        for (const entry of this.entries) {
-            if (this.entries.length > 1) body.append(this.node('h3', '', entry.version));
+        for (const [index, entry] of this.entries.slice(0, this.visibleCount).entries()) {
+            const version = this.node('section', 'whats-new-version');
+            const heading = this.node('h3', 'whats-new-version-heading');
+            const toggle = this.node('button', 'whats-new-version-toggle');
+            toggle.type = 'button'; toggle.dataset.whatsNew = `version-${entry.id}`;
+            toggle.id = `whatsNewVersion-${index}`;
+            const panel = this.node('div', 'whats-new-version-panel');
+            panel.id = `whatsNewPanel-${index}`;
+            panel.setAttribute('role', 'region'); panel.setAttribute('aria-labelledby', toggle.id);
+            toggle.setAttribute('aria-controls', panel.id);
+            const label = this.node('span', 'whats-new-version-label');
+            const formatter = new Intl.DateTimeFormat(this.language === 'ru' ? 'ru-RU' : 'en-US', {
+                day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC'
+            });
+            const date = new Date(`${entry.date}T00:00:00Z`);
+            const formattedDate = this.language === 'ru'
+                ? formatter.formatToParts(date).filter(part => ['day', 'month', 'year'].includes(part.type)).map(part => part.value).join(' ')
+                : formatter.format(date);
+            label.append(this.node('strong', '', entry.draft ? this.text('draft') : this.text('version').replace('{version}', entry.version)),
+                this.node('span', 'whats-new-version-date', '· ' + formattedDate));
+            toggle.append(label);
+            if (index > 0 && !entry.draft && globalThis.WhatsNewService.validVersion(this.seenVersion)
+                && globalThis.WhatsNewService.compare(entry.version, this.seenVersion) > 0) {
+                toggle.append(this.node('span', 'whats-new-version-new', this.text('new')));
+            }
+            const chevron = this.node('span', 'whats-new-version-chevron', '›');
+            chevron.setAttribute('aria-hidden', 'true'); toggle.append(chevron);
+            const setExpanded = () => {
+                const expanded = this.expanded.has(entry.id);
+                toggle.setAttribute('aria-expanded', String(expanded));
+                panel.classList.toggle('is-open', expanded);
+                panel.setAttribute('aria-hidden', String(!expanded));
+                panel.inert = !expanded;
+            };
+            toggle.addEventListener('click', () => {
+                if (this.expanded.has(entry.id)) this.expanded.delete(entry.id); else this.expanded.add(entry.id);
+                setExpanded();
+            });
+            setExpanded();
             const list = this.node('ul', 'whats-new-list');
             for (const highlight of entry.highlights) {
                 const item = this.node('li');
@@ -111,16 +150,18 @@ export class WhatsNewDialog {
                     this.node('p', '', highlight.text[this.language] || highlight.text.en));
                 list.append(item);
             }
-            body.append(list);
+            const content = this.node('div', 'whats-new-version-content');
+            content.append(list); panel.append(content); heading.append(toggle); version.append(heading, panel); body.append(version);
         }
-        if (this.truncated) {
-            const history = this.node('button', 'btn btn-secondary', this.text('earlier'));
-            history.type = 'button'; history.dataset.whatsNew = 'history';
-            history.addEventListener('click', () => {
-                this.entries = this.service.history(); this.truncated = false; this.render();
-                this.root.querySelector('[data-whats-new="done"]').focus();
+        if (this.entries.length > this.visibleCount) {
+            const more = this.node('button', 'btn btn-secondary', this.text('more'));
+            more.type = 'button'; more.dataset.whatsNew = 'more';
+            more.addEventListener('click', () => {
+                const firstNewIndex = this.visibleCount;
+                this.visibleCount += 10; this.render();
+                this.root.querySelectorAll('.whats-new-version-toggle')[firstNewIndex]?.focus();
             });
-            body.append(history);
+            body.append(more);
         }
         const footer = this.node('footer', 'whats-new-footer');
         const done = this.node('button', 'btn btn-primary', this.text('done'));
@@ -132,6 +173,10 @@ export class WhatsNewDialog {
         if (focusedAction) (this.root.querySelector(`[data-whats-new="${focusedAction}"]`) || done).focus();
     }
     keydown(event) {
+        const toggle = event.target.closest?.('.whats-new-version-toggle');
+        if (toggle && (event.key === 'Enter' || event.key === ' ')) {
+            event.preventDefault(); toggle.click(); return;
+        }
         if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); void this.close(true); }
         if (event.key !== 'Tab') return;
         const buttons = [...this.root.querySelectorAll('button:not([disabled])')];
