@@ -14,6 +14,7 @@ class FakeFirestore {
         this.collections = new Map();
         this.failTransactions = false;
         this.readCount = 0;
+        this.transactionReads = [];
     }
 
     collection(name) {
@@ -43,6 +44,7 @@ class FakeFirestore {
         const writes = [];
         const transaction = {
             get: async ref => {
+                this.transactionReads.push(ref.collection);
                 const data = this.get(ref);
                 return { exists: data !== null, id: ref.id, data: () => clone(data) };
             },
@@ -120,125 +122,109 @@ const input = (overrides = {}) => ({
 });
 
 async function run() {
-    const rounded = SeriesEpisodeRatingService.calculateAggregate(149, 20);
-    assert.deepEqual(rounded, { avg10: 75, episodeAverage: 7.5, rating: 8 }, '7.45 rounds to 7.5 and the public integer is rounded separately');
-    assert.equal(SeriesEpisodeRatingService.calculateAggregate(186, 25).episodeAverage, 7.4);
     assert.equal(SeriesEpisodeRatingService.getEpisodeKey(0, 1), '0:1');
-
+    assert.throws(() => SeriesEpisodeRatingService.getEpisodeKey(-1, 1));
+    const ref = { collection: 'seriesEpisodeRatings', id: 'user-a_42' };
     {
         const { db, service } = createHarness();
         const [first, second] = await Promise.all([
-            service.getEpisodeRatings('user-a', 42),
-            service.getEpisodeRatings('user-a', 42)
+            service.getEpisodeRatings('user-a', 42), service.getEpisodeRatings('user-a', 42)
         ]);
-        assert.equal(db.readCount, 1, 'concurrent page and dialog reads share one private document read');
+        assert.equal(db.readCount, 1);
         assert.equal(first.exists, false);
         assert.equal(second.exists, false);
     }
-
+    {
+        const { db, service, sideEffects } = createHarness();
+        const title = { userId: 'user-a', movieId: 42, rating: 6,
+            comment: 'Keep', review: 'Review', isFavorite: true, createdAt: new Date() };
+        db.collections.set('ratings', new Map([['user-a_42', clone(title)]]));
+        const first = await service.setEpisodeRating(input({ rating: 9, seasonNumber: 0, tmdbEpisodeId: 901 }));
+        assert.equal(first.state.episodes['0:1'].r, 9);
+        assert.equal(db.get(ref).episodes['0:1'].id, 901);
+        assert.deepEqual(Object.keys(db.get(ref)).sort(),
+            ['userId', 'movieId', 'tmdbId', 'episodes', 'lastKey', 'updatedAt'].sort());
+        const cached = await service.getEpisodeRatings('user-a', 42);
+        cached.episodes['0:1'].r = 1;
+        assert.equal((await service.getEpisodeRatings('user-a', 42)).episodes['0:1'].r, 9,
+            'returned state does not share mutable episode entries with cache');
+        await service.setEpisodeRating(input({ rating: 5, seasonNumber: 0 }));
+        assert.equal(db.get(ref).episodes['0:1'].r, 5);
+        await service.removeEpisodeRating(input({ seasonNumber: 0 }));
+        assert.equal(db.get(ref), null, 'last private score deletes only private document');
+        assert.deepEqual(db.get({ collection: 'ratings', id: 'user-a_42' }), title);
+        assert.ok(Object.values(sideEffects).every(count => count === 0), 'no public caches, genres or movie metadata effects');
+        assert.ok(db.transactionReads.every(name => name === 'seriesEpisodeRatings'));
+        assert.equal((await service.removeEpisodeRating(input())).changed, false);
+    }
     {
         const { db, service } = createHarness();
-        db.collections.set('ratings', new Map([['user-a_42', {
-            userId: 'user-a', movieId: 42, rating: 6, comment: 'Keep this', review: 'Long review',
-            isFavorite: true, createdAt: new Date(), updatedAt: new Date()
+        const t = new Date();
+        db.collections.set('seriesEpisodeRatings', new Map([['user-a_42', {
+            userId: 'user-a', movieId: 42, tmdbId: 123,
+            episodes: { '1:1': { r: 8, t, id: 91 } }, lastKey: '1:1', updatedAt: t,
+            ratingSum: 8, ratedCount: 1, mode: 'episodes', manualBackup: { rating: 4 }
         }]]));
-        await service.setEpisodeRating(input({ rating: 9, seasonNumber: 0, episodeNumber: 1, tmdbEpisodeId: 901 }));
-        const episodeDoc = db.get({ collection: 'seriesEpisodeRatings', id: 'user-a_42' });
-        const aggregateRating = db.get({ collection: 'ratings', id: 'user-a_42' });
-        assert.equal(episodeDoc.episodes['0:1'].id, 901);
-        assert.equal(episodeDoc.manualBackup.rating, 6);
-        assert.equal(aggregateRating.ratingSource, 'episodes');
-        assert.equal(aggregateRating.episodeAverage, 9);
-        assert.equal(aggregateRating.rating, 9);
-        assert.equal(aggregateRating.comment, 'Keep this');
-        assert.equal(aggregateRating.review, 'Long review');
-        assert.equal(aggregateRating.isFavorite, true);
-
-        await service.removeEpisodeRating(input({ seasonNumber: 0, episodeNumber: 1 }));
-        const restoredRating = db.get({ collection: 'ratings', id: 'user-a_42' });
-        assert.equal(db.get({ collection: 'seriesEpisodeRatings', id: 'user-a_42' }), null);
-        assert.equal(restoredRating.rating, 6);
-        assert.equal(restoredRating.ratingSource, 'manual');
-        assert.equal('episodeAverage' in restoredRating, false);
-        assert.equal(restoredRating.comment, 'Keep this');
+        const legacy = await service.getEpisodeRatings('user-a', 42);
+        assert.equal(legacy.episodes['1:1'].r, 8);
+        assert.equal('mode' in legacy, false);
+        await service.setEpisodeRating(input({ rating: 10, episodeNumber: 2 }));
+        const document = db.get(ref);
+        assert.equal(document.episodes['1:1'].id, 91);
+        for (const key of ['ratingSum', 'ratedCount', 'mode', 'manualBackup']) assert.equal(key in document, false);
+        await service.removeEpisodeRating(input({ episodeNumber: 1 }));
+        assert.equal(Object.keys(db.get(ref).episodes).length, 1);
+        assert.equal(db.get({ collection: 'ratings', id: 'user-a_42' }), null);
     }
-
     {
         const { db, service } = createHarness();
-        await service.setEpisodeRating(input({ rating: 8 }));
-        const ratingRef = { collection: 'ratings', id: 'user-a_42' };
-        const existing = db.get(ratingRef);
-        db.collections.get('ratings').set('user-a_42', { ...existing, comment: 'Review teaser', review: 'A review' });
-        const removed = await service.removeEpisodeRating(input());
-        const preserved = db.get(ratingRef);
-        assert.equal(removed.commentFallback, true);
-        assert.equal(preserved.ratingSource, 'manual');
-        assert.equal(preserved.comment, 'Review teaser');
-        assert.equal(preserved.review, 'A review');
-        assert.equal(preserved.rating, 8);
-        assert.equal(db.get({ collection: 'seriesEpisodeRatings', id: 'user-a_42' }), null);
+        const [first, second] = await Promise.all([
+            service.setEpisodeRating(input({ rating: 7 })),
+            service.setEpisodeRating(input({ rating: 9, episodeNumber: 2 }))
+        ]);
+        assert.equal(Object.keys(first.state.episodes).length, 1);
+        assert.equal(Object.keys(second.state.episodes).length, 2, 'series queue prevents lost updates');
+        assert.equal(Object.keys(db.get(ref).episodes).length, 2);
     }
-
+    {
+        const { db, service } = createHarness();
+        const collection = db.collection.bind(db);
+        let finishRead;
+        db.collection = name => {
+            const original = collection(name);
+            return {
+                doc: id => {
+                    const doc = original.doc(id);
+                    const get = doc.get;
+                    doc.get = async () => {
+                        const stale = await get();
+                        await new Promise(resolve => { finishRead = resolve; });
+                        return stale;
+                    };
+                    return doc;
+                }
+            };
+        };
+        const loading = service.getEpisodeRatings('user-a', 42);
+        await Promise.resolve();
+        await service.setEpisodeRating(input({ rating: 8 }));
+        finishRead();
+        await loading;
+        assert.equal((await service.getEpisodeRatings('user-a', 42)).episodes['1:1'].r, 8,
+            'a late page read cannot overwrite a newly committed private cache');
+    }
     {
         const { db, service } = createHarness();
         await service.setEpisodeRating(input({ rating: 4 }));
-        await service.removeEpisodeRating(input());
-        assert.equal(db.get({ collection: 'ratings', id: 'user-a_42' }), null, 'last episode rating without backup or review removes the series rating');
-    }
-
-    {
-        const { db, service } = createHarness();
-        await service.setEpisodeRating(input({ rating: 8, episodeNumber: 1 }));
-        await service.saveManualRating({ ...input(), rating: 5 });
-        let rating = db.get({ collection: 'ratings', id: 'user-a_42' });
-        assert.equal(rating.rating, 5);
-        assert.equal(rating.ratingSource, 'manual');
-        await service.setEpisodeRating(input({ rating: 10, episodeNumber: 2 }));
-        rating = db.get({ collection: 'ratings', id: 'user-a_42' });
-        assert.equal(rating.rating, 5, 'episode ratings in manual mode do not overwrite the user override');
-        const restored = await service.restoreEpisodeAggregate(input());
-        assert.equal(restored.rating.rating, 9);
-        assert.equal(restored.rating.episodeAverage, 9);
-        assert.equal(restored.state.mode, 'episodes');
-    }
-
-    {
-        const { db, service } = createHarness();
-        await service.setEpisodeRating(input({ rating: 7, episodeNumber: 1 }));
-        await service.setEpisodeRating(input({ rating: 9, episodeNumber: 2 }));
-        const result = await service.deleteSeriesRating(input());
-        assert.equal(result.deletedEpisodes, 2);
-        assert.equal(db.get({ collection: 'seriesEpisodeRatings', id: 'user-a_42' }), null);
-        assert.equal(db.get({ collection: 'ratings', id: 'user-a_42' }), null);
-    }
-
-    {
-        const { db, service, sideEffects } = createHarness();
-        const [first, second] = await Promise.all([
-            service.setEpisodeRating(input({ rating: 7, episodeNumber: 1 })),
-            service.setEpisodeRating(input({ rating: 9, episodeNumber: 2 }))
-        ]);
-        assert.equal(first.state.ratedCount, 1);
-        assert.equal(second.state.ratedCount, 2);
-        const episodeDoc = db.get({ collection: 'seriesEpisodeRatings', id: 'user-a_42' });
-        assert.equal(episodeDoc.ratedCount, 2);
-        assert.equal(episodeDoc.ratingSum, 16);
-        assert.ok(sideEffects.ratingsCache >= 2);
-        assert.equal(sideEffects.watchlist, undefined, 'episode ratings do not remove series from watchlist');
-    }
-
-    {
-        const { db, service } = createHarness();
         db.failTransactions = true;
         await assert.rejects(service.setEpisodeRating(input({ rating: 8 })), error => error.code === 'permission-denied');
-        assert.equal(db.get({ collection: 'seriesEpisodeRatings', id: 'user-a_42' }), null);
-        assert.equal(db.get({ collection: 'ratings', id: 'user-a_42' }), null);
+        assert.equal(db.get(ref).episodes['1:1'].r, 4);
+        assert.equal((await service.getEpisodeRatings('user-a', 42)).episodes['1:1'].r, 4);
+        db.failTransactions = false;
+        await service.setEpisodeRating(input({ rating: 9 }));
+        assert.equal(db.get(ref).episodes['1:1'].r, 9, 'failed request does not poison series queue');
+        await assert.rejects(service.setEpisodeRating(input({ rating: 7.5 })));
     }
-
     console.log('seriesEpisodeRatings.test.cjs: all tests passed');
 }
-
-run().catch(error => {
-    console.error(error);
-    process.exitCode = 1;
-});
+run().catch(error => { console.error(error); process.exitCode = 1; });

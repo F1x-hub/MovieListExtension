@@ -244,7 +244,10 @@ function firebase(services = {}) {
     assert.equal(deniedDetails.currentPersonalRating, legacyRating,
         'the title rating is patched even when the private episode read is denied');
     assert.equal(deniedDetails.hasEpisodeRatingsPermissionDenied(), true);
-    assert.equal(deniedDetails.getSeriesEpisodeSummaryText(), 'movie_details.series_episode_rules_error');
+    const unavailableControl = deniedDetails.renderEpisodeRatingControl({ seasonNumber: 1, episodeNumber: 1 });
+    assert.match(unavailableControl, /series_episode_rules_error/);
+    assert.doesNotMatch(unavailableControl, /role="radio"/,
+        'unavailable episode stars are replaced by a message while the independent title rating remains usable');
 
     deniedDetails.elements = {
         ratingComment: { value: 'updated comment' },

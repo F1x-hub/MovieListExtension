@@ -61,13 +61,8 @@ class MovieDetailsManager {
         this.currentSeriesEpisodeRatings = {
             exists: false,
             episodes: {},
-            ratingSum: 0,
-            ratedCount: 0,
-            mode: 'manual',
-            manualBackup: null
         };
         this.episodeRatingsPermissionDeniedMovieId = null;
-        this.seriesRatingEditMode = 'normal';
         this.episodeRatingUiVersion = 0;
         this.isEpisodeRatingMutationPending = false;
         this.originalRatingComment = '';
@@ -355,11 +350,6 @@ class MovieDetailsManager {
             ratingMovieMeta: document.getElementById('ratingMovieMeta'),
             ratingStars: document.getElementById('ratingStars'),
             ratingStatus: document.getElementById('ratingStatus'),
-            seriesAggregateRatingNotice: document.getElementById('seriesAggregateRatingNotice'),
-            seriesAggregateRatingText: document.getElementById('seriesAggregateRatingText'),
-            setManualSeriesRatingBtn: document.getElementById('setManualSeriesRatingBtn'),
-            restoreEpisodeAggregateBtn: document.getElementById('restoreEpisodeAggregateBtn'),
-            deleteSeriesRatingBtn: document.getElementById('deleteSeriesRatingBtn'),
             writeReviewBtn: document.getElementById('writeReviewBtn'),
             reviewContainer: document.getElementById('reviewContainer'),
             ratingComment: document.getElementById('ratingComment'),
@@ -577,10 +567,18 @@ class MovieDetailsManager {
         if (this.elements.saveRatingBtn) {
             this.elements.saveRatingBtn.addEventListener('click', () => this.saveRating());
         }
-        this.elements.setManualSeriesRatingBtn?.addEventListener('click', () => this.enterManualSeriesRatingMode());
-        this.elements.restoreEpisodeAggregateBtn?.addEventListener('click', () => this.restoreEpisodeAggregateFromModal());
-        this.elements.deleteSeriesRatingBtn?.addEventListener('click', () => this.deleteSeriesRatingFromModal());
         this.elements.movieDetailsContainer?.addEventListener('keydown', event => this.handleEpisodeRatingKeydown(event));
+        this.elements.movieDetailsContainer?.addEventListener('keydown', event => this.handleSeasonsBrowserKeydown(event));
+        this.elements.movieDetailsContainer?.addEventListener('mouseover', event => this.handleEpisodeRatingPointer(event));
+        this.elements.movieDetailsContainer?.addEventListener('mouseout', event => this.handleEpisodeRatingPointer(event));
+        this.elements.movieDetailsContainer?.addEventListener('error', event => {
+            const image = event.target;
+            if (image?.matches?.('[data-episode-still]')) {
+                const still = image.closest('.episode-detail-still');
+                if (still) still.innerHTML = '<span aria-label="Кадр отсутствует">▶</span>';
+            }
+        }, true);
+        window.addEventListener('resize', () => this.updateEpisodeChartScrollControls());
 
         // Video Player Modal
         if (this.elements.closeVideoBtn) {
@@ -816,10 +814,6 @@ class MovieDetailsManager {
                 this.deleteUserRating(ratingId);
             } else if (action === 'read-rating-review' && ratingId) {
                 this.openReviewReaderByRatingId(ratingId);
-            } else if (action === 'episode-rating-open') {
-                e.preventDefault();
-                e.stopPropagation();
-                this.toggleEpisodeRatingPopover(actionBtn);
             } else if (action === 'episode-rating-choice') {
                 e.preventDefault();
                 e.stopPropagation();
@@ -828,28 +822,22 @@ class MovieDetailsManager {
                 e.preventDefault();
                 e.stopPropagation();
                 void this.changeEpisodeRating(actionBtn, null);
-            } else if (action === 'toggle-season') {
-                const seasonNumber = Number(actionBtn.getAttribute('data-season-number'));
-                const tmdbId = actionBtn.getAttribute('data-tmdb-id');
-                const episodeCount = Number(actionBtn.getAttribute('data-episode-count'));
-                this.toggleSeasonEpisodes(actionBtn, seasonNumber, tmdbId, episodeCount);
             } else if (action === 'retry-season') {
-                const seasonNumber = Number(actionBtn.getAttribute('data-season-number'));
-                const tmdbId = actionBtn.getAttribute('data-tmdb-id');
-                const parentCard = actionBtn.closest('.season-card');
-                const toggleBtn = parentCard?.querySelector('[data-action="toggle-season"]');
-                if (toggleBtn) {
-                    this.toggleSeasonEpisodes(toggleBtn, seasonNumber, tmdbId, 1, true);
-                }
+                void this.loadSelectedSeason(Number(actionBtn.dataset.seasonNumber), { forceRefresh: true });
             } else if (action === 'select-season-pill') {
-                // DEF-01: Long-series season pill navigation
-                const seasonNumber = Number(actionBtn.getAttribute('data-season-number'));
-                this.handleSeasonPillSelect(seasonNumber);
+                void this.handleSeasonPillSelect(Number(actionBtn.dataset.seasonNumber));
+            } else if (action === 'select-browser-episode') {
+                this.selectSeasonEpisode(Number(actionBtn.dataset.episodeNumber));
+            } else if (action === 'navigate-browser-episode') {
+                void this.navigateSeasonEpisode(actionBtn.dataset.direction);
+            } else if (action === 'scroll-episode-chart') {
+                const chart = document.querySelector('.episode-chart');
+                chart?.scrollBy({ left: chart.clientWidth * (actionBtn.dataset.direction === 'prev' ? -0.8 : 0.8), behavior: 'smooth' });
             } else if (action === 'play-episode') {
                 const seasonNumber = Number(actionBtn.getAttribute('data-season-number'));
                 const episodeNumber = Number(actionBtn.getAttribute('data-episode-number'));
                 const timestamp = Number(actionBtn.getAttribute('data-timestamp')) || 0;
-                const parentCard = actionBtn.closest('.episode-card');
+                const parentCard = actionBtn.closest('.episode-detail');
                 const episodeTitle = parentCard?.querySelector('.episode-title')?.textContent?.trim() || null;
                 this.handleEpisodePlay(seasonNumber, episodeNumber, episodeTitle, timestamp);
             } else if (action === 'continue-watch-progress') {
@@ -2156,18 +2144,9 @@ class MovieDetailsManager {
             else delete button.dataset.userRating;
             const label = button.querySelector('.rate-movie-label');
             if (label) {
-                if (rating?.ratingSource === 'episodes' && Number(rating.episodeAverage) > 0) {
-                    label.textContent = this.formatMovieDetailsText('movie_details.series_episode_summary_short', {
-                        rating: Number(rating.episodeAverage).toFixed(1),
-                        count: Number(rating.episodesRatedCount) || 0
-                    });
-                } else if (Number(rating?.rating) > 0 && typeof isSeriesMedia === 'function' && isSeriesMedia(this.selectedMovie)) {
-                    label.textContent = this.formatMovieDetailsText('movie_details.series_manual_summary', {
-                        rating: Number(rating.rating)
-                    });
-                } else {
-                    label.textContent = i18n.get('movie_details.rate_title');
-                }
+                label.textContent = score > 0
+                    ? this.formatMovieDetailsText('movie_details.personal_rating', { rating: score })
+                    : i18n.get('movie_details.rate_title');
             }
         }
         this.currentRating = Number(rating?.rating) || 0;
@@ -2183,9 +2162,6 @@ class MovieDetailsManager {
     }
 
     getPersonalRatingDisplayValue(rating = this.currentPersonalRating) {
-        if (rating?.ratingSource === 'episodes' && Number.isFinite(Number(rating.episodeAverage))) {
-            return Number(rating.episodeAverage);
-        }
         return Number(rating?.rating) || 0;
     }
 
@@ -2214,262 +2190,69 @@ class MovieDetailsManager {
         return key ? this.currentSeriesEpisodeRatings?.episodes?.[key] || null : null;
     }
 
-    getSeasonEpisodeRatingStats(seasonNumber) {
-        const prefix = String(Number(seasonNumber)) + ':';
-        const ratings = Object.entries(this.currentSeriesEpisodeRatings?.episodes || {})
-            .filter(([key, entry]) => key.startsWith(prefix) && Number.isInteger(Number(entry?.r)))
-            .map(([, entry]) => Number(entry.r));
-        if (ratings.length === 0) return null;
-        const avg10 = Math.round((ratings.reduce((sum, rating) => sum + rating, 0) * 10) / ratings.length);
-        return { rating: avg10 / 10, count: ratings.length };
-    }
-
-    getSeriesEpisodeSummaryText() {
-        if (typeof isSeriesMedia !== 'function' || !isSeriesMedia(this.selectedMovie)) return '';
-        if (!this.currentUser) {
-            return Number(this.selectedMovie?.tmdbId || this.selectedMovie?.externalId?.tmdb) > 0
-                && !(Number(this.selectedMovie?.kinopoiskId) > 0)
-                ? i18n.get('movie_details.series_episode_tmdb_only_hint')
-                : '';
-        }
-        if (this.hasEpisodeRatingsPermissionDenied()) {
-            return i18n.get('movie_details.series_episode_rules_error');
-        }
-        const rating = this.currentPersonalRating;
-        if (rating?.ratingSource === 'episodes' && Number(rating.episodeAverage) > 0) {
-            return this.formatMovieDetailsText('movie_details.series_episode_summary', {
-                rating: Number(rating.episodeAverage).toFixed(1),
-                count: Number(rating.episodesRatedCount) || 0
-            });
-        }
-        if (Number(rating?.rating) > 0 && typeof isSeriesMedia === 'function' && isSeriesMedia(this.selectedMovie)) {
-            const episodeCount = Number(this.currentSeriesEpisodeRatings?.ratedCount) || 0;
-            return episodeCount > 0
-                ? this.formatMovieDetailsText('movie_details.series_manual_with_episodes', {
-                    rating: Number(rating.rating),
-                    count: episodeCount
-                })
-                : this.formatMovieDetailsText('movie_details.series_manual_summary', { rating: Number(rating.rating) });
-        }
-        const episodeCount = Number(this.currentSeriesEpisodeRatings?.ratedCount) || 0;
-        if (episodeCount > 0 && this.currentSeriesEpisodeRatings?.mode === 'episodes') {
-            const aggregate = SeriesEpisodeRatingService.calculateAggregate(
-                this.currentSeriesEpisodeRatings.ratingSum,
-                episodeCount
-            );
-            if (aggregate) {
-                return this.formatMovieDetailsText('movie_details.series_episode_summary', {
-                    rating: aggregate.episodeAverage.toFixed(1),
-                    count: episodeCount
-                });
-            }
-        }
-        if (this.hasEpisodeRatingAccess()) return i18n.get('movie_details.series_episode_hint');
-        if (this.currentUser && typeof isSeriesMedia === 'function' && isSeriesMedia(this.selectedMovie)
-            && Number(this.selectedMovie?.tmdbId || this.selectedMovie?.externalId?.tmdb) > 0
-            && !(Number(this.selectedMovie?.kinopoiskId) > 0)) {
-            return i18n.get('movie_details.series_episode_tmdb_only_hint');
-        }
-        return '';
-    }
-
     updateSeriesEpisodeRatingUI() {
-        const summary = document.getElementById('seriesEpisodeRatingSummary');
-        if (summary) {
-            summary.textContent = this.getSeriesEpisodeSummaryText();
-            summary.hidden = !summary.textContent;
-        }
-        const episodeRatingsUnavailable = this.hasEpisodeRatingsPermissionDenied();
-        document.querySelectorAll('.season-card__episode-average').forEach(element => {
-            if (episodeRatingsUnavailable) {
-                element.textContent = '';
-                element.hidden = true;
-                return;
-            }
-            const stats = this.getSeasonEpisodeRatingStats(element.dataset.seasonNumber);
-            element.textContent = stats
-                ? this.formatMovieDetailsText('movie_details.series_episode_season_average', {
-                    rating: stats.rating.toFixed(1),
-                    count: stats.count
-                })
-                : '';
-            element.hidden = !stats;
-        });
-        if (this.hasEpisodeRatingAccess() && !this.hasEpisodeRatingsPermissionDenied()) this.ensureEpisodeRatingControls();
-        else document.querySelectorAll('.episode-rating-control').forEach(control => control.remove());
+        this.ensureEpisodeRatingControls();
         document.querySelectorAll('.episode-rating-control').forEach(control => {
-            const seasonNumber = Number(control.dataset.seasonNumber);
-            const episodeNumber = Number(control.dataset.episodeNumber);
-            const score = Number(this.getEpisodeRatingFor(seasonNumber, episodeNumber)?.r) || 0;
-            const trigger = control.querySelector('[data-action="episode-rating-open"]');
-            const removeButton = control.querySelector('[data-action="episode-rating-remove"]');
-            if (trigger) {
-                trigger.textContent = score > 0
-                    ? this.formatMovieDetailsText('movie_details.series_episode_value', { rating: score })
-                    : i18n.get('movie_details.series_episode_rate');
-                trigger.setAttribute('aria-label', this.formatMovieDetailsText('movie_details.series_episode_aria', {
-                    episode: 'S' + seasonNumber + 'E' + episodeNumber
-                }));
-                trigger.dataset.currentRating = String(score);
-            }
-            if (removeButton) removeButton.hidden = score <= 0;
-            if (trigger) {
-                trigger.disabled = this.isEpisodeRatingMutationPending || control.dataset.released !== 'true';
-                trigger.setAttribute('aria-disabled', String(trigger.disabled));
-            }
-            control.querySelectorAll('[data-action="episode-rating-choice"], [data-action="episode-rating-remove"]').forEach(button => {
-                button.disabled = this.isEpisodeRatingMutationPending;
+            const score = Number(this.getEpisodeRatingFor(Number(control.dataset.seasonNumber), Number(control.dataset.episodeNumber))?.r) || 0;
+            const choices = [...control.querySelectorAll('[data-action="episode-rating-choice"]')];
+            choices.forEach(button => {
+                const value = Number(button.dataset.rating);
+                button.setAttribute('aria-checked', String(value === score));
+                button.tabIndex = value === (score || 1) ? 0 : -1;
+                button.classList.toggle('is-filled', value <= score);
+                button.textContent = value <= score ? '★' : '☆';
+                button.disabled = this.isEpisodeRatingMutationPending || control.dataset.released !== 'true';
             });
-            control.querySelectorAll('[data-action="episode-rating-choice"]').forEach(button => {
-                button.setAttribute('aria-pressed', String(Number(button.dataset.rating) === score));
-            });
+            const value = control.querySelector('.episode-rating-value');
+            if (value) value.textContent = score ? `${score}/10` : '—';
+            const remove = control.querySelector('[data-action="episode-rating-remove"]');
+            if (remove) {
+                remove.hidden = score === 0;
+                remove.disabled = this.isEpisodeRatingMutationPending;
+            }
         });
-        this.updateRatingModalSeriesState();
+        document.querySelectorAll('.episode-column').forEach(column => {
+            const mark = column.querySelector('[data-marker="rated"]');
+            if (mark) mark.hidden = !this.getEpisodeRatingFor(Number(column.dataset.seasonNumber), Number(column.dataset.episodeNumber));
+        });
+        const card = document.querySelector('.episode-detail');
+        const badge = card?.querySelector('.episode-user-rating-badge');
+        if (badge) {
+            const score = Number(this.getEpisodeRatingFor(Number(card.dataset.seasonNumber), Number(card.dataset.episodeNumber))?.r) || 0;
+            badge.textContent = this.formatMovieDetailsText('movie_details.series_episode_user_badge', { rating: score });
+            badge.hidden = !score;
+        }
+    }
+
+    getEpisodeRatingControlAccess() {
+        if (!this.currentUser) return 'guest';
+        if (!this.hasEpisodeRatingAccess()) return 'unlinked';
+        if (this.hasEpisodeRatingsPermissionDenied()) return 'unavailable';
+        return 'ready';
     }
 
     ensureEpisodeRatingControls() {
-        if (!this.hasEpisodeRatingAccess()) return;
-        document.querySelectorAll('.episode-card[data-season-number][data-episode-number]').forEach(card => {
-            if (card.querySelector('.episode-rating-control')) return;
-            const metaRow = card.querySelector('.episode-meta-row');
-            if (!metaRow) return;
-            const seasonNumber = Number(card.dataset.seasonNumber);
-            const episodeNumber = Number(card.dataset.episodeNumber);
-            const episode = {
-                seasonNumber,
-                episodeNumber,
-                airDate: card.dataset.airDate || null,
-                tmdbEpisodeId: Number(card.dataset.tmdbEpisodeId) || null
-            };
-            const control = document.createElement('div');
-            control.innerHTML = this.renderEpisodeRatingControl(episode, card.dataset.seasonAirDate || null);
-            if (control.firstElementChild) metaRow.appendChild(control.firstElementChild);
-        });
-    }
-
-    updateRatingModalSeriesState() {
-        if (!this.elements?.ratingModal) return;
-        const isSeries = typeof isSeriesMedia === 'function' && isSeriesMedia(this.selectedMovie);
-        const episodeCount = Number(this.currentSeriesEpisodeRatings?.ratedCount)
-            || Number(this.currentPersonalRating?.episodesRatedCount) || 0;
-        const hasEpisodeRatings = this.hasEpisodeRatingAccess()
-            && !this.hasEpisodeRatingsPermissionDenied()
-            && episodeCount > 0;
-        const isAggregateMode = hasEpisodeRatings
-            && (this.currentSeriesEpisodeRatings?.mode === 'episodes' || this.currentPersonalRating?.ratingSource === 'episodes')
-            && this.seriesRatingEditMode !== 'manual';
-        const seriesNoticeText = this.seriesRatingEditMode === 'manual'
-            ? this.formatMovieDetailsText('movie_details.series_episode_manual_edit_hint')
-            : this.getSeriesEpisodeSummaryText();
-        if (this.elements.seriesAggregateRatingNotice) {
-            this.elements.seriesAggregateRatingNotice.hidden = !isSeries || !this.currentUser || !seriesNoticeText;
-            if (this.elements.seriesAggregateRatingText) this.elements.seriesAggregateRatingText.textContent = seriesNoticeText;
-        }
-        if (this.elements.ratingStars) this.elements.ratingStars.hidden = isAggregateMode;
-        if (this.elements.ratingStatus) {
-            this.elements.ratingStatus.textContent = this.seriesRatingEditMode === 'manual'
-                ? i18n.get('movie_details.series_episode_manual_edit_hint')
-                : isAggregateMode ? this.getSeriesEpisodeSummaryText() : i18n.get('movie_details.rating_prompt');
-        }
-        if (this.elements.setManualSeriesRatingBtn) {
-            this.elements.setManualSeriesRatingBtn.hidden = !isAggregateMode;
-            this.elements.setManualSeriesRatingBtn.textContent = i18n.get('movie_details.series_episode_manual_action');
-        }
-        if (this.elements.restoreEpisodeAggregateBtn) {
-            const canRestore = hasEpisodeRatings && this.currentSeriesEpisodeRatings?.mode === 'manual';
-            this.elements.restoreEpisodeAggregateBtn.hidden = !canRestore;
-            this.elements.restoreEpisodeAggregateBtn.textContent = i18n.get('movie_details.series_episode_restore_action');
-        }
-        if (this.elements.deleteSeriesRatingBtn) {
-            const hasKinopoiskId = Number(this.selectedMovie?.kinopoiskId) > 0;
-            this.elements.deleteSeriesRatingBtn.hidden = !(isSeries && hasKinopoiskId && (episodeCount > 0 || this.currentPersonalRating));
-            this.elements.deleteSeriesRatingBtn.textContent = i18n.get('movie_details.series_episode_delete_rating');
-        }
-    }
-
-    enterManualSeriesRatingMode() {
-        const episodeCount = Number(this.currentSeriesEpisodeRatings?.ratedCount)
-            || Number(this.currentPersonalRating?.episodesRatedCount) || 0;
-        if (!this.hasEpisodeRatingAccess() || episodeCount < 1) return;
-        this.seriesRatingEditMode = 'manual';
-        this.currentRating = 0;
-        this.updateStarVisuals(0, false);
-        this.updateRatingModalSeriesState();
-        this.elements.ratingStars?.querySelector('.star-rating-btn')?.focus();
-    }
-
-    async restoreEpisodeAggregateFromModal() {
-        try {
-            const service = firebaseManager.getSeriesEpisodeRatingService();
-            const user = firebaseManager.getCurrentUser();
-            const result = await service.restoreEpisodeAggregate({
-                userId: user.uid,
-                movieId: Number(this.selectedMovie?.kinopoiskId),
-                tmdbId: Number(this.selectedMovie?.tmdbId || this.selectedMovie?.externalId?.tmdb) || null,
-                movieData: this.selectedMovie,
-                userName: user.displayName || user.email || '',
-                userPhoto: user.photoURL || ''
-            });
-            this.seriesRatingEditMode = 'aggregate';
-            this.currentSeriesEpisodeRatings = result.state;
-            this.patchPersonalRating(result.rating, this.capturePageContext(this.selectedMovie));
-            this.updateRatingModalSeriesState();
-            Utils.showToast(i18n.get('movie_details.series_episode_saved'), 'success');
-        } catch (error) {
-            this.showSeriesEpisodeMutationError(error);
-        }
-    }
-
-    async deleteSeriesRatingFromModal(options = {}) {
-        const episodeCount = Number(this.currentSeriesEpisodeRatings?.ratedCount)
-            || Number(this.currentPersonalRating?.episodesRatedCount) || 0;
-        if (episodeCount > 0 && !window.confirm(this.formatMovieDetailsText('movie_details.series_episode_delete_confirm', { count: episodeCount }))) return;
-        try {
-            const service = firebaseManager.getSeriesEpisodeRatingService();
-            const user = firebaseManager.getCurrentUser();
-            const result = await service.deleteSeriesRating({
-                userId: user.uid,
-                movieId: Number(this.selectedMovie?.kinopoiskId)
-            });
-            this.currentSeriesEpisodeRatings = result.state;
-            this.patchPersonalRating(null, this.capturePageContext(this.selectedMovie));
-            if (options.ratingId) {
-                document.querySelector(`[data-rating-id="${CSS.escape(String(options.ratingId))}"]`)?.remove();
-            }
-            this.closeRatingModal();
-            Utils.showToast(i18n.get('movie_details.series_episode_removed'), 'success');
-        } catch (error) {
-            this.showSeriesEpisodeMutationError(error);
-        }
-    }
-
-    showSeriesEpisodeMutationError(error) {
-        console.error('[MovieDetails] Series episode rating update failed:', error);
-        const permissionDenied = this.isEpisodeRatingsPermissionDenied(error);
-        Utils.showToast(i18n.get(permissionDenied ? 'movie_details.series_episode_rules_error' : 'movie_details.series_episode_save_error'), 'error');
+        const slot = document.querySelector('.episode-rating-slot');
+        const ep = this.seasonsBrowserEpisodes?.find(item => Number(item.episodeNumber) === this.seasonsBrowserEpisode);
+        if (!slot || !ep) return;
+        const existing = slot.querySelector('.episode-rating-control');
+        if (existing?.dataset.access === this.getEpisodeRatingControlAccess()) return;
+        slot.innerHTML = this.renderEpisodeRatingControl(ep, this.seasonsBrowserAirDate);
     }
 
     isEpisodeRatingsPermissionDenied(error) {
-        return error?.code === 'permission-denied'
-            || /permission-denied|insufficient permissions/i.test(String(error?.message || ''));
+        return error?.code === 'permission-denied' || /permission-denied|insufficient permissions/i.test(String(error?.message || ''));
     }
 
     hasEpisodeRatingsPermissionDenied() {
-        return this.episodeRatingsPermissionDeniedMovieId !== null
+        return Boolean(this.episodeRatingsPermissionDeniedMovieId)
             && String(this.episodeRatingsPermissionDeniedMovieId) === String(this.selectedMovie?.kinopoiskId);
     }
 
     patchSeriesEpisodeRatings(state, pageContext) {
         if (!this.isPageContextCurrent(pageContext)) return;
         this.episodeRatingsPermissionDeniedMovieId = null;
-        this.currentSeriesEpisodeRatings = state || {
-            exists: false,
-            episodes: {},
-            ratingSum: 0,
-            ratedCount: 0,
-            mode: 'manual',
-            manualBackup: null
-        };
+        this.currentSeriesEpisodeRatings = state || { exists: false, episodes: {} };
         this.updateSeriesEpisodeRatingUI();
     }
 
@@ -2485,119 +2268,69 @@ class MovieDetailsManager {
     }
 
     renderEpisodeRatingControl(episode, seasonAirDate = null) {
-        if (!this.hasEpisodeRatingAccess()) return '';
-        const seasonNumber = Number(episode?.seasonNumber);
-        const episodeNumber = Number(episode?.episodeNumber);
+        const season = Number(episode.seasonNumber), number = Number(episode.episodeNumber);
+        const access = this.getEpisodeRatingControlAccess();
+        const opening = `<div class="episode-rating-control" data-access="${access}" data-season-number="${season}" data-episode-number="${number}" data-tmdb-episode-id="${Number(episode.tmdbEpisodeId) || 0}"`;
+        if (access !== 'ready') {
+            const message = i18n.get(`movie_details.${access === 'guest' ? 'series_episode_sign_in' : access === 'unlinked' ? 'series_episode_tmdb_only_hint' : 'series_episode_rules_error'}`);
+            return `${opening}><span class="episode-rating-message">${this.escapeHtml(message)}</span></div>`;
+        }
         const released = this.isEpisodeReleasedForRating(episode, seasonAirDate);
-        const episodeLabel = `S${seasonNumber}E${episodeNumber}`;
-        const ariaLabel = this.formatMovieDetailsText('movie_details.series_episode_aria', { episode: episodeLabel });
-        const tmdbEpisodeId = Number(episode?.tmdbEpisodeId) || 0;
-        const ratingButtons = Array.from({ length: 10 }, (_, index) => {
-            const rating = index + 1;
-            const ratingAria = this.formatMovieDetailsText('movie_details.series_episode_rate_value_aria', { episode: episodeLabel, rating });
-            return `<button type="button" class="episode-rating-choice" data-action="episode-rating-choice" data-rating="${rating}" aria-label="${this.escapeHtml(ratingAria)}" aria-pressed="false">${rating}</button>`;
-        }).join('');
-        return `
-            <div class="episode-rating-control" data-season-number="${seasonNumber}" data-episode-number="${episodeNumber}" data-tmdb-episode-id="${tmdbEpisodeId}" data-released="${released ? 'true' : 'false'}"${!released ? ` title="${this.escapeHtml(i18n.get('movie_details.series_episode_unreleased'))}"` : ''}>
-                <button type="button" class="episode-rating-trigger" data-action="episode-rating-open" aria-label="${this.escapeHtml(ariaLabel)}" aria-haspopup="true" aria-expanded="false"${!released ? ' disabled aria-disabled="true"' : ''}>${this.escapeHtml(i18n.get('movie_details.series_episode_rate'))}</button>
-                <div class="episode-rating-popover" role="group" aria-label="${this.escapeHtml(ariaLabel)}" hidden>
-                    <div class="episode-rating-scale">${ratingButtons}</div>
-                    <button type="button" class="episode-rating-remove" data-action="episode-rating-remove" hidden>${this.escapeHtml(i18n.get('movie_details.series_episode_remove_rating'))}</button>
-                </div>
-            </div>`;
+        const score = Number(this.getEpisodeRatingFor(season, number)?.r) || 0;
+        return `${opening} data-released="${released}"><span class="episode-rating-label">${this.escapeHtml(i18n.get('movie_details.series_episode_your_rating'))}</span>
+            <div class="episode-rating-scale" role="radiogroup" aria-label="${this.escapeHtml(this.formatMovieDetailsText('movie_details.series_episode_aria', { episode: `S${season}E${number}` }))}">${Array.from({ length: 10 }, (_, index) => {
+                const value = index + 1;
+                return `<button type="button" class="episode-rating-choice${value <= score ? ' is-filled' : ''}" data-action="episode-rating-choice" data-rating="${value}" role="radio" aria-label="${this.escapeHtml(this.formatMovieDetailsText('movie_details.series_episode_rate_value_aria', { rating: value }))}" aria-checked="${value === score}" tabindex="${value === (score || 1) ? 0 : -1}"${released ? '' : ' disabled'}>${value <= score ? '★' : '☆'}</button>`;
+            }).join('')}</div><span class="episode-rating-value" aria-live="polite">${score ? `${score}/10` : '—'}</span>
+            <span class="episode-rating-remove-slot"><button type="button" class="episode-rating-remove" data-action="episode-rating-remove" aria-label="${this.escapeHtml(i18n.get('movie_details.series_episode_remove_rating'))}"${score ? '' : ' hidden'}>×</button></span>
+            ${released ? '' : `<span class="episode-rating-message">${this.escapeHtml(i18n.get('movie_details.series_episode_unreleased'))}</span>`}</div>`;
     }
 
-    toggleEpisodeRatingPopover(trigger) {
-        const control = trigger?.closest('.episode-rating-control');
-        if (!control || trigger.disabled || control.dataset.released !== 'true') return;
-        const popover = control.querySelector('.episode-rating-popover');
-        const shouldOpen = popover?.hidden !== false;
-        document.querySelectorAll('.episode-rating-control.is-open').forEach(openControl => {
-            openControl.classList.remove('is-open');
-            openControl.querySelector('.episode-rating-popover')?.setAttribute('hidden', '');
-            openControl.querySelector('[data-action="episode-rating-open"]')?.setAttribute('aria-expanded', 'false');
+    previewEpisodeStars(control, value) {
+        control?.querySelectorAll('[data-action="episode-rating-choice"]').forEach(button => {
+            const filled = Number(button.dataset.rating) <= value;
+            button.classList.toggle('is-filled', filled);
+            button.textContent = filled ? '★' : '☆';
         });
-        if (!popover || !shouldOpen) return;
-        popover.hidden = false;
-        control.classList.add('is-open');
-        trigger.setAttribute('aria-expanded', 'true');
-        const selectedRating = Number(trigger.dataset.currentRating) || 0;
-        (popover.querySelector(`[data-rating="${selectedRating}"]`) || popover.querySelector('[data-action="episode-rating-choice"]'))?.focus();
+    }
+
+    handleEpisodeRatingPointer(event) {
+        const choice = event.target?.closest?.('[data-action="episode-rating-choice"]');
+        const control = event.target?.closest?.('.episode-rating-control');
+        if (!control) return;
+        if (event.type === 'mouseover' && choice && !choice.disabled) this.previewEpisodeStars(control, Number(choice.dataset.rating));
+        if (event.type === 'mouseout' && !control.contains(event.relatedTarget)) {
+            this.previewEpisodeStars(control, Number(this.getEpisodeRatingFor(Number(control.dataset.seasonNumber), Number(control.dataset.episodeNumber))?.r) || 0);
+        }
     }
 
     handleEpisodeRatingKeydown(event) {
         const control = event.target?.closest?.('.episode-rating-control');
         if (!control) return;
-        const popover = control.querySelector('.episode-rating-popover');
-        if (!popover || popover.hidden) return;
-        if (event.key === 'Escape') {
-            event.preventDefault();
-            control.classList.remove('is-open');
-            popover.hidden = true;
-            const trigger = control.querySelector('[data-action="episode-rating-open"]');
-            trigger?.setAttribute('aria-expanded', 'false');
-            trigger?.focus();
-            return;
-        }
-        const choices = [...popover.querySelectorAll('[data-action="episode-rating-choice"]')];
-        const currentIndex = choices.indexOf(event.target);
-        if (currentIndex < 0) return;
-        const targetIndex = {
-            ArrowLeft: Math.max(0, currentIndex - 1),
-            ArrowUp: Math.max(0, currentIndex - 1),
-            ArrowRight: Math.min(choices.length - 1, currentIndex + 1),
-            ArrowDown: Math.min(choices.length - 1, currentIndex + 1),
-            Home: 0,
-            End: choices.length - 1
-        }[event.key];
-        if (targetIndex === undefined) return;
+        const choices = [...control.querySelectorAll('[data-action="episode-rating-choice"]')];
+        const index = choices.indexOf(event.target);
+        if (index < 0 || event.target.disabled) return;
+        const target = { ArrowLeft: Math.max(0, index - 1), ArrowDown: Math.max(0, index - 1), ArrowRight: Math.min(9, index + 1), ArrowUp: Math.min(9, index + 1), Home: 0, End: 9 }[event.key];
+        if (target === undefined) return;
         event.preventDefault();
-        choices[targetIndex]?.focus();
+        choices[target]?.focus();
+        void this.changeEpisodeRating(choices[target], target + 1);
     }
 
     applyOptimisticEpisodeRating(seasonNumber, episodeNumber, rating) {
         const previousState = this.currentSeriesEpisodeRatings;
-        const previousRating = this.currentPersonalRating;
         const key = SeriesEpisodeRatingService.getEpisodeKey(seasonNumber, episodeNumber);
         const episodes = { ...(previousState?.episodes || {}) };
         if (rating === null) delete episodes[key];
         else episodes[key] = { r: rating, t: new Date() };
-        const totals = SeriesEpisodeRatingService.calculateTotals(episodes);
-        let mode = previousState?.mode || 'manual';
-        if (totals.ratedCount > 0 && !(Number(previousState?.ratedCount) > 0)) mode = 'episodes';
         this.currentSeriesEpisodeRatings = {
-            ...(previousState || {}), exists: totals.ratedCount > 0, episodes,
-            ratingSum: totals.ratingSum, ratedCount: totals.ratedCount,
-            mode: totals.ratedCount > 0 ? mode : 'manual'
+            ...(previousState || {}), exists: Object.keys(episodes).length > 0, episodes
         };
-        if (mode === 'episodes' && totals.ratedCount > 0) {
-            const aggregate = SeriesEpisodeRatingService.calculateAggregate(totals.ratingSum, totals.ratedCount);
-            this.currentPersonalRating = {
-                ...(previousRating || {}), rating: aggregate.rating, ratingSource: 'episodes',
-                episodeAverage: aggregate.episodeAverage, episodesRatedCount: totals.ratedCount
-            };
-        } else if (previousRating && mode === 'manual') {
-            this.currentPersonalRating = { ...previousRating };
-        } else if (mode === 'episodes' && totals.ratedCount === 0) {
-            const backup = previousState?.manualBackup;
-            if (backup?.rating) {
-                this.currentPersonalRating = { ...(previousRating || {}), rating: Number(backup.rating), ratingSource: 'manual' };
-                delete this.currentPersonalRating.episodeAverage;
-                delete this.currentPersonalRating.episodesRatedCount;
-            } else if (previousRating?.comment || previousRating?.review) {
-                this.currentPersonalRating = { ...previousRating, ratingSource: 'manual' };
-                delete this.currentPersonalRating.episodeAverage;
-                delete this.currentPersonalRating.episodesRatedCount;
-            } else {
-                this.currentPersonalRating = null;
-            }
-        }
-        this.patchPersonalRating(this.currentPersonalRating, this.capturePageContext(this.selectedMovie));
-        return { previousState, previousRating };
+        return { previousState };
     }
 
     async changeEpisodeRating(button, rating) {
-        if (!this.hasEpisodeRatingAccess()) return;
+        if (!this.hasEpisodeRatingAccess() || this.isEpisodeRatingMutationPending) return;
         const pageContext = this.capturePageContext(this.selectedMovie);
         const control = button?.closest('.episode-rating-control');
         if (!control) return;
@@ -2608,39 +2341,35 @@ class MovieDetailsManager {
         const seasonNumber = Number(control.dataset.seasonNumber);
         const episodeNumber = Number(control.dataset.episodeNumber);
         const requestVersion = ++this.episodeRatingUiVersion;
-        const { previousState, previousRating } = this.applyOptimisticEpisodeRating(seasonNumber, episodeNumber, rating);
+        const previousPublicStats = this.publicEpisodeStats;
+        const oldRating = Number(this.getEpisodeRatingFor(seasonNumber, episodeNumber)?.r) || null;
+        const { previousState } = this.applyOptimisticEpisodeRating(seasonNumber, episodeNumber, rating);
+        this.adjustPublicEpisodeScore(seasonNumber, episodeNumber, oldRating, rating);
         this.isEpisodeRatingMutationPending = true;
         this.updateSeriesEpisodeRatingUI();
-        control.querySelector('.episode-rating-popover').hidden = true;
-        control.classList.remove('is-open');
-        control.querySelector('[data-action="episode-rating-open"]')?.setAttribute('aria-expanded', 'false');
-        control.querySelector('[data-action="episode-rating-open"]')?.focus();
         try {
             const service = firebaseManager.getSeriesEpisodeRatingService();
             const movieId = Number(this.selectedMovie.kinopoiskId);
             const common = {
                 userId: this.currentUser.uid,
-                userName: this.currentUser.displayName || this.currentUser.email || '',
-                userPhoto: this.currentUser.photoURL || '',
                 movieId,
                 tmdbId: Number(this.selectedMovie.tmdbId || this.selectedMovie.externalId?.tmdb) || null,
                 tmdbEpisodeId: Number(control.dataset.tmdbEpisodeId) || null,
                 seasonNumber,
-                episodeNumber,
-                movieData: this.selectedMovie
+                episodeNumber
             };
             const result = rating === null
                 ? await service.removeEpisodeRating(common)
                 : await service.setEpisodeRating({ ...common, rating });
             if (requestVersion !== this.episodeRatingUiVersion || !this.isPageContextCurrent(pageContext)) return;
             this.currentSeriesEpisodeRatings = result.state;
-            this.patchPersonalRating(result.rating || null, pageContext);
-            if (result.commentFallback) Utils.showToast(i18n.get('movie_details.series_episode_comment_fallback'), 'info');
-            else Utils.showToast(i18n.get(rating === null ? 'movie_details.series_episode_removed' : 'movie_details.series_episode_saved'), 'success');
+            Utils.showToast(i18n.get(rating === null ? 'movie_details.series_episode_removed' : 'movie_details.series_episode_saved'), 'success');
+            if (rating !== null) await this.markRatedEpisodeWatched(movieId, seasonNumber, episodeNumber, pageContext);
         } catch (error) {
             if (requestVersion === this.episodeRatingUiVersion && this.isPageContextCurrent(pageContext)) {
                 this.currentSeriesEpisodeRatings = previousState;
-                this.patchPersonalRating(previousRating, pageContext);
+                this.publicEpisodeStats = previousPublicStats;
+                this.refreshEpisodeCommunityUI();
             }
             if (this.isPageContextCurrent(pageContext)) {
                 const permissionDenied = error?.code === 'permission-denied' || /permission|insufficient permissions/i.test(String(error?.message || ''));
@@ -2650,8 +2379,32 @@ class MovieDetailsManager {
             if (requestVersion === this.episodeRatingUiVersion && this.isPageContextCurrent(pageContext)) {
                 this.isEpisodeRatingMutationPending = false;
                 this.updateSeriesEpisodeRatingUI();
-                control.querySelector('[data-action="episode-rating-open"]')?.focus();
+                control.querySelector(`[data-rating="${rating || 1}"]`)?.focus();
             }
+        }
+    }
+
+    async markRatedEpisodeWatched(movieId, seasonNumber, episodeNumber, pageContext) {
+        if (!this.currentUser || !this.isPageContextCurrent(pageContext)) return;
+        const episodeKey = `${seasonNumber}:${episodeNumber}`;
+        if (this.currentEpisodeHistory?.[episodeKey]) return;
+        const key = `${this.pageGeneration || 0}:${movieId}:${episodeKey}`;
+        this.ratedEpisodeWatchedLoads ||= new Map();
+        if (this.ratedEpisodeWatchedLoads.has(key)) return this.ratedEpisodeWatchedLoads.get(key);
+        const load = (async () => {
+            try {
+                if (!this.episodeHistoryService) throw new Error('Episode history service unavailable');
+                const history = await this.episodeHistoryService.markCompleted(movieId, seasonNumber, episodeNumber, { source: 'MANUAL' });
+                if (!this.isPageContextCurrent(pageContext)) return;
+                this.currentEpisodeHistory = history;
+                await this.refreshSeasonsProgress();
+            } catch {
+                if (this.isPageContextCurrent(pageContext)) Utils.showToast(i18n.get('movie_details.series_episode_watched_error'), 'warning');
+            }
+        })();
+        this.ratedEpisodeWatchedLoads.set(key, load);
+        try { await load; } finally {
+            if (this.ratedEpisodeWatchedLoads.get(key) === load) this.ratedEpisodeWatchedLoads.delete(key);
         }
     }
 
@@ -2705,10 +2458,9 @@ class MovieDetailsManager {
             this.isPlaying = false;
             this.currentPersonalRating = null;
             this.currentSeriesEpisodeRatings = {
-                exists: false, episodes: {}, ratingSum: 0, ratedCount: 0, mode: 'manual', manualBackup: null
+                exists: false, episodes: {}
             };
             this.episodeRatingsPermissionDeniedMovieId = null;
-            this.seriesRatingEditMode = 'normal';
         }
 
         this.selectedMovie = movie;
@@ -5954,7 +5706,7 @@ class MovieDetailsManager {
                 this.currentUser = null;
                 this.currentPersonalRating = null;
                 this.currentSeriesEpisodeRatings = {
-                    exists: false, episodes: {}, ratingSum: 0, ratedCount: 0, mode: 'manual', manualBackup: null
+                    exists: false, episodes: {}
                 };
                 this.patchPersonalRating(null, this.capturePageContext(this.selectedMovie));
                 this.updateSeriesEpisodeRatingUI();
@@ -5984,7 +5736,7 @@ class MovieDetailsManager {
             this.isEpisodeRatingMutationPending = false;
             this.currentPersonalRating = null;
             this.currentSeriesEpisodeRatings = {
-                exists: false, episodes: {}, ratingSum: 0, ratedCount: 0, mode: 'manual', manualBackup: null
+                exists: false, episodes: {}
             };
             this.patchPersonalRating(null, this.capturePageContext(this.selectedMovie));
             this.updateSeriesEpisodeRatingUI();
@@ -6473,28 +6225,6 @@ class MovieDetailsManager {
     }
 
     async deleteUserRating(ratingId) {
-        const isKinopoiskSeries = typeof isSeriesMedia === 'function'
-            && isSeriesMedia(this.selectedMovie)
-            && Number(this.selectedMovie?.kinopoiskId) > 0;
-        if (isKinopoiskSeries && this.currentUser?.uid) {
-            try {
-                const episodeService = firebaseManager.getSeriesEpisodeRatingService();
-                const episodeState = await episodeService.getEpisodeRatings(
-                    this.currentUser.uid,
-                    Number(this.selectedMovie.kinopoiskId)
-                );
-                this.currentSeriesEpisodeRatings = episodeState;
-                if (Number(episodeState?.ratedCount) > 0) {
-                    await this.deleteSeriesRatingFromModal({ ratingId });
-                    return;
-                }
-            } catch (error) {
-                if (this.currentPersonalRating?.ratingSource === 'episodes') {
-                    this.showSeriesEpisodeMutationError(error);
-                    return;
-                }
-            }
-        }
         const confirmed = await window.ConfirmDialog.confirm({
             title: 'Удалить отзыв?',
             message: 'Оценка, комментарий и рецензия к этому фильму будут удалены без возможности восстановления.',
@@ -6556,40 +6286,9 @@ class MovieDetailsManager {
         }
         
         const ratingService = firebaseManager.getRatingService();
-        let episodeRatingReadError = null;
-        const episodeRatingPromise = this.hasEpisodeRatingAccess()
-            ? firebaseManager.getSeriesEpisodeRatingService().getEpisodeRatings(currentUser.uid, movie.kinopoiskId)
-                .catch(error => {
-                    episodeRatingReadError = error;
-                    console.warn('[MovieDetails] Could not load episode ratings for the rating dialog:', error?.message || error);
-                    if (this.isEpisodeRatingsPermissionDenied(error)) {
-                        this.episodeRatingsPermissionDeniedMovieId = String(movie.kinopoiskId);
-                        this.updateSeriesEpisodeRatingUI();
-                    }
-                    return null;
-                })
-            : Promise.resolve(null);
-        const [existingRating, episodeRatings] = await Promise.all([
-            ratingService.getRating(currentUser.uid, movie.kinopoiskId),
-            episodeRatingPromise
-        ]);
-        if (episodeRatings) {
-            this.episodeRatingsPermissionDeniedMovieId = null;
-            this.currentSeriesEpisodeRatings = episodeRatings;
-        }
-        if (episodeRatingReadError && existingRating?.ratingSource === 'episodes') {
-            this.showSeriesEpisodeMutationError(episodeRatingReadError);
-            return;
-        }
+        const existingRating = await ratingService.getRating(currentUser.uid, movie.kinopoiskId);
         this.currentRatingId = existingRating?.id || null;
         this.currentPersonalRating = existingRating || null;
-        const hasEpisodeRatings = this.hasEpisodeRatingAccess()
-            && !this.hasEpisodeRatingsPermissionDenied()
-            && (Number(this.currentSeriesEpisodeRatings?.ratedCount) > 0 || Number(existingRating?.episodesRatedCount) > 0);
-        this.seriesRatingEditMode = hasEpisodeRatings
-            ? (this.currentSeriesEpisodeRatings?.mode === 'episodes' || existingRating?.ratingSource === 'episodes' ? 'aggregate' : 'manual')
-            : 'normal';
-        
         if (existingRating) {
             this.currentRating = existingRating.rating;
             this.originalRating = Number(existingRating.rating) || 0;
@@ -6623,7 +6322,6 @@ class MovieDetailsManager {
             this.elements.reviewContainer.style.display = 'none';
         }
         
-        this.updateRatingModalSeriesState();
         this.openAccessibleDialog(this.elements.ratingModal);
     }
 
@@ -6662,25 +6360,7 @@ class MovieDetailsManager {
                 return;
             }
 
-            const hasEpisodeRatings = this.hasEpisodeRatingAccess()
-                && (Number(this.currentSeriesEpisodeRatings?.ratedCount) > 0 || Number(this.currentPersonalRating?.episodesRatedCount) > 0);
-            if (hasEpisodeRatings && this.seriesRatingEditMode === 'manual') {
-                const service = firebaseManager.getSeriesEpisodeRatingService();
-                const result = await service.saveManualRating({
-                    userId: currentUser.uid,
-                    userName: displayName,
-                    userPhoto: userProfile?.photoURL || '',
-                    movieId: Number(this.selectedMovie.kinopoiskId),
-                    tmdbId: Number(this.selectedMovie.tmdbId || this.selectedMovie.externalId?.tmdb) || null,
-                    rating: Number(this.currentRating),
-                    comment,
-                    ...(reviewChanged || this.ratingReviewTouched ? { review } : {}),
-                    updateText: commentChanged || reviewChanged || this.ratingReviewTouched,
-                    movieData: this.selectedMovie
-                });
-                this.currentSeriesEpisodeRatings = result.state;
-                this.patchPersonalRating(result.rating, this.capturePageContext(this.selectedMovie));
-            } else if (this.currentRatingId && this.originalRating === Number(this.currentRating) && (commentChanged || reviewChanged)) {
+            if (this.currentRatingId && this.originalRating === Number(this.currentRating) && (commentChanged || reviewChanged)) {
                 const patch = {};
                 if (commentChanged) patch.comment = comment;
                 if (reviewChanged || this.ratingReviewTouched) patch.review = review;
@@ -12155,6 +11835,7 @@ class MovieDetailsManager {
     async resolveAndRenderSeasons(movie) {
         if (!movie) return;
         const pageContext = this.capturePageContext(movie);
+        void this.loadPublicEpisodeStats(movie, pageContext);
 
         const tabBtn = document.querySelector('.tab-btn[data-tab="seasons"]');
         const tabPane = document.getElementById('tab-seasons');
@@ -12165,6 +11846,7 @@ class MovieDetailsManager {
             if (tabBtn) tabBtn.style.display = 'inline-block';
             if (tabPane) {
                 tabPane.innerHTML = this.renderSeasonsTab(movie.seasons, movie.nextEpisode, movie.lastEpisode, movie.tmdbId, this.currentProgressRecord, this.currentWatchTarget, this.currentEpisodeHistory);
+                void this.loadSelectedSeason();
             }
             await this._hydrateSeasonsProgressAndHistory(movie, movie.seasons, pageContext);
             return;
@@ -12186,6 +11868,7 @@ class MovieDetailsManager {
             if (tabBtn) tabBtn.style.display = 'inline-block';
             if (tabPane) {
                 tabPane.innerHTML = this.renderSeasonsTab(seasons, movie.nextEpisode, movie.lastEpisode, movie.tmdbId, this.currentProgressRecord, this.currentWatchTarget, this.currentEpisodeHistory);
+                void this.loadSelectedSeason();
             }
             await this._hydrateSeasonsProgressAndHistory(movie, seasons, pageContext);
             return;
@@ -12220,7 +11903,12 @@ class MovieDetailsManager {
 
             const tabPane = document.getElementById('tab-seasons');
             if (tabPane && seasons) {
+                if (this.seasonsBrowserTouched && tabPane.querySelector('.season-browser-tabs')) {
+                    this.updateSeasonsBrowserState();
+                    return;
+                }
                 tabPane.innerHTML = this.renderSeasonsTab(seasons, movie.nextEpisode, movie.lastEpisode, movie.tmdbId, progress, this.currentWatchTarget, history);
+                void this.loadSelectedSeason();
             }
         } catch (e) {
             console.warn('[MovieDetails] Failed to hydrate seasons progress/history:', e);
@@ -12266,6 +11954,7 @@ class MovieDetailsManager {
                 if (tabBtn) tabBtn.style.display = 'inline-block';
                 if (tabPane) {
                     tabPane.innerHTML = this.renderSeasonsTab(seasons, this.selectedMovie?.nextEpisode, this.selectedMovie?.lastEpisode, this.selectedMovie?.tmdbId, progress, this.currentWatchTarget, history);
+                    void this.loadSelectedSeason();
                 }
                 if (this.selectedMovie) {
                     this.selectedMovie.seasons = seasons;
@@ -12305,19 +11994,16 @@ class MovieDetailsManager {
     }
 
     getPluralEpisodes(count) {
-        const mod10 = count % 10;
-        const mod100 = count % 100;
-        if (mod10 === 1 && mod100 !== 11) return 'серия';
-        if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'серии';
-        return 'серий';
+        return Utils.selectRussianPlural(count, ['серия', 'серии', 'серий']);
     }
 
     getPluralSeasons(count) {
-        const mod10 = count % 10;
-        const mod100 = count % 100;
-        if (mod10 === 1 && mod100 !== 11) return 'сезон';
-        if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'сезона';
-        return 'сезонов';
+        return Utils.selectRussianPlural(count, ['сезон', 'сезона', 'сезонов']);
+    }
+
+    getPluralRatings(count) {
+        // Compact counts (e.g. "1 тыс.") always take the plural genitive.
+        return count >= 1000 ? 'оценок' : Utils.selectRussianPlural(count, ['оценка', 'оценки', 'оценок']);
     }
 
     /**
@@ -12480,7 +12166,7 @@ class MovieDetailsManager {
 
         if (Array.isArray(season.episodes) && season.episodes.length > 0) {
             totalCount = season.episodes.length;
-            const released = season.episodes.filter(ep => this.isEpisodePlayableByDate(ep));
+            const released = season.episodes.filter(ep => this.isEpisodeReleasedForRating(ep, season.airDate));
             totalReleasedCount = released.length;
             completedCount = released.filter(ep => {
                 const epKey = typeof buildEpisodeHistoryKey === 'function'
@@ -12554,494 +12240,492 @@ class MovieDetailsManager {
             ? buildEpisodeHistoryKey(seasonNumber, episodeNumber)
             : `${seasonNumber}:${episodeNumber}`;
         if (!epKey) return;
+        if (btn?.disabled) return;
+        const pageContext = this.capturePageContext(this.selectedMovie);
+        if (btn) btn.disabled = true;
 
         const isCurrentlyWatched = Boolean(this.currentEpisodeHistory && this.currentEpisodeHistory[epKey]);
 
         try {
-            if (isCurrentlyWatched) {
-                this.currentEpisodeHistory = await this.episodeHistoryService.unmarkCompleted(movieId, seasonNumber, episodeNumber);
-            } else {
-                this.currentEpisodeHistory = await this.episodeHistoryService.markCompleted(movieId, seasonNumber, episodeNumber, { source: 'MANUAL' });
-            }
+            const history = isCurrentlyWatched
+                ? await this.episodeHistoryService.unmarkCompleted(movieId, seasonNumber, episodeNumber)
+                : await this.episodeHistoryService.markCompleted(movieId, seasonNumber, episodeNumber, { source: 'MANUAL' });
+            if (!this.isPageContextCurrent(pageContext)) return;
+            this.currentEpisodeHistory = history;
             await this.refreshSeasonsProgress();
         } catch (err) {
             console.warn('[MovieDetails] Failed to toggle watched state:', err);
+        } finally {
+            if (btn && this.isPageContextCurrent(pageContext)) btn.disabled = false;
         }
     }
 
-    renderSeasonsTab(seasons, nextEpisode = null, lastEpisode = null, tmdbId = null, progress = this.currentProgressRecord, watchTarget = this.currentWatchTarget, history = this.currentEpisodeHistory, currentSelection = this.playbackController?.currentSelection) {
+    getDefaultSeasonEpisode(seasons, progress = this.currentProgressRecord, watchTarget = this.currentWatchTarget, history = this.currentEpisodeHistory) {
+        const ordered = [...(seasons || [])].sort((a, b) => (Number(a.number) === 0 ? Infinity : Number(a.number)) - (Number(b.number) === 0 ? Infinity : Number(b.number)));
+        const candidates = [watchTarget && { seasonNumber: Number(watchTarget.seasonNumber), episodeNumber: Number(watchTarget.episodeNumber) },
+            progress && { seasonNumber: Number(progress.season), episodeNumber: Number(progress.episode) }];
+        const lastWatched = Object.entries(history || {}).sort((a, b) => Number(b[1]?.cAt || b[1]?.completedAt || 0) - Number(a[1]?.cAt || a[1]?.completedAt || 0))[0];
+        if (lastWatched) {
+            const [seasonNumber, episodeNumber] = lastWatched[0].split(':').map(Number);
+            candidates.push({ seasonNumber, episodeNumber });
+        }
+        const saved = candidates.find(item => item && item.episodeNumber > 0 && ordered.some(season => Number(season.number) === item.seasonNumber));
+        if (saved) return saved;
+        const season = ordered[0];
+        const episode = season?.episodes?.find(ep => this.isEpisodeReleasedForRating(ep, season.airDate));
+        return { seasonNumber: Number(season?.number) || 0, episodeNumber: Number(episode?.episodeNumber) || null };
+    }
+
+    renderSeasonsTab(seasons, nextEpisode = null, lastEpisode = null, tmdbId = null, progress = this.currentProgressRecord, watchTarget = this.currentWatchTarget, history = this.currentEpisodeHistory) {
         if (!Array.isArray(seasons) || seasons.length === 0) return '';
-
-        const normalSeasons = seasons.filter(s => !s.isSpecial && s.number > 0);
-        const specialSeasons = seasons.filter(s => s.isSpecial || s.number === 0);
-        const hasMultipleSeasons = seasons.length > 1 || (normalSeasons.length === 1 && specialSeasons.length > 0);
-
-        // Determine target season from watchTarget or progress for auto-focus
-        let targetSeasonNumber = null;
-        if (watchTarget && watchTarget.seasonNumber != null) {
-            targetSeasonNumber = watchTarget.seasonNumber;
-        } else if (progress && progress.season != null) {
-            targetSeasonNumber = progress.season;
+        const identity = `${this.pageGeneration || 0}:${this.selectedMovie?.kinopoiskId || ''}:${tmdbId || this.selectedMovie?.externalId?.tmdb || ''}`;
+        if (this.seasonsBrowserIdentity !== identity) {
+            this.seasonsBrowserIdentity = identity;
+            this.seasonsBrowserCache = new Map();
+            this.seasonsBrowserLoads = new Map();
+            this.seasonsBrowserLoadVersions = new Map();
+            this.seasonsBrowserRequest = 0;
+            this.seasonsBrowserTouched = false;
+            this.seasonsBrowserEpisode = null;
+            this.seasonsBrowserPlayingSelection = undefined;
         }
-
-        const isTargetInSeasons = targetSeasonNumber != null && seasons.some(s => s.number === targetSeasonNumber);
-        const initialActiveSeason = isTargetInSeasons
-            ? targetSeasonNumber
-            : (normalSeasons.length > 0 ? normalSeasons[0].number : seasons[0].number);
-        const totalCount = normalSeasons.length > 0 ? normalSeasons.length : seasons.length;
-
-        const continueBannerHtml = this.renderSeasonsContinueBanner(this.selectedMovie, progress, watchTarget, seasons);
-        const seriesRatingSummary = this.getSeriesEpisodeSummaryText();
-
-        return `
-            <div class="seasons-container">
-                <div class="seasons-tab-header">
-                    <h3 class="seasons-tab-title">Сезоны</h3>
-                    <span class="seasons-tab-count">${totalCount} ${this.getPluralSeasons(totalCount)}</span>
-                </div>
-                <p id="seriesEpisodeRatingSummary" class="series-episode-rating-summary" aria-live="polite"${seriesRatingSummary ? '' : ' hidden'}>${this.escapeHtml(seriesRatingSummary)}</p>
-
-                ${continueBannerHtml}
-
-                ${hasMultipleSeasons ? `
-                <div class="seasons-nav-container">
-                    <div class="seasons-nav-pills" role="tablist" aria-label="Выбор сезона">
-                        ${normalSeasons.map(s => {
-                            const stats = this.getSeasonCompletionStats(s, history);
-                            const activeCls = s.number === initialActiveSeason ? ' active' : '';
-                            const completedCls = (stats.isFullyCompleted && stats.totalReleasedCount > 0) ? ' season-pill-btn--completed' : '';
-                            const pillClass = `season-pill-btn${activeCls}${completedCls}`;
-                            let pillContent = `${s.number}`;
-                            let pillAriaLabel = `Сезон ${s.number}`;
-                            if (stats.isFullyCompleted && stats.totalReleasedCount > 0) {
-                                pillContent += ' <span class="season-pill-check" aria-hidden="true">✓</span>';
-                                pillAriaLabel += ' (просмотрен полностью)';
-                            } else if (stats.completedCount > 0 && stats.totalReleasedCount > 0) {
-                                pillContent += ` <span class="season-pill-progress" aria-hidden="true">${stats.completedCount}/${stats.totalReleasedCount}</span>`;
-                                pillAriaLabel += ` (просмотрено ${stats.completedCount} из ${stats.totalReleasedCount})`;
-                            }
-                            return `
-                            <button type="button" 
-                                    class="${pillClass}" 
-                                    data-action="select-season-pill" 
-                                    data-season-number="${s.number}" 
-                                    role="tab" 
-                                    aria-selected="${s.number === initialActiveSeason ? 'true' : 'false'}"
-                                    aria-label="${pillAriaLabel}">
-                                ${pillContent}
-                            </button>
-                        `;}).join('')}
-                        ${specialSeasons.length > 0 ? `
-                            <button type="button" 
-                                    class="season-pill-btn season-pill-btn--specials ${specialSeasons.some(sp => sp.number === initialActiveSeason) ? 'active' : ''}" 
-                                    data-action="select-season-pill" 
-                                    data-season-number="${specialSeasons[0].number}" 
-                                    role="tab" 
-                                    aria-selected="${specialSeasons.some(sp => sp.number === initialActiveSeason) ? 'true' : 'false'}"
-                                    aria-label="Спецвыпуски">
-                                Спецвыпуски
-                            </button>
-                        ` : ''}
-                    </div>
-                </div>` : ''}
-
-                <div class="seasons-grid">
-                    ${seasons.map(s => {
-                        const isCardActive = !hasMultipleSeasons || s.number === initialActiveSeason;
-                        const stats = this.getSeasonCompletionStats(s, history);
-                        let completedBadgeHtml = '';
-                        let seasonProgressBarHtml = '';
-
-                        if (!s.isSpecial && s.number > 0 && stats.completedCount > 0) {
-                            const isFull = stats.isFullyCompleted;
-                            completedBadgeHtml = `<span class="season-completed-badge ${isFull ? 'season-completed-badge--full' : ''}">${isFull ? '<svg class="season-check-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> ' : ''}${stats.badgeLabel}</span>`;
-
-                            if (stats.totalReleasedCount > 0) {
-                                const seasonPercent = Math.min(100, Math.round((stats.completedCount / stats.totalReleasedCount) * 100));
-                                seasonProgressBarHtml = `
-                                    <div class="season-progress-container" title="Прогресс сезона: ${stats.completedCount} из ${stats.totalReleasedCount} (${seasonPercent}%)">
-                                        <div class="season-progress-track">
-                                            <div class="season-progress-bar" style="width: ${seasonPercent}%;" role="progressbar" aria-valuenow="${stats.completedCount}" aria-valuemin="0" aria-valuemax="${stats.totalReleasedCount}" aria-label="Прогресс сезона"></div>
-                                        </div>
-                                    </div>
-                                `;
-                            }
-                        }
-
-                        return `
-                        <div class="season-card ${s.isSpecial ? 'season-card--special ' : ''}${isCardActive ? 'season-card--active' : 'season-card--hidden'}" 
-                             data-season-number="${s.number}"
-                             ${hasMultipleSeasons && !isCardActive ? 'style="display: none;"' : ''}>
-                            <div class="season-main-row">
-                                ${s.posterUrl ? `
-                                    <div class="season-poster-wrapper">
-                                        <img src="${this.escapeHtml(s.posterUrl)}" alt="${this.escapeHtml(s.name || '')}" class="season-poster-img" data-fallback="poster" loading="lazy" decoding="async">
-                                    </div>
-                                ` : ''}
-                                <div class="season-info-col">
-                                    <div class="season-info-header">
-                                        <div class="season-title-group">
-                                            <h4 class="season-title">${this.escapeHtml(s.name || `Сезон ${s.number}`)}</h4>
-                                            ${s.isSpecial ? '<span class="badge-special">Спецматериалы</span>' : ''}
-                                        </div>
-                                        <div class="season-badges-row">
-                                            <span class="season-episodes-badge">${s.episodeCount || 0} ${this.getPluralEpisodes(s.episodeCount || 0)}</span>
-                                            <span class="season-card__episode-average" data-season-number="${Number(s.number)}" hidden></span>
-                                            ${completedBadgeHtml}
-                                            ${s.airDate ? `<span class="season-air-date">Премьера: <strong>${this.escapeHtml(this.formatDate(s.airDate))}</strong></span>` : ''}
-                                        </div>
-                                        ${seasonProgressBarHtml}
-                                    </div>
-
-                                    ${s.overview ? `<p class="season-overview">${this.escapeHtml(s.overview)}</p>` : ''}
-
-                                    <div class="season-actions">
-                                        ${Number(s.episodeCount) > 0 ? `
-                                            <button type="button" class="season-expand-btn" data-action="toggle-season" data-season-number="${s.number}" data-tmdb-id="${tmdbId || ''}" data-episode-count="${s.episodeCount || 0}" aria-expanded="false" aria-controls="season-episodes-${s.number}">
-                                                <span class="season-expand-text">Показать серии</span>
-                                                <svg class="season-expand-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
-                                                    <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
-                                                </svg>
-                                            </button>
-                                        ` : `
-                                            <span class="season-empty-tag">Серии пока не опубликованы</span>
-                                        `}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div id="season-episodes-${s.number}" class="season-episodes-panel" style="display: none;" role="region" aria-label="Список серий">
-                                ${Array.isArray(s.episodes) && s.episodes.length > 0 ? this.renderEpisodesList(s.episodes, nextEpisode, progress, watchTarget, history, currentSelection, s.airDate) : ''}
-                            </div>
-                        </div>
-                    `;}).join('')}
-                </div>
-            </div>
-        `;
+        this.seasonsBrowserSeasons = seasons.map(season => ({ ...season, number: Number(season.number), episodeCount: Number(season.episodeCount ?? season.episodesCount) || 0 }))
+            .sort((a, b) => (a.number === 0 ? Infinity : a.number) - (b.number === 0 ? Infinity : b.number));
+        this.seasonsBrowserTmdbId = Number(tmdbId || this.selectedMovie?.externalId?.tmdb) || null;
+        const target = this.getDefaultSeasonEpisode(this.seasonsBrowserSeasons, progress, watchTarget, history);
+        if (!this.seasonsBrowserTouched || !this.seasonsBrowserSeasons.some(season => season.number === this.seasonsBrowserSeason)) {
+            this.seasonsBrowserSeason = target.seasonNumber;
+            this.seasonsBrowserEpisode = target.episodeNumber;
+        }
+        this.seasonsBrowserSeasons.forEach(season => {
+            if (Array.isArray(season.episodes) && season.episodes.length) this.seasonsBrowserCache.set(season.number, { ...season, episodes: this.normalizeBrowserEpisodes(season.episodes, season.number) });
+        });
+        const active = this.seasonsBrowserSeasons.find(season => season.number === this.seasonsBrowserSeason);
+        const data = this.seasonsBrowserCache.get(this.seasonsBrowserSeason);
+        const normalCount = this.seasonsBrowserSeasons.filter(season => season.number > 0).length;
+        return `<section class="seasons-container">
+            <div class="seasons-tab-header"><h3 class="seasons-tab-title">Сезоны</h3><span class="seasons-tab-count">${normalCount} ${this.getPluralSeasons(normalCount)}</span></div>
+            <div class="season-browser-continue">${this.renderSeasonsContinueBanner(this.selectedMovie, progress, watchTarget, seasons)}</div>
+            <div class="season-browser-nav"><span class="season-browser-label">Сезон</span><div class="season-browser-tabs" role="tablist" aria-label="Выбор сезона">
+                ${this.seasonsBrowserSeasons.map(season => {
+                    const selected = season.number === this.seasonsBrowserSeason;
+                    const completion = this.getSeasonCompletionStats(season, history);
+                    return `<button type="button" id="season-browser-tab-${season.number}" class="season-tab${selected ? ' is-selected' : ''}" data-action="select-season-pill" data-season-number="${season.number}" role="tab" aria-controls="season-browser-panel" aria-selected="${selected}" tabindex="${selected ? 0 : -1}">${season.number === 0 ? 'Спецвыпуски' : `S${season.number}`}<span class="season-tab-progress">${completion.completedCount ? ` · ${completion.completedCount}/${completion.totalReleasedCount}` : ''}</span></button>`;
+                }).join('')}
+            </div></div>
+            <div id="season-browser-panel" class="season-browser-panel" role="tabpanel" aria-labelledby="season-browser-tab-${this.seasonsBrowserSeason}">${data ? this.renderEpisodesList(data.episodes, nextEpisode, progress, watchTarget, history, this.playbackController?.currentSelection, active?.airDate || data.airDate) : this.renderSeasonBrowserPlaceholder(active)}</div>
+        </section>`;
     }
 
-    async toggleSeasonEpisodes(btn, seasonNumber, tmdbId, episodeCount, forceRefetch = false) {
-        if (!btn) return;
-        const seasonCard = btn.closest('.season-card');
-        const panel = seasonCard ? seasonCard.querySelector('.season-episodes-panel') : document.getElementById(`season-episodes-${seasonNumber}`);
+    normalizeBrowserEpisodes(episodes, seasonNumber) {
+        return episodes.filter(ep => Number.isInteger(Number(ep.episodeNumber)) && Number(ep.episodeNumber) > 0)
+            .map(ep => ({ ...ep, seasonNumber: Number(seasonNumber), episodeNumber: Number(ep.episodeNumber) }))
+            .sort((a, b) => a.episodeNumber - b.episodeNumber);
+    }
+
+    renderSeasonBrowserPlaceholder(season) {
+        if (!this.seasonsBrowserTmdbId) return '<p class="season-empty-notice">Подробный список серий доступен для сериалов с привязкой к TMDB</p>';
+        if (!season || season.episodeCount === 0) return '<p class="season-empty-notice">Серии пока не опубликованы</p>';
+        return '<div class="season-episodes-loader app-loader app-loader--inline" role="status" aria-live="polite"><div class="app-loader__indicator" aria-hidden="true"></div><span class="app-loader__label">Загрузка серий...</span></div>';
+    }
+
+    async loadSelectedSeason(seasonNumber = this.seasonsBrowserSeason, options = {}) {
+        const season = this.seasonsBrowserSeasons?.find(item => item.number === Number(seasonNumber));
+        if (!season) return;
+        const panel = document.getElementById('season-browser-panel');
         if (!panel) return;
-
-        const isExpanded = btn.getAttribute('aria-expanded') === 'true' && !forceRefetch;
-        const expandText = btn.querySelector('.season-expand-text');
-
-        if (isExpanded) {
-            panel.style.display = 'none';
-            btn.setAttribute('aria-expanded', 'false');
-            btn.classList.remove('active');
-            if (expandText) expandText.textContent = 'Показать серии';
-            return;
-        }
-
-        // Single expanded season policy: collapse any other open season panels first
-        document.querySelectorAll('.season-expand-btn[aria-expanded="true"]').forEach(openBtn => {
-            if (openBtn !== btn) {
-                openBtn.setAttribute('aria-expanded', 'false');
-                openBtn.classList.remove('active');
-                const txt = openBtn.querySelector('.season-expand-text');
-                if (txt) txt.textContent = 'Показать серии';
-                const otherCard = openBtn.closest('.season-card');
-                const otherPanel = otherCard ? otherCard.querySelector('.season-episodes-panel') : null;
-                if (otherPanel) otherPanel.style.display = 'none';
-            }
-        });
-
-        panel.style.display = 'block';
-        btn.setAttribute('aria-expanded', 'true');
-        btn.classList.add('active');
-        if (expandText) expandText.textContent = 'Скрыть серии';
-
-        // Check if already populated with episodes (and not forcing refetch)
-        if (!forceRefetch && panel.querySelector('.episodes-grid')) {
-            return;
-        }
-
-        // Check if 0 episodes (e.g. unreleased future season)
-        if (Number(episodeCount) === 0) {
-            panel.innerHTML = '<div class="season-empty-notice">Серии пока не опубликованы</div>';
-            return;
-        }
-
-        // Check if TMDB ID is available
-        const numTmdbId = Number(tmdbId || this.selectedMovie?.tmdbId || this.selectedMovie?.externalId?.tmdb);
-        if (!numTmdbId) {
-            panel.innerHTML = '<div class="season-empty-notice">Подробный список серий доступен для сериалов с привязкой к TMDB</div>';
-            return;
-        }
-
-        // Render loading state
-        panel.innerHTML = `
-            <div class="season-episodes-loader app-loader app-loader--inline" role="status" aria-live="polite">
-                <div class="app-loader__indicator" aria-hidden="true"></div>
-                <span class="app-loader__label">Загрузка серий...</span>
-            </div>
-        `;
-
+        const identity = this.seasonsBrowserIdentity;
         const pageContext = this.capturePageContext(this.selectedMovie);
+        const request = ++this.seasonsBrowserRequest;
+        const isCurrent = () => identity === this.seasonsBrowserIdentity && request === this.seasonsBrowserRequest
+            && Number(seasonNumber) === this.seasonsBrowserSeason && this.isPageContextCurrent(pageContext)
+            && document.getElementById('season-browser-panel') === panel;
+        const paint = data => {
+            if (!isCurrent()) return;
+            this.seasonsBrowserEpisodes = data.episodes;
+            this.seasonsBrowserAirDate = season.airDate || data.airDate || null;
+            if (options.episodeNumber !== undefined) this.seasonsBrowserEpisode = options.episodeNumber;
+            panel.innerHTML = this.renderEpisodesList(data.episodes, this.selectedMovie?.nextEpisode, this.currentProgressRecord,
+                this.currentWatchTarget, this.currentEpisodeHistory, this.playbackController?.currentSelection, this.seasonsBrowserAirDate);
+            this.updateSeasonsBrowserState();
+            this.updateEpisodeChartScrollControls();
+            const chart = panel.querySelector('.episode-chart');
+            chart?.addEventListener('scroll', () => this.updateEpisodeChartScrollControls(), { passive: true });
+            this.scrollBrowserSelectionIntoView('.episode-chart', '.episode-column.is-selected');
+        };
+        if (!options.forceRefresh && this.seasonsBrowserCache.has(season.number)) {
+            paint(this.seasonsBrowserCache.get(season.number));
+            return;
+        }
+        panel.innerHTML = this.renderSeasonBrowserPlaceholder(season);
+        if (!this.seasonsBrowserTmdbId || season.episodeCount === 0) return;
+        panel.setAttribute('aria-busy', 'true');
+        let load = this.seasonsBrowserLoads.get(season.number);
+        const versions = this.seasonsBrowserLoadVersions ||= new Map();
+        let loadVersion = versions.get(season.number) || 0;
         try {
-            const tmdbService = (typeof firebaseManager !== 'undefined' && firebaseManager.getTMDBService)
-                ? firebaseManager.getTMDBService()
-                : (this.tmdbService || new TMDBService());
-
-            const seasonData = await tmdbService.getSeasonDetails(numTmdbId, seasonNumber, { forceRefresh: forceRefetch });
-            if (pageContext?.kinopoiskId && !this.isPageContextCurrent(pageContext)) return;
-            if (seasonData && Array.isArray(seasonData.episodes) && seasonData.episodes.length > 0) {
-                const seasonAirDate = this.selectedMovie?.seasons?.find(season => Number(season.number) === Number(seasonNumber))?.airDate || seasonData.airDate || null;
-                panel.innerHTML = this.renderEpisodesList(seasonData.episodes, this.selectedMovie?.nextEpisode, this.currentProgressRecord, this.currentWatchTarget, this.currentEpisodeHistory, this.playbackController?.currentSelection, seasonAirDate);
-            } else {
-                panel.innerHTML = '<div class="season-empty-notice">Информация о сериях отсутствует</div>';
+            if (!load || options.forceRefresh) {
+                const tmdb = typeof firebaseManager !== 'undefined' && firebaseManager.getTMDBService
+                    ? firebaseManager.getTMDBService() : (this.tmdbService || new TMDBService());
+                load = tmdb.getSeasonDetails(this.seasonsBrowserTmdbId, season.number, { forceRefresh: Boolean(options.forceRefresh) });
+                this.seasonsBrowserLoads.set(season.number, load);
+                loadVersion += 1;
+                versions.set(season.number, loadVersion);
             }
-        } catch (err) {
-            if (pageContext?.kinopoiskId && !this.isPageContextCurrent(pageContext)) return;
-            console.warn(`[MovieDetails] Failed to load season ${seasonNumber} details:`, err);
-            panel.innerHTML = `
-                <div class="season-error-box">
-                    <p class="season-error-message">Не удалось загрузить серии этого сезона</p>
-                    <button type="button" class="btn-retry-season" data-action="retry-season" data-season-number="${seasonNumber}" data-tmdb-id="${numTmdbId}">Повторить</button>
-                </div>
-            `;
+            const raw = await load;
+            if (versions.get(season.number) !== loadVersion) return;
+            const data = { ...(raw || {}), episodes: this.normalizeBrowserEpisodes(raw?.episodes || [], season.number) };
+            if (identity !== this.seasonsBrowserIdentity || !this.isPageContextCurrent(pageContext)) return;
+            this.seasonsBrowserCache.set(season.number, data);
+            if (isCurrent()) {
+                if (data.episodes.length) paint(data);
+                else panel.innerHTML = '<p class="season-empty-notice">Информация о сериях отсутствует</p>';
+            }
+        } catch {
+            if (isCurrent()) panel.innerHTML = `<div class="season-error-box" role="alert"><p>Не удалось загрузить серии этого сезона</p><button type="button" class="btn btn-secondary" data-action="retry-season" data-season-number="${season.number}">Повторить</button></div>`;
+        } finally {
+            if (identity === this.seasonsBrowserIdentity && this.seasonsBrowserLoads.get(season.number) === load) this.seasonsBrowserLoads.delete(season.number);
+            if (isCurrent()) panel.removeAttribute('aria-busy');
         }
     }
 
-    /**
-     * Handles season pill selection for multi-season navigation.
-     * Shows the card for the selected season number, hides all others,
-     * collapses any open episode panels in newly-hidden cards,
-     * updates pill ARIA state, and smoothly scrolls active pill into view.
-     * @param {number} seasonNumber
-     */
-    handleSeasonPillSelect(seasonNumber) {
-        if (seasonNumber == null || isNaN(seasonNumber)) return;
-
-        // 1. Update pill button active / aria-selected states
-        let selectedPill = null;
-        document.querySelectorAll('.season-pill-btn').forEach(pill => {
-            const isSelected = Number(pill.getAttribute('data-season-number')) === seasonNumber;
-            pill.classList.toggle('active', isSelected);
-            pill.setAttribute('aria-selected', isSelected ? 'true' : 'false');
-            if (isSelected) selectedPill = pill;
+    async handleSeasonPillSelect(seasonNumber, options = {}) {
+        if (!this.seasonsBrowserSeasons?.some(season => season.number === Number(seasonNumber))) return;
+        this.seasonsBrowserTouched = true;
+        this.seasonsBrowserSeason = Number(seasonNumber);
+        this.seasonsBrowserEpisode = options.episodeNumber ?? null;
+        this.seasonsBrowserEpisodes = [];
+        document.querySelectorAll('.season-tab').forEach(tab => {
+            const selected = Number(tab.dataset.seasonNumber) === this.seasonsBrowserSeason;
+            tab.classList.toggle('is-selected', selected);
+            tab.setAttribute('aria-selected', String(selected));
+            tab.tabIndex = selected ? 0 : -1;
         });
+        const panel = document.getElementById('season-browser-panel');
+        panel?.setAttribute('aria-labelledby', `season-browser-tab-${this.seasonsBrowserSeason}`);
+        this.scrollBrowserSelectionIntoView('.season-browser-tabs', '.season-tab.is-selected');
+        await this.loadSelectedSeason(this.seasonsBrowserSeason, options);
+    }
 
-        if (selectedPill && typeof selectedPill.scrollIntoView === 'function') {
+    async loadPublicEpisodeStats(movie, pageContext = this.capturePageContext(movie)) {
+        if (typeof isSeriesMedia !== 'function' || !isSeriesMedia(movie)) return;
+        const movieId = Number(movie?.kinopoiskId);
+        if (!Number.isInteger(movieId) || movieId <= 0) return;
+        const identity = `${this.pageGeneration || 0}:${movieId}`;
+        if (this.episodeStatsPageIdentity === identity) return this.episodeStatsLoad;
+        this.episodeStatsPageIdentity = identity;
+        this.publicEpisodeStats = { movieId, episodes: {} };
+        this.publicEpisodeStatsRevision = 0;
+        this.episodeStatsLoad = (async () => {
             try {
-                selectedPill.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+                const db = typeof firebaseManager !== 'undefined' ? firebaseManager.db : null;
+                if (!db) return;
+                const snapshot = await db.collection('seriesEpisodeStats').doc(String(movieId)).get();
+                if (identity !== this.episodeStatsPageIdentity || !this.isPageContextCurrent(pageContext) || this.publicEpisodeStatsRevision > 0) return;
+                this.publicEpisodeStats = { movieId, episodes: snapshot.exists ? snapshot.data()?.episodes || {} : {} };
             } catch {
-                // Safe fallback
+                // Missing rules or a failed public read must not block the catalog.
+            } finally {
+                if (identity === this.episodeStatsPageIdentity && this.isPageContextCurrent(pageContext)) this.refreshEpisodeCommunityUI();
             }
-        }
+        })();
+        return this.episodeStatsLoad;
+    }
 
-        // 2. Show the selected season card, hide all others.
-        //    Collapse any open episode panels inside cards that become hidden.
-        document.querySelectorAll('.season-card').forEach(card => {
-            const cardSeason = Number(card.getAttribute('data-season-number'));
-            const isActive = cardSeason === seasonNumber;
-            card.classList.toggle('season-card--active', isActive);
-            card.classList.toggle('season-card--hidden', !isActive);
-            card.style.display = isActive ? '' : 'none';
+    getPublicEpisodeScore(ep) {
+        if (Number(this.publicEpisodeStats?.movieId) !== Number(this.selectedMovie?.kinopoiskId)) return null;
+        const entry = this.publicEpisodeStats?.episodes?.[`${Number(ep.seasonNumber)}:${Number(ep.episodeNumber)}`];
+        if (!Number.isInteger(entry?.count) || entry.count < 1 || !Number.isInteger(entry.sum)
+            || entry.sum < entry.count || entry.sum > entry.count * 10) return null;
+        return { ...entry, avg: Math.round(entry.sum / entry.count * 10) / 10 };
+    }
 
-            if (!isActive) {
-                // Collapse any open episode panel so it doesn't reappear unexpectedly
-                const openBtn = card.querySelector('.season-expand-btn[aria-expanded="true"]');
-                if (openBtn) {
-                    openBtn.setAttribute('aria-expanded', 'false');
-                    openBtn.classList.remove('active');
-                    const txt = openBtn.querySelector('.season-expand-text');
-                    if (txt) txt.textContent = 'Показать серии';
-                }
-                const panel = card.querySelector('.season-episodes-panel');
-                if (panel) panel.style.display = 'none';
-            }
+    adjustPublicEpisodeScore(season, episode, oldRating, newRating) {
+        const movieId = Number(this.selectedMovie?.kinopoiskId);
+        const episodes = Number(this.publicEpisodeStats?.movieId) === movieId ? { ...this.publicEpisodeStats.episodes } : {};
+        const key = `${season}:${episode}`;
+        const previous = this.getPublicEpisodeScore({ seasonNumber: season, episodeNumber: episode });
+        // An absent/stale projection may not yet contain the user's old vote.
+        const removeOld = oldRating && previous && previous.sum >= oldRating;
+        const sum = Math.max(0, (previous?.sum || 0) - (removeOld ? oldRating : 0) + (newRating || 0));
+        const count = Math.max(0, (previous?.count || 0) - (removeOld ? 1 : 0) + (newRating ? 1 : 0));
+        if (count && sum >= count && sum <= count * 10) episodes[key] = { sum, count, avg: Math.round(sum / count * 10) / 10 };
+        else delete episodes[key];
+        this.publicEpisodeStats = { movieId, episodes };
+        this.publicEpisodeStatsRevision = (this.publicEpisodeStatsRevision || 0) + 1;
+        this.refreshEpisodeCommunityUI();
+    }
+
+    getSeasonEpisodeChartStats(episodes, seasonAirDate = null) {
+        const rated = episodes.filter(ep => this.isEpisodeReleasedForRating(ep, seasonAirDate)).map(ep => this.getPublicEpisodeScore(ep)).filter(Boolean);
+        return { average: rated.length ? rated.reduce((sum, entry) => sum + entry.avg, 0) / rated.length : null,
+            votes: rated.reduce((sum, entry) => sum + entry.count, 0),
+            minRating: rated.length ? Math.min(...rated.map(entry => entry.avg)) : null,
+            maxRating: rated.length ? Math.max(...rated.map(entry => entry.avg)) : null };
+    }
+
+    getEpisodeSeasonSummary(episodes, stats, seasonNumber) {
+        const ratings = stats.average === null ? `${episodes.length} ${this.getPluralEpisodes(episodes.length)} · оценок пока нет`
+            : `★ ${stats.average.toFixed(1)} среднее · ${this.formatVotes(stats.votes)} ${this.getPluralRatings(stats.votes)}`;
+        return `Серии ${seasonNumber === 0 ? '· Спецвыпуски' : `S${seasonNumber}`} · ${ratings}`;
+    }
+
+    getCommunityEpisodeLabel(ep) {
+        const score = this.getPublicEpisodeScore(ep);
+        return score ? `★ ${score.avg.toFixed(1)} · ${this.formatVotes(score.count)} ${this.getPluralRatings(score.count)}` : 'Оценок пока нет';
+    }
+
+    refreshEpisodeCommunityUI() {
+        const episodes = this.seasonsBrowserEpisodes || [];
+        if (!episodes.length) return;
+        const stats = this.getSeasonEpisodeChartStats(episodes, this.seasonsBrowserAirDate);
+        const summary = document.querySelector('.season-browser-summary strong');
+        if (summary) summary.textContent = this.getEpisodeSeasonSummary(episodes, stats, this.seasonsBrowserSeason);
+        document.querySelectorAll('.episode-column').forEach(column => {
+            const ep = episodes.find(item => Number(item.episodeNumber) === Number(column.dataset.episodeNumber));
+            if (!ep) return;
+            const score = this.isEpisodeReleasedForRating(ep, this.seasonsBrowserAirDate) ? this.getPublicEpisodeScore(ep) : null;
+            column.classList.toggle('is-unrated', !score);
+            column.setAttribute('aria-label', `Серия ${ep.episodeNumber}, ${score ? `средняя оценка ${score.avg.toFixed(1)}` : 'нет оценок'}`);
+            const bar = column.querySelector('.episode-column-bar');
+            bar?.style.setProperty('--episode-bar-position', ((this.getEpisodeChartHeight(ep, stats, this.seasonsBrowserAirDate) - 22) / 38).toFixed(6));
+            const value = column.querySelector('.episode-column-score');
+            if (value) value.textContent = score ? score.avg.toFixed(1) : '—';
         });
+        const track = document.querySelector('.episode-chart-track');
+        let line = track?.querySelector('.episode-chart-average');
+        if (stats.average === null) line?.remove();
+        else if (track) {
+            if (!line) {
+                line = document.createElement('span');
+                line.className = 'episode-chart-average';
+                line.setAttribute('aria-hidden', 'true');
+                track.prepend(line);
+            }
+            line.style.setProperty('--episode-bar-position', ((this.getEpisodeChartRatingHeight(stats.average, stats) - 22) / 38).toFixed(6));
+        }
+        const ep = episodes.find(item => Number(item.episodeNumber) === this.seasonsBrowserEpisode);
+        const label = document.querySelector('.episode-community-score');
+        if (label && ep) label.textContent = this.getCommunityEpisodeLabel(ep);
+    }
+
+    getEpisodeChartRatingHeight(rating, stats) {
+        const minHeight = 22, maxHeight = 60;
+        if (stats.minRating === null || stats.maxRating === null) return minHeight;
+        if (stats.minRating === stats.maxRating) return (minHeight + maxHeight) / 2;
+        const lo = stats.minRating - 0.3, hi = stats.maxRating;
+        const ratio = Math.max(0, Math.min(1, (rating - lo) / (hi - lo)));
+        return minHeight + ratio * (maxHeight - minHeight);
+    }
+
+    getEpisodeChartHeight(ep, stats, seasonAirDate = null) {
+        const score = this.getPublicEpisodeScore(ep);
+        if (!this.isEpisodeReleasedForRating(ep, seasonAirDate) || !score) return 22;
+        return this.getEpisodeChartRatingHeight(score.avg, stats);
     }
 
     renderEpisodesList(episodes, nextEpisode = null, progress = this.currentProgressRecord, watchTarget = this.currentWatchTarget, history = this.currentEpisodeHistory, currentSelection = this.playbackController?.currentSelection, seasonAirDate = null) {
-        if (!Array.isArray(episodes) || episodes.length === 0) return '';
-        const now = new Date();
-
-        return `
-            <div class="episodes-grid">
-                ${episodes.map(ep => {
-                    const epSeason = Number(ep.seasonNumber);
-                    const epEpisode = Number(ep.episodeNumber);
-                    const epAirDate = ep.airDate ? new Date(ep.airDate) : null;
-                    const isPlayable = this.isEpisodePlayableByDate(ep);
-                    const isUpcoming = epAirDate && !isNaN(epAirDate.getTime()) && epAirDate > now;
-                    
-                    const epKey = typeof buildEpisodeHistoryKey === 'function'
-                        ? buildEpisodeHistoryKey(epSeason, epEpisode)
-                        : `${epSeason}:${epEpisode}`;
-                    const isCompleted = Boolean(history && epKey && history[epKey]);
-
-                    const isCurrentlyPlaying = Boolean(
-                        currentSelection &&
-                        currentSelection.kinopoiskId === this.selectedMovie?.kinopoiskId &&
-                        epSeason === Number(currentSelection.seasonNumber) &&
-                        epEpisode === Number(currentSelection.episodeNumber)
-                    );
-
-                    const isScheduleNext = Boolean(
-                        nextEpisode && 
-                        epSeason === Number(nextEpisode.seasonNumber) && 
-                        epEpisode === Number(nextEpisode.episodeNumber)
-                    );
-
-                    const isCurrentResume = Boolean(
-                        progress && 
-                        !progress.completed && 
-                        progress.season != null && 
-                        progress.episode != null && 
-                        epSeason === Number(progress.season) && 
-                        epEpisode === Number(progress.episode)
-                    );
-
-                    const isPersonalNext = Boolean(
-                        watchTarget &&
-                        watchTarget.reason === 'NEXT_AFTER_COMPLETED' &&
-                        epSeason === Number(watchTarget.seasonNumber) &&
-                        epEpisode === Number(watchTarget.episodeNumber)
-                    );
-
-                    let cardClass = 'episode-card';
-                    if (isCurrentlyPlaying) cardClass += ' episode-card--playing';
-                    if (isCompleted) cardClass += ' episode-card--watched';
-                    if (isCurrentResume) cardClass += ' episode-card--resume episode-card--current';
-                    if (isPersonalNext) cardClass += ' episode-card--next-target';
-                    if (isScheduleNext) cardClass += ' episode-card--next';
-                    if (isUpcoming) cardClass += ' episode-card--upcoming';
-
-                    const title = ep.name || `Серия ${ep.episodeNumber}`;
-                    const voteAvg = Number(ep.voteAverage);
-                    const ratingMarkup = (!isNaN(voteAvg) && voteAvg > 0)
-                        ? `<span class="episode-rating-badge" title="Оценка TMDB (${ep.voteCount || 0} голосов)"><svg viewBox="0 0 24 24" width="12" height="12" fill="#eab308"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>${voteAvg.toFixed(1)}</span>`
-                        : '';
-
-                    let progressBarHtml = '';
-                    if (isCurrentResume && progress.duration && progress.duration > 0 && progress.timestamp > 0) {
-                        const percent = Math.min(100, Math.max(0, (progress.timestamp / progress.duration) * 100)).toFixed(1);
-                        progressBarHtml = `
-                            <div class="episode-card__progress-track">
-                                <div class="episode-card__progress-bar" style="width: ${percent}%;" role="progressbar" aria-valuenow="${progress.timestamp}" aria-valuemin="0" aria-valuemax="${progress.duration}" aria-label="Прогресс серии"></div>
-                            </div>
-                        `;
-                    }
-
-                    return `
-                        <div class="${cardClass}" data-season-number="${epSeason}" data-episode-number="${epEpisode}" data-air-date="${this.escapeHtml(ep.airDate || '')}" data-season-air-date="${this.escapeHtml(seasonAirDate || '')}" data-tmdb-episode-id="${Number(ep.tmdbEpisodeId) || 0}">
-                            <div class="episode-card-header">
-                                <div class="episode-title-group">
-                                    <span class="episode-code">S${ep.seasonNumber}E${ep.episodeNumber}</span>
-                                    <h5 class="episode-title">${this.escapeHtml(title)}</h5>
-                                </div>
-                                <div class="episode-badges">
-                                    ${isCurrentlyPlaying ? '<span class="badge-playing-episode"><span class="badge-playing-pulse" aria-hidden="true"></span>Сейчас играет</span>' : ''}
-                                    ${isCompleted ? '<span class="badge-watched-episode" title="Просмотрено"><svg class="watched-check-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>Просмотрено</span>' : ''}
-                                    ${isCurrentResume ? '<span class="badge-resume-episode">Продолжить</span>' : ''}
-                                    ${isPersonalNext ? '<span class="badge-personal-next">Далее для вас</span>' : ''}
-                                    ${isScheduleNext ? '<span class="badge-next-episode">По расписанию</span>' : ''}
-                                    ${isUpcoming ? '<span class="badge-upcoming">Ожидается</span>' : ''}
-                                    ${ratingMarkup}
-                                </div>
-                            </div>
-
-                            ${ep.stillUrl ? `
-                                <div class="episode-still-wrapper">
-                                    <img src="${this.escapeHtml(ep.stillUrl)}" alt="${this.escapeHtml(title)}" class="episode-still-img" data-fallback="poster" loading="lazy" decoding="async">
-                                </div>
-                            ` : ''}
-
-                            ${progressBarHtml}
-
-                            <div class="episode-meta-row">
-                                ${ep.airDate ? `<span class="episode-air-date">${this.escapeHtml(this.formatDate(ep.airDate))}</span>` : ''}
-                                ${ep.runtime ? `<span class="episode-runtime">${ep.runtime} мин</span>` : ''}
-                                ${isPlayable ? `
-                                    <button type="button" 
-                                            class="episode-card__watched-toggle-btn ${isCompleted ? 'is-watched' : ''}" 
-                                            data-action="toggle-episode-watched" 
-                                            data-season-number="${ep.seasonNumber}" 
-                                            data-episode-number="${ep.episodeNumber}" 
-                                            aria-pressed="${isCompleted ? 'true' : 'false'}" 
-                                            aria-label="${isCompleted ? `Снять отметку о просмотре S${ep.seasonNumber}E${ep.episodeNumber}` : `Отметить S${ep.seasonNumber}E${ep.episodeNumber} просмотренной`}" 
-                                            title="${isCompleted ? 'Снять отметку' : 'Отметить просмотренной'}">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                            <polyline points="20 6 9 17 4 12"/>
-                                        </svg>
-                                    </button>
-                                    <button type="button" 
-                                            class="episode-card__play-btn ${isCurrentResume ? 'episode-card__play-btn--resume' : ''} ${isCurrentlyPlaying ? 'episode-card__play-btn--playing' : ''}" 
-                                            data-action="play-episode" 
-                                            data-season-number="${ep.seasonNumber}" 
-                                            data-episode-number="${ep.episodeNumber}" 
-                                            data-timestamp="${isCurrentResume ? (progress.timestamp || 0) : 0}"
-                                            aria-label="${isCurrentlyPlaying ? 'Сейчас играет' : (isCurrentResume ? 'Продолжить просмотр' : 'Смотреть')} S${ep.seasonNumber}E${ep.episodeNumber} — ${this.escapeHtml(title)}">
-                                        <span class="play-icon" aria-hidden="true">${isCurrentlyPlaying ? '■' : '▶'}</span> ${isCurrentlyPlaying ? 'Играет' : (isCurrentResume ? 'Продолжить' : 'Смотреть')}
-                                    </button>
-                                ` : ''}
-                            </div>
-
-                            ${this.renderEpisodeRatingControl(ep, seasonAirDate)}
-
-                            ${ep.overview ? `<p class="episode-overview">${this.escapeHtml(ep.overview)}</p>` : ''}
-                        </div>
-                    `;
-                }).join('')}
-            </div>
-        `;
+        if (!Array.isArray(episodes) || !episodes.length) return '';
+        const seasonNumber = Number(episodes[0].seasonNumber);
+        this.seasonsBrowserEpisodes = episodes;
+        this.seasonsBrowserAirDate = seasonAirDate;
+        const target = this.getDefaultSeasonEpisode([{ number: seasonNumber, episodes }], progress, watchTarget, history);
+        const wanted = this.seasonsBrowserEpisode ?? target.episodeNumber;
+        const selected = episodes.find(ep => Number(ep.episodeNumber) === Number(wanted))
+            || episodes.find(ep => this.isEpisodeReleasedForRating(ep, seasonAirDate)) || episodes[0];
+        this.seasonsBrowserEpisode = Number(selected.episodeNumber);
+        const stats = this.getSeasonEpisodeChartStats(episodes, seasonAirDate);
+        const season = this.seasonsBrowserSeasons?.find(item => item.number === seasonNumber);
+        const summary = this.getEpisodeSeasonSummary(episodes, stats, seasonNumber);
+        return `<div class="season-browser-summary"><strong>${this.escapeHtml(summary)}</strong>${season?.airDate ? `<span>Премьера: ${this.escapeHtml(this.formatDate(season.airDate))}</span>` : ''}</div>
+            <div class="episode-chart-shell"><button type="button" class="episode-chart-scroll" data-action="scroll-episode-chart" data-direction="prev" aria-label="Прокрутить серии влево" hidden>‹</button>
+            <div class="episode-chart" role="tablist" aria-label="Выбор серии"><div class="episode-chart-track" style="--episode-count:${episodes.length}">${stats.average === null ? '' : `<span class="episode-chart-average" aria-hidden="true" style="--episode-bar-position:${((this.getEpisodeChartRatingHeight(stats.average, stats) - 22) / 38).toFixed(6)}"></span>`}${episodes.map(ep => {
+                const score = this.isEpisodeReleasedForRating(ep, seasonAirDate) ? this.getPublicEpisodeScore(ep) : null;
+                const voted = Boolean(score);
+                const isSelected = Number(ep.episodeNumber) === this.seasonsBrowserEpisode;
+                const state = this.getBrowserEpisodeState(ep, progress, history, currentSelection);
+                return `<button type="button" id="episode-browser-tab-${seasonNumber}-${Number(ep.episodeNumber)}" class="episode-column${isSelected ? ' is-selected' : ''}${voted ? '' : ' is-unrated'}" data-action="select-browser-episode" data-season-number="${seasonNumber}" data-episode-number="${Number(ep.episodeNumber)}" role="tab" aria-controls="episode-detail-panel" aria-selected="${isSelected}" aria-label="Серия ${Number(ep.episodeNumber)}, средняя оценка ${voted ? score.avg.toFixed(1) : 'нет оценок'}" tabindex="${isSelected ? 0 : -1}"><span class="episode-column-bar" style="--episode-bar-position:${((this.getEpisodeChartHeight(ep, stats, seasonAirDate) - 22) / 38).toFixed(6)}"><span class="episode-column-score">${voted ? score.avg.toFixed(1) : '—'}</span></span><span class="episode-column-label">E${Number(ep.episodeNumber)}<span class="episode-column-markers"><span data-marker="watched" title="Просмотрено"${state.watched ? '' : ' hidden'}>✓</span><span data-marker="resume" title="Продолжить"${state.resume ? '' : ' hidden'}>●</span><span data-marker="rated" title="Вы оценили"${state.rated ? '' : ' hidden'}>★</span><span data-marker="playing" title="Смотрю"${state.playing ? '' : ' hidden'}>▶</span></span></span></button>`;
+            }).join('')}</div></div><button type="button" class="episode-chart-scroll" data-action="scroll-episode-chart" data-direction="next" aria-label="Прокрутить серии вправо" hidden>›</button></div>
+            <div id="episode-detail-panel" role="tabpanel" aria-labelledby="episode-browser-tab-${seasonNumber}-${this.seasonsBrowserEpisode}">${this.renderSelectedEpisode(selected, progress, watchTarget, history, currentSelection, seasonAirDate)}</div>`;
     }
 
-    /**
-     * Updates currently playing visual indicator on episode cards without full re-render (Phase 4D).
-     * @param {Object|null} selection 
-     */
-    updateActiveEpisodePlayingState(selection) {
-        const playingSeason = selection && selection.seasonNumber != null ? Number(selection.seasonNumber) : null;
-        const playingEpisode = selection && selection.episodeNumber != null ? Number(selection.episodeNumber) : null;
+    getBrowserEpisodeState(ep, progress = this.currentProgressRecord, history = this.currentEpisodeHistory, selection = this.seasonsBrowserPlayingSelection !== undefined ? this.seasonsBrowserPlayingSelection : this.playbackController?.currentSelection) {
+        const season = Number(ep.seasonNumber), episode = Number(ep.episodeNumber);
+        const same = record => record && Number(record.seasonNumber ?? record.season) === season && Number(record.episodeNumber ?? record.episode) === episode;
+        const playing = Boolean(same(selection) && (!selection.kinopoiskId || Number(selection.kinopoiskId) === Number(this.selectedMovie?.kinopoiskId)));
+        return { watched: Boolean(history?.[`${season}:${episode}`]), resume: Boolean(progress && !progress.completed && same(progress)), playing,
+            rated: Number(this.getEpisodeRatingFor(season, episode)?.r) || 0,
+            released: this.isEpisodeReleasedForRating(ep, this.seasonsBrowserAirDate) };
+    }
 
-        document.querySelectorAll('.episode-card').forEach(card => {
-            const playBtn = card.querySelector('[data-action="play-episode"]');
-            if (!playBtn) return;
+    renderBrowserEpisodeBadges(ep, state) {
+        return `<span class="badge-playing-episode"${state.playing ? '' : ' hidden'}>Смотрю</span><span class="badge-watched-episode"${state.watched ? '' : ' hidden'}>✓ Просмотрено</span><span class="badge-resume-episode"${state.resume ? '' : ' hidden'}>Продолжить</span><span class="episode-user-rating-badge"${state.rated ? '' : ' hidden'}>Вы ★ ${state.rated}</span><span class="badge-upcoming"${state.released ? ' hidden' : ''}>Серия ещё не вышла</span>`;
+    }
 
-            const cardSeason = Number(playBtn.getAttribute('data-season-number'));
-            const cardEpisode = Number(playBtn.getAttribute('data-episode-number'));
+    renderSelectedEpisode(ep, progress = this.currentProgressRecord, watchTarget = this.currentWatchTarget, history = this.currentEpisodeHistory, selection = this.seasonsBrowserPlayingSelection !== undefined ? this.seasonsBrowserPlayingSelection : this.playbackController?.currentSelection, seasonAirDate = this.seasonsBrowserAirDate) {
+        const state = this.getBrowserEpisodeState(ep, progress, history, selection);
+        const season = Number(ep.seasonNumber), episode = Number(ep.episodeNumber);
+        const title = this.escapeHtml(ep.name || `Серия ${episode}`);
+        const index = this.seasonsBrowserEpisodes?.findIndex(item => Number(item.episodeNumber) === episode) ?? 0;
+        const seasonIndex = this.seasonsBrowserSeasons?.findIndex(item => item.number === season) ?? 0;
+        const canPrevious = index > 0 || seasonIndex > 0;
+        const canNext = index < (this.seasonsBrowserEpisodes?.length || 1) - 1 || seasonIndex < (this.seasonsBrowserSeasons?.length || 1) - 1;
+        const fallbackStill = this.selectedMovie?.backdropUrl || this.selectedMovie?.backdrop || this.seasonsBrowserCache?.get(season)?.posterUrl
+            || this.seasonsBrowserSeasons?.find(item => item.number === season)?.posterUrl || null;
+        const still = ep.stillUrl || fallbackStill;
+        const timestamp = state.resume ? Number(progress?.timestamp) || 0 : 0;
+        const percent = state.resume && Number(progress?.duration) > 0 ? Math.min(100, Math.max(0, timestamp / Number(progress.duration) * 100)) : 0;
+        return `<article class="episode-detail" data-season-number="${season}" data-episode-number="${episode}">
+            <button type="button" class="episode-detail-nav episode-detail-nav--prev" data-action="navigate-browser-episode" data-direction="prev" aria-label="Предыдущая серия" aria-disabled="${!canPrevious}"${canPrevious ? '' : ' disabled'}>‹</button>
+            <div class="episode-detail-main"><div class="episode-detail-still">${still ? `<img src="${this.escapeHtml(still)}" alt="${title}" loading="lazy" decoding="async" data-episode-still>${ep.stillUrl ? '' : '<span class="episode-still-placeholder-label">Кадр серии недоступен</span>'}` : '<span aria-label="Кадр отсутствует">▶</span>'}</div>
+            <div class="episode-detail-content"><p class="episode-detail-meta">S${season}.E${episode}${ep.airDate ? ` · ${this.escapeHtml(this.formatDate(ep.airDate))}` : ''}${Number(ep.runtime) > 0 ? ` (${Number(ep.runtime)} мин)` : ''}</p>
+            <h4 class="episode-title">${title}</h4><p class="episode-community-score">${this.escapeHtml(this.getCommunityEpisodeLabel(ep))}</p>
+            <div class="episode-badges">${this.renderBrowserEpisodeBadges(ep, state)}</div><p class="episode-overview">${this.escapeHtml(ep.overview || '')}</p>
+            <div class="episode-progress"${percent ? '' : ' hidden'} role="progressbar" aria-label="Прогресс серии" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent.toFixed(1)}"><span style="width:${percent.toFixed(1)}%"></span></div>
+            <div class="episode-detail-actions"><button type="button" class="episode-watched-btn${state.watched ? ' is-watched' : ''}" data-action="toggle-episode-watched" data-season-number="${season}" data-episode-number="${episode}" aria-label="${state.watched ? 'Снять отметку просмотра' : 'Отметить просмотренной'}" aria-pressed="${state.watched}"${state.released ? '' : ' disabled'}>✓</button>
+            <button type="button" class="episode-play-btn${state.resume || state.playing ? ' is-resume' : ''}" data-action="play-episode" data-season-number="${season}" data-episode-number="${episode}" data-timestamp="${timestamp}"${state.released ? '' : ' disabled'}>${state.playing ? '■ Смотрю' : state.resume ? '▶ Продолжить' : '▶ Смотреть'}</button></div></div></div>
+            <button type="button" class="episode-detail-nav episode-detail-nav--next" data-action="navigate-browser-episode" data-direction="next" aria-label="Следующая серия" aria-disabled="${!canNext}"${canNext ? '' : ' disabled'}>›</button>
+            <div class="episode-rating-slot">${this.renderEpisodeRatingControl(ep, seasonAirDate)}</div></article>`;
+    }
 
-            const isThisPlaying = playingSeason !== null && playingEpisode !== null &&
-                                  cardSeason === playingSeason && cardEpisode === playingEpisode;
+    selectSeasonEpisode(episodeNumber, options = {}) {
+        const ep = this.seasonsBrowserEpisodes?.find(item => Number(item.episodeNumber) === Number(episodeNumber));
+        if (!ep) return;
+        this.seasonsBrowserTouched = true;
+        this.seasonsBrowserEpisode = Number(episodeNumber);
+        const slot = document.getElementById('episode-detail-panel');
+        if (slot) {
+            slot.setAttribute('aria-labelledby', `episode-browser-tab-${Number(ep.seasonNumber)}-${Number(episodeNumber)}`);
+            slot.innerHTML = this.renderSelectedEpisode(ep);
+        }
+        this.updateSeasonsBrowserState();
+        if (options.scroll !== false) this.scrollBrowserSelectionIntoView('.episode-chart', '.episode-column.is-selected');
+    }
 
-            card.classList.toggle('episode-card--playing', isThisPlaying);
-
-            let playingBadge = card.querySelector('.badge-playing-episode');
-            if (isThisPlaying) {
-                if (!playingBadge) {
-                    const badgesContainer = card.querySelector('.episode-badges');
-                    if (badgesContainer) {
-                        const newBadge = document.createElement('span');
-                        newBadge.className = 'badge-playing-episode';
-                        newBadge.innerHTML = '<span class="badge-playing-pulse" aria-hidden="true"></span>Сейчас играет';
-                        badgesContainer.prepend(newBadge);
-                    }
-                }
-                playBtn.classList.add('episode-card__play-btn--playing');
-            } else {
-                if (playingBadge) playingBadge.remove();
-                playBtn.classList.remove('episode-card__play-btn--playing');
+    async navigateSeasonEpisode(direction) {
+        const index = this.seasonsBrowserEpisodes?.findIndex(ep => Number(ep.episodeNumber) === this.seasonsBrowserEpisode) ?? -1;
+        if (index < 0) return;
+        const delta = direction === 'prev' ? -1 : 1;
+        const ep = this.seasonsBrowserEpisodes[index + delta];
+        if (ep) this.selectSeasonEpisode(ep.episodeNumber);
+        else {
+            const seasonIndex = this.seasonsBrowserSeasons.findIndex(season => season.number === this.seasonsBrowserSeason);
+            const nextSeason = this.seasonsBrowserSeasons[seasonIndex + delta];
+            if (!nextSeason) return;
+            await this.handleSeasonPillSelect(nextSeason.number);
+            if (this.seasonsBrowserEpisodes?.length && this.seasonsBrowserSeason === nextSeason.number) {
+                const boundaryEpisode = delta < 0 ? this.seasonsBrowserEpisodes.at(-1) : this.seasonsBrowserEpisodes[0];
+                this.selectSeasonEpisode(boundaryEpisode.episodeNumber);
             }
+        }
+        document.querySelector(`.episode-detail-nav[data-direction="${direction}"]`)?.focus();
+    }
+
+    scrollBrowserSelectionIntoView(containerSelector, itemSelector) {
+        const container = document.querySelector(containerSelector), item = container?.querySelector(itemSelector);
+        if (!container || !item) return;
+        const left = item.offsetLeft - container.offsetLeft;
+        if (left < container.scrollLeft || left + item.offsetWidth > container.scrollLeft + container.clientWidth) {
+            container.scrollTo?.({ left: Math.max(0, left - container.clientWidth / 2 + item.offsetWidth / 2), behavior: 'smooth' });
+        }
+    }
+
+    updateEpisodeChartScrollControls() {
+        const chart = document.querySelector('.episode-chart');
+        if (!chart) return;
+        const overflows = chart.scrollWidth > chart.clientWidth + 1;
+        document.querySelectorAll('.episode-chart-scroll').forEach(button => {
+            button.hidden = !overflows || (button.dataset.direction === 'prev' ? chart.scrollLeft <= 1 : chart.scrollLeft + chart.clientWidth >= chart.scrollWidth - 1);
         });
     }
 
-    /**
-     * Refreshes seasons progress and history state and DOM non-disruptively.
-     */
-    async refreshSeasonsProgress() {
-        if (!this.selectedMovie) return;
-        const movie = this.selectedMovie;
-        const pageContext = this.capturePageContext(movie);
-        const isSeries = typeof isSeriesMedia === 'function' && isSeriesMedia(movie);
-        if (!isSeries) return;
+    handleSeasonsBrowserKeydown(event) {
+        const tab = event.target?.closest?.('.season-tab, .episode-column');
+        if (!tab) return;
+        const parent = tab.parentElement;
+        const tabs = [...parent.querySelectorAll('[role="tab"]')];
+        const index = tabs.indexOf(tab);
+        const next = { ArrowLeft: Math.max(0, index - 1), ArrowRight: Math.min(tabs.length - 1, index + 1), Home: 0, End: tabs.length - 1 }[event.key];
+        if (next === undefined) return;
+        event.preventDefault();
+        const target = tabs[next];
+        target?.focus();
+        if (target?.classList.contains('season-tab')) void this.handleSeasonPillSelect(Number(target.dataset.seasonNumber));
+        else if (target) this.selectSeasonEpisode(Number(target.dataset.episodeNumber));
+    }
 
+    updateSeasonsBrowserState() {
+        const season = this.seasonsBrowserSeasons?.find(item => item.number === this.seasonsBrowserSeason);
+        const episodes = this.seasonsBrowserEpisodes || [];
+        document.querySelectorAll('.episode-column').forEach(column => {
+            const ep = episodes.find(item => Number(item.episodeNumber) === Number(column.dataset.episodeNumber));
+            if (!ep) return;
+            const state = this.getBrowserEpisodeState(ep);
+            const selected = Number(ep.episodeNumber) === this.seasonsBrowserEpisode;
+            column.classList.toggle('is-selected', selected);
+            column.setAttribute('aria-selected', String(selected));
+            column.tabIndex = selected ? 0 : -1;
+            for (const marker of ['watched', 'resume', 'rated', 'playing']) {
+                const mark = column.querySelector(`[data-marker="${marker}"]`);
+                if (mark) mark.hidden = !state[marker];
+            }
+        });
+        document.querySelectorAll('.season-tab').forEach(tab => {
+            const metadata = this.seasonsBrowserSeasons?.find(item => item.number === Number(tab.dataset.seasonNumber));
+            const data = this.seasonsBrowserCache?.get(Number(tab.dataset.seasonNumber));
+            const stats = this.getSeasonCompletionStats({ ...metadata, ...(data?.episodes ? { episodes: data.episodes } : {}) });
+            const label = tab.querySelector('.season-tab-progress');
+            if (label) label.textContent = stats.completedCount ? ` · ${stats.completedCount}/${stats.totalReleasedCount}` : '';
+        });
+        const ep = episodes.find(item => Number(item.episodeNumber) === this.seasonsBrowserEpisode);
+        const card = document.querySelector('.episode-detail');
+        if (ep && card) {
+            const state = this.getBrowserEpisodeState(ep);
+            const badges = card.querySelector('.episode-badges');
+            if (badges) badges.innerHTML = this.renderBrowserEpisodeBadges(ep, state);
+            const play = card.querySelector('[data-action="play-episode"]');
+            if (play) {
+                play.textContent = state.playing ? '■ Смотрю' : state.resume ? '▶ Продолжить' : '▶ Смотреть';
+                play.dataset.timestamp = String(state.resume ? Number(this.currentProgressRecord?.timestamp) || 0 : 0);
+                play.classList.toggle('is-resume', state.resume || state.playing);
+            }
+            const watched = card.querySelector('[data-action="toggle-episode-watched"]');
+            if (watched) {
+                watched.classList.toggle('is-watched', state.watched);
+                watched.setAttribute('aria-pressed', String(state.watched));
+                watched.setAttribute('aria-label', state.watched ? 'Снять отметку просмотра' : 'Отметить просмотренной');
+            }
+            const bar = card.querySelector('.episode-progress');
+            if (bar) {
+                const percent = state.resume && Number(this.currentProgressRecord?.duration) > 0
+                    ? Math.min(100, Math.max(0, Number(this.currentProgressRecord.timestamp) / Number(this.currentProgressRecord.duration) * 100)) : 0;
+                bar.hidden = !percent;
+                bar.setAttribute('aria-valuenow', percent.toFixed(1));
+                const fill = bar.querySelector('span');
+                if (fill) fill.style.width = `${percent.toFixed(1)}%`;
+            }
+        }
+        const banner = document.querySelector('.season-browser-continue');
+        if (banner && season) {
+            const markup = this.renderSeasonsContinueBanner(this.selectedMovie, this.currentProgressRecord, this.currentWatchTarget, this.seasonsBrowserSeasons);
+            if (banner.innerHTML !== markup) banner.innerHTML = markup;
+        }
+        this.updateSeriesEpisodeRatingUI();
+    }
+
+    updateActiveEpisodePlayingState(selection) {
+        this.seasonsBrowserPlayingSelection = selection;
+        const matchesPage = selection && (!selection.kinopoiskId || Number(selection.kinopoiskId) === Number(this.selectedMovie?.kinopoiskId));
+        if (matchesPage && Number(selection.seasonNumber) === this.seasonsBrowserSeason
+            && Number(selection.episodeNumber) !== this.seasonsBrowserEpisode) {
+            this.selectSeasonEpisode(Number(selection.episodeNumber), { scroll: false });
+        } else this.updateSeasonsBrowserState();
+    }
+
+    async refreshSeasonsProgress() {
+        const movie = this.selectedMovie;
+        if (!movie || typeof isSeriesMedia !== 'function' || !isSeriesMedia(movie)) return;
+        const pageContext = this.capturePageContext(movie);
         if (movie.kinopoiskId) {
             try {
                 const [progress, history] = await Promise.all([
@@ -13051,29 +12735,14 @@ class MovieDetailsManager {
                 if (!this.isPageContextCurrent(pageContext)) return;
                 this.currentProgressRecord = progress;
                 this.currentEpisodeHistory = history || {};
-                this.currentWatchTarget = this.resolveWatchTarget(movie, this.currentProgressRecord);
-            } catch (e) {
-                console.warn('[MovieDetails] Failed to refresh seasons progress and history:', e);
+                this.currentWatchTarget = this.resolveWatchTarget(movie, progress);
+            } catch (error) {
+                if (!this.isPageContextCurrent(pageContext)) return;
+                console.warn('[MovieDetails] Failed to refresh seasons progress and history:', error);
             }
         }
-
-        const tabPane = document.getElementById('tab-seasons');
-        if (tabPane && (this.selectedMovie.seasons || this.selectedMovie.seasonsInfo)) {
-            const seasons = this.selectedMovie.seasons || this.selectedMovie.seasonsInfo;
-            if (Array.isArray(seasons) && seasons.length > 0) {
-                const openBtn = tabPane.querySelector('.season-expand-btn[aria-expanded="true"]');
-                const openSeasonNum = openBtn ? Number(openBtn.getAttribute('data-season-number')) : null;
-
-                tabPane.innerHTML = this.renderSeasonsTab(seasons, movie.nextEpisode, movie.lastEpisode, movie.tmdbId, this.currentProgressRecord, this.currentWatchTarget, this.currentEpisodeHistory, this.playbackController?.currentSelection);
-
-                if (openSeasonNum != null) {
-                    const newBtn = tabPane.querySelector(`.season-expand-btn[data-season-number="${openSeasonNum}"]`);
-                    if (newBtn) {
-                        this.toggleSeasonEpisodes(newBtn, openSeasonNum, this.selectedMovie.tmdbId, 1);
-                    }
-                }
-            }
-        }
+        this.updateSeasonsBrowserState();
+        this.updateEpisodeChartScrollControls();
     }
 
     initSelectionPopup() {

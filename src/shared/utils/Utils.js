@@ -2,6 +2,16 @@
  * Utility functions for the Movie Rating Extension
  */
 class Utils {
+    /** Select a Russian noun form: singular, paucal, or plural. */
+    static selectRussianPlural(count, forms) {
+        const value = Math.abs(Number(count));
+        const mod10 = value % 10;
+        const mod100 = value % 100;
+        if (mod10 === 1 && mod100 !== 11) return forms[0];
+        if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1];
+        return forms[2];
+    }
+
     /**
      * Check whether cached movie metadata is sufficient for the detail views.
      * Budget and box-office fields are intentionally excluded: they are

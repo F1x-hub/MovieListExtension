@@ -26,9 +26,22 @@ class RatingService {
         return this.getRatingConfig().normalizeReview(value);
     }
 
+    getLegacyEpisodeFieldsToDelete(data) {
+        const updates = {};
+        ['ratingSource', 'episodeAverage', 'episodesRatedCount'].forEach(field => {
+            if (data && Object.prototype.hasOwnProperty.call(data, field)) {
+                updates[field] = firebase.firestore.FieldValue.delete();
+            }
+        });
+        return updates;
+    }
+
     toRatingViewModel(rating, options = {}) {
         const includeReview = options?.includeReview === true;
         const source = rating && typeof rating === 'object' ? { ...rating } : {};
+        delete source.ratingSource;
+        delete source.episodeAverage;
+        delete source.episodesRatedCount;
         const rawReview = typeof source.review === 'string' ? source.review : '';
         const review = rawReview.replace(/\r\n?/g, '\n').trim();
         source.comment = typeof source.comment === 'string' ? source.comment : '';
@@ -238,7 +251,6 @@ class RatingService {
             const resolvedMovieData = await this.resolveMovieDataForRating(movieId, movieData);
 
             let result;
-            let episodeRatingsBecameManual = false;
 
             await this.db.runTransaction(async (transaction) => {
                 // The rating event is the write owner. The Cloud Function trigger
@@ -258,37 +270,10 @@ class RatingService {
 
                 const actualExistingData = ratingDoc.exists ? ratingDoc.data() : null;
 
-                const episodeRatingSource = actualExistingData?.ratingSource;
-                if (episodeRatingSource === 'episodes' || episodeRatingSource === 'manual') {
-                    const episodeRef = this.db.collection('seriesEpisodeRatings')
-                        .doc(this.getRatingDocumentId(userId, movieId));
-                    let episodeDoc = null;
-                    try {
-                        episodeDoc = await transaction.get(episodeRef);
-                    } catch (error) {
-                        const permissionDenied = error?.code === 'permission-denied'
-                            || /permission-denied|insufficient permissions/i.test(String(error?.message || ''));
-                        if (episodeRatingSource !== 'manual' || !permissionDenied) throw error;
-                        // Keep ordinary manual title ratings usable when the private
-                        // collection rules are unavailable. Episode ratings cannot
-                        // be edited without this state, so only manualBackup may lag.
-                    }
-                    const ratedAt = firebase.firestore.FieldValue.serverTimestamp();
-                    if (episodeDoc?.exists) {
-                        const episodePatch = {
-                            manualBackup: { rating: ratingVal, ratedAt },
-                            updatedAt: ratedAt
-                        };
-                        if (episodeRatingSource === 'episodes') episodePatch.mode = 'manual';
-                        transaction.update(episodeRef, episodePatch);
-                    }
-                    ratingData.ratingSource = 'manual';
-                    if (episodeRatingSource === 'episodes') {
-                        ratingData.episodeAverage = firebase.firestore.FieldValue.delete();
-                        ratingData.episodesRatedCount = firebase.firestore.FieldValue.delete();
-                    }
-                    episodeRatingsBecameManual = true;
-                }
+                // Retire display metadata from the former aggregate model without
+                // reading or changing the independent private episode document.
+                const legacyEpisodeUpdates = this.getLegacyEpisodeFieldsToDelete(actualExistingData);
+                Object.assign(ratingData, legacyEpisodeUpdates);
 
                 if (hasReviewOption) {
                     ratingData.review = normalizedReview;
@@ -301,10 +286,7 @@ class RatingService {
 
                     transaction.update(ratingRef, ratingData);
                     result = { id: ratingRef.id, ...ratingData };
-                    if (episodeRatingsBecameManual) {
-                        delete result.episodeAverage;
-                        delete result.episodesRatedCount;
-                    }
+                    Object.keys(legacyEpisodeUpdates).forEach(field => { delete result[field]; });
                     if (!hasReviewOption && Object.prototype.hasOwnProperty.call(actualExistingData, 'review')) {
                         result.review = actualExistingData.review;
                     }
@@ -319,12 +301,6 @@ class RatingService {
 
                 }
             });
-
-            if (episodeRatingsBecameManual) {
-                if (typeof window !== 'undefined') {
-                    window.firebaseManager?.seriesEpisodeRatingService?.clearEpisodeRatingsCache?.(userId, movieId);
-                }
-            }
 
             // Always cache movie metadata when rating to ensure name, poster, and flags are set in Firestore
             if (resolvedMovieData) {
@@ -439,6 +415,8 @@ class RatingService {
                 if (!Number.isInteger(Number(current.rating)) || Number(current.rating) < 1 || Number(current.rating) > 10) {
                     throw new Error('Rating is invalid');
                 }
+
+                Object.assign(updates, this.getLegacyEpisodeFieldsToDelete(current));
 
                 transaction.update(ratingRef, updates);
                 result = this.toRatingViewModel({ id: ratingRef.id, ...current, ...updates }, { includeReview: true });
@@ -1007,46 +985,9 @@ class RatingService {
 
             const ratingData = ratingDoc.data();
             const movieId = ratingData?.movieId;
-            const hasEpisodeRatingSource = ratingData?.ratingSource === 'episodes'
-                || ratingData?.ratingSource === 'manual';
-            let hasEpisodeRatings = false;
+            // Public title deletion never touches private episode scores.
+            await ratingRef.delete();
 
-            if (movieId && hasEpisodeRatingSource) {
-                const episodeRef = this.db.collection('seriesEpisodeRatings')
-                    .doc(this.getRatingDocumentId(userId, movieId));
-                await this.db.runTransaction(async (transaction) => {
-                    const [freshRatingDoc, episodeDoc] = await Promise.all([
-                        transaction.get(ratingRef),
-                        transaction.get(episodeRef)
-                    ]);
-                    if (!freshRatingDoc.exists) {
-                        return;
-                    }
-                    // The aggregate trigger owns movies/{movieId}. Deleting the
-                    // event is enough; client-side subtraction is race-prone and
-                    // can resurrect stale counts or remove a live projection.
-                    transaction.delete(ratingRef);
-                    if (episodeDoc.exists) {
-                        transaction.update(episodeRef, {
-                            mode: 'manual',
-                            manualBackup: null,
-                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                        });
-                        hasEpisodeRatings = true;
-                    }
-                });
-            } else {
-                // Legacy and ordinary manual ratings predate episode state. Keep
-                // their original delete path so older Firestore rules still work.
-                await ratingRef.delete();
-            }
-
-            if (hasEpisodeRatings) {
-                if (typeof window !== 'undefined') {
-                    window.firebaseManager?.seriesEpisodeRatingService?.clearEpisodeRatingsCache?.(userId, movieId);
-                }
-            }
-            
             // Invalidate cache
             await this.invalidateRatingsCache(userId);
             await this.invalidateAverageRatingsCache(movieId);
@@ -1263,7 +1204,8 @@ class RatingService {
             results.forEach(doc => {
                 const updateData = {
                     userName: userName,
-                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    ...this.getLegacyEpisodeFieldsToDelete(doc.data())
                 };
                 
                 if (userPhoto) {

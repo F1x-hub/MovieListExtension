@@ -13,6 +13,7 @@ assert.doesNotMatch(addMethod, /transaction\.(set|update)\(movieRef/);
 assert.doesNotMatch(addMethod, /lastRatingUpdatedAt/);
 assert.doesNotMatch(deleteMethod, /transaction\.update\(movieRef/);
 assert.match(addMethod, /transaction\.set\(ratingRef/);
-assert.match(deleteMethod, /transaction\.delete\(ratingRef/);
+assert.match(deleteMethod, /await ratingRef\.delete\(\)/);
+assert.doesNotMatch(addMethod + deleteMethod, /seriesEpisodeRatings/);
 
 console.log('Rating client projection ownership tests passed');

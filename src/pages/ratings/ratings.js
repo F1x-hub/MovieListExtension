@@ -22,7 +22,6 @@ class RatingsPageManager {
         this.movies = [];
         this.filteredMovies = [];
         this.currentUser = null;
-        this.selectedRatingSeriesEpisodeState = null;
         this.isLoading = false;
         this.currentRequestId = 0;
         this.lastMovieDoc = null;
@@ -207,7 +206,6 @@ class RatingsPageManager {
             currentRatingInfo: document.getElementById('currentRatingInfo'),
             existingRatingValue: document.getElementById('existingRatingValue'),
             existingRatingComment: document.getElementById('existingRatingComment'),
-            seriesEpisodeEditHint: document.getElementById('seriesEpisodeEditHint'),
             
             // Active Filters
             activeFiltersContainer: document.getElementById('activeFiltersContainer'),
@@ -1158,9 +1156,6 @@ class RatingsPageManager {
                 comment: Utils.normalizeRatingComment(currentUserRating.comment),
                 myRating: Number(ownRating?.rating) || 0,
                 myComment: Utils.normalizeRatingComment(ownRating?.comment),
-                myRatingSource: ownRating?.ratingSource || '',
-                myEpisodeAverage: Number(ownRating?.episodeAverage) || 0,
-                myEpisodesRatedCount: Number(ownRating?.episodesRatedCount) || 0,
                 averageRating: movieAverage > 0 ? movieAverage : (fetchedAverage > 0 ? fetchedAverage : 0),
                 ratingsCount: movieRatingsCount > 0 ? movieRatingsCount : fetchedRatingsCount,
                 allRaters: allRaters
@@ -2493,10 +2488,6 @@ class RatingsPageManager {
         if (enrichedData.name) enrichedData.name = Utils.cleanTitle(enrichedData.name);
         if (enrichedData.movie && enrichedData.movie.name) enrichedData.movie.name = Utils.cleanTitle(enrichedData.movie.name);
 
-        const personalRating = this.getMyRating(movieData);
-        const episodeRatingCaption = personalRating.ratingSource === 'episodes'
-            ? String(i18n.get('movie_card.episode_rating_caption')).replace('{count}', String(personalRating.episodesRatedCount))
-            : '';
         
         // Use the new MovieCard component
         const card = MovieCard.create(enrichedData, {
@@ -2507,10 +2498,6 @@ class RatingsPageManager {
             showUserInfo: true,
             // Only the signed-in user's own rating can be edited here
             showEditRating: this.getMyRating(movieData).rating > 0,
-            userRatingDisplay: personalRating.ratingSource === 'episodes'
-                ? personalRating.episodeAverage
-                : movieData.rating,
-            userRatingCaption: episodeRatingCaption,
             showAddToCollection: false,
             isWatching: movieData.isWatching || movieData.status === 'watching' || false,
             isInWatchlist: movieData.isInWatchlist || movieData.status === 'plan_to_watch' || false,
@@ -2629,20 +2616,14 @@ class RatingsPageManager {
         if (Number.isFinite(movieData?.myRating)) {
             return {
                 rating: movieData.myRating,
-                comment: movieData.myComment || '',
-                ratingSource: movieData.myRatingSource || '',
-                episodeAverage: Number(movieData.myEpisodeAverage) || 0,
-                episodesRatedCount: Number(movieData.myEpisodesRatedCount) || 0
+                comment: movieData.myComment || ''
             };
         }
         const uid = this.currentUser?.uid;
         const own = uid ? (movieData?.allRaters || []).find(r => r.userId === uid) : null;
         return {
             rating: Number(own?.rating) || 0,
-            comment: Utils.normalizeRatingComment(own?.comment),
-            ratingSource: own?.ratingSource || '',
-            episodeAverage: Number(own?.episodeAverage) || 0,
-            episodesRatedCount: Number(own?.episodesRatedCount) || 0
+            comment: Utils.normalizeRatingComment(own?.comment)
         };
     }
 
@@ -2902,22 +2883,7 @@ class RatingsPageManager {
         if (!currentRating) return;
 
         const movie = movieData.movie;
-        this.selectedRatingDocumentId = movieData.id || (movieData.allRaters || [])
-            .find(rating => rating.userId === this.currentUser?.uid)?.id || null;
         this.selectedMovie = movie;
-        this.selectedRatingSeriesEpisodeState = null;
-        if (typeof isSeriesMedia === 'function' && isSeriesMedia(movie) && Number(movieData.movieId || movie.kinopoiskId) > 0) {
-            try {
-                this.selectedRatingSeriesEpisodeState = await firebaseManager.getSeriesEpisodeRatingService()
-                    .getEpisodeRatings(this.currentUser.uid, Number(movieData.movieId || movie.kinopoiskId));
-            } catch (error) {
-                console.warn('[RatingsPage] Could not load private episode ratings for edit:', error);
-                if (personalRating.ratingSource === 'episodes') {
-                    Utils.showToast(i18n.get('movie_details.series_episode_rules_error'), 'error');
-                    return;
-                }
-            }
-        }
         
         // Update modal title
         this.elements.ratingModalTitle.textContent = this.text('modal.edit_title', { title: movie.name });
@@ -2950,18 +2916,7 @@ class RatingsPageManager {
         
         // Show current rating info
         this.elements.currentRatingInfo.style.display = 'block';
-        this.elements.existingRatingValue.textContent = personalRating.ratingSource === 'episodes'
-            ? `${personalRating.episodeAverage.toFixed(1)}/10 · ${i18n.get('movie_card.episode_rating_caption').replace('{count}', String(personalRating.episodesRatedCount))}`
-            : `${currentRating}/10`;
-        if (this.elements.seriesEpisodeEditHint) {
-            this.elements.seriesEpisodeEditHint.hidden = personalRating.ratingSource !== 'episodes';
-            this.elements.seriesEpisodeEditHint.textContent = personalRating.ratingSource === 'episodes'
-                ? this.text('modal.episode_aggregate_edit_hint', {
-                    rating: personalRating.episodeAverage.toFixed(1),
-                    count: personalRating.episodesRatedCount
-                })
-                : '';
-        }
+        this.elements.existingRatingValue.textContent = `${currentRating}/10`;
         this.elements.existingRatingComment.innerHTML = currentComment ? Utils.parseSpoilers(this.escapeHtml(currentComment)) : this.escapeHtml(this.text('modal.no_comment'));
         
         // Set form values
@@ -3011,36 +2966,6 @@ class RatingsPageManager {
             // closeRatingModal() clears this.selectedMovie before the background write below
             const selectedMovie = this.selectedMovie;
             const movieId = Number(selectedMovie.kinopoiskId || selectedMovie.movieId);
-            const episodeRatingState = this.selectedRatingSeriesEpisodeState;
-            const usesEpisodeRatingService = Number(episodeRatingState?.ratedCount) > 0;
-            const currentMovieItem = this.findMovieData(movieId);
-            const existingPersonalRating = currentMovieItem ? this.getMyRating(currentMovieItem) : {};
-            const scoreChanged = Number(existingPersonalRating.rating) !== rating;
-            const isEpisodeAggregate = usesEpisodeRatingService
-                && existingPersonalRating.ratingSource === 'episodes';
-            let episodeRatingWriteHandled = false;
-
-            if (isEpisodeAggregate && !scoreChanged) {
-                const commentChanged = comment !== String(existingPersonalRating.comment || '');
-                if (commentChanged) {
-                    if (!this.selectedRatingDocumentId) throw new Error('Rating document ID is unavailable');
-                    await ratingService.updateRatingText(uid, this.selectedRatingDocumentId, { comment });
-                }
-                episodeRatingWriteHandled = true;
-            } else if (usesEpisodeRatingService) {
-                await firebaseManager.getSeriesEpisodeRatingService().saveManualRating({
-                    userId: uid,
-                    userName: displayName,
-                    userPhoto: photoURL,
-                    movieId,
-                    tmdbId: Number(selectedMovie.tmdbId || selectedMovie.externalId?.tmdb) || null,
-                    rating,
-                    comment,
-                    updateText: true,
-                    movieData: selectedMovie
-                });
-                episodeRatingWriteHandled = true;
-            }
 
             let addedNew = false;
             // Rollback restores only this card, so pages or live updates that arrive
@@ -3065,16 +2990,6 @@ class RatingsPageManager {
                 movieItem.comment = comment;
                 movieItem.myRating = rating;
                 movieItem.myComment = comment;
-                const switchedToManualRating = usesEpisodeRatingService && !isEpisodeAggregate ? true
-                    : usesEpisodeRatingService && scoreChanged;
-                if (switchedToManualRating) {
-                    movieItem.myRatingSource = 'manual';
-                    movieItem.myEpisodeAverage = 0;
-                    movieItem.myEpisodesRatedCount = 0;
-                    movieItem.ratingSource = 'manual';
-                    delete movieItem.episodeAverage;
-                    delete movieItem.episodesRatedCount;
-                }
                 movieItem.allRaters = movieItem.allRaters || [];
                 movieItem.updatedAt = new Date();
                 if (scoreChanged) {
@@ -3089,11 +3004,6 @@ class RatingsPageManager {
                     movieItem.allRaters[raterIndex].rating = rating;
                     movieItem.allRaters[raterIndex].comment = comment;
                     movieItem.allRaters[raterIndex].updatedAt = new Date();
-                    if (switchedToManualRating) {
-                        movieItem.allRaters[raterIndex].ratingSource = 'manual';
-                        delete movieItem.allRaters[raterIndex].episodeAverage;
-                        delete movieItem.allRaters[raterIndex].episodesRatedCount;
-                    }
                 } else {
                     movieItem.allRaters.push({
                         userId: uid,
@@ -3149,9 +3059,7 @@ class RatingsPageManager {
             }
 
             // Perform Firestore write in background
-            const savePromise = episodeRatingWriteHandled
-                ? Promise.resolve(null)
-                : ratingService.addOrUpdateRating(uid, displayName, photoURL, movieId, rating, comment, selectedMovie);
+            const savePromise = ratingService.addOrUpdateRating(uid, displayName, photoURL, movieId, rating, comment, selectedMovie);
             savePromise.then((actualRating) => {
                 // Update temporary opt_ IDs with real ones
                 if (addedNew && actualRating?.id) {
