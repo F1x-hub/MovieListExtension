@@ -243,7 +243,7 @@ for (let i = 1; i <= 8; i++) {
     await lruService.setCachedFranchise(i, {
         id: i,
         name: `Collection ${i}`,
-        parts: [{ tmdbId: i * 10, title: `Part ${i}` }]
+        parts: [{ tmdbId: i * 10, title: `Part ${i}` }, { tmdbId: i * 10 + 1, title: `Part ${i} sequel` }]
     });
 }
 
@@ -1002,8 +1002,8 @@ const raimiMockKpService = {
             status: 200,
             json: async () => ({
                 docs: [
-                    { id: 396, name: 'Человек-паук', year: 2002, type: 'movie', externalId: { tmdb: 557 } },
-                    { id: 397, name: 'Человек-паук 2', year: 2004, type: 'movie', externalId: { tmdb: 558 } },
+                    { id: 838, name: 'Человек-паук', year: 2002, type: 'movie', externalId: { tmdb: 557 } },
+                    { id: 2898, name: 'Человек-паук 2', year: 2004, type: 'movie', externalId: { tmdb: 558 } },
                     // PoiskKino upstream collision: returns short film 840859 ("Отражения") for TMDB 559
                     { id: 840859, name: 'Отражения', year: 2007, type: 'movie', movieLength: 18, externalId: { tmdb: 559 } }
                 ],
@@ -1021,9 +1021,9 @@ const raimiBatch = await raimiMapper.resolveBatch([
     { tmdbId: 559, mediaType: 'movie', title: 'Человек-паук 3: Враг в отражении', year: 2007 }
 ], { kinopoiskService: raimiMockKpService });
 
-assert.strictEqual(raimiBatch.get('movie:557')?.kinopoiskId, 396, 'Spider-Man 1 maps to KP 396');
-assert.strictEqual(raimiBatch.get('movie:558')?.kinopoiskId, 397, 'Spider-Man 2 maps to KP 397');
-assert.strictEqual(raimiBatch.get('movie:559')?.kinopoiskId, 81692, 'Spider-Man 3 maps to KP 81692 (NOT 840859)');
+assert.strictEqual(raimiBatch.get('movie:557')?.kinopoiskId, 838, 'Spider-Man 1 maps to KP 838');
+assert.strictEqual(raimiBatch.get('movie:558')?.kinopoiskId, 2898, 'Spider-Man 2 maps to KP 2898');
+assert.strictEqual(raimiBatch.get('movie:559')?.kinopoiskId, 82441, 'Spider-Man 3 maps to KP 82441 (NOT 840859)');
 
 // 9.2 Plausibility rejection for external ID collision
 const bogusShortFilmDoc = {
@@ -1041,7 +1041,7 @@ const spiderman3Item = {
     year: 2007
 };
 const trueSpiderman3Doc = {
-    id: 81692,
+    id: 82441,
     name: 'Человек-паук 3: Враг в отражении',
     alternativeName: 'Spider-Man 3',
     year: 2007,
@@ -1115,10 +1115,10 @@ Object.entries(badForwardStorage).forEach(([k, v]) => raimiMapper._memoryCache.s
 const healedBatch = await raimiMapper.resolveBatch([
     { tmdbId: 559, mediaType: 'movie', title: 'Человек-паук 3', year: 2007 }
 ]);
-assert.strictEqual(healedBatch.get('movie:559')?.kinopoiskId, 81692, 'resolveBatch heals movie:559 to 81692');
-assert.strictEqual(raimiMapper._memoryCache.get('movie:559')?.kpId, 81692, 'Memory cache updated to 81692');
+assert.strictEqual(healedBatch.get('movie:559')?.kinopoiskId, 82441, 'resolveBatch heals movie:559 to 82441');
+assert.strictEqual(raimiMapper._memoryCache.get('movie:559')?.kpId, 82441, 'Memory cache updated to 82441');
 assert.strictEqual(raimiMapper._memoryCache.has('kp:movie:840859'), false, 'Bad reverse mapping was removed');
-assert.strictEqual(raimiMapper._memoryCache.get('kp:movie:81692')?.tmdbId, 559, 'Correct reverse mapping was established');
+assert.strictEqual(raimiMapper._memoryCache.get('kp:movie:82441')?.tmdbId, 559, 'Correct reverse mapping was established');
 
 // 9.5 FranchiseService.getFranchise self-heals cached franchise collection parts with override conflicts
 const badFranchiseService = new FranchiseService({
@@ -1129,13 +1129,13 @@ await badFranchiseService.setCachedFranchise(531241, {
     id: 531241,
     name: 'Человек-паук (Коллекция)',
     parts: [
-        { tmdbId: 557, kinopoiskId: 396, title: 'Человек-паук' },
-        { tmdbId: 558, kinopoiskId: 397, title: 'Человек-паук 2' },
+        { tmdbId: 557, kinopoiskId: 838, title: 'Человек-паук' },
+        { tmdbId: 558, kinopoiskId: 2898, title: 'Человек-паук 2' },
         { tmdbId: 559, kinopoiskId: 840859, title: 'Человек-паук 3: Враг в отражении' }
     ]
 });
 const healedFranchise = await badFranchiseService.getFranchise(531241);
-assert.strictEqual(healedFranchise.parts[2].kinopoiskId, 81692, 'Part 559 kinopoiskId automatically healed from 840859 to 81692 in franchise cache');
+assert.strictEqual(healedFranchise.parts[2].kinopoiskId, 82441, 'Part 559 kinopoiskId automatically healed from 840859 to 82441 in franchise cache');
 
 console.log('  ✅ 9.1-9.5 Sam Raimi Spider-Man Trilogy & Collision Guard Contract verified');
 

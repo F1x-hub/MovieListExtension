@@ -1195,15 +1195,17 @@ class TMDBService {
 
             if (!response.ok) {
                 if (response.status === 404) return null;
-                console.warn(`TMDBService: collection request failed for ${numId}: HTTP ${response.status}`);
-                return null;
+                const error = new Error(`TMDB collection request failed: HTTP ${response.status}`);
+                error.status = response.status;
+                throw error;
             }
 
             const data = await response.json();
+            if (!data || !Array.isArray(data.parts)) throw new Error('Invalid TMDB collection response');
             return this.normalizeCollectionData(data);
         } catch (error) {
             console.warn(`TMDBService: getCollection failed for ${numId}:`, error.message);
-            return null;
+            throw error;
         }
     }
 
