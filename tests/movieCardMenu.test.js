@@ -83,6 +83,32 @@ menuOne.querySelector('.mc-menu-item').dispatchEvent(new dom.window.KeyboardEven
 assert.equal(menuOne.classList.contains('active'), false, 'Escape must close the menu');
 assert.equal(document.activeElement, menuButtonOne);
 
+// Carousel clipping: the right-anchored menu must flip to the start edge and
+// cap its height when the scroll container would cut it off.
+{
+    const carousel = document.createElement('div');
+    carousel.style.overflowX = 'auto';
+    carousel.style.overflowY = 'hidden';
+    const card = MovieCard.create({ movie: { kinopoiskId: 103, name: 'Carousel movie' } }, {
+        showRemoveFromCollection: true
+    });
+    carousel.append(card);
+    document.body.append(carousel);
+    const menu = card.querySelector('.mc-menu-dropdown');
+    const rect = (left, top, width, height) => () => ({ left, top, width, height, right: left + width, bottom: top + height });
+    carousel.getBoundingClientRect = rect(100, 0, 600, 300);
+    menu.getBoundingClientRect = () => (menu.classList.contains('mc-menu-dropdown--align-start')
+        ? rect(110, 50, 200, 400)()
+        : rect(45, 50, 200, 400)());
+
+    card.querySelector('.mc-menu-btn').click();
+    assert.equal(menu.classList.contains('mc-menu-dropdown--align-start'), true, 'Clipped menu must flip to the start edge');
+    assert.equal(menu.style.maxHeight, '242px', 'Menu height must fit the clip container');
+    assert.equal(menu.style.overflowY, 'auto');
+    MovieCard.closeOpenMenus();
+    carousel.remove();
+}
+
 assert.doesNotMatch(
     cardOne.innerHTML,
     /V4a2 2 0 0 1 2 2v2/,

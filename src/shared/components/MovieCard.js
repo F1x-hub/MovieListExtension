@@ -774,6 +774,59 @@ class MovieCard {
         const card = menuDropdown.closest?.('.movie-card-component');
         const menuBtn = card?.querySelector?.('.mc-menu-btn');
         menuBtn?.setAttribute('aria-expanded', String(isOpen));
+
+        if (isOpen) this.fitMenuToClipArea(menuDropdown);
+    }
+
+    /**
+     * Keeps an open dropdown inside the nearest scroll/clip container
+     * (e.g. the horizontal recommendations carousel), which would otherwise
+     * cut off the right-anchored menu on narrow cards.
+     */
+    static fitMenuToClipArea(menuDropdown) {
+        if (typeof window === 'undefined' || typeof window.getComputedStyle !== 'function') return;
+
+        menuDropdown.classList.remove('mc-menu-dropdown--align-start');
+        menuDropdown.style.maxHeight = '';
+        menuDropdown.style.overflowY = '';
+
+        const margin = 8;
+        const bounds = {
+            left: 0,
+            top: 0,
+            right: window.innerWidth || document.documentElement.clientWidth || 0,
+            bottom: window.innerHeight || document.documentElement.clientHeight || 0
+        };
+        for (let el = menuDropdown.parentElement; el && el !== document.body; el = el.parentElement) {
+            const style = window.getComputedStyle(el);
+            if (style.overflowX === 'visible' && style.overflowY === 'visible') continue;
+            const rect = el.getBoundingClientRect();
+            bounds.left = Math.max(bounds.left, rect.left);
+            bounds.top = Math.max(bounds.top, rect.top);
+            bounds.right = Math.min(bounds.right, rect.right);
+            bounds.bottom = Math.min(bounds.bottom, rect.bottom);
+            break;
+        }
+        if (bounds.right <= bounds.left || bounds.bottom <= bounds.top) return;
+
+        const endRect = menuDropdown.getBoundingClientRect();
+        if (!endRect.width) return;
+        if (endRect.left < bounds.left + margin) {
+            menuDropdown.classList.add('mc-menu-dropdown--align-start');
+            const startRect = menuDropdown.getBoundingClientRect();
+            const endOverflow = bounds.left + margin - endRect.left;
+            const startOverflow = Math.max(0, startRect.right - (bounds.right - margin));
+            if (startOverflow > endOverflow) {
+                menuDropdown.classList.remove('mc-menu-dropdown--align-start');
+            }
+        }
+
+        const rect = menuDropdown.getBoundingClientRect();
+        const available = Math.floor(bounds.bottom - margin - rect.top);
+        if (rect.bottom > bounds.bottom - margin && available > 0) {
+            menuDropdown.style.maxHeight = `${Math.max(available, 120)}px`;
+            menuDropdown.style.overflowY = 'auto';
+        }
     }
 
     static closeOpenMenus(exceptDropdown = null) {
