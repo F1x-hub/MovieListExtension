@@ -86,10 +86,11 @@
 
                 <!-- Review Section -->
                 <div class="rating-review-section">
-                    <button id="writeReviewBtn" class="btn review-write-btn btn-full-width">
+                    <button id="writeReviewBtn" class="btn review-write-btn btn-full-width" aria-controls="reviewContainer" aria-expanded="false">
                         <span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></span> <span data-i18n="movie_details.write_review">Write a Review</span>
                     </button>
-                    <div id="reviewContainer" class="review-container" style="display: none;">
+                    <div id="reviewContainer" class="review-container" style="display: none;" inert>
+                        <div class="review-content">
                         <div class="rating-text-field">
                             <label for="ratingComment" class="rating-text-label">Короткое мнение</label>
                             <textarea id="ratingComment" class="review-textarea" rows="4" maxlength="500" data-i18n="movie_details.review_placeholder" placeholder="What did you think about this movie?"></textarea>
@@ -105,6 +106,7 @@
                                 <span id="reviewCharCount">0</span>/5000
                             </div>
                             <div id="ratingReviewError" class="rating-review-error" role="alert" hidden></div>
+                        </div>
                         </div>
                     </div>
                 </div>

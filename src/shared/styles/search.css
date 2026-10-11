@@ -1509,7 +1509,7 @@
 
 .tab-pane {
     display: none;
-    animation: fadeIn 0.3s ease;
+    animation: search-pane-enter var(--motion-duration-base) var(--motion-ease-out);
 }
 
 .tab-pane.active {
@@ -2842,3 +2842,5 @@ html:not(.light-theme) .btn-show-all-awards:hover {
     justify-content: center;
     color: var(--ui-color-interactive);
 }
+
+@keyframes search-pane-enter { from { opacity: 0; transform: translateY(var(--motion-distance-pane)); } to { opacity: 1; transform: translateY(0); } }

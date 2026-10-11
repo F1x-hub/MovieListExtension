@@ -537,6 +537,7 @@
 
 /* User Dropdown Menu */
 .nav-user-dropdown {
+    pointer-events: none;
     position: absolute;
     top: 100%;
     right: 0;
@@ -548,8 +549,9 @@
     min-width: 170px;
     opacity: 0;
     visibility: hidden;
-    transform: translateY(-8px);
-    transition: opacity 160ms var(--ease-out), transform 160ms var(--ease-out), visibility 160ms;
+    transform: translateY(var(--motion-distance-enter));
+    transition: opacity var(--motion-duration-fast) var(--motion-ease-in),
+        transform var(--motion-duration-fast) var(--motion-ease-in), visibility 0s linear var(--motion-duration-fast);
     z-index: 1000;
     margin-top: 6px;
 }
@@ -564,6 +566,10 @@
     opacity: 1;
     visibility: visible;
     transform: translateY(0);
+    pointer-events: auto;
+    transition-duration: var(--motion-duration-menu);
+    transition-timing-function: var(--motion-ease-out);
+    transition-delay: 0s;
 }
 
 .nav-dropdown-item {

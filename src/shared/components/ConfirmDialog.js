@@ -103,6 +103,7 @@
 
             this.returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null;
             root.hidden = false;
+            root.inert = false;
             cancelButton.focus();
             // Callers opened from a mousedown handler would otherwise get focus moved
             // back to the pressed element by the browser's default action.
@@ -131,7 +132,7 @@
             const resolve = this.pending;
             if (!resolve) return;
             this.pending = null;
-            if (this.root) this.root.hidden = true;
+            if (this.root) { this.root.hidden = true; this.root.inert = true; }
 
             const target = this.returnFocusTo;
             this.returnFocusTo = null;

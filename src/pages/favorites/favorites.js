@@ -130,6 +130,7 @@ class FavoritesPageManager {
         
         if (!isCurrentlyOpen) {
             dropdown.element.classList.add('open');
+            if (dropdown.list) dropdown.list.inert = false;
             dropdown.isOpen = true;
         }
     }
@@ -139,6 +140,7 @@ class FavoritesPageManager {
             const dropdown = this.dropdowns[dropdownId];
             if (dropdown && dropdown.isOpen) {
                 dropdown.element.classList.remove('open');
+                if (dropdown.list) dropdown.list.inert = true;
                 dropdown.isOpen = false;
             }
         });
@@ -201,7 +203,7 @@ class FavoritesPageManager {
             this.elements.manageFavoritesBtn.addEventListener('mousedown', () => {
                 this.closeLimitModal();
                 // Already on favorites page, just scroll to top
-                window.scrollTo({ top: 0, behavior: 'smooth' });
+                window.scrollTo({ top: 0, behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
             });
         }
 

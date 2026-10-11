@@ -212,24 +212,34 @@ a:hover {
 .shadow-glow { box-shadow: var(--shadow-glow); }
 
 /* Animation utilities */
+.motion-image[data-motion-image] {
+    transition: opacity var(--motion-duration-base) var(--motion-ease-out),
+        transform var(--motion-duration-base) var(--motion-ease-out);
+}
+.motion-image[data-motion-image="pending"] { opacity: 0; }
+.motion-image[data-motion-image="ready"] { opacity: 1; }
+@starting-style {
+    .motion-image[data-motion-image="ready"] { opacity: 0; }
+}
+
 .fade-in {
-    animation: fadeIn var(--transition-base);
+    animation: ui-fade-in var(--transition-base);
 }
 
 .slide-up {
-    animation: slideUp var(--transition-base);
+    animation: ui-slide-up var(--transition-base);
 }
 
 .scale-in {
-    animation: scaleIn var(--transition-fast);
+    animation: ui-scale-in var(--transition-fast);
 }
 
-@keyframes fadeIn {
+@keyframes ui-fade-in {
     from { opacity: 0; }
     to { opacity: 1; }
 }
 
-@keyframes slideUp {
+@keyframes ui-slide-up {
     from { 
         opacity: 0;
         transform: translateY(20px);
@@ -240,7 +250,7 @@ a:hover {
     }
 }
 
-@keyframes scaleIn {
+@keyframes ui-scale-in {
     from { 
         opacity: 0;
         transform: scale(0.9);
@@ -345,8 +355,13 @@ a:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .app-loader__indicator {
-        animation-duration: 1.8s;
+    /* Games own their CSS/WAAPI timing; never disable their simulation loops. */
+    html:root *:not(.games-modal-overlay, .games-modal-overlay *),
+    html:root *:not(.games-modal-overlay, .games-modal-overlay *)::before,
+    html:root *:not(.games-modal-overlay, .games-modal-overlay *)::after {
+        animation: none !important;
+        transition: none !important;
+        scroll-behavior: auto !important;
     }
 }
 
@@ -408,4 +423,20 @@ a:hover {
 .toggle-filters-btn:active,
 .toggle-btn:active {
     transform: scale(0.975);
+}
+
+/* A focus indicator must never wait for a transition. */
+:focus-visible:not(.games-modal-overlay *) {
+    transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    /* Only decorative transforms: positioning, sliders and game boards stay intact. */
+    .press-feedback:active,
+    .dropdown-trigger:active,
+    .clear-filters-btn:active,
+    .toggle-filters-btn:active,
+    .toggle-btn:active {
+        transform: none !important;
+    }
 }

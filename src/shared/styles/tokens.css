@@ -5,6 +5,34 @@
  * palettes. Legacy variables remain fallbacks during the visual migration.
  */
 :root {
+    /* Motion: durations never include a property or easing function. */
+    --motion-duration-instant: 0ms;
+    --motion-duration-press: 80ms;
+    --motion-duration-fast: 120ms;
+    --motion-duration-base: 180ms;
+    --motion-duration-menu: 160ms;
+    --motion-duration-disclosure: 200ms;
+    --motion-duration-slow: 240ms;
+    --motion-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --motion-ease-in: cubic-bezier(0.4, 0, 1, 1);
+    --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+    --motion-ease-spring: cubic-bezier(0.34, 1.2, 0.64, 1);
+    --motion-distance-enter: 6px;
+    --motion-distance-pane: 4px;
+    --motion-scale-enter: 0.985;
+    --motion-scale-press: 0.98;
+
+    /* Compatibility for pages not yet migrated to separate motion tokens. */
+    --ease-out: var(--motion-ease-out);
+    --ease-spring: var(--motion-ease-spring);
+    --ease-in-out: var(--motion-ease-standard);
+    --transition: color var(--motion-duration-base) var(--motion-ease-out),
+        background-color var(--motion-duration-base) var(--motion-ease-out),
+        border-color var(--motion-duration-base) var(--motion-ease-out),
+        box-shadow var(--motion-duration-base) var(--motion-ease-out),
+        opacity var(--motion-duration-base) var(--motion-ease-out),
+        transform var(--motion-duration-base) var(--motion-ease-out);
+
     /* Surfaces and content */
     --ui-color-page: var(--theme-bg-primary, var(--primary-bg, #09090b));
     --ui-color-surface: var(--theme-bg-secondary, var(--secondary-bg, #121214));

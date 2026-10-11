@@ -285,6 +285,7 @@ class CommentReactionBar {
 
         if (!open) {
             picker.hidden = true;
+            picker.inert = true;
             this.clearPickerPositioning(picker);
             trigger.setAttribute('aria-expanded', 'false');
             return;
@@ -292,6 +293,7 @@ class CommentReactionBar {
 
         this.closeOpenPickers(bar);
         picker.hidden = false;
+        picker.inert = false;
         this.positionPicker(bar, picker, trigger);
         this.bindPickerPositioning(bar, picker, trigger);
         trigger.setAttribute('aria-expanded', 'true');
@@ -358,6 +360,7 @@ class CommentReactionBar {
             const bar = picker.closest('[data-comment-reactions]');
             if (!bar || bar === exceptBar || picker.hidden) return;
             picker.hidden = true;
+            picker.inert = true;
             this.clearPickerPositioning(picker);
             bar.querySelector('[data-action="toggle-comment-reaction-picker"]')
                 ?.setAttribute('aria-expanded', 'false');

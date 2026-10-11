@@ -13,10 +13,10 @@
     display: flex;
     flex-direction: column;
     gap: 40px;
-    animation: fadeIn 0.3s ease-out;
+    animation: person-page-enter 0.3s ease-out;
 }
 
-@keyframes fadeIn {
+@keyframes person-page-enter {
     from {
         opacity: 0;
         transform: translateY(6px);
@@ -280,6 +280,7 @@
 }
 
 .person-bio__text {
+    overflow: hidden;
     font-size: 15px;
     line-height: 1.65;
     color: var(--theme-text-secondary, #d4d4d8);

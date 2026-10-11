@@ -842,7 +842,7 @@ export class CustomTimePicker {
             const containerHeight = listEl.clientHeight;
             const targetScrollTop = relativeTop - (containerHeight / 2) + (itemHeight / 2);
             if (smooth) {
-                listEl.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
+                listEl.scrollTo({ top: Math.max(0, targetScrollTop), behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
             } else {
                 listEl.scrollTop = Math.max(0, targetScrollTop);
             }

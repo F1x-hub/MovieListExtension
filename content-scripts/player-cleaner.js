@@ -2180,6 +2180,18 @@
                     }
                 }
                 @media (prefers-reduced-motion: reduce) {
+                    .native-player-wrapper,
+                    .native-player-wrapper *,
+                    .native-player-wrapper *::before,
+                    .native-player-wrapper *::after {
+                        animation: none !important;
+                        transition: none !important;
+                        scroll-behavior: auto !important;
+                    }
+                    .native-player-wrapper .player-control-button:hover,
+                    .native-player-wrapper .player-control-button:active {
+                        transform: none !important;
+                    }
                     .native-player-wrapper .player-center-action,
                     .native-player-wrapper .player-control-dock,
                     .native-player-wrapper .player-control-button,

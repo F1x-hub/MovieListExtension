@@ -120,6 +120,7 @@ class HomeRenderer {
         }
 
         container.innerHTML = items.map((item, index) => this.renderFeaturedSlide(item, index, items.length)).join('');
+        if (typeof Utils !== 'undefined') Utils.bindImageReveal?.(container, 'img.featured-poster');
 
         this.bindMovieCardNavigation(container);
         this.ratingEnricher?.observe?.(container);

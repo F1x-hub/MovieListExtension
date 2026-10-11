@@ -294,6 +294,28 @@ Release entries are intentionally collapsed to keep this page readable.
 The extension manifest is the source of truth for the Chrome build version; `package.json`
 keeps npm-compatible three-component semver metadata.
 
+<details open>
+<summary><strong>Unreleased</strong></summary>
+
+### Features
+
+- Add calm dialog, toast, poster and content transitions, responsive press feedback, and animated tab and disclosure changes while preserving immediate close, focus and reduced-motion behavior.
+
+### Fixes
+
+- Restore missing easing tokens and invalid transitions in navigation, settings, ratings, Movie Details and the report drawer; animate new rating cards without a forced layout and protect toast replacements and decoded images from stale callbacks.
+- Respect reduced motion across shared UI and injected site controls: stop decorative animations and spinners, use instant motion-only exits and non-smooth scrolling, and preserve game simulation and immediate dialog semantics.
+
+### Refactor
+
+- Add shared duration and easing tokens with legacy aliases, and namespace card, utility, theme-dialog and external notification keyframes to avoid stylesheet collisions.
+
+### Docs
+
+- Document motion token ownership, reduced-motion behavior and component lifecycle constraints in the design system.
+
+</details>
+
 <details>
 <summary><strong>1.3.6</strong> — episode ratings, watch rooms and What's New</summary>
 

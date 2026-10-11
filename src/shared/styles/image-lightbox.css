@@ -126,6 +126,11 @@
     border-color: rgba(255, 255, 255, 0.4);
 }
 
+@media (prefers-reduced-motion: reduce) {
+    .image-lightbox-nav:hover { transform: translateY(-50%); }
+    .image-lightbox-close:hover { transform: none; }
+}
+
 .image-lightbox-nav:focus-visible {
     outline: 2px solid #ffffff;
     outline-offset: 2px;

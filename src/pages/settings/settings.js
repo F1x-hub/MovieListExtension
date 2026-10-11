@@ -328,6 +328,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function setLanguageDropdownOpen(open, { focusSelected = false, restoreFocus = false } = {}) {
         languageDropdown.classList.toggle('active', open);
+        const list = languageDropdown.querySelector('.dropdown-list');
+        if (list) list.inert = !open;
         dropdownHeader.setAttribute('aria-expanded', String(open));
 
         if (open && focusSelected) {
@@ -859,7 +861,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 settled = true;
                 document.removeEventListener('keydown', onKeyDown);
                 overlay.classList.remove('active');
-                setTimeout(() => overlay.remove(), 200);
+                removeOverlayAfterMotion(overlay);
                 resolve(value);
             };
             const onKeyDown = event => {
@@ -966,7 +968,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 settled = true;
                 document.removeEventListener('keydown', onKeyDown);
                 overlay.classList.remove('active');
-                setTimeout(() => overlay.remove(), 200);
+                removeOverlayAfterMotion(overlay);
                 resolve(confirmed);
             };
             const onKeyDown = event => {
@@ -1065,7 +1067,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 settled = true;
                 document.removeEventListener('keydown', onKeyDown);
                 overlay.classList.remove('active');
-                setTimeout(() => overlay.remove(), 200);
+                removeOverlayAfterMotion(overlay);
                 resolve(value);
             };
             const onKeyDown = event => {
@@ -1530,6 +1532,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    function removeOverlayAfterMotion(overlay) {
+        if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) overlay.remove();
+        else setTimeout(() => overlay.remove(), 200);
+    }
+
     /**
      * Show a toast message
      */
@@ -1540,7 +1547,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         toast = document.createElement('div');
-        toast.className = 'toast';
+        toast.className = 'toast motion-toast';
+        toast.setAttribute('role', isError ? 'alert' : 'status');
+        toast.setAttribute('aria-live', isError ? 'assertive' : 'polite');
         toast.textContent = message;
         if (isError) {
             toast.style.backgroundColor = 'var(--filter-exclude-border)';
@@ -1549,13 +1558,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.body.appendChild(toast);
         
         setTimeout(() => {
-            toast.style.opacity = '0';
-            toast.style.transform = 'translateY(100%)';
+            if (!toast.isConnected) return;
+            toast.classList.add('is-leaving');
+            if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+                toast.remove();
+                return;
+            }
+            const transitionDuration = getComputedStyle(toast).transitionDuration;
+            const exitMs = Math.max(...transitionDuration.split(',').map(value =>
+                parseFloat(value) * (value.trim().endsWith('ms') ? 1 : 1000))) || 0;
             setTimeout(() => {
                 if (toast.parentNode) {
                     document.body.removeChild(toast);
                 }
-            }, 300);
+            }, exitMs);
         }, 3000);
     }
 
@@ -1884,7 +1900,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         cancelBtn.textContent = 'Отменить изменения';
         cancelBtn.addEventListener('click', async () => {
             overlay.classList.remove('active');
-            setTimeout(() => document.body.removeChild(overlay), 200);
+            removeOverlayAfterMotion(overlay);
             
             // Revert state
             currentState = { ...initialState };
@@ -1904,7 +1920,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         confirmBtn.textContent = 'Сохранить';
         confirmBtn.addEventListener('click', async () => {
             overlay.classList.remove('active');
-            setTimeout(() => document.body.removeChild(overlay), 200);
+            removeOverlayAfterMotion(overlay);
             
             await saveSettings();
             
@@ -1964,7 +1980,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 settled = true;
                 document.removeEventListener('keydown', onKeyDown);
                 overlay.classList.remove('active');
-                setTimeout(() => overlay.remove(), 200);
+                removeOverlayAfterMotion(overlay);
                 resolve(confirmed);
             };
             const onKeyDown = (event) => {

@@ -2260,7 +2260,10 @@ class AdminPanelManager {
     showSuccessMessage(message) {
         // Create temporary success message
         const successDiv = document.createElement('div');
-        successDiv.className = 'admin-success';
+        document.querySelectorAll('.admin-success').forEach(toast => toast.remove());
+        successDiv.className = 'admin-success motion-toast';
+        successDiv.setAttribute('role', 'status');
+        successDiv.setAttribute('aria-live', 'polite');
         successDiv.style.cssText = `
             position: fixed;
             top: 80px;
@@ -2271,15 +2274,20 @@ class AdminPanelManager {
             border-radius: var(--radius-lg);
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
             z-index: 10000;
-            animation: slideIn 0.3s ease;
         `;
         successDiv.textContent = message;
         
         document.body.appendChild(successDiv);
         
         setTimeout(() => {
-            successDiv.style.animation = 'slideOut 0.3s ease';
-            setTimeout(() => successDiv.remove(), 300);
+            if (!successDiv.isConnected) return;
+            if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+                successDiv.remove();
+                return;
+            }
+            successDiv.classList.add('is-leaving');
+            const duration = parseFloat(getComputedStyle(successDiv).getPropertyValue('--motion-duration-fast')) || 120;
+            setTimeout(() => successDiv.remove(), duration);
         }, 3000);
     }
 

@@ -132,6 +132,7 @@ class CatalogSelect {
 
     open(focusSelected = false) {
         this.menu.hidden = false;
+        this.menu.inert = false;
         this.root.classList.add('is-open');
         this.trigger.setAttribute('aria-expanded', 'true');
         if (focusSelected) {
@@ -141,6 +142,7 @@ class CatalogSelect {
 
     close(restoreFocus = false) {
         this.menu.hidden = true;
+        this.menu.inert = true;
         this.root.classList.remove('is-open');
         this.trigger.setAttribute('aria-expanded', 'false');
         if (restoreFocus) this.trigger.focus();

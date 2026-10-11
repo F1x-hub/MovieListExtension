@@ -433,6 +433,11 @@
 }
 
 /* Animations */
+@media (prefers-reduced-motion: reduce) {
+    .full-page-auth-google-btn:hover,
+    .full-page-auth-submit-btn:hover { transform: none !important; }
+}
+
 @keyframes fpaFadeIn {
     from {
         opacity: 0;
