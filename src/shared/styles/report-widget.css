@@ -68,7 +68,8 @@
     background: var(--ui-color-surface);
     box-shadow: var(--shadow-xl, 4px 0 16px rgba(0, 0, 0, 0.5));
     transform: translateX(-100%);
-    transition: transform var(--transition-base, 0.3s) cubic-bezier(0.4, 0, 0.2, 1);
+    transition: transform var(--motion-duration-base) var(--motion-ease-standard),
+        visibility 0s linear var(--motion-duration-base);
     z-index: var(--z-popover, 1050);
     display: flex;
     flex-direction: column;
@@ -80,6 +81,7 @@
     transform: translateX(0);
     visibility: visible;
     pointer-events: auto;
+    transition-delay: 0s;
 }
 
 .report-drawer-header {

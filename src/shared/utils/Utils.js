@@ -496,7 +496,9 @@ class Utils {
         existingToasts.forEach(toast => toast.remove());
 
         const toast = document.createElement('div');
-        toast.className = `utils-toast utils-toast-${type}`;
+        toast.className = `utils-toast utils-toast-${type} motion-toast`;
+        toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+        toast.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
         toast.textContent = message;
         
         // Add styles
@@ -512,8 +514,6 @@ class Utils {
             zIndex: '10000',
             maxWidth: '300px',
             boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-            transform: 'translateX(100%)',
-            transition: 'transform 0.3s ease',
             backgroundColor: type === 'success' ? '#28a745' : 
                            type === 'error' ? '#dc3545' : 
                            type === 'warning' ? '#ffc107' : '#17a2b8'
@@ -521,15 +521,16 @@ class Utils {
 
         document.body.appendChild(toast);
 
-        // Animate in
-        setTimeout(() => {
-            toast.style.transform = 'translateX(0)';
-        }, 10);
-
         // Animate out and remove
         setTimeout(() => {
-            toast.style.transform = 'translateX(100%)';
-            setTimeout(() => toast.remove(), 300);
+            if (!toast.isConnected) return;
+            if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+                toast.remove();
+                return;
+            }
+            toast.classList.add('is-leaving');
+            const duration = parseFloat(getComputedStyle(toast).getPropertyValue('--motion-duration-fast')) || 120;
+            setTimeout(() => toast.remove(), duration);
         }, duration);
     }
 
@@ -1016,6 +1017,65 @@ class Utils {
         img.src = fallback;
     }
 
+    /** Reveal decoded images without changing their reserved geometry. Each
+     * source change invalidates older decode work, including on reused nodes. */
+    static bindImageReveal(root, selector = 'img') {
+        if (!root?.querySelectorAll || root._imageRevealBound) return;
+        root._imageRevealBound = true;
+        const versions = new WeakMap();
+        const source = img => img.getAttribute('src');
+        const finish = (img, version, url) => {
+            if (versions.get(img) !== version || source(img) !== url || !root.contains(img)) return;
+            img.dataset.motionImage = 'ready';
+        };
+        const loaded = img => {
+            const version = versions.get(img), url = source(img);
+            if (!img.naturalWidth) { finish(img, version, url); return; }
+            Promise.resolve().then(() => img.decode?.()).catch(() => {}).then(() => finish(img, version, url));
+        };
+        // Fallback artwork stays with each owner's error handler; this only ends the reveal.
+        const failed = img => finish(img, versions.get(img), source(img));
+        const prepare = img => {
+            if (!img.matches(selector)) return;
+            versions.set(img, (versions.get(img) || 0) + 1);
+            img.classList.add('motion-image');
+            img.dataset.motionImage = 'pending';
+            if (!img._motionImageBound) {
+                img._motionImageBound = true;
+                img.addEventListener('load', () => loaded(img));
+                img.addEventListener('error', () => failed(img));
+            }
+            if (img.complete) {
+                if (img.naturalWidth) loaded(img);
+                else failed(img);
+            }
+        };
+        root.querySelectorAll(selector).forEach(prepare);
+        if (typeof MutationObserver === 'function') {
+            const observer = new MutationObserver(records => records.forEach(record => {
+                if (record.type === 'attributes') prepare(record.target);
+                else record.addedNodes.forEach(node => {
+                    if (node.nodeType !== 1) return;
+                    if (node.matches(selector)) prepare(node);
+                    node.querySelectorAll(selector).forEach(prepare);
+                });
+            }));
+            observer.observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ['src'] });
+        }
+    }
+
+    /** Visual entry only: content is available synchronously and never awaited. */
+    static revealContent(node) {
+        if (!node?.animate) return;
+        node._contentEntry?.cancel();
+        if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+        const style = getComputedStyle(node);
+        node._contentEntry = node.animate([{ opacity: 0 }, { opacity: 1 }], {
+            duration: parseFloat(style.getPropertyValue('--motion-duration-base')) || 180,
+            easing: style.getPropertyValue('--motion-ease-out').trim() || 'ease-out'
+        });
+    }
+
     /**
      * Get a parameter from the URL
      * @param {string} param - Parameter name
@@ -1045,6 +1105,7 @@ class Utils {
                 if (els.loader)           els.loader.style.display = 'none';
                 if (els.errorScreen)      els.errorScreen.style.display = 'none';
                 if (els.contentContainer) els.contentContainer.style.display = '';
+                Utils.revealContent(els.contentContainer);
             },
             showError(error, options = {}) {
                 if (els.loader)           els.loader.style.display = 'none';
@@ -1071,6 +1132,7 @@ class Utils {
     static bindTabsAndMenus(rootEl) {
         const setMenuOpen = (menu, isOpen) => {
             menu.classList.toggle('active', isOpen);
+            menu.inert = !isOpen;
             const button = menu.previousElementSibling;
             if (button?.classList.contains('mc-menu-btn')) button.setAttribute('aria-expanded', String(isOpen));
         };

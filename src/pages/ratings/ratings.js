@@ -357,6 +357,7 @@ class RatingsPageManager {
         if (!dropdown.isOpen) {
             this.closeAllDropdowns();
             dropdown.element.classList.add('open');
+            if (dropdown.list) dropdown.list.inert = false;
             dropdown.trigger.setAttribute('aria-expanded', 'true');
             dropdown.isOpen = true;
         }
@@ -370,6 +371,7 @@ class RatingsPageManager {
         const dropdown = this.dropdowns?.[dropdownId];
         if (!dropdown || !dropdown.isOpen) return;
         dropdown.element.classList.remove('open');
+        if (dropdown.list) dropdown.list.inert = true;
         dropdown.trigger.setAttribute('aria-expanded', 'false');
         dropdown.isOpen = false;
     }

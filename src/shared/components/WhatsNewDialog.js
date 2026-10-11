@@ -8,6 +8,7 @@ export function canShowWhatsNew(document, pathname) {
     if (new URLSearchParams(document.location.search).get('whatsNewPreview') === 'draft') return false;
     if ([...document.querySelectorAll('video, audio')].some(media => !media.paused && !media.ended)) return false;
     return ![...document.querySelectorAll('.modal-overlay, [role="dialog"], [role="alertdialog"]')].some(node => {
+        if (node.getAttribute('aria-hidden') === 'true') return false;
         for (let current = node; current; current = current.parentElement) {
             const style = document.defaultView.getComputedStyle(current);
             if (current.hidden || style.display === 'none' || style.visibility === 'hidden') return false;
@@ -84,6 +85,17 @@ export class WhatsNewDialog {
             this.onPageHide = () => { void this.close(false, false); };
             this.document.defaultView.addEventListener('pagehide', this.onPageHide);
             this.render();
+            const view = this.document.defaultView;
+            if (this.root.animate && !view.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+                const style = view.getComputedStyle(this.root);
+                const timing = { duration: parseFloat(style.getPropertyValue('--motion-duration-base')) || 180,
+                    easing: style.getPropertyValue('--motion-ease-out').trim() || 'ease-out' };
+                this.root.animate([{ opacity: 0 }, { opacity: 1 }], timing);
+                this.root.querySelector('.whats-new-surface')?.animate([
+                    { transform: `translateY(${style.getPropertyValue('--motion-distance-enter').trim() || '6px'}) scale(${style.getPropertyValue('--motion-scale-enter').trim() || '.985'})` },
+                    { transform: 'translateY(0) scale(1)' }
+                ], timing);
+            }
             this.root.querySelector('[data-whats-new="done"]').focus();
             // Another surface may acknowledge while this one awaits its state read.
             if (!manual) {
@@ -202,15 +214,40 @@ export class WhatsNewDialog {
     }
     async close(acknowledge, restoreFocus = true) {
         if (!this.root) return;
-        if (acknowledge && !this.preview) {
-            try { await this.service.acknowledge(); }
-            catch (error) { console.warn('[WhatsNew] Could not save acknowledgement:', error); }
-        }
+        const closingRoot = this.root;
+        const shouldAcknowledge = acknowledge && !this.preview;
         this.chrome.storage.onChanged.removeListener(this.onStorage);
         this.unsubscribe?.();
         this.document.defaultView.removeEventListener('pagehide', this.onPageHide);
-        this.root?.remove(); this.root = null;
+        this.animateExit(closingRoot);
+        closingRoot.remove(); this.root = null;
         if (restoreFocus && this.trigger?.isConnected) this.trigger.focus();
+        if (shouldAcknowledge) {
+            try { await this.service.acknowledge(); }
+            catch (error) { console.warn('[WhatsNew] Could not save acknowledgement:', error); }
+        }
+    }
+    animateExit(root) {
+        const view = this.document.defaultView;
+        if (!root.animate || view.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+        const style = view.getComputedStyle(root);
+        const ghost = root.cloneNode(true);
+        ghost.inert = true;
+        ghost.setAttribute('aria-hidden', 'true');
+        ghost.removeAttribute('role');
+        ghost.removeAttribute('aria-modal');
+        ghost.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'));
+        ghost.style.pointerEvents = 'none';
+        this.document.body.append(ghost);
+        const duration = parseFloat(style.getPropertyValue('--motion-duration-fast')) || 120;
+        const animation = ghost.animate([{ opacity: style.opacity }, { opacity: 0 }], {
+            duration, easing: style.getPropertyValue('--motion-ease-in').trim() || 'ease-in', fill: 'forwards'
+        });
+        animation.finished.then(() => ghost.remove(), () => ghost.remove());
+        ghost.querySelector('.whats-new-surface')?.animate([
+            { transform: view.getComputedStyle(root.querySelector('.whats-new-surface')).transform },
+            { transform: `translateY(${style.getPropertyValue('--motion-distance-enter').trim() || '6px'}) scale(${style.getPropertyValue('--motion-scale-enter').trim() || '.985'})` }
+        ], { duration, easing: 'ease-in', fill: 'forwards' });
     }
 }
 

@@ -47,7 +47,7 @@
     background: rgba(255, 255, 255, 0.7) !important;
     backdrop-filter: blur(10px) !important;
     -webkit-backdrop-filter: blur(10px) !important;
-    animation: pulse 0.5s ease !important;
+    animation: ml-watchlist-added 0.5s ease !important;
 }
 
 .movieListWatchlistBtn.added:hover:not(:disabled) {
@@ -55,7 +55,7 @@
     color: #09090b !important;
 }
 
-@keyframes pulse {
+@keyframes ml-watchlist-added {
     0% {
         transform: scale(1);
     }
@@ -65,6 +65,16 @@
     100% {
         transform: scale(1);
     }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .movieListWatchlistBtn,
+    .movieListWatchlistBtn * {
+        animation: none !important;
+        transition: none !important;
+    }
+    .movieListWatchlistBtn:hover,
+    .movieListWatchlistBtn:active { transform: none !important; }
 }
 
 /* Ensure poster container and image wrapper can have absolute positioned children */

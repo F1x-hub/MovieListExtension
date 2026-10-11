@@ -109,6 +109,7 @@ class WatchingPageManager {
         
         if (!isCurrentlyOpen) {
             dropdown.element.classList.add('open');
+            if (dropdown.list) dropdown.list.inert = false;
             dropdown.isOpen = true;
         }
     }
@@ -118,6 +119,7 @@ class WatchingPageManager {
             const dropdown = this.dropdowns[dropdownId];
             if (dropdown && dropdown.isOpen) {
                 dropdown.element.classList.remove('open');
+                if (dropdown.list) dropdown.list.inert = true;
                 dropdown.isOpen = false;
             }
         });

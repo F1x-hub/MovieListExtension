@@ -703,6 +703,7 @@ class MovieCard {
         this.attachEventListeners(card);
         // CSP blocks inline onerror handlers, so image fallbacks are bound here
         this.bindImageFallbacks(card);
+        if (typeof Utils !== 'undefined') Utils.bindImageReveal?.(card, '.mc-poster, .mc-user-avatar, .mc-rater-avatar');
 
         return card;
     }
@@ -769,6 +770,7 @@ class MovieCard {
         if (!menuDropdown) return;
 
         menuDropdown.classList.toggle('active', isOpen);
+        menuDropdown.inert = !isOpen;
         const card = menuDropdown.closest?.('.movie-card-component');
         const menuBtn = card?.querySelector?.('.mc-menu-btn');
         menuBtn?.setAttribute('aria-expanded', String(isOpen));
@@ -789,6 +791,7 @@ class MovieCard {
         const menuDropdown = card.querySelector('.mc-menu-dropdown');
 
         if (!menuBtn || !menuDropdown) return;
+        menuDropdown.inert = !menuDropdown.classList.contains('active');
 
         if (!this._documentMenuListenerBound && typeof document !== 'undefined') {
             this._documentMenuListenerBound = true;

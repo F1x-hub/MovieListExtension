@@ -98,6 +98,10 @@
 }
 
 .comment-reaction-picker {
+    opacity: 1;
+    translate: 0 0;
+    transition: opacity var(--motion-duration-menu) var(--motion-ease-out),
+        translate var(--motion-duration-menu) var(--motion-ease-out), display var(--motion-duration-fast) allow-discrete;
     position: absolute;
     top: calc(100% + 8px);
     left: 0;
@@ -126,6 +130,13 @@
 
 .comment-reaction-picker[hidden] {
     display: none !important;
+    opacity: 0;
+    translate: 0 var(--motion-distance-enter);
+    transition-duration: var(--motion-duration-fast);
+    transition-timing-function: var(--motion-ease-in);
+}
+@starting-style {
+    .comment-reaction-picker { opacity: 0; translate: 0 var(--motion-distance-enter); }
 }
 
 .comment-reaction-picker-btn {
@@ -224,7 +235,8 @@
 .comment-reaction-btn:active,
 .comment-reaction-trigger:active,
 .comment-reaction-picker-btn:active {
-    transform: scale(0.97);
+    transform: scale(var(--motion-scale-press));
+    transition-duration: var(--motion-duration-press);
 }
 
 .comment-reaction-btn:focus-visible {
@@ -264,6 +276,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+    .comment-reaction-btn:hover, .comment-reaction-btn:active,
+    .comment-reaction-trigger:hover, .comment-reaction-trigger:active,
+    .comment-reaction-picker-btn:hover, .comment-reaction-picker-btn:active {
+        transform: none !important;
+    }
     .comment-reaction-btn {
         transition: none;
     }

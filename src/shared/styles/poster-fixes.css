@@ -80,10 +80,10 @@
     background-repeat: no-repeat;
     background-position: center;
     opacity: 0.6;
-    animation: pulse 1.5s ease-in-out infinite;
+    animation: poster-loading-pulse 1.5s ease-in-out infinite;
 }
 
-@keyframes pulse {
+@keyframes poster-loading-pulse {
     0%, 100% { opacity: 0.6; }
     50% { opacity: 1; }
 }

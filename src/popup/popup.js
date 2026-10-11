@@ -2260,61 +2260,28 @@ class PopupManager {
     }
 
     hideFeedContentWithFade() {
-        return new Promise((resolve) => {
-            const feedContent = this.elements.feedContent;
-            feedContent.classList.remove('fade-in');
-            feedContent.classList.add('fade-out');
-            
-            setTimeout(() => {
-                feedContent.style.display = 'none';
-                feedContent.classList.remove('fade-out');
-                resolve();
-            }, 300);
-        });
+        this.elements.feedContent.style.display = 'none';
+        this.elements.feedContent.classList.remove('fade-in', 'fade-out');
+        return Promise.resolve();
     }
 
     showFeedContentWithFade() {
-        return new Promise((resolve) => {
-            const feedContent = this.elements.feedContent;
-            // Restore original display (flex from CSS)
-            feedContent.style.display = '';
-            feedContent.classList.remove('fade-out');
-            feedContent.classList.add('fade-in');
-            
-            setTimeout(() => {
-                resolve();
-            }, 50);
-        });
+        this.elements.feedContent.style.display = '';
+        this.elements.feedContent.classList.remove('fade-in', 'fade-out');
+        Utils.revealContent?.(this.elements.feedContent);
+        return Promise.resolve();
     }
 
     showLoadingWithFade() {
-        return new Promise((resolve) => {
-            const loading = this.elements.loading;
-            loading.style.display = 'flex';
-            loading.classList.remove('fade-out');
-            loading.classList.add('fade-in');
-            
-            // Диагностика слоев для определения проблемы с z-index
-            // Используем небольшую задержку, чтобы DOM успел обновиться
-            setTimeout(() => {
-                resolve();
-            }, 100);
-        });
+        this.elements.loading.style.display = 'flex';
+        this.elements.loading.classList.remove('fade-in', 'fade-out');
+        return Promise.resolve();
     }
 
-
     hideLoadingWithFade() {
-        return new Promise((resolve) => {
-            const loading = this.elements.loading;
-            loading.classList.remove('fade-in');
-            loading.classList.add('fade-out');
-            
-            setTimeout(() => {
-                loading.style.display = 'none';
-                loading.classList.remove('fade-out');
-                resolve();
-            }, 300);
-        });
+        this.elements.loading.style.display = 'none';
+        this.elements.loading.classList.remove('fade-in', 'fade-out');
+        return Promise.resolve();
     }
 
     showMainContent() {

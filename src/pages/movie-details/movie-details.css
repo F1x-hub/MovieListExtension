@@ -83,7 +83,7 @@
     min-height: 350px;
     margin: 30px auto;
     max-width: 480px;
-    animation: fadeIn 350ms var(--ease-out) forwards;
+    animation: ui-fade-in 350ms var(--ease-out) forwards;
 }
 
 .loading-spinner-large {
@@ -137,7 +137,7 @@
     max-width: 100%;
     margin: 0 auto;
     overflow: hidden;
-    animation: fadeIn 350ms var(--ease-out) forwards;
+    animation: ui-fade-in 350ms var(--ease-out) forwards;
 }
 
 /* Atmospheric Hero Backdrop */
@@ -1367,7 +1367,7 @@
     height: 140px;
     object-fit: cover;
     display: block;
-    transition: transform var(--transition);
+    transition: transform var(--motion-duration-base) var(--motion-ease-out);
     background: transparent;
 }
 
@@ -1423,6 +1423,19 @@
     max-width: 100%;
     box-sizing: border-box;
     position: relative;
+}
+
+.rating-card-entering {
+    animation: md-rating-card-enter var(--motion-duration-base) var(--motion-ease-out);
+}
+
+.rating-card-visible {
+    opacity: 1;
+}
+
+@keyframes md-rating-card-enter {
+    from { opacity: 0; transform: translateY(var(--motion-distance-enter)); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 .light-theme .user-rating-card {
@@ -2015,7 +2028,7 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
-    transition: transform var(--transition);
+    transition: transform var(--motion-duration-base) var(--motion-ease-out);
 }
 
 .sequel-card[href]:hover .sequel-poster {
@@ -2149,7 +2162,8 @@
     overflow: hidden;
     background-color: #09090b;
     border: 1px solid var(--theme-border);
-    transition: border-color var(--transition), box-shadow var(--transition);
+    transition: border-color var(--motion-duration-base) var(--motion-ease-out),
+        box-shadow var(--motion-duration-base) var(--motion-ease-out);
 }
 
 .trailer-block:hover .trailer-poster-wrapper {
@@ -2162,7 +2176,8 @@
     height: 100%;
     object-fit: cover;
     opacity: 0.85;
-    transition: opacity var(--transition), transform var(--transition);
+    transition: opacity var(--motion-duration-base) var(--motion-ease-out),
+        transform var(--motion-duration-base) var(--motion-ease-out);
 }
 
 .trailer-block:hover .trailer-poster {
@@ -2234,7 +2249,7 @@
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    transition: color var(--transition);
+    transition: color var(--motion-duration-base) var(--motion-ease-out);
 }
 
 .trailer-block:hover .trailer-title {
@@ -2542,8 +2557,12 @@
 
 .review-container {
     margin-top: 12px;
-    animation: slideDown 250ms var(--ease-out);
+    grid-template-rows: 0fr;
+    transition: grid-template-rows var(--motion-duration-disclosure) var(--motion-ease-out), display var(--motion-duration-disclosure) allow-discrete;
 }
+.review-container.is-open { grid-template-rows: 1fr; }
+.review-content { min-height: 0; overflow: hidden; }
+@starting-style { .review-container.is-open { grid-template-rows: 0fr; } }
 
 .review-textarea {
     width: 100%;
@@ -3714,7 +3733,7 @@
 
 .fact-item--spoiler.revealed .fact-text--concealed {
     display: block;
-    animation: fadeIn 200ms var(--ease-out) forwards;
+    animation: ui-fade-in 200ms var(--ease-out) forwards;
 }
 
 .btn-show-all-facts {

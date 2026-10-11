@@ -8,10 +8,13 @@
             const style = document.createElement('style');
             style.id = 'movie-list-extension-styles';
             style.textContent = `
-                .spin { animation: spin 1s linear infinite; transform-origin: center; }
-                @keyframes spin {
+                .movieListWatchlistBtn .spin { animation: ml-watchlist-spin 1s linear infinite; transform-origin: center; }
+                @keyframes ml-watchlist-spin {
                     from { transform: rotate(0deg); }
                     to { transform: rotate(360deg); }
+                }
+                @media (prefers-reduced-motion: reduce) {
+                    .movieListWatchlistBtn .spin { animation: none !important; }
                 }
             `;
             document.head.appendChild(style);

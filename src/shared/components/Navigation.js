@@ -474,6 +474,7 @@ class Navigation {
                 
                 if (!isOpen) {
                     userDropdown.classList.add('active');
+                    userDropdown.inert = false;
                     userTrigger.classList.add('active');
                 }
             });
@@ -551,6 +552,7 @@ class Navigation {
         
         if (userDropdown && userTrigger) {
             userDropdown.classList.remove('active');
+            userDropdown.inert = true;
             userTrigger.classList.remove('active');
         }
     }
@@ -1803,7 +1805,7 @@ class Navigation {
             align-items: center;
             justify-content: center;
             z-index: 10000;
-            animation: fadeIn 0.2s ease;
+            animation: nav-theme-fade-in 0.2s ease;
             backdrop-filter: blur(4px);
         `;
 
@@ -1829,7 +1831,7 @@ class Navigation {
                     max-width: 92vw;
                     color: var(--theme-text-primary, #f4f4f5);
                     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
-                    animation: scaleIn 0.2s ease;
+                    animation: nav-theme-scale-in 0.2s ease;
                     border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.1));
                     max-height: 90vh;
                     display: flex;
@@ -2023,8 +2025,10 @@ class Navigation {
         let editingThemeId = null;
 
         const close = () => {
-            modal.style.animation = 'fadeOut 0.2s ease';
-            setTimeout(() => modal.remove(), 200);
+            const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+            modal.style.animation = 'nav-theme-fade-out 0.2s ease';
+            if (reducedMotion) modal.remove();
+            else setTimeout(() => modal.remove(), 200);
         };
 
         // Presets for Base Mode switching
@@ -2299,15 +2303,15 @@ class Navigation {
             const style = document.createElement('style');
             style.id = 'themeModalAnimations';
             style.textContent = `
-                @keyframes fadeOut {
+                @keyframes nav-theme-fade-out {
                     from { opacity: 1; }
                     to { opacity: 0; }
                 }
-                @keyframes fadeIn {
+                @keyframes nav-theme-fade-in {
                     from { opacity: 0; }
                     to { opacity: 1; }
                 }
-                @keyframes scaleIn {
+                @keyframes nav-theme-scale-in {
                     from { opacity: 0; transform: scale(0.95); }
                     to { opacity: 1; transform: scale(1); }
                 }

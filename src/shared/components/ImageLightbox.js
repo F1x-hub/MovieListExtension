@@ -184,7 +184,7 @@ class ImageLightbox {
 
         if (img && this.images[this.currentIndex]) {
             const nextSrc = this.images[this.currentIndex];
-            if (animate && img.src !== nextSrc) {
+            if (animate && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches && img.src !== nextSrc) {
                 img.style.opacity = '0.5';
                 img.style.transform = 'scale(0.98)';
                 const newImg = new Image();

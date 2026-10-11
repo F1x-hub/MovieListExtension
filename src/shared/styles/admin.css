@@ -1,5 +1,15 @@
 /* Admin Panel Styles */
 
+@keyframes admin-toast-enter {
+    from { opacity: 0; transform: translateY(var(--motion-distance-enter)); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes admin-toast-exit {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(var(--motion-distance-enter)); }
+}
+
 /* Reports Section Styles */
 .reports-section {
     margin-top: var(--space-2xl);

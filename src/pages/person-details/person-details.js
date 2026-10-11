@@ -169,6 +169,7 @@ class PersonDetailsPageController {
         if (this.loadingState) this.loadingState.style.display = 'none';
         if (this.errorState) this.errorState.style.display = 'none';
         if (this.personContainer) this.personContainer.style.display = 'flex';
+        if (typeof Utils !== 'undefined') Utils.revealContent?.(this.personContainer);
     }
 
     /**
@@ -371,6 +372,7 @@ class PersonDetailsPageController {
 
         // Post-render: Mount MovieCard instances in KnownFor and Filmography
         this.mountMovieCards(person);
+        if (typeof Utils !== 'undefined') Utils.bindImageReveal?.(this.personContainer, '.person-hero__portrait');
     }
 
     /**
@@ -1156,6 +1158,7 @@ class PersonDetailsPageController {
         if (container && this.currentPerson) {
             container.innerHTML = this.renderFilmographyCategories(this.currentPerson);
             this.mountMovieCards(this.currentPerson);
+            if (typeof Utils !== 'undefined') Utils.revealContent?.(container);
         }
 
         // Update active filter pills
@@ -1179,6 +1182,7 @@ class PersonDetailsPageController {
         if (container && this.currentPerson) {
             container.innerHTML = this.renderFilmographyCategories(this.currentPerson);
             this.mountMovieCards(this.currentPerson);
+            if (typeof Utils !== 'undefined') Utils.revealContent?.(container);
         }
     }
 
@@ -1191,10 +1195,17 @@ class PersonDetailsPageController {
         const btnEl = document.querySelector('[data-action="toggle-bio"]');
 
         if (textEl) {
+            const previousHeight = textEl.getBoundingClientRect().height;
+            textEl._bioEntry?.cancel();
             if (this.isBioExpanded) {
                 textEl.classList.remove('person-bio__text--clamped');
             } else {
                 textEl.classList.add('person-bio__text--clamped');
+            }
+            if (textEl.animate && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+                textEl._bioEntry = textEl.animate([
+                    { height: `${previousHeight}px` }, { height: `${textEl.getBoundingClientRect().height}px` }
+                ], { duration: parseFloat(getComputedStyle(textEl).getPropertyValue('--motion-duration-disclosure')) || 200, easing: getComputedStyle(textEl).getPropertyValue('--motion-ease-out').trim() || 'ease-out' });
             }
         }
 

@@ -87,7 +87,7 @@
 
 .calendar-month-chevron {
     color: var(--theme-text-secondary, #94a3b8);
-    transition: transform 0.25s ease;
+    transition: transform var(--motion-duration-base) var(--motion-ease-out);
 }
 
 .calendar-month-header.open .calendar-month-chevron {
@@ -96,17 +96,22 @@
 
 .calendar-month-body {
     overflow: hidden;
-    max-height: 0;
+    display: grid;
+    grid-template-rows: 0fr;
+    visibility: hidden;
     background: rgba(255, 255, 255, 0.02);
     border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.1));
     border-top: none;
     border-radius: 0 0 12px 12px;
-    transition: max-height 0.3s ease;
+    transition: grid-template-rows var(--motion-duration-disclosure) var(--motion-ease-out), visibility var(--motion-duration-disclosure);
 }
 
 .calendar-month-body.open {
-    max-height: 9999px;
+    grid-template-rows: 1fr;
+    visibility: visible;
 }
+
+.calendar-month-content { min-height: 0; overflow: hidden; }
 
 .calendar-day-group {
     display: flex;

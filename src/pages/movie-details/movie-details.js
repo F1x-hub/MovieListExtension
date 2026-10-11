@@ -544,7 +544,10 @@ class MovieDetailsManager {
         if (this.elements.writeReviewBtn) {
             this.elements.writeReviewBtn.addEventListener('click', () => {
                 this.isReviewVisible = !this.isReviewVisible;
-                this.elements.reviewContainer.style.display = this.isReviewVisible ? 'block' : 'none';
+                this.elements.reviewContainer.style.display = this.isReviewVisible ? 'grid' : 'none';
+                this.elements.reviewContainer.classList.toggle('is-open', this.isReviewVisible);
+                this.elements.reviewContainer.inert = !this.isReviewVisible;
+                this.elements.writeReviewBtn.setAttribute('aria-expanded', String(this.isReviewVisible));
                 if (this.isReviewVisible) {
                     this.elements.ratingComment.focus();
                 }
@@ -832,7 +835,7 @@ class MovieDetailsManager {
                 void this.navigateSeasonEpisode(actionBtn.dataset.direction);
             } else if (action === 'scroll-episode-chart') {
                 const chart = document.querySelector('.episode-chart');
-                chart?.scrollBy({ left: chart.clientWidth * (actionBtn.dataset.direction === 'prev' ? -0.8 : 0.8), behavior: 'smooth' });
+                chart?.scrollBy({ left: chart.clientWidth * (actionBtn.dataset.direction === 'prev' ? -0.8 : 0.8), behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
             } else if (action === 'play-episode') {
                 const seasonNumber = Number(actionBtn.getAttribute('data-season-number'));
                 const episodeNumber = Number(actionBtn.getAttribute('data-episode-number'));
@@ -863,22 +866,22 @@ class MovieDetailsManager {
             } else if (action === 'scroll-recommendations-prev') {
                 const carousel = document.getElementById('movieRecommendationsCarousel');
                 if (carousel) {
-                    carousel.scrollBy({ left: -carousel.clientWidth * 0.75, behavior: 'smooth' });
+                    carousel.scrollBy({ left: -carousel.clientWidth * 0.75, behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
                 }
             } else if (action === 'scroll-recommendations-next') {
                 const carousel = document.getElementById('movieRecommendationsCarousel');
                 if (carousel) {
-                    carousel.scrollBy({ left: carousel.clientWidth * 0.75, behavior: 'smooth' });
+                    carousel.scrollBy({ left: carousel.clientWidth * 0.75, behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
                 }
             } else if (action === 'scroll-franchise-prev') {
                 const carousel = document.getElementById('movieFranchiseCarousel');
                 if (carousel) {
-                    carousel.scrollBy({ left: -carousel.clientWidth * 0.75, behavior: 'smooth' });
+                    carousel.scrollBy({ left: -carousel.clientWidth * 0.75, behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
                 }
             } else if (action === 'scroll-franchise-next') {
                 const carousel = document.getElementById('movieFranchiseCarousel');
                 if (carousel) {
-                    carousel.scrollBy({ left: carousel.clientWidth * 0.75, behavior: 'smooth' });
+                    carousel.scrollBy({ left: carousel.clientWidth * 0.75, behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
                 }
             }
         });
@@ -6017,13 +6020,13 @@ class MovieDetailsManager {
         if (this._ratingsListEl.querySelector(`[data-rating-id="${rating.id}"]`)) return;
 
         const card = this._buildRatingCard(rating, currentUserId);
-        card.classList.add('rating-card-entering');
+        card.classList.add('rating-card-visible');
+        if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+            card.classList.add('rating-card-entering');
+            card.addEventListener('animationend', () => card.classList.remove('rating-card-entering'), { once: true });
+        }
         // Новые оценки — в начало списка
         this._ratingsListEl.prepend(card);
-        // Форсируем reflow для анимации
-        void card.offsetWidth;
-        card.classList.remove('rating-card-entering');
-        card.classList.add('rating-card-visible');
         this.hydrateCommentReactions([rating], this.currentUser);
 
         card.querySelectorAll('.clickable-username').forEach(el => {
@@ -6304,7 +6307,10 @@ class MovieDetailsManager {
             this.ratingReviewTouched = false;
             this.clearRatingReviewError();
             this.isReviewVisible = Boolean(normalizedComment || normalizedReview);
-            this.elements.reviewContainer.style.display = this.isReviewVisible ? 'block' : 'none';
+            this.elements.reviewContainer.style.display = this.isReviewVisible ? 'grid' : 'none';
+            this.elements.reviewContainer.classList.toggle('is-open', this.isReviewVisible);
+            this.elements.reviewContainer.inert = !this.isReviewVisible;
+            this.elements.writeReviewBtn?.setAttribute('aria-expanded', String(this.isReviewVisible));
         } else {
             this.currentRating = 0;
             this.originalRating = 0;
@@ -6320,6 +6326,9 @@ class MovieDetailsManager {
             this.clearRatingReviewError();
             this.isReviewVisible = false;
             this.elements.reviewContainer.style.display = 'none';
+            this.elements.reviewContainer.classList.remove('is-open');
+            this.elements.reviewContainer.inert = true;
+            this.elements.writeReviewBtn?.setAttribute('aria-expanded', 'false');
         }
         
         this.openAccessibleDialog(this.elements.ratingModal);
@@ -12626,7 +12635,7 @@ class MovieDetailsManager {
         if (!container || !item) return;
         const left = item.offsetLeft - container.offsetLeft;
         if (left < container.scrollLeft || left + item.offsetWidth > container.scrollLeft + container.clientWidth) {
-            container.scrollTo?.({ left: Math.max(0, left - container.clientWidth / 2 + item.offsetWidth / 2), behavior: 'smooth' });
+            container.scrollTo?.({ left: Math.max(0, left - container.clientWidth / 2 + item.offsetWidth / 2), behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
         }
     }
 

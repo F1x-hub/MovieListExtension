@@ -63,6 +63,62 @@ migration, DOM theme classes, and cross-tab synchronization. Theme editor values
 must remain within the approved neutral system; arbitrary chromatic accents are
 not part of the product contract.
 
+## Motion
+
+`tokens.css`, imported by `common.css`, owns separate motion durations (instant
+0ms, press 80ms, fast 120ms, base 180ms, slow 240ms), easing (`out`, `in`,
+`standard`, `spring`), entry distance (6px), entry scale (0.985), and press scale
+(0.98). Their names use the `--motion-duration-*`, `--motion-ease-*`,
+`--motion-distance-enter`, and `--motion-scale-*` prefixes. The spring curve is
+only for small controls. Legacy `--ease-*` aliases resolve to these shared roles;
+page transition lists remain compatibility layers, not duration tokens.
+
+Menus use `--motion-duration-menu` (160ms), disclosures use
+`--motion-duration-disclosure` (200ms), and panes use `--motion-distance-pane`
+(4px). Dialog overlays and surfaces enter in 180ms; exits use 120ms/ease-in.
+Confirm/Error use discrete display transitions with an instant-close fallback;
+What's New enters once per opening and closes through an inert, aria-hidden
+visual copy. History and locale rerenders do not replay entry. Resolve, callbacks,
+acknowledgement and focus restoration never wait for decorative motion.
+
+Settings, shared and Admin toasts share the `motion-toast` lifecycle: entry
+opacity/translate in 180ms, exit in 120ms, with display dwell independent of motion.
+Timers own a concrete node, so replacing a toast cannot remove its successor.
+Notifications expose status/alert semantics and polite/assertive live regions.
+
+`Utils.bindImageReveal` reveals MovieCard posters/avatars, Home featured posters
+and PersonDetails portraits after load/decode without changing their reserved
+geometry. Cached images, decode rejection and errors reach a visible terminal
+state; source generations prevent old decode work from revealing reused images.
+Existing poster-container surfaces remain the loading placeholders. Content
+fades never hold ready content behind a loader; Home/Catalog keep their existing
+stagger instead of adding a second container animation. Hover movement applies
+only to devices supporting hover. Closed disclosures and exiting menus are inert.
+
+List explicit transition properties; never insert a complete transition list
+after another property name. Namespace keyframes and scope animation utilities
+to their owner so stylesheet order does not change another component's effect.
+Focus indicators appear immediately. Motion must not delay semantic close,
+hidden/ARIA updates, focus restoration, persistence, or playback readiness.
+
+With `prefers-reduced-motion: reduce`, shared CSS stops decorative animations,
+shimmer, float, and spinners and disables transitions and smooth CSS scrolling.
+Loading remains visible with its existing accessible label; decorative hover and
+press transforms are suppressed without removing positioning transforms. JS
+scroll commands select `auto`, and motion-only removal waits are skipped. Games
+keep their own reduced-motion rules and simulation loops. Injected site UI owns
+equivalent local rules because extension-page styles do not reach host documents.
+
+Run `node tests/motionP0BrowserSmoke.cjs` for computed-style coverage of page
+stylesheet graphs, both theme classes, reduced motion, drawer/toast timing,
+keyframe isolation and injected adapters. This fixture check does not replace a
+reloaded-extension visual pass.
+
+Run `node tests/motionP1BrowserSmoke.cjs` for dialog entry/exit and immediate
+semantics, rapid reopen, toast replacement timers, cached/slow/error image loads,
+stale decode, and reduced motion in both themes. These are Chromium fixtures,
+not proof of the installed extension or real provider behavior.
+
 ## CSS ownership
 
 Each generic visual primitive has one owner:

@@ -52,7 +52,7 @@
             width: 220px !important;
             padding: 8px !important;
             box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04) !important;
-            animation: menuFadeIn 0.2s ease-out !important;
+            animation: ml-exfs-menu-enter 0.2s ease-out !important;
             display: none;
         }
 
@@ -60,7 +60,7 @@
             display: block !important;
         }
 
-        @keyframes menuFadeIn {
+        @keyframes ml-exfs-menu-enter {
             from { opacity: 0; transform: translateY(-10px); }
             to { opacity: 1; transform: translateY(0); }
         }
@@ -117,7 +117,7 @@
             align-items: center !important;
             justify-content: center !important;
             backdrop-filter: blur(4px) !important;
-            animation: fadeIn 0.2s ease-out !important;
+            animation: ml-exfs-modal-enter 0.2s ease-out !important;
             padding: 20px !important;
         }
 
@@ -130,15 +130,15 @@
             max-height: 90vh !important;
             overflow-y: auto !important;
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
-            animation: slideUp 0.3s ease-out !important;
+            animation: ml-exfs-surface-enter 0.3s ease-out !important;
         }
 
-        @keyframes fadeIn {
+        @keyframes ml-exfs-modal-enter {
             from { opacity: 0; }
             to { opacity: 1; }
         }
 
-        @keyframes slideUp {
+        @keyframes ml-exfs-surface-enter {
             from { opacity: 0; transform: translateY(20px); }
             to { opacity: 1; transform: translateY(0); }
         }
@@ -432,13 +432,29 @@
         }
 
         .spin {
-            animation: spin 1s linear infinite;
+            animation: ml-watchlist-spin 1s linear infinite;
             transform-origin: center;
         }
 
-        @keyframes spin {
+        @keyframes ml-watchlist-spin {
             from { transform: rotate(0deg); }
             to { transform: rotate(360deg); }
+        }
+        @keyframes ml-exfs-toast-enter {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .movie-list-menu-btn,
+            .movie-list-dropdown,
+            .movie-list-dropdown *,
+            .movie-list-modal-overlay,
+            .movie-list-modal-overlay *,
+            .movie-list-toast {
+                animation: none !important;
+                transition: none !important;
+            }
+            .movie-list-menu-btn:hover { transform: none !important; }
         }
     `;
 
@@ -1004,6 +1020,7 @@
                                 
                                 // Show success message
                                 const successMsg = document.createElement('div');
+                                successMsg.className = 'movie-list-toast';
                                 successMsg.style.cssText = `
                                     position: fixed;
                                     top: 20px;
@@ -1014,7 +1031,7 @@
                                     border-radius: 8px;
                                     font-weight: 600;
                                     z-index: 300000;
-                                    animation: slideIn 0.3s ease-out;
+                                    animation: ml-exfs-toast-enter 0.3s ease-out;
                                 `;
                                 successMsg.innerHTML = '<span style="display:inline-flex; align-items:center; margin-right:6px;"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span> Rating saved: ' + selectedRating + '/10';
                                 document.body.appendChild(successMsg);

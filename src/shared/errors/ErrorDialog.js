@@ -39,7 +39,7 @@
                 if (event.target === this.overlay) this.hide();
             });
             this.overlay.addEventListener('keydown', (event) => {
-                if (event.key === 'Escape') this.hide();
+                if (event.key === 'Escape') { event.stopPropagation(); this.hide(); }
             });
         }
 
@@ -57,7 +57,9 @@
             this.options = options;
             this.bindLocaleUpdates();
             this.render();
+            if (this.overlay.hidden) this.returnFocusTo = document.activeElement;
             this.overlay.hidden = false;
+            this.overlay.inert = false;
             document.body.classList.add('app-error-dialog-open');
             this.overlay.querySelector('[data-error-action="primary"]')?.focus();
         }
@@ -128,7 +130,10 @@
         hide() {
             if (!this.overlay) return;
             this.overlay.hidden = true;
+            this.overlay.inert = true;
             document.body.classList.remove('app-error-dialog-open');
+            if (this.returnFocusTo?.isConnected) this.returnFocusTo.focus?.();
+            this.returnFocusTo = null;
         }
     }
 

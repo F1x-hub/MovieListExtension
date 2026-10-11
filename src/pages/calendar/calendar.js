@@ -81,15 +81,15 @@ function renderMonth(monthKey, dayGroups, isFirstMonth) {
 
     return `
         <section class="calendar-month">
-            <button class="calendar-month-header${isOpen ? ' open' : ''}" type="button">
+            <button class="calendar-month-header${isOpen ? ' open' : ''}" type="button" aria-expanded="${isOpen}">
                 <span class="calendar-month-name">
                     ${year ? `${monthName} ${year}` : monthName}
                     <span class="calendar-month-count">${totalEpisodes}</span>
                 </span>
                 ${renderChevron()}
             </button>
-            <div class="calendar-month-body${isOpen ? ' open' : ''}">
-                ${daysHtml}
+            <div class="calendar-month-body${isOpen ? ' open' : ''}" ${isOpen ? '' : 'inert'}>
+                <div class="calendar-month-content">${daysHtml}</div>
             </div>
         </section>
     `;
@@ -126,10 +126,12 @@ function renderErrorState(message) {
 
 function bindInteractions(container) {
     container.querySelectorAll('.calendar-month-header').forEach((header) => {
-        header.addEventListener('mousedown', () => {
+        header.addEventListener('click', () => {
             const body = header.nextElementSibling;
             const isOpen = header.classList.toggle('open');
             body.classList.toggle('open', isOpen);
+            header.setAttribute('aria-expanded', String(isOpen));
+            body.inert = !isOpen;
         });
     });
 
