@@ -36,6 +36,11 @@
     z-index: 10; /* Bring to front on hover so menu doesn't get hidden by next card */
 }
 
+/* Keep an open menu above neighbouring (even hovered) cards it overlaps. */
+.movie-card-component:has(.mc-menu-dropdown.active) {
+    z-index: 20;
+}
+
 .movie-card-component:active {
     transform: scale(var(--motion-scale-press));
     transition-duration: var(--motion-duration-press);
@@ -139,6 +144,13 @@
     transition: opacity var(--motion-duration-fast) var(--motion-ease-in),
         transform var(--motion-duration-fast) var(--motion-ease-in), visibility 0s linear var(--motion-duration-fast);
     backdrop-filter: blur(15px);
+}
+
+/* Flipped by MovieCard.fitMenuToClipArea when the right-anchored menu would be
+   clipped on the left by a scroll container (recommendations carousel). */
+.mc-menu-dropdown--align-start {
+    left: 10px;
+    right: auto;
 }
 
 .mc-menu-dropdown.active {
