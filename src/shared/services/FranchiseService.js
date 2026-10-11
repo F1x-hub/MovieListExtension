@@ -147,6 +147,19 @@ class FranchiseService {
             if (!entry || typeof entry !== 'object') return null;
             if (entry.schemaVersion !== 2 || entry.id !== numId) return null;
             if (!Array.isArray(entry.parts) || typeof entry.cachedAt !== 'number') return null;
+            if (entry.parts.length < 2) return null;
+            if (numId === 556 && entry.identityRepairVersion !== 1) {
+                const corrections = { 557: [396, 838], 558: [397, 2898], 559: [81692, 82441] };
+                entry = { ...entry, identityRepairVersion: 1, parts: entry.parts.map(part => {
+                    const correction = corrections[Number(part.tmdbId)];
+                    return correction && Number(part.kinopoiskId) === correction[0]
+                        ? { ...part, kinopoiskId: correction[1] } : part;
+                }) };
+                this._memoryCache.set(key, entry);
+                if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+                    await new Promise(resolve => chrome.storage.local.set({ [key]: entry }, resolve));
+                }
+            }
 
             const now = Date.now();
             const age = now - entry.cachedAt;
@@ -189,7 +202,8 @@ class FranchiseService {
             posterUrl: data.posterUrl || null,
             backdropUrl: data.backdropUrl || null,
             cachedAt: now,
-            parts: data.parts
+            parts: data.parts,
+            identityRepairVersion: 1
         };
 
         try {
@@ -338,8 +352,13 @@ class FranchiseService {
 
                 // 3. Fetch from TMDB collection endpoint
                 const rawCollection = await tmdb.getCollection(numId, { signal: options.signal });
-                if (!rawCollection || !Array.isArray(rawCollection.parts)) {
-                    return null;
+                if (!rawCollection) return null;
+                if (!Array.isArray(rawCollection.parts)) {
+                    throw new Error('Invalid TMDB collection payload');
+                }
+                if (rawCollection.parts.length < 2) {
+                    // Valid empty/single-part responses are not retained for 14 days.
+                    return rawCollection;
                 }
 
                 rawCollection.parts = FranchiseService.deduplicateByStableIdentity(rawCollection.parts);

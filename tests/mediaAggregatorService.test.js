@@ -602,7 +602,8 @@ console.log('\n--- 6. Testing MediaAggregatorService async getMovieDetails flow 
                     name: 'Cached Hybrid Without Logo Schema',
                     type: 'movie',
                     status: 'Released',
-                    logoUrl: 'https://image.tmdb.org/t/p/w500/cache-healed-logo.png'
+                    logoUrl: 'https://image.tmdb.org/t/p/w500/cache-healed-logo.png',
+                    collection: null
                 };
             }
         },
@@ -642,7 +643,8 @@ console.log('\n--- 6. Testing MediaAggregatorService async getMovieDetails flow 
                     tmdbId,
                     name: 'Versioned Logo Movie',
                     type: 'movie',
-                    logoUrl: 'https://image.tmdb.org/t/p/w500/new-logo.png'
+                    logoUrl: 'https://image.tmdb.org/t/p/w500/new-logo.png',
+                    collection: null
                 };
             }
         },
@@ -678,7 +680,8 @@ console.log('\n--- 6. Testing MediaAggregatorService async getMovieDetails flow 
                     tmdbId,
                     name: 'Previously Empty Logo',
                     type: 'movie',
-                    logoUrl: 'https://image.tmdb.org/t/p/w500/recovered-logo.png'
+                    logoUrl: 'https://image.tmdb.org/t/p/w500/recovered-logo.png',
+                    collection: null
                 };
             }
         },
@@ -1320,8 +1323,8 @@ console.log('\n--- 6. Testing MediaAggregatorService async getMovieDetails flow 
     };
 
     const kpSpiderman3 = {
-        id: 81692,
-        kinopoiskId: 81692,
+        id: 82441,
+        kinopoiskId: 82441,
         name: 'Человек-паук 3: Враг в отражении',
         alternativeName: 'Spider-Man 3',
         year: 2007,
@@ -1337,7 +1340,7 @@ console.log('\n--- 6. Testing MediaAggregatorService async getMovieDetails flow 
 
     // 10.2 isTmdbCompatibleWithKinopoisk must accept true Spider-Man 3 matching both name and alternativeName
     const isMatched = MediaAggregatorService.isTmdbCompatibleWithKinopoisk(kpSpiderman3, tmdbSpiderman3);
-    assert.strictEqual(isMatched, true, 'True Spider-Man 3 (KP 81692) must be compatible with TMDB 559');
+    assert.strictEqual(isMatched, true, 'True Spider-Man 3 (KP 82441) must be compatible with TMDB 559');
 
     // 10.3 isTmdbCompatibleWithKinopoisk must reject series vs movie
     const seriesKp = { name: 'Во все тяжкие', type: 'tv-series', isSeries: true, year: 2008 };
@@ -1435,7 +1438,7 @@ console.log('\n--- 6. Testing MediaAggregatorService async getMovieDetails flow 
 
     const mockIdMapperWithOverrides = {
         VERIFIED_MAPPING_OVERRIDES: {
-            'movie:559': { tmdbId: 559, mediaType: 'movie', kpId: 81692 }
+            'movie:559': { tmdbId: 559, mediaType: 'movie', kpId: 82441 }
         },
         async resolveTmdbIdByKinopoiskId() { return null; },
         async clearMappingForKinopoiskId(kpId) {

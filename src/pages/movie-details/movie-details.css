@@ -3993,7 +3993,11 @@
 
 .season-tab:hover {
     color: var(--ui-color-content);
-    background: var(--ui-color-surface-muted);
+    border-bottom-color: var(--ui-color-border-hover);
+}
+
+.season-tab.is-selected:hover {
+    border-bottom-color: var(--ui-color-interactive);
 }
 
 .season-tab.is-selected {
@@ -4715,6 +4719,46 @@
     -webkit-backdrop-filter: blur(8px);
     max-width: fit-content;
     animation: heroNextEpisodeFadeIn 0.25s ease;
+}
+
+.hero-next-episode-card .hero-continue-button {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 5px;
+    width: 100%;
+    min-width: 0;
+    margin-top: 4px;
+    padding: 8px 0 0;
+    border-top: 1px solid var(--ui-color-border-hover);
+    border-radius: 0;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.hero-next-episode-card--continue-only .hero-continue-button {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+}
+
+.hero-next-episode-card:has(.hero-continue-button) {
+    width: fit-content;
+    max-width: 100%;
+    animation: none;
+}
+
+.hero-next-episode-card .hero-continue-button:hover:not(:disabled) {
+    background: transparent;
+    color: var(--ui-color-content);
+}
+
+.hero-next-episode-card .hero-continue-button:focus-visible {
+    outline: 2px solid var(--ui-color-interactive);
+    outline-offset: 3px;
 }
 
 @keyframes heroNextEpisodeFadeIn {

@@ -963,7 +963,10 @@ class MediaAggregatorService {
                         logoSelectionVersion: tmdbData
                             ? (Number(tmdbData.logoSelectionVersion) || TMDB_LOGO_SELECTION_VERSION)
                             : 0,
-                        collectionChecked: Boolean(tmdbData)
+                        collectionChecked: Boolean(tmdbData && (
+                            tmdbData.collection !== undefined || tmdbData.belongs_to_collection !== undefined
+                        )),
+                        collectionCheckVersion: 1
                     }
                 },
                 fieldSources
@@ -1331,7 +1334,8 @@ class MediaAggregatorService {
                             cachedTmdbId &&
                             !cached.collection &&
                             canHealFromTmdb &&
-                            cached._meta?.providers?.tmdb?.collectionChecked !== true
+                            (cached._meta?.providers?.tmdb?.collectionChecked !== true ||
+                                cached._meta?.providers?.tmdb?.collectionCheckVersion !== 1)
                         );
 
                         // KP-only cache records may be missing the IMDb/alternate

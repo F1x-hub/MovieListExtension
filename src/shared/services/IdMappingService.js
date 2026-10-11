@@ -40,7 +40,7 @@ class IdMappingService {
             'movie:557': Object.freeze({
                 tmdbId: 557,
                 mediaType: 'movie',
-                kpId: 396,
+                kpId: 838,
                 kpType: 'movie',
                 status: 'resolved',
                 identityStatus: 'VERIFIED',
@@ -51,7 +51,7 @@ class IdMappingService {
             'movie:558': Object.freeze({
                 tmdbId: 558,
                 mediaType: 'movie',
-                kpId: 397,
+                kpId: 2898,
                 kpType: 'movie',
                 status: 'resolved',
                 identityStatus: 'VERIFIED',
@@ -62,7 +62,7 @@ class IdMappingService {
             'movie:559': Object.freeze({
                 tmdbId: 559,
                 mediaType: 'movie',
-                kpId: 81692,
+                kpId: 82441,
                 kpType: 'movie',
                 status: 'resolved',
                 identityStatus: 'VERIFIED',
@@ -625,8 +625,20 @@ class IdMappingService {
         const normType = this.normalizeMediaType(mediaType);
         const reverseKey = this.buildReverseKey(normType, kpId);
         const cache = await this.getMappingCache();
+        // Publicly verified Raimi identities override conflicting shared records.
+        // This changes only the local mirror; shared documents are never repaired here.
+        const curated = Object.values(this.VERIFIED_MAPPING_OVERRIDES).find(entry =>
+            entry.mediaType === normType && entry.kpId === kpId && [557, 558, 559].includes(entry.tmdbId));
+        if (curated) {
+            cache[this.buildKey(normType, curated.tmdbId)] = { ...curated };
+            this._writeReverseIndex(cache, curated);
+            await this.saveMappingCache(cache);
+            return this._normalizeTrustedMapping(curated);
+        }
         const sharedState = await this._readSharedMappingByReverseKey(normType, kpId);
-        const sharedMapping = sharedState.mapping;
+        const sharedOverride = this.VERIFIED_MAPPING_OVERRIDES[this.buildKey(normType, sharedState.mapping?.tmdbId)];
+        const sharedMapping = sharedOverride && [557, 558, 559].includes(sharedOverride.tmdbId) && sharedOverride.kpId !== kpId
+            ? null : sharedState.mapping;
         if (sharedMapping) {
             const sharedCacheEntry = { ...sharedMapping, sharedSource: 'firestore' };
             cache[this.buildKey(sharedMapping.mediaType, sharedMapping.tmdbId)] = sharedCacheEntry;
@@ -1139,20 +1151,42 @@ class IdMappingService {
      */
     async getMappingCache() {
         if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-            return new Promise((resolve) => {
-                chrome.storage.local.get([this.CACHE_KEY], (res) => {
-                    const stored = (res && res[this.CACHE_KEY]) || {};
-                    this._memoryCache.clear();
-                    Object.entries(stored).forEach(([key, value]) => this._memoryCache.set(key, value));
-                    resolve(stored);
-                });
-            });
+            const marker = 'tmdb_raimi_identity_repair_v1';
+            const res = await new Promise(resolve => chrome.storage.local.get([this.CACHE_KEY, marker], resolve));
+            const stored = res?.[this.CACHE_KEY] || {};
+            if (res?.[marker] !== 1) {
+                const changed = this.repairLocalRaimiIdentities(stored);
+                await new Promise(resolve => chrome.storage.local.set({ [marker]: 1, ...(changed ? { [this.CACHE_KEY]: stored } : {}) }, resolve));
+            }
+            this._memoryCache.clear();
+            Object.entries(stored).forEach(([key, value]) => this._memoryCache.set(key, value));
+            return stored;
         }
         const obj = {};
         for (const [k, v] of this._memoryCache.entries()) {
             obj[k] = v;
         }
+        if (!this.raimiIdentityRepairDone) {
+            this.repairLocalRaimiIdentities(obj);
+            this.raimiIdentityRepairDone = true;
+            this._memoryCache = new Map(Object.entries(obj));
+        }
         return obj;
+    }
+
+    repairLocalRaimiIdentities(cache) {
+        const poisoned = { 557: [396], 558: [397], 559: [81692] };
+        let changed = false;
+        for (const [key, entry] of Object.entries(cache)) {
+            if (entry?.mediaType === 'tv') continue;
+            const tmdbId = Number(entry?.tmdbId);
+            const kpId = Number(entry?.kpId);
+            if (!poisoned[tmdbId]?.includes(kpId)) continue;
+            if (key.startsWith('kp:')) delete cache[key];
+            else cache[key] = { ...this.VERIFIED_MAPPING_OVERRIDES[`movie:${tmdbId}`] };
+            changed = true;
+        }
+        return changed;
     }
 
     /**
@@ -1864,7 +1898,8 @@ class IdMappingService {
                 }
             }
 
-            const entry = sharedMapping || cache[key];
+            const entry = verifiedOverride && [557, 558, 559].includes(verifiedOverride.tmdbId)
+                ? verifiedOverride : (sharedMapping || cache[key]);
 
             if (entry && entry.status === 'resolved' && entry.kpId) {
                 // Persistent resolved hit

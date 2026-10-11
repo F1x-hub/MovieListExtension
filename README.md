@@ -300,12 +300,14 @@ keeps npm-compatible three-component semver metadata.
 ### Features
 
 - Add calm dialog, toast, poster and content transitions, responsive press feedback, and animated tab and disclosure changes while preserving immediate close, focus and reduced-motion behavior.
+- Resume series directly from the next-episode card in Movie Details, with the same saved episode and position as the Seasons banner and live progress updates.
 
 ### Fixes
 
 - Restore missing easing tokens and invalid transitions in navigation, settings, ratings, Movie Details and the report drawer; animate new rating cards without a forced layout and protect toast replacements and decoded images from stale callbacks.
 - Respect reduced motion across shared UI and injected site controls: stop decorative animations and spinners, use instant motion-only exits and non-smooth scrolling, and preserve game simulation and immediate dialog semantics.
 - Keep movie-card action menus fully visible in scrolling carousels such as Movie Details recommendations: a menu that would be cut off opens toward the free side, caps its height to the carousel, and stays above neighbouring cards.
+- Restore franchise sections when collection metadata arrives after the initial render, allow bounded retries after network failures, and repair incorrect local Spider-Man trilogy identities without changing shared Firestore mappings.
 
 ### Refactor
 

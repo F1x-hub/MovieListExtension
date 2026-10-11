@@ -844,12 +844,9 @@ class MovieDetailsManager {
                 const episodeTitle = parentCard?.querySelector('.episode-title')?.textContent?.trim() || null;
                 this.handleEpisodePlay(seasonNumber, episodeNumber, episodeTitle, timestamp);
             } else if (action === 'continue-watch-progress') {
-                const seasonNumber = Number(actionBtn.getAttribute('data-season-number'));
-                const episodeNumber = Number(actionBtn.getAttribute('data-episode-number'));
-                const timestamp = Number(actionBtn.getAttribute('data-timestamp')) || 0;
-                const parentBanner = actionBtn.closest('.seasons-continue-banner');
-                const episodeTitle = parentBanner?.querySelector('.seasons-continue-banner__title')?.textContent?.trim() || null;
-                this.handleEpisodePlay(seasonNumber, episodeNumber, episodeTitle, timestamp);
+                this.handleContinueWatching();
+            } else if (action === 'retry-franchise') {
+                void this.loadFranchiseAsync(this.selectedMovie);
             } else if (action === 'toggle-episode-watched') {
                 const seasonNumber = Number(actionBtn.getAttribute('data-season-number'));
                 const episodeNumber = Number(actionBtn.getAttribute('data-episode-number'));
@@ -1705,6 +1702,7 @@ class MovieDetailsManager {
                 // Cached content is already displayed. Just silently update the internal state
                 // so that user actions (rate, bookmark) use the freshest data.
                 this.selectedMovie = movie;
+                this.patchFranchiseSection(movie);
                 
             } else {
                 await this.displayMovieDetails(movie);
@@ -3437,6 +3435,10 @@ class MovieDetailsManager {
     }
 
     resetMovieStateForNavigation(kinopoiskId = null) {
+        this.stopProgressUpdates();
+        this.currentProgressRecord = null;
+        this.currentWatchTarget = null;
+        this.currentEpisodeHistory = {};
         this.selectedMovie = null;
         this.postRenderEnrichmentMovieId = null;
         this.renderEnrichmentSnapshot = null;
@@ -3478,6 +3480,7 @@ class MovieDetailsManager {
     }
 
     invalidatePageGeneration() {
+        this.stopProgressUpdates();
         this.pageGeneration += 1;
         this.activePageContext = null;
     }
@@ -5135,6 +5138,7 @@ class MovieDetailsManager {
      * @param {Object} movie
      */
     observeOrLoadFranchise(movie) {
+        this.patchFranchiseSection(movie);
         if (!movie?.collection?.tmdbId) {
             this.logFranchiseDebug('G_OBSERVE', { decision: 'skip-no-collection' });
             return;
@@ -5157,14 +5161,15 @@ class MovieDetailsManager {
             if (this.franchiseObserver) {
                 this.franchiseObserver.disconnect();
             }
-            this.franchiseObserver = new IntersectionObserver((entries) => {
+            const observer = new IntersectionObserver((entries) => {
                 const entry = entries[0];
                 if (entry && entry.isIntersecting) {
-                    this.franchiseObserver.disconnect();
-                    this.franchiseObserver = null;
-                    this.loadFranchiseAsync(movie);
+                    void this.loadFranchiseAsync(movie).then(() => {
+                        if (this.franchiseState?.status !== 'failed') observer.disconnect();
+                    });
                 }
             }, { rootMargin: '300px' });
+            this.franchiseObserver = observer;
             this.franchiseObserver.observe(sectionEl);
         } else {
             setTimeout(() => this.loadFranchiseAsync(movie), 50);
@@ -5188,11 +5193,15 @@ class MovieDetailsManager {
         }
         this.logFranchiseDebug('H_LOAD', { decision: 'start', collectionId, kinopoiskId: movieId });
         const pageContext = this.capturePageContext(movie);
+        if (!this.isPageContextCurrent(pageContext) || Number(this.selectedMovie?.collection?.tmdbId) !== collectionId) return;
         const state = this.franchiseState || (this.franchiseState = { movieId: null, status: 'idle', data: null });
-        if (state.movieId === movieId && state.status === 'failed') {
-            document.getElementById('movieFranchiseSection')?.remove();
-            return;
+        if (state.movieId !== movieId || state.collectionId !== collectionId) {
+            Object.assign(state, { movieId, collectionId, status: 'idle', data: null, attempts: 0, retryAfter: 0 });
         }
+        if (state.movieId === movieId && state.status === 'failed') {
+            if (state.attempts >= 3 || Date.now() < state.retryAfter) return;
+        }
+        if (state.status === 'empty') return;
         if (state.movieId === movieId && state.status === 'loading') return;
 
         const retainedParts = state.movieId === movieId && state.status === 'ready'
@@ -5220,21 +5229,17 @@ class MovieDetailsManager {
                         kinopoiskService: fbMgr?.getKinopoiskService?.()
                     }) : null));
 
-                if (!franchiseService) {
-                    state.movieId = movieId;
-                    state.status = 'failed';
-                    document.getElementById('movieFranchiseSection')?.remove();
-                    return;
-                }
+                if (!franchiseService) throw new Error('Franchise service unavailable');
 
                 state.movieId = movieId;
                 state.status = 'loading';
+                state.attempts = (state.attempts || 0) + 1;
                 this.perf?.mark('md:franchise-start');
                 const franchiseRequest = this.perf?.requestStart('FRANCHISE', { purpose: 'franchise' });
                 const franchise = await franchiseService.getFranchise(collectionId);
                 this.perf?.requestEnd(franchiseRequest);
-                if (!this.isPageContextCurrent(pageContext)) {
-                    if (state.movieId === movieId && state.status === 'loading') state.status = 'idle';
+                if (!this.isPageContextCurrent(pageContext) || Number(this.selectedMovie?.collection?.tmdbId) !== collectionId) {
+                    if (state.collectionId === collectionId && state.status === 'loading') state.status = 'idle';
                     return;
                 }
                 franchiseParts = this.deduplicateRelatedContent(franchise?.parts);
@@ -5247,7 +5252,7 @@ class MovieDetailsManager {
             const carouselEl = document.getElementById('movieFranchiseCarousel');
             const navEl = document.getElementById('movieFranchiseNav');
             if (franchiseParts.length < 2) {
-                state.status = 'failed';
+                state.status = 'empty';
                 // Remove section if empty or only 1 single part
                 if (sectionEl) sectionEl.remove();
                 return;
@@ -5315,12 +5320,46 @@ class MovieDetailsManager {
                 }
             }
         } catch (err) {
-            if (!this.isPageContextCurrent(pageContext)) return;
+            if (!this.isPageContextCurrent(pageContext) || Number(this.selectedMovie?.collection?.tmdbId) !== collectionId || state.collectionId !== collectionId) return;
             state.movieId = movieId;
             state.status = 'failed';
+            state.retryAfter = Date.now() + 30000;
             console.warn(`[MovieDetails] Failed to load franchise collection ${collectionId}:`, err);
-            document.getElementById('movieFranchiseSection')?.remove();
+            const carousel = document.getElementById('movieFranchiseCarousel');
+            if (carousel) carousel.innerHTML = `<div role="status"><p>${this.escapeHtml(i18n.get('movie_details.franchise_retry_hint'))}</p>${state.attempts < 3 ? `<button type="button" class="btn btn-secondary" data-action="retry-franchise">${this.escapeHtml(i18n.get('movie_details.franchise_retry'))}</button>` : ''}</div>`;
         }
+    }
+
+    patchFranchiseSection(movie) {
+        const current = document.getElementById('movieFranchiseSection');
+        const collectionId = Number(movie?.collection?.tmdbId) || null;
+        if (!current && !collectionId) return;
+        const state = this.franchiseState;
+        if (state?.movieId === String(movie?.kinopoiskId || movie?.id) && state.collectionId === collectionId && state.status === 'empty') return;
+        const title = this.cleanFranchiseName(movie?.collection?.name || '');
+        if (current && Number(current.dataset?.collectionId) === collectionId && current.querySelector('.movie-franchise-title')?.textContent === title) return;
+        const parent = document.querySelector('.movie-detail-description');
+        if (!parent) return;
+        const html = this.renderFranchiseSectionPlaceholder(movie);
+        const holder = document.createElement('div');
+        holder.innerHTML = html;
+        if (current) {
+            if (holder.firstElementChild) current.replaceWith(holder.firstElementChild);
+            else current.remove();
+        } else if (holder.firstElementChild) {
+            const anchor = parent.querySelector('.sequels-section, .movie-recommendations-section, #userRatingsSection');
+            if (anchor) anchor.before(holder.firstElementChild);
+            else parent.appendChild(holder.firstElementChild);
+        }
+        // A changed collection must restore relations removed against the old parts.
+        const relations = parent.querySelector('.sequels-section');
+        const relationsHolder = document.createElement('div');
+        relationsHolder.innerHTML = this.renderSequelsAndPrequels(movie?.sequelsAndPrequels, movie);
+        if (relations) {
+            if (relationsHolder.firstElementChild) relations.replaceWith(relationsHolder.firstElementChild);
+            else relations.remove();
+        } else if (relationsHolder.firstElementChild) parent.appendChild(relationsHolder.firstElementChild);
+        if (state?.collectionId !== collectionId) this.franchiseState = null;
     }
 
     patchSequelsAgainstFranchise(franchiseParts, expectedMovieId) {
@@ -11640,6 +11679,13 @@ class MovieDetailsManager {
      */
     renderHeroNextEpisode(movie) {
         if (!movie) return '';
+        const action = this.getContinueWatchingAction(movie);
+        const continueRow = action ? `
+            <button type="button" class="btn btn-ghost hero-continue-button" data-action="continue-watch-progress"
+                    data-kind="${action.kind}" data-timestamp="${action.timestamp}" aria-label="${this.escapeHtml(i18n.get('movie_details.continue_episode_aria').replace('{episode}', `S${action.seasonNumber}E${action.episodeNumber}`))}">
+                <span aria-hidden="true">▶</span> ${this.escapeHtml(i18n.get('movie_details.continue_action'))} · S${action.seasonNumber}E${action.episodeNumber}${action.episodeTitle ? ` ${this.escapeHtml(action.episodeTitle)}` : ''}
+            </button>` : '';
+        const continueOnly = continueRow ? `<div class="hero-next-episode-card hero-next-episode-card--continue-only" id="heroNextEpisode">${continueRow}</div>` : '';
         const isSeries = Boolean(movie.isSeries || (movie.type && ['tv-series', 'mini-series', 'animated-series', 'tv'].includes(movie.type)));
         if (!isSeries) return '';
 
@@ -11651,26 +11697,26 @@ class MovieDetailsManager {
             if (movie.nextEpisode) {
                 console.warn(`[MovieDetails] Next episode contradiction for ended/canceled series ${movie.kinopoiskId}: omitting Hero next-episode block`);
             }
-            return '';
+            return continueOnly;
         }
 
         if (!movie.nextEpisode || typeof movie.nextEpisode !== 'object') {
-            return '';
+            return continueOnly;
         }
 
         const seasonNum = movie.nextEpisode.seasonNumber;
         const episodeNum = movie.nextEpisode.episodeNumber;
-        if (seasonNum == null || episodeNum == null) return '';
+        if (seasonNum == null || episodeNum == null) return continueOnly;
 
         const airDateStr = movie.nextEpisode.airDate ? this.formatDate(movie.nextEpisode.airDate) : '';
         const title = movie.nextEpisode.name ? String(movie.nextEpisode.name).trim() : '';
-        const runtime = movie.nextEpisode.runtime ? `${movie.nextEpisode.runtime} мин` : '';
+        const runtime = movie.nextEpisode.runtime ? i18n.get('movie_details.episode_runtime').replace('{minutes}', movie.nextEpisode.runtime) : '';
         const isPlayable = this.isEpisodePlayableByDate(movie.nextEpisode);
 
         return `
             <div class="hero-next-episode-card" id="heroNextEpisode">
                 <div class="hero-next-episode-header">
-                    <span class="hero-next-episode-badge">Следующая серия</span>
+                    <span class="hero-next-episode-badge">${this.escapeHtml(i18n.get('movie_details.next_episode'))}</span>
                     ${airDateStr ? `<span class="hero-next-episode-date">${this.escapeHtml(airDateStr)}</span>` : ''}
                 </div>
                 <div class="hero-next-episode-content">
@@ -11681,11 +11727,12 @@ class MovieDetailsManager {
                         <button type="button" 
                                 class="hero-next-episode__play-btn" 
                                 data-action="play-next-episode" 
-                                aria-label="Смотреть S${seasonNum}E${episodeNum}${title ? ` — ${this.escapeHtml(title)}` : ''}">
-                            <span class="play-icon" aria-hidden="true">▶</span> Смотреть
+                                aria-label="${this.escapeHtml(i18n.get('movie_details.watch_episode_aria').replace('{episode}', `S${seasonNum}E${episodeNum}`))}${title ? ` — ${this.escapeHtml(title)}` : ''}">
+                            <span class="play-icon" aria-hidden="true">▶</span> ${this.escapeHtml(i18n.get('movie_details.watch_action'))}
                         </button>
                     ` : ''}
                 </div>
+                ${continueRow}
             </div>
         `;
     }
@@ -11788,9 +11835,32 @@ class MovieDetailsManager {
     patchDynamicSeriesUI(freshMovie) {
         if (!freshMovie) return;
 
+        this.patchHeroEpisodeCard(freshMovie);
+
+        // Patch metadata independently of the progress-owned hero card.
+        if (freshMovie.status) {
+            const statusValEl = document.querySelector('.meta-item-status .meta-value');
+            if (statusValEl) {
+                statusValEl.textContent = this.translateStatus(freshMovie.status);
+                statusValEl.className = `meta-value status-badge status-badge--${this.getStatusBadgeClass(freshMovie.status)}`;
+            }
+        }
+        const isSeries = Boolean(freshMovie.isSeries || (freshMovie.type && ['tv-series', 'mini-series', 'animated-series', 'tv'].includes(freshMovie.type)));
+        if (isSeries) this.resolveAndRenderSeasons(freshMovie);
+    }
+
+    patchHeroEpisodeCard(movie = this.selectedMovie) {
         // 1. Patch Hero next episode block
         const currentHeroEl = document.getElementById('heroNextEpisode');
-        const newHeroHTML = this.renderHeroNextEpisode(freshMovie);
+        const newHeroHTML = this.renderHeroNextEpisode(movie);
+        const temp = document.createElement('div');
+        temp.innerHTML = newHeroHTML.trim();
+        const next = temp.firstElementChild;
+        const timestamp = next?.querySelector('[data-action="continue-watch-progress"]')?.dataset.timestamp;
+        const currentButton = currentHeroEl?.querySelector('[data-action="continue-watch-progress"]');
+        if (currentButton && timestamp != null) currentButton.dataset.timestamp = timestamp;
+        if (currentHeroEl && next && typeof currentHeroEl.outerHTML === 'string' && currentHeroEl.outerHTML === next.outerHTML) return;
+        const focusedAction = currentHeroEl?.contains?.(document.activeElement) ? document.activeElement?.dataset.action : null;
 
         if (currentHeroEl) {
             if (newHeroHTML) {
@@ -11821,28 +11891,12 @@ class MovieDetailsManager {
                 }
             }
         }
-
-        // 2. Patch Status badge if present in meta grid (DEF-02: selector matches .meta-item-status added in template)
-        if (freshMovie.status) {
-            const statusValEl = document.querySelector('.meta-item-status .meta-value');
-            if (statusValEl) {
-                const translated = this.translateStatus(freshMovie.status);
-                const badgeClass = this.getStatusBadgeClass(freshMovie.status);
-                // Update textContent and className to stay consistent with the original template structure
-                statusValEl.textContent = translated;
-                statusValEl.className = `meta-value status-badge status-badge--${badgeClass}`;
-            }
-        }
-
-        // 3. Update seasons tab if series
-        const isSeries = Boolean(freshMovie.isSeries || (freshMovie.type && ['tv-series', 'mini-series', 'animated-series', 'tv'].includes(freshMovie.type)));
-        if (isSeries) {
-            this.resolveAndRenderSeasons(freshMovie);
-        }
+        if (focusedAction) document.getElementById('heroNextEpisode')?.querySelector(`[data-action="${focusedAction}"]`)?.focus({ preventScroll: true });
     }
 
     async resolveAndRenderSeasons(movie) {
         if (!movie) return;
+        this.bindProgressUpdates(movie);
         const pageContext = this.capturePageContext(movie);
         void this.loadPublicEpisodeStats(movie, pageContext);
 
@@ -11909,6 +11963,7 @@ class MovieDetailsManager {
             this.currentProgressRecord = progress;
             this.currentEpisodeHistory = history;
             this.currentWatchTarget = this.resolveWatchTarget(movie, progress);
+            this.patchHeroEpisodeCard(movie);
 
             const tabPane = document.getElementById('tab-seasons');
             if (tabPane && seasons) {
@@ -11926,6 +11981,12 @@ class MovieDetailsManager {
 
     async loadSeasonsFallback(movieId, pageContext = this.capturePageContext()) {
         try {
+            // Resume does not depend on the scraper finding a seasons list.
+            if (this.selectedMovie) {
+                this.bindProgressUpdates(this.selectedMovie);
+                await this._hydrateSeasonsProgressAndHistory(this.selectedMovie, null, pageContext);
+                if (!this.isPageContextCurrent(pageContext)) return;
+            }
             const seasonsRequest = this.perf?.requestStart('SEASONS_FALLBACK', { purpose: 'seasons-fallback' });
             const seasons = await this.seasonsService.getSeasons(movieId);
             this.perf?.requestEnd(seasonsRequest);
@@ -11959,6 +12020,7 @@ class MovieDetailsManager {
                 this.currentProgressRecord = progress;
                 this.currentEpisodeHistory = history;
                 this.currentWatchTarget = this.resolveWatchTarget(this.selectedMovie || { kinopoiskId: movieId, isSeries: true }, progress);
+                this.patchHeroEpisodeCard();
 
                 if (tabBtn) tabBtn.style.display = 'inline-block';
                 if (tabPane) {
@@ -12023,31 +12085,75 @@ class MovieDetailsManager {
      * @param {Array} seasons
      * @returns {string}
      */
+    getContinueWatchingAction(movie = this.selectedMovie, progress = this.currentProgressRecord, watchTarget = this.currentWatchTarget, seasons = movie?.seasons || this.seasonsBrowserSeasons || []) {
+        if (!movie || !progress || !watchTarget) return null;
+        const isSeries = Boolean(movie.isSeries || ['tv-series', 'mini-series', 'animated-series', 'tv'].includes(movie.type));
+        if (!isSeries) return null;
+        const resume = watchTarget.reason === 'RESUME_IN_PROGRESS' || (!progress.completed && progress.season != null && progress.episode != null);
+        if (!resume && watchTarget.reason !== 'NEXT_AFTER_COMPLETED') return null;
+        if ((resume ? progress.season : watchTarget.seasonNumber) == null || (resume ? progress.episode : watchTarget.episodeNumber) == null) return null;
+        const seasonNumber = Number(resume ? progress.season : watchTarget.seasonNumber);
+        const episodeNumber = Number(resume ? progress.episode : watchTarget.episodeNumber);
+        if (!Number.isInteger(seasonNumber) || seasonNumber < 0 || !Number.isInteger(episodeNumber) || episodeNumber < 1) return null;
+        const season = (Array.isArray(seasons) ? seasons.find(item => Number(item.number ?? item.season_number) === seasonNumber && item.episodes) : null)
+            || movie.seasons?.find(item => Number(item.number ?? item.season_number) === seasonNumber);
+        const episode = season?.episodes?.find(item => Number(item.episodeNumber ?? item.episode_number ?? item.number) === episodeNumber);
+        return {
+            seasonNumber, episodeNumber,
+            episodeTitle: resume ? (episode?.name || episode?.title || episode?.nameRu || progress.episodeLabel || null) : (watchTarget.episodeTitle || null),
+            timestamp: resume && Number.isFinite(Number(progress.timestamp)) ? Math.max(0, Number(progress.timestamp)) : 0,
+            kind: resume ? 'resume' : 'next'
+        };
+    }
+
+    handleContinueWatching() {
+        const action = this.getContinueWatchingAction();
+        if (action) this.handleEpisodePlay(action.seasonNumber, action.episodeNumber, action.episodeTitle, action.timestamp);
+    }
+
+    stopProgressUpdates() {
+        if (this.progressStorageListener) globalThis.chrome?.storage?.onChanged?.removeListener(this.progressStorageListener);
+        if (this.progressUpdateTimer != null) clearTimeout(this.progressUpdateTimer);
+        this.progressUpdateTimer = null;
+        this.progressStorageListener = null;
+        this.progressStorageMovieId = null;
+    }
+
+    bindProgressUpdates(movie) {
+        const movieId = String(movie?.kinopoiskId || '');
+        if (!movieId || this.progressStorageMovieId === movieId) return;
+        this.stopProgressUpdates();
+        const changesEvent = globalThis.chrome?.storage?.onChanged;
+        if (!changesEvent) return;
+        const context = this.capturePageContext(movie);
+        this.progressStorageMovieId = movieId;
+        this.progressStorageListener = (changes, area) => {
+            if (area !== 'local' || !Object.hasOwn(changes, `watching_progress_${movieId}`) || !this.isPageContextCurrent(context)) return;
+            clearTimeout(this.progressUpdateTimer);
+            this.progressUpdateTimer = setTimeout(() => {
+                this.progressUpdateTimer = null;
+                if (this.isPageContextCurrent(context)) void this.refreshSeasonsProgress();
+            }, 250);
+        };
+        changesEvent.addListener(this.progressStorageListener);
+    }
+
     renderSeasonsContinueBanner(movie, progress, watchTarget, seasons = []) {
+        const action = this.getContinueWatchingAction(movie, progress, watchTarget, seasons);
+        if (!action) return '';
         if (!progress || !watchTarget) return '';
 
         const isSeries = Boolean(movie?.isSeries || (movie?.type && ['tv-series', 'mini-series', 'animated-series', 'tv'].includes(movie.type)));
         if (!isSeries) return '';
 
         // Case 1: Incomplete progress (RESUME_IN_PROGRESS)
-        if (watchTarget.reason === 'RESUME_IN_PROGRESS' || (!progress.completed && progress.season != null && progress.episode != null)) {
-            const seasonNum = progress.season;
-            const episodeNum = progress.episode;
+        if (action.kind === 'resume') {
+            const seasonNum = action.seasonNumber;
+            const episodeNum = action.episodeNumber;
             
-            // Try to find episode title from seasons structure if available
-            let episodeTitle = null;
-            if (Array.isArray(seasons)) {
-                const sObj = seasons.find(s => (s.number ?? s.season_number) === seasonNum);
-                if (sObj?.episodes) {
-                    const epObj = sObj.episodes.find(e => (e.episodeNumber ?? e.episode_number ?? e.number) === episodeNum);
-                    episodeTitle = epObj?.name || epObj?.title || epObj?.nameRu || null;
-                }
-            }
-            if (!episodeTitle && progress.episodeLabel) {
-                episodeTitle = progress.episodeLabel;
-            }
+            const episodeTitle = action.episodeTitle;
 
-            const timestamp = progress.timestamp || 0;
+            const timestamp = action.timestamp;
             const duration = progress.duration || null;
             const timeFormatter = (typeof formatPlaybackTime === 'function')
                 ? formatPlaybackTime
@@ -12080,7 +12186,7 @@ class MovieDetailsManager {
                         <div class="seasons-continue-banner__header">
                             <span class="seasons-continue-banner__badge">
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                                <span>Продолжить просмотр</span>
+                                <span>${this.escapeHtml(i18n.get('movie_details.continue_watching'))}</span>
                             </span>
                             <div class="seasons-continue-banner__target">
                                 <span class="seasons-continue-banner__code">S${seasonNum}E${episodeNum}</span>
@@ -12096,8 +12202,8 @@ class MovieDetailsManager {
                                 data-season-number="${seasonNum}" 
                                 data-episode-number="${episodeNum}" 
                                 data-timestamp="${timestamp}"
-                                aria-label="Продолжить просмотр S${seasonNum}E${episodeNum}">
-                            <span class="play-icon" aria-hidden="true">▶</span> Продолжить
+                                aria-label="${this.escapeHtml(i18n.get('movie_details.continue_episode_aria').replace('{episode}', `S${seasonNum}E${episodeNum}`))}">
+                            <span class="play-icon" aria-hidden="true">▶</span> ${this.escapeHtml(i18n.get('movie_details.continue_action'))}
                         </button>
                     </div>
                 </div>
@@ -12105,10 +12211,10 @@ class MovieDetailsManager {
         }
 
         // Case 2: Completed progress targeting next episode (NEXT_AFTER_COMPLETED)
-        if (watchTarget.reason === 'NEXT_AFTER_COMPLETED' && watchTarget.seasonNumber != null && watchTarget.episodeNumber != null) {
-            const seasonNum = watchTarget.seasonNumber;
-            const episodeNum = watchTarget.episodeNumber;
-            const episodeTitle = watchTarget.episodeTitle || null;
+        if (action.kind === 'next') {
+            const seasonNum = action.seasonNumber;
+            const episodeNum = action.episodeNumber;
+            const episodeTitle = action.episodeTitle;
 
             return `
                 <div class="seasons-continue-banner seasons-continue-banner--next" id="seasonsContinueBanner">
@@ -12116,10 +12222,10 @@ class MovieDetailsManager {
                         <div class="seasons-continue-banner__header">
                             <span class="seasons-continue-banner__badge seasons-continue-banner__badge--next">
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                                <span>Продолжить просмотр</span>
+                                <span>${this.escapeHtml(i18n.get('movie_details.continue_watching'))}</span>
                             </span>
                             <div class="seasons-continue-banner__target">
-                                <span class="seasons-continue-banner__subtitle">Следующая серия:</span>
+                                <span class="seasons-continue-banner__subtitle">${this.escapeHtml(i18n.get('movie_details.next_episode'))}:</span>
                                 <span class="seasons-continue-banner__code">S${seasonNum}E${episodeNum}</span>
                                 ${episodeTitle ? `<span class="seasons-continue-banner__title">${this.escapeHtml(episodeTitle)}</span>` : ''}
                             </div>
@@ -12132,8 +12238,8 @@ class MovieDetailsManager {
                                 data-season-number="${seasonNum}" 
                                 data-episode-number="${episodeNum}" 
                                 data-timestamp="0"
-                                aria-label="Смотреть следующую серию S${seasonNum}E${episodeNum}">
-                            <span class="play-icon" aria-hidden="true">▶</span> Смотреть
+                                aria-label="${this.escapeHtml(i18n.get('movie_details.watch_episode_aria').replace('{episode}', `S${seasonNum}E${episodeNum}`))}">
+                            <span class="play-icon" aria-hidden="true">▶</span> ${this.escapeHtml(i18n.get('movie_details.watch_action'))}
                         </button>
                     </div>
                 </div>
@@ -12752,6 +12858,7 @@ class MovieDetailsManager {
         }
         this.updateSeasonsBrowserState();
         this.updateEpisodeChartScrollControls();
+        this.patchHeroEpisodeCard(movie);
     }
 
     initSelectionPopup() {
