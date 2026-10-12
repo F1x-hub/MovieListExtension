@@ -1397,6 +1397,7 @@ class KinopoiskService {
             return movieData;
         } catch (error) {
             console.error('Error getting movie details:', error);
+            if (fallbackContext.requireProviderResponse) throw error;
             const tmdbFallback = await this.getTmdbFallbackAfterKinopoiskFailure(movieId, fallbackContext);
             if (tmdbFallback) return tmdbFallback;
             throw new Error(`Failed to get movie details: ${error.message}`, { cause: error });
@@ -1785,10 +1786,12 @@ class KinopoiskService {
             distributors: movie.distributors || null,
             
             // Sequels and Prequels
-            sequelsAndPrequels: movie.sequelsAndPrequels || [],
+            sequelsAndPrequels: Array.isArray(movie.sequelsAndPrequels) ? movie.sequelsAndPrequels : [],
+            relationsChecked: Array.isArray(movie.sequelsAndPrequels) && Array.isArray(movie.similarMovies),
+            relationFieldsChecked: { sequelsAndPrequels: Array.isArray(movie.sequelsAndPrequels), similarMovies: Array.isArray(movie.similarMovies) },
             
             // Similar Movies
-            similarMovies: movie.similarMovies || [],
+            similarMovies: Array.isArray(movie.similarMovies) ? movie.similarMovies : [],
             
             // Additional fields for caching
             lastUpdated: new Date().toISOString(),
