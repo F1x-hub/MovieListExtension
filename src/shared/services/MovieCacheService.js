@@ -155,6 +155,25 @@ class MovieCacheService {
             if (doc.exists && doc.data().hasCommunityRating === true) {
                 const data = doc.data();
                 if (this.isMetadataCacheValid(data)) {
+                    const local = await this.getLocalMovieCache(kinopoiskId);
+                    const localUpdated = new Date(local?.lastUpdated || 0).getTime();
+                    const documentUpdated = new Date(data.lastUpdated || 0).getTime();
+                    if (local?._meta?.providers?.kp?.relationsSchemaVersion === 1 && this.isMetadataCacheValid(local)
+                        && Number.isFinite(localUpdated) && Number.isFinite(documentUpdated)
+                        && localUpdated >= documentUpdated) {
+                        const movieData = { ...data, ...local, id: doc.id };
+                        for (const field of ['hasRatings', 'hasCommunityRating', 'ratingsCount', 'ratingsSum', 'avgRating', 'lastRatingUpdatedAt', 'kpRating', 'imdbRating']) {
+                            if (Object.hasOwn(data, field)) movieData[field] = data[field];
+                        }
+                        for (const field of ['votes', 'rating']) {
+                            for (const provider of ['kp', 'imdb']) {
+                                if (data[field] && Object.hasOwn(data[field], provider)) {
+                                    movieData[field] = { ...movieData[field], [provider]: data[field][provider] };
+                                }
+                            }
+                        }
+                        return movieData;
+                    }
                     const movieData = { id: doc.id, ...data };
                     this.saveToLocalStorage(kinopoiskId, movieData);
                     return movieData;
@@ -281,11 +300,16 @@ class MovieCacheService {
      * @param {boolean} isRated - Whether this movie has ratings (required to cache)
      * @returns {Promise<Object>} - Cached movie data with ID
      */
-    async cacheMovie(movieData, isRated = false) {
+    async cacheMovie(movieData, isRated = false, options = {}) {
         try {
             if (!movieData || !movieData.kinopoiskId) return null;
             
             const movieId = movieData.kinopoiskId.toString();
+            if (options.localOnly) {
+                const localData = { ...movieData, lastUpdated: new Date().toISOString() };
+                await this.setLocalMovieCache(movieId, localData);
+                return { id: movieId, ...localData };
+            }
             
             const cacheData = {
                 ...movieData,
@@ -293,10 +317,23 @@ class MovieCacheService {
                 cachedAt: firebase.firestore.FieldValue.serverTimestamp()
             };
 
+            // Relation recovery belongs to browser-local DTOs, not shared metadata.
+            delete cacheData.sequelsAndPrequels;
+            delete cacheData.similarMovies;
+            if (cacheData._meta?.providers?.kp) {
+                const { relationsChecked, relationsSchemaVersion, ...kpMetadata } = cacheData._meta.providers.kp;
+                cacheData._meta = { ...cacheData._meta, providers: { ...cacheData._meta.providers, kp: kpMetadata } };
+            }
+
             // CRITICAL: API metadata caching must NEVER overwrite ratings parsed from public KP/IMDb pages
             // nor community rating aggregates managed by the Cloud Function / RatingService.
             delete cacheData.kpRating;
             delete cacheData.imdbRating;
+            if (cacheData.rating) {
+                const { kp, imdb, ...otherRatings } = cacheData.rating;
+                if (Object.keys(otherRatings).length > 0) cacheData.rating = otherRatings;
+                else delete cacheData.rating;
+            }
             if (cacheData.votes) {
                 const { kp, imdb, ...nonRatingVotes } = cacheData.votes;
                 if (Object.keys(nonRatingVotes).length > 0) {
@@ -330,6 +367,10 @@ class MovieCacheService {
                 await movieRef.set(safeCacheData, { merge: true });
                 this.saveToLocalStorage(movieId, {
                     id: movieId,
+                    ...this.mergeMovieMetadata(movieData, existingMovieData),
+                    lastUpdated: cacheData.lastUpdated
+                });
+                await this.setLocalMovieCache(movieId, {
                     ...this.mergeMovieMetadata(movieData, existingMovieData),
                     lastUpdated: cacheData.lastUpdated
                 });

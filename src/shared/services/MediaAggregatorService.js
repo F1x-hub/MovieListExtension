@@ -916,6 +916,8 @@ class MediaAggregatorService {
             productionCompanies,
             spokenLanguages,
             collection,
+            sequelsAndPrequels: Array.isArray(kpMovie?.sequelsAndPrequels) ? kpMovie.sequelsAndPrequels.map(item => ({ ...item })) : [],
+            similarMovies: Array.isArray(kpMovie?.similarMovies) ? kpMovie.similarMovies.map(item => ({ ...item })) : [],
             videos,
             watchability,
             distributors,
@@ -951,7 +953,9 @@ class MediaAggregatorService {
                 providers: {
                     kp: {
                         available: kpQuality !== 'UNAVAILABLE',
-                        quality: kpQuality
+                        quality: kpQuality,
+                        relationsChecked: kpMovie?.relationsChecked ?? (Array.isArray(kpMovie?.sequelsAndPrequels) && Array.isArray(kpMovie?.similarMovies)),
+                        relationsSchemaVersion: 1
                     },
                     tmdb: {
                         available: tmdbQuality !== 'UNAVAILABLE',
@@ -1303,6 +1307,9 @@ class MediaAggregatorService {
         // state separate from a warm-cache hit so a negative/old reverse
         // lookup cannot permanently freeze a KP-only payload in the UI.
         let cacheRefreshRequired = false;
+        let cachedForRelations = null;
+        let relationsRefreshRequired = false;
+        let relationsOnlyRepair = false;
 
         // 1. Check MovieCacheService unless forceRefresh requested. A speculative
         // pre-auth read may be supplied so authenticated continuation does not
@@ -1312,6 +1319,13 @@ class MediaAggregatorService {
                 const cached = options.prefetchedCacheResolved
                     ? (options.prefetchedCachedMovie || null)
                     : await this.movieCacheService.getCachedMovie(numKpId);
+                if (cached) {
+                    cachedForRelations = cached;
+                    relationsRefreshRequired = cached.provenance !== 'synthetic-tmdb-only' && (
+                        cached._meta?.providers?.kp?.relationsSchemaVersion !== 1 ||
+                        !Array.isArray(cached.sequelsAndPrequels) || !Array.isArray(cached.similarMovies)
+                    );
+                }
                 if (cached && !cached._cacheExpired) {
                     perf?.setScenarioHint('movieCacheHit');
                     // Check if cached payload already adheres to UnifiedMovieDTO V1
@@ -1401,8 +1415,10 @@ class MediaAggregatorService {
                             isCorruptedCachedMovie ||
                             needsIdentityMappingHeal ||
                             needsLogoSchemaHeal ||
-                            needsCollectionSchemaHeal
+                            needsCollectionSchemaHeal || relationsRefreshRequired
                         );
+                        relationsOnlyRepair = relationsRefreshRequired && !isCorruptedCachedMovie
+                            && !needsIdentityMappingHeal && !needsLogoSchemaHeal && !needsCollectionSchemaHeal;
 
                         MediaAggregatorService.logFranchiseDebug('A_CACHE', {
                             kinopoiskId: numKpId,
@@ -1416,7 +1432,7 @@ class MediaAggregatorService {
                             needsIdentityMappingHeal
                         });
 
-                        if (!cacheRefreshRequired) {
+                        if (!cacheRefreshRequired && !relationsRefreshRequired) {
                             MediaAggregatorService.logFranchiseDebug('B_CACHE_DECISION', {
                                 kinopoiskId: numKpId,
                                 decision: 'return-warm-cache'
@@ -1452,7 +1468,7 @@ class MediaAggregatorService {
                             // recoverable logos after a negative reverse lookup.
                             cacheRefreshRequired = canHealFromTmdb;
                         }
-                        if (!reverseMapping && !cacheRefreshRequired) {
+                        if (!reverseMapping && !cacheRefreshRequired && !relationsRefreshRequired) {
                             perf?.mark('md:aggregation-ready');
                             return MediaAggregatorService.aggregate(cached, null, {
                                 isLegacyResolved: true,
@@ -1506,7 +1522,8 @@ class MediaAggregatorService {
                     const kpRequest = perf?.requestStart('KP_METADATA', { purpose: 'movie-details' });
                     kpMovie = await this.kinopoiskService.getMovieById(numKpId, {
                         title: options.title || '',
-                        year: options.year || ''
+                        year: options.year || '',
+                        requireProviderResponse: relationsRefreshRequired
                     });
                     perf?.requestEnd(kpRequest);
                     perf?.mark('md:kp-ready');
@@ -1517,6 +1534,19 @@ class MediaAggregatorService {
         }
 
         // Fallback to expired cache if available
+        if (kpMovie && cachedForRelations && kpMovie.relationFieldsChecked) {
+            kpMovie = { ...kpMovie };
+            for (const field of ['sequelsAndPrequels', 'similarMovies']) {
+                if (kpMovie.relationFieldsChecked[field] === false && Array.isArray(cachedForRelations[field])) {
+                    kpMovie[field] = cachedForRelations[field];
+                }
+            }
+        }
+        if (!kpMovie && relationsRefreshRequired && cachedForRelations) {
+            // A transport failure must retain the last known relations and leave
+            // the old schema retryable; do not persist a synthetic empty result.
+            return cachedForRelations;
+        }
         if (!kpMovie && this.movieCacheService) {
             try {
                 const fallbackCached = options.prefetchedCacheResolved
@@ -1678,7 +1708,9 @@ class MediaAggregatorService {
 
         // 6. Cache the unified DTO if renderable
         if (this.movieCacheService && MediaAggregatorService.isRenderable(unifiedDto)) {
-            void Promise.resolve().then(() => this.movieCacheService.cacheMovie(unifiedDto))
+            void Promise.resolve().then(() => relationsOnlyRepair
+                ? this.movieCacheService.cacheMovie(unifiedDto, false, { localOnly: true })
+                : this.movieCacheService.cacheMovie(unifiedDto))
                 .catch(cacheWriteErr => console.warn(`[MediaAggregator] Failed caching unified DTO for ${numKpId}:`, cacheWriteErr));
         }
 

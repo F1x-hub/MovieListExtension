@@ -1703,6 +1703,7 @@ class MovieDetailsManager {
                 // so that user actions (rate, bookmark) use the freshest data.
                 this.selectedMovie = movie;
                 this.patchFranchiseSection(movie);
+                this.patchRelatedRelations(movie);
                 
             } else {
                 await this.displayMovieDetails(movie);
@@ -5360,6 +5361,24 @@ class MovieDetailsManager {
             else relations.remove();
         } else if (relationsHolder.firstElementChild) parent.appendChild(relationsHolder.firstElementChild);
         if (state?.collectionId !== collectionId) this.franchiseState = null;
+    }
+
+    patchRelatedRelations(movie) {
+        const parent = document.querySelector?.('.movie-detail-description');
+        if (!parent) return;
+        const current = parent.querySelector('.sequels-section');
+        const holder = document.createElement('div');
+        holder.innerHTML = this.renderSequelsAndPrequels(movie?.sequelsAndPrequels, movie);
+        if (current) {
+            if (holder.firstElementChild && current.outerHTML !== holder.firstElementChild.outerHTML) current.replaceWith(holder.firstElementChild);
+            else if (!holder.firstElementChild) current.remove();
+        } else if (holder.firstElementChild) {
+            const anchor = parent.querySelector('.movie-recommendations-section, #userRatingsSection');
+            if (anchor) anchor.before(holder.firstElementChild);
+            else parent.appendChild(holder.firstElementChild);
+        }
+        const state = this.franchiseState;
+        if (state?.movieId === String(movie?.kinopoiskId) && state.status === 'ready') this.patchSequelsAgainstFranchise(state.data, state.movieId);
     }
 
     patchSequelsAgainstFranchise(franchiseParts, expectedMovieId) {

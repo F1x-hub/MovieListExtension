@@ -493,10 +493,12 @@ const doc = (id, seconds, extra = {}) => ({ id: String(id), kinopoiskId: id, las
     assert.equal(writes[0].data.name, 'Вавилон');
     assert.equal('avgRating' in writes[0].data, false, 'Aggregate fields are never written by the client');
     assert.deepEqual(writes[0].options, { merge: true });
+    assert.equal(localWrites[0].id, '77', 'Rated metadata also retains its complete browser-local DTO');
+    assert.equal(localWrites[0].data.name, 'Вавилон');
 
     await service.cacheMovie({ kinopoiskId: 78, name: 'Unrated', posterUrl: 'p.jpg' });
     assert.equal(writes.length, 1, 'Unrated films still stay out of Firestore');
-    assert.equal(localWrites[0].id, '78');
+    assert.equal(localWrites[1].id, '78');
     globalThis.MovieCacheService = MovieCacheService;
 }
 
