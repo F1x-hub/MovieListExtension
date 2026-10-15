@@ -1,0 +1,57 @@
+<!doctype html><meta charset=utf-8><body style="background:#000">
+<video id=v width=320 height=180 muted playsinline></video>
+<video id=a style="display:none" playsinline></video><audio id=au></audio>
+<canvas id=c width=4 height=4 style="display:none"></canvas>
+<script src="/hls.js"></script>
+<script>
+const q=new URLSearchParams(location.search); const mode=q.get('mode'); const ctrl=q.get('ctrl')==='1'; const DUR=+(q.get('dur')||30);
+const R={mode,ctrl,events:[],lagSamples:[],drift:[],err:[]};window.__R=R;
+const log=(...x)=>R.events.push(x.join(' '));
+const v=document.getElementById('v'),a=document.getElementById('a'),au=document.getElementById('au');
+function mk(el,url,opts={}){const h=new Hls({enableWorker:false,...opts});h.on(Hls.Events.ERROR,(e,d)=>R.err.push(d.details+(d.fatal?'!FATAL':'')));h.loadSource(url);h.attachMedia(el);return h;}
+// ---- measurement: video flashes via rVFC
+const cv=document.getElementById('c'),cx=cv.getContext('2d',{willReadFrequently:true});let lastBright=0;const flashes=[];
+function vfc(now,meta){cx.drawImage(v,0,0,4,4);const b=cx.getImageData(0,0,1,1).data[0];if(b>128&&lastBright<=128)flashes.push({media:meta.mediaTime,disp:meta.expectedDisplayTime});lastBright=b;v.requestVideoFrameCallback(vfc);}
+v.requestVideoFrameCallback(vfc);
+// ---- measurement: audio beeps via analyser
+const beeps=[];let actx,an,buf,prev=0,rmsMin=1,rmsMax=0,measuring=false;
+function setupAudio(el){actx=new AudioContext();const s=actx.createMediaElementSource(el);an=actx.createAnalyser();an.fftSize=256;buf=new Float32Array(256);s.connect(an);an.connect(actx.destination);
+ setInterval(()=>{if(!measuring)return;an.getFloatTimeDomainData(buf);let s=0;for(const x of buf)s+=x*x;const rms=Math.sqrt(s/buf.length);rmsMin=Math.min(rmsMin,rms);rmsMax=Math.max(rmsMax,rms);if(rms>0.15&&prev<=0.15)beeps.push(performance.now()-2.7);prev=rms;},2);}
+const wait=(el,ev)=>new Promise(r=>el.addEventListener(ev,r,{once:true}));
+async function run(){
+ const base='http://localhost:8099/';
+ if(mode==='dual'){
+  mk(v,base+'a/index.m3u8',{startLevel:0}); const SRCQ=q.get('src')||'b'; const hb=mk(a,base+SRCQ+'/index.m3u8'); setupAudio(a);
+  await Promise.all([wait(v,'canplay'),wait(a,'canplay')]); await actx.resume();
+  measuring=true; await Promise.all([v.play(),a.play()]); log('started');
+  const SRC=q.get('src')||'b'; const ratio=+(q.get('ratio')||1), offset=+(q.get('offset')||0);
+  const target=()=>v.currentTime*ratio+offset; a.playbackRate=ratio;
+  R.marks=[];const mark=(t)=>R.marks.push([t,+performance.now().toFixed(0)]);
+  let held=false,resuming=false;
+  const resume=async()=>{if(!held||resuming)return;if(v.readyState>=3&&a.readyState>=3&&!v.seeking&&!a.seeking){resuming=true;try{a.currentTime=target();await Promise.all([v.play(),a.play()]);held=false;mark('resumed');}catch(e){R.err.push('play:'+e.name);}resuming=false;}};
+  const hold=(who)=>{if(held)return;held=true;try{v.pause();a.pause();}catch(e){}mark('hold:'+who);};
+  if(ctrl){
+   for(const el of [v,a]){el.addEventListener('waiting',()=>{if(v.ended||v.seeking||a.seeking)return;hold(el.id);});el.addEventListener('canplay',resume);el.addEventListener('playing',()=>{if(held)resume();});el.addEventListener('seeked',()=>{if(held)resume();});}
+   v.addEventListener('seeking',()=>{mark('seek');held=true;a.currentTime=target();setTimeout(resume,50);});
+   setInterval(()=>{if(held)return;const d=a.currentTime-target();R.drift.push(+d.toFixed(3));
+     if(Math.abs(d)>0.3){a.currentTime=target();R.events.push('hardseek '+d.toFixed(3));}
+     else if(Math.abs(d)>0.03){a.playbackRate=Math.max(ratio*0.95,Math.min(ratio*1.05,ratio*(1-d*0.5)));} else a.playbackRate=ratio;},250);}
+  else setInterval(()=>R.drift.push(+(a.currentTime-target()).toFixed(3)),250);
+  const sk=+(q.get('seekAt')||0); if(sk){setTimeout(()=>{mark('seekcmd');v.currentTime=+(q.get('seekTo')||30);if(!ctrl){}},sk*1000);}
+ }
+ if(mode==='audioel'){ mk(au,base+'b/index.m3u8'); await wait(au,'canplay'); au.play(); await new Promise(r=>setTimeout(r,4000)); R.audioel={t:au.currentTime,paused:au.paused,vtracks:au.videoTracks&&au.videoTracks.length,err:au.error&&au.error.code};R.done=true;return;}
+ if(mode==='alt'){ const h=mk(v,base+'master_alt.m3u8',{startLevel:0}); v.muted=false; setupAudio(v); await wait(v,'canplay'); await actx.resume(); measuring=true; await v.play();
+   h.on(Hls.Events.MANIFEST_PARSED,()=>{}); R.alt={audioTracks:(h.audioTracks||[]).map(t=>t.name)};}
+ if(mode==='dual'||mode==='alt'){
+  await new Promise(r=>setTimeout(r,DUR*1000));
+  // seek test
+  R.pre={v:v.currentTime,a:mode==='dual'?a.currentTime:null};
+  R.rms={min:+rmsMin.toFixed(4),max:+rmsMax.toFixed(4)};
+  // match flashes to beeps by order within 500ms
+  const fl=flashes.map(f=>f.disp);let used=0;
+  for(const b of beeps){let best=null;for(const f of fl){const d=b-f;if(Math.abs(d)<500&&(best===null||Math.abs(d)<Math.abs(best)))best=d;}if(best!==null)R.lagSamples.push(+best.toFixed(1));R.lagT=(R.lagT||[]);R.lagT.push([+b.toFixed(0),+best.toFixed(0)]);}
+  R.counts={flashes:fl.length,beeps:beeps.length};
+  R.done=true;}
+}
+run().catch(e=>{R.err.push('EXC '+e.message);R.done=true;});
+</script>

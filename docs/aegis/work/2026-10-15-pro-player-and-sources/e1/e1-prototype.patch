@@ -1,0 +1,659 @@
+diff --git a/content-scripts/player-cleaner.js b/content-scripts/player-cleaner.js
+index 9c4451e..d2eea50 100644
+--- a/content-scripts/player-cleaner.js
++++ b/content-scripts/player-cleaner.js
+@@ -4740,7 +4740,7 @@
+                 const options = getQualityOptions();
+                 
+                 if (options.length === 0) {
+-                    renderSubMenuView('Качество', [{label: 'Auto (Not found)', isActive: true, action: () => {}}]);
++                    renderSubMenuView('Качество', [{label: 'Авто', isActive: true, action: () => {}}]);
+                     return;
+                 }
+ 
+diff --git a/src/pages/movie-details/movie-details.js b/src/pages/movie-details/movie-details.js
+index 690559e..fa32467 100644
+--- a/src/pages/movie-details/movie-details.js
++++ b/src/pages/movie-details/movie-details.js
+@@ -646,22 +646,7 @@ class MovieDetailsManager {
+             this.closeEpisodePicker();
+         });
+         this.setupPlayerMessageListener();
+-        if (this.elements.sourceButtonsContainer) {
+-            this.elements.sourceButtonsContainer.addEventListener('click', async (e) => {
+-                const btn = e.target.closest('.source-btn');
+-                if (btn) {
+-                    const value = btn.getAttribute('data-value');
+-                    if (value === 'mediaplayer:torrent') {
+-                        e.preventDefault();
+-                        await this.openTorrentPicker();
+-                        return;
+-                    }
+-                    if (value && !btn.classList.contains('active')) {
+-                        await this.changeVideoSource(value);
+-                    }
+-                }
+-            });
+-        }
++        this.bindSourceSelectorEvents();
+         if (this.elements.torrentSourceCloseBtn) {
+             this.elements.torrentSourceCloseBtn.addEventListener('click', () => this.closeTorrentPicker());
+         }
+@@ -8213,6 +8198,12 @@ class MovieDetailsManager {
+             }
+         }
+ 
++        const unifiedWatchEntry = this.isUnifiedWatchEntryEnabled();
++        const watchPrefs = unifiedWatchEntry ? await this.getWatchPrefs(movie.kinopoiskId) : null;
++        this.watchFallbackRun = unifiedWatchEntry
++            ? { movieId: String(movie.kinopoiskId), attempted: new Set(), failed: new Set(), manual: false, fallbackReason: null, history: [] }
++            : null;
++
+         // Prefer custom (native video) players for preload mount; skip iframe-only parsers
+         const initializedCustomParser = Object.keys(this.playerRegistry).find(parserId => {
+             const entry = this.playerRegistry[parserId];
+@@ -8221,7 +8212,8 @@ class MovieDetailsManager {
+             return parser && parser.getPlayerType() !== 'iframe';
+         });
+         
+-        if (initializedCustomParser) {
++        // A stored manual choice beats the hover-preloaded parser.
++        if (initializedCustomParser && (!watchPrefs || watchPrefs.innerId === initializedCustomParser)) {
+             this.showVideoModal(this.selectedMovie);
+             this.videoModalMovie = this.selectedMovie;
+             
+@@ -8236,6 +8228,7 @@ class MovieDetailsManager {
+         this.showVideoModal(this.selectedMovie);
+         this.videoModalMovie = this.selectedMovie;
+         this.setPlayerSourceState('loading', { message: 'Поиск источников…' });
++        this.setWatchEntrySearching(true);
+         
+         try {
+             // POPULATE SOURCES UI — dynamically from ParserRegistry
+@@ -8275,6 +8268,7 @@ class MovieDetailsManager {
+             
+             // Re-populate source selector with fetched sources
+             this.populateSourceSelector();
++            this.setWatchEntrySearching(false);
+             
+             // Playback Logic
+             if (this.currentSources && this.currentSources.length > 0) {
+@@ -8294,6 +8288,10 @@ class MovieDetailsManager {
+                 if (explicitSource) {
+                     targetSource = explicitSource;
+                 }
++
++                if (!targetSource && watchPrefs) {
++                    targetSource = this.resolveWatchPrefsValue(watchPrefs);
++                }
+                 
+                 if (!targetSource && lastSaved) {
+                     if (lastSaved.startsWith('parser:')) {
+@@ -8312,7 +8310,10 @@ class MovieDetailsManager {
+                 
+                 if (!targetSource) {
+                     const firstOption = this.elements.sourceButtonsContainer.querySelector('.source-btn');
+-                    if (firstOption) {
++                    const ranked = unifiedWatchEntry ? this.rankInnerSources(movie, this.getInnerSourceValues())[0] : null;
++                    if (ranked) {
++                        targetSource = ranked;
++                    } else if (firstOption) {
+                         targetSource = firstOption.getAttribute('data-value');
+                     } else if (this.currentSources?.length > 0) {
+                         targetSource = this.currentSources[0].url;
+@@ -8378,6 +8379,8 @@ class MovieDetailsManager {
+             });
+             const presentation = window.ErrorPresentation?.getPresentation?.(playbackError);
+             this.renderPlayerPlaceholder(presentation?.message || 'Playback unavailable');
++        } finally {
++            this.setWatchEntrySearching(false);
+         }
+     }
+ 
+@@ -8536,14 +8539,18 @@ class MovieDetailsManager {
+                     }
+                     const movieId = String(this.selectedMovie?.kinopoiskId || '');
+                     this.invalidateSourceCache(movieId);
+-                    this.setPlayerSourceState(state, {
++                    const stateOptions = {
+                         onRetry: () => this.changeVideoSource(parserId ? `parser:${parserId}` : url),
+                         onResearch: () => this.forceResearchSources(
+                             parserId ? `parser:${parserId}` : url,
+                             parserId
+                         )
+-                    });
++                    };
++                    this.setPlayerSourceState(state, stateOptions);
+                     this.updatePlayerNavigationControls();
++                    this.handleWatchSourceFailure(parserId ? `parser:${parserId}` : this.activeSourceValue || url, {
++                        state, reason: event.data.reason || 'player-source-state', stateOptions
++                    });
+                 }
+             } else if (event.data.type === 'PLAYER_EPISODE_NAVIGATE') {
+                 await this.requestPlayerEpisodeNavigation(event.data.direction);
+@@ -9651,12 +9658,273 @@ class MovieDetailsManager {
+         return Number.isSafeInteger(numericId) && numericId > 0 ? numericId : null;
+     }
+ 
++    bindSourceSelectorEvents() {
++        const container = this.elements?.sourceButtonsContainer;
++        if (!container || container.dataset.sourceSelectorBound) return;
++        container.dataset.sourceSelectorBound = 'true';
++        this.elements.sourceButtonsContainer.addEventListener('click', async (e) => {
++            const btn = e.target.closest('.source-btn');
++            if (btn) {
++                const value = btn.getAttribute('data-value');
++                if (value === 'mediaplayer:torrent') {
++                    e.preventDefault();
++                    await this.openTorrentPicker();
++                    return;
++                }
++                if (this.isUnifiedWatchEntryEnabled()) {
++                    this.closeSourcePopover({ restoreFocus: true });
++                    if (!value) return;
++                    // Only a click in «Источник ▾» is a manual choice; room hints
++                    // and auto-fallback never reach this handler.
++                    if (this.watchFallbackRun) this.watchFallbackRun.manual = true;
++                    await this.saveWatchPrefs(this.selectedMovie?.kinopoiskId, value);
++                }
++                if (value && !btn.classList.contains('active')) {
++                    await this.changeVideoSource(value, { userInitiated: true });
++                }
++            }
++        });
++    }
++
++    // E1 flag: off by default; admins turn it on with
++    // localStorage.setItem('unifiedWatchEntry', '1') on the extension origin.
++    isUnifiedWatchEntryEnabled() {
++        try {
++            return typeof localStorage !== 'undefined' && localStorage.getItem('unifiedWatchEntry') === '1';
++        } catch {
++            return false;
++        }
++    }
++
++    watchEntryText(key, fallback) {
++        const value = typeof i18n !== 'undefined' && i18n?.get ? i18n.get(`movie_details.${key}`) : null;
++        return value && value !== `movie_details.${key}` ? value : fallback;
++    }
++
++    ensureWatchEntryDom() {
++        if (this.watchEntryDom?.popover?.isConnected) return this.watchEntryDom;
++        const container = this.elements?.sourceButtonsContainer;
++        const toolbar = container?.closest?.('.source-toolbar');
++        if (!container || !toolbar) return null;
++
++        const make = (tag, attrs, text) => {
++            const el = document.createElement(tag);
++            Object.entries(attrs).forEach(([name, value]) => el.setAttribute(name, value));
++            if (text) el.textContent = text;
++            return el;
++        };
++        const group = make('div', { class: 'watch-entry', id: 'watchEntryGroup' });
++        const watchBtn = make('button', { type: 'button', class: 'watch-entry__main', id: 'watchEntryBtn', 'data-watch-entry': 'watch' });
++        watchBtn.append(
++            make('span', { class: 'watch-entry__label' }, this.watchEntryText('watch_entry', 'Смотреть')),
++            make('span', { class: 'watch-entry__source' })
++        );
++        const toggle = make('button', {
++            type: 'button', class: 'watch-entry__toggle', id: 'sourcePopoverToggle',
++            'aria-haspopup': 'dialog', 'aria-expanded': 'false', 'aria-controls': 'sourcePopover'
++        }, `${this.watchEntryText('source_popover_toggle', 'Источник')} ▾`);
++        const torrentBtn = make('button', {
++            type: 'button', class: 'watch-entry__torrent', id: 'torrentEntryBtn', 'data-watch-entry': 'torrent',
++            'data-value': MEDIA_PLAYER_TORRENT_SOURCE, 'aria-pressed': 'false', hidden: ''
++        }, this.watchEntryText('torrent_entry', 'Торрент'));
++        const popover = make('div', {
++            class: 'source-popover', id: 'sourcePopover', 'data-source-popover': '', role: 'dialog',
++            'aria-label': this.watchEntryText('source_popover_label', 'Выбор источника'), hidden: ''
++        });
++        const hint = make('p', { class: 'source-popover__hint' },
++            this.watchEntryText('source_popover_hint', 'Озвучки разных источников не объединяются. Seasonvar проверится при запуске.'));
++        toolbar.querySelector('.source-toolbar__label')?.setAttribute('hidden', '');
++        toolbar.insertBefore(group, container);
++        // The same node (and id) moves, so WatchRoomPanel and every
++        // #sourceButtonsContainer query keep working.
++        popover.append(container, hint);
++        group.append(watchBtn, toggle, torrentBtn, popover);
++        toolbar.classList.add('source-toolbar--unified');
++
++        watchBtn.addEventListener('click', () => {
++            const value = watchBtn.dataset.aliasValue;
++            if (watchBtn.getAttribute('aria-busy') === 'true') return;
++            if (value) void this.changeVideoSource(value);
++            else void this.handleWatchClick();
++        });
++        toggle.addEventListener('click', () => {
++            if (popover.hidden) this.openSourcePopover();
++            else this.closeSourcePopover({ restoreFocus: true });
++        });
++        torrentBtn.addEventListener('click', () => { void this.openTorrentPicker(); });
++        popover.addEventListener('keydown', (event) => this.handleSourcePopoverKeydown(event));
++        document.addEventListener('click', (event) => {
++            if (popover.hidden) return;
++            if (event.target?.closest?.('#sourcePopover, #sourcePopoverToggle')) return;
++            this.closeSourcePopover();
++        });
++
++        this.watchEntryDom = { group, watchBtn, toggle, torrentBtn, popover };
++        return this.watchEntryDom;
++    }
++
++    openSourcePopover() {
++        const dom = this.ensureWatchEntryDom();
++        if (!dom) return;
++        dom.popover.hidden = false;
++        dom.toggle.setAttribute('aria-expanded', 'true');
++        const buttons = [...dom.popover.querySelectorAll('.source-btn')];
++        (buttons.find(btn => btn.classList.contains('active')) || buttons[0])?.focus();
++    }
++
++    closeSourcePopover({ restoreFocus = false } = {}) {
++        const dom = this.watchEntryDom;
++        if (!dom || dom.popover.hidden) return;
++        dom.popover.hidden = true;
++        dom.toggle.setAttribute('aria-expanded', 'false');
++        if (restoreFocus) dom.toggle.focus();
++    }
++
++    handleSourcePopoverKeydown(event) {
++        const buttons = [...(this.elements.sourceButtonsContainer?.querySelectorAll('.source-btn') || [])];
++        if (event.key === 'Escape') {
++            event.preventDefault();
++            event.stopPropagation();
++            this.closeSourcePopover({ restoreFocus: true });
++            return;
++        }
++        const index = buttons.indexOf(document.activeElement);
++        const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[event.key];
++        let next = null;
++        if (step) next = buttons[(index + step + buttons.length) % buttons.length];
++        else if (event.key === 'Home') next = buttons[0];
++        else if (event.key === 'End') next = buttons[buttons.length - 1];
++        if (next) {
++            event.preventDefault();
++            next.focus();
++        }
++    }
++
++    setWatchEntrySearching(searching) {
++        const dom = this.isUnifiedWatchEntryEnabled() ? this.ensureWatchEntryDom() : null;
++        if (!dom) return;
++        dom.watchBtn.setAttribute('aria-busy', searching ? 'true' : 'false');
++        dom.watchBtn.dataset.state = searching ? 'searching' : '';
++        dom.watchBtn.querySelector('.watch-entry__label').textContent = searching
++            ? this.watchEntryText('watch_entry_searching', 'Поиск источников…')
++            : this.watchEntryText('watch_entry', 'Смотреть');
++    }
++
++    syncWatchEntryAlias(value) {
++        const dom = this.watchEntryDom;
++        if (!dom) return;
++        dom.torrentBtn.classList.toggle('active', value === MEDIA_PLAYER_TORRENT_SOURCE);
++        dom.torrentBtn.setAttribute('aria-pressed', String(value === MEDIA_PLAYER_TORRENT_SOURCE));
++        const inner = [...this.elements.sourceButtonsContainer.querySelectorAll('.source-btn')]
++            .find(btn => btn.getAttribute('data-value') === value);
++        if (!inner) return;
++        dom.watchBtn.dataset.aliasValue = value;
++        const name = inner.firstChild?.nodeType === 3 ? inner.firstChild.textContent.trim() : inner.textContent.trim();
++        dom.watchBtn.querySelector('.watch-entry__source').textContent = name;
++        dom.watchBtn.setAttribute('aria-label', `${this.watchEntryText('watch_entry', 'Смотреть')}: ${name}`);
++    }
++
++    /**
++     * Pure ranking of inner source values. Default keeps today's button order
++     * (no behaviour change); only Rutube (title search) moves last for films.
++     * @param {object} movie
++     * @param {string[]} values - data-value of inner .source-btn in DOM order
++     * @returns {string[]}
++     */
++    rankInnerSources(movie, values) {
++        const list = values.filter(value => value && value !== MEDIA_PLAYER_TORRENT_SOURCE);
++        if (movie?.type !== 'movie') return list;
++        return [...list.filter(value => value !== 'parser:rutube'), ...list.filter(value => value === 'parser:rutube')];
++    }
++
++    getInnerSourceValues() {
++        return [...(this.elements.sourceButtonsContainer?.querySelectorAll('.source-btn') || [])]
++            .map(btn => btn.getAttribute('data-value'));
++    }
++
++    async getWatchPrefs(movieId) {
++        if (!movieId) return null;
++        try {
++            const key = `watchPrefs_${movieId}`;
++            const result = await chrome.storage.local.get([key]);
++            return result[key]?.innerId ? result[key] : null;
++        } catch (e) {
++            console.warn('[getWatchPrefs] Error:', e);
++            return null;
++        }
++    }
++
++    async saveWatchPrefs(movieId, value) {
++        if (!movieId || !value) return;
++        const innerId = this.getSourceButtonProviderKey(value) || value;
++        try {
++            await chrome.storage.local.set({ [`watchPrefs_${movieId}`]: { innerId, value, savedAt: Date.now() } });
++        } catch (e) {
++            console.warn('[saveWatchPrefs] Error:', e);
++        }
++    }
++
++    resolveWatchPrefsValue(prefs) {
++        if (!prefs?.innerId) return null;
++        const values = this.getInnerSourceValues();
++        if (prefs.value && values.includes(prefs.value)) return prefs.value;
++        const parserValue = `parser:${prefs.innerId}`;
++        return values.includes(parserValue) ? parserValue : null;
++    }
++
++    /**
++     * E1 auto-fallback. Called by every failure path after it set its own
++     * overlay. Never switches inside a watch room (that would move the whole
++     * room) or after a manual choice; offers «Попробовать другой источник» instead.
++     * @returns {boolean} true when a fallback switch was scheduled
++     */
++    handleWatchSourceFailure(failedValue, { state = 'error', reason = '', stateOptions = {} } = {}) {
++        const run = this.watchFallbackRun;
++        if (!this.isUnifiedWatchEntryEnabled() || !run || !failedValue) return false;
++        if (run.movieId !== String(this.selectedMovie?.kinopoiskId || '')) return false;
++        // One decision per failed source; late reports for a source we already left are ignored.
++        if (run.failed.has(failedValue) || (this.activeSourceValue && this.activeSourceValue !== failedValue)) return false;
++        run.failed.add(failedValue);
++        run.attempted.add(failedValue);
++        const movie = this.selectedMovie;
++        const next = this.rankInnerSources(movie, this.getInnerSourceValues())
++            .find(value => !run.attempted.has(value)
++                && !this.unavailableProviderIds?.has?.(this.getSourceButtonProviderKey(value)));
++        const inRoom = Boolean(this.watchRoomController?.room) || this.lastSourceSwitchOrigin === 'room';
++        if (inRoom || run.manual || !next) {
++            run.fallbackReason = inRoom ? 'blocked:room' : run.manual ? 'blocked:manual' : 'exhausted';
++            if (next && !inRoom) {
++                this.setPlayerSourceState(state, {
++                    ...stateOptions,
++                    onTryOther: () => {
++                        run.manual = false;
++                        void this.changeVideoSource(next, { autoFallback: true });
++                    }
++                });
++            }
++            return false;
++        }
++        run.attempted.add(next);
++        run.fallbackReason = `${failedValue}:${state}:${reason || 'unknown'}`;
++        run.history.push({ from: failedValue, to: next, reason: run.fallbackReason });
++        setTimeout(() => {
++            if (this.watchFallbackRun !== run) return;
++            void this.changeVideoSource(next, { autoFallback: true });
++        }, 0);
++        return true;
++    }
++
+     populateSourceSelector() {
+         let savedValue = this.activeSourceValue;
+         if (!savedValue && this.elements.sourceButtonsContainer) {
+             savedValue = this.elements.sourceButtonsContainer.querySelector('.source-btn.active')?.getAttribute('data-value');
+         }
+         if (!this.elements.sourceButtonsContainer) return;
++        const unified = this.isUnifiedWatchEntryEnabled();
++        const watchDom = unified ? this.ensureWatchEntryDom() : null;
++        const focusedValue = unified && this.elements.sourceButtonsContainer.contains(document.activeElement)
++            ? document.activeElement.getAttribute('data-value')
++            : null;
+         this.elements.sourceButtonsContainer.innerHTML = '';
+ 
+         this.currentSources = this.normalizeVideoSources(this.currentSources);
+@@ -9680,7 +9948,9 @@ class MovieDetailsManager {
+ 
+         // MediaPlayer is a local backend source, not an iframe parser. Keep it
+         // in the same provider rail while opening a dedicated torrent picker.
+-        if (this.mediaPlayerReady && this.isTorrentMovie()) {
++        if (watchDom) {
++            watchDom.torrentBtn.hidden = !(this.mediaPlayerReady && this.isTorrentMovie());
++        } else if (this.mediaPlayerReady && this.isTorrentMovie()) {
+             const btn = document.createElement('button');
+             btn.type = 'button';
+             btn.className = 'source-btn';
+@@ -9725,6 +9995,11 @@ class MovieDetailsManager {
+             this.updateActiveSourceButton(savedValue);
+         }
+         this.refreshSourceButtonStates();
++        if (focusedValue) {
++            // innerHTML = '' dropped the focused button; put focus back on its twin.
++            const buttons = [...this.elements.sourceButtonsContainer.querySelectorAll('.source-btn')];
++            (buttons.find(btn => btn.getAttribute('data-value') === focusedValue) || buttons[0] || watchDom?.toggle)?.focus();
++        }
+     }
+ 
+     /**
+@@ -9934,6 +10209,7 @@ class MovieDetailsManager {
+             }
+         });
+         this.refreshSourceButtonStates();
++        this.syncWatchEntryAlias(value);
+         return found;
+     }
+ 
+@@ -9972,10 +10248,19 @@ class MovieDetailsManager {
+             isRequestCurrent,
+             onRetry: () => this.changeVideoSource(url),
+             onResearch: () => this.forceResearchSources(url, parserId),
+-            onLifecycleState: state => {
++            onLifecycleState: (state, detail = {}) => {
+                 if (!isRequestCurrent()) return;
+                 if (state === 'error' || state === 'unavailable') {
+                     this.invalidateSourceCache(movieId);
++                    // A 5 s lifecycle timeout also fires for slow but working
++                    // sources; only hard failures switch automatically.
++                    if (detail?.reason !== 'timeout') {
++                        this.handleWatchSourceFailure(url, {
++                            state,
++                            reason: detail?.reason || 'lifecycle',
++                            stateOptions: { onRetry: () => this.changeVideoSource(url), onResearch: () => this.forceResearchSources(url, parserId) }
++                        });
++                    }
+                 }
+             }
+         };
+@@ -10073,8 +10358,9 @@ class MovieDetailsManager {
+         return false;
+     }
+ 
+-    async changeVideoSource(url, { fromWatchRoom = false, providerSource = null } = {}) {
++    async changeVideoSource(url, { fromWatchRoom = false, providerSource = null, userInitiated = false, autoFallback = false } = {}) {
+         if (!url) return false;
++        this.lastSourceSwitchOrigin = fromWatchRoom ? 'room' : userInitiated ? 'user' : autoFallback ? 'fallback' : 'auto';
+         if (url === MEDIA_PLAYER_TORRENT_SOURCE) {
+             if (!this.mediaPlayerReady && !(await this.refreshMediaPlayerReadiness())) return false;
+             return this.openTorrentPicker();
+@@ -10288,11 +10574,13 @@ class MovieDetailsManager {
+                 if (String(this.selectedMovie?.kinopoiskId) !== movieId || this.playerRegistry[parserId] !== entry || !isRequestCurrent()) return false;
+ 
+                 if (!searchResult) {
+-                    this.setPlayerSourceState('unavailable', {
++                    const stateOptions = {
+                         message: `Ничего не найдено на ${parser.name}.`,
+                         onRetry: () => this.changeVideoSource(`parser:${parserId}`),
+                         onResearch: () => this.forceResearchSources(`parser:${parserId}`, parserId)
+-                    });
++                    };
++                    this.setPlayerSourceState('unavailable', stateOptions);
++                    this.handleWatchSourceFailure(`parser:${parserId}`, { state: 'unavailable', reason: 'not-found', stateOptions });
+                     return false;
+                 }
+             }
+@@ -10351,11 +10639,13 @@ class MovieDetailsManager {
+             if (String(this.selectedMovie?.kinopoiskId) !== movieId || this.playerRegistry[parserId] !== entry || !isRequestCurrent()) return false;
+ 
+             if (!sources || sources.length === 0) {
+-                this.setPlayerSourceState('unavailable', {
++                const stateOptions = {
+                     message: `Источники не найдены на ${parser.name}.`,
+                     onRetry: () => this.changeVideoSource(`parser:${parserId}`),
+                     onResearch: () => this.forceResearchSources(`parser:${parserId}`, parserId)
+-                });
++                };
++                this.setPlayerSourceState('unavailable', stateOptions);
++                this.handleWatchSourceFailure(`parser:${parserId}`, { state: 'unavailable', reason: 'no-sources', stateOptions });
+                 return false;
+             }
+ 
+@@ -10496,12 +10786,14 @@ class MovieDetailsManager {
+             if (isRequestCurrent()) {
+                 this.unavailableProviderIds?.add?.(parserId);
+                 this.invalidateSourceCache(movieId);
+-                this.setPlayerSourceState('error', {
++                const stateOptions = {
+                     message: `Ошибка загрузки ${parser.name}: ${e.message}`,
+                     onRetry: () => this.changeVideoSource(`parser:${parserId}`),
+                     onResearch: () => this.forceResearchSources(`parser:${parserId}`, parserId)
+-                });
++                };
++                this.setPlayerSourceState('error', stateOptions);
+                 this.updatePlayerNavigationControls();
++                this.handleWatchSourceFailure(`parser:${parserId}`, { state: 'error', reason: 'load-error', stateOptions });
+             }
+             return false;
+         }
+diff --git a/src/shared/i18n/locales.js b/src/shared/i18n/locales.js
+index fe99fe1..bfea9ac 100644
+--- a/src/shared/i18n/locales.js
++++ b/src/shared/i18n/locales.js
+@@ -897,6 +897,12 @@ export const locales = {
+             continue_watching: "Continue watching",
+             continue_episode_aria: "Continue watching {episode}",
+             watch_action: "Watch",
++            watch_entry: "Watch",
++            watch_entry_searching: "Searching sources…",
++            torrent_entry: "Torrent",
++            source_popover_toggle: "Source",
++            source_popover_label: "Choose source",
++            source_popover_hint: "Dubs from different sources are not merged. Seasonvar is checked on start.",
+             watch_episode_aria: "Watch {episode}",
+             next_episode: "Next episode",
+             episode_runtime: "{minutes} min",
+@@ -2147,6 +2153,12 @@ export const locales = {
+             continue_watching: "Продолжить просмотр",
+             continue_episode_aria: "Продолжить просмотр {episode}",
+             watch_action: "Смотреть",
++            watch_entry: "Смотреть",
++            watch_entry_searching: "Поиск источников…",
++            torrent_entry: "Торрент",
++            source_popover_toggle: "Источник",
++            source_popover_label: "Выбор источника",
++            source_popover_hint: "Озвучки разных источников не объединяются. Seasonvar проверится при запуске.",
+             watch_episode_aria: "Смотреть {episode}",
+             next_episode: "Следующая серия",
+             episode_runtime: "{minutes} мин",
+diff --git a/src/shared/services/PlayerSourceLifecycle.js b/src/shared/services/PlayerSourceLifecycle.js
+index 863a733..451906c 100644
+--- a/src/shared/services/PlayerSourceLifecycle.js
++++ b/src/shared/services/PlayerSourceLifecycle.js
+@@ -99,6 +99,7 @@
+         if (!isLoading) {
+             addAction('Повторить', options.onRetry, 'retry');
+             addAction('Искать источники заново', options.onResearch, 'research');
++            addAction('Попробовать другой источник', options.onTryOther, 'try-other');
+         }
+         return overlay;
+     }
+diff --git a/src/shared/styles/player.css b/src/shared/styles/player.css
+index 6293407..121dd5e 100644
+--- a/src/shared/styles/player.css
++++ b/src/shared/styles/player.css
+@@ -2063,3 +2063,93 @@ body.player-modal-open {
+         border-radius: 16px;
+     }
+ }
++
++/* E1 unified «Смотреть» entry (flag unifiedWatchEntry). */
++.watch-entry {
++    position: relative;
++    display: inline-flex;
++    align-items: center;
++    gap: 6px;
++    flex: 0 0 auto;
++}
++
++.watch-entry__main,
++.watch-entry__toggle,
++.watch-entry__torrent {
++    height: 36px;
++    padding: 0 13px;
++    color: var(--theme-text-primary);
++    background: transparent;
++    border: 1px solid var(--theme-border);
++    border-radius: 10px;
++    font: 600 13px/1 var(--font-family);
++    cursor: pointer;
++}
++
++.watch-entry__main {
++    display: inline-flex;
++    align-items: center;
++    gap: 8px;
++    color: var(--ui-color-page);
++    background: var(--ui-color-interactive);
++    border-color: transparent;
++}
++
++.watch-entry__source {
++    font-weight: 500;
++    opacity: 0.75;
++}
++
++.watch-entry__source:empty {
++    display: none;
++}
++
++.watch-entry__main[aria-busy="true"] {
++    cursor: progress;
++    opacity: 0.8;
++}
++
++.watch-entry__torrent[hidden],
++.source-toolbar__label[hidden] {
++    display: none;
++}
++
++.watch-entry__torrent.active {
++    border-color: var(--theme-text-primary);
++}
++
++.watch-entry button:focus-visible {
++    outline: 2px solid var(--ui-color-interactive);
++    outline-offset: 2px;
++}
++
++.source-popover {
++    position: absolute;
++    top: calc(100% + 6px);
++    left: 0;
++    z-index: 40;
++    min-width: 220px;
++    max-width: min(360px, 90vw);
++    padding: 8px;
++    background: var(--ui-color-surface, #15161a);
++    border: 1px solid var(--theme-border);
++    border-radius: 12px;
++    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
++}
++
++.source-popover[hidden] {
++    display: none;
++}
++
++.source-popover .source-buttons-container {
++    flex-direction: column;
++    max-height: none;
++    overflow: visible;
++}
++
++.source-popover__hint {
++    margin: 8px 4px 0;
++    color: var(--ui-color-content-muted);
++    font-size: 11px;
++    line-height: 1.4;
++}

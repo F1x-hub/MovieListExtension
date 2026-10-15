@@ -1,0 +1,1 @@
+chrome.runtime.onMessage.addListener((m,s,send)=>{ if(m.t!=='off')return; (async()=>{const o={};for(const [u,k] of [['http://127.0.0.1:3000/ok','off3000'],['http://127.0.0.1:9999/ok','off9999']]){try{const r=await fetch(u);o[k]=r.status}catch(e){o[k]='ERR'}}send(o)})();return true;});

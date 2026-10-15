@@ -1,5 +1,7 @@
 # Aegis index
 
+- [Plan: pro-level sources and player (unified entry, security, health, UX) — 2026-10-15](plans/2026-10-15-pro-player-and-sources.md)
+
 - [Plan: GitHub ZIP + Native Messaging updater — 2026-09-08](plans/2026-09-08-github-native-updater.md)
 
 - [Plan: series episode restore race — 2026-09-11](plans/2026-09-11-series-episode-restore-race.md)
