@@ -31,7 +31,7 @@
   (воспроизведено в Chromium; отправителя `CHANGE_SOURCE` в коде нет).
 - `rules.json` id 1,2,5,6 без `initiatorDomains` (снимают CSP/XFO у `kinopoisk.ru`, ставят `ACAO:*` на `rutube.ru`/`rtbcdn.ru` для всех инициаторов);
   `web_accessible_resources` открыты для `<all_urls>` (включая `content-scripts/*.js`).
-- `player-cleaner.js` ~5,7 тыс. строк: `replacePlayer()` 3 920 строк, 354 присваивания `.style.*`, 17 селекторов по хешированным классам Venom, 91 `console.*`,
+- `player-cleaner.js` ~5,7 тыс. строк: `replacePlayer()` 3 920 строк, ≈344 присваивания `.style.X =` (354 вхождения `.style.`), 17 селекторов по хешированным классам Venom, 90 `console.*`,
   подписи плеера зашиты по-русски; Media Session отсутствует; в меню качества «Auto (Not found)».
 - hls.js 1.6.15 (актуальная линия 1.7.x, источник один: GitHub releases).
 - Тесты плеера работают на заглушках (`vm`/jsdom); реальный Chromium есть в CI только для интерфейса (v1.3.7), для плеера нет.
@@ -39,9 +39,9 @@
 
 ## Дорожка A. Безопасность (E0), отдельный трек, ~1 неделя + ручной прогон провайдеров
 
-- **A1 Sandbox** `allow-scripts allow-same-origin allow-forms allow-presentation` на iframe провайдеров: `BaseParserService.js:166`, `PlayerSurface.js:44`
-  (опция `{sandbox}`: `renderFrameInto` используют и трейлеры `movie-details.js:11565`), `VidSrcAdapter.js:112`, `search.js:4307` (перевести на
-  `renderFrameInto`, подключив `PlayerSurface.js` на `search.html`; сейчас `${url}` без экранирования). Механизм отката — константа `SANDBOX_PROVIDERS`
+- **A1 Sandbox** `allow-scripts allow-same-origin allow-forms allow-presentation` на iframe провайдеров: `BaseParserService.js:166`, `src/pages/movie-details/PlayerSurface.js:44`
+  (класс `MovieDetailsPlayerSurface`; опция `{sandbox}`: `renderFrameInto` используют и трейлеры `movie-details.js:11565`), `VidSrcAdapter.js:112`, `search.js:4307` (перевести на
+  `renderFrameInto`, подключив `../movie-details/PlayerSurface.js` в `search.html` перед `search.js` (он `type="module"`, ~`:306`) и вызывая `MovieDetailsPlayerSurface.renderFrameInto`; сейчас `${url}` без экранирования). Механизм отката — константа `SANDBOX_PROVIDERS`
   (**изначально пустая**): провайдер добавляется только после живого прогона. `allow-same-origin` обязателен (без него origin=`"null"`, и `isTrustedPlayerMessage`
   отбрасывает все сообщения) — закрепить тестом. Spotify (`movie-details.js:3431`) — отдельно.
 - **A2** Удалить мёртвые обработчики `CHANGE_SOURCE` (`movie-details.js:8511,8723`, `search.js:4010`).
@@ -49,13 +49,13 @@
   `xmlhttprequest`; проверить JS-навигацию во фрейме виджета Кинопоиска. Тест: extId = sha256(`key`) = `dgdejomdgiabgcfijcdhjefijdfiemhd`.
 - **A4** `createMenuItem` и заголовок подменю (`player-cleaner.js:4264–4286`) на `textContent` (завести `CHEVRON_SVG`).
 - **A5 URL-политика сети.**
-  (а) `PolicyLoader` в `HlsPlaybackFactory.buildConfig` (приложение 1; сброс `pLoader/fLoader/cmcd/progressive/emeEnabled`); `_createUnmanagedHls` вести через фабрику;
-  остальные точки hls.js: `BaseParserService.js:122,209`, `AnimeGoParser.js:756,769`, `search.js:4267`; профиль `isTorrentStream ? 'local' : 'remote'`
+  (а) `PolicyLoader` в `HlsPlaybackFactory.buildConfig` (приложение 1; сброс `pLoader/fLoader/cmcd/progressive/emeEnabled`); единственный `new Hls(` — `BaseParserService.js:209` (`_createUnmanagedHls`, его зовёт `AnimeGoParser.js:769`): метод и вызов удалить, всё через фабрику (она создаёт `new HlsCtor(`, `:151`);
+  GhostPlayer (`new this._Hls(`, `player-cleaner.js:5588`) — явное исключение; `search.js:4267` уже идёт через фабрику; профиль `isTorrentStream ? 'local' : 'remote'`
   (в `renderCustomPlayer` вычислять `isTorrentStream = Boolean(this.torrentPlaybackSession)` до `:10692`).
   (б) В фабрике перехват `response.text==='POLICY_VIOLATION'` при **любом** `fatal` → `destroy()` → `onFatal({reason:'policy'})` → источник исключается
   (нарушение на фрагменте/ключе приходит `fatal:false`, без `destroy()` hls.js перезапрашивает 4 раза).
-  (в) Прямые присваивания `video.src`/`track.src`/`<source src>`: `BaseParserService.js:139–153`, `SeasonvarParser.js:507,564,658,828`, `SeasonvarAdapter.js:109`,
-  `AnimeGoParser.js:774`, `movie-details.js:10692,10752` — проверять `UrlPolicy.check(url,{kind:'file'})` до присваивания.
+  (в) Прямые присваивания `video.src`/`track.src`/`<source src>`: `BaseParserService.js:116,139–153`, `SeasonvarParser.js:507,564,658,828`, `SeasonvarAdapter.js:109`,
+  `search.js:4245` (`<source src="${this.currentVideoUrl}">`), `player-cleaner.js:5617,5621` (GhostPlayer, ветка без HLS; проверять только при `typeof UrlPolicy !== 'undefined'`), `AnimeGoParser.js:774`, `movie-details.js:10692,10752` — проверять `UrlPolicy.check(url,{kind:'file'})` до присваивания.
   (г) `UrlPolicy.check(url,{kind:'manifest'|'level'|'init'|'fragment'|'key'|'file',profile:'remote'|'local'})`: allowlist хостов — только для `manifest` и `file`;
   остальное — https + публичный хост (принятый риск: фрагменты/ключи идут с поддоменов CDN). `profile:'remote'` **обязан отклонять loopback и приватные адреса**
   (DNR пропускает `127.0.0.1:3000` для любого удалённого URL); `profile:'local'` допускает только `http://127.0.0.1:3000/`. `UrlPolicy.js` — до
@@ -64,7 +64,7 @@
   (д) **DNR** `local_network_guard` (приложение 2): три block-правила (один regex превышает лимит 2 КБ) + allow только для `127.0.0.1:3000`. Порт `3579` в коде не
   используется (убрать из `host_permissions` отдельной задачей). Принятые остаточные риски: DNS-имена на частные адреса, DNS rebinding.
 - **A6** `decodeSource` Kodik: перебор сдвигов 0–25 с валидацией (`new URL`, `.m3u8`); причина `decode_failed` в диагностике.
-- **A7** `redactUrl()` (origin+path); исправить логи: `player-cleaner.js:3938`, `movie-details.js:10318,10488,10580,10677`, KinogoSearchTrace.
+- **A7** `redactUrl()` (origin+path); исправить логи: `player-cleaner.js:3938`, `movie-details.js:10318,10481–10490` (`iframeSources` в `console.info`), `10580,10677`, KinogoSearchTrace.
 - **Отдельный трек безопасности (вне этой цели):** лазейка `isApprovedUser` (`firestore.rules:51–58, 582`: истинно без `approvalStatus`, `users create` без поля);
   сужение `web_accessible_resources` по потребителям (watchlist-скрипты внедряют сервисы и `*-injected.js`; `player-cleaner.js:1048` — `suppress-errors.js`;
   `kinogo-watchlist-injected.js:120` встраивает `movie-details.html?embedded=true`), `use_dynamic_url` после проверки `runtime.getURL`.
@@ -72,8 +72,8 @@
 ## Дорожка B. Единый вход «Смотреть» (E1), M, 5–7 дней
 
 Нового парсера и адаптера нет; код на `parser:<id>` (lastSource, RELIABLE, `bindProviderVideoTracking`, комнаты) не меняется.
-Прототип собран и проверен в изолированной копии (см. `docs/aegis/work/2026-10-15-pro-player-and-sources/e1/`): +425/−30 строк, 11 приёмочных
-проверок и a11y проходят с флагом `unifiedWatchEntry`, на текущем коде все падают.
+Прототип собран и проверен в изолированной копии (см. `docs/aegis/work/2026-10-15-pro-player-and-sources/e1/`): +425/−30 строк, 10 приёмочных
+проверок и a11y (всего 11 тестов) проходят с флагом `unifiedWatchEntry` (в прототипе — `localStorage['unifiedWatchEntry']==='1'`; хранилище флага выбирает владелец), на текущем коде все падают.
 
 - **B1 Разметка:** `movie-details.html` не меняется. При включённом флаге метод `ensureWatchEntryDom()` создаёт `#watchEntryGroup` (`#watchEntryBtn`,
   `#sourcePopoverToggle` «▾», `#torrentEntryBtn`, `#sourcePopover[hidden]`) и **переносит** узел `#sourceButtonsContainer` в поповер (тот же id и обработчики; поиски
@@ -94,7 +94,7 @@
   «Поиск источников…» (`aria-busy`); статус «найден» = `currentSources.some(s=>s.parserId===id)`, для Seasonvar «проверится при запуске» (в прототипе подсказка Seasonvar показывается
   всегда — доделать); статус не только цветом.
 - **B7 Включение:** по умолчанию выключено + локальный тумблер администратора; следующий релиз включает по умолчанию; откат — релизом. Миграция: `lastSource_${movieId}` читается как есть.
-- **B8 Приёмка:** 11 проверок `e1/e1WatchAliasAcceptance.full.test.mjs` (шапка, дефолт без изменений, lastSource→псевдоним, hint, `bindProviderVideoTracking`, псевдоним на `vidsrc:`/URL,
+- **B8 Приёмка:** 10 проверок + a11y (11 тестов) `e1/e1WatchAliasAcceptance.full.test.mjs` (шапка, дефолт без изменений, lastSource→псевдоним, hint, `bindProviderVideoTracking`, псевдоним на `vidsrc:`/URL,
   ручной выбор, предзагрузка против `watchPrefs`, автопереход, выключенный флаг, торрент-кнопка) + a11y; существующие тесты проходят с выключенным флагом.
   Сломаться могут: `torrentModalLayout.test.cjs:29`, `movieDetailsPhase3C:103`, `3D:98`, `playerVisualContract:53` и CSS-регулярка в нём, `movieDetailsPlayerAuditRegression:370–399`.
 - **Не сделано в прототипе:** сквозной запуск (нужны авторизация и сеть), счётчики и копирование отчёта, тумблер администратора, статус «найден».
@@ -127,7 +127,7 @@
 - Браузерный смоук плеера с расширением: `launchPersistentContext` + `channel:'chromium'` (в headless-shell `--load-extension` не работает), фикстуры VP9/Opus (в CI-Chromium нет H.264/AAC);
   сценарии: блок `127.0.0.1:9999` при разрешённом `:3000`, 403/истечение ссылки, нарушение политики, sandbox-контракт, утечка элементов. Подключить в `release.yml` рядом с существующими браузерными шагами.
 - В среде разработки Playwright 1.62.1 ждёт Chromium 1234; в песочнице стоит 1194 — тесты с `chromium.launch` требуют `executablePath` (в CI `playwright install chromium` есть).
-- Контрактные тесты на `readFileSync` (~164 шт.) — заложить время на обновление при каждой правке `movie-details.js`/`player-cleaner.js`.
+- Контрактные тесты на `readFileSync` (~166 файлов с `readFileSync`, из них ≈73 затрагивают `movie-details.js`/`player-cleaner.js`/`search.js`) — заложить время на обновление при каждой правке `movie-details.js`/`player-cleaner.js`.
 
 ## Ворота и отложенное
 
@@ -140,7 +140,7 @@
   Известно: Media Chrome не показывает меню субтитров/аудиодорожек/качества и клавиши в README; Video.js 10 — бета, меню качества и аудиодорожек есть в changelog; для iframe-источников
   фреймворк, вероятно, не подходит (cleaner работает внутри чужого документа).
 
-## Порядок и сроки (оценка для одного разработчика, без запаса)
+## Порядок и сроки (оценка трудозатрат разработчика, без запаса; при исполнении агентом календарь определяют шлюзы владельца)
 
 | Недели | Работа |
 |---|---|
@@ -152,7 +152,7 @@
 ## Критерии приёмки
 
 - A: sandbox-контракт зелёный; `rules.json` проверен; блок `127.0.0.1:9999` при работающем торренте; живой прогон каждого провайдера перед добавлением в `SANDBOX_PROVIDERS`.
-- B: 11 проверок + a11y; 0 регрессий прогресса RELIABLE и автоперехода на следующую серию; `lint` + `npm test` зелёные; смоук зелёный.
+- B: 10 проверок приёмки + a11y; 0 регрессий прогресса RELIABLE и автоперехода на следующую серию; `lint` + `npm test` зелёные; смоук зелёный.
 - C: ночной прогон работает; диагностика копируется; 403 не вызывает бесконечных повторов.
 - D: по каждому пункту — тест до правки; браузерный смоук покрывает меню, громкость и скорость.
 - Общие: время до первого кадра и доля ошибок воспроизведения измеряются локально; релиз с флагом, откат релизом.
@@ -172,6 +172,7 @@
 
 ## Не подтверждено
 
+Виден ли флаг из `localStorage` в режиме `?embedded=true` (страница расширения во фрейме на чужом сайте, возможное разделение хранилища); 
 TS-демукс и H.264/AAC; живые провайдеры и CDN Kodik; sandbox на живых плеерах и Spotify; Bluetooth/`outputLatency`; фон/PiP/Media Session на реальных устройствах; сквозной запуск E1 (авторизация и сеть);
 IPv6 и `127.0.0.2` в DNR; узкий allow `127.0.0.1:3000` (в стенде проверялся надмножественный allow на 3000/3579 — прогнать узкий перед A5); тайминг озвучек Kodik между релизами (гипотеза: тот же релиз → 0).
 

@@ -14,7 +14,7 @@
 ## Прототип E1 (изолированная копия `origin/master`)
 
 - Патч: `e1/e1-prototype.patch` (+425/−30: `movie-details.js` +320/−30, `player.css` +90, `locales.js` +12, `PlayerSourceLifecycle.js` +1, `player-cleaner.js` 1 строка).
-- Тест: `e1/e1WatchAliasAcceptance.full.test.mjs` (jsdom на реальном `movie-details.html/js`): 11 проверок + a11y проходят с флагом; на `origin/master` все падают.
+- Тест: `e1/e1WatchAliasAcceptance.full.test.mjs` (jsdom на реальном `movie-details.html/js`): 10 проверок + a11y (11 тестов) проходят с флагом; на `origin/master` все падают.
 - Существующие тесты: 109 команд основного списка, `test:watch-room`, `test:media-player`, `lint` проходят с выключенным флагом. Исправлены без правки тестов: литерал `sourceButtonsContainer.addEventListener('click'`
   (`playerVisualContract`), CSS-регулярка `\.source-buttons-container\s*\{`.
 - Реальный Chromium: шапка «Смотреть · Источник ▾ · Торрент» рисуется, поповер открывается поверх плеера, Esc возвращает фокус. Сквозной запуск не проверен (нужны авторизация и сеть).
