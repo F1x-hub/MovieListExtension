@@ -32,7 +32,7 @@
 - `rules.json` id 1,2,5,6 без `initiatorDomains` (снимают CSP/XFO у `kinopoisk.ru`, ставят `ACAO:*` на `rutube.ru`/`rtbcdn.ru` для всех инициаторов);
   `web_accessible_resources` открыты для `<all_urls>` (включая `content-scripts/*.js`).
 - `player-cleaner.js` ~5,7 тыс. строк: `replacePlayer()` 3 920 строк, ≈344 присваивания `.style.X =` (354 вхождения `.style.`), 17 селекторов по хешированным классам Venom, 90 `console.*`,
-  подписи плеера зашиты по-русски; Media Session отсутствует; в меню качества «Auto (Not found)».
+  подписи плеера зашиты по-русски; Media Session отсутствует; в меню качества «Auto (Not found)» (рядом уже есть «Автоматически», `:4693`).
 - hls.js 1.6.15 (актуальная линия 1.7.x, источник один: GitHub releases).
 - Тесты плеера работают на заглушках (`vm`/jsdom); реальный Chromium есть в CI только для интерфейса (v1.3.7), для плеера нет.
 - Торрент-бэкенд: `http://127.0.0.1:3000` — единственный легитимный локальный запрос расширения.
@@ -49,7 +49,7 @@
   `xmlhttprequest`; проверить JS-навигацию во фрейме виджета Кинопоиска. Тест: extId = sha256(`key`) = `dgdejomdgiabgcfijcdhjefijdfiemhd`.
 - **A4** `createMenuItem` и заголовок подменю (`player-cleaner.js:4264–4286`) на `textContent` (завести `CHEVRON_SVG`).
 - **A5 URL-политика сети.**
-  (а) `PolicyLoader` в `HlsPlaybackFactory.buildConfig` (приложение 1; сброс `pLoader/fLoader/cmcd/progressive/emeEnabled`); единственный `new Hls(` — `BaseParserService.js:209` (`_createUnmanagedHls`, его зовёт `AnimeGoParser.js:769`): метод и вызов удалить, всё через фабрику (она создаёт `new HlsCtor(`, `:151`);
+  (а) `PolicyLoader` в `HlsPlaybackFactory.buildConfig` (приложение 1; сброс `pLoader/fLoader/cmcd/progressive/emeEnabled`); единственный `new Hls(` — `BaseParserService.js:209` (`_createUnmanagedHls`; зовут его **два** места: `BaseParserService.js:130` — ветка без фабрики, и `AnimeGoParser.js:769`): метод и оба вызова удалить (без `window.HlsPlaybackFactory` — `hls=null` и ветка `video.src` с проверкой A5в), всё через фабрику (она создаёт `new HlsCtor(`, `:151`);
   GhostPlayer (`new this._Hls(`, `player-cleaner.js:5588`) — явное исключение; `search.js:4267` уже идёт через фабрику; профиль `isTorrentStream ? 'local' : 'remote'`
   (в `renderCustomPlayer` вычислять `isTorrentStream = Boolean(this.torrentPlaybackSession)` до `:10692`).
   (б) В фабрике перехват `response.text==='POLICY_VIOLATION'` при **любом** `fatal` → `destroy()` → `onFatal({reason:'policy'})` → источник исключается
@@ -65,7 +65,7 @@
   используется (убрать из `host_permissions` отдельной задачей). Принятые остаточные риски: DNS-имена на частные адреса, DNS rebinding.
 - **A6** `decodeSource` Kodik: перебор сдвигов 0–25 с валидацией (`new URL`, `.m3u8`); причина `decode_failed` в диагностике.
 - **A7** `redactUrl()` (origin+path); исправить логи: `player-cleaner.js:3938`, `movie-details.js:10318,10481–10490` (`iframeSources` в `console.info`), `10580,10677`, KinogoSearchTrace.
-- **Отдельный трек безопасности (вне этой цели):** лазейка `isApprovedUser` (`firestore.rules:51–58, 582`: истинно без `approvalStatus`, `users create` без поля);
+- **Отдельный трек безопасности (вне этой цели):** захардкоженные секреты в коде расширения — Authorization-ключ в `src/background/background.js` (`SCHEDULE_ANNOUNCE`, ~`:898`) и `CLIENT_SECRET` в `src/shared/config/spotify.config.js` (~`:5`, используется в `background.js`): ротация и вынос на сервер, значения в документы не копировать; лазейка `isApprovedUser` (`firestore.rules:51–58, 582`: истинно без `approvalStatus`, `users create` без поля);
   сужение `web_accessible_resources` по потребителям (watchlist-скрипты внедряют сервисы и `*-injected.js`; `player-cleaner.js:1048` — `suppress-errors.js`;
   `kinogo-watchlist-injected.js:120` встраивает `movie-details.html?embedded=true`), `use_dynamic_url` после проверки `runtime.getURL`.
 
@@ -95,7 +95,7 @@
   всегда — доделать); статус не только цветом.
 - **B7 Включение:** по умолчанию выключено + локальный тумблер администратора; следующий релиз включает по умолчанию; откат — релизом. Миграция: `lastSource_${movieId}` читается как есть.
 - **B8 Приёмка:** 10 проверок + a11y (11 тестов) `e1/e1WatchAliasAcceptance.full.test.mjs` (шапка, дефолт без изменений, lastSource→псевдоним, hint, `bindProviderVideoTracking`, псевдоним на `vidsrc:`/URL,
-  ручной выбор, предзагрузка против `watchPrefs`, автопереход, выключенный флаг, торрент-кнопка) + a11y; существующие тесты проходят с выключенным флагом.
+  ручной выбор, предзагрузка против `watchPrefs`, автопереход, выключенный флаг; кнопка «Торрент» входит в проверку шапки) + a11y; существующие тесты проходят с выключенным флагом.
   Сломаться могут: `torrentModalLayout.test.cjs:29`, `movieDetailsPhase3C:103`, `3D:98`, `playerVisualContract:53` и CSS-регулярка в нём, `movieDetailsPlayerAuditRegression:370–399`.
 - **Не сделано в прототипе:** сквозной запуск (нужны авторизация и сеть), счётчики и копирование отчёта, тумблер администратора, статус «найден».
 
@@ -113,12 +113,12 @@
 ## Дорожка D. Качество плеера и интерфейс, ~2–4 недели, итеративно
 
 Каждый пункт: сначала характеризационный тест, потом правка, по одному контролу.
-- **D1 Единые состояния:** загрузка с названием источника (вместо `0:00 / 0:00`), буферизация, ошибка с «Повторить» / «Попробовать другой источник», «Авто» вместо «Auto (Not found)».
+- **D1 Единые состояния:** загрузка с названием источника (вместо `0:00 / 0:00`), буферизация, ошибка с «Повторить» / «Попробовать другой источник», «Автоматически» (как уже в `player-cleaner.js:4693`) вместо «Auto (Not found)».
 - **D2 Media Session и управление:** `play/pause/seekto/previoustrack/nexttrack` → основное видео, `mediaSession.metadata`; горячие клавиши (пробел/K, J/L ±10 с, стрелки ±5 с, F, M, C, `<`/`>`
   скорость, `?` — подсказка); корректный PiP (`leavepictureinpicture`).
 - **D3 Доступность по WCAG 2.2 AA:** шкала перемотки как ARIA-slider (`aria-valuetext`, Home/End/PageUp/PageDown), видимый фокус, подписи кнопок, навигация меню клавиатурой, `aria-live` для сообщений.
 - **D4 i18n:** строки плеера из `player-cleaner.js` в `src/shared/i18n/locales.js` (RU+EN).
-- **D5 Единый визуальный язык:** 354 присваивания `.style.*` → классы и токены (`player.css`, префикс `mre-`); убрать акцент `#4da6ff` у PiP/субтитров; поштучно.
+- **D5 Единый визуальный язык:** ≈344 присваивания `.style.X =` → классы и токены (`player.css`, префикс `mre-`; **`player.css` во фреймы провайдеров не подключается** — манифест внедряет для `player-cleaner` только js, поэтому способ доставки CSS (манифест `css` или вставка `<style>`) решается в G1/G5 до D5); убрать акцент `#4da6ff` у PiP/субтитров; поштучно.
 - **D6 Разбор монолита:** порядок — меню настроек → громкость/скорость → оформление субтитров → превью (GhostPlayer) → шкала перемотки; перед громкостью/скоростью характеризационные тесты (файл без покрытия).
 - **D7 Продуктовые мелочи:** запоминание озвучки и качества на тайтл (`watchPrefs`), карточка «Следующая серия» с отсчётом (на базе `AutoNextCoordinator`), «Продолжить с …».
 
@@ -206,9 +206,9 @@ class PolicyLoader extends Base {
 ## Приложение 2. DNR `local_network_guard` (extId = `dgdejomdgiabgcfijcdhjefijdfiemhd`; стенд: `docs/aegis/work/2026-10-15-pro-player-and-sources/e1/dnr-ext`)
 
 ```json
-[{"id":1,"priority":1,"action":{"type":"block"},"condition":{"regexFilter":"^https?://(localhost|127\\.[0-9]+\\.[0-9]+\\.[0-9]+|0\\.0\\.0\\.0)\\.?(:[0-9]+)?(/|$)","initiatorDomains":["dgdejomdgiabgcfijcdhjefijdfiemhd"],"resourceTypes":["xmlhttprequest","media","sub_frame","image","websocket","ping","other"]}},
- {"id":2,"priority":1,"action":{"type":"block"},"condition":{"regexFilter":"^https?://(10\\.[0-9]+|192\\.168|169\\.254|172\\.(1[6-9]|2[0-9]|3[01]))\\.[0-9]+\\.[0-9]+(:[0-9]+)?(/|$)","initiatorDomains":["dgdejomdgiabgcfijcdhjefijdfiemhd"],"resourceTypes":["xmlhttprequest","media","sub_frame","image","websocket","ping","other"]}},
- {"id":3,"priority":1,"action":{"type":"block"},"condition":{"regexFilter":"^https?://\\[(::1?|::ffff:[0-9a-f.:]+|f[c-d][0-9a-f]*:[0-9a-f:]*|fe[89ab][0-9a-f]*:[0-9a-f:]*)\\](:[0-9]+)?(/|$)","initiatorDomains":["dgdejomdgiabgcfijcdhjefijdfiemhd"],"resourceTypes":["xmlhttprequest","media","sub_frame","image","websocket","ping","other"]}},
+[{"id":1,"priority":1,"action":{"type":"block"},"condition":{"regexFilter":"^(https?|wss?)://(localhost|127\\.[0-9]+\\.[0-9]+\\.[0-9]+|0\\.0\\.0\\.0)\\.?(:[0-9]+)?(/|$)","initiatorDomains":["dgdejomdgiabgcfijcdhjefijdfiemhd"],"resourceTypes":["xmlhttprequest","media","sub_frame","image","websocket","ping","other"]}},
+ {"id":2,"priority":1,"action":{"type":"block"},"condition":{"regexFilter":"^(https?|wss?)://(10\\.[0-9]+|192\\.168|169\\.254|172\\.(1[6-9]|2[0-9]|3[01]))\\.[0-9]+\\.[0-9]+(:[0-9]+)?(/|$)","initiatorDomains":["dgdejomdgiabgcfijcdhjefijdfiemhd"],"resourceTypes":["xmlhttprequest","media","sub_frame","image","websocket","ping","other"]}},
+ {"id":3,"priority":1,"action":{"type":"block"},"condition":{"regexFilter":"^(https?|wss?)://\\[(::1?|::ffff:[0-9a-f.:]+|f[c-d][0-9a-f]*:[0-9a-f:]*|fe[89ab][0-9a-f]*:[0-9a-f:]*)\\](:[0-9]+)?(/|$)","initiatorDomains":["dgdejomdgiabgcfijcdhjefijdfiemhd"],"resourceTypes":["xmlhttprequest","media","sub_frame","image","websocket","ping","other"]}},
  {"id":4,"priority":2,"action":{"type":"allow"},"condition":{"regexFilter":"^http://127\\.0\\.0\\.1:3000/","initiatorDomains":["dgdejomdgiabgcfijcdhjefijdfiemhd"],"resourceTypes":["xmlhttprequest","media","other"]}}]
 ```
 
