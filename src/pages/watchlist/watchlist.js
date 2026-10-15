@@ -18,7 +18,7 @@ class WatchlistPageManager {
 
     async init() {
         this.initializeElements();
-        this.initializeCustomDropdowns();
+        this.initializeSortControl();
         this.setupEventListeners();
         
         await this.setupFirebase();
@@ -55,87 +55,12 @@ class WatchlistPageManager {
         };
     }
 
-    initializeCustomDropdowns() {
-        this.dropdowns = {};
-        const dropdownElements = document.querySelectorAll('.custom-dropdown');
-        
-        dropdownElements.forEach(dropdown => {
-            const dropdownId = dropdown.getAttribute('data-dropdown');
-            const trigger = dropdown.querySelector('.dropdown-trigger');
-            const list = dropdown.querySelector('.dropdown-list');
-            const hiddenSelect = dropdown.querySelector('.filter-select-hidden');
-            const options = list.querySelectorAll('.dropdown-option');
-            
-            if (!dropdownId || !trigger || !list || !hiddenSelect) return;
-            
-            this.dropdowns[dropdownId] = {
-                element: dropdown,
-                trigger: trigger,
-                list: list,
-                hiddenSelect: hiddenSelect,
-                isOpen: false
-            };
-            
-            trigger.addEventListener('mousedown', (e) => {
-                e.stopPropagation();
-                this.toggleDropdown(dropdownId);
-            });
-            
-            options.forEach(option => {
-                option.addEventListener('mousedown', (e) => {
-                    e.stopPropagation();
-                    const value = option.getAttribute('data-value');
-                    const text = option.textContent.trim();
-                    this.selectDropdownOption(dropdownId, value, text);
-                });
-            });
-        });
-        
-        document.addEventListener('mousedown', (e) => {
-            if (!e.target.closest('.custom-dropdown')) {
-                this.closeAllDropdowns();
-            }
-        });
-    }
-
-    toggleDropdown(dropdownId) {
-        const dropdown = this.dropdowns[dropdownId];
-        if (!dropdown) return;
-        
-        const isCurrentlyOpen = dropdown.isOpen;
-        
-        this.closeAllDropdowns();
-        
-        if (!isCurrentlyOpen) {
-            dropdown.element.classList.add('open');
-            if (dropdown.list) dropdown.list.inert = false;
-            dropdown.isOpen = true;
-        }
-    }
-
-    closeAllDropdowns() {
-        Object.keys(this.dropdowns).forEach(dropdownId => {
-            const dropdown = this.dropdowns[dropdownId];
-            if (dropdown && dropdown.isOpen) {
-                dropdown.element.classList.remove('open');
-                if (dropdown.list) dropdown.list.inert = true;
-                dropdown.isOpen = false;
-            }
-        });
-    }
-
-    selectDropdownOption(dropdownId, value, text) {
-        const dropdown = this.dropdowns[dropdownId];
-        if (!dropdown) return;
-        
-        dropdown.hiddenSelect.value = value;
-        dropdown.trigger.querySelector('.dropdown-value').textContent = text;
-        this.closeAllDropdowns();
-        
-        if (dropdownId === 'sortFilter') {
-            this.filters.sort = value;
+    initializeSortControl() {
+        this.sortControl = SortControl.enhance(this.elements.sortFilter);
+        this.elements.sortFilter?.addEventListener('change', (event) => {
+            this.filters.sort = event.target.value;
             this.applyFilters();
-        }
+        });
     }
 
     setupEventListeners() {

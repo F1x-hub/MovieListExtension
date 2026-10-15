@@ -85,6 +85,8 @@ function harness() {
         requestAnimationFrame: callback => frames.push(callback), performance: { now: () => 0 }
     };
     for (const file of [
+        'src/shared/config/discoveryFilters.js',
+        'src/shared/components/FilterControls.js',
         'src/shared/utils/PosterUrl.js',
         'src/shared/services/RandomPoolService.js',
         'src/shared/components/MovieCard.js',
@@ -94,6 +96,9 @@ function harness() {
         runInNewContext(read(file), context);
     }
     context.MovieCard = dom.window.MovieCard;
+    context.DiscoveryFilters = dom.window.DiscoveryFilters;
+    context.FilterChoice = dom.window.FilterChoice;
+    context.RangeControl = dom.window.RangeControl;
     runInNewContext(`${pageCode.replace(/^import .*;\r?\n/gm, '').split('// Initialize')[0]}\nglobalThis.RandomManager = RandomManager;`, context);
     context.RandomManager.prototype.init = () => {};
     const manager = new context.RandomManager();
@@ -146,13 +151,19 @@ function harness() {
     const tag = element('typeTags').querySelector('[data-value="movie"]');
     assert.equal(tag.tagName, 'BUTTON');
     assert.equal(tag.type, 'button');
+    const names = new Set();
     const descriptions = new Set();
     for (const state of ['neutral', 'include', 'exclude']) {
         assert.equal(tag.dataset.state, state);
-        assert.ok(tag.getAttribute('aria-label') || tag.getAttribute('aria-description'), 'Each state needs a readable description');
-        descriptions.add(tag.getAttribute('aria-label') + tag.getAttribute('aria-description'));
+        names.add(tag.getAttribute('aria-label'));
+        const describedBy = tag.getAttribute('aria-describedby');
+        assert.ok(describedBy, 'The stable toggle name must link to its current state description');
+        const description = document.getElementById(describedBy);
+        assert.ok(description?.textContent, 'Each state needs a readable description');
+        descriptions.add(description.textContent);
         tag.click();
     }
+    assert.equal(names.size, 1, 'The toggle name stays stable across all three filter states');
     assert.equal(descriptions.size, 3, 'The three filter states must have distinct accessible descriptions');
     tag.click();
     manager.currentMovie = { kinopoiskId: 42, name: 'Retained movie', year: 2024 };

@@ -4,9 +4,23 @@
     let firebaseManagerInstance = null;
     let servicesLoading = false;
     let isSettingUpButton = false;
+
+    function closeDropdown(dropdown) {
+        dropdown.classList.remove('active');
+        dropdown.inert = true;
+    }
     
     // CSS Styles
     const styles = `
+        .movie-list-dropdown, .movie-list-modal-overlay {
+            --motion-duration-menu: 160ms;
+            --motion-duration-base: 180ms;
+            --motion-duration-fast: 120ms;
+            --motion-ease-out: cubic-bezier(.16,1,.3,1);
+            --motion-ease-in: cubic-bezier(.4,0,1,1);
+            --motion-distance-enter: 6px;
+            --motion-scale-enter: .985;
+        }
         .movie-list-menu-btn {
             position: absolute !important;
             top: 10px !important;
@@ -52,17 +66,26 @@
             width: 220px !important;
             padding: 8px !important;
             box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04) !important;
-            animation: ml-exfs-menu-enter 0.2s ease-out !important;
+            opacity: 0;
+            transform: translateY(var(--motion-distance-enter));
+            pointer-events: none;
+            transition: opacity var(--motion-duration-fast) var(--motion-ease-in),
+                transform var(--motion-duration-fast) var(--motion-ease-in),
+                display var(--motion-duration-fast) allow-discrete !important;
             display: none;
         }
 
         .movie-list-dropdown.active {
             display: block !important;
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+            transition-duration: var(--motion-duration-menu) !important;
+            transition-timing-function: var(--motion-ease-out) !important;
         }
 
-        @keyframes ml-exfs-menu-enter {
-            from { opacity: 0; transform: translateY(-10px); }
-            to { opacity: 1; transform: translateY(0); }
+        @starting-style {
+            .movie-list-dropdown.active { opacity: 0; transform: translateY(var(--motion-distance-enter)); }
         }
 
         .movie-list-menu-item {
@@ -117,7 +140,7 @@
             align-items: center !important;
             justify-content: center !important;
             backdrop-filter: blur(4px) !important;
-            animation: ml-exfs-modal-enter 0.2s ease-out !important;
+            animation: ml-exfs-modal-enter var(--motion-duration-base) var(--motion-ease-out) !important;
             padding: 20px !important;
         }
 
@@ -130,7 +153,7 @@
             max-height: 90vh !important;
             overflow-y: auto !important;
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
-            animation: ml-exfs-surface-enter 0.3s ease-out !important;
+            animation: ml-exfs-surface-enter var(--motion-duration-base) var(--motion-ease-out) !important;
         }
 
         @keyframes ml-exfs-modal-enter {
@@ -139,8 +162,8 @@
         }
 
         @keyframes ml-exfs-surface-enter {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
+            from { transform: translateY(var(--motion-distance-enter)) scale(var(--motion-scale-enter)); }
+            to { transform: translateY(0) scale(1); }
         }
 
         .movie-list-modal-header {
@@ -706,6 +729,7 @@
             // Create Dropdown
             const dropdown = document.createElement('div');
             dropdown.className = 'movie-list-dropdown';
+            dropdown.inert = true;
             dropdown.id = 'movieListDropdown';
             
             btn.onclick = async (e) => {
@@ -716,18 +740,19 @@
                 const isActive = dropdown.classList.contains('active');
                 
                 // Close all other dropdowns
-                document.querySelectorAll('.movie-list-dropdown').forEach(d => d.classList.remove('active'));
+                document.querySelectorAll('.movie-list-dropdown').forEach(closeDropdown);
                 
                 if (!isActive) {
                     await renderMenuContent(dropdown);
                     dropdown.classList.add('active');
+                    dropdown.inert = false;
                 }
             };
             
             // Close on click outside
             document.addEventListener('click', (e) => {
                 if (!btn.contains(e.target) && !dropdown.contains(e.target)) {
-                    dropdown.classList.remove('active');
+                    closeDropdown(dropdown);
                 }
             });
             
@@ -797,7 +822,7 @@
             );
             watchlistItem.onclick = async (e) => {
                 if ('button' in e && e.button !== 0) return;
-                dropdown.classList.remove('active');
+                closeDropdown(dropdown);
                 
                 if (inWatchlist) {
                     window.postMessage({
@@ -828,7 +853,7 @@
                 if ('button' in e && e.button !== 0) return;
                 if (isFavorite) await favoriteService.removeFromFavorites(user.uid, movieData.movieId);
                 else await favoriteService.addToFavorites(user.uid, movieData);
-                dropdown.classList.remove('active');
+                closeDropdown(dropdown);
             };
             dropdown.appendChild(favoriteItem);
             
@@ -845,7 +870,7 @@
             );
             ratingItem.onclick = (e) => {
                 if ('button' in e && e.button !== 0) return;
-                dropdown.classList.remove('active');
+                closeDropdown(dropdown);
                 showRatingModal(movieData, userRating?.rating, userRating?.comment || '');
             };
             dropdown.appendChild(ratingItem);
@@ -993,7 +1018,38 @@
         };
         
         // Close handlers
-        const close = () => overlay.remove();
+        const close = () => {
+            if (!overlay.isConnected) return;
+            const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+            const visual = !reduce && typeof overlay.animate === 'function' ? overlay.cloneNode(true) : null;
+            overlay.remove();
+            if (!visual) return;
+            visual.removeAttribute('id');
+            visual.removeAttribute('role');
+            visual.removeAttribute('aria-modal');
+            visual.inert = true;
+            visual.setAttribute('aria-hidden', 'true');
+            visual.style.pointerEvents = 'none';
+            visual.querySelectorAll('[id], [role], [aria-modal], [data-movie-list-rating-modal]').forEach(node => {
+                node.removeAttribute('id');
+                node.removeAttribute('role');
+                node.removeAttribute('aria-modal');
+                node.removeAttribute('data-movie-list-rating-modal');
+            });
+            document.body.appendChild(visual);
+            const computed = getComputedStyle(visual);
+            const options = {
+                duration: parseFloat(computed.getPropertyValue('--motion-duration-fast')) || 120,
+                easing: computed.getPropertyValue('--motion-ease-in').trim() || 'ease-in'
+            };
+            visual.style.setProperty('animation', 'none', 'important');
+            const surface = visual.querySelector('.movie-list-modal');
+            surface?.style.setProperty('animation', 'none', 'important');
+            surface?.animate([{ transform: 'translateY(0) scale(1)' }, {
+                transform: `translateY(${computed.getPropertyValue('--motion-distance-enter').trim() || '6px'}) scale(${computed.getPropertyValue('--motion-scale-enter').trim() || '.985'})`
+            }], options);
+            visual.animate([{ opacity: 1 }, { opacity: 0 }], options).finished.catch(() => {}).then(() => visual.remove());
+        };
         closeBtn.onclick = (e) => { if ('button' in e && e.button !== 0) return; close(); };
         cancelBtn.onclick = (e) => { if ('button' in e && e.button !== 0) return; close(); };
         overlay.onclick = (e) => { if ('button' in e && e.button !== 0) return; if (e.target === overlay) close(); };

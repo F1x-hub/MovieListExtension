@@ -1,5 +1,16 @@
 export const whatsNew = [
     {
+        id: '1.3.7', version: '1.3.7', date: '2026-10-15',
+        highlights: [
+            { id: 'sorting', title: { ru: 'Сортировка в одном стиле', en: 'Consistent sorting everywhere' }, text: { ru: 'Оценённые, избранное и другие списки используют одинаковые элементы сортировки. Названия вариантов читаются целиком, а выбирать их можно с клавиатуры.', en: 'Rated, Favorites and other lists share the same sorting controls. Option labels stay readable, with full keyboard navigation.' } },
+            { id: 'filters', title: { ru: 'Фильтры стали компактнее', en: 'More compact filters' }, text: { ru: 'В поиске жанры и страны раскрываются по нажатию, а выбранное видно сразу. На телефоне длинные списки можно развернуть, сохранив активные фильтры на виду.', en: 'Search genres and countries expand on demand while keeping your choices visible. Long mobile lists reveal more options without hiding active filters.' } },
+            { id: 'numbers', title: { ru: 'Свои стрелки для числовых полей', en: 'Custom numeric controls' }, text: { ru: 'Год и рейтинг можно менять аккуратными стрелками внутри поля. Кнопки учитывают шаг и границы значения, а ввод с клавиатуры по-прежнему работает.', en: 'Adjust years and ratings with compact arrows inside each field. Buttons respect steps and limits, and keyboard editing still works.' } },
+            { id: 'motion', title: { ru: 'Спокойнее и плавнее', en: 'Calmer, smoother navigation' }, text: { ru: 'Обновлены переходы карточек, вкладок и окон. Декоративные эффекты не крутятся бесконечно, а настройка уменьшения движения учитывается во всём интерфейсе.', en: 'Cards, tabs and dialogs have more restrained transitions. Decorative effects stop after a short sequence, and reduced-motion preferences are respected.' } },
+            { id: 'loading', title: { ru: 'Меньше ожидания в карточке фильма', en: 'Less waiting in Movie Details' }, text: { ru: 'Оценка, избранное и другие личные действия становятся доступны независимо от дополнительных сведений. Знакомые постеры остаются на месте при обновлении карточек.', en: 'Rating, Favorites and other personal actions become ready independently of optional metadata. Previously loaded posters stay visible when cards refresh.' } },
+            { id: 'continue', title: { ru: 'Продолжайте сериал с нужного места', en: 'Continue from the right episode' }, text: { ru: 'Карточка следующей серии открывает сохранённый эпизод и позицию. Переключение источника больше не ждёт сохранения прогресса, а запоздавший запуск не заменяет новый плеер.', en: 'The next-episode card opens the saved episode and position. Switching sources no longer waits for progress storage, and a stale start cannot replace the newest player.' } }
+        ]
+    },
+    {
         id: '1.3.6', version: '1.3.6', date: '2026-10-10',
         highlights: [
             { id: 'seasons', title: { ru: 'Удобнее выбирать серии', en: 'Find your next episode more easily' }, text: { ru: 'Переключайте сезоны, смотрите оценки сообщества и открывайте нужную серию в одной карточке.', en: 'Switch seasons, see community ratings and open an episode in one clear card.' } },

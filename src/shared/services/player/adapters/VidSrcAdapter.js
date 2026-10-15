@@ -140,16 +140,19 @@ class VidSrcAdapter extends (typeof BasePlaybackAdapter !== 'undefined' ? BasePl
     }
 
     unmount(context = {}) {
-        if (this.activeIframe) {
+        // A stale mount owns only its returned iframe, even when this adapter
+        // has already mounted a newer request into the same container.
+        const iframe = context.element || this.activeIframe;
+        if (iframe) {
             try {
-                this.activeIframe.src = 'about:blank';
-                if (this.activeIframe.parentNode) {
-                    this.activeIframe.parentNode.removeChild(this.activeIframe);
+                iframe.src = 'about:blank';
+                if (iframe.parentNode) {
+                    iframe.parentNode.removeChild(iframe);
                 }
             } catch (e) {
                 console.warn('[VidSrcAdapter] Error during unmount:', e);
             }
-            this.activeIframe = null;
+            if (this.activeIframe === iframe) this.activeIframe = null;
         }
     }
 }

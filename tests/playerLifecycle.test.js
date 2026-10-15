@@ -190,4 +190,31 @@ requestIsCurrent = false;
 const staleResult = await stalePlayback.promise;
 assert.strictEqual(staleResult.state, 'cancelled', 'Phase 2 request invalidation must cancel retries');
 
+const eventReadyVideo = createEventTarget({
+    readyState: 0, error: null, playAttempts: 0,
+    play() { this.playAttempts += 1; return Promise.resolve(); }
+});
+const eventReadyPlayback = tryPlayWithLimit(eventReadyVideo, { intervalMs: 10000 });
+eventReadyVideo.readyState = 2;
+eventReadyVideo.dispatch('loadeddata');
+assert.strictEqual(eventReadyVideo.playAttempts, 1,
+    'loadeddata must start playback immediately without waiting for the poll or readyState 3');
+assert.strictEqual((await eventReadyPlayback.promise).state, 'ready');
+eventReadyVideo.dispatch('canplay');
+assert.strictEqual(eventReadyVideo.playAttempts, 1, 'readiness listeners must be removed after completion');
+
+let readyRequestCurrent = true;
+const staleEventVideo = createEventTarget({
+    readyState: 0, error: null, playAttempts: 0,
+    play() { this.playAttempts += 1; return Promise.resolve(); }
+});
+const staleEventPlayback = tryPlayWithLimit(staleEventVideo, {
+    intervalMs: 10000, isRequestCurrent: () => readyRequestCurrent
+});
+readyRequestCurrent = false;
+staleEventVideo.readyState = 3;
+staleEventVideo.dispatch('canplay');
+assert.strictEqual((await staleEventPlayback.promise).state, 'cancelled');
+assert.strictEqual(staleEventVideo.playAttempts, 0, 'a ready event from a replaced source cannot start playback');
+
 console.log('✅ Player lifecycle tests passed!');

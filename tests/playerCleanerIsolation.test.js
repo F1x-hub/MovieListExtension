@@ -55,6 +55,7 @@ const {
     teardownActiveWrapper,
     getPlayerObservationRoot,
     mutationsWithinRoot,
+    needsPlayerReconciliation,
     cleanupCleanerOwnedIframes
 } = cleanerWindow.MovieExtension_PlayerCleaner._test;
 
@@ -215,5 +216,25 @@ applyPlayerMessage({
     origin: 'https://player.example'
 });
 assert.strictEqual(acceptedMessages, 1, 'current iframe with matching origin and request token must be accepted');
+
+const ownedWrapper = {};
+const controlsNode = { closest: () => ownedWrapper };
+const contentVideoNode = { nodeType: 1, matches: () => true, closest: () => ownedWrapper };
+const unrelatedControlNode = { nodeType: 1, matches: () => false, querySelector: () => null };
+assert.strictEqual(needsPlayerReconciliation({
+    target: controlsNode, type: 'childList', addedNodes: [unrelatedControlNode], removedNodes: []
+}), false, 'buffer and menu rendering must not rescan provider videos');
+assert.strictEqual(needsPlayerReconciliation({
+    target: controlsNode, type: 'childList', addedNodes: [contentVideoNode], removedNodes: []
+}), true, 'a media element inserted into the wrapper must still reconcile');
+assert.strictEqual(needsPlayerReconciliation({
+    target: contentVideoNode, type: 'attributes', attributeName: 'src'
+}), true, 'source changes on adopted media must still reconcile');
+assert.strictEqual(needsPlayerReconciliation({
+    target: controlsNode, type: 'attributes', attributeName: 'class'
+}), false, 'control state class changes must not rescan provider videos');
+assert.strictEqual(needsPlayerReconciliation({
+    target: { closest: () => null }, type: 'childList', addedNodes: [], removedNodes: [contentVideoNode]
+}), true, 'provider changes and wrapper removal remain observable');
 
 console.log('✅ Player cleaner isolation tests passed!');

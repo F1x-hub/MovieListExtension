@@ -14,12 +14,18 @@
     align-items: center;
     opacity: 0;
     visibility: hidden;
-    transition: all 0.3s ease;
+    pointer-events: none;
+    transition: opacity var(--motion-duration-fast) var(--motion-ease-in),
+        visibility 0s linear var(--motion-duration-fast);
 }
 
 .image-lightbox-overlay.visible {
     opacity: 1;
     visibility: visible;
+    pointer-events: auto;
+    transition-duration: var(--motion-duration-base), 0s;
+    transition-delay: 0s;
+    transition-timing-function: var(--motion-ease-out), linear;
 }
 
 .image-lightbox-image {
@@ -28,15 +34,21 @@
     object-fit: contain;
     border-radius: 8px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-    transform: scale(0.95);
-    transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.2s ease;
+    transform: translateY(var(--motion-distance-enter)) scale(var(--motion-scale-enter));
+    transition: transform var(--motion-duration-fast) var(--motion-ease-in);
     cursor: pointer;
     user-select: none;
     -webkit-user-drag: none;
 }
 
 .image-lightbox-overlay.visible .image-lightbox-image {
-    transform: scale(1);
+    transform: translateY(0) scale(1);
+    transition: transform var(--motion-duration-base) var(--motion-ease-out);
+}
+
+.image-lightbox-crossfade {
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
 
 .image-lightbox-close {

@@ -1071,12 +1071,17 @@
     justify-content: center;
     z-index: 10000;
     padding: 20px;
-    animation: profileModalFadeIn 200ms var(--ease-out) forwards;
+    opacity: 1;
+    animation: none;
+    transition: opacity var(--motion-duration-base) var(--motion-ease-out),
+        display var(--motion-duration-fast) allow-discrete;
 }
 
-@keyframes profileModalFadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+.profile-modal-overlay[hidden] {
+    opacity: 0;
+    pointer-events: none;
+    transition-duration: var(--motion-duration-fast);
+    transition-timing-function: var(--motion-ease-in);
 }
 
 .profile-modal {
@@ -1090,17 +1095,21 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    animation: profileModalScaleUp 220ms var(--ease-out) forwards;
+    animation: none;
+    transform: translateY(0) scale(1);
+    transition: transform var(--motion-duration-base) var(--motion-ease-out);
 }
 
-@keyframes profileModalScaleUp {
-    from {
-        opacity: 0;
-        transform: scale(0.96) translateY(12px);
-    }
-    to {
-        opacity: 1;
-        transform: scale(1) translateY(0);
+.profile-modal-overlay[hidden] > .profile-modal {
+    transform: translateY(var(--motion-distance-enter)) scale(var(--motion-scale-enter));
+    transition-duration: var(--motion-duration-fast);
+    transition-timing-function: var(--motion-ease-in);
+}
+
+@starting-style {
+    .profile-modal-overlay { opacity: 0; }
+    .profile-modal-overlay > .profile-modal {
+        transform: translateY(var(--motion-distance-enter)) scale(var(--motion-scale-enter));
     }
 }
 

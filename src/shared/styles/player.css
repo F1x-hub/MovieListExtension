@@ -1998,6 +1998,8 @@ body.player-modal-open {
     -moz-appearance: textfield;
 }
 
+.player-episode-picker__search .number-stepper { width: 76px; }
+
 .player-episode-picker__search-input::-webkit-outer-spin-button,
 .player-episode-picker__search-input::-webkit-inner-spin-button {
     -webkit-appearance: none;

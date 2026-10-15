@@ -669,23 +669,29 @@ class MovieDetailsManager {
             this.focusTorrentRegion(this.elements.torrentSourcePanel);
         });
         if (this.elements.torrentSourceControls) {
+            const qualityChoices = this.elements.torrentSourceControls.querySelector('.torrent-source-controls__filters');
+            window.FilterChoice?.enhanceSingleGroup(qualityChoices, {
+                selector: '[data-quality-filter]', label: 'Фильтр качества'
+            });
             this.elements.torrentSourceControls.addEventListener('click', (event) => {
                 const chip = event.target.closest('[data-quality-filter]');
                 if (!chip) return;
                 this.torrentQualityFilter = String(chip.getAttribute('data-quality-filter') || 'all');
-                this.elements.torrentSourceControls.querySelectorAll('[data-quality-filter]').forEach((item) => {
-                    item.classList.toggle('is-active', item === chip);
+                window.FilterChoice?.syncSingleGroup(qualityChoices, {
+                    value: this.torrentQualityFilter, attribute: 'data-quality-filter', selector: '[data-quality-filter]'
                 });
                 this.renderTorrentSources(this.torrentSources);
             });
         }
         if (this.elements.torrentSourceSort) {
+            this.torrentSortControl = window.SortControl?.enhance(this.elements.torrentSourceSort);
             this.elements.torrentSourceSort.addEventListener('change', (event) => {
                 this.torrentSort = String(event.target.value || 'recommended');
                 this.renderTorrentSources(this.torrentSources);
             });
         }
         if (this.elements.torrentSourceLanguageFilter) {
+            this.torrentSourceLanguageControl = window.SortControl?.enhance(this.elements.torrentSourceLanguageFilter);
             this.elements.torrentSourceLanguageFilter.addEventListener('change', (event) => {
                 this.torrentLanguageFilter = String(event.target.value || 'all');
                 this.torrentVisibleSourceLimit = 10;
@@ -1552,6 +1558,14 @@ class MovieDetailsManager {
     async loadMovieById(movieId, shouldShowLoading = true, skipRender = false, options = {}) {
         const pageContext = this.beginPageGeneration(movieId);
         let loadActive = true;
+        let personalStateStarted = false;
+        const startPersonalState = () => {
+            if (personalStateStarted || !this.authVerified || !this.currentUser
+                || !this.isPageContextCurrent(pageContext)
+                || String(this.selectedMovie?.kinopoiskId) !== String(movieId)) return;
+            personalStateStarted = true;
+            void this.loadPersonalState(movieId);
+        };
         this.perf?.mark('md:aggregation-start');
         try {
             if (shouldShowLoading) {
@@ -1575,6 +1589,7 @@ class MovieDetailsManager {
             const params = new URLSearchParams(window.location.search);
 
             let movie = options.prefetchedCacheResolved ? (options.prefetchedCachedMovie || null) : null;
+            startPersonalState();
             if (mediaAggregator) {
                 try {
                     movie = await this.withMovieLoadDeadline(mediaAggregator.getMovieDetails(movieId, {
@@ -1589,7 +1604,7 @@ class MovieDetailsManager {
                         onBaseMovie: baseMovie => {
                             if (!loadActive || !this.isPageContextCurrent(pageContext) || this.selectedMovie) return;
                             skipRender = true;
-                            void this.displayMovieDetails(baseMovie).catch(error => {
+                            void this.displayMovieDetails(baseMovie).then(startPersonalState).catch(error => {
                                 console.warn('[MovieDetails] Base metadata render failed:', error);
                             });
                         }
@@ -1711,7 +1726,7 @@ class MovieDetailsManager {
             if (skipRender) this.startPostRenderEnrichment(movie, this.capturePageContext(movie));
             // Personal state is intentionally post-render. Keeping this at the end of
             // every movie load also covers explicit refreshes after rating/bookmark actions.
-            if (this.currentUser && this.selectedMovie) this.loadPersonalState(movieId);
+            if (!personalStateStarted && this.authVerified && this.currentUser && this.selectedMovie) this.loadPersonalState(movieId);
         } catch (error) {
             if (!this.isPageContextCurrent(pageContext)) return;
             console.error('Error loading movie:', error);
@@ -2040,6 +2055,15 @@ class MovieDetailsManager {
         if (!this.currentUser || !this.selectedMovie || String(this.selectedMovie.kinopoiskId) !== String(movieId)) return;
         const pageContext = this.capturePageContext(this.selectedMovie);
         const uid = this.currentUser.uid;
+        const hydrationVersion = (this.personalHydrationVersion || 0) + 1;
+        this.personalHydrationVersion = hydrationVersion;
+        const isCurrent = () => this.isPageContextCurrent(pageContext)
+            && this.currentUser?.uid === uid
+            && this.personalHydrationVersion === hydrationVersion;
+        const snapshot = this.personalStateSnapshot;
+        if (!snapshot || snapshot.uid !== uid || !this.isPageContextCurrent(snapshot.pageContext)) {
+            this.personalStateSnapshot = { uid, pageContext };
+        }
         const userService = firebaseManager.getUserService?.();
         const ratingService = firebaseManager.getRatingService?.();
         const canReadEpisodeRatings = typeof isSeriesMedia === 'function'
@@ -2065,37 +2089,74 @@ class MovieDetailsManager {
             ? read('FIREBASE_RATING', 'series-episode-ratings', () => seriesEpisodeRatingService.getEpisodeRatings(uid, movieId))
             : Promise.resolve(null);
         const bookmarkPromise = favoriteService ? read('FIREBASE_BOOKMARK', 'current-user-bookmark', () => favoriteService.getBookmark(uid, movieId)) : Promise.resolve(null);
-        const results = await Promise.allSettled([profilePromise, collectionsPromise, ratingPromise, bookmarkPromise, episodeRatingPromise]);
-
-        if (this.isPageContextCurrent(pageContext) && results[0].status === 'fulfilled') {
-            this.isAdmin = results[0].value?.isAdmin === true;
-            try { await chrome.storage.local.set({ cached_is_admin: this.isAdmin }); } catch { /* non-critical */ }
-            this.patchAdminControl(this.isAdmin, pageContext);
-            this.perf?.mark('md:profile-ready');
-        }
-        if (this.isPageContextCurrent(pageContext) && results[1].status === 'fulfilled') {
-            this.availableCollections = Array.isArray(results[1].value) ? results[1].value : [];
-            this.patchCollectionsMenu(this.selectedMovie, pageContext);
-            this.perf?.mark('md:collections-ready');
-        }
-        if (this.isPageContextCurrent(pageContext) && results[2].status === 'fulfilled') {
-            this.patchPersonalRating(results[2].value, pageContext);
-            this.perf?.mark('md:rating-state-ready');
-        }
-        if (this.isPageContextCurrent(pageContext) && results[3].status === 'fulfilled') {
-            this.patchBookmarkState(results[3].value, favoriteService, pageContext);
-            this.perf?.mark('md:bookmark-state-ready');
-        }
-        if (this.isPageContextCurrent(pageContext) && results[4].status === 'fulfilled' && results[4].value) {
-            this.patchSeriesEpisodeRatings(results[4].value, pageContext);
-        } else if (this.isPageContextCurrent(pageContext) && results[4].status === 'rejected'
-            && this.isEpisodeRatingsPermissionDenied(results[4].reason)) {
-            this.episodeRatingsPermissionDeniedMovieId = String(movieId);
-            this.updateSeriesEpisodeRatingUI();
-        }
+        // Each control owns its own completion. A slow collections/episode read
+        // must not hold already available ratings or bookmarks behind a barrier.
+        const apply = (promise, patch) => promise.then(value => {
+            if (isCurrent()) patch(value);
+        });
+        const results = await Promise.allSettled([
+            apply(profilePromise, profile => {
+                const isAdmin = profile?.isAdmin === true;
+                this.personalStateSnapshot.isAdmin = isAdmin;
+                this.isAdmin = isAdmin;
+                this.patchAdminControl(isAdmin, pageContext);
+                this.perf?.mark('md:profile-ready');
+                void Promise.resolve().then(() => chrome.storage.local.set({ cached_is_admin: isAdmin }))
+                    .catch(() => { /* non-critical */ });
+            }),
+            apply(collectionsPromise, collections => {
+                this.availableCollections = Array.isArray(collections) ? collections : [];
+                this.personalStateSnapshot.collections = this.availableCollections;
+                this.patchCollectionsMenu(this.selectedMovie, pageContext);
+                this.perf?.mark('md:collections-ready');
+            }),
+            apply(ratingPromise, rating => {
+                this.personalStateSnapshot.rating = rating;
+                this.patchPersonalRating(rating, pageContext);
+                this.perf?.mark('md:rating-state-ready');
+            }),
+            apply(bookmarkPromise, bookmark => {
+                this.personalStateSnapshot.bookmark = bookmark;
+                this.patchBookmarkState(bookmark, favoriteService, pageContext);
+                this.perf?.mark('md:bookmark-state-ready');
+            }),
+            apply(episodeRatingPromise, episodeRatings => {
+                this.personalStateSnapshot.episodeRatings = episodeRatings;
+                delete this.personalStateSnapshot.episodePermissionDenied;
+                if (episodeRatings) this.patchSeriesEpisodeRatings(episodeRatings, pageContext);
+            }).catch(error => {
+                if (isCurrent() && this.isEpisodeRatingsPermissionDenied(error)) {
+                    this.personalStateSnapshot.episodePermissionDenied = true;
+                    this.episodeRatingsPermissionDeniedMovieId = String(movieId);
+                    this.updateSeriesEpisodeRatingUI();
+                }
+                throw error;
+            })
+        ]);
         results.filter(result => result.status === 'rejected').forEach(result => {
             console.warn('[MovieDetails] Personal state read failed:', result.reason);
         });
+    }
+
+    rehydratePersonalState(pageContext = this.capturePageContext()) {
+        const snapshot = this.personalStateSnapshot;
+        if (!snapshot || snapshot.uid !== this.currentUser?.uid
+            || !this.authVerified || !this.isPageContextCurrent(snapshot.pageContext)
+            || !this.isPageContextCurrent(pageContext)) return;
+        if (Object.hasOwn(snapshot, 'isAdmin')) this.patchAdminControl(snapshot.isAdmin, pageContext);
+        if (Object.hasOwn(snapshot, 'collections')) {
+            this.availableCollections = snapshot.collections;
+            this.patchCollectionsMenu(this.selectedMovie, pageContext);
+        }
+        if (Object.hasOwn(snapshot, 'rating')) this.patchPersonalRating(snapshot.rating, pageContext);
+        if (Object.hasOwn(snapshot, 'bookmark')) {
+            this.patchBookmarkState(snapshot.bookmark, null, pageContext);
+        }
+        if (snapshot.episodeRatings) this.patchSeriesEpisodeRatings(snapshot.episodeRatings, pageContext);
+        if (snapshot.episodePermissionDenied) {
+            this.episodeRatingsPermissionDeniedMovieId = pageContext.kinopoiskId;
+            this.updateSeriesEpisodeRatingUI();
+        }
     }
 
     async loadFramesInBackground(movieId, movie, pageContext, kinopoiskService) {
@@ -2448,6 +2509,11 @@ class MovieDetailsManager {
         this.beginPageGeneration(movie?.kinopoiskId || movie?.id);
         const previousMovieKey = String(this.selectedMovie?.kinopoiskId || this.selectedMovie?.tmdbId || '');
         const nextMovieKey = String(movie?.kinopoiskId || movie?.tmdbId || '');
+        const focusedControl = previousMovieKey === nextMovieKey
+            && this.elements.movieDetailsContainer.contains?.(document.activeElement)
+            ? document.activeElement : null;
+        const focusedPrimaryClass = ['watch-movie-btn', 'rate-movie-btn', 'mc-menu-btn']
+            .find(className => focusedControl?.classList?.contains(className));
         if (previousMovieKey && previousMovieKey !== nextMovieKey) {
             this.episodeRatingUiVersion += 1;
             this.isEpisodeRatingMutationPending = false;
@@ -2515,6 +2581,10 @@ class MovieDetailsManager {
         // Show content after everything is ready
         this.showContent();
         this.perf?.mark('md:first-content-rendered');
+        this.rehydratePersonalState(this.capturePageContext(movie));
+        if (focusedPrimaryClass) {
+            this.elements.movieDetailsContainer.querySelector(`.${focusedPrimaryClass}`)?.focus({ preventScroll: true });
+        }
 
         if (this.authVerified) this.startPostRenderEnrichment(movie, this.capturePageContext(movie));
     }
@@ -3443,6 +3513,7 @@ class MovieDetailsManager {
         this.selectedMovie = null;
         this.postRenderEnrichmentMovieId = null;
         this.renderEnrichmentSnapshot = null;
+        this.personalStateSnapshot = null;
         this.franchiseState = null;
         if (this.franchiseObserver) {
             try { this.franchiseObserver.disconnect(); } catch { /* ignore */ }

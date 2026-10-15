@@ -1,5 +1,6 @@
 export const locales = {
     en: {
+        filter_controls: { more: 'More ({count})', less: 'Show less', any: 'Any', included_count: 'Included: {count}', excluded_count: 'Excluded: {count}', increase: 'Increase', decrease: 'Decrease' },
         whats_new: {
             title: 'What’s new', draft: 'Next version draft', version: 'Version {version}', new: 'New', more: 'Show more',
             done: 'Got it', close: 'Close release notes', open: 'What’s new',
@@ -664,6 +665,8 @@ export const locales = {
             sort: {
                 date_newest: "Date Added (Newest)",
                 date_oldest: "Date Added (Oldest)",
+                watched_newest: "Watched Date (Newest)",
+                watched_oldest: "Watched Date (Oldest)",
                 rating_high: "My Rating (High to Low)",
                 rating_low: "My Rating (Low to High)",
                 avg_high: "Avg Rating (High to Low)",
@@ -814,6 +817,11 @@ export const locales = {
                 neutral: "No preference. Activate to include.",
                 include: "Included. Activate to exclude.",
                 exclude: "Excluded. Activate to clear."
+            },
+            tag_state_legend: {
+                neutral: "Neutral",
+                include: "Included",
+                exclude: "Excluded"
             },
             pool: {
                 clear_title: "Clear the movie pool?",
@@ -1033,11 +1041,11 @@ export const locales = {
             no_recent: "No recent searches",
             search_btn: "Search",
             filters_btn: "Filters",
-            year_range: "Year Range:",
+            year_range: "Release year",
             from: "From",
             to: "To",
-            genres: "Genres:",
-            countries: "Countries:",
+            genres: "Genres",
+            countries: "Countries",
             clear_filters: "Clear Filters",
             apply_filters: "Apply Filters",
             results_title: "Search Results",
@@ -1242,6 +1250,7 @@ export const locales = {
         }
     },
     ru: {
+        filter_controls: { more: 'Ещё ({count})', less: 'Свернуть', any: 'Любые', included_count: 'Включено: {count}', excluded_count: 'Исключено: {count}', increase: 'Увеличить', decrease: 'Уменьшить' },
         whats_new: {
             title: 'Что нового', draft: 'Черновик следующей версии', version: 'Версия {version}', new: 'Новое', more: 'Показать ещё',
             done: 'Понятно', close: 'Закрыть новости', open: 'Что нового',
@@ -1906,6 +1915,8 @@ export const locales = {
             sort: {
                 date_newest: "Дата добавления (Сначала новые)",
                 date_oldest: "Дата добавления (Сначала старые)",
+                watched_newest: "Дата просмотра (Сначала новые)",
+                watched_oldest: "Дата просмотра (Сначала старые)",
                 rating_high: "Моя оценка (Высокая)",
                 rating_low: "Моя оценка (Низкая)",
                 avg_high: "Средний рейтинг (Высокий)",
@@ -2056,6 +2067,11 @@ export const locales = {
                 neutral: "Без предпочтений. Нажмите, чтобы включить.",
                 include: "Включено. Нажмите, чтобы исключить.",
                 exclude: "Исключено. Нажмите, чтобы сбросить."
+            },
+            tag_state_legend: {
+                neutral: "Без предпочтений",
+                include: "Включено",
+                exclude: "Исключено"
             },
             pool: {
                 clear_title: "Очистить пул фильмов?",
@@ -2275,11 +2291,11 @@ export const locales = {
             no_recent: "Нет недавних поисков",
             search_btn: "Поиск",
             filters_btn: "Фильтры",
-            year_range: "Года:",
+            year_range: "Год выхода",
             from: "От",
             to: "До",
-            genres: "Жанры:",
-            countries: "Страны:",
+            genres: "Жанры",
+            countries: "Страны",
             clear_filters: "Очистить",
             apply_filters: "Применить",
             results_title: "Результаты поиска",

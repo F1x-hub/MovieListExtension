@@ -668,14 +668,14 @@ class PersonDetailsPageController {
                         <span>${this.escapeHtml(this.i18n.get('person_details.filmography'))}</span>
                         <span class="person-section__count">${totalRenderableCount}</span>
                     </h2>
-                    <div class="filmography-controls" role="tablist" aria-label="Filmography Type Filter">
-                        <button type="button" class="filmography-filter-pill ${this.activeMediaFilter === 'all' ? 'active' : ''}" data-action="filter-filmography" data-filter="all">
+                    <div class="filmography-controls filter-choices" role="group" aria-label="${this.escapeHtml(this.i18n.get('person_details.filmography'))}">
+                        <button type="button" class="filmography-filter-pill filter-choice ${this.activeMediaFilter === 'all' ? 'active is-active' : ''}" aria-pressed="${this.activeMediaFilter === 'all'}" data-action="filter-filmography" data-filter="all">
                             ${this.escapeHtml(this.i18n.get('person_details.all_media'))}
                         </button>
-                        <button type="button" class="filmography-filter-pill ${this.activeMediaFilter === 'movie' ? 'active' : ''}" data-action="filter-filmography" data-filter="movie">
+                        <button type="button" class="filmography-filter-pill filter-choice ${this.activeMediaFilter === 'movie' ? 'active is-active' : ''}" aria-pressed="${this.activeMediaFilter === 'movie'}" data-action="filter-filmography" data-filter="movie">
                             ${this.escapeHtml(this.i18n.get('person_details.movies_media'))}
                         </button>
-                        <button type="button" class="filmography-filter-pill ${this.activeMediaFilter === 'tv' ? 'active' : ''}" data-action="filter-filmography" data-filter="tv">
+                        <button type="button" class="filmography-filter-pill filter-choice ${this.activeMediaFilter === 'tv' ? 'active is-active' : ''}" aria-pressed="${this.activeMediaFilter === 'tv'}" data-action="filter-filmography" data-filter="tv">
                             ${this.escapeHtml(this.i18n.get('person_details.series_media'))}
                         </button>
                     </div>
@@ -1166,8 +1166,12 @@ class PersonDetailsPageController {
         pills.forEach(pill => {
             if (pill.getAttribute('data-filter') === filter) {
                 pill.classList.add('active');
+                pill.classList.add('is-active');
+                pill.setAttribute('aria-pressed', 'true');
             } else {
                 pill.classList.remove('active');
+                pill.classList.remove('is-active');
+                pill.setAttribute('aria-pressed', 'false');
             }
         });
     }

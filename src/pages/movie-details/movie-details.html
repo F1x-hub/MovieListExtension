@@ -7,6 +7,7 @@
     
     <!-- Shared Styles -->
     <link rel="stylesheet" href="../../shared/styles/common.css">
+    <script defer src="../../shared/components/NumberStepper.js"></script>
     <link rel="stylesheet" href="../../shared/styles/theme.css">
     <link rel="stylesheet" href="../../shared/styles/components.css">
     <link rel="stylesheet" href="../../shared/styles/navigation.css">
@@ -18,6 +19,7 @@
     <link rel="stylesheet" href="../../shared/styles/image-lightbox.css">
     <link rel="stylesheet" href="../../shared/styles/custom-picker.css">
     <link rel="stylesheet" href="movie-details.css">
+    <link rel="stylesheet" href="../../shared/styles/filter-controls.css">
 
     <!-- Resource Hints -->
     <link rel="preload" as="script" href="../../../libs/firebase-app-compat.js">
@@ -301,19 +303,19 @@
                         <div class="torrent-download-list" id="torrentDownloadList" role="list" aria-label="Сохранённые загрузки фильма"></div>
                     </section>
                     <details class="torrent-source-disclosure" id="torrentSourceDisclosure" hidden>
-                        <summary>
+                        <summary class="disclosure-summary">
                             <span>Другие раздачи</span>
                             <span class="torrent-source-disclosure__count" data-torrent-disclosure-count></span>
                         </summary>
                         <div class="torrent-source-disclosure__body">
                             <div class="torrent-source-controls" id="torrentSourceControls" hidden>
                                 <div class="torrent-source-controls__filters" role="group" aria-label="Фильтр качества">
-                                    <button class="torrent-quality-chip is-active" type="button" data-quality-filter="all">Все</button>
-                                    <button class="torrent-quality-chip" type="button" data-quality-filter="4k">4K</button>
-                                    <button class="torrent-quality-chip" type="button" data-quality-filter="2k">2K</button>
-                                    <button class="torrent-quality-chip" type="button" data-quality-filter="1080p">1080p</button>
-                                    <button class="torrent-quality-chip" type="button" data-quality-filter="720p">720p</button>
-                                    <button class="torrent-quality-chip" type="button" data-quality-filter="sd">SD</button>
+                                    <button class="torrent-quality-chip filter-choice is-active" aria-pressed="true" type="button" data-quality-filter="all">Все</button>
+                                    <button class="torrent-quality-chip filter-choice" aria-pressed="false" type="button" data-quality-filter="4k">4K</button>
+                                    <button class="torrent-quality-chip filter-choice" aria-pressed="false" type="button" data-quality-filter="2k">2K</button>
+                                    <button class="torrent-quality-chip filter-choice" aria-pressed="false" type="button" data-quality-filter="1080p">1080p</button>
+                                    <button class="torrent-quality-chip filter-choice" aria-pressed="false" type="button" data-quality-filter="720p">720p</button>
+                                    <button class="torrent-quality-chip filter-choice" aria-pressed="false" type="button" data-quality-filter="sd">SD</button>
                                 </div>
                                 <label class="torrent-source-controls__sort" for="torrentSourceLanguageFilter">
                                     <span>Язык</span>
@@ -327,7 +329,7 @@
                                 </label>
                                 <label class="torrent-source-controls__sort">
                                     <span>Сортировка</span>
-                                    <select id="torrentSourceSort">
+                                    <select id="torrentSourceSort" data-sort-control>
                                         <option value="recommended">Рекомендуемые</option>
                                         <option value="seeders">Сиды: больше</option>
                                         <option value="quality">Качество: выше</option>
@@ -528,6 +530,8 @@
     <script defer src="ModalStack.js"></script>
     <script defer src="PlayerSurface.js"></script>
     <script defer src="PlayerModalController.js"></script>
+    <script defer src="../../shared/components/SortControl.js"></script>
+    <script defer src="../../shared/components/FilterControls.js"></script>
     <script defer src="TorrentSourcePanel.js"></script>
     <script defer src="WatchRoomPanel.js"></script>
     <script defer src="MetaRenderer.js"></script>

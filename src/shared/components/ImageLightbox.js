@@ -4,6 +4,9 @@
 class ImageLightbox {
     static images = [];
     static currentIndex = 0;
+    static imageGeneration = 0;
+    static imageAnimation = null;
+    static previousImage = null;
 
     /**
      * Extracts a valid image URL string from various input formats (string, object with url/previewUrl/src/image).
@@ -78,7 +81,11 @@ class ImageLightbox {
             document.body.appendChild(overlay);
             
             const closeLightbox = () => {
+                ImageLightbox.imageGeneration++;
+                ImageLightbox.clearImageMotion();
                 overlay.classList.remove('visible');
+                overlay.inert = true;
+                overlay.setAttribute('aria-hidden', 'true');
             };
             
             closeBtn.addEventListener('click', (e) => {
@@ -171,9 +178,16 @@ class ImageLightbox {
         
         ImageLightbox.updateDisplay(false);
         
-        requestAnimationFrame(() => {
-            overlay.classList.add('visible');
-        });
+        overlay.inert = false;
+        overlay.setAttribute('aria-hidden', 'false');
+        overlay.classList.add('visible');
+    }
+
+    static clearImageMotion() {
+        this.imageAnimation?.cancel();
+        this.imageAnimation = null;
+        this.previousImage?.remove();
+        this.previousImage = null;
     }
 
     static updateDisplay(animate = false) {
@@ -184,25 +198,63 @@ class ImageLightbox {
 
         if (img && this.images[this.currentIndex]) {
             const nextSrc = this.images[this.currentIndex];
-            if (animate && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches && img.src !== nextSrc) {
-                img.style.opacity = '0.5';
-                img.style.transform = 'scale(0.98)';
-                const newImg = new Image();
-                newImg.onload = () => {
+            const generation = ++this.imageGeneration;
+            this.clearImageMotion();
+            const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+            if (animate && !reduced && img.getAttribute('src') !== nextSrc) {
+                const preload = new Image();
+                let settled = false;
+                const commit = () => {
+                    if (settled) return;
+                    settled = true;
+                    if (generation !== this.imageGeneration || !img.isConnected) return;
+                    const overlay = img.parentElement;
+                    if (!overlay.classList.contains('visible')) return;
+                    // Keep the old pixels while the new image decodes. The copy is
+                    // purely visual and cannot retain navigation or focus.
+                    const old = img.cloneNode(false);
+                    old.removeAttribute('id');
+                    old.className = 'image-lightbox-crossfade';
+                    old.setAttribute('aria-hidden', 'true');
+                    const rect = img.getBoundingClientRect();
+                    Object.assign(old.style, {
+                        position: 'fixed', left: `${rect.left}px`, top: `${rect.top}px`,
+                        width: `${rect.width}px`, height: `${rect.height}px`,
+                        pointerEvents: 'none', objectFit: 'contain'
+                    });
                     img.src = nextSrc;
-                    img.style.opacity = '1';
-                    img.style.transform = 'scale(1)';
+                    if (typeof img.animate !== 'function'
+                        || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+                    overlay.appendChild(old);
+                    this.previousImage = old;
+                    const styles = getComputedStyle(img);
+                    const options = {
+                        duration: parseFloat(styles.getPropertyValue('--motion-duration-menu')) || 160,
+                        easing: styles.getPropertyValue('--motion-ease-out').trim() || 'ease-out'
+                    };
+                    const animation = img.animate([{ opacity: 0 }, { opacity: 1 }], options);
+                    this.imageAnimation = animation;
+                    const outgoing = old.animate([{ opacity: 1 }, { opacity: 0 }], options);
+                    outgoing.finished.catch(() => {}).then(() => old.remove());
+                    animation.finished.catch(() => {}).then(() => {
+                        if (this.imageAnimation === animation) this.imageAnimation = null;
+                        if (this.previousImage === old) this.previousImage = null;
+                        old.remove();
+                    });
                 };
-                newImg.onerror = () => {
-                    img.src = nextSrc;
-                    img.style.opacity = '1';
-                    img.style.transform = 'scale(1)';
+                preload.onload = () => {
+                    if (typeof preload.decode === 'function') {
+                        preload.decode().catch(() => {}).then(commit);
+                    } else commit();
                 };
-                newImg.src = nextSrc;
+                preload.onerror = commit;
+                preload.src = nextSrc;
+                if (preload.complete) {
+                    if (preload.naturalWidth) preload.onload();
+                    else commit();
+                }
             } else {
                 img.src = nextSrc;
-                img.style.opacity = '1';
-                img.style.transform = 'scale(1)';
             }
         }
 

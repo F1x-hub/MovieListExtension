@@ -1073,3 +1073,128 @@ body.app-error-dialog-open {
 @media (hover: none) {
     .btn:hover:not(:disabled):not(:active), .card:hover { transform: none; }
 }
+
+/* One shared sorting control. Native selects remain the page's data owner. */
+.sort-control__label--sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.sort-control {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+}
+
+.sort-control__trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 10px 14px;
+    border: 1px solid var(--ui-color-border);
+    border-radius: var(--ui-control-radius);
+    background: var(--ui-color-surface);
+    color: var(--ui-color-content);
+    font: inherit;
+    font-size: var(--ui-control-font-size);
+    line-height: 1.5;
+    text-align: start;
+    cursor: pointer;
+}
+
+.sort-control__value {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.sort-control__chevron {
+    flex: 0 0 7px;
+    width: 7px;
+    height: 7px;
+    margin: 0 3px 4px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(45deg);
+}
+
+.sort-control__trigger[aria-expanded="true"] .sort-control__chevron {
+    transform: rotate(225deg);
+    margin-bottom: 0;
+}
+
+.sort-control__trigger:focus-visible {
+    outline: 2px solid var(--ui-color-interactive);
+    outline-offset: 2px;
+}
+
+.sort-control__trigger:disabled {
+    color: var(--ui-color-content-muted);
+    background: var(--ui-color-surface-muted);
+    cursor: not-allowed;
+}
+
+.sort-control__hint {
+    display: block;
+    margin-top: 6px;
+    color: var(--ui-color-content-muted);
+    font-size: var(--ui-control-font-size);
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.sort-control__list {
+    position: fixed;
+    z-index: 10000;
+    box-sizing: border-box;
+    padding: 4px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border: 1px solid var(--ui-color-border-hover);
+    border-radius: var(--ui-control-radius);
+    background: var(--ui-color-surface);
+    color: var(--ui-color-content);
+    font-size: var(--ui-control-font-size);
+    line-height: 1.5;
+}
+
+.sort-control__option {
+    box-sizing: border-box;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    padding: 10px 12px;
+    border-radius: var(--ui-control-radius);
+    white-space: normal;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+}
+
+.sort-control__option[aria-selected="true"] {
+    font-weight: 700;
+    box-shadow: inset 3px 0 var(--ui-color-interactive);
+}
+
+.sort-control__option--active,
+.sort-control__option:hover:not([aria-disabled="true"]) {
+    background: var(--ui-color-surface-muted);
+}
+
+.sort-control__option[aria-disabled="true"] {
+    color: var(--ui-color-content-muted);
+    cursor: not-allowed;
+}
+
+.sort-control__list[hidden],
+.sort-control__hint[hidden],
+select.sort-control__native[hidden] { display: none; }

@@ -1022,46 +1022,82 @@ class Utils {
     static bindImageReveal(root, selector = 'img') {
         if (!root?.querySelectorAll || root._imageRevealBound) return;
         root._imageRevealBound = true;
-        const versions = new WeakMap();
+        const document = root.ownerDocument || root;
+        Utils._imageRevealDocuments ||= new WeakMap();
+        let coordinator = Utils._imageRevealDocuments.get(document);
+        if (!coordinator) {
+            coordinator = Utils.createImageRevealCoordinator(document);
+            Utils._imageRevealDocuments.set(document, coordinator);
+        }
+        coordinator.roots.set(root, selector);
+        root.querySelectorAll(selector).forEach(coordinator.prepare);
+    }
+
+    /** One observer and two capture listeners per document, not per MovieCard.
+     * Weak registrations do not retain detached cards or their image closures. */
+    static createImageRevealCoordinator(document) {
+        const roots = new WeakMap(), images = new WeakMap();
+        // Sources already shown once: re-rendered cards display them at once, and
+        // fresh markup serializes like the old (owners diff card HTML).
+        const revealed = new Set();
         const source = img => img.getAttribute('src');
-        const finish = (img, version, url) => {
-            if (versions.get(img) !== version || source(img) !== url || !root.contains(img)) return;
+        const owner = img => {
+            for (let node = img.parentNode; node; node = node.parentNode) {
+                const selector = roots.get(node);
+                if (selector && img.matches(selector)) return node;
+            }
+        };
+        const finish = (img, state) => {
+            if (images.get(img) !== state || source(img) !== state.url || !state.root.contains(img)) return;
+            if (img.naturalWidth && state.url) revealed.add(state.url);
             img.dataset.motionImage = 'ready';
         };
         const loaded = img => {
-            const version = versions.get(img), url = source(img);
-            if (!img.naturalWidth) { finish(img, version, url); return; }
-            Promise.resolve().then(() => img.decode?.()).catch(() => {}).then(() => finish(img, version, url));
+            const state = prepare(img);
+            if (!state) return;
+            if (!img.naturalWidth) { finish(img, state); return; }
+            Promise.resolve().then(() => img.decode?.()).catch(() => {}).then(() => finish(img, state));
         };
         // Fallback artwork stays with each owner's error handler; this only ends the reveal.
-        const failed = img => finish(img, versions.get(img), source(img));
+        const failed = img => {
+            const state = prepare(img);
+            if (state) finish(img, state);
+        };
         const prepare = img => {
-            if (!img.matches(selector)) return;
-            versions.set(img, (versions.get(img) || 0) + 1);
+            if (img.tagName !== 'IMG') return;
+            const root = owner(img);
+            if (!root) return;
+            const previous = images.get(img), url = source(img);
+            if (previous?.url === url && previous.root === root) return previous;
+            const state = { root, url };
+            images.set(img, state);
             img.classList.add('motion-image');
-            img.dataset.motionImage = 'pending';
-            if (!img._motionImageBound) {
-                img._motionImageBound = true;
-                img.addEventListener('load', () => loaded(img));
-                img.addEventListener('error', () => failed(img));
+            if (revealed.has(url)) {
+                img.dataset.motionImage = 'ready';
+                return state;
             }
+            img.dataset.motionImage = 'pending';
             if (img.complete) {
                 if (img.naturalWidth) loaded(img);
                 else failed(img);
             }
+            return state;
         };
-        root.querySelectorAll(selector).forEach(prepare);
-        if (typeof MutationObserver === 'function') {
-            const observer = new MutationObserver(records => records.forEach(record => {
+        document.addEventListener('load', event => loaded(event.target), true);
+        document.addEventListener('error', event => failed(event.target), true);
+        const Observer = document.defaultView?.MutationObserver;
+        if (Observer) {
+            const observer = new Observer(records => records.forEach(record => {
                 if (record.type === 'attributes') prepare(record.target);
                 else record.addedNodes.forEach(node => {
                     if (node.nodeType !== 1) return;
-                    if (node.matches(selector)) prepare(node);
-                    node.querySelectorAll(selector).forEach(prepare);
+                    prepare(node);
+                    node.querySelectorAll('img').forEach(prepare);
                 });
             }));
-            observer.observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ['src'] });
+            observer.observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['src'] });
         }
+        return { roots, prepare };
     }
 
     /** Visual entry only: content is available synchronously and never awaited. */

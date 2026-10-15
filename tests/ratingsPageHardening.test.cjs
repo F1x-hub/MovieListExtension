@@ -157,9 +157,12 @@ function createFakeDb(collections, { failWhen = () => false } = {}) {
     // 7. Page markup and controls: keyboard-operable, non-blocking, labelled.
     const ratingsJs = read('src/pages/ratings/ratings.js');
     const ratingsHtml = read('src/pages/ratings/ratings.html');
+    const sortControlJs = read('src/shared/components/SortControl.js');
     assert.doesNotMatch(ratingsJs, /(clearFiltersBtn|toggleFiltersBtn|retryBtn|ratingModalClose|saveRatingBtn|cancelRatingBtn|activeFiltersList|trigger|option)\??\.addEventListener\('mousedown'/,
         'Buttons and dropdown options react to click, so Enter and Space work');
-    assert.match(ratingsJs, /handleDropdownKeydown\(dropdownId, e\)/, 'Dropdown lists handle arrow keys and Escape');
+    assert.match(ratingsJs, /window\.SortControl\?\.enhance\(this\.elements\[id\]\)/, 'Filter and sort selects use the shared control');
+    assert.match(sortControlJs, /'ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter', ' '/, 'Shared selects support keyboard navigation');
+    assert.match(sortControlJs, /key === 'Escape'[\s\S]*?this\.close\(\)[\s\S]*?this\.trigger\.focus\(\)/, 'Escape closes the shared menu and returns focus');
     assert.match(ratingsJs, /handleRatingModalKeydown\(e\)/, 'The rating dialog handles Escape and Tab');
     assert.match(ratingsJs, /removeEl = document\.createElement\('button'\)/, 'Filter tag removal is a real button');
     assert.match(ratingsHtml, /fonts\.googleapis\.com[^>]*media="print" data-async-style/, 'Font CSS does not block the first paint');

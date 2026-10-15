@@ -4,236 +4,6 @@ const DEFAULT_CATALOG_SORT_OPTIONS = Object.freeze([
     Object.freeze({ value: 'primary_release_date.desc', label: 'Новые фильмы' })
 ]);
 
-class CatalogSelect {
-    constructor(select) {
-        this.select = select;
-        this.root = document.createElement('div');
-        this.root.className = 'catalog-select';
-        this.root.dataset.catalogSelect = select.id;
-
-        this.trigger = document.createElement('button');
-        this.trigger.type = 'button';
-        this.trigger.className = 'catalog-select__trigger';
-        this.trigger.id = `${select.id}Trigger`;
-        this.trigger.setAttribute('aria-haspopup', 'listbox');
-        this.trigger.setAttribute('aria-expanded', 'false');
-
-        this.triggerText = document.createElement('span');
-        this.triggerText.className = 'catalog-select__value';
-        this.trigger.appendChild(this.triggerText);
-
-        this.triggerIcon = document.createElement('span');
-        this.triggerIcon.className = 'catalog-select__chevron';
-        this.triggerIcon.setAttribute('aria-hidden', 'true');
-        this.trigger.appendChild(this.triggerIcon);
-
-        this.menu = document.createElement('div');
-        this.menu.className = 'catalog-select__menu';
-        this.menu.id = `${select.id}Menu`;
-        this.menu.setAttribute('role', 'listbox');
-        this.menu.hidden = true;
-        this.trigger.setAttribute('aria-controls', this.menu.id);
-
-        const label = Array.from(document.querySelectorAll('label'))
-            .find(candidate => candidate.htmlFor === select.id);
-        if (label) {
-            if (!label.id) label.id = `${select.id}Label`;
-            this.trigger.setAttribute('aria-labelledby', label.id);
-            label.setAttribute('for', this.trigger.id);
-        }
-
-        const parent = select.parentElement;
-        parent.insertBefore(this.root, select);
-        this.root.append(this.trigger, this.menu, select);
-        select.classList.add('catalog-select__native');
-        select.tabIndex = -1;
-        select.setAttribute('aria-hidden', 'true');
-
-        this.onDocumentPointerDown = event => {
-            if (!this.root.contains(event.target)) this.close();
-        };
-        this.trigger.addEventListener('click', () => this.toggle());
-        this.trigger.addEventListener('keydown', event => this.handleTriggerKeydown(event));
-        this.menu.addEventListener('click', event => {
-            const option = event.target.closest('[role="option"]');
-            if (option) this.selectValue(option.dataset.value);
-        });
-        this.menu.addEventListener('keydown', event => this.handleMenuKeydown(event));
-        document.addEventListener('pointerdown', this.onDocumentPointerDown);
-        this.syncFromNative();
-    }
-
-    static enhance(select) {
-        if (!select || select.dataset.customSelectEnhanced === 'true') return null;
-        select.dataset.customSelectEnhanced = 'true';
-        return new CatalogSelect(select);
-    }
-
-    setOptions(options = []) {
-        const normalized = options
-            .map(option => ({
-                value: String(option?.value || ''),
-                label: String(option?.label || '')
-            }))
-            .filter(option => option.value && option.label);
-        const currentValue = this.select.value;
-
-        this.select.replaceChildren(...normalized.map(option => {
-            const element = document.createElement('option');
-            element.value = option.value;
-            element.textContent = option.label;
-            return element;
-        }));
-        this.select.value = normalized.some(option => option.value === currentValue)
-            ? currentValue
-            : (normalized[0]?.value || '');
-        this.menu.replaceChildren(...normalized.map((option, index) => {
-            const element = document.createElement('button');
-            element.type = 'button';
-            element.className = 'catalog-select__option';
-            element.dataset.value = option.value;
-            element.id = `${this.select.id}Option${index}`;
-            element.setAttribute('role', 'option');
-            element.textContent = option.label;
-            return element;
-        }));
-        this.syncFromNative();
-    }
-
-    syncFromNative() {
-        const options = Array.from(this.select.options || []);
-        const selected = options.find(option => option.value === this.select.value) || options[0];
-        if (!selected) {
-            this.triggerText.textContent = 'Выбрать';
-            return;
-        }
-        this.select.value = selected.value;
-        this.triggerText.textContent = selected.textContent.trim();
-        this.menu.querySelectorAll('[role="option"]').forEach(option => {
-            const isSelected = option.dataset.value === selected.value;
-            option.classList.toggle('is-selected', isSelected);
-            option.setAttribute('aria-selected', String(isSelected));
-        });
-    }
-
-    selectValue(value, { dispatchChange = true } = {}) {
-        const option = Array.from(this.select.options || []).find(item => item.value === value);
-        if (!option) return;
-        this.select.value = option.value;
-        this.syncFromNative();
-        this.close(true);
-        if (dispatchChange) this.select.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-
-    toggle() {
-        if (this.menu.hidden) this.open();
-        else this.close();
-    }
-
-    open(focusSelected = false) {
-        this.menu.hidden = false;
-        this.menu.inert = false;
-        this.root.classList.add('is-open');
-        this.trigger.setAttribute('aria-expanded', 'true');
-        if (focusSelected) {
-            this.menu.querySelector('.is-selected')?.focus();
-        }
-    }
-
-    close(restoreFocus = false) {
-        this.menu.hidden = true;
-        this.menu.inert = true;
-        this.root.classList.remove('is-open');
-        this.trigger.setAttribute('aria-expanded', 'false');
-        if (restoreFocus) this.trigger.focus();
-    }
-
-    handleTriggerKeydown(event) {
-        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-            event.preventDefault();
-            this.open(true);
-        } else if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            this.toggle();
-        } else if (event.key === 'Escape') {
-            this.close();
-        }
-    }
-
-    handleMenuKeydown(event) {
-        const options = Array.from(this.menu.querySelectorAll('[role="option"]'));
-        const currentIndex = options.indexOf(document.activeElement);
-        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-            event.preventDefault();
-            const direction = event.key === 'ArrowDown' ? 1 : -1;
-            const nextIndex = Math.min(options.length - 1, Math.max(0, currentIndex + direction));
-            options[nextIndex]?.focus();
-        } else if (event.key === 'Home' || event.key === 'End') {
-            event.preventDefault();
-            options[event.key === 'Home' ? 0 : options.length - 1]?.focus();
-        } else if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            const option = options[currentIndex];
-            if (option) this.selectValue(option.dataset.value);
-        } else if (event.key === 'Escape') {
-            event.preventDefault();
-            this.close(true);
-        }
-    }
-}
-
-class CatalogNumberInput {
-    constructor(input) {
-        this.input = input;
-        this.root = document.createElement('div');
-        this.root.className = 'catalog-number';
-        this.root.dataset.catalogNumber = input.id;
-
-        this.stepper = document.createElement('div');
-        this.stepper.className = 'catalog-number__stepper';
-
-        this.incrementButton = this.createButton('Увеличить год', 1, 'is-up');
-        this.decrementButton = this.createButton('Уменьшить год', -1, 'is-down');
-        this.stepper.append(this.incrementButton, this.decrementButton);
-
-        const parent = input.parentElement;
-        parent.insertBefore(this.root, input);
-        this.root.append(input, this.stepper);
-        input.classList.add('catalog-number__input');
-    }
-
-    static enhance(input) {
-        if (!input || input.dataset.catalogNumberEnhanced === 'true') return null;
-        input.dataset.catalogNumberEnhanced = 'true';
-        return new CatalogNumberInput(input);
-    }
-
-    createButton(label, delta, modifier) {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = `catalog-number__button ${modifier}`;
-        button.setAttribute('aria-label', label);
-        button.addEventListener('click', () => this.step(delta));
-        return button;
-    }
-
-    step(delta) {
-        const min = Number(this.input.min);
-        const max = Number(this.input.max);
-        const step = Number(this.input.step) || 1;
-        const fallback = delta > 0 ? min : max;
-        const current = Number(this.input.value);
-        const base = Number.isFinite(current) && current !== 0 ? current : fallback;
-        const next = Math.min(max, Math.max(min, base + delta * step));
-
-        if (Number.isFinite(next)) {
-            this.input.value = String(next);
-            this.input.dispatchEvent(new Event('change', { bubbles: true }));
-            this.input.focus();
-        }
-    }
-}
-
 class CatalogPage {
     constructor() {
         this.elements = {
@@ -259,12 +29,13 @@ class CatalogPage {
             country: document.getElementById('catalogCountry')
         };
 
-        this.customSelects = {
-            sort: CatalogSelect.enhance(this.elements.sort),
-            genre: CatalogSelect.enhance(this.elements.genre)
+        this.selectControls = {
+            sort: window.SortControl?.enhance(this.elements.sort),
+            genre: window.SortControl?.enhance(this.elements.genre)
         };
-        this.customNumberInputs = [this.elements.yearFrom, this.elements.yearTo]
-            .map(input => CatalogNumberInput.enhance(input));
+        this.yearRangeControl = RangeControl.enhance(this.elements.yearFrom, this.elements.yearTo, {
+            fromLabel: 'Год от', toLabel: 'Год до'
+        });
 
         this.state = this.readStateFromUrl();
         this.catalogService = new CatalogService();
@@ -364,7 +135,7 @@ class CatalogPage {
         if (!sortOptions.some(option => option.value === this.state.sort)) {
             this.state.sort = sortOptions[0]?.value || 'popularity.desc';
         }
-        this.customSelects?.sort?.setOptions(sortOptions);
+        this.selectControls?.sort?.setOptions(sortOptions);
         this.elements.title.textContent = config.title;
         this.elements.description.textContent = config.description;
         document.title = `${config.title} | Movie Rating Extension`;
@@ -379,10 +150,13 @@ class CatalogPage {
         this.elements.sort.value = this.state.sort;
         this.elements.yearFrom.value = this.state.yearFrom;
         this.elements.yearTo.value = this.state.yearTo;
+        this.yearRangeControl?.syncFromNative();
+        this.state.yearFrom = this.elements.yearFrom.value.trim();
+        this.state.yearTo = this.elements.yearTo.value.trim();
         this.elements.genre.value = this.state.genre;
         this.elements.country.value = this.state.country;
-        this.customSelects?.sort?.syncFromNative();
-        this.customSelects?.genre?.syncFromNative();
+        this.selectControls?.sort?.syncFromNative();
+        this.selectControls?.genre?.syncFromNative();
     }
 
     bindEvents() {
@@ -448,7 +222,8 @@ class CatalogPage {
     }
 
     async loadFirstPage(forceRefresh = false) {
-        if (this.isLoading) return;
+        // A new filter/sort supersedes any pending page, including load-more.
+        this.requestGeneration = (this.requestGeneration || 0) + 1;
         this.currentPage = 0;
         this.totalPages = 1;
         this.totalResults = 0;
@@ -469,6 +244,7 @@ class CatalogPage {
     }
 
     async loadPage(page, { replace = false, forceRefresh = false } = {}) {
+        const generation = this.requestGeneration;
         this.isLoading = true;
         this.setLoadingState(true);
         if (!replace) this.setStatus('');
@@ -479,6 +255,8 @@ class CatalogPage {
                 this.getQuery(page),
                 { forceRefresh }
             );
+
+            if (generation !== this.requestGeneration) return;
 
             if (replace) this.elements.grid.innerHTML = '';
             const newItems = result.items.filter(item => {
@@ -498,6 +276,7 @@ class CatalogPage {
             this.elements.loadMore.hidden = !this.hasMorePages();
             this.setStatus(result.isStale ? 'Показана сохранённая версия. Обновление источника временно недоступно.' : '');
         } catch (error) {
+            if (generation !== this.requestGeneration) return;
             console.error('[CatalogPage] Failed to load catalogue page:', error);
             if (replace) {
                 this.elements.grid.innerHTML = '';
@@ -509,8 +288,10 @@ class CatalogPage {
                 this.elements.loadMore.hidden = false;
             }
         } finally {
-            this.isLoading = false;
-            this.setLoadingState(false);
+            if (generation === this.requestGeneration) {
+                this.isLoading = false;
+                this.setLoadingState(false);
+            }
         }
     }
 
@@ -570,7 +351,3 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 if (typeof window !== 'undefined') window.CatalogPage = CatalogPage;
-if (typeof window !== 'undefined') window.CatalogSelect = CatalogSelect;
-if (typeof globalThis !== 'undefined') globalThis.CatalogSelect = CatalogSelect;
-if (typeof window !== 'undefined') window.CatalogNumberInput = CatalogNumberInput;
-if (typeof globalThis !== 'undefined') globalThis.CatalogNumberInput = CatalogNumberInput;

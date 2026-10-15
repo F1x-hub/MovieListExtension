@@ -115,7 +115,7 @@ class SearchManager {
     }
 
     async handleSettingsUpdate(settings) {
-        if (settings.language && settings.language !== i18n.currentLocale) {
+        if (settings.language && settings.language !== this._filterLocale) {
             await i18n.init();
             i18n.translatePage();
             
@@ -218,7 +218,7 @@ class SearchManager {
         
         // Search History
         if (this.elements.clearHistoryBtn) {
-            this.elements.clearHistoryBtn.addEventListener('mousedown', (e) => {
+            this.elements.clearHistoryBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.clearSearchHistory();
             });
@@ -231,13 +231,13 @@ class SearchManager {
             }
         });
         if (this.elements.toggleFiltersBtn) {
-            this.elements.toggleFiltersBtn.addEventListener('mousedown', () => this.toggleFilters());
+            this.elements.toggleFiltersBtn.addEventListener('click', () => this.toggleFilters());
         }
         if (this.elements.clearFiltersBtn) {
-            this.elements.clearFiltersBtn.addEventListener('mousedown', () => this.clearFilters());
+            this.elements.clearFiltersBtn.addEventListener('click', () => this.clearFilters());
         }
         if (this.elements.applyFiltersBtn) {
-            this.elements.applyFiltersBtn.addEventListener('mousedown', () => this.applyFilters());
+            this.elements.applyFiltersBtn.addEventListener('click', () => this.applyFilters());
         }
         
         // Infinite scroll observer & scroll event listener (circuit breaker reset)
@@ -512,6 +512,9 @@ class SearchManager {
                 return;
             }
 
+            this.initializeFilters();
+            this.loadFilterState();
+
             if (query) {
                 routeOwnsResults = true;
                 this.elements.searchInput.value = query;
@@ -520,9 +523,6 @@ class SearchManager {
                 await this.searchMovies();
                 return;
             }
-
-            this.initializeFilters();
-            this.loadFilterState();
         } catch (error) {
             console.error('[SearchInit] Failed to initialize search page:', error);
             Utils.showToast(i18n.get('search.error_generic'), 'error');
@@ -709,83 +709,65 @@ class SearchManager {
     }
 
     initializeFilters() {
-        // Set current year as default max for year range
-        const currentYear = new Date().getFullYear();
-        this.elements.yearToFilter.value = currentYear;
-        
-        // Get genres from locales
-        const genres = Object.entries(i18n.locales.ru.random.genres).map(([key, val]) => ({
-            key,
-            label: i18n.get(`random.genres.${key}`)
-        }));
-        
-        this.elements.genreCheckboxes.innerHTML = '';
-        genres.forEach(({ key, label }) => {
-            const checkboxItem = this.createCheckboxItem(`genre-${key}`, label, label);
-            this.elements.genreCheckboxes.appendChild(checkboxItem);
+        this._filterLocale = i18n.currentLocale;
+        const previous = new Map();
+        for (const container of [this.elements.genreCheckboxes, this.elements.countryCheckboxes]) {
+            container.querySelectorAll('[data-filter-id]').forEach(item =>
+                previous.set(item.dataset.filterId, item.dataset.filterState));
+        }
+        if (!this._filtersInitialized) {
+            this.elements.yearToFilter.value = new Date().getFullYear();
+            this._filtersInitialized = true;
+        }
+        const options = DiscoveryFilters.getOptions(i18n);
+        const labels = this.getFilterStateLabels();
+        const legendLabels = this.getFilterStateLegendLabels();
+        let legendId = null;
+        for (const [name, prefix, container, captionKey] of [
+            ['genres', 'genre', this.elements.genreCheckboxes, 'search.genres'],
+            ['countries', 'country', this.elements.countryCheckboxes, 'search.countries']
+        ]) {
+            container.replaceChildren(...options[name].map(option => {
+                const id = `${prefix}-${option.labelKey.split('.').at(-1)}`;
+                const item = this.createCheckboxItem(id, option.value, option.label);
+                FilterChoice.setState(item, previous.get(id) || 'neutral');
+                return item;
+            }));
+            FilterChoice.enhanceGroup(container, {
+                label: i18n.get(captionKey), labels,
+                legendLabels,
+                showLegend: legendId === null, legendId, compactLimit: 6,
+                moreLabel: i18n.get('filter_controls.more'), lessLabel: i18n.get('filter_controls.less')
+            });
+            legendId ||= container.querySelector('.filter-choices__legend')?.id || null;
+            FilterChoice.enhanceSummary(container, {
+                empty: i18n.get('filter_controls.any'),
+                include: i18n.get('filter_controls.included_count'),
+                exclude: i18n.get('filter_controls.excluded_count')
+            });
+        }
+        this.yearRange = RangeControl.enhance(this.elements.yearFromFilter, this.elements.yearToFilter, {
+            fromLabel: `${i18n.get('search.year_range')} ${i18n.get('search.from')}`,
+            toLabel: `${i18n.get('search.year_range')} ${i18n.get('search.to')}`
         });
-        
-        // Get countries from locales
-        const countries = Object.entries(i18n.locales.ru.random.countries).map(([key, val]) => ({
-            key,
-            label: i18n.get(`random.countries.${key}`)
-        }));
-        
-        this.elements.countryCheckboxes.innerHTML = '';
-        countries.forEach(({ key, label }) => {
-            const checkboxItem = this.createCheckboxItem(`country-${key}`, label, label);
-            this.elements.countryCheckboxes.appendChild(checkboxItem);
-        });
+        this.yearRange.syncFromNative();
+    }
+
+    getFilterStateLabels() {
+        return Object.fromEntries(['neutral', 'include', 'exclude'].map(state =>
+            [state, i18n.get(`random.tag_states.${state}`)]));
+    }
+
+    getFilterStateLegendLabels() {
+        return Object.fromEntries(['neutral', 'include', 'exclude'].map(state =>
+            [state, i18n.get(`random.tag_state_legend.${state}`)]));
     }
 
     createCheckboxItem(id, value, label) {
-        const item = document.createElement('div');
-        item.className = 'checkbox-item';
-        item.setAttribute('data-filter-state', 'neutral'); // neutral, include, exclude
-        item.setAttribute('data-filter-value', value);
-        item.setAttribute('data-filter-id', id);
-        
-        // Hidden checkbox for backward compatibility
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.id = id;
-        checkbox.value = value;
-        checkbox.style.display = 'none';
-        
-        const labelEl = document.createElement('label');
-        labelEl.htmlFor = id;
-        labelEl.textContent = label;
-        
-        item.appendChild(checkbox);
-        item.appendChild(labelEl);
-        
-        // Three-state toggle on click
-        item.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            const currentState = item.getAttribute('data-filter-state');
-            let newState;
-            
-            // Cycle through states: neutral → include → exclude → neutral
-            if (currentState === 'neutral') {
-                newState = 'include';
-                item.classList.add('filter-include');
-                item.classList.remove('filter-exclude', 'selected');
-                checkbox.checked = true;
-            } else if (currentState === 'include') {
-                newState = 'exclude';
-                item.classList.add('filter-exclude');
-                item.classList.remove('filter-include', 'selected');
-                checkbox.checked = false;
-            } else { // exclude
-                newState = 'neutral';
-                item.classList.remove('filter-include', 'filter-exclude', 'selected');
-                checkbox.checked = false;
-            }
-            item.setAttribute('data-filter-state', newState);
-        });
-        
+        const item = FilterChoice.create({ id, value, label, className: 'checkbox-item',
+            labels: this.getFilterStateLabels() });
+        item.dataset.filterId = id;
+        item.dataset.filterValue = value;
         return item;
     }
 
@@ -3052,31 +3034,21 @@ class SearchManager {
     toggleFilters() {
         const isVisible = this.elements.filters.style.display !== 'none';
         this.elements.filters.style.display = isVisible ? 'none' : 'grid';
-        this.elements.toggleFiltersBtn.textContent = isVisible ? i18n.get('search.filters_btn') : i18n.get('search.filters_btn').replace('Filters', 'Hide Filters').replace('Фильтры', 'Скрыть фильтры');
+        this.elements.toggleFiltersBtn.setAttribute('aria-expanded', String(!isVisible));
+        this.elements.toggleFiltersBtn.setAttribute('aria-controls', 'filters');
+        const label = this.elements.toggleFiltersBtn.querySelector('[data-i18n="search.filters_btn"]');
+        if (label) label.textContent = i18n.get('search.filters_btn');
     }
 
     clearFilters() {
         this.elements.yearFromFilter.value = '';
         this.elements.yearToFilter.value = '';
-        
-        // Reset all genre filters to neutral state
-        this.elements.genreCheckboxes.querySelectorAll('.checkbox-item').forEach(item => {
-            item.setAttribute('data-filter-state', 'neutral');
-            item.classList.remove('filter-include', 'filter-exclude', 'selected');
-            const checkbox = item.querySelector('input[type="checkbox"]');
-            if (checkbox) checkbox.checked = false;
-        });
-        
-        // Reset all country filters to neutral state
-        this.elements.countryCheckboxes.querySelectorAll('.checkbox-item').forEach(item => {
-            item.setAttribute('data-filter-state', 'neutral');
-            item.classList.remove('filter-include', 'filter-exclude', 'selected');
-            const checkbox = item.querySelector('input[type="checkbox"]');
-            if (checkbox) checkbox.checked = false;
-        });
-        
-        // Clear saved filter state
-        this.clearFilterState();
+        this.yearRange?.syncFromNative();
+        for (const container of [this.elements.genreCheckboxes, this.elements.countryCheckboxes]) {
+            container.querySelectorAll('.checkbox-item').forEach(item => FilterChoice.setState(item, 'neutral'));
+        }
+        // Persist open bounds as empty values rather than reviving the initial default.
+        this.saveFilterState();
     }
 
     applyFilters() {
@@ -3088,6 +3060,7 @@ class SearchManager {
     }
 
     getSelectedFilters() {
+        this.yearRange?.syncFromNative();
         const filters = {
             yearFrom: this.elements.yearFromFilter.value ? parseInt(this.elements.yearFromFilter.value) : null,
             yearTo: this.elements.yearToFilter.value ? parseInt(this.elements.yearToFilter.value) : null,
@@ -3229,43 +3202,19 @@ class SearchManager {
         try {
             const savedState = localStorage.getItem('movieSearchFilters');
             if (!savedState) return;
-            
             const filterState = JSON.parse(savedState);
-            
-            // Restore year range
-            if (filterState.yearFrom) this.elements.yearFromFilter.value = filterState.yearFrom;
-            if (filterState.yearTo) this.elements.yearToFilter.value = filterState.yearTo;
-            
-            // Restore genre filters
-            if (filterState.genres) {
-                filterState.genres.forEach(savedFilter => {
-                    const item = this.elements.genreCheckboxes.querySelector(`[data-filter-id="${savedFilter.id}"]`);
-                    if (item && savedFilter.state) {
-                        item.setAttribute('data-filter-state', savedFilter.state);
-                        item.classList.remove('filter-include', 'filter-exclude');
-                        if (savedFilter.state === 'include') {
-                            item.classList.add('filter-include');
-                        } else if (savedFilter.state === 'exclude') {
-                            item.classList.add('filter-exclude');
-                        }
-                    }
-                });
+            if (!filterState || typeof filterState !== 'object' || Array.isArray(filterState)) return;
+            for (const [key, input] of [['yearFrom', this.elements.yearFromFilter], ['yearTo', this.elements.yearToFilter]]) {
+                if (Object.hasOwn(filterState, key)) input.value = filterState[key] ?? '';
             }
-            
-            // Restore country filters
-            if (filterState.countries) {
-                filterState.countries.forEach(savedFilter => {
-                    const item = this.elements.countryCheckboxes.querySelector(`[data-filter-id="${savedFilter.id}"]`);
-                    if (item && savedFilter.state) {
-                        item.setAttribute('data-filter-state', savedFilter.state);
-                        item.classList.remove('filter-include', 'filter-exclude');
-                        if (savedFilter.state === 'include') {
-                            item.classList.add('filter-include');
-                        } else if (savedFilter.state === 'exclude') {
-                            item.classList.add('filter-exclude');
-                        }
-                    }
-                });
+            this.yearRange?.syncFromNative();
+            for (const [key, container] of [['genres', this.elements.genreCheckboxes], ['countries', this.elements.countryCheckboxes]]) {
+                for (const saved of Array.isArray(filterState[key]) ? filterState[key] : []) {
+                    // Stable IDs migrate older localized values without altering provider data.
+                    const item = Array.from(container.querySelectorAll('.checkbox-item'))
+                        .find(choice => choice.dataset.filterId === saved?.id);
+                    if (item) FilterChoice.setState(item, saved.state);
+                }
             }
         } catch (error) {
             console.error('Error loading filter state:', error);

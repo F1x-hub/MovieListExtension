@@ -5,11 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Movie Search - Movie Rating Extension</title>
     <link rel="stylesheet" href="../../shared/styles/common.css">
+    <script defer src="../../shared/components/NumberStepper.js"></script>
     <link rel="stylesheet" href="../../shared/styles/theme.css">
     <link rel="stylesheet" href="../../shared/styles/components.css">
     <link rel="stylesheet" href="../../shared/styles/navigation.css">
     <link rel="stylesheet" href="../../shared/styles/router.css">
     <link rel="stylesheet" href="../../shared/styles/search.css">
+    <link rel="stylesheet" href="../../shared/styles/filter-controls.css">
     <link rel="stylesheet" href="../../shared/styles/poster-fixes.css">
     <link rel="stylesheet" href="../../shared/styles/movie-card.css">
     <link rel="stylesheet" href="../../shared/styles/player.css">
@@ -53,7 +55,7 @@
                         <div id="searchHistoryDropdown" class="search-history-dropdown" style="display: none;">
                             <div class="search-history-header">
                                 <span class="history-title" data-i18n="search.recent_searches">Recent Searches</span>
-                                <button id="clearHistoryBtn" class="clear-history-btn" data-i18n="search.clear_history" title="Clear all history">
+                                <button type="button" id="clearHistoryBtn" class="clear-history-btn" data-i18n="[title]search.clear_history" title="Clear all history">
                                     <span class="clear-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></span>
                                 </button>
                             </div>
@@ -67,42 +69,48 @@
                         </div>
                     </div>
 
-                    <button id="toggleFiltersBtn" class="btn btn-outline btn-filters" data-i18n="search.filters_btn">
+                    <button type="button" id="toggleFiltersBtn" class="btn btn-outline btn-filters" aria-expanded="false" aria-controls="filters">
                         <span class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg></span>
-                        <span data-i18n="search.filters_label">Фильтры</span>
+                        <span data-i18n="search.filters_btn">Фильтры</span>
                     </button>
 
-                    <button type="button" id="searchBtn" class="btn btn-accent btn-search" data-i18n="search.search_btn">
+                    <button type="button" id="searchBtn" class="btn btn-accent btn-search">
                         <span class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></span>
-                        <span>Поиск</span>
+                        <span data-i18n="search.search_btn">Поиск</span>
                     </button>
                 </div>
 
                 <!-- Filters -->
-                <div class="filters" id="filters" style="display: none;">
+                <div class="filters filter-panel" id="filters" style="display: none;">
                     <div class="filter-section">
-                        <div class="filter-group year-range-group">
+                        <div class="filter-group filter-section year-range-group">
                             <label class="filter-label" data-i18n="search.year_range">Year Range:</label>
                             <div class="year-range-inputs">
-                                <input type="number" id="yearFromFilter" class="form-input year-input" data-i18n="search.from" placeholder="From" min="1900" max="2030">
+                                <input type="number" id="yearFromFilter" class="form-input year-input" data-i18n="[placeholder]search.from" placeholder="From" min="1900" max="2030">
                                 <span class="year-separator">—</span>
-                                <input type="number" id="yearToFilter" class="form-input year-input" data-i18n="search.to" placeholder="To" min="1900" max="2030">
+                                <input type="number" id="yearToFilter" class="form-input year-input" data-i18n="[placeholder]search.to" placeholder="To" min="1900" max="2030">
                             </div>
                         </div>
 
-                        <div class="filter-group">
-                            <label class="filter-label" data-i18n="search.genres">Genres:</label>
-                            <div class="checkbox-grid" id="genreCheckboxes"></div>
-                        </div>
+                        <details class="filter-disclosure" id="genreFilterSection">
+                            <summary class="filter-disclosure__summary disclosure-summary">
+                                <span class="filter-disclosure__label" data-i18n="search.genres">Genres</span>
+                                <span class="filter-disclosure__selection"></span>
+                            </summary>
+                            <div class="filter-disclosure__content"><div id="genreCheckboxes"></div></div>
+                        </details>
 
-                        <div class="filter-group">
-                            <label class="filter-label" data-i18n="search.countries">Countries:</label>
-                            <div class="checkbox-grid" id="countryCheckboxes"></div>
-                        </div>
+                        <details class="filter-disclosure" id="countryFilterSection">
+                            <summary class="filter-disclosure__summary disclosure-summary">
+                                <span class="filter-disclosure__label" data-i18n="search.countries">Countries</span>
+                                <span class="filter-disclosure__selection"></span>
+                            </summary>
+                            <div class="filter-disclosure__content"><div id="countryCheckboxes"></div></div>
+                        </details>
 
                         <div class="filter-actions">
-                            <button id="clearFiltersBtn" class="btn btn-secondary btn-sm" data-i18n="search.clear_filters">Clear Filters</button>
-                            <button id="applyFiltersBtn" class="btn btn-accent btn-sm" data-i18n="search.apply_filters">Apply Filters</button>
+                            <button type="button" id="clearFiltersBtn" class="btn btn-secondary btn-sm" data-i18n="search.clear_filters">Clear Filters</button>
+                            <button type="button" id="applyFiltersBtn" class="btn btn-accent btn-sm" data-i18n="search.apply_filters">Apply Filters</button>
                         </div>
                     </div>
                 </div>
@@ -293,6 +301,8 @@
     <script defer src="../../shared/firestore.js"></script>
     <script defer src="../../shared/components/MovieCard.js"></script>
     <script defer src="../../shared/components/ConfirmDialog.js"></script>
+    <script defer src="../../shared/config/discoveryFilters.js"></script>
+    <script defer src="../../shared/components/FilterControls.js"></script>
     <script defer src="search.js" type="module"></script>
     <script defer src="../../shared/components/ReportWidget.js"></script>
 </body>

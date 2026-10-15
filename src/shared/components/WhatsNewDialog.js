@@ -216,16 +216,18 @@ export class WhatsNewDialog {
         if (!this.root) return;
         const closingRoot = this.root;
         const shouldAcknowledge = acknowledge && !this.preview;
+        // Enqueue persistence before exposing the closed surface to another
+        // automatic open. Focus/hidden semantics never wait for storage or motion.
+        const saving = shouldAcknowledge ? this.service.acknowledge().catch(error => {
+            console.warn('[WhatsNew] Could not save acknowledgement:', error);
+        }) : null;
         this.chrome.storage.onChanged.removeListener(this.onStorage);
         this.unsubscribe?.();
         this.document.defaultView.removeEventListener('pagehide', this.onPageHide);
         this.animateExit(closingRoot);
         closingRoot.remove(); this.root = null;
         if (restoreFocus && this.trigger?.isConnected) this.trigger.focus();
-        if (shouldAcknowledge) {
-            try { await this.service.acknowledge(); }
-            catch (error) { console.warn('[WhatsNew] Could not save acknowledgement:', error); }
-        }
+        if (saving) await saving;
     }
     animateExit(root) {
         const view = this.document.defaultView;

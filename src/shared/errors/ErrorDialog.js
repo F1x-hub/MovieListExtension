@@ -22,7 +22,7 @@
                     <h2 class="app-error-dialog__title" id="appErrorDialogTitle"></h2>
                     <p class="app-error-dialog__message" id="appErrorDialogMessage"></p>
                     <details class="app-error-dialog__details">
-                        <summary></summary>
+                        <summary class="disclosure-summary"></summary>
                         <pre></pre>
                     </details>
                     <div class="app-error-dialog__actions">
