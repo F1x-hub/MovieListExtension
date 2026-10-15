@@ -7,6 +7,7 @@
     
     <!-- Styles -->
     <link rel="stylesheet" href="../../shared/styles/common.css">
+    <script defer src="../../shared/components/NumberStepper.js"></script>
     <link rel="stylesheet" href="../../shared/styles/theme.css">
     <link rel="stylesheet" href="../../shared/styles/components.css">
     <link rel="stylesheet" href="../../shared/styles/navigation.css">
@@ -14,6 +15,7 @@
     <link rel="stylesheet" href="../../shared/styles/search.css">
     <link rel="stylesheet" href="../../shared/styles/movie-card.css">
     <link rel="stylesheet" href="../../shared/styles/favorites.css">
+    <link rel="stylesheet" href="../../shared/styles/filter-controls.css">
     
     <!-- Resource Hints -->
     <link rel="preload" as="script" href="../../../libs/firebase-app-compat.js">
@@ -39,7 +41,7 @@
             </div>
 
             <!-- Filters Section -->
-            <div class="filters-section">
+            <div class="filters-section filter-panel">
                 <div class="filters-header">
                     <h3 class="filters-title">Filters & Search</h3>
                 </div>
@@ -56,37 +58,19 @@
 
                     <!-- Sort Options -->
                     <div class="filter-group">
-                        <label class="filter-label">Sort By</label>
-                        <div class="custom-dropdown" data-dropdown="sortFilter">
-                            <button type="button" class="dropdown-trigger" id="sortFilterTrigger">
-                                <span class="dropdown-value">Date Added (Newest)</span>
-                                <span class="dropdown-arrow"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
-                            </button>
-                            <div class="dropdown-list" id="sortFilterList">
-                                <div class="dropdown-option" data-value="favoritedAt-desc">Date Added (Newest)</div>
-                                <div class="dropdown-option" data-value="favoritedAt-asc">Date Added (Oldest)</div>
-                                <div class="dropdown-option" data-value="rating-desc">My Rating (High to Low)</div>
-                                <div class="dropdown-option" data-value="rating-asc">My Rating (Low to High)</div>
-                                <div class="dropdown-option" data-value="watchedDate-desc">Watched Date (Newest)</div>
-                                <div class="dropdown-option" data-value="watchedDate-asc">Watched Date (Oldest)</div>
-                                <div class="dropdown-option" data-value="movieTitle-asc">Title (A-Z)</div>
-                                <div class="dropdown-option" data-value="movieTitle-desc">Title (Z-A)</div>
-                                <div class="dropdown-option" data-value="releaseYear-desc">Year (Newest)</div>
-                                <div class="dropdown-option" data-value="releaseYear-asc">Year (Oldest)</div>
-                            </div>
-                            <select class="filter-select-hidden" id="sortFilter">
-                                <option value="favoritedAt-desc">Date Added (Newest)</option>
-                                <option value="favoritedAt-asc">Date Added (Oldest)</option>
-                                <option value="rating-desc">My Rating (High to Low)</option>
-                                <option value="rating-asc">My Rating (Low to High)</option>
-                                <option value="watchedDate-desc">Watched Date (Newest)</option>
-                                <option value="watchedDate-asc">Watched Date (Oldest)</option>
-                                <option value="movieTitle-asc">Title (A-Z)</option>
-                                <option value="movieTitle-desc">Title (Z-A)</option>
-                                <option value="releaseYear-desc">Year (Newest)</option>
-                                <option value="releaseYear-asc">Year (Oldest)</option>
-                            </select>
-                        </div>
+                        <label class="filter-label" for="sortFilter" data-i18n="ratings.filters.sort">Sort By</label>
+                        <select id="sortFilter" data-sort-control>
+                            <option value="favoritedAt-desc" data-i18n="ratings.sort.date_newest">Date Added (Newest)</option>
+                            <option value="favoritedAt-asc" data-i18n="ratings.sort.date_oldest">Date Added (Oldest)</option>
+                            <option value="rating-desc" data-i18n="ratings.sort.rating_high">My Rating (High to Low)</option>
+                            <option value="rating-asc" data-i18n="ratings.sort.rating_low">My Rating (Low to High)</option>
+                            <option value="watchedDate-desc" data-i18n="ratings.sort.watched_newest">Watched Date (Newest)</option>
+                            <option value="watchedDate-asc" data-i18n="ratings.sort.watched_oldest">Watched Date (Oldest)</option>
+                            <option value="movieTitle-asc" data-i18n="ratings.sort.title_az">Title (A-Z)</option>
+                            <option value="movieTitle-desc" data-i18n="ratings.sort.title_za">Title (Z-A)</option>
+                            <option value="releaseYear-desc" data-i18n="ratings.sort.year_newest">Year (Newest)</option>
+                            <option value="releaseYear-asc" data-i18n="ratings.sort.year_oldest">Year (Oldest)</option>
+                        </select>
                     </div>
                 </div>
             </div>
@@ -265,6 +249,7 @@
     <script defer src="../../shared/components/Router.js"></script>
 
     <!-- Main Script -->
+    <script defer src="../../shared/components/SortControl.js"></script>
     <script defer src="favorites.js"></script>
     <script defer src="../../shared/components/ReportWidget.js"></script>
 </body>

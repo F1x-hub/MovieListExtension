@@ -6,6 +6,7 @@ const files = {
     theme: 'src/shared/styles/theme.css',
     common: 'src/shared/styles/common.css',
     components: 'src/shared/styles/components.css',
+    filterControls: 'src/shared/styles/filter-controls.css',
     home: 'src/pages/home/home.css',
     catalog: 'src/pages/catalog/catalog.css',
 };
@@ -107,6 +108,7 @@ assertOnlyApprovedHexes(files.tokens, true);
 assertOnlyApprovedHexes(files.theme, false);
 assertOnlyApprovedHexes(files.common, true);
 assertOnlyApprovedHexes(files.components, true);
+assertOnlyApprovedHexes(files.filterControls, true);
 assertOnlyApprovedHexes(files.home, true);
 assertOnlyApprovedHexes(files.catalog, false);
 

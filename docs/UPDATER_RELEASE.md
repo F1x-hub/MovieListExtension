@@ -51,6 +51,10 @@ To publish a version:
 3. Push the tag. `.github/workflows/release.yml` builds the extension, removes local
    configuration, publishes the self-contained setup executable, and signs the
    immutable release metadata.
+   The workflow installs Chromium before browser regressions and builds the
+   GitHub release description from that exact version's README changelog block
+   with `scripts/create-release-notes.cjs`; it preserves the project's headings
+   and links to the previous version's comparison instead of generating commit noise.
 4. Give users `MovieListSetup.exe` for the one-time connection. They select the
    folder containing `manifest.json`, then load that same folder in Chrome.
    If Chrome was already open while setup registered the Native Messaging host,

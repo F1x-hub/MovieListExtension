@@ -44,6 +44,56 @@ pattern in addition to color. Color must never be the only carrier of meaning.
 
 ## Token ownership
 
+Sorting uses `src/shared/components/SortControl.js` and the `.sort-control`
+rules in `components.css`. Enhance a labelled native select; keep its option
+values, persistence and ordering logic in the owning page. Selected labels and
+options wrap without truncation. Use `setValue` for silent state restoration,
+`setOptions` for category-dependent choices, and `setDisabled` with a visible
+reason for range-filter locks. A committed selection emits one native change.
+Menus stay within the viewport and the owning modal dialog; keyboard navigation
+uses a select-only combobox with Escape cancellation and Tab commitment.
+
+Filtering uses `src/shared/components/FilterControls.js` and
+`src/shared/styles/filter-controls.css`. Use `FilterChoice` for page-owned
+include/exclude cycles and single-choice groups; keep values, persistence and
+filtering rules in the page. A tri-state choice is a real button with visible
+check/cross states and a shared cycle legend. Use `RangeControl` to normalize
+paired numeric bounds or multi-thumb ranges; provide a label for each bound,
+preserve the native controls as the source of truth, and pass the page's existing
+step and minimum-gap rules. One committed range change calls the page callback
+once, while restore and localization updates remain silent.
+Discovery panels use a 20px radius; their header/body own padding once. Choices
+use 44px pill targets. Range inputs display one pair of integrated numeric bounds
+before the slider rather than duplicate value rows. The inline range variant
+fits beside sorting on wide Rated layouts and stacks on narrow screens.
+Pass `compactLimit`, `moreLabel` and `lessLabel` to `FilterChoice.enhanceGroup`
+for long discovery lists. Below 600px, neutral overflow choices collapse behind
+one localized disclosure; included/excluded choices remain visible. Disclosure
+preserves values, expanded state and keyboard focus across updates.
+Search wraps genre/country choices in native `details` with project chevrons;
+`FilterChoice.enhanceSummary` keeps the closed header's include/exclude summary
+in sync with selection, restore, reset and localization. Groups start closed so
+opening filters does not push results below a full reference list.
+`common.css` removes OS numeric spin buttons and native select/details arrows.
+Numeric keyboard editing stays native; select indicators use one neutral custom
+chevron, while `disclosure-summary` provides the shared details indicator. Existing
+specialized chart and game disclosures keep their own custom indicators.
+`NumberStepper.js` enhances numeric inputs on every extension page, including
+dynamic fields, with compact increase/decrease buttons inset inside the input.
+Their two rows derive from the input height, rather than a fixed block that can
+extend past a shorter field. The original input
+still owns step, bounds and validation; custom steps emit native input/change
+events, preserve input focus, and respect disabled/read-only state. Range editors
+sync the buttons against their current paired constraints. Arrow keys remain
+the numeric input's keyboard interaction.
+`npm run test:filter-controls-browser` checks paired keyboard focus, contextual
+numeric names, and pointer/touch access to both slider handles at their minimum
+gap in Chromium.
+`npm run test:filter-controls-layout` checks real Random, Search and Rated markup
+and styles at 320, 390, 768 and 1440px in both themes, including mobile disclosure
+and focus restoration, plus plain Admin/Settings selects under theme background
+overrides. Set `FILTER_CAPTURE_DIR` to save screenshots from that run.
+
 `src/shared/styles/tokens.css` is the canonical owner of semantic `--ui-*`
 roles. Use roles such as page/surface/content/border/interactive/control and
 button roles instead of raw colors. `src/shared/styles/theme.css` provides the
@@ -119,6 +169,33 @@ semantics, rapid reopen, toast replacement timers, cached/slow/error image loads
 stale decode, and reduced motion in both themes. These are Chromium fixtures,
 not proof of the installed extension or real provider behavior.
 
+Home applies one 25ms stagger to at most six initially visible cards per grid,
+capped at 120ms. Refreshes and below-viewport cards do not replay it. Random's
+decorative glow, float, shimmer and poster motion have finite cycles; wheel,
+audio and game simulation keep their own owners. GamesModal motion belongs to
+its overlay, surface and game-content boundary, never the game loop.
+
+Image reveal uses one document observer and capture-phase image load/error
+handlers rather than one observer per card. Roots/images are registered weakly;
+source generations still reject stale decode work and artwork fallbacks remain
+owned by the component. A source that has loaded once is marked ready
+immediately on later renders, with no fade, so re-created card markup matches
+the previous markup and owners that diff card HTML (Ratings) do not blink.
+Lightbox navigation and report preview reads likewise
+invalidate old work on replacement or close. Release-note acknowledgement starts
+before semantic dialog removal; automatic-open decisions share the storage
+serialization boundary and never wait for decorative exit.
+
+The P2 Chromium fixtures (`motionP2DecorationBrowserSmoke.cjs`, `motionP2SurfacesBrowserSmoke.cjs` and
+`motionP2ImageAckSmoke.cjs`)
+exercise surface lifecycles, image/ack behavior, reduced motion and bounded decoration.
+Synthetic timings are regression evidence, not installed-extension frame-rate
+or production-network measurements.
+
+Cross-context acknowledgement serialization requires Web Locks. Its fallback
+queues operations sharing the same storage object within one JavaScript context;
+it does not provide a cross-tab lock in browsers without that API.
+
 ## CSS ownership
 
 Each generic visual primitive has one owner:
@@ -127,6 +204,7 @@ Each generic visual primitive has one owner:
 | --- | --- |
 | Base tokens and theme roles | `src/shared/styles/tokens.css` and `theme.css` |
 | Buttons, modals, dropdowns, menus, tooltips, popovers | `src/shared/styles/components.css` |
+| Filter choices, ranges and discovery panels | `src/shared/components/FilterControls.js` and `src/shared/styles/filter-controls.css` |
 | Movie cards | `src/shared/styles/movie-card.css` and `MovieCard.js` |
 | Navigation | `src/shared/styles/navigation.css` and `Navigation.js` |
 | Player geometry and overlays | `src/shared/styles/player.css` |

@@ -368,7 +368,7 @@ export class GamesModal {
             '[tabindex]:not([tabindex="-1"])'
         ].join(', ');
         return [...scope.querySelectorAll(selector)].filter(element => (
-            !element.closest('[hidden]') && element.getClientRects().length > 0
+            !element.closest('[hidden]') && !element.closest('[inert]') && element.getClientRects().length > 0
         ));
     }
 
@@ -402,6 +402,19 @@ export class GamesModal {
 
         this.updateSidebarLabels();
         this.startNewGame();
+        this.revealView(playView);
+    }
+
+    revealView(view) {
+        this.viewAnimation?.cancel();
+        this.viewAnimation = null;
+        if (!view || typeof view.animate !== 'function'
+            || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+        const styles = getComputedStyle(view);
+        this.viewAnimation = view.animate([{ opacity: 0 }, { opacity: 1 }], {
+            duration: parseFloat(styles.getPropertyValue('--motion-duration-base')) || 180,
+            easing: styles.getPropertyValue('--motion-ease-out').trim() || 'ease-out'
+        });
     }
 
     showGameMenu() {
@@ -423,6 +436,7 @@ export class GamesModal {
             tab.classList.remove('active');
             tab.setAttribute('aria-selected', 'false');
         });
+        this.revealView(menu);
     }
 
     controlRows(rows) {
@@ -632,6 +646,8 @@ export class GamesModal {
         }
 
         this.previouslyFocused = document.activeElement;
+        this.overlay.inert = false;
+        this.overlay.setAttribute('aria-hidden', 'false');
         this.overlay.classList.add('active');
         document.addEventListener('keydown', this.keyHandler);
         document.addEventListener('keyup', this.keyUpHandler);
@@ -663,12 +679,18 @@ export class GamesModal {
         if (continueButton) continueButton.hidden = !showContinue;
         if (restartButton) restartButton.hidden = !showRestart;
         overlay.style.display = 'flex';
+        overlay.inert = false;
+        overlay.setAttribute('aria-hidden', 'false');
         (showContinue ? continueButton : showRestart ? restartButton : null)?.focus({ preventScroll: true });
     }
 
     hideOverlay() {
         const overlay = document.getElementById('gameOverlay');
-        if (overlay) overlay.style.display = 'none';
+        if (overlay) {
+            overlay.style.display = 'none';
+            overlay.inert = true;
+            overlay.setAttribute('aria-hidden', 'true');
+        }
     }
 
     continueAfterWin() {
@@ -776,7 +798,11 @@ export class GamesModal {
         this.hideCloseConfirm({ resume: false });
         if (this.overlay) {
             this.overlay.classList.remove('active');
+            this.overlay.inert = true;
+            this.overlay.setAttribute('aria-hidden', 'true');
         }
+        this.viewAnimation?.cancel();
+        this.viewAnimation = null;
         document.removeEventListener('keydown', this.keyHandler);
         document.removeEventListener('keyup', this.keyUpHandler);
         window.removeEventListener('blur', this.blurHandler);

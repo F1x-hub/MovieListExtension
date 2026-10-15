@@ -439,6 +439,8 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
             this.modalReturnFocus.set(modal, document.activeElement);
         }
         modal.style.display = 'flex';
+        modal.hidden = false;
+        modal.inert = false;
         const target = initialFocus || modal.querySelector(FOCUSABLE_SELECTOR);
         if (target && typeof target.focus === 'function') target.focus();
     }
@@ -446,6 +448,8 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
     hideModal(modal) {
         if (!modal) return;
         modal.style.display = 'none';
+        modal.hidden = true;
+        modal.inert = true;
         const returnFocus = this.modalReturnFocus.get(modal);
         this.modalReturnFocus.delete(modal);
         if (returnFocus && returnFocus.isConnected && typeof returnFocus.focus === 'function') {

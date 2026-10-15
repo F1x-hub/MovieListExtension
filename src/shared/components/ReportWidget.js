@@ -18,6 +18,7 @@ class ReportWidget {
         this.reportContext = null;
 
         this.selectedFile = null;
+        this.previewGeneration = 0;
         this.MAX_CHARS = 5000;
         this.MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
@@ -95,6 +96,7 @@ class ReportWidget {
     bindElements() {
         this.container = document.getElementById('reportWidgetContainer');
         this.drawer = document.getElementById('reportWidgetDrawer');
+        this.drawer.inert = true;
         this.overlay = document.getElementById('reportWidgetOverlay');
         this.triggerBtn = document.getElementById('reportWidgetBtn');
         this.closeBtn = document.getElementById('reportWidgetCloseBtn');
@@ -184,18 +186,18 @@ class ReportWidget {
             ? document.activeElement
             : this.triggerBtn;
         this.drawer.classList.add('open');
+        this.drawer.inert = false;
         this.overlay.classList.add('visible');
         this.drawer.setAttribute('aria-hidden', 'false');
         this.overlay.setAttribute('aria-hidden', 'false');
         this.triggerBtn.setAttribute('aria-expanded', 'true');
         this.triggerBtn.style.display = 'none';
         this.clearMessage();
+        if (this.pendingPreviewFile && this.pendingPreviewFile === this.selectedFile) {
+            this.processFile(this.pendingPreviewFile);
+        }
         
-        setTimeout(() => {
-            if (this.drawer.classList.contains('open')) {
-                this.textarea.focus();
-            }
-        }, 100);
+        this.textarea.focus();
     }
 
     openForContext(context) {
@@ -211,7 +213,9 @@ class ReportWidget {
     }
 
     closeDrawer() {
+        this.previewGeneration++;
         this.drawer.classList.remove('open');
+        this.drawer.inert = true;
         this.overlay.classList.remove('visible');
         this.drawer.setAttribute('aria-hidden', 'true');
         this.overlay.setAttribute('aria-hidden', 'true');
@@ -284,13 +288,25 @@ class ReportWidget {
         }
 
         this.selectedFile = file;
+        this.pendingPreviewFile = file;
+        const generation = ++this.previewGeneration;
         this.clearMessage();
 
         const reader = new FileReader();
         reader.onload = (event) => {
+            if (generation !== this.previewGeneration || this.selectedFile !== file) return;
+            this.pendingPreviewFile = null;
             this.previewImg.src = event.target.result;
             this.previewContainer.style.display = 'block';
+            this.previewContainer.inert = false;
             this.fileLabelText.textContent = 'Заменить скриншот';
+        };
+        reader.onerror = () => {
+            if (generation !== this.previewGeneration || this.selectedFile !== file) return;
+            this.pendingPreviewFile = null;
+            this.previewContainer.style.display = 'none';
+            this.previewContainer.inert = true;
+            this.showMessage('Не удалось загрузить предпросмотр скриншота.', 'error');
         };
         reader.readAsDataURL(file);
 
@@ -298,10 +314,12 @@ class ReportWidget {
     }
 
     removePhoto() {
+        this.previewGeneration++;
         this.selectedFile = null;
+        this.pendingPreviewFile = null;
         this.fileInput.value = '';
-        this.previewImg.src = '';
         this.previewContainer.style.display = 'none';
+        this.previewContainer.inert = true;
         this.fileLabelText.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg> Прикрепить скриншот (до 5 МБ)';
         this.validateForm();
     }
@@ -314,15 +332,17 @@ class ReportWidget {
     }
 
     showMessage(text, type) {
+        this.messageBox.setAttribute('role', type === 'error' ? 'alert' : 'status');
+        this.messageBox.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
         this.messageBox.textContent = text;
         this.messageBox.className = `report-message ${type}`;
+        this.messageBox.setAttribute('aria-hidden', 'false');
         this.messageBox.style.display = 'block';
     }
 
     clearMessage() {
         this.messageBox.style.display = 'none';
-        this.messageBox.textContent = '';
-        this.messageBox.className = 'report-message';
+        this.messageBox.setAttribute('aria-hidden', 'true');
     }
 
     setLoading(isLoading) {

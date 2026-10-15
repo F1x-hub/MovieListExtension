@@ -106,7 +106,13 @@ class MovieDetailsTorrentPanelMethods {
             item.classList.toggle('is-active', item.getAttribute('data-quality-filter') === 'all');
         });
         if (this.elements.torrentSourceSort) this.elements.torrentSourceSort.value = 'recommended';
+        this.torrentSortControl?.syncFromNative();
         if (this.elements.torrentSourceLanguageFilter) this.elements.torrentSourceLanguageFilter.value = 'all';
+        this.torrentSourceLanguageControl?.syncFromNative();
+        const qualityChoices = this.elements?.torrentSourceControls?.querySelector('.torrent-source-controls__filters');
+        window.FilterChoice?.syncSingleGroup(qualityChoices, {
+            value: this.torrentQualityFilter || 'all', attribute: 'data-quality-filter', selector: '[data-quality-filter]'
+        });
         this.elements.torrentSourceList?.replaceChildren();
         this.elements.torrentDownloadList?.replaceChildren();
         this.elements.torrentDownloadLibrary?.setAttribute('hidden', '');

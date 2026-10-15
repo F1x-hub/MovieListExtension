@@ -7,6 +7,7 @@
     
     <!-- Styles -->
     <link rel="stylesheet" href="../../shared/styles/common.css">
+    <script defer src="../../shared/components/NumberStepper.js"></script>
     <link rel="stylesheet" href="../../shared/styles/theme.css">
     <link rel="stylesheet" href="../../shared/styles/components.css">
     <link rel="stylesheet" href="../../shared/styles/navigation.css">
@@ -14,6 +15,7 @@
     <link rel="stylesheet" href="../../shared/styles/search.css">
     <link rel="stylesheet" href="../../shared/styles/movie-card.css">
     <link rel="stylesheet" href="../../shared/styles/ratings.css">
+    <link rel="stylesheet" href="../../shared/styles/filter-controls.css">
     
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -41,7 +43,7 @@
 
 
             <!-- Filters Section -->
-            <div class="filters-section">
+            <div class="filters-section filter-panel">
                 <div class="filters-header">
                     <h3 class="filters-title" data-i18n="ratings.filters.title">Filters & Search</h3>
                     <div class="filters-controls">
@@ -67,42 +69,49 @@
 
                     <!-- Genre Filter -->
                     <div class="filter-group">
-                        <label class="filter-label" for="genreFilterTrigger" data-i18n="ratings.filters.genre">Genre</label>
-                        <div class="custom-dropdown" data-dropdown="genreFilter">
-                            <button type="button" class="dropdown-trigger" id="genreFilterTrigger">
-                                <span class="dropdown-value" data-i18n="ratings.filters.all_genres">All Genres</span>
-                                <span class="dropdown-arrow"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
-                            </button>
-                            <div class="dropdown-list" id="genreFilterList">
-                                <div class="dropdown-option" data-value="" data-i18n="ratings.filters.all_genres">All Genres</div>
-                            </div>
-                            <select class="filter-select-hidden" id="genreFilter" tabindex="-1" aria-hidden="true">
-                                <option value="">All Genres</option>
-                            </select>
-                        </div>
+                        <label class="filter-label" for="genreFilter" data-i18n="ratings.filters.genre">Genre</label>
+                        <select id="genreFilter" data-filter-control>
+                            <option value="" data-i18n="ratings.filters.all_genres">All Genres</option>
+                        </select>
                     </div>
 
                     <!-- Year Filter -->
                     <div class="filter-group">
-                        <label class="filter-label" for="yearFilterTrigger" data-i18n="ratings.filters.year">Year</label>
-                        <div class="custom-dropdown" data-dropdown="yearFilter">
-                            <button type="button" class="dropdown-trigger" id="yearFilterTrigger">
-                                <span class="dropdown-value" data-i18n="ratings.filters.all_years">All Years</span>
-                                <span class="dropdown-arrow"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
-                            </button>
-                            <div class="dropdown-list" id="yearFilterList">
-                                <div class="dropdown-option" data-value="" data-i18n="ratings.filters.all_years">All Years</div>
-                            </div>
-                            <select class="filter-select-hidden" id="yearFilter" tabindex="-1" aria-hidden="true">
-                                <option value="">All Years</option>
-                            </select>
-                        </div>
+                        <label class="filter-label" for="yearFilter" data-i18n="ratings.filters.year">Year</label>
+                        <select id="yearFilter" data-filter-control>
+                            <option value="" data-i18n="ratings.filters.all_years">All Years</option>
+                        </select>
+                    </div>
+
+                    <!-- User Filter -->
+                    <div class="filter-group" id="userFilterGroup">
+                        <label class="filter-label" for="userFilter" data-i18n="ratings.filters.user">User</label>
+                        <select id="userFilter" data-filter-control>
+                            <option value="" data-i18n="ratings.filters.all_users">All Users</option>
+                        </select>
+                    </div>
+
+                    <!-- Sort Options -->
+                    <div class="filter-group filter-group--sort">
+                        <label class="filter-label" for="sortFilter" data-i18n="ratings.filters.sort">Sort By</label>
+                        <select id="sortFilter" data-sort-control>
+                            <option value="date-desc" data-i18n="ratings.sort.date_newest">Date Added (Newest)</option>
+                            <option value="date-asc" data-i18n="ratings.sort.date_oldest">Date Added (Oldest)</option>
+                            <option value="rating-desc" data-i18n="ratings.sort.rating_high">My Rating (High to Low)</option>
+                            <option value="rating-asc" data-i18n="ratings.sort.rating_low">My Rating (Low to High)</option>
+                            <option value="avg-rating-desc" data-i18n="ratings.sort.avg_high">Avg Rating (High to Low)</option>
+                            <option value="avg-rating-asc" data-i18n="ratings.sort.avg_low">Avg Rating (Low to High)</option>
+                            <option value="title-asc" data-i18n="ratings.sort.title_az">Title (A-Z)</option>
+                            <option value="title-desc" data-i18n="ratings.sort.title_za">Title (Z-A)</option>
+                            <option value="year-desc" data-i18n="ratings.sort.year_newest">Year (Newest)</option>
+                            <option value="year-asc" data-i18n="ratings.sort.year_oldest">Year (Oldest)</option>
+                        </select>
                     </div>
 
                     <!-- Average Rating Filter -->
-                    <div class="filter-group">
+                    <div class="filter-group filter-group--range">
                         <label class="filter-label" for="avgRatingFrom" data-i18n="ratings.filters.avg_rating">Average Rating</label>
-                        <div class="range-slider-container" id="avgRatingSlider">
+                        <div class="range-slider-container filter-range-layout-inline" id="avgRatingSlider">
                             <div class="slider-values">
                                 <span id="avgRatingMinDisplay">1.0</span>
                                 <span id="avgRatingMaxDisplay">10.0</span>
@@ -113,58 +122,6 @@
                                 <input type="range" id="avgRatingFrom" class="range-input" min="1.0" max="10.0" value="1.0" step="0.1" aria-label="Minimum average rating" data-i18n="[aria-label]ratings.filters.avg_from">
                                 <input type="range" id="avgRatingTo" class="range-input" min="1.0" max="10.0" value="10.0" step="0.1" aria-label="Maximum average rating" data-i18n="[aria-label]ratings.filters.avg_to">
                             </div>
-                        </div>
-                    </div>
-
-                    <!-- User Filter -->
-                    <div class="filter-group" id="userFilterGroup">
-                        <label class="filter-label" for="userFilterTrigger" data-i18n="ratings.filters.user">User</label>
-                        <div class="custom-dropdown" data-dropdown="userFilter">
-                            <button type="button" class="dropdown-trigger" id="userFilterTrigger">
-                                <span class="dropdown-value" data-i18n="ratings.filters.all_users">All Users</span>
-                                <span class="dropdown-arrow"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
-                            </button>
-                            <div class="dropdown-list" id="userFilterList">
-                                <div class="dropdown-option" data-value="" data-i18n="ratings.filters.all_users">All Users</div>
-                            </div>
-                            <select class="filter-select-hidden" id="userFilter" tabindex="-1" aria-hidden="true">
-                                <option value="">All Users</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <!-- Sort Options -->
-                    <div class="filter-group">
-                        <label class="filter-label" for="sortFilterTrigger" data-i18n="ratings.filters.sort">Sort By</label>
-                        <div class="custom-dropdown" data-dropdown="sortFilter">
-                            <button type="button" class="dropdown-trigger" id="sortFilterTrigger">
-                                <span class="dropdown-value" data-i18n="ratings.sort.date_newest">Date Added (Newest)</span>
-                                <span class="dropdown-arrow"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
-                            </button>
-                            <div class="dropdown-list" id="sortFilterList">
-                                <div class="dropdown-option" data-value="date-desc" data-i18n="ratings.sort.date_newest">Date Added (Newest)</div>
-                                <div class="dropdown-option" data-value="date-asc" data-i18n="ratings.sort.date_oldest">Date Added (Oldest)</div>
-                                <div class="dropdown-option" data-value="rating-desc" data-i18n="ratings.sort.rating_high">My Rating (High to Low)</div>
-                                <div class="dropdown-option" data-value="rating-asc" data-i18n="ratings.sort.rating_low">My Rating (Low to High)</div>
-                                <div class="dropdown-option" data-value="avg-rating-desc" data-i18n="ratings.sort.avg_high">Avg Rating (High to Low)</div>
-                                <div class="dropdown-option" data-value="avg-rating-asc" data-i18n="ratings.sort.avg_low">Avg Rating (Low to High)</div>
-                                <div class="dropdown-option" data-value="title-asc" data-i18n="ratings.sort.title_az">Title (A-Z)</div>
-                                <div class="dropdown-option" data-value="title-desc" data-i18n="ratings.sort.title_za">Title (Z-A)</div>
-                                <div class="dropdown-option" data-value="year-desc" data-i18n="ratings.sort.year_newest">Year (Newest)</div>
-                                <div class="dropdown-option" data-value="year-asc" data-i18n="ratings.sort.year_oldest">Year (Oldest)</div>
-                            </div>
-                            <select class="filter-select-hidden" id="sortFilter" tabindex="-1" aria-hidden="true">
-                                <option value="date-desc">Date Added (Newest)</option>
-                                <option value="date-asc">Date Added (Oldest)</option>
-                                <option value="rating-desc">My Rating (High to Low)</option>
-                                <option value="rating-asc">My Rating (Low to High)</option>
-                                <option value="avg-rating-desc">Avg Rating (High to Low)</option>
-                                <option value="avg-rating-asc">Avg Rating (Low to High)</option>
-                                <option value="title-asc">Title (A-Z)</option>
-                                <option value="title-desc">Title (Z-A)</option>
-                                <option value="year-desc">Year (Newest)</option>
-                                <option value="year-asc">Year (Oldest)</option>
-                            </select>
                         </div>
                     </div>
                 </div>
@@ -341,6 +298,8 @@
     <script defer src="../../shared/components/Router.js"></script>
 
     <!-- Main Script -->
+    <script defer src="../../shared/components/SortControl.js"></script>
+    <script defer src="../../shared/components/FilterControls.js"></script>
     <script defer src="ratings.js" type="module"></script>
     <script defer src="../../shared/components/ReportWidget.js"></script>
 </body>

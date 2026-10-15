@@ -137,6 +137,7 @@ class RandomManager {
                 this.populateFilterData();
                 this.renderTags();
                 this._restoreTagFilters(filters);
+                this.setupSliders();
                 if (this.currentMovie && !this._findBusy && this.elements.movieResult.style.display !== 'none') {
                     const focused = document.activeElement;
                     const focusClass = ['cmc-reload-btn', 'cmc-pool-btn', 'cmc-watch-btn'].find(name => focused?.classList.contains(name));
@@ -149,176 +150,79 @@ class RandomManager {
     }
 
     populateFilterData() {
-        this.types = [
-            { label: i18n.get('random.types.movie'), value: 'movie' },
-            { label: i18n.get('random.types.tv_series'), value: 'tv-series' },
-            { label: i18n.get('random.types.cartoon'), value: 'cartoon' },
-            { label: i18n.get('random.types.anime'), value: 'anime' }
-        ];
-
-        this.genres = [
-            { label: i18n.get('random.genres.comedy'), value: 'комедия' },
-            { label: i18n.get('random.genres.cartoon'), value: 'мультфильм' },
-            { label: i18n.get('random.genres.horror'), value: 'ужасы' },
-            { label: i18n.get('random.genres.sci_fi'), value: 'фантастика' },
-            { label: i18n.get('random.genres.thriller'), value: 'триллер' },
-            { label: i18n.get('random.genres.action'), value: 'боевик' },
-            { label: i18n.get('random.genres.melodrama'), value: 'мелодрама' },
-            { label: i18n.get('random.genres.detective'), value: 'детектив' },
-            { label: i18n.get('random.genres.adventure'), value: 'приключения' },
-            { label: i18n.get('random.genres.fantasy'), value: 'фэнтези' },
-            { label: i18n.get('random.genres.war'), value: 'военный' },
-            { label: i18n.get('random.genres.family'), value: 'семейный' },
-            { label: i18n.get('random.genres.anime'), value: 'аниме' },
-            { label: i18n.get('random.genres.history'), value: 'история' },
-            { label: i18n.get('random.genres.drama'), value: 'драма' },
-            { label: i18n.get('random.genres.documentary'), value: 'документальный' },
-            { label: i18n.get('random.genres.kids'), value: 'детский' },
-            { label: i18n.get('random.genres.crime'), value: 'криминал' },
-            { label: i18n.get('random.genres.biography'), value: 'биография' },
-            { label: i18n.get('random.genres.western'), value: 'вестерн' },
-            { label: i18n.get('random.genres.film_noir'), value: 'фильм-нуар' },
-            { label: i18n.get('random.genres.sport'), value: 'спорт' },
-            { label: i18n.get('random.genres.reality_tv'), value: 'реальное ТВ' },
-            { label: i18n.get('random.genres.short'), value: 'короткометражка' },
-            { label: i18n.get('random.genres.music'), value: 'музыка' },
-            { label: i18n.get('random.genres.musical'), value: 'мюзикл' },
-            { label: i18n.get('random.genres.talk_show'), value: 'ток-шоу' },
-            { label: i18n.get('random.genres.game'), value: 'игра' }
-        ];
-
-        this.countries = [
-            { label: i18n.get('random.countries.russia'), value: 'Россия' },
-            { label: i18n.get('random.countries.ussr'), value: 'СССР' },
-            { label: i18n.get('random.countries.usa'), value: 'США' },
-            { label: i18n.get('random.countries.kazakhstan'), value: 'Казахстан' },
-            { label: i18n.get('random.countries.france'), value: 'Франция' },
-            { label: i18n.get('random.countries.south_korea'), value: 'Южная Корея' },
-            { label: i18n.get('random.countries.uk'), value: 'Великобритания' },
-            { label: i18n.get('random.countries.japan'), value: 'Япония' },
-            { label: i18n.get('random.countries.italy'), value: 'Италия' },
-            { label: i18n.get('random.countries.spain'), value: 'Испания' },
-            { label: i18n.get('random.countries.germany'), value: 'Германия' },
-            { label: i18n.get('random.countries.turkey'), value: 'Турция' },
-            { label: i18n.get('random.countries.sweden'), value: 'Швеция' },
-            { label: i18n.get('random.countries.denmark'), value: 'Дания' },
-            { label: i18n.get('random.countries.norway'), value: 'Норвегия' },
-            { label: i18n.get('random.countries.hong_kong'), value: 'Гонконг' },
-            { label: i18n.get('random.countries.australia'), value: 'Австралия' },
-            { label: i18n.get('random.countries.belgium'), value: 'Бельгия' },
-            { label: i18n.get('random.countries.netherlands'), value: 'Нидерланды' },
-            { label: i18n.get('random.countries.greece'), value: 'Греция' },
-            { label: i18n.get('random.countries.austria'), value: 'Австрия' }
-        ];
+        Object.assign(this, DiscoveryFilters.getOptions(i18n));
     }
 
     setupSliders() {
+        this.rangeControls?.forEach(control => control.destroy());
+        this.rangeControls = [];
         this.initDoubleSlider('year', 1900, 2030, 0); // min gap 0
         this.initDoubleSlider('rating', 1, 10, 0.5); // min gap 0.5
         this.initDoubleSlider('votes', 0, 2000000, 1000); // Votes
     }
 
     initDoubleSlider(idPrefix, minLimit, maxLimit, minGap) {
-        const minInput = document.getElementById(`${idPrefix}From`);
-        const maxInput = document.getElementById(`${idPrefix}To`);
-        const minDisplay = document.getElementById(`${idPrefix}MinDisplay`);
-        const maxDisplay = document.getElementById(`${idPrefix}MaxDisplay`);
-        const rangeBar = document.getElementById(`${idPrefix}RangeBar`);
-
-        const formatValue = (val) => {
+        const formatValue = val => {
             if (idPrefix === 'votes') {
                 if (val >= 1000000) return (val / 1000000).toFixed(1) + 'M';
                 if (val >= 1000) return (val / 1000).toFixed(0) + 'k';
-                return val;
             }
             return val;
         };
-
-        const save = () => this.savePreferences();
-
-        const updateSlider = () => {
-            let minVal = parseFloat(minInput.value);
-            let maxVal = parseFloat(maxInput.value);
-
-            // Prevent crossover
-            if (maxVal - minVal < minGap) {
-                if (document.activeElement === minInput) {
-                    minInput.value = maxVal - minGap;
-                    minVal = parseFloat(minInput.value);
-                } else {
-                    maxInput.value = minVal + minGap;
-                    maxVal = parseFloat(maxInput.value);
-                }
-            }
-
-            // Update displays
-            minDisplay.textContent = formatValue(minVal);
-            maxDisplay.textContent = formatValue(maxVal);
-
-            // Update bar position
-            // Calculate percentages
-            // Formula: ((value - minLimit) / (maxLimit - minLimit)) * 100
-            const range = maxLimit - minLimit;
-            const leftPercent = ((minVal - minLimit) / range) * 100;
-            const rightPercent = 100 - (((maxVal - minLimit) / range) * 100);
-
-            rangeBar.style.left = `${leftPercent}%`;
-            rangeBar.style.right = `${rightPercent}%`;
-        };
-
-        minInput.addEventListener('input', updateSlider);
-        maxInput.addEventListener('input', updateSlider);
-        minInput.addEventListener('change', save);
-        maxInput.addEventListener('change', save);
-        
-        // Initial call
-        updateSlider();
+        const fieldLabel = document.getElementById(`${idPrefix}Slider`).parentElement.querySelector('label').textContent.trim();
+        const control = RangeControl.enhance(document.getElementById(`${idPrefix}From`), document.getElementById(`${idPrefix}To`), {
+            min: minLimit, max: maxLimit, minGap,
+            fromDisplay: document.getElementById(`${idPrefix}MinDisplay`),
+            toDisplay: document.getElementById(`${idPrefix}MaxDisplay`),
+            rangeBar: document.getElementById(`${idPrefix}RangeBar`),
+            formatValue,
+            fromLabel: `${fieldLabel}: ${i18n.get('random.config.min')}`,
+            toLabel: `${fieldLabel}: ${i18n.get('random.config.max')}`,
+            fromFieldLabel: i18n.get('random.config.min'),
+            toFieldLabel: i18n.get('random.config.max'),
+            onCommit: () => this.savePreferences()
+        });
+        this.rangeControls.push(control);
     }
 
     renderTags() {
         this._renderedLocale = i18n.currentLocale;
+        let legendId = null;
         for (const [type, values, container] of [
             ['type', this.types, this.elements.typeTags],
             ['genre', this.genres, this.elements.genreTags],
             ['country', this.countries, this.elements.countryTags]
-        ]) container.replaceChildren(...values.map(value => this.createTag(value, type)));
+        ]) {
+            container.replaceChildren(...values.map(value => this.createTag(value, type)));
+            const label = container.parentElement.querySelector('label')?.textContent.trim() || '';
+            FilterChoice.enhanceGroup(container, {
+                label, labels: this.getChoiceStateLabels(),
+                legendLabels: this.getChoiceStateLegendLabels(),
+                showLegend: legendId === null, legendId, compactLimit: 6,
+                moreLabel: i18n.get('filter_controls.more'), lessLabel: i18n.get('filter_controls.less')
+            });
+            legendId ||= container.querySelector('.filter-choices__legend')?.id || null;
+        }
+    }
+
+    getChoiceStateLabels() {
+        return Object.fromEntries(['neutral', 'include', 'exclude'].map(state => [state, i18n.get(`random.tag_states.${state}`)]));
+    }
+
+    getChoiceStateLegendLabels() {
+        return Object.fromEntries(['neutral', 'include', 'exclude'].map(state => [state, i18n.get(`random.tag_state_legend.${state}`)]));
     }
 
     createTag(data, type) {
-        // Handle both object {label, value} and string input (legacy support)
-        let label, value;
-        if (typeof data === 'object' && data !== null) {
-            label = data.label;
-            value = data.value;
-        } else {
-            label = data;
-            value = data;
-        }
-
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'tag-btn';
-        button.dataset.value = value;
+        const label = typeof data === 'object' && data !== null ? data.label : data;
+        const value = typeof data === 'object' && data !== null ? data.value : data;
+        const button = FilterChoice.create({ label, value, className: 'tag-btn', labels: this.getChoiceStateLabels() });
         button.dataset.type = type;
-        const text = document.createElement('span');
-        text.className = 'tag-text';
-        text.textContent = label;
-        const icon = document.createElement('span');
-        icon.className = 'tag-status-icon';
-        icon.setAttribute('aria-hidden', 'true');
-        button.append(text, icon);
-        this._setTagState(button, 'neutral');
         return button;
     }
 
     _setTagState(button, state) {
-        button.dataset.state = state;
-        button.classList.toggle('state-include', state === 'include');
-        button.classList.toggle('state-exclude', state === 'exclude');
-        button.setAttribute('aria-pressed', String(state !== 'neutral'));
-        const label = button.querySelector('.tag-text')?.textContent || '';
-        button.setAttribute('aria-label', `${label}: ${i18n.get(`random.tag_states.${state}`)}`);
-        button.querySelector('.tag-status-icon').textContent = { neutral: '', include: '✓', exclude: '×' }[state];
+        FilterChoice.setState(button, state, { emit: false });
     }
 
     _restoreTagFilters(filters) {
@@ -351,6 +255,7 @@ class RandomManager {
                 el.dispatchEvent(new Event('input'));
             }
         });
+        this.rangeControls?.forEach(control => control.syncFromNative());
     }
 
     setupEventListeners() {
@@ -412,7 +317,7 @@ class RandomManager {
     }
 
     handleTagClick(btn) {
-        this._setTagState(btn, { neutral: 'include', include: 'exclude', exclude: 'neutral' }[btn.dataset.state] || 'neutral');
+        // FilterChoice owns the state cycle before this delegated persistence handler.
         this.savePreferences();
     }
 
@@ -523,6 +428,7 @@ class RandomManager {
             restoreTags(prefs.excludeGenres, 'genre', 'exclude');
             restoreTags(prefs.countries, 'country', 'include');
             restoreTags(prefs.excludeCountries, 'country', 'exclude');
+            this.rangeControls?.forEach(control => control.syncFromNative());
 
         } catch {
             console.error('Failed to load preferences');
@@ -589,6 +495,7 @@ class RandomManager {
 
     _cleanup() {
         this._disposed = true;
+        this.rangeControls?.forEach(control => control.destroy());
         this._marathonAuthRefreshId++;
         this._cancelMovieRequest();
         this._poolSearchId++;

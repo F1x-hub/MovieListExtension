@@ -225,7 +225,7 @@ class Navigation {
                     </a>
 
                     <!-- Mobile Toggle -->
-                    <button class="nav-mobile-toggle" id="navMobileToggle" aria-label="${this.i18n?.get('navbar.open_menu') || 'Открыть меню'}">
+                    <button type="button" class="nav-mobile-toggle" id="navMobileToggle" aria-controls="navMenu" aria-expanded="false" aria-label="${this.i18n?.get('navbar.open_menu') || 'Открыть меню'}">
                         <span>${typeof Icons !== 'undefined' ? Icons.MENU : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>'}</span>
                     </button>
 
@@ -248,7 +248,7 @@ class Navigation {
 
                     <!-- Search & Bookmarks Section -->
                     <div class="nav-search-container">
-                        <button class="nav-search-toggle" id="navSearchToggle" aria-label="${this.i18n?.get('navbar.search') || 'Поиск фильмов'}" title="Search Movies" style="margin-right: 5px;">
+                        <button type="button" class="nav-search-toggle" id="navSearchToggle" aria-controls="navSearchInputWrapper" aria-expanded="false" aria-label="${this.i18n?.get('navbar.search') || 'Поиск фильмов'}" title="Search Movies" style="margin-right: 5px;">
                             <span class="nav-icon">${typeof Icons !== 'undefined' ? Icons.SEARCH : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>'}</span>
                         </button>
                         <div class="nav-search-input-wrapper" id="navSearchInputWrapper">
@@ -275,7 +275,7 @@ class Navigation {
                     <div class="nav-user" id="navUser">
                         <!-- User Profile Dropdown -->
                         <div class="nav-user-profile" id="navUserProfile" style="display: ${userProfileDisplay};">
-                            <button class="nav-user-trigger" id="navUserTrigger">
+                            <button type="button" class="nav-user-trigger" id="navUserTrigger" aria-controls="navUserDropdown" aria-expanded="false">
                                 <img src="${cachedAvatar}" alt="User" class="nav-user-avatar" id="navUserAvatar">
                                 <span class="nav-user-name" id="navUserName">${cachedName}</span>
                                 <span class="nav-dropdown-arrow">${typeof Icons !== 'undefined' && Icons.CHEVRON_DOWN ? Icons.CHEVRON_DOWN : '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>'}</span>
@@ -332,9 +332,9 @@ class Navigation {
         const navMenu = document.getElementById('navMenu');
         
         if (mobileToggle && navMenu) {
-            mobileToggle.addEventListener('mousedown', (e) => {
-                if (e.button !== 0) return; // Only left click
-                navMenu.classList.toggle('active');
+            mobileToggle.addEventListener('click', () => {
+                const isOpen = navMenu.classList.toggle('active');
+                mobileToggle.setAttribute('aria-expanded', String(isOpen));
             });
         }
 
@@ -445,6 +445,14 @@ class Navigation {
         document.addEventListener('mousedown', (e) => {
             if (navMenu && !navMenu.contains(e.target) && !mobileToggle.contains(e.target)) {
                 navMenu.classList.remove('active');
+                mobileToggle.setAttribute('aria-expanded', 'false');
+            }
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && navMenu?.classList.contains('active')) {
+                navMenu.classList.remove('active');
+                mobileToggle.setAttribute('aria-expanded', 'false');
+                mobileToggle.focus();
             }
         });
     }
@@ -463,7 +471,7 @@ class Navigation {
             userTrigger.dataset.listenerAttached = 'true';
             
             // Toggle dropdown on user trigger click
-            userTrigger.addEventListener('mousedown', (e) => {
+            userTrigger.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 
@@ -476,6 +484,7 @@ class Navigation {
                     userDropdown.classList.add('active');
                     userDropdown.inert = false;
                     userTrigger.classList.add('active');
+                    userTrigger.setAttribute('aria-expanded', 'true');
                 }
             });
 
@@ -540,7 +549,9 @@ class Navigation {
             // Close dropdown on escape key
             document.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape') {
+                    const wasOpen = userDropdown.classList.contains('active');
                     this.closeAllDropdowns();
+                    if (wasOpen) userTrigger.focus();
                 }
             });
         }
@@ -554,6 +565,7 @@ class Navigation {
             userDropdown.classList.remove('active');
             userDropdown.inert = true;
             userTrigger.classList.remove('active');
+            userTrigger.setAttribute('aria-expanded', 'false');
         }
     }
 
@@ -565,19 +577,24 @@ class Navigation {
         if (!searchToggle || !searchInputWrapper || !searchInput) return;
 
         // Toggle search input on button click
-        searchToggle.addEventListener('mousedown', (e) => {
+        const closeSearch = () => {
+            searchInputWrapper.classList.remove('active');
+            searchToggle.setAttribute('aria-expanded', 'false');
+        };
+        searchToggle.addEventListener('click', (e) => {
             e.stopPropagation();
             const isOpen = searchInputWrapper.classList.contains('active');
             
             if (isOpen) {
                 const query = searchInput.value.trim();
                 if (query) {
-                    searchInputWrapper.classList.remove('active');
+                    closeSearch();
                     this.navigateToSearchWithQuery(query);
                 }
             } else {
                 searchInputWrapper.classList.add('active');
-                setTimeout(() => searchInput.focus(), 300);
+                searchToggle.setAttribute('aria-expanded', 'true');
+                searchInput.focus();
             }
         });
 
@@ -589,21 +606,22 @@ class Navigation {
             if (e.repeat || this._searchNavigationPending) return;
 
             const query = searchInput.value.trim();
-            searchInputWrapper.classList.remove('active');
+            closeSearch();
             this.navigateToSearchWithQuery(query);
         });
 
         // Close search when clicking outside
         document.addEventListener('mousedown', (e) => {
             if (!searchToggle.contains(e.target) && !searchInputWrapper.contains(e.target)) {
-                searchInputWrapper.classList.remove('active');
+                closeSearch();
             }
         });
 
         // Close search on Escape key
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && searchInputWrapper.classList.contains('active')) {
-                searchInputWrapper.classList.remove('active');
+                closeSearch();
+                searchToggle.focus();
             }
         });
     }

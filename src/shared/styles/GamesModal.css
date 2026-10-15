@@ -39,13 +39,19 @@
     justify-content: center;
     opacity: 0;
     visibility: hidden;
-    transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1), visibility 180ms;
+    pointer-events: none;
+    transition: opacity var(--motion-duration-fast) var(--motion-ease-in),
+        visibility 0s linear var(--motion-duration-fast);
     font-family: 'Outfit', sans-serif;
 }
 
 .games-modal-overlay.active {
     opacity: 1;
     visibility: visible;
+    pointer-events: auto;
+    transition-duration: var(--motion-duration-base), 0s;
+    transition-delay: 0s;
+    transition-timing-function: var(--motion-ease-out), linear;
 }
 
 .games-modal-container {
@@ -59,15 +65,16 @@
     border: 1px solid var(--games-border-hover);
     border-radius: 16px;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
-    transform: scale(0.96) translateY(8px);
-    transition: transform 220ms cubic-bezier(0.23, 1, 0.32, 1);
+    transform: translateY(var(--motion-distance-enter)) scale(var(--motion-scale-enter));
+    transition: transform var(--motion-duration-fast) var(--motion-ease-in);
     display: flex;
     flex-direction: column;
     color: var(--games-content);
 }
 
 .games-modal-overlay.active .games-modal-container {
-    transform: scale(1) translateY(0);
+    transform: translateY(0) scale(1);
+    transition: transform var(--motion-duration-base) var(--motion-ease-out);
 }
 
 .games-modal-container[hidden],
@@ -1036,6 +1043,20 @@
     gap: 14px;
     text-align: center;
     z-index: 5;
+    opacity: 1;
+    transition: opacity var(--motion-duration-base) var(--motion-ease-out),
+        display var(--motion-duration-fast) allow-discrete;
+}
+
+.game-overlay[aria-hidden="true"] {
+    opacity: 0;
+    pointer-events: none;
+    transition-duration: var(--motion-duration-fast);
+    transition-timing-function: var(--motion-ease-in);
+}
+
+@starting-style {
+    .game-overlay { opacity: 0; }
 }
 
 .game-overlay-title {
@@ -1385,6 +1406,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+    .games-modal-overlay,
+    .games-modal-container,
+    .game-overlay { transition: none !important; }
+    .games-modal-container { transform: none !important; }
     .games-modal-overlay,
     .games-modal-container,
     .game-tab-btn,

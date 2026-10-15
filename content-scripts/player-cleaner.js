@@ -736,6 +736,20 @@
         );
     }
 
+    function needsPlayerReconciliation(mutation) {
+        const target = mutation?.target;
+        // Timeline, loader and menu rendering belongs to this cleaner. It must
+        // not repeatedly scan the provider DOM just because its controls change.
+        if (!target?.closest?.('.native-player-wrapper')) return true;
+        const isMediaNode = node => node?.nodeType === 1
+            && (node.matches?.('video:not(.ghost-video), source')
+                || node.querySelector?.('video:not(.ghost-video), source'));
+        if (mutation.type === 'attributes') {
+            return mutation.attributeName === 'src' && isMediaNode(target);
+        }
+        return [...(mutation.addedNodes || []), ...(mutation.removedNodes || [])].some(isMediaNode);
+    }
+
     function cleanupCleanerOwnedIframes(root) {
         if (!root?.querySelectorAll) return 0;
         let removed = 0;
@@ -1154,6 +1168,8 @@
         const cleanup = () => {
             if (timer) clearTimeout(timer);
             video?.removeEventListener?.('error', onVideoError);
+            video?.removeEventListener?.('loadeddata', onMediaReady);
+            video?.removeEventListener?.('canplay', onMediaReady);
         };
         const finish = (state, detail = {}) => {
             if (!active) return;
@@ -1166,6 +1182,11 @@
             reason: 'media-error',
             error: video?.error || null
         });
+        const onMediaReady = () => {
+            if (!active || video?.readyState < 2) return;
+            if (timer) clearTimeout(timer);
+            attemptPlay();
+        };
         const attemptPlay = () => {
             if (!active) return;
             if (!isRequestCurrent() || !isSourceCurrent()) {
@@ -1201,6 +1222,8 @@
         };
 
         video?.addEventListener?.('error', onVideoError);
+        video?.addEventListener?.('loadeddata', onMediaReady);
+        video?.addEventListener?.('canplay', onMediaReady);
         emit(states.LOADING, { reason: 'start' });
         attemptPlay();
 
@@ -1241,6 +1264,7 @@
             teardownActiveWrapper,
             getPlayerObservationRoot,
             mutationsWithinRoot,
+            needsPlayerReconciliation,
             cleanupCleanerOwnedIframes
         }
     };
@@ -1402,6 +1426,7 @@
                 // Auto-play if flag is set
                 if (localStorage.getItem('movieExtension_autoplay_next') === 'true') {
                     localStorage.removeItem('movieExtension_autoplay_next');
+                    localStorage.removeItem('movieExtension_autoplay_start_time');
                     playAdoptedVideo(permanentVideo);
                 }
                 
@@ -3094,42 +3119,9 @@
                 const autoPlayFlag = localStorage.getItem('movieExtension_autoplay_next');
                 if (autoPlayFlag === 'true') {
                     localStorage.removeItem('movieExtension_autoplay_next');
+                    localStorage.removeItem('movieExtension_autoplay_start_time');
                     
-                    let isPlayPending = false;
-                    const attemptPlay = () => {
-                        if (isPlayPending) return;
-                        isPlayPending = true;
-                        
-                        const p = video.play();
-                        if (p && p.catch) {
-                            p.catch(e => { /* ignore */ })
-                             .finally(() => { isPlayPending = false; });
-                        } else {
-                            isPlayPending = false;
-                        }
-                    };
-
-                    // Aggressive polling to start as soon as possible
-                    const interval = setInterval(() => {
-                        if (!video.paused) {
-                            clearInterval(interval);
-                            // Log Performance
-                            const startTime = localStorage.getItem('movieExtension_autoplay_start_time');
-                            if (startTime) {
-                                const duration = Date.now() - parseInt(startTime, 10);
-                            console.log(`[MovieExtension] Auto-play latency: ${duration}ms`);
-                                localStorage.removeItem('movieExtension_autoplay_start_time');
-                            }
-                            return;
-                        }
-                        // Increase readyState requirement to 3 (HAVE_FUTURE_DATA) to avoid HLS buffering pauses
-                        if (video.readyState >= 3) { 
-                           attemptPlay();
-                        }
-                    }, 100);
-
-                    // Stop trying after 5 seconds to prevent infinite loops
-                    setTimeout(() => clearInterval(interval), 5000);
+                    playAdoptedVideo(video);
                 }
             };
             // Check immediately on new player init
@@ -3871,16 +3863,6 @@
                 // Remove old listeners if any (not easily possible with anonymous functions unless we track them, 
                 // but since we destroy old video elements, it's fine)
                 
-                // Auto-Play & State logic
-                const checkAutoPlay = () => {
-                   const autoPlayFlag = localStorage.getItem('movieExtension_autoplay_next');
-                   if (autoPlayFlag === 'true') {
-                       localStorage.removeItem('movieExtension_autoplay_next');
-                       videoEl.play().catch(() => {});
-                   }
-                };
-                checkAutoPlay(); // Check on init
-
                 const updateTime = () => {
                     const current = videoEl.currentTime || 0;
                     const total = Number.isFinite(videoEl.duration) ? videoEl.duration : 0;
@@ -5383,6 +5365,7 @@
             setPermanentVideo(null);
             activeWrapper = null;
         }
+        if (permanentVideo && !mutations.some(needsPlayerReconciliation)) return;
         // One adoption path owns initial mounts and provider source changes.
         // Never copy an arbitrary added video's URL into the current movie:
         // it may be an advert, and a blob's MSE owner must stay with its element.

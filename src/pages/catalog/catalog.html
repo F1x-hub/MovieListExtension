@@ -5,12 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Каталог | Movie Rating Extension</title>
     <link rel="stylesheet" href="../../shared/styles/common.css">
+    <script defer src="../../shared/components/NumberStepper.js"></script>
     <link rel="stylesheet" href="../../shared/styles/theme.css">
     <link rel="stylesheet" href="../../shared/styles/components.css">
     <link rel="stylesheet" href="../../shared/styles/navigation.css">
     <link rel="stylesheet" href="../../shared/styles/movie-card.css">
     <link rel="stylesheet" href="../../shared/styles/report-widget.css">
     <link rel="stylesheet" href="catalog.css">
+    <link rel="stylesheet" href="../../shared/styles/filter-controls.css">
     <script src="../../shared/services/ThemeService.js"></script>
 </head>
 <body>
@@ -34,10 +36,10 @@
                 <a href="catalog.html?category=anime" data-catalog-category="anime">Аниме</a>
             </nav>
 
-            <section class="catalog-controls" aria-label="Фильтры каталога">
+            <section class="catalog-controls filter-panel" aria-label="Фильтры каталога">
                 <div class="catalog-control catalog-control--wide">
                     <label for="catalogSort">Сортировка</label>
-                    <select id="catalogSort">
+                    <select id="catalogSort" data-sort-control>
                         <option value="popularity.desc">Популярные</option>
                         <option value="vote_average.desc">По рейтингу</option>
                         <option value="primary_release_date.desc">Новые фильмы</option>
@@ -45,15 +47,15 @@
                 </div>
                 <div class="catalog-control">
                     <label for="catalogYearFrom">Год от</label>
-                    <input id="catalogYearFrom" type="number" min="1870" max="2100" inputmode="numeric" placeholder="—">
+                    <input id="catalogYearFrom" type="number" min="1870" max="2100" inputmode="numeric" placeholder="—" aria-label="Год от">
                 </div>
                 <div class="catalog-control">
                     <label for="catalogYearTo">Год до</label>
-                    <input id="catalogYearTo" type="number" min="1870" max="2100" inputmode="numeric" placeholder="—">
+                    <input id="catalogYearTo" type="number" min="1870" max="2100" inputmode="numeric" placeholder="—" aria-label="Год до">
                 </div>
                 <div class="catalog-control catalog-control--wide">
                     <label for="catalogGenre">Жанр</label>
-                    <select id="catalogGenre">
+                    <select id="catalogGenre" data-filter-control>
                         <option value="">Все жанры</option>
                         <option value="28">Боевик</option>
                         <option value="12">Приключения</option>
@@ -70,7 +72,7 @@
                 </div>
                 <div class="catalog-control catalog-control--country">
                     <label for="catalogCountry">Страна</label>
-                    <input id="catalogCountry" type="text" maxlength="2" pattern="[A-Za-z]{2}" placeholder="RU" aria-label="Код страны, например RU">
+                    <input id="catalogCountry" class="filter-field" type="text" maxlength="2" pattern="[A-Za-z]{2}" placeholder="RU" aria-label="Код страны, например RU">
                 </div>
                 <button class="catalog-reset" id="catalogReset" type="button">Сбросить</button>
             </section>
@@ -134,6 +136,8 @@
     <script defer src="../home/HomeMovieNavigationService.js"></script>
     <script defer src="../home/HomeRenderer.js"></script>
     <script type="module" src="../../shared/i18n/I18n.js"></script>
+    <script defer src="../../shared/components/SortControl.js"></script>
+    <script defer src="../../shared/components/FilterControls.js"></script>
     <script defer src="catalog.js"></script>
     <script defer src="../../shared/components/ReportWidget.js"></script>
 </body>

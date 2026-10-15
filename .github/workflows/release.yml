@@ -28,6 +28,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Chromium for browser regressions
+        run: npx playwright install chromium
+
       - name: Run lint
         run: npm run lint
 
@@ -37,8 +40,14 @@ jobs:
       - name: Run updater contract tests
         run: npm run test:random-marathon && npm run test:update-service && npm run test:package-release && npm run test-popup-surface-contract && npm run test:updater-setup && node tests/updateMirror.test.cjs
 
+      - name: Run interface browser regressions
+        run: npm run test:filter-controls-browser && npm run test:filter-controls-layout && node tests/motionP2DecorationBrowserSmoke.cjs && node tests/motionP2SurfacesBrowserSmoke.cjs && node tests/motionP2ImageAckSmoke.cjs
+
       - name: Validate localized release notes
         run: npm run test:whats-new && node scripts/validate-whats-new.cjs
+
+      - name: Prepare release description from changelog
+        run: node tests/releaseNotes.test.cjs && node scripts/create-release-notes.cjs $env:GITHUB_REF_NAME release-notes.md
 
       - name: Build and package extension
         run: npm run package-release
@@ -100,9 +109,11 @@ jobs:
               --verify-tag `
               --draft `
               --title "MovieList Extension $env:GITHUB_REF_NAME" `
-              --generate-notes
+              --notes-file release-notes.md
             if ($LASTEXITCODE -ne 0) { throw 'Could not create the draft GitHub release.' }
           }
+          gh release edit $env:GITHUB_REF_NAME --title "MovieList Extension $env:GITHUB_REF_NAME" --notes-file release-notes.md
+          if ($LASTEXITCODE -ne 0) { throw 'Could not update the release description.' }
           $version = $env:GITHUB_REF_NAME.TrimStart('v')
           gh release upload $env:GITHUB_REF_NAME `
             --clobber `

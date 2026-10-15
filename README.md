@@ -7,7 +7,7 @@ series, cartoons, and anime.
 
 <p>
   <img src="https://img.shields.io/badge/MANIFEST-V3-1687c9?style=flat-square&logo=googlechrome&logoColor=white" alt="Manifest V3">
-  <img src="https://img.shields.io/badge/VERSION-1.3.6-69b500?style=flat-square" alt="Version 1.3.6">
+  <img src="https://img.shields.io/badge/VERSION-1.3.7-69b500?style=flat-square" alt="Version 1.3.7">
   <img src="https://img.shields.io/badge/JAVASCRIPT-ES6%2B-f0d000?style=flat-square&logo=javascript&logoColor=111827" alt="JavaScript ES6+">
   <img src="https://img.shields.io/badge/VANILLA-ES6%2B-e2c400?style=flat-square" alt="Vanilla ES6+">
   <img src="https://img.shields.io/badge/AUTHOR-FIX-f47721?style=flat-square" alt="Author Fix">
@@ -294,29 +294,29 @@ Release entries are intentionally collapsed to keep this page readable.
 The extension manifest is the source of truth for the Chrome build version; `package.json`
 keeps npm-compatible three-component semver metadata.
 
-<details open>
-<summary><strong>Unreleased</strong></summary>
+<details>
+<summary><strong>1.3.7</strong> — unified filters, smoother navigation and faster playback</summary>
 
 ### Features
 
-- Add calm dialog, toast, poster and content transitions, responsive press feedback, and animated tab and disclosure changes while preserving immediate close, focus and reduced-motion behavior.
-- Resume series directly from the next-episode card in Movie Details, with the same saved episode and position as the Seasons banner and live progress updates.
+- Use consistent sorting across Rated, Favorites, Watching, Watchlist, Collections, bookmarks, catalog and torrent sources, with fully readable options and keyboard navigation.
+- Adjust filters through rounded panels, compact choices and custom numeric arrows. Search keeps genre and country groups compact while showing selected and excluded choices; long mobile lists expand on demand.
+- Resume a series directly from the next-episode card in Movie Details, using the same saved episode and position as Seasons.
+- Move through the interface with calmer dialogs, cards, tabs and button feedback. Reduced-motion preferences are respected, and decorative animations stop after a short sequence.
 
 ### Fixes
 
-- Restore missing easing tokens and invalid transitions in navigation, settings, ratings, Movie Details and the report drawer; animate new rating cards without a forced layout and protect toast replacements and decoded images from stale callbacks.
-- Respect reduced motion across shared UI and injected site controls: stop decorative animations and spinners, use instant motion-only exits and non-smooth scrolling, and preserve game simulation and immediate dialog semantics.
-- Keep movie-card action menus fully visible in scrolling carousels such as Movie Details recommendations: a menu that would be cut off opens toward the free side, caps its height to the carousel, and stays above neighbouring cards.
-- Preserve Kinopoisk sequel/prequel and similar-title data through Movie Details aggregation; repair fresh local relation caches without Firestore writes while retaining normal shared metadata updates and authoritative ratings.
-- Restore franchise sections when collection metadata arrives after the initial render, allow bounded retries after network failures, and repair incorrect local Spider-Man trilogy identities without changing shared Firestore mappings.
+- Initialize Search filters before query-driven results, preserve icons during localization and keep the newest catalog sort request authoritative during overlapping loads.
+- Load Movie Details personal controls independently of optional metadata, and retain ready controls while the rest of the page catches up.
+- Preserve Kinopoisk sequels, prequels and similar titles; restore late-arriving franchise sections and repair incorrect local Spider-Man trilogy identities without changing shared mappings.
+- Keep movie-card action menus visible inside scrolling carousels and prevent artwork from blinking when Rated cards refresh.
+- Reject stale lightbox/report previews and serialize release-note acknowledgement so open pages agree whether news has already been read.
+- Switch playback providers without waiting for progress storage, preserve the newest player during competing starts and avoid repeated video scans caused by timeline updates. Auto-next uses one bounded, cancellable readiness path.
 
 ### Refactor
 
-- Add shared duration and easing tokens with legacy aliases, and namespace card, utility, theme-dialog and external notification keyframes to avoid stylesheet collisions.
-
-### Docs
-
-- Document motion token ownership, reduced-motion behavior and component lifecycle constraints in the design system.
+- Reuse shared sort, filter and numeric controls while preserving page-owned values, persistence and query behavior.
+- Consolidate motion tokens and image observation, with regression coverage for themes, keyboard access, control geometry and component lifecycles.
 
 </details>
 

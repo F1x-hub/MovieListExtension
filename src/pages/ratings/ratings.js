@@ -225,245 +225,46 @@ class RatingsPageManager {
         });
     }
 
-    /**
-     * Custom filter dropdowns (listbox pattern). Triggers are real buttons, so mouse,
-     * Enter and Space all open them through `click`; arrow keys move between options,
-     * Enter/Space select, Escape closes and returns focus to the trigger. Option
-     * clicks are delegated on the list, so rebuilt option lists need no listeners.
-     */
+    /** Native filter selects are enhanced by the shared SortControl component. */
     initializeCustomDropdowns() {
         this.dropdowns = {};
-        const dropdownElements = document.querySelectorAll('.custom-dropdown');
-
-        dropdownElements.forEach(dropdown => {
-            const dropdownId = dropdown.getAttribute('data-dropdown');
-            const trigger = dropdown.querySelector('.dropdown-trigger');
-            const list = dropdown.querySelector('.dropdown-list');
-            const hiddenSelect = dropdown.querySelector('.filter-select-hidden');
-
-            if (!dropdownId || !trigger || !list || !hiddenSelect) return;
-
-            this.dropdowns[dropdownId] = {
-                element: dropdown,
-                trigger: trigger,
-                list: list,
-                hiddenSelect: hiddenSelect,
-                isOpen: false,
-                optionsKey: null
-            };
-
-            if (!list.id) list.id = `${dropdownId}List`;
-            list.setAttribute('role', 'listbox');
-            list.tabIndex = -1;
-            trigger.setAttribute('aria-haspopup', 'listbox');
-            trigger.setAttribute('aria-controls', list.id);
-            trigger.setAttribute('aria-expanded', 'false');
-            this.decorateDropdownOptions(dropdownId);
-
-            trigger.addEventListener('click', () => this.toggleDropdown(dropdownId, { focusOption: true }));
-            trigger.addEventListener('keydown', (e) => {
-                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    this.openDropdown(dropdownId, { focusOption: true });
-                }
-            });
-
-            list.addEventListener('click', (e) => {
-                const option = e.target.closest('.dropdown-option');
-                if (!option || !list.contains(option)) return;
-                this.selectDropdownOption(dropdownId, option.getAttribute('data-value') ?? '', option.textContent.trim());
-                trigger.focus();
-            });
-            list.addEventListener('keydown', (e) => this.handleDropdownKeydown(dropdownId, e));
-
-            // Closes when focus leaves the dropdown (Tab, or a click elsewhere)
-            dropdown.addEventListener('focusout', (e) => {
-                if (!dropdown.contains(e.relatedTarget)) this.closeDropdown(dropdownId);
-            });
-        });
-
-        document.addEventListener('mousedown', (e) => {
-            if (!e.target.closest('.custom-dropdown')) {
-                this.closeAllDropdowns();
-            }
-        });
-    }
-
-    /** ARIA roles and selection state for the current options of a dropdown. */
-    decorateDropdownOptions(dropdownId) {
-        const dropdown = this.dropdowns?.[dropdownId];
-        if (!dropdown) return;
-        const selectedValue = dropdown.hiddenSelect?.value ?? '';
-        dropdown.list.querySelectorAll('.dropdown-option').forEach(option => {
-            const isSelected = (option.getAttribute('data-value') ?? '') === selectedValue;
-            option.setAttribute('role', 'option');
-            option.tabIndex = -1;
-            option.setAttribute('aria-selected', String(isSelected));
-            option.classList.toggle('selected', isSelected);
-        });
-    }
-
-    getDropdownOptions(dropdownId) {
-        const dropdown = this.dropdowns?.[dropdownId];
-        return dropdown ? Array.from(dropdown.list.querySelectorAll('.dropdown-option')) : [];
-    }
-
-    handleDropdownKeydown(dropdownId, e) {
-        const dropdown = this.dropdowns[dropdownId];
-        if (!dropdown) return;
-        const options = this.getDropdownOptions(dropdownId);
-        const index = options.indexOf(document.activeElement);
-
-        switch (e.key) {
-            case 'ArrowDown':
-                e.preventDefault();
-                options[Math.min(options.length - 1, index + 1)]?.focus();
-                break;
-            case 'ArrowUp':
-                e.preventDefault();
-                options[Math.max(0, index - 1)]?.focus();
-                break;
-            case 'Home':
-                e.preventDefault();
-                options[0]?.focus();
-                break;
-            case 'End':
-                e.preventDefault();
-                options[options.length - 1]?.focus();
-                break;
-            case 'Enter':
-            case ' ':
-                if (index > -1) {
-                    e.preventDefault();
-                    const option = options[index];
-                    this.selectDropdownOption(dropdownId, option.getAttribute('data-value') ?? '', option.textContent.trim());
-                    dropdown.trigger.focus();
-                }
-                break;
-            case 'Escape':
-                e.preventDefault();
-                this.closeDropdown(dropdownId);
-                dropdown.trigger.focus();
-                break;
-            case 'Tab':
-                this.closeDropdown(dropdownId);
-                break;
+        for (const id of ['genreFilter', 'yearFilter', 'userFilter', 'sortFilter']) {
+            this.dropdowns[id] = window.SortControl?.enhance(this.elements[id]);
         }
-    }
-
-    openDropdown(dropdownId, { focusOption = false } = {}) {
-        const dropdown = this.dropdowns[dropdownId];
-        if (!dropdown || dropdown.trigger.disabled) return;
-        if (!dropdown.isOpen) {
-            this.closeAllDropdowns();
-            dropdown.element.classList.add('open');
-            if (dropdown.list) dropdown.list.inert = false;
-            dropdown.trigger.setAttribute('aria-expanded', 'true');
-            dropdown.isOpen = true;
-        }
-        if (focusOption) {
-            const options = this.getDropdownOptions(dropdownId);
-            (options.find(option => option.classList.contains('selected')) || options[0])?.focus();
-        }
+        this.sortControl = this.dropdowns.sortFilter;
+        this.sortLocaleUnsubscribe?.();
+        this.sortLocaleUnsubscribe = i18n.onLocaleChange?.(() => this.updateSortFilterUIState());
     }
 
     closeDropdown(dropdownId) {
-        const dropdown = this.dropdowns?.[dropdownId];
-        if (!dropdown || !dropdown.isOpen) return;
-        dropdown.element.classList.remove('open');
-        if (dropdown.list) dropdown.list.inert = true;
-        dropdown.trigger.setAttribute('aria-expanded', 'false');
-        dropdown.isOpen = false;
-    }
-
-    toggleDropdown(dropdownId, options = {}) {
-        const dropdown = this.dropdowns[dropdownId];
-        if (!dropdown) return;
-        if (dropdown.isOpen) {
-            this.closeDropdown(dropdownId);
-        } else {
-            this.openDropdown(dropdownId, options);
-        }
+        this.dropdowns?.[dropdownId]?.close();
     }
 
     closeAllDropdowns() {
-        Object.keys(this.dropdowns || {}).forEach(dropdownId => this.closeDropdown(dropdownId));
-    }
-
-    selectDropdownOption(dropdownId, value, text) {
-        const dropdown = this.dropdowns[dropdownId];
-        if (!dropdown) return;
-
-        const valueElement = dropdown.trigger.querySelector('.dropdown-value');
-        if (valueElement) {
-            valueElement.textContent = text;
-        }
-
-        if (dropdown.hiddenSelect) {
-            dropdown.hiddenSelect.value = value;
-            this.decorateDropdownOptions(dropdownId);
-            const changeEvent = new Event('change', { bubbles: true });
-            dropdown.hiddenSelect.dispatchEvent(changeEvent);
-        }
-
-        this.closeAllDropdowns();
+        Object.values(this.dropdowns || {}).forEach(control => control?.close());
     }
 
     updateDropdownValue(dropdownId, value) {
-        const dropdown = this.dropdowns?.[dropdownId];
-        if (!dropdown) return;
-
-        const option = this.getDropdownOptions(dropdownId)
-            .find(item => (item.getAttribute('data-value') ?? '') === value);
-        if (option) {
-            const valueElement = dropdown.trigger.querySelector('.dropdown-value');
-            if (valueElement) {
-                valueElement.textContent = option.textContent.trim();
-            }
-        }
-
-        if (dropdown.hiddenSelect) {
-            dropdown.hiddenSelect.value = value;
-        }
-        this.decorateDropdownOptions(dropdownId);
+        const control = this.dropdowns?.[dropdownId] || (dropdownId === 'sortFilter' ? this.sortControl : null);
+        if (control?.setValue) control.setValue(value);
+        else if (this.elements[dropdownId]) this.elements[dropdownId].value = value;
     }
 
-    /**
-     * Rebuild a filter's hidden <select> and its custom option list. Skipped when the
-     * values are unchanged, which is the common case for every loaded page.
-     */
     setDropdownOptions(dropdownId, selectElement, allLabel, items) {
-        const dropdown = this.dropdowns?.[dropdownId];
-        const optionsKey = JSON.stringify([allLabel, ...items.map(item => [item.value, item.label])]);
-        if (dropdown && dropdown.optionsKey === optionsKey) return false;
-        if (dropdown) dropdown.optionsKey = optionsKey;
-
-        if (selectElement) {
-            const createSelectOption = (value, label) => {
-                const option = document.createElement('option');
-                option.value = value;
-                option.textContent = label;
-                return option;
-            };
+        const control = this.dropdowns?.[dropdownId];
+        const options = [{ value: '', label: allLabel }, ...items];
+        const optionsKey = JSON.stringify(options.map(item => [item.value, item.label]));
+        if (control?.optionsKey === optionsKey) return false;
+        if (control) control.optionsKey = optionsKey;
+        if (control?.setOptions) control.setOptions(options);
+        else if (selectElement) {
             selectElement.innerHTML = '';
-            selectElement.appendChild(createSelectOption('', allLabel));
-            items.forEach(item => selectElement.appendChild(createSelectOption(item.value, item.label)));
-        }
-
-        if (dropdown) {
-            const createOption = (value, label) => {
-                const option = document.createElement('div');
-                option.className = 'dropdown-option';
-                option.setAttribute('data-value', value);
-                option.textContent = label;
-                return option;
-            };
-            const fragment = document.createDocumentFragment();
-            fragment.appendChild(createOption('', allLabel));
-            items.forEach(item => fragment.appendChild(createOption(item.value, item.label)));
-            dropdown.list.innerHTML = '';
-            dropdown.list.appendChild(fragment);
-            this.decorateDropdownOptions(dropdownId);
+            for (const item of options) {
+                const option = document.createElement('option');
+                option.value = item.value;
+                option.textContent = item.label;
+                selectElement.appendChild(option);
+            }
         }
         return true;
     }
@@ -2014,6 +1815,7 @@ class RatingsPageManager {
                 this.filters.avgRatingTo = 10.0;
                 if (this.elements.avgRatingFrom) this.elements.avgRatingFrom.value = 1.0;
                 if (this.elements.avgRatingTo) this.elements.avgRatingTo.value = 10.0;
+                this.avgRangeControl?.syncFromNative();
                 // Trigger slider update visually
                 const event = new Event('input');
                 this.elements.avgRatingFrom?.dispatchEvent(event);
@@ -2029,49 +1831,11 @@ class RatingsPageManager {
     }
 
     initDoubleSlider(fromInput, toInput, fromDisplay, toDisplay, sliderRange, onChange) {
-        const updateSlider = (evt) => {
-            const min = parseFloat(fromInput.value);
-            const max = parseFloat(toInput.value);
-
-            if (min > max) {
-                if (evt?.target === fromInput) {
-                    fromInput.value = max;
-                } else {
-                    toInput.value = min;
-                }
-            }
-
-            const finalMin = Math.min(parseFloat(fromInput.value), parseFloat(toInput.value));
-            const finalMax = Math.max(parseFloat(fromInput.value), parseFloat(toInput.value));
-
-            fromDisplay.textContent = finalMin.toFixed(1);
-            toDisplay.textContent = finalMax.toFixed(1);
-
-            // Update track highlights
-            const percent1 = ((finalMin - 1) / 9) * 100;
-            const percent2 = ((finalMax - 1) / 9) * 100;
-            
-            sliderRange.style.left = percent1 + '%';
-            sliderRange.style.width = (percent2 - percent1) + '%';
-        };
-
-        const handleInput = (e) => {
-            updateSlider(e);
-        };
-
-        const handleChange = (e) => {
-            const min = Math.min(parseFloat(fromInput.value), parseFloat(toInput.value));
-            const max = Math.max(parseFloat(fromInput.value), parseFloat(toInput.value));
-            onChange(min, max);
-        };
-
-        fromInput.addEventListener('input', handleInput);
-        toInput.addEventListener('input', handleInput);
-        fromInput.addEventListener('change', handleChange);
-        toInput.addEventListener('change', handleChange);
-
-        // Initial update
-        updateSlider();
+        this.avgRangeControl = RangeControl.enhance(fromInput, toInput, {
+            fromDisplay, toDisplay, rangeBar: sliderRange, formatValue: value => Number(value).toFixed(1),
+            fromLabel: i18n.get('ratings.filters.avg_from'), toLabel: i18n.get('ratings.filters.avg_to'),
+            onCommit: onChange
+        });
     }
 
     updateSortFilterUIState() {
@@ -2086,15 +1850,9 @@ class RatingsPageManager {
         // without overwriting the user's choice in filters.sort.
         this.updateDropdownValue('sortFilter', this.getEffectiveSortKey());
 
-        const dropdown = this.dropdowns?.sortFilter;
-        const dropdownElement = dropdown?.element || dropdown?.container;
-        if (dropdownElement) {
-            // A disabled trigger is skipped by the mouse and the keyboard alike
-            if (dropdown.trigger) dropdown.trigger.disabled = isFilterActive;
-            if (isFilterActive) this.closeDropdown('sortFilter');
-            dropdownElement.classList.toggle('is-locked', isFilterActive);
-            dropdownElement.style.opacity = isFilterActive ? '0.6' : '1';
-            dropdownElement.title = isFilterActive ? i18n.get('ratings.sort.locked_by_avg_filter') : '';
+        if (this.sortControl) {
+            this.sortControl.setDisabled(isFilterActive,
+                isFilterActive ? i18n.get('ratings.sort.locked_by_avg_filter') : '');
         }
     }
 
@@ -3189,6 +2947,7 @@ class RatingsPageManager {
         // Reset slider
         if (this.elements.avgRatingFrom) this.elements.avgRatingFrom.value = 1.0;
         if (this.elements.avgRatingTo) this.elements.avgRatingTo.value = 10.0;
+        this.avgRangeControl?.syncFromNative();
         const event = new Event('input');
         this.elements.avgRatingFrom?.dispatchEvent(event);
 
@@ -3253,7 +3012,7 @@ class RatingsPageManager {
         this.filters.avgRatingTo = Math.max(from, to);
         if (this.elements.avgRatingFrom) this.elements.avgRatingFrom.value = this.filters.avgRatingFrom;
         if (this.elements.avgRatingTo) this.elements.avgRatingTo.value = this.filters.avgRatingTo;
-        // Track and labels are drawn by initDoubleSlider() from these input values
+        this.avgRangeControl?.syncFromNative();
         if (this.elements.userFilter) {
             this.elements.userFilter.value = this.filters.user;
             this.updateDropdownValue('userFilter', this.filters.user);

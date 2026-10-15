@@ -969,8 +969,9 @@ class PlaybackController {
         // Immediately cancel any active auto-next countdown on provider switch (Phase 3G)
         this._notifyCancelAutoNext();
 
-        // Flush active provider's progress before unmounting (Part 14)
-        await this.flushProgress({ force: true });
+        // Capture the outgoing progress before unmounting. Persistence is queued
+        // by ProgressService and must not delay mounting or newer switch intents.
+        this.flushProgress({ force: true });
 
         // Increment generation token for async race condition protection (Part 18)
         const currentToken = ++this.mountRequestId;
@@ -1056,7 +1057,7 @@ class PlaybackController {
             if (this.mountRequestId !== currentToken) {
                 console.warn(`[PlaybackController] Stale mount request ${currentToken} discarded (current: ${this.mountRequestId})`);
                 if (adapter && typeof adapter.unmount === 'function') {
-                    adapter.unmount(mountContext);
+                    adapter.unmount({ ...mountContext, element: mountResult?.element });
                 }
                 const staleError = new Error('Playback request was superseded');
                 staleError.code = 'STALE_PLAYBACK_REQUEST';

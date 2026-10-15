@@ -167,6 +167,7 @@ class BookmarksPageManager {
     initializeElements() {
         this.elements = {
             sidebarItems: document.querySelectorAll('.sidebar-item'),
+            sidebarNav: document.querySelector('.sidebar-nav'),
             searchInput: document.getElementById('bookmarksSearchInput'),
             sortSelect: document.getElementById('sortFilter'),
             moviesGrid: document.getElementById('moviesGrid'),
@@ -200,8 +201,11 @@ class BookmarksPageManager {
 
     setupEventListeners() {
         // Sidebar filtering
+        window.FilterChoice?.enhanceSingleGroup(this.elements.sidebarNav, {
+            selector: '.sidebar-item', label: 'Списки фильмов'
+        });
         this.elements.sidebarItems.forEach(item => {
-            item.addEventListener('mousedown', () => {
+            item.addEventListener('click', () => {
                 const filter = item.dataset.filter;
                 this.setFilter(filter);
             });
@@ -217,6 +221,7 @@ class BookmarksPageManager {
 
         // Sort
         if (this.elements.sortSelect) {
+            this.sortControl = window.SortControl?.enhance(this.elements.sortSelect);
             this.elements.sortSelect.addEventListener('change', (e) => {
                 this.currentSort = e.target.value;
                 this.applyFilters();
@@ -659,7 +664,7 @@ class BookmarksPageManager {
                 : (col.icon || '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line></svg>');
 
             return `
-                <button class="sidebar-item collection-item ${this.activeCollectionId === col.id ? 'active' : ''}" data-collection-id="${col.id}">
+                <button type="button" class="sidebar-item filter-choice collection-item ${this.activeCollectionId === col.id ? 'active is-active' : ''}" data-collection-id="${col.id}" aria-pressed="${this.activeCollectionId === col.id}">
                     <span class="sidebar-icon">${iconHtml}</span>
                     <span class="sidebar-label">${col.name}</span>
                     <span class="sidebar-count">${col.movieIds?.length || 0}</span>
@@ -667,9 +672,13 @@ class BookmarksPageManager {
             `;
         }).join('');
 
+        window.FilterChoice?.enhanceSingleGroup(this.elements.customCollectionsList, {
+            selector: '.collection-item', label: 'Пользовательские подборки'
+        });
+
         // Add click handlers
         this.elements.customCollectionsList.querySelectorAll('.collection-item').forEach(item => {
-            item.addEventListener('mousedown', () => {
+            item.addEventListener('click', () => {
                 const collectionId = item.dataset.collectionId;
                 this.setFilter(`collection:${collectionId}`);
             });
@@ -1245,6 +1254,15 @@ class BookmarksPageManager {
                 this.elements.pageTitle.textContent = titleMap[filter] || i18n.get('bookmarks.title');
             }
         }
+
+        window.FilterChoice?.syncSingleGroup(this.elements.sidebarNav, {
+            value: filter.startsWith('collection:') ? '' : filter,
+            attribute: 'data-filter', selector: '.sidebar-item'
+        });
+        window.FilterChoice?.syncSingleGroup(this.elements.customCollectionsList, {
+            value: filter.startsWith('collection:') ? filter.slice('collection:'.length) : '',
+            attribute: 'data-collection-id', selector: '.collection-item'
+        });
 
         this.applyFilters();
     }

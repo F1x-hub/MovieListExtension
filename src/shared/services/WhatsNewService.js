@@ -3,6 +3,23 @@
     const KEY = 'whatsNewV1';
     class WhatsNewService {
         static key = KEY;
+        static queues = new WeakMap();
+        // Web Locks serializes storage reads/writes across extension tabs and
+        // the worker. The per-storage queue also covers tests/older contexts.
+        transaction(callback) {
+            if (global.isSecureContext && global.navigator?.locks?.request) {
+                return global.navigator.locks.request('movie-extension-whats-new-ack', callback);
+            }
+            const previous = WhatsNewService.queues.get(this.storage);
+            const operation = previous ? previous.catch(() => {}).then(callback) : Promise.resolve(callback());
+            WhatsNewService.queues.set(this.storage, operation);
+            operation.then(() => {
+                if (WhatsNewService.queues.get(this.storage) === operation) WhatsNewService.queues.delete(this.storage);
+            }, () => {
+                if (WhatsNewService.queues.get(this.storage) === operation) WhatsNewService.queues.delete(this.storage);
+            });
+            return operation;
+        }
         static validVersion(value) {
             return typeof value === 'string' && /^\d+(?:\.\d+){2,3}$/.test(value)
                 && value.split('.').every(part => Number(part) <= 65535);
@@ -22,19 +39,24 @@
             this.entries = entries;
         }
         async read() {
-            const result = await this.storage.get(KEY);
-            return result[KEY] || {};
+            return this.transaction(async () => {
+                const result = await this.storage.get(KEY);
+                return result[KEY] || {};
+            });
         }
         async observeInstallation(details) {
-            const state = await this.read();
-            if (details.reason === 'install') {
-                await this.storage.set({ [KEY]: { seenVersion: this.version } });
-            } else if (details.reason === 'update' && !WhatsNewService.validVersion(state.seenVersion)) {
-                const previous = details.previousVersion;
-                const baseline = WhatsNewService.validVersion(previous) && WhatsNewService.compare(previous, this.version) < 0
-                    ? previous : this.version;
-                await this.storage.set({ [KEY]: { seenVersion: baseline } });
-            }
+            return this.transaction(async () => {
+                const result = await this.storage.get(KEY);
+                const state = result[KEY] || {};
+                if (details.reason === 'install') {
+                    await this.storage.set({ [KEY]: { seenVersion: this.version } });
+                } else if (details.reason === 'update' && !WhatsNewService.validVersion(state.seenVersion)) {
+                    const previous = details.previousVersion;
+                    const baseline = WhatsNewService.validVersion(previous) && WhatsNewService.compare(previous, this.version) < 0
+                        ? previous : this.version;
+                    await this.storage.set({ [KEY]: { seenVersion: baseline } });
+                }
+            });
         }
         published() {
             return this.entries.filter(entry => !entry.draft && entry.highlights?.length
@@ -63,10 +85,13 @@
             return { entries: hasNew ? history : [], seenVersion: state.seenVersion };
         }
         async acknowledge() {
-            const state = await this.read();
-            const seenVersion = WhatsNewService.validVersion(state.seenVersion)
-                && WhatsNewService.compare(state.seenVersion, this.version) > 0 ? state.seenVersion : this.version;
-            await this.storage.set({ [KEY]: { seenVersion } });
+            return this.transaction(async () => {
+                const result = await this.storage.get(KEY);
+                const state = result[KEY] || {};
+                const seenVersion = WhatsNewService.validVersion(state.seenVersion)
+                    && WhatsNewService.compare(state.seenVersion, this.version) > 0 ? state.seenVersion : this.version;
+                await this.storage.set({ [KEY]: { seenVersion } });
+            });
         }
     }
     global.WhatsNewService = WhatsNewService;

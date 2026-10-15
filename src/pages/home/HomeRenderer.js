@@ -12,6 +12,7 @@ class HomeRenderer {
         this.navigationOptions = options;
         this.ratingEnricher = options.ratingEnricher || null;
         this.personalTierStates = new WeakMap();
+        this.enteredGrids = new WeakSet();
     }
 
     /**
@@ -37,6 +38,27 @@ class HomeRenderer {
         if (typeof Utils !== 'undefined' && Utils.bindMovieCardNavigation) {
             Utils.bindMovieCardNavigation(container, { ...this.navigationOptions, ...options });
         }
+    }
+
+    /** Animate only the first mounted, visible batch; later refreshes stay still. */
+    enterVisibleGrid(container) {
+        if (!container?.isConnected || this.enteredGrids.has(container)) return;
+        this.enteredGrids.add(container);
+        if (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        const cards = Array.from(container.children);
+        // Read all geometry before adding animation classes.
+        const visible = cards.filter(card => {
+            const rect = card.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight;
+        }).slice(0, 6);
+        visible.forEach((card, index) => {
+            card.style.animationDelay = `${Math.min(index * 25, 120)}ms`;
+            card.classList.add('home-card-animate');
+            card.addEventListener('animationend', () => {
+                card.classList.remove('home-card-animate');
+                card.style.removeProperty('animation-delay');
+            }, { once: true });
+        });
     }
 
     /**
@@ -314,18 +336,16 @@ class HomeRenderer {
         }
 
         const fragment = document.createDocumentFragment();
-        items.forEach((item, index) => {
+        items.forEach(item => {
             const cardEl = this.createMovieCard(item, options);
             if (cardEl) {
-                const delay = Math.min(index * 35, 400);
                 cardEl.classList.remove('fade-in');
-                cardEl.classList.add('home-card-animate');
-                cardEl.style.animationDelay = `${delay}ms`;
                 fragment.appendChild(cardEl);
             }
         });
 
         container.appendChild(fragment);
+        this.enterVisibleGrid(container);
         this.applyAiringBadges(items, container);
 
         this.bindMovieCardNavigation(container);
@@ -510,6 +530,7 @@ class HomeRenderer {
             if (anchor !== section.node) container.insertBefore(section.node, anchor);
         });
         gridsToObserve.forEach(grid => {
+            this.enterVisibleGrid(grid);
             this.bindMovieCardNavigation(grid);
             if (grid.isConnected) this.ratingEnricher?.observe?.(grid);
         });
@@ -541,9 +562,6 @@ class HomeRenderer {
                         ? Array.from(entry.node.querySelectorAll('a, button, [tabindex]')).indexOf(active) : -1;
                     entry.node.replaceWith(node);
                     if (focusedIndex >= 0) node.querySelectorAll('a, button, [tabindex]')[focusedIndex]?.focus({ preventScroll: true });
-                } else {
-                    node.classList.add('home-card-animate');
-                    node.style.animationDelay = `${Math.min(index * 35, 400)}ms`;
                 }
                 entry = { node, signature, data };
                 cards.set(key, entry);
@@ -569,6 +587,7 @@ class HomeRenderer {
                 cards.delete(key);
             }
         });
+        this.enterVisibleGrid(grid);
         return newCards;
     }
 
@@ -705,12 +724,10 @@ class HomeRenderer {
         const communityGrid = container.querySelector('#home-community-grid');
         if (communityGrid && communityDocs.length > 0) {
             const fragment = document.createDocumentFragment();
-            communityDocs.forEach((m, index) => {
+            communityDocs.forEach(m => {
                 const cardEl = this.createMovieCard(m, { showAverageRating: true });
                 if (cardEl) {
-                    const delay = Math.min(index * 40, 300);
-                    cardEl.classList.add('home-card-animate');
-                    cardEl.style.animationDelay = `${delay}ms`;
+                    cardEl.classList.remove('fade-in');
                     fragment.appendChild(cardEl);
                 }
             });
@@ -721,6 +738,7 @@ class HomeRenderer {
         }
 
         container.style.display = 'block';
+        if (communityGrid) this.enterVisibleGrid(communityGrid);
     }
 
     /**
