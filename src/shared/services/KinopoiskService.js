@@ -359,6 +359,38 @@ class KinopoiskService {
             .trim();
     }
 
+    getGraphqlService() {
+        if (this.graphqlService === undefined) {
+            this.graphqlService = typeof KinopoiskGraphqlService === 'function' ? new KinopoiskGraphqlService() : null;
+        }
+        return this.graphqlService;
+    }
+
+    /** GraphQL title search; null when unavailable or failed (callers fall back). */
+    async searchViaGraphql(query, options = {}) {
+        const service = this.getGraphqlService();
+        if (!service || options.skipGraphql === true) return null;
+        try {
+            const items = await service.searchMovies(query, { limit: Math.min(options.limit || 10, 20) });
+            return items.length > 0 ? items : null;
+        } catch (error) {
+            console.warn('[KinopoiskGraphql] search failed, using the hidden page:', error.message);
+            return null;
+        }
+    }
+
+    /** GraphQL ratings by Kinopoisk ID; null when unavailable or failed. */
+    async movieRatingsViaGraphql(kinopoiskId) {
+        const service = this.getGraphqlService();
+        if (!service) return null;
+        try {
+            return await service.getMovieRatings(kinopoiskId);
+        } catch (error) {
+            console.warn('[KinopoiskGraphql] ratings failed, using the hidden page:', error.message);
+            return null;
+        }
+    }
+
     /**
      * Scrape search results from kinopoisk.ru using real browser context (offscreen document + iframe + content script)
      * @param {string} query - Raw search query
@@ -368,6 +400,14 @@ class KinopoiskService {
     async scrapeSearchResultsOffscreen(query, options = {}) {
         const cleanQuery = this.normalizeQuery(query);
         if (!cleanQuery) return [];
+
+        // Fast path: the site's own GraphQL search suggestions answer in one JSON
+        // request; the hidden search page stays the fallback.
+        const graphqlItems = await this.searchViaGraphql(cleanQuery, options);
+        if (graphqlItems) {
+            const items = graphqlItems.slice(0, options.limit || 30);
+            return options.returnDiagnostics === true ? { items, failureReason: null, metrics: { source: 'graphql' } } : items;
+        }
 
         if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
             // Not running in Chrome extension context (e.g. unit tests or node)
@@ -471,6 +511,15 @@ class KinopoiskService {
     async scrapeMoviePageRatingsOffscreen(kinopoiskId, options = {}) {
         const numericId = Number(kinopoiskId);
         if (!Number.isInteger(numericId) || numericId <= 0) return null;
+
+        // Fast path: Kinopoisk's GraphQL returns both ratings with vote counts.
+        // The hidden movie page is loaded only when Kinopoisk has no IMDb block
+        // for the title yet (new releases show IMDb on the page earlier).
+        const graphqlRatings = await this.movieRatingsViaGraphql(numericId);
+        if (graphqlRatings?.imdbAnswered || (graphqlRatings && options.kpOnly === true)) {
+            const ratings = { ...graphqlRatings, imdbId: null, source: 'graphql' };
+            return options.returnDiagnostics === true ? { ratings, failureReason: null, metrics: { source: 'graphql' } } : ratings;
+        }
 
         if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
             return null;

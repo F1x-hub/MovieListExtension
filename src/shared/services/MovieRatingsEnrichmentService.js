@@ -4,6 +4,9 @@
  * bounded HTML search flows, never through a per-card provider API batch.
  */
 class MovieRatingsEnrichmentService {
+    // Bumped when "no IMDb rating" records written earlier can no longer be trusted.
+    static IMDB_CHECK_VERSION = 2;
+
     constructor(options = {}) {
         this.kinopoiskService = options.kinopoiskService || null;
         this.navigationService = options.navigationService || null;
@@ -221,6 +224,12 @@ class MovieRatingsEnrichmentService {
                 cached = null;
             }
             card.dataset.ratingsEnrichmentKey = key;
+            const merged = this.mergeKinopoiskRecord(cached, cache);
+            if (merged !== cached) {
+                cache[key] = merged;
+                cached = merged;
+                repairedCache = true;
+            }
             if (this.isFullyUsableCache(cached)) {
                 cacheHits += 1;
                 const record = this.preserveKnownRatings(cached, item);
@@ -386,6 +395,7 @@ class MovieRatingsEnrichmentService {
                         imdbId: candidate.imdbId,
                         kpState: Number(candidate.kpRating) > 0 ? 'available' : 'unavailable',
                         imdbState: Number(candidate.imdbRating) > 0 ? 'available' : 'unavailable',
+                        imdbAnswered: false,
                         error: error?.message || 'ENRICHMENT_FAILED'
                     })
                 };
@@ -690,6 +700,9 @@ class MovieRatingsEnrichmentService {
         let imdbVotes = Number(candidate.imdbVotes) || 0;
         let kpMoviePageAttempted = false;
         const imdbChecked = candidate.imdbChecked === true;
+        // True once IMDb data was actually read (batch answer or a parsed
+        // Kinopoisk page). A failed scrape must not cache "no IMDb" for 12 hours.
+        let imdbAnswered = imdbChecked;
         this.trace('ratings:start', {
             ...this.cardTraceData(candidate.card),
             kpId: candidate.kpId,
@@ -719,6 +732,7 @@ class MovieRatingsEnrichmentService {
                     priority: this.requestPriority(candidate.card, 'visible-ratings'),
                     sessionId: this.enrichmentSessionId
                 });
+                if (parsed) imdbAnswered = true;
                 kpRating = kpRating > 0 ? kpRating : Number(parsed?.kpRating) || 0;
                 imdbRating = imdbRating > 0 ? imdbRating : Number(parsed?.imdbRating) || 0;
                 imdbId = imdbId || this.normalizeImdbId(parsed?.imdbId);
@@ -767,7 +781,8 @@ class MovieRatingsEnrichmentService {
                 kpRating,
                 imdbRating,
                 imdbId,
-                votes: { kp: kpVotes, imdb: imdbVotes }
+                votes: { kp: kpVotes, imdb: imdbVotes },
+                imdbAnswered
             })
         };
         this.trace('ratings:complete', {
@@ -780,6 +795,33 @@ class MovieRatingsEnrichmentService {
             status: result.record.status
         });
         return result;
+    }
+
+    /**
+     * Cards opened from TMDB-only feeds are cached under a tmdb: key, while Movie
+     * Details stores what it found on the Kinopoisk page under kp:<id>. Without
+     * this merge the card kept an old "no IMDb rating" result for up to 12 hours
+     * although the details page already showed the rating.
+     * @returns {Object} the same record when nothing new is known
+     */
+    mergeKinopoiskRecord(record, cache) {
+        const kpId = Number(record?.kpId) || 0;
+        const kpRecord = kpId > 0 ? cache?.[`kp:${kpId}`] : null;
+        if (!record || !kpRecord || kpRecord === record) return record;
+        const kpRating = this.knownRating(record.kpRating) || this.knownRating(kpRecord.kpRating);
+        const imdbRating = this.knownRating(record.imdbRating) || this.knownRating(kpRecord.imdbRating);
+        const votes = {
+            kp: Number(record.votes?.kp) || Number(kpRecord.votes?.kp) || 0,
+            imdb: Number(record.votes?.imdb) || Number(kpRecord.votes?.imdb) || 0
+        };
+        const imdbId = this.normalizeImdbId(record.imdbId) || this.normalizeImdbId(kpRecord.imdbId);
+        const unchanged = kpRating === this.knownRating(record.kpRating)
+            && imdbRating === this.knownRating(record.imdbRating)
+            && votes.kp === (Number(record.votes?.kp) || 0)
+            && votes.imdb === (Number(record.votes?.imdb) || 0)
+            && imdbId === this.normalizeImdbId(record.imdbId);
+        if (unchanged) return record;
+        return this.preserveKnownRatings({ ...record, votes, imdbId }, { kpRating, imdbRating });
     }
 
     knownRating(value) {
@@ -836,8 +878,9 @@ class MovieRatingsEnrichmentService {
             ),
             ...(isNegative ? { retryAfter: now + (Number(values.retryAfterMs) || this.negativeRetryMs) } : {}),
             ...(kpId > 0 && kpRating <= 0 ? { kpRetryAfter: now + this.providerRetryMs } : {}),
+            ...(imdbRating <= 0 && values.imdbAnswered !== false ? { imdbCheckVersion: MovieRatingsEnrichmentService.IMDB_CHECK_VERSION } : {}),
             ...(imdbRating <= 0 ? {
-                imdbRetryAfter: now + this.imdbRetryMs,
+                imdbRetryAfter: now + (values.imdbAnswered === false ? this.providerRetryMs : this.imdbRetryMs),
                 imdbAttemptSessionId: this.enrichmentSessionId
             } : {})
         };
@@ -994,8 +1037,11 @@ class MovieRatingsEnrichmentService {
         if (Number(record.imdbRating) <= 0) {
             // A settled "no IMDb rating" result is reused until its retry time
             // instead of only within the current page session.
+            // Records from before imdbCheckVersion 2 may hold a failed scrape as
+            // "no IMDb rating"; they are checked once more (now via GraphQL).
             return record.imdbState === 'unavailable'
-                && Number(record.imdbRetryAfter) > Date.now();
+                && Number(record.imdbRetryAfter) > Date.now()
+                && Number(record.imdbCheckVersion) >= MovieRatingsEnrichmentService.IMDB_CHECK_VERSION;
         }
         return true;
     }

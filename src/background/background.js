@@ -1021,36 +1021,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return false;
     } else if (message.target === 'kinopoisk-search-coordinator') {
         // Message from content script running inside the scraper iframe
+        const activeRequest = findActiveSearchRequest(message.requestId);
         debugTrace('[KinopoiskOffscreenTrace]', {
-            traceId: _currentSearchRequest?.traceId || null,
+            traceId: activeRequest?.traceId || null,
             stage: 'content-script:result-received',
             requestId: message.requestId || null,
             type: message.type,
             itemCount: message.items?.length || 0
         });
-        if (_currentSearchRequest?.provider === 'kinopoisk'
-            || _currentSearchRequest?.provider === 'kinopoisk-detail'
-            || _currentSearchRequest?.provider === 'kinopoisk-similar') {
-            if (!message.requestId || !_currentSearchRequest.requestId || message.requestId === _currentSearchRequest.requestId) {
-                if (message.type === 'SCRAPE_RESULT_SUCCESS') {
-                    _currentSearchRequest.finish({ success: true, items: message.items || [] });
-                } else if (message.type === 'SCRAPE_SIMILAR_SUCCESS') {
-                    _currentSearchRequest.finish({ success: true, items: message.items || [] });
-                } else if (message.type === 'SCRAPE_MOVIE_RATINGS_SUCCESS') {
-                    _currentSearchRequest.finish({ success: true, ratings: message.ratings || null });
-                } else if (message.type === 'SCRAPE_RESULT_BLOCKED') {
-                    _currentSearchRequest.finish({ success: false, reason: message.reason || 'SCRAPE_BLOCKED_EVEN_WITH_SESSION', items: [] });
-                } else {
-                    _currentSearchRequest.finish({ success: false, reason: message.reason || 'SCRAPE_TIMEOUT', items: [] });
-                }
+        if (activeRequest && ['kinopoisk', 'kinopoisk-detail', 'kinopoisk-similar'].includes(activeRequest.provider)) {
+            if (message.type === 'SCRAPE_RESULT_SUCCESS' || message.type === 'SCRAPE_SIMILAR_SUCCESS') {
+                activeRequest.finish({ success: true, items: message.items || [] });
+            } else if (message.type === 'SCRAPE_MOVIE_RATINGS_SUCCESS') {
+                activeRequest.finish({ success: true, ratings: message.ratings || null });
+            } else if (message.type === 'SCRAPE_RESULT_BLOCKED') {
+                activeRequest.finish({ success: false, reason: message.reason || 'SCRAPE_BLOCKED_EVEN_WITH_SESSION', items: [] });
             } else {
-                console.warn('[KinopoiskOffscreenTrace]', {
-                    traceId: _currentSearchRequest.traceId || null,
-                    stage: 'content-script:result-ignored',
-                    activeRequestId: _currentSearchRequest.requestId,
-                    receivedRequestId: message.requestId
-                });
+                activeRequest.finish({ success: false, reason: message.reason || 'SCRAPE_TIMEOUT', items: [] });
             }
+        } else if (message.requestId) {
+            console.warn('[KinopoiskOffscreenTrace]', {
+                stage: 'content-script:result-ignored',
+                activeRequestIds: [..._activeSearchRequests.values()].map(item => item.requestId),
+                receivedRequestId: message.requestId
+            });
         }
         return false;
     } else if (message.type && message.type.startsWith('RADIO_')) {
@@ -1068,7 +1062,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // --- Offscreen Document Coordinator (Radio & Search Scraper) ---
 let _offscreenPromise = null;
-let _currentSearchRequest = null;
+// Hidden Kinopoisk frames work in parallel: one page load no longer waits for
+// the previous card's load. Two slots keep the request rate modest.
+const SEARCH_FRAME_SLOTS = 2;
+const _activeSearchRequests = new Map(); // slot -> request entry
+
+function isActiveSearchRequest(entry) {
+    return Boolean(entry) && Number.isInteger(entry.slot) && _activeSearchRequests.get(entry.slot) === entry;
+}
+
+/** The running request a scraper message belongs to (by requestId). */
+function findActiveSearchRequest(requestId) {
+    const active = [..._activeSearchRequests.values()];
+    if (requestId) return active.find(item => item.requestId === requestId) || null;
+    // Legacy messages without an ID are only attributable to a single request.
+    return active.length === 1 ? active[0] : null;
+}
+
+function findFreeSearchSlot() {
+    for (let slot = 0; slot < SEARCH_FRAME_SLOTS; slot += 1) {
+        if (!_activeSearchRequests.has(slot)) return slot;
+    }
+    return -1;
+}
 
 // Offscreen search traces are diagnostics, enabled with
 // chrome.storage.local.set({ movielistDebugTraces: true }). Warnings always log.
@@ -1241,7 +1257,7 @@ function pickNextSearchIndex() {
 function expireSearchRequest(entry) {
     if (!entry || _searchInFlight.get(entry.requestKey) !== entry) return;
 
-    if (entry === _currentSearchRequest && typeof entry.finish === 'function') {
+    if (isActiveSearchRequest(entry) && typeof entry.finish === 'function') {
         entry.finish({ success: false, reason: 'QUEUE_DEADLINE_EXCEEDED', items: [] });
         return;
     }
@@ -1271,7 +1287,7 @@ function expireSearchRequest(entry) {
 }
 
 function cancelSearchRequest({ requestKey = null, requestId = null } = {}) {
-    const entry = requestKey ? _searchInFlight.get(requestKey) : _currentSearchRequest;
+    const entry = requestKey ? _searchInFlight.get(requestKey) : findActiveSearchRequest(requestId);
     if (!entry || (requestId && entry.requestId && requestId !== entry.requestId)) return false;
 
     if (entry.consumerCount > 1) {
@@ -1279,7 +1295,7 @@ function cancelSearchRequest({ requestKey = null, requestId = null } = {}) {
         return true;
     }
 
-    if (entry === _currentSearchRequest && typeof entry.finish === 'function') {
+    if (isActiveSearchRequest(entry) && typeof entry.finish === 'function') {
         entry.finish({ success: false, reason: 'REQUEST_CANCELLED', items: [] });
         return true;
     }
@@ -1308,13 +1324,18 @@ function cancelSearchRequest({ requestKey = null, requestId = null } = {}) {
     return true;
 }
 
-async function processSearchQueue() {
-    if (_currentSearchRequest || _searchQueue.length === 0) {
-        return;
+function processSearchQueue() {
+    while (_searchQueue.length > 0) {
+        const slot = findFreeSearchSlot();
+        if (slot < 0) return;
+        const item = _searchQueue.splice(pickNextSearchIndex(), 1)[0];
+        item.slot = slot;
+        _activeSearchRequests.set(slot, item);
+        void startSearchRequest(item, slot);
     }
+}
 
-    const item = _searchQueue.splice(pickNextSearchIndex(), 1)[0];
-    _currentSearchRequest = item;
+async function startSearchRequest(item, slot) {
     const { provider, query, timeoutMs, resolve, requireRating, mediaType, traceId } = item;
     const requestId = Date.now() + '_' + Math.random().toString(36).slice(2, 8);
     const queueWaitMs = Date.now() - item.enqueuedAt;
@@ -1371,7 +1392,6 @@ async function processSearchQueue() {
             totalMs: metrics.totalMs
         });
         const finalResult = { ...result, requestId, metrics };
-        _currentSearchRequest = null;
         _searchInFlight.delete(item.requestKey);
         if (finalResult.success || finalResult.reason === 'SCRAPE_RESULT_SUCCESS') {
             _recentSearchResults.set(item.requestKey, {
@@ -1380,12 +1400,14 @@ async function processSearchQueue() {
             });
         }
 
-        // The iframe is the single physical resource. Wait for cleanup to be
-        // acknowledged before allowing the next request to load a URL.
+        // Each frame slot is a physical resource. Wait for cleanup to be
+        // acknowledged before the slot loads its next URL.
         Promise.resolve(chrome.runtime.sendMessage({
             target: 'offscreen-scraper',
-            type: 'CLEANUP_SEARCH_FRAME'
+            type: 'CLEANUP_SEARCH_FRAME',
+            slot
         })).catch(() => {}).finally(() => {
+            if (_activeSearchRequests.get(slot) === item) _activeSearchRequests.delete(slot);
             resolve(finalResult);
             setTimeout(processSearchQueue, 50);
         });
@@ -1393,7 +1415,6 @@ async function processSearchQueue() {
 
     item.requestId = requestId;
     item.finish = finish;
-    _currentSearchRequest = item;
 
     try {
         const offscreenInitStartedAt = Date.now();
@@ -1415,7 +1436,7 @@ async function processSearchQueue() {
         return;
     }
 
-    if (isDone || _currentSearchRequest !== item) return;
+    if (isDone || _activeSearchRequests.get(slot) !== item) return;
 
     timeoutId = setTimeout(() => {
         console.warn('[KinopoiskOffscreenTrace]', {
@@ -1439,7 +1460,8 @@ async function processSearchQueue() {
         target: 'offscreen-scraper',
         type: 'LOAD_SEARCH_FRAME',
         searchUrl,
-        requestId
+        requestId,
+        slot
     }).catch(err => {
         finish({ success: false, reason: 'OFFSCREEN_MESSAGE_FAILED', error: err.message, items: [] });
     });

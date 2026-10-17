@@ -6,7 +6,7 @@ const source = fs.readFileSync('src/background/background.js', 'utf8');
 const listeners = [];
 const loads = [];
 let cleanupCount = 0;
-let currentLoad = null;
+const activeLoads = new Map(); // slot -> LOAD_SEARCH_FRAME message
 
 const chrome = {
     runtime: {
@@ -15,12 +15,12 @@ const chrome = {
         onMessage: { addListener(listener) { listeners.push(listener); } },
         sendMessage(message) {
             if (message.target === 'offscreen-scraper' && message.type === 'LOAD_SEARCH_FRAME') {
-                currentLoad = message;
+                activeLoads.set(message.slot, message);
                 loads.push(message);
                 return Promise.resolve({ success: true });
             }
             if (message.target === 'offscreen-scraper' && message.type === 'CLEANUP_SEARCH_FRAME') {
-                currentLoad = null;
+                activeLoads.delete(message.slot);
                 cleanupCount += 1;
                 return Promise.resolve({ success: true });
             }
@@ -78,12 +78,13 @@ function request(message) {
     });
 }
 
-function finishCurrent(items = [{ id: 1, type: 'film' }]) {
-    assert.ok(currentLoad, 'a physical iframe request should be active');
+function finishLoad(pattern, items = [{ id: 1, type: 'film' }]) {
+    const load = [...activeLoads.values()].find(item => pattern.test(item.searchUrl));
+    assert.ok(load, `a frame should be loading ${pattern}`);
     onMessage({
         target: 'kinopoisk-search-coordinator',
         type: 'SCRAPE_RESULT_SUCCESS',
-        requestId: currentLoad.requestId,
+        requestId: load.requestId,
         items
     }, {}, () => {});
 }
@@ -92,42 +93,28 @@ async function tick(ms = 25) {
     await new Promise(resolve => setTimeout(resolve, ms));
 }
 
+const search = (query, priority, extra = {}) => request({
+    type: 'KINOPOISK_OFFSCREEN_SCRAPE', query, requestKey: `search:${query}`, priority, ...extra
+});
+
 async function run() {
-    const first = request({
-        type: 'KINOPOISK_OFFSCREEN_SCRAPE',
-        query: 'first',
-        requestKey: 'search:first',
-        priority: 'below-viewport'
-    });
+    // Two frame slots load in parallel.
+    const first = search('first', 'below-viewport');
+    const second = search('second', 'below-viewport');
     await tick();
-    assert.equal(loads.length, 1);
+    assert.equal(loads.length, 2, 'both frame slots start at once');
+    assert.deepEqual([...activeLoads.keys()].sort(), [0, 1]);
 
-    const low = request({
-        type: 'KINOPOISK_OFFSCREEN_SCRAPE',
-        query: 'low',
-        requestKey: 'search:low',
-        priority: 'below-viewport'
-    });
-    const visible = request({
-        type: 'KINOPOISK_OFFSCREEN_SCRAPE',
-        query: 'visible',
-        requestKey: 'search:visible',
-        priority: 'visible-identity'
-    });
-    const duplicate = request({
-        type: 'KINOPOISK_OFFSCREEN_SCRAPE',
-        query: 'visible',
-        requestKey: 'search:visible',
-        priority: 'visible-identity'
-    });
-
-    finishCurrent();
-    const firstResult = await first;
-    assert.equal(firstResult.success, true);
+    // With both slots busy, the freed slot takes visible work before background work.
+    const low = search('low', 'below-viewport');
+    const visible = search('visible', 'visible-identity');
+    const duplicate = search('visible', 'visible-identity');
+    finishLoad(/first/);
+    assert.equal((await first).success, true);
     await tick(80);
-    assert.match(loads[1].searchUrl, /visible/);
+    assert.match(loads[2].searchUrl, /visible/);
 
-    finishCurrent([{ id: 2, type: 'film' }]);
+    finishLoad(/visible/, [{ id: 2, type: 'film' }]);
     const [visibleResult, duplicateResult] = await Promise.all([visible, duplicate]);
     assert.equal(visibleResult.success, true);
     assert.deepEqual(duplicateResult.items, visibleResult.items);
@@ -136,32 +123,29 @@ async function run() {
     assert.ok(visibleResult.metrics.serviceMs >= 0);
     await tick(80);
     assert.equal(cleanupCount, 2);
+    // A result is routed to its own frame's request, not to whichever started last.
+    assert.match(activeLoads.get(1)?.searchUrl || activeLoads.get(0)?.searchUrl, /second|low/);
 
-    const cancelled = request({
-        type: 'KINOPOISK_OFFSCREEN_SCRAPE',
-        query: 'cancelled',
-        requestKey: 'search:cancelled',
-        priority: 'retry'
-    });
-    const cancelResponse = await request({
-        type: 'KINOPOISK_OFFSCREEN_CANCEL',
-        requestKey: 'search:cancelled'
-    });
+    finishLoad(/second/);
+    await second;
+    await tick(80);
+    finishLoad(/low/);
+    await low;
+    await tick(80);
+    assert.equal(activeLoads.size, 0);
+
+    // Queued work can be cancelled before it loads.
+    const busyA = search('busy-a', 'visible-identity');
+    const busyB = search('busy-b', 'visible-identity');
+    await tick();
+    const cancelled = search('cancelled', 'retry');
+    const cancelResponse = await request({ type: 'KINOPOISK_OFFSCREEN_CANCEL', requestKey: 'search:cancelled' });
     assert.equal(cancelResponse.success, true);
-    finishCurrent([{ id: 3, type: 'film' }]);
     const cancelledResult = await cancelled;
     assert.equal(cancelledResult.reason, 'REQUEST_CANCELLED');
     assert.equal(loads.some(load => /cancelled/.test(load.searchUrl)), false);
 
-    const blocker = request({
-        type: 'KINOPOISK_OFFSCREEN_SCRAPE',
-        query: 'blocker',
-        requestKey: 'search:blocker',
-        priority: 'visible-identity'
-    });
-    await tick();
-    assert.match(currentLoad.searchUrl, /blocker/);
-
+    // Queued work past its deadline expires without loading.
     const expiredSimilar = request({
         type: 'KINOPOISK_SIMILAR_OFFSCREEN',
         kinopoiskId: 42,
@@ -176,10 +160,11 @@ async function run() {
     assert.equal(expiredResult.metrics.timeoutReason, 'QUEUE_DEADLINE_EXCEEDED');
     assert.equal(loads.some(load => /\/42\/like\//.test(load.searchUrl)), false);
 
-    finishCurrent([{ id: 4, type: 'film' }]);
-    await blocker;
+    finishLoad(/busy-a/);
+    finishLoad(/busy-b/);
+    await Promise.all([busyA, busyB]);
 
-    console.log('✅ Offscreen ratings scheduler prioritizes, deduplicates, cancels, and expires queued work');
+    console.log('✅ Offscreen ratings scheduler runs two frame slots, prioritizes, deduplicates, cancels, and expires queued work');
 }
 
 run().catch(error => {
