@@ -16,7 +16,8 @@
     "nativeMessaging",
     "sidePanel",
     "declarativeNetRequest",
-    "offscreen"
+    "offscreen",
+    "cookies"
   ],
   "declarative_net_request": {
     "rule_resources": [
@@ -54,6 +55,7 @@
     "https://*.kinopoisk.ru/*",
     "https://widgets.kinopoisk.ru/*",
     "https://www.imdb.com/*",
+    "https://api.graphql.imdb.com/*",
     "https://www.the-numbers.com/*",
     "https://kinogo.inc/*",
     "https://kinogo.my/*",
