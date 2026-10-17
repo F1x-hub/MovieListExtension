@@ -333,6 +333,8 @@ keeps npm-compatible three-component semver metadata.
 
 ### Fixes
 
+- Fix "IMDb —" on card pages for films whose IMDb rating exists: Ratings, bookmarks, watching, watchlist, search and collections no longer rely only on ratings some other page happened to cache. A shared `ProviderRatingsBackfill` applies ratings already in the shared card cache at once and fetches the missing ones through the Movie Details path (Kinopoisk GraphQL, hidden page fallback, three at a time), stores them back and updates every card of the title; a recent real "no IMDb rating" answer is respected.
+
 - Load Kinopoisk/IMDb ratings much faster on Home, catalog and Movie Details: title search and ratings with vote counts now come from Kinopoisk's own GraphQL API (`SuggestSearch`, `TouchMovieRating`, one JSON request each) instead of loading hidden Kinopoisk pages. Hidden pages remain the fallback, including new titles whose IMDb rating Kinopoisk's API does not have yet, and the hidden scraper now runs two frames in parallel.
 
 - Fix Home/catalog cards showing "IMDb —" for titles whose IMDb rating is known: cards cached under a TMDB key now merge the ratings and vote counts Movie Details stored for the Kinopoisk ID, and a failed hidden-page scrape is retried after 15 minutes instead of being cached as "no IMDb rating" for 12 hours. "No IMDb rating" records cached before this fix (no `imdbCheckVersion`) are checked once more.
