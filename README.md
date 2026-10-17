@@ -332,6 +332,10 @@ keeps npm-compatible three-component semver metadata.
 
 ### Fixes
 
+- Load Kinopoisk/IMDb ratings much faster on Home, catalog and Movie Details: title search and ratings with vote counts now come from Kinopoisk's own GraphQL API (`SuggestSearch`, `TouchMovieRating`, one JSON request each) instead of loading hidden Kinopoisk pages. Hidden pages remain the fallback, including new titles whose IMDb rating Kinopoisk's API does not have yet, and the hidden scraper now runs two frames in parallel.
+
+- Fix Home/catalog cards showing "IMDb —" for titles whose IMDb rating is known: cards cached under a TMDB key now merge the ratings and vote counts Movie Details stored for the Kinopoisk ID, and a failed hidden-page scrape is retried after 15 minutes instead of being cached as "no IMDb rating" for 12 hours. "No IMDb rating" records cached before this fix (no `imdbCheckVersion`) are checked once more.
+
 - Retry missing Kinopoisk/IMDb vote counts on Movie Details: when the first hidden-page scrape returns a rating without votes (common on a cold start), one delayed retry with its own request key and a longer timeout fills the vote line.
 
 - Fix Movie Details parts that sometimes stayed empty on the first load until a reload: when the complete movie arrives after a partial cached or base paint, the page rerenders if it adds a backdrop, series type, seasons or provider ratings; seasons and an empty ratings refresh are started for the late data; and the poster-colored backdrop retries a failed image load once before hiding.

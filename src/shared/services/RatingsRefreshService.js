@@ -175,7 +175,7 @@ class RatingsRefreshService {
                     // and card enrichment wait before reading it again.
                     ...(ratings?.imdbChecked ? {
                         imdbCheckedAt: now,
-                        ...(nextImdbRating > 0 ? {} : { imdbRetryAfter: now + 12 * 60 * 60 * 1000 })
+                        ...(nextImdbRating > 0 ? {} : { imdbRetryAfter: now + 12 * 60 * 60 * 1000, imdbCheckVersion: 2 })
                     } : {}),
                     votes: nextVotes,
                     updatedAt: now,

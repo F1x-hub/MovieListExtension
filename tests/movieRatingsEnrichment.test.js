@@ -617,6 +617,34 @@ assert.equal(unratedService.cacheKeyFor({ tmdbId: 5, mediaType: 'movie' }), 'tmd
 assert.equal(unratedService.cacheKeyFor({ tmdbId: 5, mediaType: 'tv' }), 'tmdb:tv:5');
 console.log('✅ TMDB external_ids feed the batched IMDb request without a KP page load');
 
+// A TMDB-keyed card picks up the IMDb rating Movie Details stored under kp:<id>.
+{
+    const svc = new MovieRatingsEnrichmentService({ storage, trace: false });
+    const stale = svc.createRecord({ item: { tmdbId: 1148365, name: 'Matchbox' }, kpId: 6601550 },
+        { status: 'resolved', kpId: 6601550, kpRating: 5.9, imdbRating: 0, imdbState: 'unavailable', votes: { kp: 0, imdb: 0 } });
+    const fromDetails = { kpId: 6601550, kpRating: 5.9, imdbRating: 5.7, imdbId: 'tt1234567', votes: { kp: 764, imdb: 8500 } };
+    const merged = svc.mergeKinopoiskRecord(stale, { 'kp:6601550': fromDetails });
+    assert.equal(merged.imdbRating, 5.7);
+    assert.equal(merged.imdbState, 'available');
+    assert.deepEqual(merged.votes, { kp: 764, imdb: 8500 });
+    assert.equal(merged.imdbId, 'tt1234567');
+    assert.equal(svc.mergeKinopoiskRecord(merged, { 'kp:6601550': fromDetails }), merged, 'nothing new keeps the record');
+
+    // "No IMDb rating" lasts 12 hours only when IMDb data was actually read.
+    const before = Date.now();
+    const failed = svc.createRecord({ item: { tmdbId: 1 }, kpId: 1 }, { kpId: 1, kpRating: 7, imdbAnswered: false });
+    const answered = svc.createRecord({ item: { tmdbId: 1 }, kpId: 1 }, { kpId: 1, kpRating: 7, imdbAnswered: true });
+    assert.ok(failed.imdbRetryAfter - before <= svc.providerRetryMs + 1000, 'a failed scrape retries soon');
+    assert.ok(answered.imdbRetryAfter - before >= svc.imdbRetryMs - 1000, 'a real "no IMDb" answer waits 12 hours');
+    // Legacy "no IMDb" records (no imdbCheckVersion) are checked once more.
+    const legacy = { ...answered };
+    delete legacy.imdbCheckVersion;
+    assert.equal(svc.isFullyUsableCache(answered), true, 'a versioned "no IMDb" answer is reused');
+    assert.equal(svc.isFullyUsableCache(legacy), false, 'a pre-fix "no IMDb" record is re-checked');
+    assert.equal(failed.imdbCheckVersion, undefined, 'a failed scrape is not marked as checked');
+    console.log('✅ Card IMDb results merge kp:<id> data and failed scrapes retry soon');
+}
+
 }
 
 run().then(() => require('./homeSeededRatings.test.cjs').run()).catch(error => {

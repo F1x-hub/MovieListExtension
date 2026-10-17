@@ -13,26 +13,42 @@ function scraperTrace(...args) {
 }
 
 const audio = document.getElementById('radio');
-const scraperFrame = document.getElementById('scraperFrame');
-let activeScraperRequestId = null;
-let scraperLoadStartedAt = 0;
+// Scraper frame slots: slot 0 is the frame in offscreen.html, further slots are
+// created on demand so the background can load Kinopoisk pages in parallel.
+const scraperSlots = new Map();
 
-scraperFrame?.addEventListener('load', () => {
-    scraperTrace('[KinopoiskOffscreenTrace]', {
-        stage: 'iframe:load',
-        requestId: activeScraperRequestId,
-        stageDurationMs: scraperLoadStartedAt ? Date.now() - scraperLoadStartedAt : null
+function getScraperSlot(slot = 0) {
+    const index = Number.isInteger(slot) && slot >= 0 && slot < 4 ? slot : 0;
+    if (scraperSlots.has(index)) return scraperSlots.get(index);
+    let frame = index === 0 ? document.getElementById('scraperFrame') : null;
+    if (!frame && index > 0) {
+        frame = document.createElement('iframe');
+        frame.id = `scraperFrame${index}`;
+        frame.style.cssText = 'display:none; width:0; height:0; border:0;';
+        document.body.appendChild(frame);
+    }
+    if (!frame) return null;
+    const state = { frame, requestId: null, startedAt: 0 };
+    frame.addEventListener('load', () => {
+        scraperTrace('[KinopoiskOffscreenTrace]', {
+            stage: 'iframe:load',
+            slot: index,
+            requestId: state.requestId,
+            stageDurationMs: state.startedAt ? Date.now() - state.startedAt : null
+        });
     });
-});
-
-scraperFrame?.addEventListener('error', (error) => {
-    console.warn('[KinopoiskOffscreenTrace]', {
-        stage: 'iframe:error',
-        requestId: activeScraperRequestId,
-        stageDurationMs: scraperLoadStartedAt ? Date.now() - scraperLoadStartedAt : null,
-        error: error?.message || 'iframe-load-error'
+    frame.addEventListener('error', (error) => {
+        console.warn('[KinopoiskOffscreenTrace]', {
+            stage: 'iframe:error',
+            slot: index,
+            requestId: state.requestId,
+            stageDurationMs: state.startedAt ? Date.now() - state.startedAt : null,
+            error: error?.message || 'iframe-load-error'
+        });
     });
-});
+    scraperSlots.set(index, state);
+    return state;
+}
 
 // Default volume
 if (audio) {
@@ -43,36 +59,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // --- Kinopoisk Scraper Iframe Control ---
     if (message.target === 'offscreen-scraper') {
         switch (message.type) {
-            case 'LOAD_SEARCH_FRAME':
-                if (scraperFrame) {
-                    activeScraperRequestId = message.requestId || null;
-                    scraperLoadStartedAt = Date.now();
+            case 'LOAD_SEARCH_FRAME': {
+                const state = getScraperSlot(message.slot);
+                if (state) {
+                    state.requestId = message.requestId || null;
+                    state.startedAt = Date.now();
                     scraperTrace('[KinopoiskOffscreenTrace]', {
                         stage: 'iframe:load-start',
-                        requestId: activeScraperRequestId,
+                        slot: message.slot ?? 0,
+                        requestId: state.requestId,
                         searchUrl: message.searchUrl
                     });
-                    scraperFrame.src = message.searchUrl || 'about:blank';
+                    state.frame.src = message.searchUrl || 'about:blank';
                     sendResponse({ success: true });
                 } else {
                     sendResponse({ success: false, error: 'scraperFrame not found' });
                 }
                 return false;
+            }
 
-            case 'CLEANUP_SEARCH_FRAME':
-                if (scraperFrame) {
+            case 'CLEANUP_SEARCH_FRAME': {
+                const state = getScraperSlot(message.slot);
+                if (state) {
                     scraperTrace('[KinopoiskOffscreenTrace]', {
                         stage: 'iframe:cleanup',
-                        requestId: activeScraperRequestId
+                        slot: message.slot ?? 0,
+                        requestId: state.requestId
                     });
-                    scraperFrame.src = 'about:blank';
-                    activeScraperRequestId = null;
-                    scraperLoadStartedAt = 0;
+                    state.frame.src = 'about:blank';
+                    state.requestId = null;
+                    state.startedAt = 0;
                     sendResponse({ success: true });
                 } else {
                     sendResponse({ success: false });
                 }
                 return false;
+            }
 
             default:
                 return false;
