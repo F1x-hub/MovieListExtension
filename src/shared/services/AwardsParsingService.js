@@ -5,6 +5,7 @@
 class AwardsParsingService {
     constructor() {
         this.baseUrl = 'https://www.kinopoisk.ru';
+        this.ceremonyWinnersCache = new Map();
     }
 
     /**
@@ -88,7 +89,8 @@ class AwardsParsingService {
                 winnerNominations.forEach(nom => {
                     awards.push({
                         name: awardName,
-                        nominationName: nom,
+                        nominationName: nom.title,
+                        nominationUrl: nom.url,
                         win: true,
                         year: year
                     });
@@ -110,15 +112,16 @@ class AwardsParsingService {
                 ];
                 
                 nominations.forEach(nom => {
-                    const nomLower = nom.toLowerCase();
+                    const nomLower = nom.title.toLowerCase();
                     const isOtherAward = nonOscarGlobeNominations.some(keyword => nomLower.includes(keyword.toLowerCase()));
                     
                     if (isOtherAward) {
-                        console.log(`[AwardsParser] → Skipping non-Oscar/Globe nomination: "${nom}"`);
+                        console.log(`[AwardsParser] → Skipping non-Oscar/Globe nomination: "${nom.title}"`);
                     } else {
                         awards.push({
                             name: awardName,
-                            nominationName: nom,
+                            nominationName: nom.title,
+                            nominationUrl: nom.url,
                             win: false,
                             year: year
                         });
@@ -172,7 +175,7 @@ class AwardsParsingService {
     /**
      * Extract nomination titles from a section row
      * @param {Element} row - Row element containing <ul class="trivia">
-     * @returns {Array<string>} - Array of nomination titles
+     * @returns {Array<{title: string, url: string|null}>} - Nomination titles with ceremony category links
      */
     extractNominations(row) {
         const nominations = [];
@@ -190,14 +193,84 @@ class AwardsParsingService {
             const link = item.querySelector('a.all');
             if (link) {
                 const nominationTitle = link.textContent.trim();
+                const href = link.getAttribute('href') || '';
                 console.log(`[AwardsParser]   Item ${idx}: "${nominationTitle}"`);
-                nominations.push(nominationTitle);
+                nominations.push({
+                    title: nominationTitle,
+                    url: /^\/awards\/[^#]+#nom\d+$/.test(href) ? href : null
+                });
             } else {
                 console.log(`[AwardsParser]   Item ${idx}: No link found, skipping`);
             }
         });
 
         return nominations;
+    }
+
+    /**
+     * Get a ceremony category (winner and nominees) from its nomination link
+     * @param {string} nominationUrl - e.g. "/awards/oscar/2018/#nom1850"
+     * @returns {Promise<{winner: Object|null, nominees: Array}|null>} - Entries are
+     *   { label, person, filmIds }, e.g. { label: "Гари Олдман — Темные времена", person: "Гари Олдман", filmIds: ["972777"] }
+     */
+    async getCategoryInfo(nominationUrl) {
+        const match = String(nominationUrl || '').match(/^(\/awards\/[^#]+)#(nom\d+)$/);
+        if (!match) return null;
+        const [, ceremonyPath, nominationId] = match;
+
+        let winnersPromise = this.ceremonyWinnersCache.get(ceremonyPath);
+        if (!winnersPromise) {
+            winnersPromise = fetch(`${this.baseUrl}${ceremonyPath}`)
+                .then(response => (response.ok ? response.text() : ''))
+                .then(html => (html ? this.parseCeremonyWinners(html) : {}))
+                .catch(error => {
+                    console.warn('[AwardsParser] Failed to load ceremony page:', error);
+                    return {};
+                });
+            this.ceremonyWinnersCache.set(ceremonyPath, winnersPromise);
+        }
+
+        const categories = await winnersPromise;
+        return categories[nominationId] || null;
+    }
+
+    /**
+     * Parse a ceremony page into a map of nomination anchor -> category info
+     * @param {string} html - Ceremony page HTML (e.g. /awards/oscar/2018/)
+     * @returns {Object<string, {winner: Object|null, nominees: Array}>}
+     */
+    parseCeremonyWinners(html) {
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const categories = {};
+
+        const toEntry = (element) => {
+            if (!element) return null;
+            const label = element.textContent.replace(/\s+/g, ' ').trim();
+            if (!label) return null;
+            const person = element.querySelector('a[href^="/name/"]')?.textContent.trim() || null;
+            const filmIds = Array.from(element.querySelectorAll('a[href^="/film/"]'))
+                .map(link => (link.getAttribute('href').match(/^\/film\/(\d+)/) || [])[1])
+                .filter(Boolean);
+            return { label, person, filmIds };
+        };
+
+        doc.querySelectorAll('a[name^="nom"]').forEach(anchor => {
+            const headerRow = anchor.closest('tr');
+            const winnerRow = headerRow?.nextElementSibling;
+            const winner = toEntry(winnerRow?.querySelector('td.awardCol2 b'));
+            const nomineesRow = winnerRow?.nextElementSibling;
+            // Only rows of this category: stop if the next row is already another category header.
+            const nominees = nomineesRow && !nomineesRow.querySelector('a[name^="nom"]')
+                ? Array.from(nomineesRow.querySelectorAll('li.trivia')).map(item => {
+                    const clone = item.cloneNode(true);
+                    clone.querySelectorAll('span, br').forEach(node => node.remove());
+                    return toEntry(clone);
+                }).filter(Boolean)
+                : [];
+            if (winner || nominees.length) categories[anchor.getAttribute('name')] = { winner, nominees };
+        });
+
+        return categories;
     }
 }
 

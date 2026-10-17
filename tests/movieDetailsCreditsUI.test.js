@@ -127,6 +127,7 @@ const actorsColumnCountMethod = extractMethod(movieDetailsSource, 'getActorsGrid
 const actorsVisibilityMethod = extractMethod(movieDetailsSource, 'applyActorsGridVisibility');
 const awardsGroupingMethod = extractMethod(movieDetailsSource, 'groupAwardsForDisplay');
 const awardsRenderMethod = extractMethod(movieDetailsSource, 'renderAwardsTab');
+const awardDetailMethod = extractMethod(movieDetailsSource, 'formatAwardDetail');
 
 const managerClassCode = `
 (${MockMovieDetailsManager.toString()});
@@ -139,6 +140,7 @@ MockMovieDetailsManager.prototype.getActorsGridColumnCount = function ${actorsCo
 MockMovieDetailsManager.prototype.applyActorsGridVisibility = function ${actorsVisibilityMethod.slice(actorsVisibilityMethod.indexOf('('))};
 MockMovieDetailsManager.prototype.groupAwardsForDisplay = function ${awardsGroupingMethod.slice(awardsGroupingMethod.indexOf('('))};
 MockMovieDetailsManager.prototype.renderAwardsTab = function ${awardsRenderMethod.slice(awardsRenderMethod.indexOf('('))};
+MockMovieDetailsManager.prototype.formatAwardDetail = function ${awardDetailMethod.slice(awardDetailMethod.indexOf('('))};
 `;
 
 eval(managerClassCode);
@@ -617,6 +619,9 @@ console.log('\n--- Part 45: Phase UI-4 Compact Awards Group Tests ---');
         nomination: 'Номинация',
         winner: 'Победа',
         nominee: 'Номинация',
+        category_winner: 'Победитель: {name}',
+        recipient: 'Награду получил(а): {name}',
+        nominee_person: 'Номинант: {name}',
         show_all: 'Показать все награды ({count})'
     };
 
@@ -644,6 +649,23 @@ console.log('\n--- Part 45: Phase UI-4 Compact Awards Group Tests ---');
     assert(singleHtml.includes('award-row') && singleHtml.includes('Номинация'), 'status is visible as row text');
     assert(singleHtml.includes('award-icon-container'), 'unknown award retains fallback icon container');
     assert(!singleHtml.includes('award-card'), 'legacy oversized award cards are not rendered');
+
+    const nomineeUrl = '/awards/oscar/2018/#nom1850';
+    const pendingWinnerDoc = new JSDOM(manager.renderAwardsTab([{ name: 'Оскар', year: 2018, nominationName: 'Лучший звук', nominationUrl: nomineeUrl, win: false }])).window.document;
+    const pendingRow = pendingWinnerDoc.querySelector('.award-row');
+    assert.strictEqual(pendingRow.getAttribute('data-award-nomination-url'), nomineeUrl, 'nominee rows expose their ceremony category link');
+    assert.strictEqual(pendingRow.querySelector('.award-category-winner').hidden, true, 'category winner stays hidden until resolved');
+    const resolvedWinnerHtml = manager.renderAwardsTab([{ name: 'Оскар', year: 2018, nominationName: 'Лучший звук', nominationUrl: nomineeUrl, categoryWinner: 'Дюнкерк', win: false }]);
+    assert(resolvedWinnerHtml.includes('Победитель: Дюнкерк'), 'resolved category winner is shown under a nomination');
+    const peopleHtml = manager.renderAwardsTab([
+        { name: 'Золотой глобус', year: 1973, nominationName: 'Лучшая мужская роль (драма)', nominationUrl: '/awards/golden_globes/1973/#nom188', recipient: 'Марлон Брандо', win: true },
+        { name: 'Золотой глобус', year: 1973, nominationName: 'Лучшая мужская роль (драма)', nominationUrl: '/awards/golden_globes/1973/#nom188', recipient: 'Аль Пачино', win: false },
+        { name: 'Золотой глобус', year: 1973, nominationName: 'Лучшая мужская роль второго плана', nominationUrl: '/awards/golden_globes/1973/#nom225', recipient: 'Джеймс Каан', categoryWinner: 'Джоэл Грей — Кабаре', win: false }
+    ]);
+    assert(peopleHtml.includes('Награду получил(а): Марлон Брандо'), 'won rows name the person from this movie');
+    assert(peopleHtml.includes('Номинант: Аль Пачино') && !peopleHtml.includes('Победитель: Марлон'), 'a nomination lost to the same movie names its nominee, not the movie as winner');
+    assert(peopleHtml.includes('Номинант: Джеймс Каан · Победитель: Джоэл Грей — Кабаре'), 'lost nominations show both the nominee and the category winner');
+    assert(peopleHtml.includes('data-award-win="true"') && peopleHtml.includes('data-award-win="false"'), 'rows with the same category link stay distinguishable');
 
     const emptyHtml = manager.renderAwardsTab([]);
     assert(emptyHtml.includes('Нет информации о наградах'), 'empty awards behavior remains unchanged');

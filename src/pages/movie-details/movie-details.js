@@ -909,6 +909,9 @@ class MovieDetailsManager {
             if (tabBtn) {
                 this.refreshSeasonsProgress();
             }
+            if (e.target.closest('.tab-btn[data-tab="awards"]') && this.selectedMovie) {
+                void this.hydrateAwardCategoryWinners(this.selectedMovie);
+            }
         });
 
         // Click handler for toggle-crew to support keyboard / touch / click interactions with localStorage persistence
@@ -1856,11 +1859,90 @@ class MovieDetailsManager {
         }
     }
 
+    /**
+     * Second line of an award row: who from this movie won or was nominated,
+     * and, for a lost nomination, who won the category instead.
+     */
+    formatAwardDetail(award) {
+        const parts = [];
+        if (award?.recipient) {
+            const key = award.win === true ? 'recipient' : 'nominee_person';
+            parts.push(i18n.get(`movie_details.awards_tab.${key}`).replace('{name}', award.recipient));
+        }
+        if (award?.win !== true && award?.categoryWinner) {
+            parts.push(i18n.get('movie_details.awards_tab.category_winner').replace('{name}', award.categoryWinner));
+        }
+        return parts.join(' · ');
+    }
+
+    /**
+     * Look up each award category on the Kinopoisk ceremony page: who from this
+     * movie won or was nominated, and who won the categories the movie lost.
+     * Runs lazily when the Awards tab is opened.
+     */
+    async hydrateAwardCategoryWinners(movie, pageContext = this.capturePageContext(movie)) {
+        if (!movie || !Array.isArray(movie.awards) || typeof AwardsParsingService === 'undefined') return;
+        this._awardWinnersHydrations = this._awardWinnersHydrations || new WeakMap();
+        if (this._awardWinnersHydrations.has(movie)) return this._awardWinnersHydrations.get(movie);
+
+        const hydration = (async () => {
+            const parser = this._awardsParser || (this._awardsParser = new AwardsParsingService());
+            const awardKey = (award) => `${award.name}|${award.nominationName}|${award.year}|${award.win === true}`;
+            // Awards cached before category links were stored: re-read them once.
+            if (movie.awards.some(award => award && !award.nominationUrl)) {
+                const movieId = movie.kinopoiskId || movie.id;
+                const fresh = movieId ? await parser.getAwards(movieId) : [];
+                if (!this.isPageContextCurrent(pageContext)) return;
+                const urls = new Map(fresh.filter(a => a.nominationUrl).map(a => [awardKey(a), a.nominationUrl]));
+                movie.awards.forEach(award => {
+                    if (!award.nominationUrl && urls.has(awardKey(award))) award.nominationUrl = urls.get(awardKey(award));
+                });
+            }
+
+            const movieId = String(movie.kinopoiskId || movie.id || '');
+            await Promise.all(movie.awards
+                .filter(award => award?.nominationUrl && !award.categoryResolved)
+                .map(async (award) => {
+                    const category = await parser.getCategoryInfo(award.nominationUrl);
+                    if (!category || !this.isPageContextCurrent(pageContext)) return;
+
+                    // Who from this movie won / was nominated (actor, director...), when Kinopoisk names a person.
+                    const ownEntries = award.win === true
+                        ? [category.winner].filter(entry => entry && entry.filmIds.includes(movieId))
+                        : category.nominees.filter(entry => entry.filmIds.includes(movieId));
+                    const people = ownEntries.map(entry => entry.person).filter(Boolean);
+                    if (people.length) award.recipient = people.join(', ');
+                    if (award.win !== true && category.winner && !category.winner.filmIds.includes(movieId)) {
+                        award.categoryWinner = category.winner.label;
+                    }
+                    award.categoryResolved = true;
+
+                    document.querySelectorAll('#tab-awards .award-row[data-award-nomination-url]').forEach(row => {
+                        if (row.getAttribute('data-award-nomination-url') !== award.nominationUrl
+                            || row.getAttribute('data-award-win') !== String(award.win === true)) return;
+                        const label = row.querySelector('.award-category-winner');
+                        const detail = this.formatAwardDetail(award);
+                        if (!label || !detail) return;
+                        label.textContent = detail;
+                        label.hidden = false;
+                    });
+                }));
+        })().catch(error => {
+            console.warn('Award category winners lookup failed', error);
+        });
+
+        this._awardWinnersHydrations.set(movie, hydration);
+        return hydration;
+    }
+
     updateAwardsUI(awards) {
         // Update tab content
         const tabPane = document.getElementById('tab-awards');
         if (tabPane) {
             tabPane.innerHTML = this.renderAwardsTab(awards);
+            if (tabPane.classList.contains('active') && this.selectedMovie) {
+                void this.hydrateAwardCategoryWinners(this.selectedMovie);
+            }
         }
 
         // Update tab button state
@@ -4705,12 +4787,15 @@ class MovieDetailsManager {
                     </div>
                 </header>
                 <div class="award-rows">
-                    ${group.items.map((award) => `
-                        <div class="award-row">
-                            <span class="award-nomination">${this.escapeHtml(award.nominationName || i18n.get('movie_details.awards_tab.nomination'))}</span>
+                    ${group.items.map((award) => {
+                        const detail = this.formatAwardDetail(award);
+                        return `
+                        <div class="award-row"${award.nominationUrl ? ` data-award-nomination-url="${this.escapeHtml(award.nominationUrl)}" data-award-win="${award.win === true}"` : ''}>
+                            <span class="award-nomination">${this.escapeHtml(award.nominationName || i18n.get('movie_details.awards_tab.nomination'))}<span class="award-category-winner"${detail ? '' : ' hidden'}>${this.escapeHtml(detail)}</span></span>
                             <span class="award-badge ${award.win === true ? 'winner' : 'nominee'}">${award.win === true ? i18n.get('movie_details.awards_tab.winner') : i18n.get('movie_details.awards_tab.nominee')}</span>
                         </div>
-                    `).join('')}
+                    `;
+                    }).join('')}
                 </div>
             </section>
         `;

@@ -2714,6 +2714,18 @@
     overflow-wrap: anywhere;
 }
 
+.award-category-winner {
+    display: block;
+    margin-top: 2px;
+    font-size: 11px;
+    color: var(--theme-text-muted, var(--theme-text-secondary));
+    opacity: 0.85;
+}
+
+.award-category-winner[hidden] {
+    display: none;
+}
+
 .award-badge {
     flex: 0 0 auto;
     display: inline-flex;

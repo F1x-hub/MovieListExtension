@@ -1065,6 +1065,9 @@ export const locales = {
                 nomination: "Nomination",
                 winner: "Winner",
                 nominee: "Nominee",
+                category_winner: "Winner: {name}",
+                recipient: "Awarded to: {name}",
+                nominee_person: "Nominee: {name}",
                 show_all: "Show all awards ({count})"
             },
             actors_tab: {
@@ -2354,6 +2357,9 @@ export const locales = {
                 nomination: "Номинация",
                 winner: "Победитель",
                 nominee: "Номинация",
+                category_winner: "Победитель: {name}",
+                recipient: "Награду получил(а): {name}",
+                nominee_person: "Номинант: {name}",
                 show_all: "Показать все награды ({count})"
             },
             actors_tab: {
