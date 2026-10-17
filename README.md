@@ -332,6 +332,8 @@ keeps npm-compatible three-component semver metadata.
 
 ### Fixes
 
+- Fix Movie Details parts that sometimes stayed empty on the first load until a reload: when the complete movie arrives after a partial cached or base paint, the page rerenders if it adds a backdrop, series type, seasons or provider ratings; seasons and an empty ratings refresh are started for the late data; and the poster-colored backdrop retries a failed image load once before hiding.
+
 - Keep player keyboard shortcuts working after clicking player controls: a mouse click no longer leaves focus on the button (so Space pauses instead of re-clicking it), arrows/J/L/F/M work while a control is focused, and shortcuts pressed on the player stage outside a provider frame are forwarded to that frame. Shortcuts are captured before provider pages see them, so a provider player's own Space handler no longer cancels the pause. Tab-focused controls keep Space/Enter activation.
 
 - Style Rated filter and sort selects from the first paint, so delayed localization or control initialization does not expose white system controls in the filter panel.

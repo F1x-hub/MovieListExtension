@@ -1652,7 +1652,8 @@ class MovieDetailsManager {
                         skipRender &&
                         (
                             (resolvedTmdbId && renderedTmdbId !== resolvedTmdbId) ||
-                            (resolvedLogoUrl && renderedLogoUrl !== resolvedLogoUrl)
+                            (resolvedLogoUrl && renderedLogoUrl !== resolvedLogoUrl) ||
+                            MovieDetailsManager.fillsRenderGaps(this.selectedMovie, movie)
                         )
                     ) {
                         skipRender = false;
@@ -1758,6 +1759,25 @@ class MovieDetailsManager {
             }
 
         }
+    }
+
+    /**
+     * True when the complete movie has visible data the rendered (base or cached)
+     * movie lacked: backdrop, series type/seasons or provider ratings. The first
+     * paint after a cold start often comes from such a partial DTO, and without a
+     * rerender those parts stayed empty until the page was reloaded.
+     */
+    static fillsRenderGaps(rendered, complete) {
+        if (!rendered || !complete) return false;
+        const hasBackdrop = movie => /^https?:/.test(String(movie?.backdropUrl || movie?.backdrop || ''));
+        const isSeries = movie => Boolean(movie?.isSeries || ['tv-series', 'mini-series', 'animated-series', 'tv'].includes(movie?.type));
+        const seasonCount = movie => Math.max(movie?.seasons?.length || 0, movie?.seasonsInfo?.length || 0);
+        const rating = (movie, key) => Number(movie?.rating?.[key] || movie?.[`${key}Rating`] || 0);
+        return (hasBackdrop(complete) && !hasBackdrop(rendered))
+            || (isSeries(complete) && !isSeries(rendered))
+            || (seasonCount(complete) > 0 && seasonCount(rendered) === 0)
+            || (rating(complete, 'kp') > 0 && rating(rendered, 'kp') <= 0)
+            || (rating(complete, 'imdb') > 0 && rating(rendered, 'imdb') <= 0);
     }
 
     async withMovieLoadDeadline(work, timeoutMs = 25000) {
@@ -2583,14 +2603,6 @@ class MovieDetailsManager {
             });
         }
 
-        // Setup backdrop error listener
-        const backdropImg = this.elements.movieDetailsContainer.querySelector('.movie-detail-hero-backdrop-img');
-        if (backdropImg) {
-            backdropImg.addEventListener('error', function() {
-                const container = this.closest('.movie-detail-hero-backdrop');
-                if (container) container.style.display = 'none';
-            });
-        }
         
         // Show content after everything is ready
         this.showContent();
@@ -2622,6 +2634,7 @@ class MovieDetailsManager {
             this.observeOrLoadRecommendations(movie);
             this.observeOrLoadFranchise(movie);
             this.rehydrateRenderEnrichments(movie, pageContext);
+            this.startMissedEnrichments(movie, pageContext);
             return;
         }
         this.postRenderEnrichmentMovieId = movieId;
@@ -2653,6 +2666,7 @@ class MovieDetailsManager {
         
         const isSeries = Boolean(movie.isSeries || (movie.type && ['tv-series', 'mini-series', 'animated-series', 'tv'].includes(movie.type)));
         if (isSeries) {
+            this.renderEnrichmentSnapshot.seasonsRequested = true;
             this.resolveAndRenderSeasons(movie);
 
             // Phase 1G: Dynamic Freshness SWR for stale next episode
@@ -2673,6 +2687,26 @@ class MovieDetailsManager {
      * page generation. Restore results that were patched into the previous DOM without
      * repeating their provider requests; in-flight loaders resolve into the new DOM.
      */
+    /**
+     * The first enrichment pass may run on a partial movie (not yet known to be a
+     * series, no ratings). A later complete movie starts what that pass skipped.
+     */
+    startMissedEnrichments(movie, pageContext = this.capturePageContext(movie)) {
+        const snapshot = this.getRenderEnrichmentSnapshot(movie?.kinopoiskId);
+        if (!snapshot || !this.isPageContextCurrent(pageContext)) return;
+        const isSeries = Boolean(movie.isSeries || ['tv-series', 'mini-series', 'animated-series', 'tv'].includes(movie.type));
+        if (isSeries && !snapshot.seasonsRequested) {
+            snapshot.seasonsRequested = true;
+            this.resolveAndRenderSeasons(this.selectedMovie || movie);
+        }
+        if (!snapshot.providerRatings && snapshot.providerRatingsSettled) {
+            // The earlier refresh settled without data; the complete movie may carry
+            // the IMDb ID or type the first request lacked.
+            snapshot.providerRatingsSettled = false;
+            this.loadProviderRatingsInBackground(this.selectedMovie || movie, pageContext);
+        }
+    }
+
     rehydrateRenderEnrichments(movie, pageContext = this.capturePageContext(movie)) {
         const snapshot = this.getRenderEnrichmentSnapshot(movie?.kinopoiskId);
         if (!snapshot || !this.isPageContextCurrent(pageContext)) return;
@@ -11376,6 +11410,15 @@ class MovieDetailsManager {
                     const placeholder = img.nextElementSibling;
                     if (placeholder?.classList.contains('movie-poster-placeholder')) placeholder.style.display = 'flex';
                 } else if (type === 'backdrop') {
+                    // A cold start often hits a transient image error: retry once
+                    // before hiding the poster-colored background.
+                    if (!img.dataset.backdropRetried && /^https?:/.test(img.src)) {
+                        img.dataset.backdropRetried = 'true';
+                        const retryUrl = new URL(img.src);
+                        retryUrl.searchParams.set('mr_retry', '1');
+                        setTimeout(() => { if (img.isConnected) img.src = retryUrl.toString(); }, 1500);
+                        return;
+                    }
                     const backdropContainer = img.closest('.movie-detail-hero-backdrop');
                     if (backdropContainer) {
                         backdropContainer.style.display = 'none';
