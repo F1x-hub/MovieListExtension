@@ -263,5 +263,32 @@ function firebase(services = {}) {
     await deniedDetails.saveRating();
     assert.equal(addOrUpdateCalls, 1, 'an ordinary title score remains saveable after the denied episode read');
 
+    // A partial first paint (cold start) is rerendered when the complete movie
+    // fills its gaps, so backdrop, seasons and provider ratings do not need a reload.
+    const gaps = context.window.MovieDetailsManager.fillsRenderGaps;
+    const base = { kinopoiskId: 1, type: 'movie', rating: {} };
+    assert.equal(gaps(base, { ...base, backdropUrl: 'https://image.test/b.jpg' }), true, 'backdrop appears');
+    assert.equal(gaps(base, { ...base, type: 'tv-series' }), true, 'series type appears');
+    assert.equal(gaps(base, { ...base, seasonsInfo: [{ number: 1 }] }), true, 'seasons appear');
+    assert.equal(gaps(base, { ...base, rating: { kp: 8.1 } }), true, 'Kinopoisk rating appears');
+    assert.equal(gaps(base, { ...base, imdbRating: 7.4 }), true, 'IMDb rating appears');
+    const full = { kinopoiskId: 1, type: 'tv-series', backdropUrl: 'https://image.test/b.jpg', seasons: [{}], rating: { kp: 8, imdb: 7 } };
+    assert.equal(gaps(full, { ...full }), false, 'a complete render is not repeated');
+    assert.equal(gaps(null, full), false);
+
+    // Same-movie enrichment starts seasons the partial pass skipped, once.
+    const missed = Object.create(prototype);
+    let seasonCalls = 0;
+    let ratingCalls = 0;
+    missed.renderEnrichmentSnapshot = { movieId: '7', providerRatingsSettled: true };
+    missed.getRenderEnrichmentSnapshot = () => missed.renderEnrichmentSnapshot;
+    missed.isPageContextCurrent = () => true;
+    missed.resolveAndRenderSeasons = () => { seasonCalls++; };
+    missed.loadProviderRatingsInBackground = () => { ratingCalls++; };
+    missed.startMissedEnrichments({ kinopoiskId: 7, type: 'tv-series' }, {});
+    missed.startMissedEnrichments({ kinopoiskId: 7, type: 'tv-series' }, {});
+    assert.equal(seasonCalls, 1, 'seasons load once when the series type arrives late');
+    assert.equal(ratingCalls, 1, 'a settled-empty ratings refresh is retried once with the complete movie');
+
     console.log('Movie Details loading reliability tests passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
