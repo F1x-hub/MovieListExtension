@@ -1,0 +1,19 @@
+{
+  "embedUrl": "https://kodikplayer.com/video/1/fixture/720p",
+  "routes": {
+    "https://kodikplayer.com/video/1/fixture/720p": {
+      "body": "var urlParams = '{\"d\":\"kodikplayer.com\",\"d_sign\":\"fixture\"}'; vInfo.type = 'video'; vInfo.hash = 'fixture'; vInfo.id = '1';"
+    },
+    "https://kodikplayer.com/ftor": {
+      "method": "POST",
+      "body": { "links": { "720": [{ "src": "Tg9rjO91HK5hj2fdHOVsjq5rj20dHut4lPDgHA9bGE5xHuDhlK5bU3C4" }] } }
+    },
+    "https://cloud.solodcdn.com/fixture/manifest.m3u8": {
+      "asset": "index.m3u8"
+    },
+    "https://cloud.solodcdn.com/fixture/init.mp4": { "asset": "init.mp4" },
+    "https://cloud.solodcdn.com/fixture/index0.m4s": { "asset": "index0.m4s" },
+    "https://cloud.solodcdn.com/fixture/index1.m4s": { "asset": "index1.m4s" },
+    "https://cloud.solodcdn.com/fixture/index2.m4s": { "asset": "index2.m4s" }
+  }
+}

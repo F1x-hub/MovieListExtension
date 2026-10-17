@@ -16,10 +16,10 @@
             ]
         },
         "condition": {
-            "urlFilter": "widgets.kinopoisk.ru",
+            "requestDomains": ["widgets.kinopoisk.ru"],
+            "initiatorDomains": ["dgdejomdgiabgcfijcdhjefijdfiemhd"],
             "resourceTypes": [
-                "sub_frame",
-                "xmlhttprequest"
+                "sub_frame"
             ]
         }
     },
@@ -40,10 +40,10 @@
             ]
         },
         "condition": {
-            "urlFilter": "www.kinopoisk.ru",
+            "requestDomains": ["www.kinopoisk.ru"],
+            "initiatorDomains": ["dgdejomdgiabgcfijcdhjefijdfiemhd"],
             "resourceTypes": [
-                "sub_frame",
-                "xmlhttprequest"
+                "sub_frame"
             ]
         }
     },
@@ -71,7 +71,8 @@
             ]
         },
         "condition": {
-            "urlFilter": "rutube.ru",
+            "requestDomains": ["rutube.ru"],
+            "initiatorDomains": ["dgdejomdgiabgcfijcdhjefijdfiemhd"],
             "resourceTypes": [
                 "xmlhttprequest",
                 "media",
@@ -103,7 +104,8 @@
             ]
         },
         "condition": {
-            "urlFilter": "rtbcdn.ru",
+            "requestDomains": ["rtbcdn.ru"],
+            "initiatorDomains": ["dgdejomdgiabgcfijcdhjefijdfiemhd"],
             "resourceTypes": [
                 "xmlhttprequest",
                 "media",

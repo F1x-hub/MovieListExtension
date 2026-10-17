@@ -1,5 +1,27 @@
 export const locales = {
     en: {
+        player: {
+            diagnostics_no_data: 'No data', diagnostics_ms: 'ms', diagnostics_qoe_sessions: 'Measured sessions',
+            diagnostics_stalls: 'Buffering stalls', diagnostics_rebuffer_total: 'Total rebuffer time', diagnostics_rebuffer_max: 'Longest rebuffer',
+            diagnostics_ttff_quantiles: 'TTFF p50 / p95', diagnostics_quantile_label: 'TTFF intervals', diagnostics_quantile_note: 'p50/p95 are bucket upper bounds; exact and approximate measurements are counted separately.',
+            diagnostics_technical: 'Technical JSON data', diagnostics_ready_count: 'Source readiness responses', diagnostics_failure_count: 'Source errors', diagnostics_fallback_count: 'Source fallbacks', diagnostics_first_frame: 'First frame', diagnostics_frame_unknown: 'Measurement unavailable; this is not a playback error.', diagnostics_approximate: 'approximate', diagnostics_exact: 'measured',
+            watch: 'Watch', watch_searching: 'Finding sources…', choose_source: 'Choose source', video_sources: 'Video sources', torrent: 'Torrent',
+            loading_source: 'Loading source…', source_unavailable: 'Source unavailable or did not respond in time.', source_failed: 'Could not load the source.',
+            retry: 'Retry', research: 'Find sources again', try_other_source: 'Try another source',
+            diagnostics: 'Diagnostics', diagnostics_title: 'Player diagnostics', diagnostics_copy: 'Copy JSON', diagnostics_reset: 'Reset', close: 'Close',
+            diagnostics_note: 'Local statistics for 7 days. No URLs, titles or account data. TTFF: exact — first frame; approximate — estimate; unknown — no reliable measurement.',
+            diagnostics_loading: 'Loading statistics…', diagnostics_load_failed: 'Could not load local statistics.', diagnostics_copied: 'JSON copied.', diagnostics_copy_failed: 'Could not copy JSON.', diagnostics_reset_done: 'Statistics reset.', diagnostics_reset_failed: 'Could not reset statistics.',
+            source_loading: 'loading', source_ready: 'playing', source_unavailable_hint: 'unavailable — select to retry', source_discovered: 'discovered — playback not yet verified', source_pending: 'checked when opened',
+            shortcut_help: 'Space/K — play/pause; J/L — ±10 s; ←/→ — ±5 s; F — fullscreen; M — mute; C — subtitles; </> — speed; ? — help.',
+            seek: 'Seek', play_pause: 'Play or pause', previous_episode: 'Previous episode', next_episode: 'Next episode', episode: 'Episode',
+            subtitles: 'Subtitles', pip: 'Picture in picture', settings: 'Settings', back: 'Back: {title}', speed: 'Speed',
+            subtitle_settings: 'Subtitle settings', subtitle_appearance: 'Subtitle appearance settings', back_subtitles: 'Back to subtitle tracks',
+            subtitle_preview: 'Subtitle preview', subtitle_sample: 'Subtitle example', bottom: 'Bottom', top: 'Top', none: 'None', soft: 'Soft', strong: 'Strong',
+            size: 'Size', text_color: 'Text color', position: 'Position', edge_offset: 'Edge offset', text_background: 'Text background', text_shadow: 'Text shadow',
+            subtitle_note: 'Changes apply immediately and are saved for future videos.', reset_settings: 'Reset settings', off: 'Off', track: 'Track {number}',
+            auto: 'Auto', automatic: 'Automatic', quality: 'Quality', voiceover: 'Audio', main_track: 'Main', fullscreen: 'Fullscreen',
+            player_settings: 'Player settings', toggle_subtitles: 'Toggle subtitles', skip_opening: 'Skip opening', forward: 'Next: {title}', quality_unavailable: 'Auto (not detected)'
+        },
         filter_controls: { more: 'More ({count})', less: 'Show less', any: 'Any', included_count: 'Included: {count}', excluded_count: 'Excluded: {count}', increase: 'Increase', decrease: 'Decrease' },
         whats_new: {
             title: 'What’s new', draft: 'Next version draft', version: 'Version {version}', new: 'New', more: 'Show more',
@@ -478,7 +500,10 @@ export const locales = {
                 empty: "Rate a few movies to reveal your favorite genres.",
                 empty_other: "This user has no favorite genres yet.",
                 distribution_empty: "Your rating distribution will appear here.",
-                distribution_empty_other: "This user has no ratings yet."
+                distribution_empty_other: "This user has no ratings yet.",
+                filter_by_rating: "Show ratings {rating}: {count}",
+                filter_reset: "Rating {rating} · Show all",
+                filter_empty: "No ratings with this score."
             },
             page_title: "My profile",
             page_title_other: "Profile: {name}",
@@ -1250,6 +1275,28 @@ export const locales = {
         }
     },
     ru: {
+        player: {
+            diagnostics_no_data: 'Нет данных', diagnostics_ms: 'мс', diagnostics_qoe_sessions: 'Сессий с измерением',
+            diagnostics_stalls: 'Остановок для буферизации', diagnostics_rebuffer_total: 'Всего буферизация', diagnostics_rebuffer_max: 'Самая долгая буферизация',
+            diagnostics_ttff_quantiles: 'TTFF p50 / p95', diagnostics_quantile_label: 'Интервалы TTFF', diagnostics_quantile_note: 'p50/p95 — верхние границы интервалов; точные и приблизительные измерения считаются отдельно.',
+            diagnostics_technical: 'Технические данные JSON', diagnostics_ready_count: 'Ответов о готовности источника', diagnostics_failure_count: 'Ошибок источника', diagnostics_fallback_count: 'Переходов на другой источник', diagnostics_first_frame: 'Первый кадр', diagnostics_frame_unknown: 'Измерение недоступно; это не ошибка воспроизведения.', diagnostics_approximate: 'приблизительно', diagnostics_exact: 'измерено',
+            watch: 'Смотреть', watch_searching: 'Поиск источников…', choose_source: 'Выбрать источник', video_sources: 'Источники видео', torrent: 'Торрент',
+            loading_source: 'Загрузка источника…', source_unavailable: 'Источник недоступен или не ответил вовремя.', source_failed: 'Не удалось загрузить источник.',
+            retry: 'Повторить', research: 'Искать источники заново', try_other_source: 'Попробовать другой источник',
+            diagnostics: 'Диагностика', diagnostics_title: 'Диагностика плеера', diagnostics_copy: 'Копировать JSON', diagnostics_reset: 'Сбросить', close: 'Закрыть',
+            diagnostics_note: 'Локальная статистика за 7 дней. Без URL, названий и данных аккаунта. TTFF: exact — первый кадр; approximate — приближение; unknown — нет достоверного измерения.',
+            diagnostics_loading: 'Загрузка статистики…', diagnostics_load_failed: 'Не удалось загрузить локальную статистику.', diagnostics_copied: 'JSON скопирован.', diagnostics_copy_failed: 'Не удалось скопировать JSON.', diagnostics_reset_done: 'Статистика сброшена.', diagnostics_reset_failed: 'Не удалось сбросить статистику.',
+            source_loading: 'загружается', source_ready: 'воспроизводится', source_unavailable_hint: 'недоступен — нажмите, чтобы повторить', source_discovered: 'обнаружен — воспроизведение ещё не проверено', source_pending: 'проверится при запуске',
+            shortcut_help: 'Пробел/K — пауза; J/L — ±10 с; ←/→ — ±5 с; F — полный экран; M — звук; C — субтитры; </> — скорость; ? — подсказка.',
+            seek: 'Перемотка', play_pause: 'Воспроизвести или поставить на паузу', previous_episode: 'Предыдущая серия', next_episode: 'Следующая серия', episode: 'Серия',
+            subtitles: 'Субтитры', pip: 'Картинка в картинке', settings: 'Настройки', back: 'Назад: {title}', speed: 'Скорость',
+            subtitle_settings: 'Настройки субтитров', subtitle_appearance: 'Настройки оформления субтитров', back_subtitles: 'Назад к дорожкам субтитров',
+            subtitle_preview: 'Предпросмотр субтитров', subtitle_sample: 'Пример субтитров', bottom: 'Снизу', top: 'Сверху', none: 'Нет', soft: 'Мягкая', strong: 'Сильная',
+            size: 'Размер', text_color: 'Цвет текста', position: 'Расположение', edge_offset: 'Отступ от края', text_background: 'Фон под текстом', text_shadow: 'Тень текста',
+            subtitle_note: 'Изменения применяются сразу и сохраняются для следующих видео.', reset_settings: 'Сбросить настройки', off: 'Откл', track: 'Дорожка {number}',
+            auto: 'Авто', automatic: 'Автоматически', quality: 'Качество', voiceover: 'Озвучка', main_track: 'Основная', fullscreen: 'Полный экран',
+            player_settings: 'Настройки плеера', toggle_subtitles: 'Включить или выключить субтитры', skip_opening: 'Пропустить опенинг', forward: 'Вперёд: {title}', quality_unavailable: 'Авто (не определено)'
+        },
         filter_controls: { more: 'Ещё ({count})', less: 'Свернуть', any: 'Любые', included_count: 'Включено: {count}', excluded_count: 'Исключено: {count}', increase: 'Увеличить', decrease: 'Уменьшить' },
         whats_new: {
             title: 'Что нового', draft: 'Черновик следующей версии', version: 'Версия {version}', new: 'Новое', more: 'Показать ещё',
@@ -1728,7 +1775,10 @@ export const locales = {
                 empty: "Оцените несколько фильмов, чтобы увидеть любимые жанры.",
                 empty_other: "У пользователя пока нет любимых жанров.",
                 distribution_empty: "Здесь появится распределение ваших оценок.",
-                distribution_empty_other: "У пользователя пока нет оценок."
+                distribution_empty_other: "У пользователя пока нет оценок.",
+                filter_by_rating: "Показать оценки {rating}: {count}",
+                filter_reset: "Оценка {rating} · Показать все",
+                filter_empty: "Нет фильмов с такой оценкой."
             },
             page_title: "Мой профиль",
             page_title_other: "Профиль: {name}",

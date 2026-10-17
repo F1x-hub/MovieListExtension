@@ -2052,6 +2052,52 @@ body.player-modal-open {
     outline-offset: 2px;
 }
 
+/* Watch entry moves the existing provider rail into this optional disclosure. */
+.watch-entry-group { position: relative; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.source-toolbar .watch-entry-button {
+    box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
+    height: 40px; min-height: 40px; padding: 0 14px; border: 1px solid var(--ui-color-border);
+    border-radius: 10px; color: var(--ui-color-content); background: var(--ui-color-surface);
+    font-family: var(--font-family, sans-serif); font-size: 14px; font-weight: 600; line-height: 20px;
+    letter-spacing: normal; text-decoration: none; white-space: nowrap; cursor: pointer;
+}
+.source-toolbar .watch-entry-button[hidden], .watch-source-popover[hidden] { display: none; }
+.source-toolbar .watch-entry-button:hover:not(:disabled),
+.source-toolbar .watch-entry-button[aria-pressed="true"] { border-color: var(--ui-color-border-hover); }
+.source-toolbar .watch-entry-button:focus-visible { outline: 2px solid var(--ui-color-interactive); outline-offset: 2px; }
+#sourcePopoverToggle { width: 40px; flex: 0 0 40px; padding: 0; }
+.source-toolbar:has(.watch-entry-group) { flex-wrap: wrap; }
+.watch-source-popover {
+    position: absolute; top: calc(100% + 8px); left: 0; z-index: 60;
+    width: min(360px, calc(100vw - 40px)); max-height: min(420px, 60vh); overflow: auto;
+    padding: 12px; border: 1px solid var(--ui-color-border); border-radius: 14px;
+    background: var(--ui-color-surface); color: var(--ui-color-content); box-shadow: var(--popover-surface-shadow);
+}
+.watch-source-popover .source-buttons-container { display: flex; flex-wrap: wrap; gap: 8px; max-height: none; overflow: visible; }
+.watch-source-popover .source-btn { max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; }
+.player-diagnostics-trigger { flex-shrink: 0; }
+.player-diagnostics-trigger[hidden] { display: none; }
+.video-container .native-player-wrapper .player-settings-menu__diagnostics {
+    margin-top: 6px; border-top: 1px solid var(--ui-color-border); border-radius: 0;
+}
+.player-diagnostics-dialog {
+    width: min(700px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 20px;
+    border: 1px solid var(--ui-color-border); border-radius: 16px;
+    background: var(--ui-color-surface); color: var(--ui-color-content);
+}
+.player-diagnostics-dialog::backdrop { background: rgba(0, 0, 0, .6); }
+.player-diagnostics-report { max-height: 50vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: var(--ui-color-surface-muted); border-radius: 8px; }
+.player-diagnostics-status { min-height: 1.5em; color: var(--ui-color-content-muted); }
+.player-diagnostics-summary { display: grid; gap: 10px; margin: 16px 0; }
+.player-diagnostics-summary p { margin: 0; overflow-wrap: anywhere; }
+.player-diagnostics-dialog summary { cursor: pointer; padding: 8px 0; }
+.player-shortcut-help { position: absolute; z-index: 40; inset: 20% 10% auto; padding: 16px; border-radius: 12px; background: rgba(0, 0, 0, .9); color: #fff; line-height: 1.6; }
+@media (max-width: 480px) {
+    .watch-entry-group { flex-wrap: wrap; }
+    .source-toolbar .watch-entry-button { height: 44px; min-height: 44px; }
+    #sourcePopoverToggle { width: 44px; flex-basis: 44px; }
+}
+
 @media (max-width: 480px) {
     .player-episode-picker {
         top: auto;

@@ -73,6 +73,9 @@ const { chromium } = require('playwright');
         const cleaner = fs.readFileSync(path.join(__dirname, '../content-scripts/player-cleaner.js'), 'utf8');
         // Only the embedding boundary is simulated; DOM, decoding, events,
         // bootstrap order, and the unmodified cleaner execute in real Chromium.
+        await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, '../src/shared/services/player/PlayerSettingsMenu.js'), 'utf8') });
+        await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, '../src/shared/services/player/PlayerMediaControls.js'), 'utf8') });
+        await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, '../src/shared/services/player/PlayerGhostPreview.js'), 'utf8') });
         await page.addScriptTag({ content: `(function(window) { ${cleaner}\n})(new Proxy(window, {
             get(target, key) {
                 if (key === 'location') return {

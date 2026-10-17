@@ -14,7 +14,10 @@ const localStorage = {
     setItem: (key, value) => storage.set(key, String(value)),
     removeItem: key => storage.delete(key)
 };
-const context = vm.createContext({ console, setTimeout, clearTimeout, CustomEvent, EventTarget, localStorage });
+const context = vm.createContext({ console, setTimeout, clearTimeout, CustomEvent, EventTarget, localStorage, URL });
+for (const file of ['UrlPolicy.js', 'HlsPolicyLoader.js']) {
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/shared/services/player/', file), 'utf8'), context);
+}
 vm.runInContext(factorySource, context);
 const factory = context.HlsPlaybackFactory;
 assert.ok(factory, 'HlsPlaybackFactory must be exported');

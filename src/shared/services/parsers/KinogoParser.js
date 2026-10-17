@@ -14,6 +14,8 @@ class KinogoParser extends BaseParserService {
     ];
 
     static STORAGE_KEY = 'kinogo_active_mirror';
+    static STORAGE_TIME_KEY = 'kinogo_active_mirror_at';
+    static MIRROR_TTL_MS = 24 * 60 * 60 * 1000;
 
     constructor(options = {}) {
         super({
@@ -57,10 +59,13 @@ class KinogoParser extends BaseParserService {
         if (typeof chrome === 'undefined' || !chrome?.storage?.local?.get) return Promise.resolve();
         return new Promise(resolve => {
             try {
-                chrome.storage.local.get([KinogoParser.STORAGE_KEY], (res) => {
+                chrome.storage.local.get([KinogoParser.STORAGE_KEY, KinogoParser.STORAGE_TIME_KEY], (res) => {
                     const saved = res?.[KinogoParser.STORAGE_KEY];
+                    const timestamp = res?.[KinogoParser.STORAGE_TIME_KEY];
+                    const age = Date.now() - timestamp;
                     // A mirror chosen during this session wins over the stored one.
-                    if (typeof saved === 'string' && saved.startsWith('http') && !this._mirrorChosenThisSession) {
+                    if (this.mirrors.includes(saved) && Number.isFinite(timestamp)
+                        && age >= 0 && age < KinogoParser.MIRROR_TTL_MS && !this._mirrorChosenThisSession) {
                         this._activeMirror = saved;
                         this.baseUrl = saved;
                     }
@@ -103,7 +108,9 @@ class KinogoParser extends BaseParserService {
         this.baseUrl = mirror;
         if (typeof chrome !== 'undefined' && chrome?.storage?.local?.set) {
             try {
-                chrome.storage.local.set({ [KinogoParser.STORAGE_KEY]: mirror });
+                const write = chrome.storage.local.set({ [KinogoParser.STORAGE_KEY]: mirror,
+                    [KinogoParser.STORAGE_TIME_KEY]: Date.now() });
+                write?.catch?.(() => {});
             } catch {
                 // Ignore storage write failures
             }
@@ -454,7 +461,7 @@ class KinogoParser extends BaseParserService {
             ...allMirrors.filter(m => m.replace(/\/+$/, '') !== initialMirror.replace(/\/+$/, ''))
         ];
 
-        const { value: sources, lastError } = await this._raceMirrors(mirrors, async (mirror, signal) => {
+        const { value: sources, mirror: matchedMirror, lastError } = await this._raceMirrors(mirrors, async (mirror, signal) => {
             const candidateUrl = this._buildAbsoluteUrl(pathname, mirror);
             try {
                 this.debugLog(`[DEBUG KinogoParser] Trying mirror for getVideoSources: ${candidateUrl}`);
@@ -477,9 +484,6 @@ class KinogoParser extends BaseParserService {
                 const html = await response.text();
                 const mirrorSources = this.extractKinogoDirectSources(html, candidateUrl);
                 if (!mirrorSources || mirrorSources.length === 0) return null;
-                if (mirror !== this._activeMirror) {
-                    this._saveActiveMirror(mirror);
-                }
                 this._logSearchTrace('source extraction result', {
                     pageUrl: candidateUrl,
                     mirror,
@@ -500,7 +504,10 @@ class KinogoParser extends BaseParserService {
             }
         });
 
-        if (sources) return sources;
+        if (sources) {
+            this._saveActiveMirror(matchedMirror);
+            return sources;
+        }
         if (lastError) {
             console.error(`[${this.name}] getVideoSources error across all mirrors:`, lastError);
         }

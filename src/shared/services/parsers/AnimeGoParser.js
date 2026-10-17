@@ -417,6 +417,8 @@ class AnimeGoParser extends BaseParserService {
      * @returns {Promise<boolean>}
      */
     async mountPlayers(container, { animeId, episodeNumber, episodeId = null, players, sources, options, isCurrent }) {
+        await this.restoreTitlePreferences(options.movieId, animeId, isCurrent);
+        if (!isCurrent()) return false;
         const ordered = this.orderByPreferredTranslation(players, animeId);
         const streams = await this.resolveNativeStreams(ordered);
         if (!isCurrent()) return false;
@@ -688,6 +690,8 @@ class AnimeGoParser extends BaseParserService {
         const stream = state?.streams.find(candidate => candidate.height === Number(height));
         if (!state || !stream || stream === state.stream) return false;
         this._preferredHeight = stream.height;
+        this._preferenceRevision = (this._preferenceRevision || 0) + 1;
+        this.persistTitlePreferences(state.options.movieId, { qualityHeight: stream.height });
         state.stream = stream;
         state.mountSources = this.buildMountSources(state);
         this.swapNativeStream(container, state);
@@ -707,7 +711,8 @@ class AnimeGoParser extends BaseParserService {
         const activeTranslationId = state?.ordered[0]?.translationId != null ? String(state.ordered[0].translationId) : null;
         if (!state || !translationId || String(translationId) === activeTranslationId) return false;
 
-        this.setPreferredTranslation(state.animeId, translationId);
+        if (!state.players.some(player => String(player.translationId) === String(translationId))) return false;
+        this.setPreferredTranslation(state.animeId, translationId, state.options.movieId);
         container.querySelectorAll?.('[data-voiceover-option]').forEach(item => {
             item.classList.toggle('active', item.dataset.voiceoverOption === String(translationId));
         });
@@ -741,41 +746,56 @@ class AnimeGoParser extends BaseParserService {
      */
     swapNativeStream(container, state, { startAt = null, play = null } = {}) {
         const video = container.querySelector?.('video');
-        if (!video || !state.stream) return false;
+        if (!video || !state.stream || container.__animegoNativeState !== state
+            || (state.options.isRequestCurrent && !state.options.isRequestCurrent())) return false;
         // Quality/dub keep the position; a new episode starts at its own one.
         const resumeAt = startAt != null ? Math.max(0, Number(startAt) || 0) : (Number(video.currentTime) || 0);
         const wasPlaying = play != null ? Boolean(play) : (!video.paused && !video.ended);
         const url = state.stream.url;
+        const swapToken = {};
+        video._animegoSwapToken = swapToken;
+        if (video._animegoRestoreMetadata) {
+            video.removeEventListener('loadedmetadata', video._animegoRestoreMetadata);
+            video._animegoRestoreMetadata = null;
+        }
 
         try { video._movieExtensionHls?.destroy?.(); } catch { /* ignore */ }
         video._movieExtensionHls = null;
         video._movieExtensionStreamFailed = false;
 
         const isCurrent = () => container.__animegoNativeState === state
+            && container.querySelector?.('video') === video
+            && video._animegoSwapToken === swapToken
+            && state.stream?.url === url
+            && !video._movieExtensionStreamFailed
             && (!state.options.isRequestCurrent || state.options.isRequestCurrent());
+        if (!isCurrent()) return false;
         const factory = typeof window !== 'undefined' ? window.HlsPlaybackFactory : null;
-        const hls = factory
-            ? factory.create(video, url, {
+        const fail = (reason) => this._handleStreamFailure({
+            container, video, failedSource: state.mountSources[0],
+            sources: state.mountSources, options: state.mountOptions, reason
+        });
+        const hls = factory?.create(video, url, {
+                networkProfile: 'remote',
+                onSourceExpired: state.mountOptions?.onSourceExpired,
                 isCurrent,
-                onFatal: ({ reason }) => this._handleStreamFailure({
-                    container,
-                    video,
-                    failedSource: state.mountSources[0],
-                    sources: state.mountSources,
-                    options: state.mountOptions,
-                    reason
-                })
-            })
-            : this._createUnmanagedHls(video, url);
-        if (hls) {
+                beforeLoad: (instance) => {
+                    video._movieExtensionHls = instance;
+                    container._hlsInstance = instance;
+                },
+                onFatal: ({ reason }) => isCurrent() && fail(reason)
+            });
+        if (hls && isCurrent()) {
             video._movieExtensionHls = hls;
             container._hlsInstance = hls;
         } else {
-            video.src = url;
+            if (!hls && isCurrent()) fail('unsupported');
+            return false;
         }
 
         const restore = () => {
             video.removeEventListener('loadedmetadata', restore);
+            if (video._animegoRestoreMetadata === restore) video._animegoRestoreMetadata = null;
             if (!isCurrent()) return;
             if (resumeAt > 0 || startAt != null) {
                 const duration = Number(video.duration);
@@ -783,6 +803,7 @@ class AnimeGoParser extends BaseParserService {
             }
             if (wasPlaying) video.play?.()?.catch?.(() => {});
         };
+        video._animegoRestoreMetadata = restore;
         video.addEventListener('loadedmetadata', restore);
         return true;
     }
@@ -792,11 +813,39 @@ class AnimeGoParser extends BaseParserService {
      * @param {string|number} animeId
      * @param {string|number} translationId
      */
-    setPreferredTranslation(animeId, translationId) {
+    setPreferredTranslation(animeId, translationId, movieId = null) {
         if (translationId == null || translationId === '') return;
+        this._preferenceRevision = (this._preferenceRevision || 0) + 1;
         this._lastPreferredTranslation = String(translationId);
+        if (movieId) this.persistTitlePreferences(movieId, { translationId: String(translationId) });
         if (animeId == null) return;
         this._preferredTranslationByAnime.set(String(animeId), String(translationId));
+    }
+
+    persistTitlePreferences(movieId, fields) {
+        if (!movieId || typeof window === 'undefined' || !window.WatchPreferences?.patch) return;
+        void window.WatchPreferences.patch(movieId, { providers: { animego: fields } }).catch(() => {});
+    }
+
+    async restoreTitlePreferences(movieId, animeId, isCurrent = () => true) {
+        if (!movieId || typeof window === 'undefined' || !window.WatchPreferences?.get) return;
+        const revision = this._preferenceRevision || 0;
+        let preferences;
+        try { preferences = await window.WatchPreferences.get(movieId); } catch { return; }
+        if (!isCurrent() || revision !== (this._preferenceRevision || 0)) return;
+        const changedTitle = this._preferenceMovieId !== String(movieId);
+        this._preferenceMovieId = String(movieId);
+        if (changedTitle) {
+            this._preferredHeight = null;
+            this._lastPreferredTranslation = null;
+            this._preferredTranslationByAnime.delete(String(animeId));
+        }
+        const preferred = preferences?.providers?.animego;
+        if (preferred?.translationId != null) {
+            this._preferredTranslationByAnime.set(String(animeId), String(preferred.translationId));
+            this._lastPreferredTranslation = String(preferred.translationId);
+        }
+        if (Number.isInteger(preferred?.qualityHeight)) this._preferredHeight = preferred.qualityHeight;
     }
 
     /**

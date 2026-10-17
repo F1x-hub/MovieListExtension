@@ -429,6 +429,25 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
 
         if (!isRenderCurrent()) return false;
 
+        // A title-level dub is restored only when it contains the exact episode.
+        if (options.movieId && !options.activeTranslationUrl && typeof window !== 'undefined' && window.WatchPreferences?.get) {
+            try {
+                const prefs = await window.WatchPreferences.get(options.movieId);
+                if (!isRenderCurrent()) return false;
+                const preferredId = prefs?.providers?.seasonvar?.translationId;
+                const translation = preferredId != null ? (translations || []).find(item => String(item.id) === String(preferredId)) : null;
+                if (translation?.url && this.fetchAndParsePlaylist) {
+                    const preferredEpisodes = await this.fetchAndParsePlaylist(translation.url);
+                    if (!isRenderCurrent()) return false;
+                    const target = Number(options.resolvedEpisodeNumber ?? options.episode ?? this.extractEpisodeNumber(episodes[0]));
+                    if (preferredEpisodes.some(item => this.extractEpisodeNumber(item) === target)) {
+                        episodes = preferredEpisodes;
+                        options = { ...options, activeTranslationUrl: translation.url, resolvedEpisodeNumber: target };
+                    }
+                }
+            } catch { /* Keep the currently resolved title/episode if preferences fail. */ }
+        }
+
         // --- CANONICAL EPISODE SELECTION ---
         let targetEpisode = null;
         if (options.resolvedEpisodeUrl) {
@@ -637,15 +656,14 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
                      const currentEpNum = container.__seasonvarPlaybackState?.activeEpisodeNumber ?? options.resolvedEpisodeNumber ?? options.episode ?? 1;
                      
                      // Pick matching episode in new translation (Part 27 & 28)
-                     let newEpIndex = -1;
-                     if (currentEpNum) {
-                         newEpIndex = newEpisodes.findIndex(ep => this.extractEpisodeNumber(ep) === currentEpNum);
+                     const newEpIndex = newEpisodes.findIndex(ep => this.extractEpisodeNumber(ep) === Number(currentEpNum));
+                     const newEp = newEpisodes[newEpIndex];
+                     if (!newEp) {
+                         item.classList.remove('active');
+                         previousActive?.classList.add('active');
+                         setSourceState('unavailable', { message: 'Выбранная озвучка не содержит текущую серию.' });
+                         return;
                      }
-                     if (newEpIndex === -1) {
-                         newEpIndex = 0;
-                     }
-                     
-                     const newEp = newEpisodes[newEpIndex] || newEpisodes[0];
                      
                      if (!newEp) throw new Error('Translation has no playable episodes');
                      
@@ -680,6 +698,10 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
                      }
                      
                      setSourceState('ready');
+                     const translationId = item.getAttribute('data-id');
+                     if (options.movieId && translationId && window.WatchPreferences?.patch) {
+                         void window.WatchPreferences.patch(options.movieId, { providers: { seasonvar: { translationId } } }).catch(() => {});
+                     }
                      
                  } catch (err) {
                      if (!this.isSelectionRequestCurrent(requestId)) return;

@@ -15,6 +15,12 @@
     // Dispatched on the <video> by HlsPlaybackFactory.
     const HLS_FATAL_EVENT = 'extension-hls-fatal';
     const HLS_RETRY_EVENT = 'extension-hls-retry';
+    const text = (key, fallback) => global.PlayerLocale?.t(key, {}, fallback) || fallback;
+    function localize(container) {
+        for (const node of container?.querySelectorAll?.('[data-player-locale-key]') || []) {
+            node.textContent = text(node.dataset.playerLocaleKey, node.dataset.playerLocaleFallback);
+        }
+    }
 
     function ensureStyles(doc) {
         if (!doc?.head || doc.getElementById?.('player-source-lifecycle-styles')) return;
@@ -83,6 +89,10 @@
         `;
         const message = overlay.querySelector('.player-source-lifecycle__message');
         if (message) message.textContent = options.message || defaultMessage;
+        if (message && !options.message) {
+            message.dataset.playerLocaleKey = isLoading ? 'loading_source' : state === STATES.UNAVAILABLE ? 'source_unavailable' : 'source_failed';
+            message.dataset.playerLocaleFallback = defaultMessage;
+        }
         const actions = overlay.querySelector('.player-source-lifecycle__actions');
 
         const addAction = (label, handler, action) => {
@@ -91,6 +101,8 @@
             button.type = 'button';
             button.className = 'player-source-lifecycle__action';
             button.dataset.action = action;
+            button.dataset.playerLocaleKey = { retry: 'retry', research: 'research', 'try-other': 'try_other_source' }[action];
+            button.dataset.playerLocaleFallback = label;
             button.textContent = label;
             button.addEventListener('click', handler);
             actions.appendChild(button);
@@ -99,7 +111,9 @@
         if (!isLoading) {
             addAction('Повторить', options.onRetry, 'retry');
             addAction('Искать источники заново', options.onResearch, 'research');
+            addAction('Попробовать другой источник', options.onTryOther, 'try-other');
         }
+        localize(container);
         return overlay;
     }
 
@@ -204,6 +218,7 @@
         STATES,
         DEFAULT_TIMEOUT_MS,
         setState,
+        localize,
         watchIframe,
         watchVideo
     };

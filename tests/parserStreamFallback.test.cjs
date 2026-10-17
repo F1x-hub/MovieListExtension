@@ -40,6 +40,8 @@ const read = (file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8')
         });
         for (const file of [
             'src/shared/services/PlayerSourceLifecycle.js',
+            'src/shared/services/player/UrlPolicy.js',
+            'src/shared/services/player/HlsPolicyLoader.js',
             'src/shared/services/player/HlsPlaybackFactory.js',
             'src/shared/services/parsers/BaseParserService.js'
         ]) {

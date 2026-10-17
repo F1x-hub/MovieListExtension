@@ -95,7 +95,7 @@ await delay(30);
 assert.deepStrictEqual(Array.from(iframeStates, item => item.state), ['loading', 'unavailable']);
 assert.strictEqual(iframeStates[1].reason, 'timeout');
 
-const cleanerSource = fs.readFileSync(
+const cleanerSource = ['PlayerSettingsMenu', 'PlayerMediaControls', 'PlayerGhostPreview'].map(name => fs.readFileSync(new URL('../src/shared/services/player/' + name + '.js', import.meta.url), 'utf8')).join(String.fromCharCode(10)) + String.fromCharCode(10) + fs.readFileSync(
     new URL('../content-scripts/player-cleaner.js', import.meta.url),
     'utf8'
 );

@@ -404,7 +404,7 @@ return isTrustedHostMessage;`);
     const navBlock = cleaner.slice(cleaner.indexOf("const prevEpisodeBtn = document.createElement('button');"), cleaner.indexOf('leftControls.appendChild(prevEpisodeBtn);'));
     assert.doesNotMatch(navBlock, /\.style\.(?:color|opacity|cursor|background)\s*=/, 'episode arrows must be styled by the cleaner stylesheet');
     assert.doesNotMatch(navBlock, /#4da6ff/, 'episode arrows must not use a chromatic accent');
-    assert.match(navBlock, /aria-label', 'Предыдущая серия'/);
+    assert.match(navBlock, /aria-label', pt\('previous_episode', 'Предыдущая серия'\)/, 'previous episode retains its accessible label through the canonical locale key');
     assert.match(cleaner, /\.native-player-wrapper \.provider-native-episode-nav:disabled \{/);
 }
 

@@ -527,6 +527,11 @@ function createManager() {
         assert.deepEqual(firstPage.map(r => r.movieId).slice(0, 3), [25, 24, 23], 'newest first');
         assert.equal(firstPage[0].rating, 5, 'the latest rating per movie is kept, not the older duplicate (3)');
         assert.equal(firstPage.length + secondPage.length + thirdPage.length, 25, 'one card per movie');
+        const fives = await sharedService.getRecentRatings('u1', 10, 0, { throwOnError: true, rating: 5 });
+        assert.deepEqual(fives.map(r => r.movieId), [25, 15, 5], 'the rating filter keeps newest-first order');
+        assert.equal(sharedStats.ratingDistribution[4].count, fives.length, 'a distribution count equals its filtered cards');
+        const threes = await sharedService.getRecentRatings('u1', 10, 0, { throwOnError: true, rating: 3 });
+        assert.equal(sharedStats.ratingDistribution[2].count, threes.length, 'an older duplicate score is not counted');
         assert.equal(firstPage[0].movie.name, 'Cached 25');
         assert.ok(!fetchedIds.includes(25), 'cached movies are not requested from the API');
         assert.ok(peakFetches > 1 && peakFetches <= 3, `API lookups run with bounded concurrency (peak ${peakFetches})`);

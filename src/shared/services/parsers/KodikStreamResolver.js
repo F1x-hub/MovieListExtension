@@ -144,20 +144,40 @@ class KodikStreamResolver {
     }
 
     /**
-     * Kodik shifts letters by 18 within their case and then base64-encodes
-     * the URL. Plain URLs (containing `//`) are returned unchanged.
+     * Try the bounded alphabet shifts used by Kodik. Only approved HTTPS HLS
+     * manifests are accepted, including the plain/protocol-relative form.
      * @param {string} value
      * @returns {string}
      */
     static decodeSource(value) {
-        const text = String(value || '');
-        if (text.includes('//')) return text;
-        const shifted = text.replace(/[a-zA-Z]/g, char => {
-            const limit = char <= 'Z' ? 90 : 122;
-            const code = char.charCodeAt(0) + 18;
-            return String.fromCharCode(limit >= code ? code : code - 26);
-        });
-        return KodikStreamResolver.decodeBase64(shifted);
+        const text = String(value || '').trim();
+        if (KodikStreamResolver.isManifestSource(text)) return text;
+        for (let shift = 0; shift < 26; shift++) {
+            const shifted = text.replace(/[a-zA-Z]/g, char => {
+                const base = char <= 'Z' ? 65 : 97;
+                return String.fromCharCode((char.charCodeAt(0) - base + shift) % 26 + base);
+            });
+            try {
+                const decoded = KodikStreamResolver.decodeBase64(shifted).trim();
+                if (KodikStreamResolver.isManifestSource(decoded)) return decoded;
+            } catch {
+                // A malformed candidate does not prevent checking other shifts.
+            }
+        }
+        throw new Error('decode_failed');
+    }
+
+    static isManifestSource(value) {
+        try {
+            const url = new URL(value.startsWith('//') ? `https:${value}` : value);
+            if (url.protocol !== 'https:' || url.username || url.password || !/\.m3u8$/i.test(url.pathname)) return false;
+            const policy = globalThis.UrlPolicy;
+            if (policy?.check) return policy.check(url.href, { kind: 'manifest', profile: 'remote' }).ok === true;
+            // Resolver-only consumers still fail closed before the shared policy loads.
+            return url.hostname === 'solodcdn.com' || url.hostname.endsWith('.solodcdn.com');
+        } catch {
+            return false;
+        }
     }
 
     static decodeBase64(value) {
@@ -182,6 +202,7 @@ class KodikStreamResolver {
             try {
                 decoded = KodikStreamResolver.decodeSource(entry.src).trim();
             } catch {
+                void globalThis.PlayerMetrics?.record('decodeFailed', { providerId: 'kodik', reason: 'decode' });
                 return;
             }
             try {

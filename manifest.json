@@ -21,9 +21,9 @@
   "declarative_net_request": {
     "rule_resources": [
       {
-        "id": "ruleset_1",
+        "id": "player_response_headers",
         "enabled": true,
-        "path": "src/background/rules.json"
+        "path": "src/background/player-response-header-rules.json"
       },
       {
         "id": "provider_embed_context",
@@ -158,6 +158,11 @@
         "src/shared/assets/**/*",
         "libs/*.js",
         "src/shared/firestore.js",
+        "src/shared/i18n/locales.js",
+        "src/shared/services/player/PlayerLocale.js",
+        "src/shared/services/player/PlayerGhostPreview.js",
+        "src/shared/services/player/PlayerMediaControls.js",
+        "src/shared/services/player/PlayerSettingsMenu.js",
         "content-scripts/*.js"
       ],
       "matches": [
@@ -311,6 +316,9 @@
       "js": [
         "src/shared/lib/hls.min.js",
         "src/shared/services/PlayerSourceLifecycle.js",
+        "src/shared/services/player/PlayerGhostPreview.js",
+        "src/shared/services/player/PlayerMediaControls.js",
+        "src/shared/services/player/PlayerSettingsMenu.js",
         "content-scripts/player-cleaner.js"
       ],
       "run_at": "document_end",

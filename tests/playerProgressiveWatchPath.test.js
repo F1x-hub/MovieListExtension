@@ -158,6 +158,18 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
         `release must happen at the deadline, not after the hanging provider (elapsed ${deadlineElapsed}ms)`);
     await deadlineDiscovery.finalize;
 
+    deadlineManager.activeSourceValue = 'parser:fast-fallback';
+    const selectedDiscovery = deadlineManager.startProgressiveSourceDiscovery(
+        { name: 'Film', year: 2024, type: 'film', kinopoiskId: 'movie-2' },
+        { priorityDeadlineMs: 200 }
+    );
+    const selectedSources = await Promise.race([
+        selectedDiscovery.firstSources,
+        delay(100).then(() => { throw Error('selected provider waited for unrelated discovery'); })
+    ]);
+    assert.equal(selectedSources[0].parserId, 'fast-fallback');
+    await selectedDiscovery.finalize;
+
     console.log('✅ progressive watch path tests passed');
 })().catch(error => {
     console.error(error);

@@ -13,7 +13,7 @@ const read = name => fs.readFileSync(
 const dom = new JSDOM('<!doctype html><html><body></body></html>', {
     url: 'chrome-extension://extension-id/src/pages/movie-details/movie-details.html'
 });
-const storageData = { kinogo_active_mirror: 'https://b.test' };
+const storageData = { kinogo_active_mirror: 'https://b.test', kinogo_active_mirror_at: Date.now() };
 const context = vm.createContext({
     console,
     window: {},
@@ -148,7 +148,7 @@ const delay = (ms, value) => new Promise(resolve => setTimeout(() => resolve(val
     assert.equal(clicked, background);
     assert.equal(clicked.altName, 'Reacher', 'the alternative title reaches Seasonvar ranking');
 
-    // ─── Missing Venom embeds are dropped before mounting ──────────────
+    // Availability filters future discoveries without holding up a mount.
     const embedParser = new ExFsParser();
     const checked = [];
     embedParser.fetchWithTimeout = async url => {
@@ -164,20 +164,22 @@ const delay = (ms, value) => new Promise(resolve => setTimeout(() => resolve(val
         { name: 'Other', url: 'https://other.test/embed/kp/662551', type: 'iframe' },
         { name: 'Signed', url: 'https://cinemar.cc/embed/1?token=abc', type: 'iframe' }
     ];
-    const kept = await embedParser.cachedVideoSources({ url: 'https://ex-fs.net/film/50750-helter-skelter.html' });
+    const immediate = await embedParser.cachedVideoSources({ url: 'https://ex-fs.net/film/50750-helter-skelter.html' });
+    const kept = await embedParser.dropMissingEmbedSources(immediate);
     assert.deepEqual(kept.map(source => source.url), [
         'https://api.variyt.ws/embed/kp/500',
         'https://api.variyt.ws/embed/kp/301',
         'https://other.test/embed/kp/662551',
         'https://cinemar.cc/embed/1?token=abc'
     ], 'only a Venom embed answering 404 is dropped; errors keep the source');
-    assert.equal(checked.length, 3, 'only unsigned Venom embeds are pre-checked');
+    assert.equal(new Set(checked).size, 3, 'only unsigned Venom embeds are checked; unknown network results can retry');
 
     embedParser.clearCache();
     embedParser.getVideoSources = async () => [
         { name: 'Ex-FS', url: 'https://api.variyt.ws/embed/kp/662551', type: 'iframe' }
     ];
-    const none = await embedParser.cachedVideoSources({ url: 'https://ex-fs.net/film/50750-helter-skelter.html' });
+    const initial = await embedParser.cachedVideoSources({ url: 'https://ex-fs.net/film/50750-helter-skelter.html' });
+    const none = await embedParser.dropMissingEmbedSources(initial);
     assert.equal(none.length, 0, 'a film without any playable embed reports no sources');
 
     console.log('✅ Parser search matching tests passed');

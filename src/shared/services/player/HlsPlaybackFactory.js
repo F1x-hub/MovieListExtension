@@ -84,16 +84,36 @@
 
     /**
      * hls.js config for one stream: shared defaults, then the remembered
-     * bandwidth (provider streams only), then caller overrides.
+     * bandwidth (provider streams only), then caller quality/buffer overrides.
+     * Transport restrictions are applied last and cannot be overridden.
      * @param {Object} [overrides]
-     * @param {{rememberBandwidth?: boolean}} [options]
-     * @returns {Object}
+     * @param {{rememberBandwidth?: boolean, networkProfile?: 'remote'|'local', localManifestUrl?: string}} [options]
+     * @returns {Object|null}
      */
-    function buildConfig(overrides = {}, { rememberBandwidth = true } = {}) {
+    function buildConfig(overrides = {}, { rememberBandwidth = true, networkProfile = 'remote', localManifestUrl } = {}) {
+        if (!['remote', 'local'].includes(networkProfile)
+            || typeof global.UrlPolicy?.check !== 'function'
+            || typeof global.UrlPolicy?.kindOf !== 'function'
+            || typeof global.HlsPolicyLoader?.forProfile !== 'function') return null;
+        const loader = global.HlsPolicyLoader.forProfile(networkProfile, { localManifestUrl });
+        if (typeof loader !== 'function') return null;
         const config = { ...DEFAULT_HLS_CONFIG };
         const estimate = rememberBandwidth ? readBandwidthEstimate() : null;
         if (estimate) config.abrEwmaDefaultEstimate = estimate;
-        return { ...config, ...(overrides || {}) };
+        return {
+            ...config, ...(overrides || {}), loader,
+            pLoader: undefined, fLoader: undefined,
+            fetchSetup: undefined, xhrSetup: undefined,
+            cmcd: undefined, cmcdController: undefined,
+            progressive: false,
+            emeEnabled: false, emeController: undefined,
+            drmSystems: undefined, drmSystemOptions: undefined,
+            widevineLicenseUrl: undefined, licenseXhrSetup: undefined,
+            licenseResponseCallback: undefined,
+            contentSteeringController: undefined,
+            // Asset-list contexts are outside this first controlled HLS slice.
+            interstitialsController: undefined
+        };
     }
 
     const isManifestError = (data) => /^manifest/i.test(String(data?.details || ''));
@@ -120,6 +140,8 @@
      * @param {Function} [options.Hls] - hls.js constructor (defaults to global Hls)
      * @param {Object} [options.config] - Extra hls.js config
      * @param {'bounded'|'persistent'} [options.policy='bounded']
+     * @param {'remote'|'local'} [options.networkProfile='remote'] - Independent URL trust boundary
+     * @param {string} [options.localManifestUrl] - Captured local session manifest; scopes every local request
      * @param {number} [options.maxNetworkRetries=3] - bounded policy only
      * @param {number} [options.maxMediaRecoveries=2]
      * @param {number} [options.retryBaseDelayMs=1000] - Backoff unit (1, 2, 4, 8 units)
@@ -148,7 +170,11 @@
         const MEDIA_ERROR = ErrorTypes.MEDIA_ERROR || 'mediaError';
 
         const rememberBandwidth = options.rememberBandwidth ?? policy === 'bounded';
-        const hls = new HlsCtor(buildConfig(options.config, { rememberBandwidth }));
+        const config = buildConfig(options.config, {
+            rememberBandwidth, networkProfile: options.networkProfile, localManifestUrl: options.localManifestUrl
+        });
+        if (!config) return null;
+        const hls = new HlsCtor(config);
         let networkRetries = 0;
         let mediaRecoveries = 0;
         let audioCodecSwapped = false;
@@ -156,6 +182,8 @@
         let recovering = false;
         let failed = false;
         let destroyed = false;
+        let refreshPending = false;
+        let refreshAttempted = false;
 
         const clearRetryTimer = () => {
             if (retryTimer !== null) clearTimeout(retryTimer);
@@ -163,15 +191,20 @@
         };
         const active = () => !destroyed && !failed && isCurrent();
 
-        const fail = (reason, data) => {
+        const fail = (reason, data, destroyTransport = false) => {
             if (failed || destroyed) return;
             failed = true;
             clearRetryTimer();
             try { hls.stopLoad(); } catch { /* ignore */ }
+            if (destroyTransport) {
+                // Set failed before destroy: DESTROYING or nested ERROR events
+                // must never reopen recovery or report this failure twice.
+                try { hls.destroy(); } catch { /* ignore */ }
+            }
             if (!isCurrent()) return;
             let handled = false;
             try { handled = options.onFatal?.({ reason, data }) === true; } catch (error) {
-                console.warn('[HlsPlaybackFactory] onFatal handler failed:', error);
+                console.warn('[HlsPlaybackFactory] onFatal handler failed:', global.PlayerDiagnostics?.sanitizeError(error) || { category: 'unknown' });
             }
             // A handler that already replaced the source (fallback) owns the
             // UI; outer lifecycle watchers must not report an error.
@@ -210,7 +243,7 @@
                         hls.startLoad(-1);
                     }
                 } catch (error) {
-                    console.warn('[HlsPlaybackFactory] HLS recovery retry failed:', error);
+                    console.warn('[HlsPlaybackFactory] HLS recovery retry failed:', global.PlayerDiagnostics?.sanitizeError(error) || { category: 'unknown' });
                     scheduleNetworkRetry(data);
                 }
             }, delayMs);
@@ -236,7 +269,32 @@
 
         hls.on(Events.ERROR || 'hlsError', (_event, data) => {
             if (!active()) return;
+            if (data?.response?.text === 'POLICY_VIOLATION') {
+                fail('policy', data, true);
+                return;
+            }
             const status = responseStatus(data);
+            if (refreshPending) return;
+            const resource = /key/i.test(data?.details || '') ? 'key'
+                : /frag/i.test(data?.details || '') ? 'fragment'
+                    : /manifest/i.test(data?.details || '') ? 'manifest'
+                        : /level|audioTrack|subtitleTrack/i.test(data?.details || '') ? 'level' : null;
+            if (options.networkProfile !== 'local' && resource && TERMINAL_MANIFEST_STATUSES.has(status)
+                && typeof options.onSourceExpired === 'function') {
+                if (refreshAttempted) { fail('source-rejected', data); return; }
+                refreshAttempted = refreshPending = true;
+                clearRetryTimer();
+                try { hls.stopLoad(); } catch { /* ignore */ }
+                Promise.resolve().then(() => active() && options.onSourceExpired({ status, resource, data }))
+                    .then(result => {
+                        refreshPending = false;
+                        if (active() && result !== true && result?.recovered !== true) fail('source-rejected', data);
+                    }).catch(() => {
+                        refreshPending = false;
+                        if (active()) fail('source-rejected', data);
+                    });
+                return;
+            }
 
             if (data?.type === MEDIA_ERROR && data?.fatal) {
                 recoverMedia(data);
@@ -299,14 +357,17 @@
         });
 
         options.beforeLoad?.(hls);
+        if (!active()) return null;
         if (options.attachFirst) {
             hls.attachMedia(video);
+            if (!active()) return null;
             hls.loadSource(url);
         } else {
             hls.loadSource(url);
+            if (!active()) return null;
             hls.attachMedia(video);
         }
-        return hls;
+        return active() ? hls : null;
     }
 
     global.HlsPlaybackFactory = {

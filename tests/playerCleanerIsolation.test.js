@@ -4,7 +4,7 @@ import vm from 'node:vm';
 
 console.log('🧪 Running player cleaner isolation tests...');
 
-const cleanerSource = fs.readFileSync(
+const cleanerSource = ['PlayerSettingsMenu', 'PlayerMediaControls', 'PlayerGhostPreview'].map(name => fs.readFileSync(new URL('../src/shared/services/player/' + name + '.js', import.meta.url), 'utf8')).join(String.fromCharCode(10)) + String.fromCharCode(10) + fs.readFileSync(
     new URL('../content-scripts/player-cleaner.js', import.meta.url),
     'utf8'
 );

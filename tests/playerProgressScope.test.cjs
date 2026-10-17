@@ -44,6 +44,9 @@ const progressKeys = (page) => page.evaluate(() => Object.keys(localStorage)
             window.chrome = { runtime: { getURL: () => 'data:text/javascript,', id: 'test' } };
             localStorage.clear();
         });
+        await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, '../src/shared/services/player/PlayerSettingsMenu.js'), 'utf8') });
+        await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, '../src/shared/services/player/PlayerMediaControls.js'), 'utf8') });
+        await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, '../src/shared/services/player/PlayerGhostPreview.js'), 'utf8') });
         await page.addScriptTag({ content: cleanerSource });
 
         // 1. Positions are saved per title, not per shared movie-details.html path.

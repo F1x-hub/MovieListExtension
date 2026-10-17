@@ -1,0 +1,28 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { test } = require('node:test');
+const { JSDOM } = require('jsdom');
+const source = fs.readFileSync(path.join(__dirname, '../src/shared/services/player/PlayerSettingsMenu.js'), 'utf8');
+test('extracted menu preserves text-only labels, selection, actions and back semantics', () => {
+    const dom = new JSDOM('<div id="menu"></div>', { runScripts: 'outside-only' });
+    dom.window.eval(source);
+    const api = dom.window.PlayerSettingsMenu;
+    const menu = dom.window.document.getElementById('menu');
+    const hostile = '<img src=x onerror=alert(1)>';
+    const item = api.createItem(dom.window.document, hostile, hostile);
+    assert.equal(item.querySelector('img'), null);
+    assert.equal(item.querySelector('.player-settings-menu__label').textContent, hostile);
+    assert.equal(item.querySelectorAll('svg').length, 1);
+    let action = 0; let refresh = 0; let back = 0;
+    api.renderSubmenu({ menu, title: hostile, backLabel: 'Back', onBack: () => back++, items: [{ label: hostile, isActive: true, action: () => action++, refreshFn: () => refresh++ }] });
+    assert.equal(menu.querySelector('img'), null);
+    const option = menu.querySelector('[role="menuitemradio"]');
+    assert.equal(option.getAttribute('aria-checked'), 'true');
+    assert.equal(option.classList.contains('is-active'), true);
+    option.click(); assert.equal(action, 1); assert.equal(refresh, 1);
+    menu.querySelector('.player-settings-menu__back').click(); assert.equal(back, 1);
+    api.renderSubmenu({ menu, title: 'Empty', items: [], onBack() {}, backLabel: 'Back' });
+    assert.equal(menu.querySelectorAll('[role="menuitemradio"]').length, 0);
+    dom.window.close();
+});
