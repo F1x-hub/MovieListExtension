@@ -1,0 +1,34 @@
+const assert = require('node:assert/strict');
+const fixture = require('./fixtures/provider-health/kodik.json');
+const { classify, runFixture, main } = require('../scripts/player-source-health.cjs');
+
+(async () => {
+    assert.equal(classify({ fixture: true, resolved: true }), 'parse_regression', 'a nonempty source array is insufficient');
+    assert.equal(classify({ resolved: false }), 'network_or_access_unconfirmed');
+    assert.equal(classify({ fixture: true, transportFailed: true }), 'network_or_access_unconfirmed');
+    assert.equal((await runFixture(fixture)).status, 'available');
+    const brokenDecode = structuredClone(fixture);
+    brokenDecode.routes['https://kodikplayer.com/ftor'].body.links[720][0].src = 'payload-secret-invalid';
+    const regression = await runFixture(brokenDecode);
+    assert.equal(regression.status, 'parse_regression', 'actual production resolver rejects broken sources');
+    assert.ok(!JSON.stringify(regression).includes('secret'));
+    const brokenManifest = structuredClone(fixture);
+    delete brokenManifest.routes['https://cloud.solodcdn.com/fixture/manifest.m3u8'].asset;
+    brokenManifest.routes['https://cloud.solodcdn.com/fixture/manifest.m3u8'].body = '<html>unavailable</html>';
+    assert.equal((await runFixture(brokenManifest)).status, 'parse_regression');
+    const brokenMedia = structuredClone(fixture);
+    brokenMedia.routes['https://cloud.solodcdn.com/fixture/index0.m4s'] = { body: 'not a video' };
+    assert.equal((await runFixture(brokenMedia)).status, 'parse_regression', 'nonempty manifest alone is insufficient');
+    const blocked = structuredClone(fixture);
+    blocked.routes['https://kodikplayer.com/ftor'].status = 403;
+    assert.equal((await runFixture(blocked)).status, 'network_or_access_unconfirmed', 'one access failure proves no regional cause');
+    const missingRoute = structuredClone(fixture);
+    delete missingRoute.routes['https://kodikplayer.com/ftor'];
+    assert.equal((await runFixture(missingRoute)).status, 'network_or_access_unconfirmed');
+    const output = await main([]);
+    assert.equal(output.monitoringEnabled, false);
+    assert.equal(output.results.length, 1);
+    assert.ok(!JSON.stringify(output).includes('https:'));
+    assert.deepEqual(await main(['--live']), { mode: 'live-disabled', monitoringEnabled: false, results: [] });
+    console.log('Player source health tests passed');
+})().catch(error => { console.error(error); process.exitCode = 1; });

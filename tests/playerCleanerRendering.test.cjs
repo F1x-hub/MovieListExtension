@@ -28,6 +28,9 @@ const { chromium } = require('playwright');
                     value: { length: 1, start: () => 0, end: () => 120 }
                 });
             });
+            await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, '../src/shared/services/player/PlayerSettingsMenu.js'), 'utf8') });
+            await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, '../src/shared/services/player/PlayerMediaControls.js'), 'utf8') });
+            await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, '../src/shared/services/player/PlayerGhostPreview.js'), 'utf8') });
             await page.addScriptTag({ content: `(function(window) { ${cleaner}\n})(new Proxy(window, {
                 get(target, key) {
                     if (key === 'location') return {

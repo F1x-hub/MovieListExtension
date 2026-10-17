@@ -111,6 +111,9 @@ class VidSrcAdapter extends (typeof BasePlaybackAdapter !== 'undefined' ? BasePl
 
         const iframe = document.createElement('iframe');
         iframe.src = url;
+        const sandbox = typeof window !== 'undefined'
+            ? window.MovieDetailsPlayerSurface?.getProviderSandbox?.(url) : null;
+        if (sandbox) iframe.setAttribute('sandbox', sandbox);
         iframe.setAttribute('allow', 'autoplay; fullscreen');
         iframe.setAttribute('allowfullscreen', 'true');
         iframe.className = 'player-surface__content';

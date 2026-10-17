@@ -81,6 +81,15 @@ class ProfileService {
         return unique;
     }
 
+    /** Rounded 1-10 score of a rating document, or null for legacy/invalid values. */
+    static normalizeRatingValue(value) {
+        // Legacy documents may store the score as a string.
+        const ratingValue = Number(value);
+        if (!Number.isFinite(ratingValue) || ratingValue <= 0) return null;
+        const normalized = Math.round(ratingValue);
+        return normalized >= 1 && normalized <= 10 ? normalized : null;
+    }
+
     static toRatingMovie(movieId, movieData) {
         if (!movieData) {
             // An empty name lets the page show its localized "unknown title" text.
@@ -101,17 +110,21 @@ class ProfileService {
      * @param {string} userId - User ID
      * @param {number} limit - Maximum number of ratings to return
      * @param {number} offset - Number of (deduplicated) ratings to skip
-     * @param {{throwOnError?: boolean}} [options] - throwOnError rethrows read failures
-     *   instead of returning an empty list that looks like "no ratings"
+     * @param {{throwOnError?: boolean, rating?: number|null}} [options] - throwOnError rethrows read failures
+     *   instead of returning an empty list that looks like "no ratings"; rating keeps only
+     *   that (rounded) score, matching the profile rating distribution
      * @returns {Promise<Array>} - Array of rating objects with movie data
      */
-    async getRecentRatings(userId, limit = 10, offset = 0, { throwOnError = false } = {}) {
+    async getRecentRatings(userId, limit = 10, offset = 0, { throwOnError = false, rating = null } = {}) {
         try {
             if (!userId) {
                 throw new Error('User ID is required');
             }
 
-            const uniqueRatings = await this.getSortedUniqueRatings(userId);
+            const sortedRatings = await this.getSortedUniqueRatings(userId);
+            const uniqueRatings = rating == null
+                ? sortedRatings
+                : sortedRatings.filter(item => ProfileService.normalizeRatingValue(item.rating) === Number(rating));
             // Copies: the shared snapshot must not collect `movie` fields.
             const pagedRatings = uniqueRatings.slice(offset, offset + limit).map(rating => ({ ...rating }));
             if (pagedRatings.length === 0) {
@@ -248,10 +261,16 @@ class ProfileService {
                 if (Number.isFinite(ratingValue) && ratingValue > 0) {
                     totalRatings++;
                     sumRatings += ratingValue;
-                    const normalizedRating = Math.round(ratingValue);
-                    if (normalizedRating >= 1 && normalizedRating <= 10) {
-                        ratingDistribution[normalizedRating - 1].count++;
-                    }
+                }
+            });
+
+            // The distribution counts one (latest) rating per movie, like the ratings
+            // list, so a score's count equals the cards its filter shows.
+            const uniqueRatings = await this.getSortedUniqueRatings(userId);
+            uniqueRatings.forEach(data => {
+                const normalizedRating = ProfileService.normalizeRatingValue(data.rating);
+                if (normalizedRating) {
+                    ratingDistribution[normalizedRating - 1].count++;
                 }
             });
 

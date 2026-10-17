@@ -84,6 +84,10 @@
                             <span>Реакции</span>
                             <span class="admin-nav-count" id="adminNavReactionCount">—</span>
                         </button>
+                        <button class="sidebar-link" data-target="player-settings" type="button">
+                            <span class="icon" aria-hidden="true">▷</span>
+                            <span>Плеер</span>
+                        </button>
                         <div class="sidebar-spacer"></div>
                     </nav>
                 </aside>
@@ -602,6 +606,17 @@
                             </div>
                         </div>
 
+                        <div class="settings-pane" id="pane-player-settings">
+                            <div class="pane-header admin-pane-header">
+                                <div><h2>Плеер</h2><p>Экспериментальный интерфейс просмотра в этом браузере.</p></div>
+                            </div>
+                            <div class="settings-section">
+                                <label for="proPlayerEnabled"><input id="proPlayerEnabled" type="checkbox" aria-describedby="proPlayerDescription proPlayerStatus" disabled> Включить «Смотреть»</label>
+                                <p id="proPlayerDescription">По умолчанию выключено. Настройка сохраняется только в этом профиле браузера и не изменяет настройки других пользователей. Доступные озвучки и качества зависят от выбранного источника; объединение дорожек разных источников пока недоступно.</p>
+                                <p id="proPlayerStatus" role="status" aria-live="polite"></p>
+                            </div>
+                        </div>
+
                         <!-- Comment Reactions Pane -->
                         <div class="settings-pane" id="pane-reaction-settings">
                             <div class="pane-header admin-pane-header reaction-settings-header">
@@ -892,6 +907,7 @@
     <script src="/src/shared/components/Navigation.js"></script>
     <script src="/src/shared/components/ImageLightbox.js"></script>
     <script src="/src/shared/components/ConfirmDialog.js"></script>
+    <script src="../../shared/services/player/ProPlayerPreferences.js"></script>
     <script src="admin.js"></script>
     <script defer src="../../shared/components/ReportWidget.js"></script>
 </body>

@@ -90,7 +90,7 @@ assert.equal(new URL(createProvider([], 'https://api.variyt.ws/embed/kp/472329',
 ).location.href).searchParams.get('santabarbaranoads'), '1',
     'support extension referrers when ancestorOrigins is unavailable');
 
-const cleaner = fs.readFileSync(new URL('../content-scripts/player-cleaner.js', import.meta.url), 'utf8');
+const cleaner = ['PlayerSettingsMenu', 'PlayerMediaControls', 'PlayerGhostPreview'].map(name => fs.readFileSync(new URL('../src/shared/services/player/' + name + '.js', import.meta.url), 'utf8')).join(String.fromCharCode(10)) + String.fromCharCode(10) + fs.readFileSync(new URL('../content-scripts/player-cleaner.js', import.meta.url), 'utf8');
 const dom = new JSDOM('<body></body>', { url: 'https://api.variyt.ws/embed/kp/1134493' });
 const { window } = dom;
 Object.defineProperty(window.document, 'readyState', { value: 'loading' });

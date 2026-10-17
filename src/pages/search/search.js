@@ -95,6 +95,8 @@ class SearchManager {
 
     async init() {
         await i18n.init();
+        await window.PlayerLocale?.init();
+        window.PlayerLocale?.setLocale(i18n.currentLocale);
         i18n.translatePage();
         await this.initializeUI();
         
@@ -117,6 +119,8 @@ class SearchManager {
     async handleSettingsUpdate(settings) {
         if (settings.language && settings.language !== this._filterLocale) {
             await i18n.init();
+            window.PlayerLocale?.setLocale(settings.language);
+            window.PlayerSourceLifecycle?.localize?.(this.elements.videoContainer);
             i18n.translatePage();
             
             // Re-initialize filters to update their labels
@@ -4007,14 +4011,6 @@ class SearchManager {
                         }, '*');
                         this.restoreProgressForReadyIframe(readyIframe);
                     }
-                } else if (event.data.type === 'CHANGE_SOURCE') {
-                    const newUrl = event.data.url;
-                    if (newUrl && newUrl !== this.currentVideoUrl) {
-                        this.elements.sourceSelect.value = newUrl;
-                        this.changeVideoSource(newUrl);
-                        // Auto-play the new source
-                        this.togglePlayPause(); 
-                    }
                 } else if (event.data.type === 'EPISODE_CHANGED') {
                     if (event.data.origin === 'USER_PROVIDER_SELECTION') {
                         this.invalidatePlayerRestore();
@@ -4239,15 +4235,17 @@ class SearchManager {
             const isHls = this.currentVideoUrl.includes('.m3u8');
             
             if (isMp4 || isHls) {
+                const sourceUrl = this.currentVideoUrl;
                 // Native Player
                 this.elements.videoContainer.innerHTML = `
-                    <video id="nativeVideoPlayer" controls autoplay style="width:100%; height:100%; outline:none;" ${isHls && !this.currentVideoUrl.includes('.m3u8') ? '' : ''}>
-                        <source src="${this.currentVideoUrl}" type="${isHls ? 'application/x-mpegURL' : 'video/mp4'}">
+                    <video id="nativeVideoPlayer" controls autoplay style="width:100%; height:100%; outline:none;">
                         Your browser does not support the video tag.
                     </video>
                 `;
                 
                 const videoElement = document.getElementById('nativeVideoPlayer');
+                const isCurrent = () => videoElement.isConnected && this.currentVideoUrl === sourceUrl;
+                if (!isHls) videoElement.src = sourceUrl;
                 
                 // If HLS and not natively supported (like on Chrome Desktop typically), use Hls.js
                 // Lazy-load hls.min.js only when needed
@@ -4255,6 +4253,7 @@ class SearchManager {
                     try {
                         await LazyLoader.loadScript('../../shared/lib/hls.min.js');
                     } catch (e) {
+                        if (!isCurrent()) return;
                         console.error('Failed to load HLS library:', e);
                         this.elements.videoContainer.innerHTML = `
                             <div class="video-placeholder">
@@ -4264,28 +4263,30 @@ class SearchManager {
                         return;
                     }
 
-                    const hls = window.HlsPlaybackFactory?.create(videoElement, this.currentVideoUrl, {
-                        isCurrent: () => videoElement.isConnected,
+                    if (!isCurrent()) return;
+                    const showError = () => {
+                        if (!isCurrent()) return;
+                        this.elements.videoContainer.innerHTML = `
+                            <div class="video-placeholder">
+                                <span>Video stream is unavailable.</span>
+                            </div>
+                        `;
+                    };
+                    const hls = window.HlsPlaybackFactory?.create(videoElement, sourceUrl, {
+                        networkProfile: 'remote',
+                        isCurrent,
                         beforeLoad: (instance) => {
+                            this.currentHls = instance;
                             instance.on(Hls.Events.MANIFEST_PARSED, () => {
+                                if (!isCurrent()) return;
                                 videoElement.play().catch(e => console.log('Autoplay blocked:', e));
                             });
                         },
-                        onFatal: () => {
-                            if (!videoElement.isConnected) return;
-                            this.elements.videoContainer.innerHTML = `
-                                <div class="video-placeholder">
-                                    <span>Video stream is unavailable.</span>
-                                </div>
-                            `;
-                        }
+                        onFatal: showError
                     });
-                    if (hls) {
+                    if (hls && isCurrent()) {
                         this.currentHls = hls; // Store to destroy later
-                    } else if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
-                        // Safari
-                        videoElement.play().catch(e => console.log('Autoplay blocked:', e));
-                    }
+                    } else if (!hls) showError();
                 }
             } else {
                 // Iframe Fallback
@@ -4303,9 +4304,10 @@ class SearchManager {
                     }
                 }
 
-                this.elements.videoContainer.innerHTML = `
-                    <iframe src="${url}" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture" style="width:100%; height:100%; border:none;"></iframe>
-                `;
+                MovieDetailsPlayerSurface.renderFrameInto(this.elements.videoContainer, url, {
+                    allow: 'autoplay; encrypted-media; picture-in-picture',
+                    sandbox: MovieDetailsPlayerSurface.getProviderSandbox(url)
+                });
             }
         } else {
             // Pause: Show simple player (which unloads iframe/video)

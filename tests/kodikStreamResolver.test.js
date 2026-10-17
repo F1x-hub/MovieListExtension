@@ -4,10 +4,10 @@ const { KodikStreamResolver } = require('../src/shared/services/parsers/KodikStr
 console.log('🧪 Running KodikStreamResolver tests...');
 
 // Inverse of Kodik's obfuscation: base64, then shift letters back by 18.
-function encodeSource(url) {
+function encodeSource(url, shift = 18) {
     return Buffer.from(url, 'binary').toString('base64').replace(/[a-zA-Z]/g, char => {
         const base = char <= 'Z' ? 65 : 97;
-        return String.fromCharCode(((char.charCodeAt(0) - base - 18 + 26) % 26) + base);
+        return String.fromCharCode(((char.charCodeAt(0) - base - shift + 26) % 26) + base);
     });
 }
 
@@ -32,8 +32,41 @@ const ftor = {
 (async () => {
     // 1. Decoding and parsing helpers.
     assert.equal(KodikStreamResolver.decodeSource(encodeSource(cdn(720))), cdn(720));
-    assert.equal(KodikStreamResolver.decodeSource('https://plain.example/a.m3u8'), 'https://plain.example/a.m3u8',
+    assert.equal(KodikStreamResolver.decodeSource('https://cloud.solodcdn.com/a.m3u8'), 'https://cloud.solodcdn.com/a.m3u8',
         'plain URLs pass through');
+    for (let shift = 0; shift < 26; shift++) {
+        assert.equal(KodikStreamResolver.decodeSource(encodeSource(cdn(720), shift)), cdn(720), `bounded shift ${shift}`);
+    }
+    for (const invalid of [
+        'https://cloud.solodcdn.com/video.mp4?next=manifest.m3u8',
+        'https://cloud.solodcdn.com/video.m3u8/extra',
+        'https://solodcdn.com.evil.example/a.m3u8',
+        'https://evil-solodcdn.com/a.m3u8',
+        'https://localhost/a.m3u8',
+        'https://127.0.0.1/a.m3u8',
+        'http://cloud.solodcdn.com/a.m3u8',
+        'https://user:secret@cloud.solodcdn.com/a.m3u8',
+        'payload-secret-%%%'
+    ]) {
+        for (const source of [invalid, encodeSource(invalid)]) {
+            assert.throws(() => KodikStreamResolver.decodeSource(source), error => error.message === 'decode_failed',
+                'rejection has a fixed message without the input payload');
+        }
+    }
+    const oldPolicy = globalThis.UrlPolicy;
+    const policyCalls = [];
+    try {
+        globalThis.UrlPolicy = { check: (url, options) => {
+            policyCalls.push({ url, options });
+            return { ok: false };
+        } };
+        assert.throws(() => KodikStreamResolver.decodeSource(cdn(720)), /decode_failed/,
+            'shared policy can deny an otherwise approved manifest');
+        assert.deepEqual(policyCalls[0], { url: `https:${cdn(720)}`, options: { kind: 'manifest', profile: 'remote' } });
+    } finally {
+        if (oldPolicy === undefined) delete globalThis.UrlPolicy;
+        else globalThis.UrlPolicy = oldPolicy;
+    }
 
     assert.equal(KodikStreamResolver.toPageUrl(embed), pageUrl, 'the Referer-rule marker is stripped');
     assert.equal(KodikStreamResolver.toPageUrl('//kodikplayer.com/video/1/a/720p'), 'https://kodikplayer.com/video/1/a/720p');

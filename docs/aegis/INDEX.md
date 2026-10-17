@@ -1,5 +1,11 @@
 # Aegis index
 
+- [Plan: professional source/player roadmap — 2026-10-15](plans/2026-10-15-pro-player-and-sources.md)
+- [Execution plan v6: professional sources/player — 2026-10-15](plans/2026-10-15-pro-player-and-sources-execution.md)
+- [Audit: source/player plans — 2026-10-15](work/2026-10-15-pro-player-and-sources/00-plan-audit.md)
+- [Implementation checkpoint: source/player work — 2026-10-16](work/2026-10-15-pro-player-and-sources/CHECKPOINT.md)
+- [Current implementation, checks and remaining gates — 2026-10-16](work/2026-10-15-pro-player-and-sources/90-current-status.md)
+
 - [Plan: GitHub ZIP + Native Messaging updater — 2026-09-08](plans/2026-09-08-github-native-updater.md)
 
 - [Plan: series episode restore race — 2026-09-11](plans/2026-09-11-series-episode-restore-race.md)

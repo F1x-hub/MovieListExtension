@@ -299,6 +299,9 @@ class MovieDetailsManager {
         await i18n.init();
         this.perf?.mark('md:i18n-ready');
         i18n.translatePage();
+        await window.PlayerLocale?.init();
+        window.PlayerLocale?.setLocale(i18n.currentLocale);
+        await this.initializeWatchEntry?.();
         await this.initializeUI();
 
         
@@ -491,6 +494,9 @@ class MovieDetailsManager {
             this.elements.ratingStars.addEventListener('pointerover', (e) => {
                 const btn = e.target.closest('.star-rating-btn');
                 if (btn) {
+                    if (this.proPlayerEnabled && this.watchRoomController?.room && !['owner', 'controller'].includes(this.watchRoomController.role)) {
+                        e.preventDefault(); return;
+                    }
                     const rating = parseInt(btn.dataset.rating);
                     this.updateStarVisuals(rating, true);
                 }
@@ -657,7 +663,10 @@ class MovieDetailsManager {
                         return;
                     }
                     if (value && !btn.classList.contains('active')) {
-                        await this.changeVideoSource(value);
+                        await this.changeVideoSource(value, { userInitiated: true });
+                    } else if (value && this.proPlayerEnabled) {
+                        if (this.watchSourceRun) this.watchSourceRun.manual = true;
+                        await window.WatchSourcePolicy.save(this.selectedMovie?.kinopoiskId, value);
                     }
                 }
             });
@@ -6684,6 +6693,10 @@ class MovieDetailsManager {
             sourceSettled: true,
             sources: []
         }]));
+        const selectedParserId = this.activeSourceValue?.startsWith('parser:')
+            ? this.activeSourceValue.slice(7) : null;
+        const releaseOrder = [...parsers].sort((a, b) =>
+            Number(b.id === selectedParserId) - Number(a.id === selectedParserId));
         const allSources = [];
         const sourceTasks = [];
         let firstResolved = false;
@@ -6702,7 +6715,7 @@ class MovieDetailsManager {
 
         const resolveFirstIfReady = () => {
             if (firstResolved) return;
-            for (const parser of parsers) {
+            for (const parser of releaseOrder) {
                 const state = states.get(parser.id);
                 if (!state.searchSettled || !state.sourceSettled) {
                     // A slow mirror must not hold the watch path indefinitely.
@@ -8155,6 +8168,11 @@ class MovieDetailsManager {
 
     async handleWatchClick() {
         if (!this.selectedMovie) return;
+        if (this.proPlayerEnabled) {
+            this.watchSourceRun = window.WatchSourcePolicy.createRun(this.selectedMovie.kinopoiskId);
+            this.watchSearching = true;
+            this.syncWatchEntry();
+        }
         
         // Construct canonical PlaybackSelection
         const movie = this.selectedMovie;
@@ -8221,7 +8239,7 @@ class MovieDetailsManager {
             return parser && parser.getPlayerType() !== 'iframe';
         });
         
-        if (initializedCustomParser) {
+        if (initializedCustomParser && !this.proPlayerEnabled) {
             this.showVideoModal(this.selectedMovie);
             this.videoModalMovie = this.selectedMovie;
             
@@ -8279,19 +8297,21 @@ class MovieDetailsManager {
             // Playback Logic
             if (this.currentSources && this.currentSources.length > 0) {
                 const lastSaved = await this.getLastSource(this.selectedMovie.kinopoiskId);
-                let targetSource = null;
+                let targetSource = this.proPlayerEnabled ? await this.resolveWatchSource() : null;
+                this.watchSearching = false;
+                this.syncWatchEntry?.();
+                if (this.proPlayerEnabled && !targetSource) return;
 
                 // A source button click is an explicit user intent. Preserve it
                 // across the async watch flow instead of allowing stale storage or
                 // the first URL in currentSources to select VidSrc/Ex-FS again.
                 const explicitSource = this.activeSourceValue
-                    && this.elements.sourceButtonsContainer.querySelector(
-                        `.source-btn[data-value="${this.activeSourceValue}"]`
-                    )
+                    && [...this.elements.sourceButtonsContainer.querySelectorAll('.source-btn')]
+                        .some(button => button.dataset.value === this.activeSourceValue)
                     ? this.activeSourceValue
                     : null;
 
-                if (explicitSource) {
+                if (explicitSource && !this.proPlayerEnabled) {
                     targetSource = explicitSource;
                 }
                 
@@ -8339,6 +8359,13 @@ class MovieDetailsManager {
                 if (sourceChanged) this.togglePlayPause(targetSource);
             } else {
                 // No direct sources — try first non-primary parser that supports this movie type
+                if (this.proPlayerEnabled) {
+                    const target = await this.resolveWatchSource();
+                    this.watchSearching = false;
+                    this.syncWatchEntry();
+                    if (target) await this.changeVideoSource(target);
+                    return;
+                }
                 const currentType = this.selectedMovie?.type;
                 const allParsers = this.parserRegistry.getAll();
                 
@@ -8378,6 +8405,9 @@ class MovieDetailsManager {
             });
             const presentation = window.ErrorPresentation?.getPresentation?.(playbackError);
             this.renderPlayerPlaceholder(presentation?.message || 'Playback unavailable');
+        } finally {
+            this.watchSearching = false;
+            this.syncWatchEntry?.();
         }
     }
 
@@ -8507,13 +8537,6 @@ class MovieDetailsManager {
                      
                      this.restoreProgressForReadyIframe(iframe);
                      this.sendAnimeSkipTimes(iframe);
-                 }
-            } else if (event.data.type === 'CHANGE_SOURCE') {
-                const newUrl = event.data.url;
-                if (newUrl && newUrl !== this.currentVideoUrl) {
-                    this.updateActiveSourceButton(newUrl);
-                    const sourceChanged = await this.changeVideoSource(newUrl);
-                    if (sourceChanged) this.togglePlayPause(newUrl);
                  }
             } else if (event.data.type === 'PLAYER_SOURCE_STATE') {
                 const { state, url } = event.data;
@@ -8720,7 +8743,6 @@ class MovieDetailsManager {
     isTrustedPlayerMessage(event) {
         const playerMessageTypes = new Set([
             'PLAYER_READY',
-            'CHANGE_SOURCE',
             'PLAYER_SOURCE_STATE',
             'PLAYER_EPISODE_NAVIGATE',
             'UPDATE_WATCHING_PROGRESS',
@@ -9430,7 +9452,8 @@ class MovieDetailsManager {
                         if (!lifecycleOptions.isRequestCurrent()) return;
                         lifecycle.setState(this.elements.videoContainer, state, {
                             onRetry: lifecycleOptions.onRetry,
-                            onResearch: lifecycleOptions.onResearch
+                            onResearch: lifecycleOptions.onResearch,
+                            onTryOther: lifecycleOptions.onTryOther
                         });
                         lifecycleOptions.onLifecycleState(state, detail);
                     }
@@ -9652,6 +9675,7 @@ class MovieDetailsManager {
     }
 
     populateSourceSelector() {
+        this.watchEntryController?.beforeRebuild();
         let savedValue = this.activeSourceValue;
         if (!savedValue && this.elements.sourceButtonsContainer) {
             savedValue = this.elements.sourceButtonsContainer.querySelector('.source-btn.active')?.getAttribute('data-value');
@@ -9680,7 +9704,7 @@ class MovieDetailsManager {
 
         // MediaPlayer is a local backend source, not an iframe parser. Keep it
         // in the same provider rail while opening a dedicated torrent picker.
-        if (this.mediaPlayerReady && this.isTorrentMovie()) {
+        if (this.mediaPlayerReady && this.isTorrentMovie() && !this.proPlayerEnabled) {
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'source-btn';
@@ -9720,11 +9744,12 @@ class MovieDetailsManager {
             });
         }
         
-        const hasSavedValue = savedValue && this.elements.sourceButtonsContainer.querySelector(`[data-value="${savedValue}"]`);
+        const hasSavedValue = savedValue && [...this.elements.sourceButtonsContainer.querySelectorAll('.source-btn')].some(button => button.dataset.value === savedValue);
         if (hasSavedValue) {
             this.updateActiveSourceButton(savedValue);
         }
         this.refreshSourceButtonStates();
+        this.syncWatchEntry?.();
     }
 
     /**
@@ -9807,7 +9832,7 @@ class MovieDetailsManager {
         const state = this.elements?.videoContainer?.__providerDubState;
         const parser = state ? this.parserRegistry?.get?.(state.providerId) : null;
         if (!parser?.setPreferredTranslation || !translationId || translationId === state.activeTranslationId) return;
-        parser.setPreferredTranslation(state.contextId, translationId);
+        parser.setPreferredTranslation(state.contextId, translationId, this.selectedMovie?.kinopoiskId);
         await this.changeVideoSource(`parser:${state.providerId}`);
     }
 
@@ -9888,9 +9913,11 @@ class MovieDetailsManager {
         if (!container?.querySelectorAll) return;
         const lifecycleState = this.elements.videoContainer?.dataset?.sourceState || '';
         const labels = {
-            loading: 'загружается',
-            ready: 'воспроизводится',
-            unavailable: 'недоступен — нажмите, чтобы повторить'
+            loading: window?.PlayerLocale?.t('source_loading', {}, 'загружается') || 'загружается',
+            ready: window?.PlayerLocale?.t('source_ready', {}, 'воспроизводится') || 'воспроизводится',
+            unavailable: window?.PlayerLocale?.t('source_unavailable_hint', {}, 'недоступен — нажмите, чтобы повторить') || 'недоступен — нажмите, чтобы повторить',
+            discovered: window?.PlayerLocale?.t('source_discovered', {}, 'обнаружен — воспроизведение ещё не проверено') || 'обнаружен — воспроизведение ещё не проверено',
+            pending: window?.PlayerLocale?.t('source_pending', {}, 'проверится при запуске') || 'проверится при запуске'
         };
         container.querySelectorAll('.source-btn').forEach(btn => {
             const providerKey = this.getSourceButtonProviderKey(btn.getAttribute('data-value'));
@@ -9901,6 +9928,10 @@ class MovieDetailsManager {
                 else if (lifecycleState === 'error' || lifecycleState === 'unavailable') state = 'unavailable';
             } else if (providerKey && this.unavailableProviderIds?.has(providerKey)) {
                 state = 'unavailable';
+            }
+            if (!state && this.proPlayerEnabled) {
+                if (providerKey && this.currentSources?.some(source => source.parserId === providerKey)) state = 'discovered';
+                else if (providerKey === 'seasonvar') state = 'pending';
             }
 
             if (state) btn.dataset.sourceState = state;
@@ -9934,7 +9965,8 @@ class MovieDetailsManager {
             }
         });
         this.refreshSourceButtonStates();
-        return found;
+        this.syncWatchEntry?.();
+        return found || Boolean(this.proPlayerEnabled && value === 'mediaplayer:torrent' && this.mediaPlayerReady && this.isTorrentMovie());
     }
 
     resetHlsRecoveryState() {
@@ -9956,6 +9988,12 @@ class MovieDetailsManager {
     setPlayerSourceState(state, options = {}) {
         const lifecycle = window.PlayerSourceLifecycle;
         if (!lifecycle || !this.elements.videoContainer) return;
+        this.observePlayerMetrics?.(state, { requestId: this.sourceSwitchRequestId,
+            parserId: this.getSourceButtonProviderKey(this.activeSourceValue), reason: options.reason || state });
+        if (this.proPlayerEnabled && !this.watchRoomController?.room && ['error', 'unavailable'].includes(state)) {
+            options = { ...options, onTryOther: () => this.tryOtherWatchSource() };
+            void this.handleWatchSourceFailure(this.activeSourceValue, this.sourceSwitchRequestId, options.reason || state);
+        }
         lifecycle.setState(this.elements.videoContainer, state, options);
     }
 
@@ -9969,13 +10007,20 @@ class MovieDetailsManager {
             || this.isSourceSwitchRequestCurrent(requestId, movieId);
         return {
             requestId,
+            movieId,
             isRequestCurrent,
-            onRetry: () => this.changeVideoSource(url),
+            onRetry: () => this.changeVideoSource(url, { manualRetry: true }),
             onResearch: () => this.forceResearchSources(url, parserId),
-            onLifecycleState: state => {
+            onSourceExpired: parserId && typeof this.refreshExpiredWatchSource === 'function'
+                ? ({ status, resource }) => this.refreshExpiredWatchSource({ parserId, movieId, requestId, status, resource }) : undefined,
+            onTryOther: this.proPlayerEnabled && !this.watchRoomController?.room ? () => this.tryOtherWatchSource() : undefined,
+            onLifecycleState: (state, detail) => {
                 if (!isRequestCurrent()) return;
+                this.syncWatchEntry?.();
+                this.observePlayerMetrics?.(state, { requestId, parserId, reason: detail?.reason || state });
                 if (state === 'error' || state === 'unavailable') {
                     this.invalidateSourceCache(movieId);
+                    void this.handleWatchSourceFailure?.(url, requestId, detail?.reason || state);
                 }
             }
         };
@@ -10073,8 +10118,10 @@ class MovieDetailsManager {
         return false;
     }
 
-    async changeVideoSource(url, { fromWatchRoom = false, providerSource = null } = {}) {
+    async changeVideoSource(url, { fromWatchRoom = false, providerSource = null, userInitiated = false, manualRetry = false } = {}) {
         if (!url) return false;
+        if (this.proPlayerEnabled && userInitiated && !fromWatchRoom && this.watchRoomController?.room
+            && !['owner', 'controller'].includes(this.watchRoomController.role)) return false;
         if (url === MEDIA_PLAYER_TORRENT_SOURCE) {
             if (!this.mediaPlayerReady && !(await this.refreshMediaPlayerReadiness())) return false;
             return this.openTorrentPicker();
@@ -10083,6 +10130,18 @@ class MovieDetailsManager {
 
         const movieId = String(this.selectedMovie?.kinopoiskId || '');
         const requestId = this.beginSourceSwitchRequest();
+        this.manualRefreshRequestId = manualRetry ? requestId : null;
+        this.sourceRefreshGeneration = (this.sourceRefreshGeneration || 0) + 1;
+        if (this.proPlayerEnabled) {
+            if (userInitiated || !this.watchSourceRun || this.watchSourceRun.movieId !== movieId) {
+                this.watchSourceRun = window.WatchSourcePolicy.createRun(movieId, userInitiated);
+            }
+            if (fromWatchRoom) this.watchSourceRun.manual = true;
+            this.watchSourceRun.requestId = requestId;
+            this.watchSourceRun.attempted.add(url);
+            if (userInitiated && this.getWatchInnerValues().includes(url)) await window.WatchSourcePolicy.save(movieId, url);
+        }
+        if (!this.isSourceSwitchRequestCurrent(requestId, movieId)) return false;
 
         this.updateActiveSourceButton(url);
         // The dub selector belongs to the mounted player; hide it until the
@@ -10096,6 +10155,8 @@ class MovieDetailsManager {
         } else if (url.startsWith('vidsrc:')) {
             providerKey = 'vidsrc';
         }
+        this.playerMetricsDispose?.();
+        this.playerMetricsAttempt = { requestId, providerId: providerKey, startAt: globalThis.performance?.now?.() ?? Date.now(), complete: false, attached: false };
 
         this.unavailableProviderIds?.delete?.(providerKey);
 
@@ -10155,6 +10216,7 @@ class MovieDetailsManager {
             if (this.isSourceSwitchRequestCurrent(requestId, movieId)) {
                 this.refreshProviderDubSelector?.(sourceChanged ? parserId : null);
                 this.bindProviderVideoTracking?.(sourceChanged ? parserId : null);
+                this.observePlayerMetrics?.('loading', { requestId, parserId });
             }
             return sourceChanged;
         }
@@ -10522,7 +10584,9 @@ class MovieDetailsManager {
     }
 
     renderDefaultPlayer(url, { requestId = null, movieId = this.selectedMovie?.kinopoiskId } = {}) {
-        if (!this.getPlayerSurface().mountFrame(url, { allow: 'autoplay; fullscreen' })) return;
+        if (!this.getPlayerSurface().mountFrame(url, {
+            allow: 'autoplay; fullscreen', sandbox: MovieDetailsPlayerSurface.getProviderSandbox(url)
+        })) return;
         const iframe = this.elements.videoContainer.querySelector('iframe');
         if (iframe) {
             iframe.dataset.playerSourceActive = 'true';
@@ -10538,7 +10602,8 @@ class MovieDetailsManager {
                 if (!lifecycleOptions.isRequestCurrent()) return;
                 lifecycle.setState(this.elements.videoContainer, state, {
                     onRetry: lifecycleOptions.onRetry,
-                    onResearch: lifecycleOptions.onResearch
+                    onResearch: lifecycleOptions.onResearch,
+                    onTryOther: lifecycleOptions.onTryOther
                 });
                 lifecycleOptions.onLifecycleState(state, detail);
             }
@@ -10577,7 +10642,7 @@ class MovieDetailsManager {
         }
 
         const url = this.buildVidSrcUrl(imdbId);
-        console.log(`[VidSrc] Loading embed: ${url}`);
+        console.log('[VidSrc] Loading embed');
         this.currentVideoUrl = url;
         this.renderDefaultPlayer(url, lifecycleContext);
     }
@@ -10661,7 +10726,10 @@ class MovieDetailsManager {
             } else {
                 let url = this.currentVideoUrl;
                 try { const u = new URL(url); u.searchParams.set('autoplay', '1'); url = u.toString(); } catch { url += url.includes('?') ? '&autoplay=1' : '?autoplay=1'; }
-                this.getPlayerSurface().mountFrame(url, { allow: 'autoplay; encrypted-media; picture-in-picture' });
+                this.getPlayerSurface().mountFrame(url, {
+                    allow: 'autoplay; encrypted-media; picture-in-picture',
+                    sandbox: MovieDetailsPlayerSurface.getProviderSandbox(url)
+                });
             }
         } else {
             if (this.currentHls) { 
@@ -10673,8 +10741,20 @@ class MovieDetailsManager {
     }
 
     async renderCustomPlayer(url, isHls) {
+        const torrentSession = this.torrentPlaybackSession;
+        const torrentSessionId = torrentSession?.sessionId;
+        const torrentRequestId = this.torrentRequestId;
+        const sourceRequestId = this.sourceSwitchRequestId;
+        const isTorrentStream = Boolean(isHls && torrentSession?.preferHls
+            && typeof torrentSessionId === 'string' && torrentSessionId
+            && torrentSession.hlsUrl === url);
+        const isMountCurrent = () => this.currentVideoUrl === url
+            && this.sourceSwitchRequestId === sourceRequestId
+            && this.torrentPlaybackSession === torrentSession
+            && (!isTorrentStream || (this.torrentRequestId === torrentRequestId
+                && torrentSession.sessionId === torrentSessionId && torrentSession.hlsUrl === url));
         console.log('[DEBUG renderCustomPlayer] === renderCustomPlayer() START ===');
-        console.log(`[DEBUG renderCustomPlayer] url: ${url?.substring(0,80)}, isHls: ${isHls}`);
+        console.log('[DEBUG renderCustomPlayer] stream type', { isHls });
         
         // Create wrapper and logic for custom controls
         const wrapper = document.createElement('div');
@@ -10696,6 +10776,10 @@ class MovieDetailsManager {
         wrapper.appendChild(video);
         
         this.getPlayerSurface().mountElement(wrapper);
+        this.playerMetricsDispose?.();
+        this.playerMetricsAttempt = { requestId: this.sourceSwitchRequestId,
+            providerId: isTorrentStream ? 'torrent' : 'unknown', startAt: globalThis.performance?.now?.() ?? Date.now(), complete: false, attached: false };
+        this.observePlayerMetrics?.('loading', { requestId: this.sourceSwitchRequestId, parserId: isTorrentStream ? 'torrent' : 'unknown' });
         if (this.torrentPlaybackSession) {
             this.attachTorrentPlaybackVideo(video);
         }
@@ -10704,17 +10788,18 @@ class MovieDetailsManager {
         if (isHls) {
             try {
                 await LazyLoader.loadScript('../../shared/lib/hls.min.js');
-                if (!wrapper.isConnected || this.currentVideoUrl !== url) return;
-                const isTorrentStream = Boolean(this.torrentPlaybackSession);
+                if (!wrapper.isConnected || !isMountCurrent()) return;
                 let hls = null;
                 const isCurrentPlayer = () => Boolean(hls)
                     && this.currentHls === hls
                     && wrapper.isConnected
-                    && this.currentVideoUrl === url;
+                    && isMountCurrent();
                 // Torrent sessions answer 5xx while buffering, so they retry
                 // indefinitely; other direct streams use bounded recovery.
                 hls = window.HlsPlaybackFactory?.create(video, url, {
                     policy: isTorrentStream ? 'persistent' : 'bounded',
+                    networkProfile: isTorrentStream ? 'local' : 'remote',
+                    localManifestUrl: isTorrentStream ? url : undefined,
                     attachFirst: true,
                     isCurrent: isCurrentPlayer,
                     beforeLoad: (instance) => {
@@ -10748,14 +10833,12 @@ class MovieDetailsManager {
                 if (hls) {
                     // Retry timers live in the factory; only the status text is ours.
                     video.addEventListener('playing', () => this.resetHlsRecoveryState());
-                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                    video.src = url;
-                    this.waitForTorrentPlaybackStart(video, () => video.isConnected && this.currentVideoUrl === url);
                 } else {
                     this.hlsPlaybackState = 'HLS не поддерживается в этом браузере';
                     this.renderTorrentPlaybackStatus();
                 }
             } catch (e) {
+                if (!wrapper.isConnected || !isMountCurrent()) return;
                 console.error('Failed to load HLS library:', e);
                 this.hlsPlaybackState = 'Ошибка запуска потока';
                 this.renderTorrentPlaybackStatus();
@@ -13110,6 +13193,9 @@ if (typeof installMovieDetailsWatchRoomPanel === 'function') {
     installMovieDetailsWatchRoomPanel(MovieDetailsManager);
 } else if (typeof window !== 'undefined' && window.document) {
     console.error('[MovieDetails] WatchRoomPanel.js is not loaded; watch rooms are unavailable');
+}
+if (typeof window.installMovieDetailsWatchEntry === 'function') {
+    window.installMovieDetailsWatchEntry(MovieDetailsManager);
 }
 if (typeof installMovieDetailsMetaRenderer === 'function') {
     installMovieDetailsMetaRenderer(MovieDetailsManager);

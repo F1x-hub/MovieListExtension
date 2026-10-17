@@ -240,6 +240,10 @@ local MediaPlayer and Jackett services; an older Suite version requires the curr
 | `npm run test:visual-design` | Verify the monochrome palette and shared UI token contract |
 | `npm run test:popup` | Verify popup interactions, request races, failure recovery, profile caches and shared surface contracts |
 | `npm run test:media-player` | Verify the local MediaPlayer client and torrent picker contract |
+| `npm run test:player-smoke` | Load the unpacked extension in Chromium and verify synthetic HLS frames with local fixtures and blocked external probes |
+| `npm run test:player-menu-smoke` | Check escaped provider labels in the real cleaner menu at desktop/narrow widths in both themes |
+| `npm run test:player-network-experiment` | Reproduce redirect, DNR allow and iframe-initiator boundaries on test-owned local servers; does not enable production URL policy |
+| `npm run test:player-hls-policy` | Verify controlled HLS frames and zero server hits for rejected initial URLs, redirects, child resources and keys on test-owned servers |
 | `npm run test:watch-room` | Verify watch-room sync, sessions, invites, RTDB rules, and the room Cloud Function and cleanup |
 | `npm run package` | Build and create `movie-rating-extension.zip` |
 | `npm run backfill` | Run the administrative Firestore backfill utility |
@@ -247,12 +251,31 @@ local MediaPlayer and Jackett services; an older Suite version requires the curr
 After a rebuild, reload the unpacked extension from `chrome://extensions`. Source
 files live under `src/`; `dist/` is generated output and must not be edited by hand.
 
+The player smoke test uses the Chromium already installed for Playwright; set
+`PW_CHROMIUM_PATH` only to a compatible existing full Chromium executable.
+Its fixture server binds to `127.0.0.1:3000` and refuses to replace an existing
+listener. For the T0 harness, use a free loopback port if the real MediaPlayer
+already occupies that port (PowerShell: `$env:PLAYER_FIXTURE_PORT='0'; npm run test:player-smoke`).
+This verifies the offline harness; the separate `test:player-hls-policy` checks the
+implemented controlled-HLS boundary. Neither test verifies live providers.
+
 ## Data and security notes
 
 - Authentication and account-scoped data are handled through Firebase.
 - Ratings, watchlists, favorites, collections, and movie aggregates are protected
   by Firestore rules and the approved-user lifecycle.
 - Provider responses and playback state may be cached in `chrome.storage.local`.
+- Extension-owned HLS uses a non-progressive Fetch loader. Remote manifests must
+  use HTTPS on the reviewed Kodik/Rutube host families; child resources must use
+  public HTTPS addresses. The torrent profile permits only `http://127.0.0.1:3000`
+  resources within the captured session manifest's directory; a matching active
+  session and request generation are required before selecting that profile.
+  Redirects are rejected before following them, including redirects within an
+  allowed host. A source needing redirects, cookies, DRM or an unknown manifest
+  host falls back or reports an error until separately supported and verified.
+  DNS rebinding/private DNS resolution, direct MP4 and provider-owned iframe
+  requests remain outside this controlled-HLS guarantee. No provider sandbox is
+  enabled by default, and no backend authorization or global DNR isolation is implied.
 - Content scripts run only on the domains declared in `manifest.json` and exchange
   data with the extension through runtime messaging.
 - Do not commit `tmdb.config.js`, service-account keys, API tokens, or other local
@@ -272,6 +295,8 @@ files live under `src/`; `dist/` is generated output and must not be edited by h
 
 ## Documentation map
 
+- [`docs/aegis/plans/2026-10-15-pro-player-and-sources.md`](docs/aegis/plans/2026-10-15-pro-player-and-sources.md)
+  — audited source/player roadmap and its linked execution plan; see the [implementation status](docs/aegis/work/2026-10-15-pro-player-and-sources/90-current-status.md) for completed work and remaining gates.
 - [`CONTEXT.md`](CONTEXT.md) — canonical project and visual terminology.
 - [`docs/PARSERS.md`](docs/PARSERS.md) — parser and provider integration notes.
 - [`docs/dynamic-parser-architecture.md`](docs/dynamic-parser-architecture.md) —
@@ -293,6 +318,41 @@ MIT
 Release entries are intentionally collapsed to keep this page readable.
 The extension manifest is the source of truth for the Chrome build version; `package.json`
 keeps npm-compatible three-component semver metadata.
+
+<details open>
+<summary><strong>Unreleased</strong></summary>
+
+### Features
+
+- Add an optional Watch entry with a keyboard-accessible source picker and separate torrent action. The browser-local admin switch defaults off; anime defaults to AnimeGo after room, explicit and saved choices.
+- Add bounded local player statistics and a diagnostics dialog with JSON copy/reset. Reports contain aggregate counters and first-frame timing classifications, without URLs, titles or account data.
+- Localize shared player controls in Russian and English, add shortcut help and accessible seeking/menu navigation, and retain per-title voiceover and quality preferences.
+- Filter the profile's ratings list by clicking a score in the rating distribution: the list keeps newest-first order, the active score is highlighted, and a second click or the "Show all" badge clears the filter. Distribution counts now use one (latest) rating per movie, so each count matches its filtered list; the total ratings figure is unchanged.
+
+### Fixes
+
+- Unify Watch, source-toggle and torrent toolbar button height, typography, spacing and focus styling in both themes and at narrow widths.
+- Move diagnostics into the custom player's settings menu, including supported provider frames, with an accessible overflow icon beside minimize when custom controls are unavailable. Keep the source strip focused on Watch and Torrent, and scroll settings options within compact players so the additional action does not clip playback settings.
+- Mount KinoGo and Ex-FS embeds while availability checks run in the background; retain missing-embed fallback and reuse completed checks. Give an explicitly selected provider priority over unrelated discovery, and expire remembered KinoGo mirrors after 24 hours. These remove identified startup waits; live provider speed has not been measured (see the [stage analysis](docs/player-startup-analysis.md)).
+- Present readable player diagnostics before optional technical JSON, explain unavailable first-frame measurements, and keep diagnostics keyboard navigation from closing or focusing the player underneath.
+- Reject the retired provider-controlled source-switch message in Movie Details and Search, and render player settings labels and submenu titles as text to prevent provider strings from becoming HTML.
+- Escape Search embeds through the shared frame renderer and add an opt-in provider sandbox policy; no provider is enabled before its compatibility check.
+- Route extension-owned HLS through a checked Fetch loader with separate remote/local profiles, blocked redirects, and terminal policy failures. Preserve direct MP4 and provider iframe playback with limited network guarantees; unsupported controlled HLS shows a source error or uses the parser fallback.
+- Keep automatic source fallback finite and suppress it for manual selection and watch rooms. Reject stale preference writes and refresh completions; allow one expired-link refresh per logical attempt with a repeated-denial cooldown.
+- Restrict response-header rules to their intended hosts, resource types and extension initiator; bound Kodik decoding and keep unsafe diagnostic payloads out of the new reporting path.
+- Preserve the selected episode when a replacement voiceover lacks it, and keep room-viewer source controls locked.
+
+### Refactor
+
+- Add a reusable Chromium extension-player smoke harness with synthetic VP9/Opus HLS media, loopback-only fixtures, blocked external probes, and resource cleanup checks.
+- Extract settings rendering, volume/rate state, subtitle appearance, timeline calculations and hover-preview ownership from the player cleaner while preserving existing playback behavior.
+
+### Docs
+
+- Audit and revise the source/player roadmap and execution plan, clarifying network-security boundaries, recovery budgets, environment requirements, and verification gates before implementation.
+- Add an offline source-health runner (`npm run test:player-health`), a separate bounded live-probe entry point, player regression coverage (`npm run test:pro-player`) and isolated Watch/locale browser checks. Live monitoring is not configured; the implementation checkpoint records outstanding provider and installed-environment gates.
+
+</details>
 
 <details>
 <summary><strong>1.3.7</strong> — unified filters, smoother navigation and faster playback</summary>

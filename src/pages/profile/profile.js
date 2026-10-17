@@ -272,6 +272,8 @@ profileCover: document.querySelector('.profile-cover'),
             recentRatingsList: document.getElementById('recentRatingsList'),
             recentRatingsSentinel: document.getElementById('recentRatingsSentinel'),
             recentRatingsLoader: document.getElementById('recentRatingsLoader'),
+            ratingFilterReset: document.getElementById('ratingFilterReset'),
+            ratingFilterResetLabel: document.getElementById('ratingFilterResetLabel'),
             viewAllRatingsBtn: document.getElementById('viewAllRatingsBtn'),
 
             // Loading and error states
@@ -1020,28 +1022,76 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
             const rating = Number(item.rating || 0);
             const count = Number(item.count || 0);
             const width = count > 0 ? Math.max(8, Math.round((count / maxCount) * 100)) : 0;
+            const active = this.ratingFilter === rating;
+            const label = i18n.get('profile.taste.filter_by_rating').replace('{rating}', rating).replace('{count}', count);
             return `
-                <div class="rating-distribution__row">
+                <button type="button" class="rating-distribution__row${active ? ' is-active' : ''}" data-rating="${rating}"
+                    aria-pressed="${active}" aria-label="${Utils.escapeHtml(label)}"${count === 0 ? ' disabled' : ''}>
                     <span>${rating}</span>
                     <div class="rating-distribution__bar"><span style="width: ${width}%"></span></div>
                     <span class="rating-distribution__count">${count}</span>
-                </div>`;
+                </button>`;
         }).join('');
+
+        if (!container.dataset.filterBound) {
+            container.dataset.filterBound = 'true';
+            container.addEventListener('click', event => {
+                const row = event.target.closest('.rating-distribution__row');
+                if (!row || row.disabled) return;
+                const rating = Number(row.dataset.rating);
+                // A second click on the active score clears the filter.
+                this.setRatingFilter(this.ratingFilter === rating ? null : rating);
+            });
+        }
+    }
+
+    /** Filters the ratings list to one score (null shows every rating). */
+    setRatingFilter(rating) {
+        this.ratingFilter = rating;
+        this.elements.ratingDistribution?.querySelectorAll('.rating-distribution__row').forEach(row => {
+            const active = Number(row.dataset.rating) === rating;
+            row.classList.toggle('is-active', active);
+            row.setAttribute('aria-pressed', String(active));
+        });
+        this.updateRatingFilterReset();
+        if (this.ratingsUserId) {
+            this.loadRecentRatings(this.ratingsUserId);
+        }
+    }
+
+    updateRatingFilterReset() {
+        const button = this.elements.ratingFilterReset;
+        if (!button) return;
+        const active = this.ratingFilter != null;
+        button.hidden = !active;
+        if (active && this.elements.ratingFilterResetLabel) {
+            this.elements.ratingFilterResetLabel.textContent = i18n.get('profile.taste.filter_reset').replace('{rating}', this.ratingFilter);
+        }
+        if (!button.dataset.bound) {
+            button.dataset.bound = 'true';
+            button.addEventListener('click', () => this.setRatingFilter(null));
+        }
     }
 
     async loadRecentRatings(userId = null) {
         const targetUserId = userId || (this.currentUser ? this.currentUser.uid : null);
         if (!targetUserId) return;
 
+        if (this.ratingsUserId !== targetUserId && this.ratingFilter != null) {
+            this.ratingFilter = null;
+            this.updateRatingFilterReset();
+        }
         this.ratingsUserId = targetUserId;
+        // Filter switches reload the list; only the latest request may render.
+        const requestId = this.ratingsRequestId = (this.ratingsRequestId || 0) + 1;
         this.ratingsOffset = 0;
         this.ratingsLimit = 10;
         this.hasMoreRatings = true;
         this.isLoadingMoreRatings = false;
 
         try {
-            const ratings = await this.profileService.getRecentRatings(targetUserId, this.ratingsLimit, 0, { throwOnError: true });
-            if (this.ratingsUserId !== targetUserId) return;
+            const ratings = await this.profileService.getRecentRatings(targetUserId, this.ratingsLimit, 0, { throwOnError: true, rating: this.ratingFilter ?? null });
+            if (this.ratingsRequestId !== requestId) return;
             this.displayRecentRatings(ratings);
             this.ratingsOffset = ratings.length;
             if (ratings.length < this.ratingsLimit) {
@@ -1050,7 +1100,7 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
                 this.setupRatingsInfiniteScroll();
             }
         } catch (error) {
-            if (this.ratingsUserId !== targetUserId) return;
+            if (this.ratingsRequestId !== requestId) return;
             console.error('Error loading recent ratings:', error);
             this.hasMoreRatings = false;
             this.renderRecentRatingsError(() => this.loadRecentRatings(targetUserId));
@@ -1115,9 +1165,9 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
         }
 
         try {
-            const requestedUserId = this.ratingsUserId;
-            const newRatings = await this.profileService.getRecentRatings(requestedUserId, this.ratingsLimit, this.ratingsOffset, { throwOnError: true });
-            if (this.ratingsUserId !== requestedUserId) return;
+            const requestId = this.ratingsRequestId;
+            const newRatings = await this.profileService.getRecentRatings(this.ratingsUserId, this.ratingsLimit, this.ratingsOffset, { throwOnError: true, rating: this.ratingFilter ?? null });
+            if (this.ratingsRequestId !== requestId) return;
             if (newRatings.length < this.ratingsLimit) {
                 this.hasMoreRatings = false;
             }
@@ -1176,7 +1226,9 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
         if (!this.elements.recentRatingsList) return;
 
         if (ratings.length === 0) {
-            const emptyText = i18n.get(this.viewingOtherUser ? 'profile.ui.ratings_empty_other' : 'profile.ui.ratings_empty');
+            const emptyText = this.ratingFilter != null
+                ? i18n.get('profile.taste.filter_empty')
+                : i18n.get(this.viewingOtherUser ? 'profile.ui.ratings_empty_other' : 'profile.ui.ratings_empty');
             this.elements.recentRatingsList.innerHTML = `<p class="recent-ratings-empty">${Utils.escapeHtml(emptyText)}</p>`;
             return;
         }

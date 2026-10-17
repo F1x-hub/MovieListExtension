@@ -19,6 +19,9 @@ const playerCleanerSource = fs.readFileSync(
     new URL('../content-scripts/player-cleaner.js', import.meta.url),
     'utf8'
 );
+const settingsMenuSource = fs.readFileSync(new URL('../src/shared/services/player/PlayerSettingsMenu.js', import.meta.url), 'utf8');
+const mediaControlsSource = fs.readFileSync(new URL('../src/shared/services/player/PlayerMediaControls.js', import.meta.url), 'utf8');
+const ghostPreviewSource = fs.readFileSync(new URL('../src/shared/services/player/PlayerGhostPreview.js', import.meta.url), 'utf8');
 
 // ─── TEST GROUP 1: SeasonvarParser Structured State & Clean DOM ───────
 console.log('--- Test Group 1: SeasonvarParser Structured State & Clean DOM ---');
@@ -152,6 +155,9 @@ console.log('\n--- Test Group 2: PlayerCleaner Decoupling & Overlay Removal ---'
     });
 
     // Run player cleaner script
+    vm.runInContext(settingsMenuSource, cleanerContext);
+    vm.runInContext(mediaControlsSource, cleanerContext);
+    vm.runInContext(ghostPreviewSource, cleanerContext);
     vm.runInContext(playerCleanerSource, cleanerContext);
 
     // Send structured playback state
@@ -434,6 +440,9 @@ console.log('\n--- Test Group 5: Runtime Hardening & Regression Invariants ---')
         MutationObserver: cleanerDom.window.MutationObserver
     });
 
+    vm.runInContext(settingsMenuSource, cCtx);
+    vm.runInContext(mediaControlsSource, cCtx);
+    vm.runInContext(ghostPreviewSource, cCtx);
     vm.runInContext(playerCleanerSource, cCtx);
 
     assert.doesNotThrow(() => {

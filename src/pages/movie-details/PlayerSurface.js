@@ -8,6 +8,10 @@
  * URL validation, escaping and reset semantics stay in one place. Overlays
  * that must survive resets live outside the container (see .player-stage).
  */
+// Exact frame hostnames only; add a provider after its live sandbox check.
+const SANDBOX_PROVIDERS = Object.freeze([]);
+const PROVIDER_SANDBOX = 'allow-scripts allow-same-origin allow-forms allow-presentation';
+
 class MovieDetailsPlayerSurface {
     constructor({ getContainer } = {}) {
         if (typeof getContainer !== 'function') throw new TypeError('PlayerSurface needs getContainer()');
@@ -36,12 +40,23 @@ class MovieDetailsPlayerSurface {
             .replace(/>/g, '&gt;');
     }
 
-    static renderFrameInto(container, url, { allow, title = 'Video player' } = {}) {
+    static getProviderSandbox(url) {
+        const safeUrl = MovieDetailsPlayerSurface.getSafeWebUrl(url);
+        if (!safeUrl) return null;
+        const parsed = new URL(safeUrl);
+        if (!['https:', 'http:'].includes(parsed.protocol)
+            || (typeof window !== 'undefined' && parsed.origin === window.location?.origin)) return null;
+        return SANDBOX_PROVIDERS.includes(parsed.hostname) ? PROVIDER_SANDBOX : null;
+    }
+
+    static renderFrameInto(container, url, { allow, title = 'Video player', sandbox = null } = {}) {
         const safeUrl = MovieDetailsPlayerSurface.getSafeWebUrl(url);
         if (!safeUrl || !container) return false;
+        if (sandbox !== null && sandbox !== MovieDetailsPlayerSurface.getProviderSandbox(safeUrl)) return false;
         const escape = MovieDetailsPlayerSurface.escapeAttribute;
         const allowAttribute = allow ? ` allow="${escape(allow)}"` : '';
-        container.innerHTML = `<iframe class="player-surface__media" src="${escape(safeUrl)}" allowfullscreen${allowAttribute} title="${escape(title)}"></iframe>`;
+        const sandboxAttribute = sandbox ? ` sandbox="${escape(sandbox)}"` : '';
+        container.innerHTML = `<iframe class="player-surface__media" src="${escape(safeUrl)}" allowfullscreen${allowAttribute}${sandboxAttribute} title="${escape(title)}"></iframe>`;
         return true;
     }
 

@@ -37,6 +37,7 @@ class BaseParserService {
         this._searchInFlight = new Map();
         /** @private @type {Map<string, {data: Array<VideoSource>, timestamp: number}>} */
         this._sourceCache = new Map();
+        this._embedChecks = new Map();
         /** @private @type {Map<string, Promise<Array<VideoSource>>>} */
         this._sourceInFlight = new Map();
         /** @private @type {number} */
@@ -97,6 +98,7 @@ class BaseParserService {
 
         const playerType = this.getSourcePlayerType(source);
 
+        container._hlsMountVideo = null;
         if (container._hlsInstance) {
             try { container._hlsInstance.destroy?.(); } catch { /* ignore */ }
             container._hlsInstance = null;
@@ -118,40 +120,45 @@ class BaseParserService {
             const video = container.querySelector?.('video');
 
             if (isHls && video && typeof window !== 'undefined') {
+                container._hlsMountVideo = video;
+                const isCurrent = () => container._hlsMountVideo === video
+                    && !video._movieExtensionStreamFailed
+                    && (!options.isRequestCurrent || options.isRequestCurrent());
+                const fail = (reason) => {
+                    if (!isCurrent()) return false;
+                    return this._handleStreamFailure({ container, video, failedSource: source, sources, options, reason });
+                };
                 const mountHls = () => {
+                    if (!isCurrent()) return;
                     const factory = window.HlsPlaybackFactory;
-                    const hls = factory
-                        ? factory.create(video, source.url, {
-                            isCurrent: () => !options.isRequestCurrent || options.isRequestCurrent(),
-                            onFatal: ({ reason }) => this._handleStreamFailure({
-                                container, video, failedSource: source, sources, options, reason
-                            })
-                        })
-                        : this._createUnmanagedHls(video, source.url);
-                    if (hls) {
+                    const hls = factory?.create(video, source.url, {
+                        networkProfile: 'remote',
+                        onSourceExpired: options.onSourceExpired,
+                        isCurrent,
+                        beforeLoad: (instance) => {
+                            container._hlsInstance = instance;
+                            video._movieExtensionHls = instance;
+                        },
+                        onFatal: ({ reason }) => fail(reason)
+                    });
+                    if (hls && isCurrent()) {
                         container._hlsInstance = hls;
+                        video._movieExtensionHls = hls;
                         // The shared native-player menu owns all visible controls.
                         // Keep the HLS instance on its media element so that menu can
                         // expose its quality choices without creating a second control.
-                        video._movieExtensionHls = hls;
                         video.dataset.playerProvider = this.id;
-                    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                        video.src = source.url;
-                    }
+                    } else if (!hls) fail('unsupported');
                 };
 
                 if (typeof Hls !== 'undefined') {
                     mountHls();
                 } else if (window.LazyLoader) {
                     window.LazyLoader.loadScript('../../shared/lib/hls.min.js').then(mountHls).catch(err => {
-                        console.warn('[BaseParserService] Failed to load HLS library:', err);
-                        if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                            video.src = source.url;
-                        }
+                        console.warn('[BaseParserService] Failed to load HLS library:', globalThis.PlayerDiagnostics?.sanitizeError(err) || { category: 'unknown' });
+                        fail('unsupported');
                     });
-                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                    video.src = source.url;
-                }
+                } else fail('unsupported');
             }
         } else {
             const iframeSourceUrl = toPlayerFrameSrcAttribute(withVenomAdFreeParam(source.url, this.baseUrl));
@@ -163,7 +170,10 @@ class BaseParserService {
             const iframeReferrerPolicy = isVenomProviderUrl(source.url)
                 ? ' referrerpolicy="no-referrer"'
                 : '';
-            container.innerHTML = `<iframe class="player-surface__media" src="${iframeSourceUrl}"${iframeReferrerPolicy} allowfullscreen allow="autoplay; fullscreen" title="${escapePlayerAttribute(this.name)} player"></iframe>`;
+            const sandbox = typeof window !== 'undefined'
+                ? window.MovieDetailsPlayerSurface?.getProviderSandbox?.(source.url) : null;
+            const sandboxAttribute = sandbox ? ` sandbox="${escapePlayerAttribute(sandbox)}"` : '';
+            container.innerHTML = `<iframe class="player-surface__media" src="${iframeSourceUrl}"${iframeReferrerPolicy}${sandboxAttribute} allowfullscreen allow="autoplay; fullscreen" title="${escapePlayerAttribute(this.name)} player"></iframe>`;
         }
 
         const lifecycle = typeof window !== 'undefined' ? window.PlayerSourceLifecycle : null;
@@ -184,7 +194,8 @@ class BaseParserService {
                 lifecycle.setState(lifecycleHost, state, {
                     message: options.lifecycleMessage,
                     onRetry: options.onRetry || (() => this.renderPlayer(container, sources, options)),
-                    onResearch: options.onResearch
+                    onResearch: options.onResearch,
+                    onTryOther: options.onTryOther
                 });
                 options.onLifecycleState?.(state, { ...detail, source, parserId: this.id });
             };
@@ -196,20 +207,16 @@ class BaseParserService {
             });
         }
 
+        // Mount first; probe availability in parallel. Ignore stale mounts.
+        if (playerType === 'iframe' && playerElement && BaseParserService.isCheckableEmbedUrl(source.url)) {
+            void this.checkEmbedAvailable(source.url).then(available => {
+                if (available || !playerElement.isConnected
+                    || (options.isRequestCurrent && !options.isRequestCurrent())) return;
+                this._handleStreamFailure({ container, video: playerElement, failedSource: source,
+                    sources, options, reason: 'embed-missing' });
+            });
+        }
         return true;
-    }
-
-    /**
-     * hls.js without shared recovery, used only when HlsPlaybackFactory is not
-     * loaded on the page.
-     * @private
-     */
-    _createUnmanagedHls(video, url) {
-        if (typeof Hls === 'undefined' || !Hls.isSupported()) return null;
-        const hls = new Hls({ enableWorker: true });
-        hls.loadSource(url);
-        hls.attachMedia(video);
-        return hls;
     }
 
     /**
@@ -226,7 +233,10 @@ class BaseParserService {
         video._movieExtensionStreamFailed = true;
 
         const hls = video._movieExtensionHls;
-        try { hls?.destroy?.(); } catch { /* ignore */ }
+        // Policy failures already destroy their transport in the factory.
+        if (reason !== 'policy') {
+            try { hls?.destroy?.(); } catch { /* ignore */ }
+        }
         video._movieExtensionHls = null;
         if (container?._hlsInstance === hls) container._hlsInstance = null;
 
@@ -241,7 +251,9 @@ class BaseParserService {
             && this.supportsSourceType(candidate)
         );
 
-        console.warn(`[${this.name}] Stream failed (${reason}); ${remaining.length ? 'switching to the next source' : 'no fallback source'}`);
+        console.warn('[BaseParserService] Stream failed', {
+            providerId: globalThis.PlayerDiagnostics?.safeSourceId(this.id) || 'unknown', fallback: remaining.length > 0
+        });
 
         const doc = typeof document !== 'undefined' ? document : null;
         if (remaining.length > 0 && doc && mountRoot.parentElement) {
@@ -265,8 +277,10 @@ class BaseParserService {
         lifecycle?.setState(host, 'error', {
             message: 'Поток недоступен: ссылка устарела или сервер не отвечает.',
             onRetry: options.onRetry || (() => this.renderPlayer(container, sources, options)),
-            onResearch: options.onResearch
+            onResearch: options.onResearch,
+            onTryOther: options.onTryOther
         });
+        options.onLifecycleState?.('error', { reason: reason || 'stream-failed', source: failedSource, parserId: this.id });
         return false;
     }
 
@@ -564,7 +578,7 @@ class BaseParserService {
                 }
                 return result;
             } catch (error) {
-                console.error(`[${this.name}] Search error:`, error);
+                console.error('[BaseParserService] Search error:', globalThis.PlayerDiagnostics?.sanitizeError(error) || { category: 'unknown' });
                 return null;
             } finally {
                 if (this._searchInFlight.get(cacheKey) === request) {
@@ -611,13 +625,21 @@ class BaseParserService {
         const request = (async () => {
             try {
                 const sources = await this.getVideoSources(searchResult);
-                const normalized = await this.dropMissingEmbedSources(Array.isArray(sources) ? sources : []);
+                const normalized = Array.isArray(sources) ? sources : [];
                 // An empty source list is not a successful discovery result. Do
                 // not poison the source cache after a transient provider page,
                 // expired token, or incomplete iframe response.
                 if (cacheGeneration === this._cacheGeneration && normalized.length > 0) {
                     this._sourceCache.set(sourceKey, { data: normalized, timestamp: Date.now() });
                 }
+                // Refine future cache hits without holding up this mount or
+                // mutating an array already handed to an active player.
+                void this.dropMissingEmbedSources(normalized).then(available => {
+                    if (cacheGeneration !== this._cacheGeneration
+                        || this._sourceCache.get(sourceKey)?.data !== normalized) return;
+                    if (available.length) this._sourceCache.set(sourceKey, { data: available, timestamp: Date.now() });
+                    else this._sourceCache.delete(sourceKey);
+                });
                 return normalized;
             } finally {
                 if (this._sourceInFlight.get(sourceKey) === request) {
@@ -635,7 +657,7 @@ class BaseParserService {
      * A Venom embed (`…/embed/kp/<id>`) for a title the service does not have
      * still loads as a page that only says "видео не найдено", so the
      * extension would show it as a working player. The service answers such
-     * requests with HTTP 404, which is checked here before mounting. Only a
+     * requests with HTTP 404, which is checked in parallel with mounting. Only a
      * definitive 404/410 drops a source; network errors and timeouts keep it.
      * Token-signed URLs are never pre-fetched.
      * @param {Array<VideoSource>} sources
@@ -643,29 +665,41 @@ class BaseParserService {
      */
     async dropMissingEmbedSources(sources) {
         if (!Array.isArray(sources) || sources.length === 0) return sources;
-        const checks = await Promise.all(sources.map(async source => {
-            if (!BaseParserService.isCheckableEmbedUrl(source?.url)) return true;
-            try {
-                const response = await this.fetchWithTimeout(source.url, {
-                    credentials: 'omit',
-                    cache: 'no-store'
-                }, EMBED_CHECK_TIMEOUT_MS);
-                try { await response.body?.cancel?.(); } catch { /* ignore */ }
-                if (response.status === 404 || response.status === 410) {
-                    console.warn(`[${this.name}] Player embed has no video (${response.status}), skipping: ${source.url}`);
-                    return false;
-                }
-                return true;
-            } catch {
-                return true;
-            }
-        }));
+        const checks = await Promise.all(sources.map(source => this.checkEmbedAvailable(source?.url)));
         const available = sources.filter((_source, index) => checks[index]);
-        // Keep array-level metadata (for example Seasonvar translations).
         Object.keys(sources).forEach(key => {
             if (!/^\d+$/.test(key)) available[key] = sources[key];
         });
         return available;
+    }
+
+    checkEmbedAvailable(url) {
+        if (!BaseParserService.isCheckableEmbedUrl(url)) return Promise.resolve(true);
+        const cached = this._embedChecks.get(url);
+        if (cached && Date.now() - cached.timestamp < this.cacheTTL) return cached.promise;
+        const entry = { timestamp: Date.now() };
+        entry.promise = (async () => {
+            try {
+                const request = () => this.fetchWithTimeout(url, {
+                    credentials: 'omit',
+                    cache: 'no-store'
+                }, EMBED_CHECK_TIMEOUT_MS);
+                const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
+                const response = perf ? await perf.trackRequest('EMBED_CHECK', { purpose: this.getPerfCategory('EMBED_CHECK') }, request) : await request();
+                try { await response.body?.cancel?.(); } catch { /* ignore */ }
+                if (response.status === 404 || response.status === 410) {
+                    console.warn('[BaseParserService] Player embed has no video', { status: response.status });
+                    return false;
+                }
+                return true;
+            } catch {
+                if (this._embedChecks.get(url) === entry) this._embedChecks.delete(url);
+                return true;
+            }
+        })();
+        if (this._embedChecks.size >= 100) this._embedChecks.delete(this._embedChecks.keys().next().value);
+        this._embedChecks.set(url, entry);
+        return entry.promise;
     }
 
     /**
@@ -693,6 +727,7 @@ class BaseParserService {
         this._searchInFlight.clear();
         this._sourceCache.clear();
         this._sourceInFlight.clear();
+        this._embedChecks.clear();
     }
 
     // ─── Markup Helpers (for custom renderers) ────────────────────────
@@ -728,7 +763,7 @@ class BaseParserService {
 
 const PARSER_DEBUG_STORAGE_KEY = 'movieExtension.debugParsers';
 
-// Pre-mount availability check for player embeds; a slow answer keeps the source.
+// Background availability check for player embeds; a slow answer keeps the source.
 const EMBED_CHECK_TIMEOUT_MS = 4000;
 
 const VENOM_AD_FREE_HOSTS = new Set([

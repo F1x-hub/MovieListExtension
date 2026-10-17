@@ -93,6 +93,7 @@ class MovieDetailsWatchRoomPanelMethods {
     refreshWatchRoomControls() {
         const connected = Boolean(this.watchRoomController?.room);
         const isOwner = this.watchRoomController?.role === 'owner';
+        this.syncWatchEntry?.();
         if (!connected) this.watchRoomJoinCode = null;
         if ((connected && this.watchRoomInviteMode === 'join') || (!connected && this.watchRoomInviteMode === 'share')) {
             this.closeWatchRoomInvite?.();

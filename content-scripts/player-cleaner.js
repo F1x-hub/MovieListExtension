@@ -1,6 +1,12 @@
 // player-cleaner.js - Replaces third-party player UI with native video player
 (function() {
     'use strict';
+    const pt = (key, fallback, params = {}) => window.PlayerLocale?.t(key, params, fallback) || fallback;
+    const playerLocaleReady = window.PlayerLocale
+        ? window.PlayerLocale.init()
+        : (typeof chrome !== 'undefined' && chrome.runtime?.getURL
+            ? import(chrome.runtime.getURL('src/shared/services/player/PlayerLocale.js')).then(() => window.PlayerLocale?.init()).catch(() => false)
+            : Promise.resolve(false));
     
 
     // Only run if we are in an iframe (optional, but good practice since we expect to be embedded)
@@ -762,6 +768,91 @@
         return removed;
     }
 
+    function bindPlayerAccessibility({ container, getVideo, scope, slider, toggleFullscreen, toggleSubtitles, onSeek, onVolume }) {
+        const ignored = target => Boolean(target?.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="menu"],.player-settings-menu,button,[role="button"],[role="slider"],dialog'));
+        const seek = value => {
+            if (!container.isConnected) return;
+            const media = getVideo();
+            if (media && Number.isFinite(media.duration)) media.currentTime = Math.max(0, Math.min(media.duration, value));
+        };
+        const help = document.createElement('div');
+        help.className = 'player-shortcut-help'; help.hidden = true;
+        help.setAttribute('role', 'status'); help.setAttribute('aria-live', 'polite');
+        help.textContent = pt('shortcut_help', 'Пробел/K — пауза; J/L — ±10 с; ←/→ — ±5 с; F — полный экран; M — звук; C — субтитры; </> — скорость; ? — подсказка.');
+        container.appendChild(help);
+        scope.listen(document, 'keydown', event => {
+            if (!container.isConnected || event.defaultPrevented || event.ctrlKey || event.altKey || event.metaKey || ignored(event.target)) return;
+            const media = getVideo();
+            if (!media) return;
+            const key = event.key.toLowerCase();
+            if (![' ', 'k', 'j', 'l', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'f', 'm', 'c', '<', '>', '?'].includes(key)) return;
+            event.preventDefault(); event.stopPropagation();
+            if (key === ' ' || key === 'k') { if (media.paused) media.play().catch(() => {}); else media.pause(); }
+            else if (['j', 'l', 'arrowleft', 'arrowright'].includes(key)) { seek(media.currentTime + ({ j: -10, l: 10, arrowleft: -5, arrowright: 5 }[key])); onSeek?.(key === 'j' || key === 'arrowleft' ? 'left' : 'right'); }
+            else if (key === 'arrowup' || key === 'arrowdown') { media.volume = Math.max(0, Math.min(1, media.volume + (key === 'arrowup' ? .05 : -.05))); onVolume?.(media.volume * 100); }
+            else if (key === 'f') toggleFullscreen?.();
+            else if (key === 'm') media.muted = !media.muted;
+            else if (key === 'c') toggleSubtitles?.();
+            else if (key === '<' || key === '>') window.PlayerMediaControls.PlaybackRate.step(media, key === '>' ? 1 : -1);
+            else if (key === '?') help.hidden = !help.hidden;
+        });
+        if (slider) {
+            slider.tabIndex = 0; slider.classList.add('player-keyboard-action'); slider.setAttribute('role', 'slider'); slider.setAttribute('aria-label', pt('seek', 'Перемотка'));
+            slider.setAttribute('aria-valuemin', '0');
+            const update = () => {
+                const media = getVideo();
+                const duration = Number.isFinite(media?.duration) ? media.duration : 0;
+                const time = Number.isFinite(media?.currentTime) ? media.currentTime : 0;
+                slider.setAttribute('aria-valuemax', String(Math.floor(duration)));
+                slider.setAttribute('aria-valuenow', String(Math.floor(time)));
+                const clock = seconds => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+                slider.setAttribute('aria-valuetext', `${clock(time)} / ${clock(duration)}`);
+            };
+            scope.listen(slider, 'keydown', event => {
+                const media = getVideo();
+                if (!media || !Number.isFinite(media.duration)) return;
+                const targets = { Home: 0, End: media.duration, PageUp: media.currentTime + 60, PageDown: media.currentTime - 60, ArrowLeft: media.currentTime - 5, ArrowRight: media.currentTime + 5 };
+                if (!Object.hasOwn(targets, event.key)) return;
+                event.preventDefault(); event.stopPropagation(); seek(targets[event.key]); update();
+            });
+            const media = getVideo();
+            if (media) for (const event of ['timeupdate', 'durationchange', 'loadedmetadata']) scope.listen(media, event, update);
+            update();
+        }
+        scope.listen(container, 'keydown', event => {
+            const menu = event.target.closest?.('.player-settings-menu');
+            if (!menu || !['ArrowDown', 'ArrowUp', 'Home', 'End', 'Escape'].includes(event.key)) return;
+            const items = [...menu.querySelectorAll('button,[role="button"],input,select')].filter(item => !item.disabled && !item.hidden);
+            if (event.key === 'Escape') { menu.style.display = 'none'; container.querySelector('.player-settings-button')?.focus(); }
+            else if (items.length) {
+                const index = items.indexOf(document.activeElement);
+                const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+                items[next].focus();
+            }
+            event.preventDefault(); event.stopPropagation();
+        });
+        const session = window.navigator?.mediaSession;
+        if (session) {
+            const current = () => container.isConnected ? getVideo() : null;
+            const actions = {
+                play: () => current()?.play().catch(() => {}), pause: () => current()?.pause(),
+                seekto: detail => { if (Number.isFinite(detail.seekTime)) seek(detail.seekTime); },
+                previoustrack: () => container.querySelector('[data-player-episode-action="previous"]:not(:disabled)')?.click(),
+                nexttrack: () => container.querySelector('[data-player-episode-action="next"]:not(:disabled)')?.click()
+            };
+            const owned = [];
+            for (const [action, handler] of Object.entries(actions)) {
+                try { session.setActionHandler(action, handler); owned.push(action); } catch { /* Platform capability varies. */ }
+            }
+            try { if (typeof window.MediaMetadata === 'function') session.metadata = new window.MediaMetadata({ title: document.title || 'MovieList' }); } catch { /* Optional API. */ }
+            scope.addDisposer(() => {
+                for (const action of owned) { try { session.setActionHandler(action, null); } catch { /* Optional API. */ } }
+                try { session.metadata = null; } catch { /* Optional API. */ }
+            });
+        }
+        scope.addDisposer(() => help.remove());
+    }
+
     function makeKeyboardActivatable(element, label) {
         if (!element) return;
         element.setAttribute('role', 'button');
@@ -784,65 +875,11 @@
     const SUB_ENABLED_KEY = 'movieExtension_subs_enabled';
     const SUB_TRACK_KEY = 'movieExtension_subs_track';
     const SUBTITLE_APPEARANCE_STORAGE_KEY = 'movieExtensionSubtitleAppearanceV1';
-    const DEFAULT_SUBTITLE_APPEARANCE = Object.freeze({
-        version: 1,
-        fontSizePercent: 100,
-        color: '#ffffff',
-        position: 'bottom',
-        offsetPercent: 6,
-        backgroundOpacity: 0.45,
-        textShadow: 'strong'
-    });
+    const DEFAULT_SUBTITLE_APPEARANCE = window.PlayerMediaControls.SubtitleAppearance.defaults;
     let subtitleAppearance = { ...DEFAULT_SUBTITLE_APPEARANCE };
-
-    const clampSubtitleAppearanceNumber = (value, min, max, fallback) => {
-        const parsed = Number(value);
-        if (!Number.isFinite(parsed)) return fallback;
-        return Math.min(max, Math.max(min, parsed));
-    };
-
-    const normalizeSubtitleAppearanceStep = (value, min, max, step, fallback) => {
-        const bounded = clampSubtitleAppearanceNumber(value, min, max, fallback);
-        return Number((Math.round((bounded - min) / step) * step + min).toFixed(2));
-    };
-
-    const normalizeSubtitleAppearance = rawValue => {
-        const raw = rawValue && typeof rawValue === 'object' ? rawValue : {};
-        const color = typeof raw.color === 'string' && /^#[0-9a-f]{6}$/i.test(raw.color)
-            ? raw.color.toLowerCase()
-            : DEFAULT_SUBTITLE_APPEARANCE.color;
-        const position = raw.position === 'top' ? 'top' : 'bottom';
-        const textShadow = ['none', 'soft', 'strong'].includes(raw.textShadow)
-            ? raw.textShadow
-            : DEFAULT_SUBTITLE_APPEARANCE.textShadow;
-
-        return {
-            version: 1,
-            fontSizePercent: normalizeSubtitleAppearanceStep(
-                raw.fontSizePercent, 75, 200, 5, DEFAULT_SUBTITLE_APPEARANCE.fontSizePercent
-            ),
-            color,
-            position,
-            offsetPercent: normalizeSubtitleAppearanceStep(
-                raw.offsetPercent, 2, 20, 1, DEFAULT_SUBTITLE_APPEARANCE.offsetPercent
-            ),
-            backgroundOpacity: normalizeSubtitleAppearanceStep(
-                raw.backgroundOpacity, 0, 0.9, 0.05, DEFAULT_SUBTITLE_APPEARANCE.backgroundOpacity
-            ),
-            textShadow
-        };
-    };
-
-    const getSubtitleAppearanceTextShadow = appearance => {
-        if (appearance.textShadow === 'none') return 'none';
-        if (appearance.textShadow === 'soft') return '0 1px 3px rgba(0, 0, 0, .82)';
-        return '0 2px 4px rgba(0, 0, 0, .96), 0 0 2px rgba(0, 0, 0, .9)';
-    };
-
-    const getSubtitleAppearanceRgb = color => {
-        const value = Number.parseInt(color.slice(1), 16);
-        return `${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}`;
-    };
+    const normalizeSubtitleAppearance = window.PlayerMediaControls.SubtitleAppearance.normalize;
+    const getSubtitleAppearanceTextShadow = window.PlayerMediaControls.SubtitleAppearance.shadow;
+    const getSubtitleAppearanceRgb = window.PlayerMediaControls.SubtitleAppearance.rgb;
 
     const updateActiveSubtitleAppearance = () => {
         const wrapper = activeSubtitleAppearanceWrapper;
@@ -1000,7 +1037,7 @@
             if (btn) {
                 btn.style.opacity = active ? '1' : '0.7';
                 const path = btn.querySelector('path');
-                if (path) path.setAttribute('fill', active ? '#4da6ff' : '#fff');
+                if (path) path.setAttribute('fill', active ? '#f4f4f5' : '#a1a1aa');
             }
         };
 
@@ -1260,6 +1297,7 @@
             replacePlayerForTest: () => replacePlayer({ allowTestContext: true }),
             tryPlayWithLimit,
             createListenerScope,
+            bindPlayerAccessibility,
             activateWrapperListenerScope,
             teardownActiveWrapper,
             getPlayerObservationRoot,
@@ -1584,7 +1622,7 @@
             // Center Play/Pause Button
             const centerPlayBtn = document.createElement('button');
             centerPlayBtn.type = 'button';
-            centerPlayBtn.setAttribute('aria-label', 'Воспроизвести или поставить на паузу');
+            centerPlayBtn.setAttribute('aria-label', pt('play_pause', 'Воспроизвести или поставить на паузу'));
             centerPlayBtn.className = 'player-center-action player-keyboard-action';
             centerPlayBtn.style.position = 'absolute';
             centerPlayBtn.style.top = '50%';
@@ -1603,7 +1641,7 @@
             centerPlayBtn.style.transition = 'opacity 160ms ease, transform 140ms cubic-bezier(0.23, 1, 0.32, 1)';
             centerPlayBtn.style.backdropFilter = 'blur(16px) saturate(130%)';
             centerPlayBtn.style.boxShadow = '0 18px 48px rgba(0, 0, 0, 0.45), inset 0 1px rgba(255, 255, 255, 0.08)';
-            makeKeyboardActivatable(centerPlayBtn, 'Воспроизвести или поставить на паузу');
+            makeKeyboardActivatable(centerPlayBtn, pt('play_pause', 'Воспроизвести или поставить на паузу'));
 
             // Hover effect for center button
             centerPlayBtn.addEventListener('mouseenter', () => centerPlayBtn.style.transform = 'translate(-50%, -50%) scale(1.04)');
@@ -1919,9 +1957,10 @@
                     width: 268px;
                     min-width: 268px !important;
                     max-width: calc(100vw - 24px);
-                    max-height: min(360px, calc(100vh - 110px));
+                    max-height: min(360px, calc(100vh - 110px), max(46px, calc(100% - 82px)));
                     padding: 6px !important;
-                    overflow: hidden;
+                    overflow-x: hidden;
+                    overflow-y: auto;
                     color: #f4f4f5;
                     color-scheme: dark;
                     font: 500 14px/1.3 system-ui, sans-serif !important;
@@ -1948,6 +1987,11 @@
                     background: transparent;
                     border-radius: 10px;
                     transition: background-color 160ms ease;
+                }
+                .native-player-wrapper .player-settings-menu__diagnostics {
+                    margin-top: 6px;
+                    border-top: 1px solid var(--ui-color-border, var(--popover-surface-border));
+                    border-radius: 0;
                 }
                 .native-player-wrapper .player-settings-menu__item:hover,
                 .native-player-wrapper .player-settings-menu__option:hover,
@@ -2168,12 +2212,20 @@
                     border-color: #f4f4f5;
                 }
                 .native-player-wrapper .player-volume-popover {
+                    position: absolute; left: 50%; transform: translateX(-50%); height: 100px; padding: 12px 0;
+                    flex-direction: column; align-items: center; justify-content: center; cursor: default; z-index: 2147483643;
                     bottom: 42px !important;
                     width: 38px !important;
                     --popover-surface-radius: 12px;
                     --popover-surface-shadow: 0 16px 36px rgba(0, 0, 0, .42);
                     --popover-surface-backdrop: blur(16px);
                 }
+                .native-player-wrapper { --mre-control-foreground: #f4f4f5; --mre-control-track: rgba(255,255,255,.2); }
+                .native-player-wrapper .mre-volume-control { position: relative; display: flex; align-items: center; cursor: pointer; }
+                .native-player-wrapper .mre-volume-button { background: none; border: none; cursor: pointer; color: var(--mre-control-foreground); padding: 5px; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; }
+                .native-player-wrapper .mre-volume-track { width: 4px; height: 80px; background: var(--mre-control-track); border-radius: 2px; position: relative; cursor: pointer; }
+                .native-player-wrapper .mre-volume-fill { position: absolute; bottom: 0; left: 0; width: 100%; background: var(--mre-control-foreground); border-radius: 2px; }
+                .native-player-wrapper .mre-volume-knob { width: 12px; height: 12px; background: var(--mre-control-foreground); border-radius: 50%; position: absolute; top: 0; left: 50%; transform: translate(-50%, -50%); }
                 @media (max-width: 600px) {
                     .native-player-wrapper .player-center-action {
                         width: 58px !important;
@@ -2603,9 +2655,8 @@
                 e.stopPropagation();
                 if (permanentVideo) permanentVideo.focus(); // Fix focus
                 const rect = progressContainer.getBoundingClientRect();
-                const clickX = e.clientX - rect.left;
-                const width = rect.width;
-                const percent = Math.max(0, Math.min(1, clickX / width));
+                const percent = window.PlayerMediaControls.Timeline.ratio(e.clientX, rect);
+                if (percent === null) return;
                 
                 // Use current video
                 const currentVid = permanentVideo || video;
@@ -2766,78 +2817,6 @@
             
             newContainer.addEventListener('mousemove', resetInactivityTimer);
             newContainer.addEventListener('click', resetInactivityTimer);
-            listenerScope.listen(document, 'keydown', (e) => {
-                // Ensure player is active
-                if (!document.body.contains(newContainer)) return;
-
-                resetInactivityTimer();
-                
-                 // Method 3: Global keydown handler to ensure shortcuts work
-                // regardless of what element is focused (buttons, etc.)
-                const currentVid = permanentVideo || video;
-                if (!currentVid) return;
-
-                // Ignore if user is typing in an input
-                if (document.activeElement && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
-
-                switch(e.key) {
-                    case 'ArrowLeft':
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (Number.isFinite(currentVid.duration)) {
-                             currentVid.currentTime = Math.max(0, currentVid.currentTime - 5);
-                             // Trigger timeupdate manually or wait for event? Event will fire.
-                             // But for instant update if paused:
-                             if (typeof updateTime === 'function') updateTime();
-                             
-                             // Show progress bar update?
-                             if (progressFilled) {
-                                  const percent = (currentVid.currentTime / currentVid.duration) * 100;
-                                  progressFilled.style.width = `${percent}%`;
-                             }
-                        }
-                        break;
-                    case 'ArrowRight':
-                         e.preventDefault();
-                         e.stopPropagation();
-                         if (Number.isFinite(currentVid.duration)) {
-                             currentVid.currentTime = Math.min(currentVid.duration, currentVid.currentTime + 5);
-                             if (typeof updateTime === 'function') updateTime();
-                              if (progressFilled) {
-                                  const percent = (currentVid.currentTime / currentVid.duration) * 100;
-                                  progressFilled.style.width = `${percent}%`;
-                             }
-                        }
-                         break;
-                    case ' ':
-                    case 'Space': 
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (currentVid.paused) currentVid.play().catch(()=>{});
-                        else currentVid.pause();
-                        break;
-                    case 'ArrowUp':
-                        e.preventDefault();
-                        e.stopPropagation();
-                         if (currentVid.volume < 1) {
-                             currentVid.volume = Math.min(1, currentVid.volume + 0.1);
-                             currentVid.muted = false;
-                         }
-                        break;
-                    case 'ArrowDown':
-                        e.preventDefault();
-                        e.stopPropagation();
-                         if (currentVid.volume > 0) currentVid.volume = Math.max(0, currentVid.volume - 0.1);
-                        break;
-                     case 'f':
-                     case 'F':
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (typeof toggleFullscreen === 'function') toggleFullscreen();
-                        break;
-                }
-            });
-
             // Call updateVisibility immediately so controls are visible on initial load when paused
             updateVisibility();
 
@@ -3051,7 +3030,7 @@
             if (seriesData.hasSeries) {
                 // Episode Selector
                 if (seriesData.episodes.length > 0) {
-                    episodeDropdown = createEpisodeNavigationState(seriesData.episodes, seriesData.seasons || [], 'Серия', (selectedItem) => {
+                    episodeDropdown = createEpisodeNavigationState(seriesData.episodes, seriesData.seasons || [], pt('episode', 'Серия'), (selectedItem) => {
 
                          if (selectedItem.element) {
                              selectedItem.element.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true, view: window}));
@@ -3108,12 +3087,7 @@
             timeDisplay.style.zIndex = '2'; // Ensure visibility
             timeDisplay.style.position = 'relative';
 
-            const formatTime = (seconds) => {
-                const h = Math.floor(seconds / 3600);
-                const m = Math.floor((seconds % 3600) / 60);
-                const s = Math.floor(seconds % 60);
-                return (h > 0 ? h + ':' : '') + (m < 10 && h > 0 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
-            };
+            const formatTime = window.PlayerMediaControls.Timeline.formatTime;
             // --- Auto-Play Logic ---
             const checkAutoPlay = () => {
                 const autoPlayFlag = localStorage.getItem('movieExtension_autoplay_next');
@@ -3208,8 +3182,10 @@
                     btn.classList.add('provider-native-episode-nav');
                     btn.style.display = 'flex';
                 });
-                prevEpisodeBtn.setAttribute('aria-label', 'Предыдущая серия');
-                nextEpisodeBtn.setAttribute('aria-label', 'Следующая серия');
+                prevEpisodeBtn.dataset.playerEpisodeAction = 'previous';
+                prevEpisodeBtn.setAttribute('aria-label', pt('previous_episode', 'Предыдущая серия'));
+                nextEpisodeBtn.dataset.playerEpisodeAction = 'next';
+                nextEpisodeBtn.setAttribute('aria-label', pt('next_episode', 'Следующая серия'));
                 [prevEpisodeBtn, nextEpisodeBtn].forEach(btn => {
                     btn.dataset.canonicalPickerOnly = seriesData.hasSeries ? 'false' : 'true';
                     if (!seriesData.hasSeries) btn.style.display = 'none';
@@ -3245,8 +3221,8 @@
                         [prevEpisodeBtn, nextEpisodeBtn].forEach(button => {
                             button.disabled = false;
                         });
-                        prevTooltip.textContent = 'Предыдущая серия';
-                        nextTooltip.textContent = 'Следующая серия';
+                        prevTooltip.textContent = pt('previous_episode', 'Предыдущая серия');
+                        nextTooltip.textContent = pt('next_episode', 'Следующая серия');
                         return;
                     }
                     // Standalone provider mode can use its own episode list.
@@ -3256,7 +3232,7 @@
                         // Prev Button State
                         if (state.hasPrev) {
                             prevEpisodeBtn.disabled = false;
-                            prevTooltip.textContent = `Назад: ${state.prevItem.label}`;
+                            prevTooltip.textContent = pt('back', `Назад: ${state.prevItem.label}`, { title: state.prevItem.label });
                         } else {
                             prevEpisodeBtn.disabled = true;
                             prevTooltip.textContent = '';
@@ -3265,7 +3241,7 @@
                         // Next Button State
                         if (state.hasNext) {
                             nextEpisodeBtn.disabled = false;
-                            nextTooltip.textContent = `Вперед: ${state.nextItem.label}`;
+                            nextTooltip.textContent = pt('forward', `Вперед: ${state.nextItem.label}`, { title: state.nextItem.label });
                         } else {
                             nextEpisodeBtn.disabled = true;
                             nextTooltip.textContent = '';
@@ -3735,24 +3711,10 @@
 
             // Volume Control
             const volumeContainer = document.createElement('div');
-            volumeContainer.className = 'player-volume-control';
-            volumeContainer.style.position = 'relative';
-            volumeContainer.style.display = 'flex';
-            volumeContainer.style.alignItems = 'center';
-            volumeContainer.style.cursor = 'pointer';
+            volumeContainer.className = 'player-volume-control mre-volume-control';
 
             const volumeBtn = document.createElement('button');
-            volumeBtn.className = 'player-control-button';
-            volumeBtn.style.background = 'none';
-            volumeBtn.style.border = 'none';
-            volumeBtn.style.cursor = 'pointer';
-            volumeBtn.style.color = 'white';
-            volumeBtn.style.padding = '5px';
-            volumeBtn.style.display = 'flex';
-            volumeBtn.style.alignItems = 'center';
-            volumeBtn.style.justifyContent = 'center'; // Center icon
-            volumeBtn.style.width = '40px'; // Fixed width to prevent jumps
-            volumeBtn.style.height = '40px'; 
+            volumeBtn.className = 'player-control-button mre-volume-button';
 
             const volHighIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>';
             const volLowIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>';
@@ -3776,45 +3738,17 @@
             // Custom Vertical Slider
             const sliderContainer = document.createElement('div');
             sliderContainer.className = 'popover-surface player-volume-popover';
-            sliderContainer.style.position = 'absolute';
-            sliderContainer.style.left = '50%';
-            sliderContainer.style.transform = 'translateX(-50%)';
-            sliderContainer.style.height = '100px';
-            sliderContainer.style.padding = '12px 0';
             sliderContainer.style.display = 'none'; 
-            sliderContainer.style.flexDirection = 'column';
-            sliderContainer.style.alignItems = 'center';
-            sliderContainer.style.justifyContent = 'center';
-            sliderContainer.style.cursor = 'default'; // Don't inherit pointer
-            sliderContainer.style.zIndex = '2147483643';
 
             const volTrack = document.createElement('div');
-            volTrack.className = 'player-volume-track';
-            volTrack.style.width = '4px';
-            volTrack.style.height = '80px';
-            volTrack.style.backgroundColor = 'rgba(255,255,255,0.2)';
-            volTrack.style.borderRadius = '2px';
-            volTrack.style.position = 'relative';
-            volTrack.style.cursor = 'pointer';
+            volTrack.className = 'player-volume-track mre-volume-track';
 
             const volFill = document.createElement('div');
-            volFill.style.position = 'absolute';
-            volFill.style.bottom = '0';
-            volFill.style.left = '0';
-            volFill.style.width = '100%';
+            volFill.className = 'mre-volume-fill';
             volFill.style.height = (video.volume * 100) + '%';
-            volFill.style.backgroundColor = '#f4f4f5';
-            volFill.style.borderRadius = '2px';
             
             const volKnob = document.createElement('div');
-            volKnob.style.width = '12px';
-            volKnob.style.height = '12px';
-            volKnob.style.backgroundColor = '#f4f4f5';
-            volKnob.style.borderRadius = '50%';
-            volKnob.style.position = 'absolute';
-            volKnob.style.top = '0'; // Relative to fill top
-            volKnob.style.left = '50%';
-            volKnob.style.transform = 'translate(-50%, -50%)';
+            volKnob.className = 'mre-volume-knob';
             
             volFill.appendChild(volKnob);
             volTrack.appendChild(volFill);
@@ -3825,29 +3759,14 @@
             // Load saved volume from localStorage
             const VOLUME_STORAGE_KEY = 'movieExtension_videoVolume';
             
-            let intendedVolume = 1; // Default
-            let lastVolume = 1; 
-            let isEnforcing = false;
-
-            // Helper to set volume safely and enforce it
-            const setVolumeSafe = (vol, isMuted) => {
-                isEnforcing = true;
-                intendedVolume = vol;
-                
-                // Set state on current video
-                if (permanentVideo) {
-                    permanentVideo.volume = vol;
-                    permanentVideo.muted = isMuted;
-                }
-                
-                // Save to localStorage
-                localStorage.setItem(VOLUME_STORAGE_KEY, vol.toString());
-                
-                // Update UI immediately
-                updateVolumeUI();
-
-                setTimeout(() => { isEnforcing = false; }, 50);
-            };
+            const volumeController = new window.PlayerMediaControls.PlayerVolumeController({
+                getVideo: () => permanentVideo,
+                storage: localStorage,
+                storageKey: VOLUME_STORAGE_KEY,
+                onChange: () => updateVolumeUI()
+            });
+            listenerScope.addDisposer(() => volumeController.destroy());
+            const setVolumeSafe = (vol, isMuted) => volumeController.set(vol, isMuted);
 
             const updateVolumeUI = () => {
                 if (!permanentVideo) return;
@@ -3941,31 +3860,14 @@
                 
                 // Volume Enforcement
                 videoEl.addEventListener('volumechange', (e) => {
-                    if (!isEnforcing && (Math.abs(videoEl.volume - intendedVolume) > 0.01 || videoEl.muted !== (intendedVolume === 0))) {
-                         if (videoEl.volume !== intendedVolume) {
-                             videoEl.volume = intendedVolume;
-                             videoEl.muted = (intendedVolume === 0);
-                         }
-                    }
-                    updateVolumeUI();
-                    e.stopImmediatePropagation();
+                    volumeController.enforce(videoEl, e);
                 }, true);
             };
 
             // INITIAL SETUP
             
             // 1. Load Volume
-            const savedVolume = localStorage.getItem(VOLUME_STORAGE_KEY);
-            if (savedVolume !== null) {
-                const vol = parseFloat(savedVolume);
-                if (!isNaN(vol) && vol >= 0 && vol <= 1) {
-                    permanentVideo.volume = vol;
-                    permanentVideo.muted = (vol === 0);
-                    intendedVolume = vol;
-                }
-            }
-            // Update UI initially
-            updateVolumeUI();
+            volumeController.restore();
             
             // A source that is still fetching shows the loader instead of an
             // idle play button. Idle sources (preload=none, blocked autoplay)
@@ -4000,12 +3902,7 @@
             volumeBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (permanentVideo) permanentVideo.focus(); // Fix focus
-                if (permanentVideo.muted || permanentVideo.volume === 0) {
-                    setVolumeSafe(lastVolume || 1, false);
-                } else {
-                    lastVolume = permanentVideo.volume > 0 ? permanentVideo.volume : 1;
-                    setVolumeSafe(0, true);
-                }
+                volumeController.toggle();
             });
 
             // Hover Logic
@@ -4075,7 +3972,7 @@
             subtitlesBtn.style.display = 'flex';
             subtitlesBtn.style.alignItems = 'center';
             subtitlesBtn.style.justifyContent = 'center';
-            subtitlesBtn.title = 'Субтитры';
+            subtitlesBtn.title = pt('subtitles', 'Субтитры');
             
             // Subtitle Persistence Keys (Moved to shared scope)
             // const SUB_ENABLED_KEY = 'movieExtension_subs_enabled';
@@ -4084,7 +3981,7 @@
             const updateSubBtnState = (isEnabled) => {
                 subtitlesBtn.style.opacity = isEnabled ? '1' : '0.7';
                 const path = subtitlesBtn.querySelector('path');
-                if (path) path.setAttribute('fill', isEnabled ? '#4da6ff' : '#fff');
+                if (path) path.setAttribute('fill', isEnabled ? '#f4f4f5' : '#a1a1aa');
             };
 
             const toggleSubtitles = () => {
@@ -4178,12 +4075,12 @@
                 pipBtn.style.alignItems = 'center';
                 pipBtn.style.justifyContent = 'center';
                 pipBtn.style.color = 'white'; 
-                pipBtn.title = 'Картинка в картинке';
+                pipBtn.title = pt('pip', 'Картинка в картинке');
 
                 pipBtn.addEventListener('mouseenter', () => {
                     if (!document.pictureInPictureElement) {
                         pipBtn.style.opacity = '1';
-                        pipBtn.style.color = '#4da6ff';
+                        pipBtn.style.color = '#f4f4f5';
                     }
                 });
                 pipBtn.addEventListener('mouseleave', () => {
@@ -4207,7 +4104,7 @@
 
                 const updatePipState = () => {
                     if (document.pictureInPictureElement) {
-                        pipBtn.style.color = '#4da6ff';
+                        pipBtn.style.color = '#f4f4f5';
                         pipBtn.style.opacity = '1';
                         // Ensure button stays visible/highlighted
                         pipBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" x="0px" y="0px" viewBox="0 0 64 64" style="enable-background:new 0 0 64 64;" xml:space="preserve"><path fill="#ffffff" d="M55.156,30.219H33.781c-1.965,0-3.563,1.598-3.563,3.563v15.141c0,1.965,1.598,3.563,3.563,3.563h21.375  c1.965,0,3.563-1.598,3.563-3.563V33.781C58.719,31.817,57.121,30.219,55.156,30.219z M33.781,48.922V33.781h21.375l0.003,15.141  H33.781z"/><path fill="#ffffff" d="M27.851,17.139c-0.984,0-1.781,0.798-1.781,1.781v4.517l-5.776-5.776c-0.696-0.696-1.823-0.696-2.519,0  c-0.696,0.695-0.696,1.823,0,2.519l5.776,5.776h-4.517c-0.984,0-1.781,0.798-1.781,1.781c0,0.984,0.798,1.781,1.781,1.781h8.817  c0.117,0,0.234-0.012,0.349-0.035c0.053-0.01,0.102-0.03,0.153-0.045c0.06-0.018,0.121-0.032,0.18-0.056  c0.061-0.025,0.115-0.059,0.172-0.091c0.045-0.025,0.091-0.044,0.134-0.073c0.195-0.13,0.363-0.298,0.494-0.494  c0.03-0.044,0.05-0.093,0.075-0.139c0.03-0.055,0.064-0.109,0.088-0.167c0.025-0.06,0.039-0.122,0.057-0.183  c0.015-0.05,0.034-0.098,0.044-0.149c0.023-0.115,0.035-0.232,0.035-0.349V18.92C29.633,17.937,28.835,17.139,27.851,17.139z"/><path fill="#ffffff" d="M25.765,48.923H9.734c-0.491,0-0.891-0.399-0.891-0.891V15.969c0-0.491,0.399-0.891,0.891-0.891h44.531  c0.491,0,0.891,0.4,0.891,0.891v9.797c0,0.984,0.798,1.781,1.781,1.781c0.983,0,1.781-0.798,1.781-1.781v-9.797  c0.001-2.456-1.997-4.453-4.452-4.453H9.734c-2.455,0-4.453,1.998-4.453,4.453v32.063c0,2.455,1.998,4.453,4.453,4.453h16.031  c0.984,0,1.781-0.798,1.781-1.781C27.546,49.721,26.748,48.923,25.765,48.923z"/></svg>`;
@@ -4224,14 +4121,17 @@
                 const originalSetup = window._movieExtension_setupListeners;
                 window._movieExtension_setupListeners = (v) => {
                     if (originalSetup) originalSetup(v);
-                    v.addEventListener('enterpictureinpicture', updatePipState);
-                    v.addEventListener('leavepictureinpicture', updatePipState);
+                    listenerScope.listen(v, 'enterpictureinpicture', updatePipState);
+                    listenerScope.listen(v, 'leavepictureinpicture', updatePipState);
                 };
                 
+                const scopedPipSetup = window._movieExtension_setupListeners;
+                listenerScope.addDisposer(() => { if (window._movieExtension_setupListeners === scopedPipSetup) window._movieExtension_setupListeners = originalSetup; });
+
                 // Also attach to current immediately
                 if (permanentVideo) {
-                    permanentVideo.addEventListener('enterpictureinpicture', updatePipState);
-                    permanentVideo.addEventListener('leavepictureinpicture', updatePipState);
+                    listenerScope.listen(permanentVideo, 'enterpictureinpicture', updatePipState);
+                    listenerScope.listen(permanentVideo, 'leavepictureinpicture', updatePipState);
                 }
 
                 rightControls.appendChild(pipBtn);
@@ -4248,7 +4148,7 @@
             settingsBtn.style.border = 'none';
             settingsBtn.style.cursor = 'pointer';
             settingsBtn.style.padding = '5px';
-            settingsBtn.title = 'Настройки';
+            settingsBtn.title = pt('settings', 'Настройки');
             
             // Settings Menu Container
             const settingsMenu = document.createElement('div');
@@ -4261,86 +4161,35 @@
             settingsMenu.style.zIndex = '2147483645';
             settingsMenu.setAttribute('role', 'menu');
 
-            const createMenuItem = (label, value) => {
-                const item = document.createElement('button');
-                item.type = 'button';
-                item.className = 'player-settings-menu__item';
-                item.setAttribute('role', 'menuitem');
-                
-                item.innerHTML = `
-                    <span class="player-settings-menu__label">${label}</span>
-                    <span class="player-settings-menu__value">${value}</span>
-                    <svg class="player-settings-menu__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
-                `;
-                return item;
-            };
-
-            // Generic Sub-menu Renderer
+            if (!window.PlayerSettingsMenu) throw new Error('PLAYER_SETTINGS_MENU_DEPENDENCY_MISSING');
+            const createMenuItem = (label, value) => window.PlayerSettingsMenu.createItem(document, label, value);
             const renderSubMenuView = (title, items, activeCondition, onBack = renderMainView) => {
-                settingsMenu.innerHTML = '';
-                
-                // Header with Back Button
-                const header = document.createElement('button');
-                header.type = 'button';
-                header.className = 'player-settings-menu__back';
-                header.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg><span>${title}</span>`;
-                header.setAttribute('aria-label', `Назад: ${title}`);
-                header.onclick = (e) => { e.stopPropagation(); onBack(); };
-                settingsMenu.appendChild(header);
-
-                // Items list
-                const listContainer = document.createElement('div');
-                listContainer.className = 'player-settings-menu__list';
-                listContainer.setAttribute('role', 'menu');
-
-                items.forEach(item => {
-                     const div = document.createElement('button');
-                     div.type = 'button';
-                     div.className = 'player-settings-menu__option';
-                     div.setAttribute('role', 'menuitemradio');
-                     div.setAttribute('aria-checked', String(!!item.isActive));
-                     div.innerHTML = `<span class="player-settings-menu__option-label"></span><span class="player-settings-menu__check" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>`;
-                     div.querySelector('.player-settings-menu__option-label').textContent = item.label;
-                     
-                     if (item.isActive) {
-                         div.classList.add('is-active');
-                     }
-                     
-                     div.onclick = (e) => {
-                         e.stopPropagation();
-                         item.action();
-                         // Refresh view to show new active state
-                         // We re-generate the items by calling the parent view function again
-                         if (item.refreshFn) item.refreshFn();
-                     };
-                     listContainer.appendChild(div);
-                });
-                settingsMenu.appendChild(listContainer);
+                window.PlayerSettingsMenu.renderSubmenu({ menu: settingsMenu, title, items, onBack,
+                    backLabel: pt('back', `Назад: ${title}`, { title }) });
             };
 
             // Speed View
             const renderSpeedView = () => {
                 const currentVid = permanentVideo || video;
-                const rates = [0.5, 0.75, 1, 1.25, 1.5, 2];
+                const rates = window.PlayerMediaControls.PlaybackRate.rates;
                 const items = rates.map(rate => ({
                     label: rate + 'x',
                     isActive: currentVid.playbackRate === rate,
                     action: () => {
-                        currentVid.playbackRate = rate;
-                        // Save preference?
+                        window.PlayerMediaControls.PlaybackRate.set(currentVid, rate);
                     },
                     refreshFn: renderSpeedView
                 }));
-                renderSubMenuView('Скорость', items);
+                renderSubMenuView(pt('speed', 'Скорость'), items);
             }
 
             const appendSubtitleAppearanceItem = () => {
                 const list = settingsMenu.querySelector('.player-settings-menu__list');
                 if (!list) return;
                 const appearanceItem = createMenuItem(
-                    'Настройки субтитров', `${subtitleAppearance.fontSizePercent}%`
+                    pt('subtitle_settings', 'Настройки субтитров'), `${subtitleAppearance.fontSizePercent}%`
                 );
-                appearanceItem.setAttribute('aria-label', 'Настройки оформления субтитров');
+                appearanceItem.setAttribute('aria-label', pt('subtitle_appearance', 'Настройки оформления субтитров'));
                 appearanceItem.onclick = (e) => {
                     e.stopPropagation();
                     renderSubtitleAppearanceView();
@@ -4354,22 +4203,23 @@
                 const header = document.createElement('button');
                 header.type = 'button';
                 header.className = 'player-settings-menu__back';
-                header.setAttribute('aria-label', 'Назад к дорожкам субтитров');
+                header.setAttribute('aria-label', pt('back_subtitles', 'Назад к дорожкам субтитров'));
                 header.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg><span>Настройки субтитров</span>';
+                header.querySelector('span').textContent = pt('subtitle_settings', 'Настройки субтитров');
                 header.onclick = (e) => { e.stopPropagation(); renderSubsView(); };
                 settingsMenu.appendChild(header);
 
                 const body = document.createElement('div');
                 body.className = 'player-subtitle-appearance__body';
                 body.setAttribute('role', 'group');
-                body.setAttribute('aria-label', 'Настройки оформления субтитров');
+                body.setAttribute('aria-label', pt('subtitle_appearance', 'Настройки оформления субтитров'));
 
                 const preview = document.createElement('div');
                 preview.className = 'player-subtitle-appearance__preview';
-                preview.setAttribute('aria-label', 'Предпросмотр субтитров');
+                preview.setAttribute('aria-label', pt('subtitle_preview', 'Предпросмотр субтитров'));
                 const caption = document.createElement('span');
                 caption.className = 'player-subtitle-appearance__caption';
-                caption.textContent = 'Пример субтитров';
+                caption.textContent = pt('subtitle_sample', 'Пример субтитров');
                 preview.appendChild(caption);
                 body.appendChild(preview);
 
@@ -4416,8 +4266,8 @@
                     input.value = String(subtitleAppearance[key]);
                     if (type === 'select') {
                         const options = key === 'position'
-                            ? [['bottom', 'Снизу'], ['top', 'Сверху']]
-                            : [['none', 'Нет'], ['soft', 'Мягкая'], ['strong', 'Сильная']];
+                            ? [['bottom', pt('bottom', 'Снизу')], ['top', pt('top', 'Сверху')]]
+                            : [['none', pt('none', 'Нет')], ['soft', pt('soft', 'Мягкая')], ['strong', pt('strong', 'Сильная')]];
                         options.forEach(([value, text]) => {
                             const option = document.createElement('option');
                             option.value = value;
@@ -4450,7 +4300,7 @@
 
                 appendControl({
                     id: 'playerSubtitleFontSize',
-                    label: 'Размер',
+                    label: pt('size', 'Размер'),
                     key: 'fontSizePercent',
                     min: 75,
                     max: 200,
@@ -4459,19 +4309,19 @@
                 });
                 appendControl({
                     id: 'playerSubtitleColor',
-                    label: 'Цвет текста',
+                    label: pt('text_color', 'Цвет текста'),
                     key: 'color',
                     type: 'color'
                 });
                 appendControl({
                     id: 'playerSubtitlePosition',
-                    label: 'Расположение',
+                    label: pt('position', 'Расположение'),
                     key: 'position',
                     type: 'select'
                 });
                 appendControl({
                     id: 'playerSubtitleOffset',
-                    label: 'Отступ от края',
+                    label: pt('edge_offset', 'Отступ от края'),
                     key: 'offsetPercent',
                     min: 2,
                     max: 20,
@@ -4480,7 +4330,7 @@
                 });
                 appendControl({
                     id: 'playerSubtitleBackgroundOpacity',
-                    label: 'Фон под текстом',
+                    label: pt('text_background', 'Фон под текстом'),
                     key: 'backgroundOpacity',
                     min: 0,
                     max: 0.9,
@@ -4489,20 +4339,20 @@
                 });
                 appendControl({
                     id: 'playerSubtitleTextShadow',
-                    label: 'Тень текста',
+                    label: pt('text_shadow', 'Тень текста'),
                     key: 'textShadow',
                     type: 'select'
                 });
 
                 const note = document.createElement('div');
                 note.className = 'player-subtitle-appearance__note';
-                note.textContent = 'Изменения применяются сразу и сохраняются для следующих видео.';
+                note.textContent = pt('subtitle_note', 'Изменения применяются сразу и сохраняются для следующих видео.');
                 body.appendChild(note);
 
                 const reset = document.createElement('button');
                 reset.type = 'button';
                 reset.className = 'player-subtitle-appearance__reset';
-                reset.textContent = 'Сбросить настройки';
+                reset.textContent = pt('reset_settings', 'Сбросить настройки');
                 reset.addEventListener('click', (e) => {
                     e.stopPropagation();
                     persistSubtitleAppearance(DEFAULT_SUBTITLE_APPEARANCE);
@@ -4523,11 +4373,11 @@
                         hls.subtitleDisplay = index >= 0;
                         updateSubBtnState(index >= 0);
                     };
-                    renderSubMenuView('Субтитры', [
-                        { label: 'Откл', isActive: hls.subtitleTrack < 0 || !hls.subtitleDisplay,
+                    renderSubMenuView(pt('subtitles', 'Субтитры'), [
+                        { label: pt('off', 'Откл'), isActive: hls.subtitleTrack < 0 || !hls.subtitleDisplay,
                             action: () => select(-1), refreshFn: renderSubsView },
                         ...hls.subtitleTracks.map((track, index) => ({
-                            label: track.name || track.lang || `Дорожка ${index + 1}`,
+                            label: track.name || track.lang || pt('track', `Дорожка ${index + 1}`, { number: index + 1 }),
                             isActive: hls.subtitleDisplay && hls.subtitleTrack === index,
                             action: () => select(index), refreshFn: renderSubsView
                         }))
@@ -4538,7 +4388,7 @@
                 const tracks = Array.from(currentVid.textTracks || []);
                 // Add "Off" option
                 const items = [{
-                    label: 'Откл',
+                    label: pt('off', 'Откл'),
                     isActive: tracks.every(t => t.mode === 'disabled' || t.mode === 'hidden'), 
                     action: () => {
                          tracks.forEach(t => t.mode = 'disabled'); // Or hidden
@@ -4578,7 +4428,7 @@
                     // No tracks
                 }
                 
-                renderSubMenuView('Субтитры', items);
+                renderSubMenuView(pt('subtitles', 'Субтитры'), items);
                 appendSubtitleAppearanceItem();
             };
 
@@ -4647,7 +4497,7 @@
                 if (allMatches.length > 0) {
                     const lastToken = allMatches[allMatches.length - 1][0];
                     if (lastToken.toLowerCase() === 'auto') return 'Auto';
-                    if (lastToken.toLowerCase() === 'авто') return 'Авто';
+                    if (lastToken.toLowerCase() === 'авто') return pt('auto', 'Авто');
                     if (lastToken.toLowerCase() === '4k') return '4K';
                     if (lastToken.toLowerCase() === 'full hd') return '1080p (Full HD)';
                     if (lastToken.toLowerCase() === 'ultra hd') return '4K (Ultra HD)';
@@ -4689,8 +4539,8 @@
                 // manifest height, like the manual entries).
                 const playingHeight = Math.round(Number(levels[hls.currentLevel]?.height));
                 const autoLabel = hls.autoLevelEnabled && Number.isFinite(playingHeight) && playingHeight > 0
-                    ? `Авто · ${playingHeight}p`
-                    : 'Автоматически';
+                    ? `${pt('auto', 'Авто')} · ${playingHeight}p`
+                    : pt('automatic', 'Автоматически');
 
                 return [
                     {
@@ -4740,7 +4590,7 @@
                 const options = getQualityOptions();
                 
                 if (options.length === 0) {
-                    renderSubMenuView('Качество', [{label: 'Auto (Not found)', isActive: true, action: () => {}}]);
+                    renderSubMenuView(pt('quality', 'Качество'), [{label: pt('automatic', 'Автоматически'), isActive: true, action: () => {}}]);
                     return;
                 }
 
@@ -4761,15 +4611,15 @@
                     }
                 }));
                 
-                renderSubMenuView('Качество', items);
+                renderSubMenuView(pt('quality', 'Качество'), items);
             }
 
             // Voiceover View
             const renderVoiceoverView = () => {
                 const hls = (permanentVideo || video)._movieExtensionHls;
                 if (hls?.audioTracks?.length) {
-                    renderSubMenuView('Озвучка', hls.audioTracks.map((track, index) => ({
-                        label: track.name || track.lang || `Дорожка ${index + 1}`,
+                    renderSubMenuView(pt('voiceover', 'Озвучка'), hls.audioTracks.map((track, index) => ({
+                        label: track.name || track.lang || pt('track', `Дорожка ${index + 1}`, { number: index + 1 }),
                         isActive: hls.audioTrack === index,
                         action: () => { hls.audioTrack = index; },
                         refreshFn: renderVoiceoverView
@@ -4814,10 +4664,17 @@
                     },
                     refreshFn: renderVoiceoverView
                 }));
-                renderSubMenuView('Озвучка', items);
+                renderSubMenuView(pt('voiceover', 'Озвучка'), items);
             };
 
 
+            // The host opts framed players into diagnostics; standalone provider
+            // pages and Search must not display a dead menu action.
+            let diagnosticsRequestId = null;
+            listenerScope.addDisposer(() => {
+                if (diagnosticsRequestId !== null) postToHost({ type: 'PLAYER_DIAGNOSTICS_AVAILABLE',
+                    requestId: diagnosticsRequestId, available: false });
+            });
             // Main View
             const renderMainView = () => {
                 settingsMenu.innerHTML = '';
@@ -4829,7 +4686,7 @@
                 const qualityLabel = activeQuality ? activeQuality.label : 'Auto';
 
                 // Quality Item
-                const qualityItem = createMenuItem('Качество', qualityLabel); 
+                const qualityItem = createMenuItem(pt('quality', 'Качество'), qualityLabel);
                 qualityItem.onclick = (e) => { e.stopPropagation(); renderQualityView(); };
                 if (qualityOpts.length || currentVid.dataset?.playerProvider !== 'torrent') settingsMenu.appendChild(qualityItem);
 
@@ -4837,21 +4694,21 @@
                 const hlsAudio = currentVid._movieExtensionHls?.audioTracks || [];
                 if (hlsAudio.length) {
                     const selected = hlsAudio[currentVid._movieExtensionHls.audioTrack];
-                    const voiceItem = createMenuItem('Озвучка', '');
-                    voiceItem.querySelector('.player-settings-menu__value').textContent = selected?.name || selected?.lang || 'Основная';
+                    const voiceItem = createMenuItem(pt('voiceover', 'Озвучка'), '');
+                    voiceItem.querySelector('.player-settings-menu__value').textContent = selected?.name || selected?.lang || pt('main_track', 'Основная');
                     voiceItem.onclick = e => { e.stopPropagation(); renderVoiceoverView(); };
                     settingsMenu.appendChild(voiceItem);
                 } else if (currentVoiceoverOptions.length > 0 && currentVid.dataset?.playerProvider !== 'torrent') {
                     const activeVoiceover = currentVoiceoverOptions.find(o => o.isActive) || currentVoiceoverOptions[0];
                     const voiceLabel = activeVoiceover ? activeVoiceover.name : 'Unknown';
                     
-                    const voiceItem = createMenuItem('Озвучка', voiceLabel);
+                    const voiceItem = createMenuItem(pt('voiceover', 'Озвучка'), voiceLabel);
                     voiceItem.onclick = (e) => { e.stopPropagation(); renderVoiceoverView(); };
                     settingsMenu.appendChild(voiceItem);
                 }
 
                 // Speed Item
-                const speedItem = createMenuItem('Скорость', currentVid.playbackRate + 'x');
+                const speedItem = createMenuItem(pt('speed', 'Скорость'), currentVid.playbackRate + 'x');
                 speedItem.onclick = (e) => { e.stopPropagation(); renderSpeedView(); };
                 settingsMenu.appendChild(speedItem);
 
@@ -4868,13 +4725,22 @@
                     ? (activeHlsSubtitle.name || activeHlsSubtitle.lang)
                     : activeTrack
                         ? (activeTrack.label || activeTrack.language)
-                        : 'Откл';
-                subLabel = subLabel || 'Откл';
+                        : pt('off', 'Откл');
+                subLabel = subLabel || pt('off', 'Откл');
                 subLabel = subLabel.replace(/\s*-\s*\d+$/, ''); 
 
-                const subsItem = createMenuItem('Субтитры', subLabel);
+                const subsItem = createMenuItem(pt('subtitles', 'Субтитры'), subLabel);
                 subsItem.onclick = (e) => { e.stopPropagation(); renderSubsView(); };
                 settingsMenu.appendChild(subsItem);
+                if ((isExtensionPageContext() && window.PlayerDiagnosticsPanel) || diagnosticsRequestId !== null) {
+                    window.PlayerSettingsMenu.appendDiagnostics(settingsMenu, {
+                        label: pt('diagnostics', 'Диагностика'),
+                        onOpen: () => {
+                            if (isExtensionPageContext()) window.dispatchEvent(new Event('movie-player-diagnostics'));
+                            else postToHost({ type: 'PLAYER_DIAGNOSTICS_OPEN', requestId: diagnosticsRequestId });
+                        }
+                    });
+                }
             };
 
             renderMainView();
@@ -4898,10 +4764,12 @@
                 if (settingsMenu.style.display === 'none') {
                     // Re-scan voiceovers to ensure freshness before showing
                     findAndRenderVoiceovers(controlsOverlay, newContainer);
-                    renderMainView(); // Reset to main on open
+                    renderMainView(); // Reset to main on open.
                     settingsMenu.style.display = 'flex';
+                    settingsMenu.querySelector('button')?.focus();
                 } else {
                     settingsMenu.style.display = 'none';
+                    settingsBtn.focus();
                 }
             });
 
@@ -4958,65 +4826,24 @@
             
             listenerScope.listen(document, 'fullscreenchange', updateFullIcon);
 
-            // Keyboard controls belong to this wrapper and are removed with it.
-            {
-                listenerScope.listen(document, 'keydown', (e) => {
-                    // Only handle if player is visible and not typing in input
-                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-                    
-                    const currentVid = permanentVideo || video;
-                    if (!currentVid) return;
-                    
-                    // Arrow Left: Seek backward 10 seconds
-                    if (e.key === 'ArrowLeft' && Number.isFinite(currentVid.duration)) {
-                        e.preventDefault();
-                        e.stopImmediatePropagation();
-                        const newTime = Math.max(0, currentVid.currentTime - 10);
-                        currentVid.currentTime = newTime;
-                        showSeekIndicator(leftSeekIndicator, 'left');
-                        console.log('[MovieExtension] Seek backward to:', newTime);
-                    }
-                    // Arrow Right: Seek forward 10 seconds  
-                    else if (e.key === 'ArrowRight' && Number.isFinite(currentVid.duration)) {
-                        e.preventDefault();
-                        e.stopImmediatePropagation();
-                        const newTime = Math.min(currentVid.duration, currentVid.currentTime + 10);
-                        currentVid.currentTime = newTime;
-                        showSeekIndicator(rightSeekIndicator, 'right');
-                        console.log('[MovieExtension] Seek forward to:', newTime);
-                    }
-                    // Arrow Up: Increase volume by 5%
-                    else if (e.key === 'ArrowUp') {
-                        e.preventDefault();
-                        e.stopImmediatePropagation();
-                        const currentVolume = currentVid.volume;
-                        const newVolume = Math.min(1, currentVolume + 0.05);
-                        setVolumeSafe(newVolume, false);
-                        showVolumeIndicator(newVolume * 100);
-                        console.log('[MovieExtension] Volume increased to:', Math.round(newVolume * 100) + '%');
-                    }
-                    // Arrow Down: Decrease volume by 5%
-                    else if (e.key === 'ArrowDown') {
-                        e.preventDefault();
-                        e.stopImmediatePropagation();
-                        const currentVolume = currentVid.volume;
-                        const newVolume = Math.max(0, currentVolume - 0.05);
-                        setVolumeSafe(newVolume, newVolume === 0);
-                        showVolumeIndicator(newVolume * 100);
-                        console.log('[MovieExtension] Volume decreased to:', Math.round(newVolume * 100) + '%');
-                    }
-                    // Space: Play/Pause
-                    else if (e.key === ' ' || e.code === 'Space') {
-                        e.preventDefault();
-                        e.stopImmediatePropagation();
-                        if (currentVid.paused) {
-                            currentVid.play().catch(() => {});
-                        } else {
-                            currentVid.pause();
-                        }
-                    }
-                }, true); // Use capture phase to catch events before other handlers
-            }
+            settingsBtn.classList.add('player-settings-button');
+            const relabelPlayer = () => window.PlayerLocale?.localize?.(newContainer);
+            let unsubscribeLocale = null;
+            let localeDisposed = false;
+            playerLocaleReady.then(() => {
+                if (localeDisposed || !newContainer.isConnected) return;
+                relabelPlayer();
+                unsubscribeLocale = window.PlayerLocale?.subscribe(relabelPlayer);
+            });
+            listenerScope.addDisposer(() => { localeDisposed = true; unsubscribeLocale?.(); });
+            playPauseBtn.setAttribute('aria-label', pt('play_pause', 'Воспроизвести или поставить на паузу'));
+            fullscreenBtn.setAttribute('aria-label', pt('fullscreen', 'Полный экран'));
+            settingsBtn.setAttribute('aria-label', pt('player_settings', 'Настройки плеера'));
+            subtitlesBtn.setAttribute('aria-label', pt('toggle_subtitles', 'Включить или выключить субтитры'));
+            bindPlayerAccessibility({ container: newContainer, getVideo: () => permanentVideo || video,
+                scope: listenerScope, slider: progressContainer, toggleFullscreen, toggleSubtitles,
+                onSeek: direction => showSeekIndicator(direction === 'left' ? leftSeekIndicator : rightSeekIndicator, direction),
+                onVolume: showVolumeIndicator });
 
             // === Anime Opening Skip Button ===
             // === Anime Opening Skip Button ===
@@ -5028,6 +4855,7 @@
                 </svg>
                 <span>Пропустить опенинг</span>
             `;
+            skipButton.querySelector('span').textContent = pt('skip_opening', 'Пропустить опенинг');
             // Updated styles: Absolute positioning, Dark theme with Blue accent
             skipButton.style.cssText = `
                 display: none;
@@ -5142,7 +4970,16 @@
             // Listen for messages from parent
             listenerScope.listen(window, 'message', (event) => {
                 if (!isTrustedHostMessage(event)) return;
-                if (event.data.type === 'SET_SOURCES') {
+                if (event.data.type === 'PLAYER_DIAGNOSTICS_QUERY' && Number.isSafeInteger(event.data.requestId)) {
+                    const firstOptIn = diagnosticsRequestId === null;
+                    diagnosticsRequestId = event.data.requestId;
+                    if (firstOptIn) {
+                        const restoreMenuFocus = settingsMenu.contains(document.activeElement);
+                        renderMainView();
+                        if (restoreMenuFocus) settingsMenu.querySelector('button')?.focus();
+                    }
+                    postToHost({ type: 'PLAYER_DIAGNOSTICS_AVAILABLE', requestId: diagnosticsRequestId, available: true });
+                } else if (event.data.type === 'SET_SOURCES') {
                     // Sources received, no action needed here currently
                 } else if (event.data.type === 'ANIME_SKIP_DATA') {
                     // Received anime skip times from parent
@@ -5389,8 +5226,8 @@
         }, { once: true });
     } else {
         scheduleProviderContentErrorCheck();
-        // GhostPlayer is declared below. A document_end injection may already
-        // have a sourced video; wait until this script has initialized the class.
+        // Let the owned classic dependencies and document-end bootstrap settle
+        // before mounting a video that already has a source.
         Promise.resolve().then(() => startPlayerObservation());
     }
 
@@ -5425,277 +5262,3 @@
 
 
 // ─── GHOST PLAYER CLASS ───
-class GhostPlayer {
-    constructor({ progressContainer, getActiveVideo, getCurrentUrl, getCurrentType, getCurrentHls, HlsClass }) {
-        this._progressContainer = progressContainer;
-        this._getActiveVideo   = getActiveVideo;   // () => video element
-        this._getCurrentUrl    = getCurrentUrl;    // () => string | null
-        this._getCurrentType   = getCurrentType || (() => null);
-        this._getCurrentHls    = getCurrentHls;    // () => Hls instance | null
-        this._Hls              = HlsClass;         // Hls constructor (lazy-loaded)
-
-        this._ghostHls   = null;
-        this._lastUrl    = null;
-        this._debounce   = null;
-
-        this._tooltip    = null;
-        this._ghostVideo = null;
-        this._timeLabel  = null;
-        this._targetTime = null;
-        this._destroyed = false;
-        this._hovering = false;
-        this._hideTimer = null;
-        this._showFrame = null;
-
-        this._build();
-        this._bind();
-    }
-
-    // ─── DOM ──────────────────────────────────────────────────────────────────
-
-    _build() {
-        this._tooltip = document.createElement('div');
-        this._tooltip.className = 'ghost-tooltip';
-        this._tooltip.setAttribute('aria-hidden', 'true');
-
-        this._ghostVideo = document.createElement('video');
-        this._ghostVideo.className   = 'ghost-video';
-        this._ghostVideo.dataset.ghost = "true"; // Tag it for other scripts
-        this._ghostVideo.muted       = true;
-        this._ghostVideo.preload     = 'none';
-        this._ghostVideo.controls    = false;
-        this._ghostVideo.playsInline = true;
-
-        this._timeLabel = document.createElement('span');
-        this._timeLabel.className = 'ghost-time-label';
-
-        this._tooltip.appendChild(this._ghostVideo);
-        this._tooltip.appendChild(this._timeLabel);
-        this._getTooltipHost().appendChild(this._tooltip);
-        this._onMetadata = () => this._applyTarget();
-        this._onSeeked = () => this._revealFrame();
-        this._ghostVideo.addEventListener('loadedmetadata', this._onMetadata);
-        this._ghostVideo.addEventListener('seeked', this._onSeeked);
-        this._ghostVideo.addEventListener('loadeddata', this._onSeeked);
-    }
-
-    // ─── Events ───────────────────────────────────────────────────────────────
-
-    _bind() {
-        this._onMove  = this._handleMove.bind(this);
-        this._onLeave = this._handleLeave.bind(this);
-
-        this._progressContainer.addEventListener('mousemove',  this._onMove);
-        this._progressContainer.addEventListener('mouseleave', this._onLeave);
-    }
-
-    _handleMove(e) {
-        if (this._destroyed) return;
-        const video = this._getActiveVideo();
-
-        if (!video) {
-            return;
-        }
-        if (!Number.isFinite(video.duration) || video.duration <= 0) {
-            return;
-        }
-
-        const rect     = this._progressContainer.getBoundingClientRect();
-        if (rect.width <= 0) return;
-        const ratio    = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-        const seekTime = Math.min(ratio * video.duration, Math.max(0, video.duration - 0.05));
-
-        this._hovering = true;
-        clearTimeout(this._hideTimer);
-        this._targetTime = null;
-        this._ghostVideo.style.visibility = 'hidden';
-
-        this._showTooltip(e.clientX, rect.top, seekTime);
-
-        clearTimeout(this._debounce);
-        this._debounce = setTimeout(() => this._seekGhost(seekTime), 120);
-    }
-
-    _handleLeave() {
-        this._hovering = false;
-        cancelAnimationFrame(this._showFrame);
-        clearTimeout(this._debounce);
-        this._targetTime = null;
-        this._ghostHls?.stopLoad();
-        this._ghostVideo.pause();
-        this._tooltip.classList.remove('ghost-tooltip--visible');
-
-        // Небольшая задержка перед реальным hide — плавный fade-out
-        this._hideTimer = setTimeout(() => {
-            if (!this._tooltip.classList.contains('ghost-tooltip--visible')) {
-                this._tooltip.style.display = 'none';
-            }
-        }, 200);
-    }
-
-    // ─── Core ─────────────────────────────────────────────────────────────────
-
-    _seekGhost(time) {
-        if (this._destroyed) return;
-        const url = this._getCurrentUrl();
-
-        if (!url || url.startsWith('blob:')) {
-            return;
-        }
-
-        this._targetTime = time;
-        if (url !== this._lastUrl) {
-            this._initSource(url);
-            this._lastUrl = url;
-        } else {
-            this._ghostHls?.startLoad(time);
-        }
-
-        this._applyTarget();
-    }
-
-    _applyTarget() {
-        if (this._destroyed || this._targetTime === null || this._ghostVideo.readyState < 1) return;
-        // The preview has its own source and buffers. The primary video's MSE
-        // range can cover only the current fragment, not the requested frame.
-        this._ghostVideo.currentTime = this._targetTime;
-        this._ghostVideo.pause();
-        this._revealFrame();
-    }
-
-    _revealFrame() {
-        if (this._destroyed || !this._hovering || this._targetTime === null
-            || this._ghostVideo.readyState < 2 || this._ghostVideo.seeking) return;
-        if (Math.abs(this._ghostVideo.currentTime - this._targetTime) < 0.5) {
-            this._ghostVideo.style.visibility = 'visible';
-            this._ghostHls?.stopLoad();
-        }
-    }
-
-    _initSource(url) {
-        // Уничтожаем предыдущий HLS инстанс
-        if (this._ghostHls) {
-            this._ghostHls.destroy();
-            this._ghostHls = null;
-        }
-        this._ghostVideo.removeAttribute('src');
-
-        const isHlsUrl = this._getCurrentType() === 'hls' || /\.m3u8(?:[?#]|$)/i.test(url);
-        this._Hls ||= typeof Hls !== 'undefined' ? Hls : null;
-
-        if (isHlsUrl && this._Hls && this._Hls.isSupported()) {
-            const activeConfig = this._getCurrentHls?.()?.config || {};
-            this._ghostHls = new this._Hls({
-                // Keep source-specific loaders/authentication from the active
-                // extension stream (including signed local torrent sessions).
-                ...activeConfig,
-                autoStartLoad: false,
-                maxBufferLength:    8,
-                maxMaxBufferLength: 16,
-                backBufferLength: 0,
-                startFragPrefetch: false,
-            });
-            this._ghostHls.on(this._Hls.Events.ERROR, (event, data) => {
-                if (data.fatal) this._ghostVideo.style.visibility = 'hidden';
-                console.debug('[GhostPlayer] Preview unavailable:', data.type, data.details);
-            });
-            this._ghostHls.on(this._Hls.Events.MANIFEST_PARSED, () => {
-                if (this._destroyed || this._targetTime === null) return;
-                const levels = this._ghostHls.levels || [];
-                const lowest = levels.reduce((best, level, index) =>
-                    level.bitrate < levels[best].bitrate ? index : best, 0);
-                if (levels.length) {
-                    this._ghostHls.startLevel = lowest;
-                    this._ghostHls.loadLevel = lowest;
-                }
-                this._ghostHls.startLoad(this._targetTime);
-            });
-            this._ghostHls.loadSource(url);
-            this._ghostHls.attachMedia(this._ghostVideo);
-        } else if (isHlsUrl && this._ghostVideo && this._ghostVideo.canPlayType('application/vnd.apple.mpegurl')) {
-            // Нативный HLS (Safari)
-            this._ghostVideo.src = url;
-            this._ghostVideo.load();
-        } else {
-            // MP4 или прямая ссылка
-            this._ghostVideo.src = url;
-            this._ghostVideo.load();
-        }
-
-        this._ghostVideo.addEventListener('error', (e) => {
-            console.error('[GhostPlayer] ghostVideo error —', this._ghostVideo.error?.code, this._ghostVideo.error?.message);
-        }, { once: true });
-    }
-
-    // ─── UI ───────────────────────────────────────────────────────────────────
-
-    _getTooltipHost() {
-        // Provider frames mount a fixed wrapper at the maximum z-index. A body
-        // sibling is painted beneath that wrapper even when its own z-index is
-        // very large. Keep the preview in the same player stacking context.
-        return this._progressContainer.closest('.native-player-wrapper')
-            || document.fullscreenElement || document.body;
-    }
-
-    _showTooltip(clientX, barTop, time) {
-        const host = this._getTooltipHost();
-        if (this._tooltip.parentElement !== host) host.appendChild(this._tooltip);
-        this._tooltip.style.display = 'flex';
-        // Принудительный reflow, чтобы offsetWidth был актуален
-        const w = this._tooltip.offsetWidth || 180;
-        const h = this._tooltip.offsetHeight || 116;
-
-        const hostRect = host.getBoundingClientRect();
-        const hostWidth = host.clientWidth || window.innerWidth;
-        const scaleX = hostRect.width > 0 ? host.offsetWidth / hostRect.width : 1;
-        const scaleY = hostRect.height > 0 ? host.offsetHeight / hostRect.height : 1;
-        let left = (clientX - hostRect.left) * scaleX - w / 2;
-        left = Math.max(8, Math.min(left, hostWidth - w - 8));
-
-        const top = Math.max(8, (barTop - hostRect.top) * scaleY - h - 14);
-
-        this._tooltip.style.left = `${left}px`;
-        this._tooltip.style.top  = `${top}px`;
-
-        this._timeLabel.textContent = this._formatTime(time);
-        
-        // Use requestAnimationFrame to ensure display: flex is applied before adding visibility class
-        cancelAnimationFrame(this._showFrame);
-        this._showFrame = requestAnimationFrame(() => {
-            if (!this._destroyed && this._hovering) this._tooltip.classList.add('ghost-tooltip--visible');
-        });
-
-    }
-
-    _formatTime(seconds) {
-        const h = Math.floor(seconds / 3600);
-        const m = Math.floor((seconds % 3600) / 60);
-        const s = Math.floor(seconds % 60);
-        const mm = String(m).padStart(2, '0');
-        const ss = String(s).padStart(2, '0');
-        return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
-    }
-
-    // ─── Lifecycle ────────────────────────────────────────────────────────────
-
-    destroy() {
-        if (this._destroyed) return;
-        this._destroyed = true;
-        clearTimeout(this._debounce);
-        clearTimeout(this._hideTimer);
-        cancelAnimationFrame(this._showFrame);
-        this._progressContainer.removeEventListener('mousemove',  this._onMove);
-        this._progressContainer.removeEventListener('mouseleave', this._onLeave);
-        if (this._ghostHls) {
-            this._ghostHls.destroy();
-            this._ghostHls = null;
-        }
-        this._ghostVideo.removeEventListener('loadedmetadata', this._onMetadata);
-        this._ghostVideo.removeEventListener('seeked', this._onSeeked);
-        this._ghostVideo.removeEventListener('loadeddata', this._onSeeked);
-        this._ghostVideo.pause();
-        this._ghostVideo.removeAttribute('src');
-        this._ghostVideo.load();
-        this._tooltip.remove();
-    }
-}

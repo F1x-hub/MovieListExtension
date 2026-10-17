@@ -12,6 +12,9 @@ const { chromium } = require('playwright');
         await page.evaluate(() => {
             window.chrome = { runtime: { getURL: () => 'data:text/javascript,', id: 'test' } };
         });
+        await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, '../src/shared/services/player/PlayerSettingsMenu.js'), 'utf8') });
+        await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, '../src/shared/services/player/PlayerMediaControls.js'), 'utf8') });
+        await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, '../src/shared/services/player/PlayerGhostPreview.js'), 'utf8') });
         await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, '../content-scripts/player-cleaner.js'), 'utf8') });
         await page.evaluate(() => {
             const video = document.createElement('video');
