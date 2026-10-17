@@ -327,9 +327,14 @@ keeps npm-compatible three-component semver metadata.
 - Add an optional Watch entry with a keyboard-accessible source picker and separate torrent action. The browser-local admin switch defaults off; anime defaults to AnimeGo after room, explicit and saved choices.
 - Add bounded local player statistics and a diagnostics dialog with JSON copy/reset. Reports contain aggregate counters and first-frame timing classifications, without URLs, titles or account data.
 - Localize shared player controls in Russian and English, add shortcut help and accessible seeking/menu navigation, and retain per-title voiceover and quality preferences.
+- Add Settings → Integrations with IMDb and Kinopoisk toggles: when one is on, ratings set or removed in the extension are mirrored to that account through the browser's own session on the site (the sign-in page opens if needed; no passwords or cookie values are stored). Failed sends are retried in the background, and a sign-out turns the toggle off. Kinopoisk requests from the extension carry kinopoisk.ru Origin/Referer headers (session DNR rule scoped to the extension), because Kinopoisk ignores the session otherwise; its GraphQL accepts only the site's own query texts, so all Kinopoisk queries are copied verbatim. Requires the new `cookies` permission and `api.graphql.imdb.com` host access.
 - Filter the profile's ratings list by clicking a score in the rating distribution: the list keeps newest-first order, the active score is highlighted, and a second click or the "Show all" badge clears the filter. Distribution counts now use one (latest) rating per movie, so each count matches its filtered list; the total ratings figure is unchanged.
 
 ### Fixes
+
+- Style Rated filter and sort selects from the first paint, so delayed localization or control initialization does not expose white system controls in the filter panel.
+
+- Mark test fixtures as byte-exact in `.gitattributes`, so Windows checkouts with `core.autocrlf` no longer rewrite the HLS playlist line endings and break the fixture size check in `npm test`.
 
 - Unify Watch, source-toggle and torrent toolbar button height, typography, spacing and focus styling in both themes and at narrow widths.
 - Move diagnostics into the custom player's settings menu, including supported provider frames, with an accessible overflow icon beside minimize when custom controls are unavailable. Keep the source strip focused on Watch and Torrent, and scroll settings options within compact players so the additional action does not clip playback settings.

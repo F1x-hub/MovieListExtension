@@ -1611,6 +1611,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    bindRatingIntegrations();
+
     for (const radio of radioSourceRadios) {
         radio.addEventListener('change', (e) => {
             currentState.animeRadioSource = e.target.value;
@@ -2112,3 +2114,69 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
 });
+
+/**
+ * External rating integration toggles (IMDb, Kinopoisk). They apply immediately
+ * (not through Save): turning one on may open the site's sign-in tab, and the
+ * toggle completes once the user is signed in there.
+ */
+function bindRatingIntegrations() {
+    if (typeof ExternalRatingSync === 'undefined') return;
+    bindRatingIntegration('imdb', ImdbRatingSync, 'imdbIntegrationToggle', 'imdbIntegrationStatus');
+    bindRatingIntegration('kinopoisk', KinopoiskRatingSync, 'kinopoiskIntegrationToggle', 'kinopoiskIntegrationStatus');
+}
+
+function bindRatingIntegration(provider, SyncClass, toggleId, statusId) {
+    const toggle = document.getElementById(toggleId);
+    const statusEl = document.getElementById(statusId);
+    if (!toggle) return;
+
+    let busy = false;
+    const render = (status) => {
+        if (!status || status.status === 'failed') return;
+        toggle.checked = Boolean(status.connected || status.pendingConnect);
+        let text;
+        if (status.connected) {
+            text = i18n.get('settings.integrations.status_connected');
+            if (status.pending > 0) {
+                text += ` · ${i18n.get('settings.integrations.status_pending').replace('{count}', status.pending)}`;
+            }
+        } else if (status.pendingConnect) {
+            text = i18n.get(`settings.integrations.status_waiting_${provider}`);
+        } else if (status.enabled && !status.signedIn) {
+            text = i18n.get(`settings.integrations.status_signed_out_${provider}`);
+        } else {
+            text = i18n.get('settings.integrations.status_off');
+        }
+        if (statusEl) {
+            statusEl.textContent = text;
+            statusEl.dataset.state = status.connected ? 'connected' : status.pendingConnect ? 'waiting' : 'off';
+        }
+    };
+    const refresh = async () => {
+        if (busy) return;
+        render(await ExternalRatingSync.send({ type: 'INTEGRATION_STATUS', provider }));
+    };
+
+    toggle.addEventListener('change', async () => {
+        busy = true;
+        toggle.disabled = true;
+        try {
+            const type = toggle.checked ? 'INTEGRATION_CONNECT' : 'INTEGRATION_DISCONNECT';
+            const status = await ExternalRatingSync.send({ type, provider });
+            if (status && status.status !== 'failed') render(status);
+            else toggle.checked = !toggle.checked;
+        } finally {
+            busy = false;
+            toggle.disabled = false;
+        }
+    });
+
+    // The user signs in on another tab: pick up the change when the worker saves it
+    // or when this tab gets focus back.
+    chrome.storage?.onChanged.addListener((changes, area) => {
+        if (area === 'local' && (changes[SyncClass.SETTINGS_KEY] || changes[SyncClass.QUEUE_KEY])) void refresh();
+    });
+    window.addEventListener('focus', () => void refresh());
+    void refresh();
+}

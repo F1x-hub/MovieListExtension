@@ -355,6 +355,8 @@ class RatingService {
                 console.warn('RatingService: Non-critical failure in topGenres recalculation:', err);
             });
 
+            this.syncExternalRating(movieId, resolvedMovieData || movieData, ratingVal);
+
             return result;
         } catch (error) {
             console.error('Error adding/updating rating:', error);
@@ -504,6 +506,17 @@ class RatingService {
         return candidates
             .map(candidate => this.normalizeMovieDataForRating(movieId, candidate))
             .find(Boolean) || null;
+    }
+
+    /**
+     * Mirrors a saved rating (or a deletion, rating null) to connected external
+     * accounts. Best effort: the background worker skips it when the integration
+     * is off and never affects the extension's own rating.
+     */
+    syncExternalRating(movieId, movieData, rating) {
+        if (typeof globalThis === 'undefined' || !globalThis.ExternalRatingSync) return;
+        globalThis.ExternalRatingSync.requestSync({ kinopoiskId: movieId, movie: movieData, rating })
+            .catch(() => {});
     }
 
     /**
@@ -987,6 +1000,10 @@ class RatingService {
             const movieId = ratingData?.movieId;
             // Public title deletion never touches private episode scores.
             await ratingRef.delete();
+            // The local movie cache usually still holds the IMDb ID for the deletion.
+            this.resolveMovieDataForRating(movieId)
+                .catch(() => null)
+                .then(movieData => this.syncExternalRating(movieId, movieData, null));
 
             // Invalidate cache
             await this.invalidateRatingsCache(userId);

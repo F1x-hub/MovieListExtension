@@ -10,3 +10,6 @@
 *.cs text eol=lf
 *.csproj text eol=lf
 *.ps1 text eol=lf
+
+# Test fixtures are byte-exact (sizes and hashes are asserted): never convert line endings.
+tests/fixtures/** -text

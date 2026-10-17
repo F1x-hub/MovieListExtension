@@ -381,6 +381,20 @@ export const locales = {
                 viewing: "Viewing",
                 updates: "Updates"
             },
+            integrations: {
+                title: "Integrations",
+                description: "Mirror your ratings to accounts on other movie sites.",
+                imdb_desc: "Ratings you set here are also saved to your IMDb account.",
+                kinopoisk_desc: "Ratings you set here are also saved to your Kinopoisk account.",
+                status_connected: "Connected",
+                status_off: "Off",
+                status_waiting_imdb: "Sign in to IMDb in the opened tab, then come back",
+                status_waiting_kinopoisk: "Sign in to Yandex in the opened tab, then come back",
+                status_signed_out_imdb: "Not signed in to IMDb",
+                status_signed_out_kinopoisk: "Not signed in to Kinopoisk",
+                status_pending: "Waiting to sync: {count}",
+                note: "The extension does not store passwords or cookies for these sites: it uses the browser session you signed in with on imdb.com or kinopoisk.ru."
+            },
             general_desc: "Core interface and language preferences.",
             viewing_desc: "Subtitle and comfortable viewing preferences.",
             subtitle_appearance: {
@@ -1655,6 +1669,20 @@ export const locales = {
                 general: "Основные",
                 viewing: "Просмотр",
                 updates: "Обновления"
+            },
+            integrations: {
+                title: "Интеграции",
+                description: "Дублируйте свои оценки в аккаунты других киносайтов.",
+                imdb_desc: "Оценки, поставленные здесь, сохраняются и в вашем аккаунте IMDb.",
+                kinopoisk_desc: "Оценки, поставленные здесь, сохраняются и в вашем аккаунте Кинопоиска.",
+                status_connected: "Подключено",
+                status_off: "Выключено",
+                status_waiting_imdb: "Войдите в IMDb в открывшейся вкладке и вернитесь сюда",
+                status_waiting_kinopoisk: "Войдите в Яндекс в открывшейся вкладке и вернитесь сюда",
+                status_signed_out_imdb: "Вход в IMDb не выполнен",
+                status_signed_out_kinopoisk: "Вход в Кинопоиск не выполнен",
+                status_pending: "Ожидают отправки: {count}",
+                note: "Расширение не хранит пароли и куки этих сайтов: используется сессия браузера, в которой вы вошли на imdb.com или kinopoisk.ru."
             },
             general_desc: "Основные параметры интерфейса и языка.",
             viewing_desc: "Настройки субтитров и комфортного просмотра.",

@@ -8,8 +8,56 @@ try {
     importScripts('../shared/services/UpdateService.js');
     importScripts('../shared/services/WhatsNewService.js');
     importScripts('../shared/services/WhatsNewPlaybackService.js');
+    importScripts('../shared/services/ExternalRatingSync.js');
 } catch (e) {
     console.error('Failed to import scripts:', e);
+}
+
+// External rating sync (IMDb, Kinopoisk): settings toggles, session detection
+// and per-provider retry queues.
+const externalRatingSyncs = typeof ExternalRatingSync !== 'undefined'
+    ? { imdb: new ImdbRatingSync(), kinopoisk: new KinopoiskRatingSync() }
+    : null;
+
+if (externalRatingSyncs) {
+    const providers = Object.values(externalRatingSyncs);
+    void KinopoiskRatingSync.installRequestRules().catch(error => console.warn('[Rating sync] Kinopoisk request rule failed:', error));
+    const forProvider = (message) => {
+        const provider = externalRatingSyncs[message?.provider];
+        if (!provider) throw new Error('Unknown integration provider');
+        return provider;
+    };
+    const handlers = {
+        EXTERNAL_SYNC_RATING: async (message) => {
+            const results = await Promise.all(providers.map(provider => provider.sync(message)
+                .catch(error => ({ status: 'failed', reason: error.message }))));
+            return Object.fromEntries(providers.map((provider, index) => [provider.keys.PROVIDER, results[index]]));
+        },
+        INTEGRATION_STATUS: async message => forProvider(message).getStatus(),
+        INTEGRATION_CONNECT: async message => forProvider(message).connect(),
+        INTEGRATION_DISCONNECT: async message => forProvider(message).disconnect()
+    };
+
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        const handler = handlers[message?.type];
+        if (!handler) return false;
+        // Only extension pages may drive the integrations, never content scripts on sites.
+        if (sender.id !== chrome.runtime.id || sender.tab?.url && !sender.tab.url.startsWith(chrome.runtime.getURL(''))) {
+            sendResponse({ status: 'failed', reason: 'forbidden' });
+            return false;
+        }
+        handler(message).then(sendResponse).catch(error => sendResponse({ status: 'failed', reason: error.message }));
+        return true;
+    });
+    chrome.cookies?.onChanged.addListener(changeInfo => {
+        for (const provider of providers) {
+            void provider.handleCookieChange(changeInfo).catch(error => console.warn('[Rating sync] Session check failed:', error));
+        }
+    });
+    chrome.alarms.onAlarm.addListener(alarm => {
+        const provider = providers.find(item => item.keys.RETRY_ALARM === alarm.name);
+        if (provider) void provider.flushQueue().catch(error => console.warn('[Rating sync] Retry failed:', error));
+    });
 }
 
 const RETIRED_RATINGS_CACHE_NAME = 'ratings-sphere-posters-v2';

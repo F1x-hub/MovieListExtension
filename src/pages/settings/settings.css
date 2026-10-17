@@ -1478,3 +1478,18 @@
     gap: 12px;
     justify-content: center;
 }
+
+.integration-status {
+    margin-top: 4px;
+    font-weight: 600;
+}
+
+.integration-status[data-state="connected"] {
+    color: var(--ui-color-status-success);
+}
+
+
+.integration-note {
+    margin-top: var(--space-lg);
+    opacity: 0.8;
+}

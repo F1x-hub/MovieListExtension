@@ -56,6 +56,12 @@
                             </span>
                             <span>MediaPlayer</span>
                         </button>
+                        <button class="sidebar-link" type="button" data-target="integrations">
+                            <span class="icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                            </span>
+                            <span data-i18n="settings.integrations.title">Интеграции</span>
+                        </button>
                         <button class="sidebar-link" type="button" data-target="updates">
                             <span class="icon">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path></svg>
@@ -277,6 +283,42 @@
                         </div>
                     </div>
 
+                    <!-- Integrations Pane -->
+                    <div class="settings-pane" id="pane-integrations">
+                        <div class="pane-header">
+                            <h2 data-i18n="settings.integrations.title">Интеграции</h2>
+                            <p data-i18n="settings.integrations.description">Дублируйте свои оценки в аккаунты других киносайтов.</p>
+                        </div>
+
+                        <div class="settings-section">
+                            <div class="setting-group-row">
+                                <div class="setting-info">
+                                    <h3 class="setting-title">IMDb</h3>
+                                    <p class="setting-desc" data-i18n="settings.integrations.imdb_desc">Оценки, поставленные здесь, сохраняются и в вашем аккаунте IMDb.</p>
+                                    <p class="setting-desc integration-status" id="imdbIntegrationStatus" role="status" aria-live="polite"></p>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="imdbIntegrationToggle" aria-label="IMDb">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="setting-group-row" style="margin-top: var(--space-lg); border-top: 1px solid var(--border-color); padding-top: var(--space-lg);">
+                                <div class="setting-info">
+                                    <h3 class="setting-title">Кинопоиск</h3>
+                                    <p class="setting-desc" data-i18n="settings.integrations.kinopoisk_desc">Оценки, поставленные здесь, сохраняются и в вашем аккаунте Кинопоиска.</p>
+                                    <p class="setting-desc integration-status" id="kinopoiskIntegrationStatus" role="status" aria-live="polite"></p>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="kinopoiskIntegrationToggle" aria-label="Кинопоиск">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+
+                            <p class="setting-desc integration-note" data-i18n="settings.integrations.note">Расширение не хранит пароли и куки этих сайтов: используется сессия браузера, в которой вы вошли на imdb.com или kinopoisk.ru.</p>
+                        </div>
+                    </div>
+
                     <!-- Updates Pane -->
                     <div class="settings-pane" id="pane-updates">
                         <div class="pane-header">
@@ -422,6 +464,7 @@
     <script src="../../shared/services/MediaPlayerService.js"></script>
     <script src="../../shared/services/UpdateService.js"></script>
     <script src="../../shared/components/ConfirmDialog.js"></script>
+    <script src="../../shared/services/ExternalRatingSync.js"></script>
     <script src="settings.js" type="module"></script>
     <script defer src="../../shared/components/ReportWidget.js"></script>
 </body>
