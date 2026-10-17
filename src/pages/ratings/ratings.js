@@ -579,7 +579,69 @@ class RatingsPageManager {
         const withPreviousRatings = mergeProviderRatingsIntoMovies(items, previousRatings);
         const sharedRatings = await this.loadSharedProviderRatings();
         const merged = mergeProviderRatingsIntoMovies(withPreviousRatings, sharedRatings);
+        // The shared card cache only has titles some page already enriched; the
+        // rest showed "IMDb —" for good. Fetch what is missing after rendering.
+        setTimeout(() => void this.backfillProviderRatings(merged), 0);
         return merged;
+    }
+
+    /**
+     * Loads KP/IMDb ratings the shared cache lacks for films on this page, through
+     * the same path Movie Details uses (Kinopoisk GraphQL, hidden page fallback),
+     * persists them to the shared card cache and patches the cards.
+     */
+    async backfillProviderRatings(items) {
+        const kinopoiskService = typeof firebaseManager !== 'undefined' ? firebaseManager?.getKinopoiskService?.() : null;
+        if (!kinopoiskService?.scrapeMoviePageRatingsOffscreen || !Array.isArray(items)
+            || typeof ProviderRatingsBackfill !== 'function') return;
+        this.providerBackfillSeen ||= new Set();
+        const shared = await this.loadSharedProviderRatings();
+        const pending = ProviderRatingsBackfill.select(items.map(item => {
+            const movie = item?.movie || item;
+            return {
+                kinopoiskId: movie?.kinopoiskId || item?.movieId || item?.id,
+                kpRating: movie?.kpRating ?? movie?.rating?.kp,
+                imdbRating: movie?.imdbRating ?? movie?.rating?.imdb,
+                mediaType: movie?.type || movie?.mediaType || null
+            };
+        }), shared, this.providerBackfillSeen);
+        if (pending.length === 0) return;
+        pending.forEach(({ kinopoiskId }) => this.providerBackfillSeen.add(kinopoiskId));
+
+        const refreshService = typeof RatingsRefreshService === 'function' && typeof firebaseManager !== 'undefined'
+            ? new RatingsRefreshService(firebaseManager)
+            : null;
+        const found = new Map();
+        const queue = [...pending];
+        const worker = async () => {
+            while (queue.length > 0) {
+                const { kinopoiskId, mediaType } = queue.shift();
+                try {
+                    const ratings = await kinopoiskService.scrapeMoviePageRatingsOffscreen(kinopoiskId, {
+                        mediaType,
+                        requestKey: `ratings-page:${kinopoiskId}`,
+                        priority: 'below-viewport'
+                    });
+                    if (!ratings) continue;
+                    const record = {
+                        kpRating: Number(ratings.kpRating) || 0,
+                        imdbRating: Number(ratings.imdbRating) || 0,
+                        imdbId: ratings.imdbId || null,
+                        votes: { kp: Number(ratings.kpVotes) || 0, imdb: Number(ratings.imdbVotes) || 0 },
+                        imdbChecked: true,
+                        expiresAt: Number.MAX_SAFE_INTEGER
+                    };
+                    found.set(`kp:${kinopoiskId}`, record);
+                    await refreshService?.persistCardRatingPatch(kinopoiskId, record);
+                } catch (error) {
+                    console.warn('[RatingsPage] Provider rating backfill failed:', kinopoiskId, error?.message);
+                }
+            }
+        };
+        await Promise.all([worker(), worker(), worker()]);
+        if (found.size === 0) return;
+        this.movies = mergeProviderRatingsIntoMovies(this.movies, Object.fromEntries(found));
+        this.applyFilters();
     }
 
     mergeCachedMovieMetadata(items, movieCacheService) {
