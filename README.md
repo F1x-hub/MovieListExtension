@@ -324,6 +324,7 @@ keeps npm-compatible three-component semver metadata.
 
 ### Features
 
+- Movie Details awards now name who from the movie won or was nominated ("Награду получил(а): Марлон Брандо", "Номинант: Аль Пачино") and, for lost nominations, who won the category ("Победитель: Джоэл Грей — Кабаре"). Data loads from the Kinopoisk ceremony page when the Awards tab opens, one request per ceremony; awards cached earlier are re-read once to get category links. A category the movie itself won is never shown as lost to it.
 - Add an optional Watch entry with a keyboard-accessible source picker and separate torrent action. The browser-local admin switch defaults off; anime defaults to AnimeGo after room, explicit and saved choices.
 - Add bounded local player statistics and a diagnostics dialog with JSON copy/reset. Reports contain aggregate counters and first-frame timing classifications, without URLs, titles or account data.
 - Localize shared player controls in Russian and English, add shortcut help and accessible seeking/menu navigation, and retain per-title voiceover and quality preferences.
