@@ -193,6 +193,28 @@
     height: 15px;
 }
 
+/* Keep native controls themed while localization and SortControl initialize. */
+.ratings-main select:is([data-filter-control], [data-sort-control]):not([hidden]) {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 10px 34px 10px 14px;
+    border: 1px solid var(--ui-color-border);
+    border-radius: 12px;
+    background-color: var(--ui-color-surface);
+    color: var(--ui-color-content);
+    font: inherit;
+    font-size: var(--ui-control-font-size);
+    line-height: 1.5;
+    cursor: pointer;
+}
+
+.ratings-main select:is([data-filter-control], [data-sort-control]):not([hidden]):focus-visible {
+    outline: 2px solid var(--ui-color-interactive);
+    outline-offset: 2px;
+}
+
 .ratings-main .filter-select-hidden {
     position: absolute;
     opacity: 0 !important;
