@@ -15,6 +15,45 @@ const surfaces = {
 
 async function fixture(page, baseUrl, surface, theme) {
     await page.goto(`${baseUrl}/src/pages/${surface}/${surface}.html`, { waitUntil: 'load' });
+    if (surface === 'ratings') {
+        // The server strips scripts: this is the initial paint even if startup
+        // or localization never settles, before any controls are enhanced.
+        const controls = await page.evaluate(theme => {
+            document.documentElement.classList.toggle('light-theme', theme === 'light');
+            document.body.classList.toggle('light-theme', theme === 'light');
+            return [...document.querySelectorAll('[data-filter-control], [data-sort-control]')].map(select => {
+                const style = getComputedStyle(select);
+                return {
+                    id: select.id, visible: select.getClientRects().length > 0,
+                    height: select.getBoundingClientRect().height,
+                    background: style.backgroundColor, color: style.color,
+                    surface: style.getPropertyValue('--ui-color-surface').trim(),
+                    content: style.getPropertyValue('--ui-color-content').trim(),
+                    radius: style.borderTopLeftRadius
+                };
+            });
+        }, theme);
+        assert.equal(controls.length, 4);
+        for (const control of controls) {
+            assert.ok(control.visible, `${control.id}: native fallback stays usable before startup`);
+            assert.ok(control.height >= 44, `${control.id}: initial control has full height`);
+            assert.equal(control.radius, '12px');
+            // Resolve tokens through CSS so hex/rgb notation does not affect comparison.
+            const expected = await page.evaluate(({ surface, content }) => {
+                const probe = document.createElement('span');
+                probe.style.backgroundColor = surface;
+                probe.style.color = content;
+                document.body.append(probe);
+                const style = getComputedStyle(probe);
+                const result = { background: style.backgroundColor, color: style.color };
+                probe.remove();
+                return result;
+            }, control);
+            assert.equal(control.background, expected.background, `${control.id}/${theme}: themed before JS`);
+            assert.equal(control.color, expected.color, `${control.id}/${theme}: readable before JS`);
+        }
+        if (captureDir) await page.locator('.filters-section').screenshot({ path: path.join(captureDir, `ratings-${theme}-${page.viewportSize().width}-startup.png`) });
+    }
     await page.addScriptTag({ content: read('src/shared/i18n/locales.js').replace('export const locales', 'window.testLocales') });
     await page.addScriptTag({ content: read('src/shared/i18n/I18n.js').replace(/^import .*;\r?\n/gm, '').replace('export const i18n', 'const i18n').replace('export { I18n };', '').replace('this.locales = locales;', 'this.locales = window.testLocales;') });
     for (const file of ['src/shared/config/discoveryFilters.js', 'src/shared/components/NumberStepper.js', 'src/shared/components/FilterControls.js', 'src/shared/components/SortControl.js']) {
