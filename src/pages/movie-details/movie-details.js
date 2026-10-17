@@ -31,6 +31,9 @@ function createAppError(code, options = {}) {
  * Migrated from SearchManager in search.js
  */
 class MovieDetailsManager {
+    // Mirrors the shortcuts content-scripts/player-cleaner.js handles in the frame.
+    static PLAYER_SHORTCUT_KEYS = new Set([' ', 'k', 'j', 'l', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'f', 'm', 'c', '<', '>', '?']);
+
     constructor() {
         this.elements = this.initializeElements();
         this.selectedMovie = null;
@@ -452,6 +455,8 @@ class MovieDetailsManager {
 
 
     setupEventListeners() {
+        this.bindPlayerShortcutForwarding();
+
         // Retry button
         if (this.elements.retryLoadBtn) {
             this.elements.retryLoadBtn.addEventListener('click', () => this.handleLoadRetry());
@@ -8723,6 +8728,28 @@ class MovieDetailsManager {
     // Commands are addressed to the frame's expected origin. If a provider
     // frame navigates elsewhere, the browser drops them instead of leaking
     // playback state to the new document.
+    /**
+     * Player shortcuts pressed while focus sits on the player stage outside the
+     * provider frame (after clicking around the iframe) are forwarded to the
+     * frame's player, so Space and the arrows work without clicking the video.
+     */
+    bindPlayerShortcutForwarding() {
+        const stage = document.getElementById('playerStage');
+        if (!stage || stage.dataset.shortcutForwarding === 'true') return;
+        stage.dataset.shortcutForwarding = 'true';
+        stage.addEventListener('keydown', (event) => {
+            if (event.defaultPrevented || event.ctrlKey || event.altKey || event.metaKey) return;
+            const key = String(event.key || '').toLowerCase();
+            if (!MovieDetailsManager.PLAYER_SHORTCUT_KEYS.has(key)) return;
+            const target = event.target;
+            if (target?.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"]),dialog,[role="menu"]')) return;
+            if (key === ' ' && target?.closest?.('button,[role="button"]')) return;
+            const iframe = this.elements.videoContainer?.querySelector('iframe');
+            if (!iframe || !this.postToPlayerFrame(iframe, { type: 'PLAYER_SHORTCUT', key })) return;
+            event.preventDefault();
+        });
+    }
+
     postToPlayerFrame(iframe, message) {
         const targetOrigin = this.getPlayerFrameOrigin(iframe);
         if (!targetOrigin || !iframe?.contentWindow) return false;

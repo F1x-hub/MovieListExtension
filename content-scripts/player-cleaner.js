@@ -768,8 +768,17 @@
         return removed;
     }
 
+    const PLAYER_SHORTCUT_KEYS = new Set([' ', 'k', 'j', 'l', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'f', 'm', 'c', '<', '>', '?']);
+
     function bindPlayerAccessibility({ container, getVideo, scope, slider, toggleFullscreen, toggleSubtitles, onSeek, onVolume }) {
-        const ignored = target => Boolean(target?.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="menu"],.player-settings-menu,button,[role="button"],[role="slider"],dialog'));
+        // Text fields, menus and dialogs keep their own keys. Player buttons do not
+        // swallow shortcuts: arrows and letters always reach the player, and only a
+        // keyboard-focused (Tab) control keeps Space/Enter as its own activation.
+        const ignored = target => Boolean(target?.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="menu"],.player-settings-menu,dialog'));
+        const keyboardFocusedControl = target => {
+            const control = target?.closest?.('button,[role="button"]');
+            try { return Boolean(control?.matches(':focus-visible')); } catch { return false; }
+        };
         const seek = value => {
             if (!container.isConnected) return;
             const media = getVideo();
@@ -780,13 +789,11 @@
         help.setAttribute('role', 'status'); help.setAttribute('aria-live', 'polite');
         help.textContent = pt('shortcut_help', 'Пробел/K — пауза; J/L — ±10 с; ←/→ — ±5 с; F — полный экран; M — звук; C — субтитры; </> — скорость; ? — подсказка.');
         container.appendChild(help);
-        scope.listen(document, 'keydown', event => {
-            if (!container.isConnected || event.defaultPrevented || event.ctrlKey || event.altKey || event.metaKey || ignored(event.target)) return;
+        /** Runs one shortcut; returns false when the key is not a player shortcut. */
+        const runShortcut = rawKey => {
             const media = getVideo();
-            if (!media) return;
-            const key = event.key.toLowerCase();
-            if (![' ', 'k', 'j', 'l', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'f', 'm', 'c', '<', '>', '?'].includes(key)) return;
-            event.preventDefault(); event.stopPropagation();
+            const key = String(rawKey || '').toLowerCase();
+            if (!media || !container.isConnected || !PLAYER_SHORTCUT_KEYS.has(key)) return false;
             if (key === ' ' || key === 'k') { if (media.paused) media.play().catch(() => {}); else media.pause(); }
             else if (['j', 'l', 'arrowleft', 'arrowright'].includes(key)) { seek(media.currentTime + ({ j: -10, l: 10, arrowleft: -5, arrowright: 5 }[key])); onSeek?.(key === 'j' || key === 'arrowleft' ? 'left' : 'right'); }
             else if (key === 'arrowup' || key === 'arrowdown') { media.volume = Math.max(0, Math.min(1, media.volume + (key === 'arrowup' ? .05 : -.05))); onVolume?.(media.volume * 100); }
@@ -795,6 +802,40 @@
             else if (key === 'c') toggleSubtitles?.();
             else if (key === '<' || key === '>') window.PlayerMediaControls.PlaybackRate.step(media, key === '>' ? 1 : -1);
             else if (key === '?') help.hidden = !help.hidden;
+            return true;
+        };
+        // Capture on window, before the provider page sees the key: provider players
+        // bind their own Space/arrow handlers to the same video, and both toggling
+        // play/pause would cancel each other out.
+        scope.listen(window, 'keydown', event => {
+            if (!container.isConnected || event.defaultPrevented || event.ctrlKey || event.altKey || event.metaKey || ignored(event.target)) return;
+            const key = event.key.toLowerCase();
+            if ((key === ' ' || key === 'enter') && keyboardFocusedControl(event.target)) return;
+            if (!PLAYER_SHORTCUT_KEYS.has(key) || !getVideo()) return;
+            event.preventDefault(); event.stopImmediatePropagation();
+            runShortcut(key);
+        }, true);
+        // Swallow the matching keyup too: some providers toggle on keyup instead.
+        scope.listen(window, 'keyup', event => {
+            if (!container.isConnected || event.ctrlKey || event.altKey || event.metaKey || ignored(event.target)) return;
+            const key = event.key.toLowerCase();
+            if ((key === ' ' || key === 'enter') && keyboardFocusedControl(event.target)) return;
+            if (!PLAYER_SHORTCUT_KEYS.has(key) || !getVideo()) return;
+            event.preventDefault(); event.stopImmediatePropagation();
+        }, true);
+        // The host page forwards shortcuts pressed while its focus is outside this frame.
+        scope.listen(window, 'message', event => {
+            if (event.data?.type !== 'PLAYER_SHORTCUT' || !isTrustedHostMessage(event)) return;
+            runShortcut(event.data.key);
+        });
+        // A mouse click leaves focus on the clicked control, and Space would then
+        // re-click it instead of pausing. Mouse clicks hand focus back to the page;
+        // the settings menu keeps focus for its own keyboard navigation.
+        scope.listen(container, 'click', event => {
+            if (event.detail === 0) return;
+            const control = event.target?.closest?.('button,[role="button"],[role="slider"]');
+            if (!control || control.closest('.player-settings-menu') || control.matches('.player-settings-button')) return;
+            if (document.activeElement === control) control.blur();
         });
         if (slider) {
             slider.tabIndex = 0; slider.classList.add('player-keyboard-action'); slider.setAttribute('role', 'slider'); slider.setAttribute('aria-label', pt('seek', 'Перемотка'));
@@ -861,6 +902,10 @@
         element.classList.add('player-keyboard-action');
         element.addEventListener('keydown', event => {
             if (event.key !== 'Enter' && event.key !== ' ') return;
+            // Focus left by a mouse click: Space belongs to play/pause, not this control.
+            let keyboardFocus = true;
+            try { keyboardFocus = element.matches(':focus-visible'); } catch { /* Older engines. */ }
+            if (event.key === ' ' && !keyboardFocus) return;
             event.preventDefault();
             element.click();
         });

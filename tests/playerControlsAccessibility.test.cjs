@@ -5,7 +5,7 @@ const { test } = require('node:test');
 const { JSDOM, VirtualConsole } = require('jsdom');
 const source = fs.readFileSync(path.join(__dirname, '../content-scripts/player-cleaner.js'), 'utf8');
 function harness() {
-    const dom = new JSDOM('<div id="root"><video></video><div id="slider"></div><input><div contenteditable="true"><span id="edit"></span></div><div class="player-settings-menu"><button>A</button><button>B</button></div></div>', { url: 'https://fixture.test/', runScripts: 'outside-only', virtualConsole: new VirtualConsole() });
+    const dom = new JSDOM('<div id="root"><video></video><div id="slider"></div><input><div contenteditable="true"><span id="edit"></span></div><div class="player-settings-menu"><button>A</button><button>B</button></div><button id="control" type="button">Volume</button></div>', { url: 'https://fixture.test/', runScripts: 'outside-only', virtualConsole: new VirtualConsole() });
     const { window } = dom;
     window.chrome = { runtime: { id: 'test', getURL: () => 'data:text/javascript,' } };
     window.ResizeObserver = class { observe() {} disconnect() {} };
@@ -35,6 +35,27 @@ test('one shortcut authority uses exact deltas and respects editable/menu focus'
     h.key('m'); assert.equal(h.video.muted, true);
     h.key('>'); assert.equal(h.video.playbackRate, 1.25);
     h.scope.dispose(); h.key('l'); assert.equal(h.video.currentTime, 35);
+    h.dom.window.close();
+});
+test('a mouse-focused player button does not swallow Space or the arrows', () => {
+    const h = harness();
+    const control = h.window.document.getElementById('control');
+    control.focus();
+    h.key('ArrowRight', control); assert.equal(h.video.currentTime, 45, 'arrows seek while a control has focus');
+    h.key('ArrowLeft', control); assert.equal(h.video.currentTime, 40);
+    // A mouse click (detail > 0) hands focus back, so Space reaches play/pause.
+    control.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true, detail: 1 }));
+    assert.notEqual(h.window.document.activeElement, control, 'mouse click releases focus');
+    h.key(' ', h.window.document.activeElement); assert.equal(h.plays(), 1, 'Space toggles playback after clicking a control');
+    // A provider player's own Space handler must not toggle the same video again.
+    let providerToggles = 0;
+    h.window.document.addEventListener('keydown', event => { if (event.key === ' ') providerToggles++; });
+    h.window.document.addEventListener('keyup', event => { if (event.key === ' ') providerToggles++; });
+    h.key(' ');
+    h.window.document.body.dispatchEvent(new h.window.KeyboardEvent('keyup', { key: ' ', bubbles: true, cancelable: true }));
+    assert.equal(h.plays(), 2);
+    assert.equal(providerToggles, 0, 'provider handlers never see player shortcuts');
+    h.scope.dispose();
     h.dom.window.close();
 });
 test('slider supports keyboard bounds and ARIA time text; menu uses arrows', () => {
