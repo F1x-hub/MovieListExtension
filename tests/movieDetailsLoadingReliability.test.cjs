@@ -290,5 +290,13 @@ function firebase(services = {}) {
     assert.equal(seasonCalls, 1, 'seasons load once when the series type arrives late');
     assert.equal(ratingCalls, 1, 'a settled-empty ratings refresh is retried once with the complete movie');
 
+    // Vote counts: a rating without any vote source triggers the delayed retry.
+    const missingVotes = context.window.MovieDetailsManager.missingProviderVotes;
+    assert.equal(missingVotes({ kpRating: 8.1, kpVotes: 0 }, {}, {}), true, 'KP rating without votes');
+    assert.equal(missingVotes(null, { imdb: 7.2 }, {}), true, 'failed scrape leaves IMDb votes missing');
+    assert.equal(missingVotes({ kpRating: 8.1, kpVotes: 1200, imdbRating: 7.9, imdbVotes: 900 }, {}, {}), false);
+    assert.equal(missingVotes(null, { kp: 8.1 }, { kp: 1200 }), false, 'cached votes are enough');
+    assert.equal(missingVotes(null, {}, {}), false, 'no rating, nothing to show');
+
     console.log('Movie Details loading reliability tests passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

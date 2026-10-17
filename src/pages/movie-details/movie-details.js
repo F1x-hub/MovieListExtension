@@ -2839,12 +2839,28 @@ class MovieDetailsManager {
 
             if (needsVoteRepair && typeof kinopoiskService?.scrapeMoviePageRatingsOffscreen === 'function') {
                 try {
-                    const pageRatings = await kinopoiskService.scrapeMoviePageRatingsOffscreen(kinopoiskId, {
+                    // The first scrape on a cold start (new offscreen document, slow
+                    // page) often returns ratings without vote counts, or nothing.
+                    // One delayed retry uses its own request key: the background
+                    // caches successful results per key, including vote-less ones.
+                    const scrape = (requestKey, timeoutMs) => kinopoiskService.scrapeMoviePageRatingsOffscreen(kinopoiskId, {
                         mediaType: movie?.mediaType || movie?.type || null,
-                        requestKey: `movie-details-votes:${kinopoiskId}`,
+                        requestKey,
+                        timeoutMs,
                         priority: 'visible-ratings'
                     });
+                    let pageRatings = await scrape(`movie-details-votes:${kinopoiskId}`, 8000);
                     if (!this.isPageContextCurrent(pageContext)) return;
+                    if (MovieDetailsManager.missingProviderVotes(pageRatings, {
+                        kp: Number(result?.kpRating) || kpRating,
+                        imdb: Number(result?.imdbRating) || imdbRating
+                    }, cachedVotes)) {
+                        await new Promise(resolve => setTimeout(resolve, 3000));
+                        if (!this.isPageContextCurrent(pageContext)) return;
+                        const retried = await scrape(`movie-details-votes-retry:${kinopoiskId}`, 15000);
+                        if (!this.isPageContextCurrent(pageContext)) return;
+                        if (retried) pageRatings = { ...(pageRatings || {}), ...Object.fromEntries(Object.entries(retried).filter(([, value]) => value !== null && value !== undefined && value !== 0)) };
+                    }
 
                     if (Number(pageRatings?.kpVotes) > 0) cachedVotes.kp = Number(pageRatings.kpVotes);
                     if (Number(pageRatings?.imdbVotes) > 0) cachedVotes.imdb = Number(pageRatings.imdbVotes);
@@ -2924,6 +2940,16 @@ class MovieDetailsManager {
             console.warn('[MovieDetails] Provider ratings refresh failed:', error);
             this.settleProviderRatingsUI(movie, pageContext);
         }
+    }
+
+    /**
+     * True when a provider has a rating but neither the scraped page nor the cache
+     * supplies its vote count, so the vote line under the tile would stay empty.
+     */
+    static missingProviderVotes(pageRatings, ratings = {}, cachedVotes = {}) {
+        const has = (rating, ...counts) => Number(rating) > 0 && !counts.some(count => Number(count) > 0);
+        return has(Number(pageRatings?.kpRating) || ratings.kp, pageRatings?.kpVotes, cachedVotes.kp)
+            || has(Number(pageRatings?.imdbRating) || ratings.imdb, pageRatings?.imdbVotes, cachedVotes.imdb);
     }
 
     /**
