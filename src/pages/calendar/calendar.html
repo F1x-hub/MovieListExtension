@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -32,11 +32,12 @@
                 Календарь
                 <span class="calendar-total-badge" id="calendarTotal"></span>
             </h1>
-            <p class="calendar-subtitle">Ближайшие эпизоды сериалов со статусом «Смотрю»</p>
+            <p class="calendar-subtitle">Ближайшие серии и премьеры из списков «Смотрю» и «Буду смотреть»</p>
         </div>
 
-        <div id="calendarContent" class="calendar-months">
-            <div class="calendar-loading" id="calendarLoading">
+        <div id="calendarContent" class="calendar-months" aria-busy="true">
+            <div class="calendar-loading" id="calendarLoading" role="status" aria-label="Загрузка календаря">
+                <div class="skeleton-month"></div>
                 <div class="skeleton-month"></div>
                 <div class="skeleton-month"></div>
             </div>

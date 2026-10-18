@@ -322,6 +322,11 @@ keeps npm-compatible three-component semver metadata.
 <details open>
 <summary><strong>Unreleased</strong></summary>
 
+### Fixes
+
+- Calendar loads much faster: the last result paints instantly from a local snapshot, fresh data fills in progressively, TMDB IDs (30 days) and episode/release data (6 hours) are cached, requests run six at a time instead of all at once, movies released over a year ago are skipped, and ended shows no longer fetch season lists.
+- Calendar visuals: titles and labels follow the theme (they were hard-coded white and unreadable in light theme), collapsed months no longer show a stray border strip, today's date pill no longer shifts the date column, countdowns read "Завтра" / "через 21 день" with correct plurals, dates are parsed as local days, and show names are real links (middle-click opens a new tab).
+
 ### Features
 
 - Title search now runs through Kinopoisk's own GraphQL search as a separate first step, before any hidden-page parsing, and asks for up to 30+ titles instead of 20. Searches that skip hidden pages (popup, movie quiz) also use it instead of spending kinopoisk.dev API quota; the hidden search page stays the fallback when GraphQL fails.

@@ -13,7 +13,7 @@
     align-items: center;
     gap: 10px;
     margin: 0 0 8px;
-    color: var(--text-primary, #ffffff);
+    color: var(--theme-text-primary, #ffffff);
     font-size: 28px;
     font-weight: 700;
 }
@@ -34,11 +34,19 @@
     font-weight: 600;
 }
 
+/* One border and surface per month: a collapsed month is just its header,
+   with no leftover body border underneath. */
 .calendar-month {
     margin-bottom: 10px;
+    border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.1));
     border-radius: 12px;
     overflow: hidden;
-    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+    background: var(--theme-bg-card, rgba(255, 255, 255, 0.03));
+    transition: border-color 0.2s ease;
+}
+
+.calendar-month:hover {
+    border-color: var(--theme-border-hover, rgba(255, 255, 255, 0.16));
 }
 
 .calendar-month-header {
@@ -48,23 +56,24 @@
     gap: 12px;
     width: 100%;
     padding: 14px 20px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.1));
-    border-radius: 12px;
+    background: transparent;
+    border: none;
     color: inherit;
+    font: inherit;
+    text-align: left;
     cursor: pointer;
     user-select: none;
-    transition: all 0.2s ease;
-    backdrop-filter: blur(10px);
+    transition: background-color 0.2s ease;
 }
 
 .calendar-month-header:hover {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.2);
+    background: var(--theme-hover-bg, rgba(255, 255, 255, 0.06));
 }
 
-.calendar-month-header.open {
-    border-radius: 12px 12px 0 0;
+.calendar-month-header:focus-visible {
+    outline: 2px solid var(--theme-accent, #f4f4f5);
+    outline-offset: -2px;
+    border-radius: 12px;
 }
 
 .calendar-month-name {
@@ -99,10 +108,6 @@
     display: grid;
     grid-template-rows: 0fr;
     visibility: hidden;
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.1));
-    border-top: none;
-    border-radius: 0 0 12px 12px;
     transition: grid-template-rows var(--motion-duration-disclosure) var(--motion-ease-out), visibility var(--motion-duration-disclosure);
 }
 
@@ -111,7 +116,11 @@
     visibility: visible;
 }
 
-.calendar-month-content { min-height: 0; overflow: hidden; }
+.calendar-month-content {
+    min-height: 0;
+    overflow: hidden;
+    border-top: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
+}
 
 .calendar-day-group {
     display: flex;
@@ -119,7 +128,7 @@
 }
 
 .calendar-day-group + .calendar-day-group {
-    border-top: 1px solid rgba(148, 163, 184, 0.08);
+    border-top: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
 }
 
 .calendar-day-label {
@@ -129,7 +138,7 @@
     justify-content: center;
     min-width: 64px;
     padding: 14px 6px;
-    border-right: 1px solid rgba(148, 163, 184, 0.08);
+    border-right: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
     color: var(--theme-text-secondary, #94a3b8);
     font-size: 12px;
     text-transform: uppercase;
@@ -142,12 +151,13 @@
     line-height: 1;
 }
 
+/* Same box size as other days so the date column does not shift. */
 .calendar-day-num.today {
-    color: #ffffff;
-    background: rgba(255, 255, 255, 0.15);
-    padding: 2px 8px;
-    border-radius: 6px;
-    display: inline-block;
+    color: var(--theme-bg-primary, #09090b);
+    background: var(--theme-text-primary, #f4f4f5);
+    padding: 3px 6px;
+    margin: -3px -6px;
+    border-radius: 8px;
 }
 
 .calendar-day-week {
@@ -169,11 +179,11 @@
 }
 
 .calendar-episode-row + .calendar-episode-row {
-    border-top: 1px solid rgba(148, 163, 184, 0.06);
+    border-top: 1px solid var(--theme-border, rgba(255, 255, 255, 0.06));
 }
 
 .calendar-episode-row:hover {
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--theme-hover-bg, rgba(255, 255, 255, 0.04));
 }
 
 .calendar-episode-info {
@@ -183,7 +193,9 @@
 
 .calendar-show-name {
     display: block;
-    color: #ffffff;
+    max-width: 100%;
+    width: fit-content;
+    color: var(--theme-text-primary, #ffffff);
     font-size: 14px;
     font-weight: 600;
     text-decoration: none;
@@ -193,13 +205,17 @@
     cursor: pointer;
 }
 
-.calendar-show-name:hover {
+a.calendar-show-name:hover {
     text-decoration: underline;
+}
+
+span.calendar-show-name {
+    cursor: default;
 }
 
 .calendar-ep-label {
     margin-top: 4px;
-    color: rgba(255, 255, 255, 0.7);
+    color: var(--theme-text-secondary, rgba(255, 255, 255, 0.7));
     font-size: 12px;
     white-space: nowrap;
     overflow: hidden;
@@ -208,10 +224,10 @@
 
 .calendar-countdown {
     flex-shrink: 0;
-    margin-left: 16px;
     color: var(--theme-text-secondary, #94a3b8);
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
     white-space: nowrap;
 }
 
@@ -219,13 +235,17 @@
     color: #22c55e;
 }
 
+.light-theme .calendar-countdown.today-badge {
+    color: #15803d;
+}
+
+/* Inset marker instead of a border, so premiere rows keep the same text alignment. */
 .calendar-episode-row.movie-premiere {
-    background: rgba(255, 255, 255, 0.03);
-    border-left: 3px solid var(--accent-color, #c0c0c0);
+    box-shadow: inset 3px 0 0 var(--theme-accent, #c0c0c0);
 }
 
 .calendar-episode-row.movie-premiere .calendar-ep-label {
-    color: var(--accent-color, #c0c0c0);
+    color: var(--theme-text-primary, #f4f4f5);
     font-weight: 600;
 }
 
@@ -237,7 +257,7 @@
 .skeleton-month {
     height: 52px;
     border-radius: 12px;
-    background: rgba(255, 255, 255, 0.06);
+    background: var(--theme-hover-bg, rgba(255, 255, 255, 0.06));
     animation: skeletonPulse 1.4s infinite ease-in-out;
 }
 
@@ -250,8 +270,8 @@
     padding: 72px 24px;
     border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.1));
     border-radius: 16px;
-    background: rgba(255, 255, 255, 0.02);
-    color: rgba(255, 255, 255, 0.7);
+    background: var(--theme-bg-card, rgba(255, 255, 255, 0.02));
+    color: var(--theme-text-secondary, rgba(255, 255, 255, 0.7));
     text-align: center;
 }
 
@@ -276,6 +296,15 @@
 
     50% {
         opacity: 1;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .skeleton-month,
+    .calendar-month-body,
+    .calendar-month-chevron {
+        animation: none;
+        transition: none;
     }
 }
 
