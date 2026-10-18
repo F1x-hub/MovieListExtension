@@ -324,6 +324,7 @@ keeps npm-compatible three-component semver metadata.
 
 ### Features
 
+- Extension pages now have their own favicon: the white mark on a dark rounded tile, with a dedicated 16px drawing (solid clapper arm, larger play). Tabs and bookmarks stay legible on both dark and light browser bars instead of falling back to the black toolbar icon.
 - New logo: a cleaner clapperboard with a play symbol, designed in Figma. It replaces the navbar mark and the extension icons (16/48/128, black and white), so the toolbar, popup header, home and Random pages use it; the 16px icon is a simplified version that stays legible at that size. The poster placeholder image (`icon48.png`) is unchanged.
 - Movie Details awards now name who from the movie won or was nominated ("Награду получил(а): Марлон Брандо", "Номинант: Аль Пачино") and, for lost nominations, who won the category ("Победитель: Джоэл Грей — Кабаре"). Data loads from the Kinopoisk ceremony page when the Awards tab opens, one request per ceremony; awards cached earlier are re-read once to get category links. A category the movie itself won is never shown as lost to it.
 - Add an optional Watch entry with a keyboard-accessible source picker and separate torrent action. The browser-local admin switch defaults off; anime defaults to AnimeGo after room, explicit and saved choices.
