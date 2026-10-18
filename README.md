@@ -7,7 +7,7 @@ series, cartoons, and anime.
 
 <p>
   <img src="https://img.shields.io/badge/MANIFEST-V3-1687c9?style=flat-square&logo=googlechrome&logoColor=white" alt="Manifest V3">
-  <img src="https://img.shields.io/badge/VERSION-1.3.7-69b500?style=flat-square" alt="Version 1.3.7">
+  <img src="https://img.shields.io/badge/VERSION-1.3.8-69b500?style=flat-square" alt="Version 1.3.8">
   <img src="https://img.shields.io/badge/JAVASCRIPT-ES6%2B-f0d000?style=flat-square&logo=javascript&logoColor=111827" alt="JavaScript ES6+">
   <img src="https://img.shields.io/badge/VANILLA-ES6%2B-e2c400?style=flat-square" alt="Vanilla ES6+">
   <img src="https://img.shields.io/badge/AUTHOR-FIX-f47721?style=flat-square" alt="Author Fix">
@@ -319,13 +319,8 @@ Release entries are intentionally collapsed to keep this page readable.
 The extension manifest is the source of truth for the Chrome build version; `package.json`
 keeps npm-compatible three-component semver metadata.
 
-<details open>
-<summary><strong>Unreleased</strong></summary>
-
-### Fixes
-
-- Calendar loads much faster: the last result paints instantly from a local snapshot, fresh data fills in progressively, TMDB IDs (30 days) and episode/release data (6 hours) are cached, requests run six at a time instead of all at once, movies released over a year ago are skipped, and ended shows no longer fetch season lists.
-- Calendar visuals: titles and labels follow the theme (they were hard-coded white and unreadable in light theme), collapsed months no longer show a stray border strip, today's date pill no longer shifts the date column, countdowns read "Завтра" / "через 21 день" with correct plurals, dates are parsed as local days, and show names are real links (middle-click opens a new tab).
+<details>
+<summary><strong>1.3.8</strong> — faster discovery, account rating sync and refined playback</summary>
 
 ### Features
 
@@ -342,6 +337,8 @@ keeps npm-compatible three-component semver metadata.
 
 ### Fixes
 
+- Calendar loads much faster: the last result paints instantly from a local snapshot, fresh data fills in progressively, TMDB IDs (30 days) and episode/release data (6 hours) are cached, requests run six at a time instead of all at once, movies released over a year ago are skipped, and ended shows no longer fetch season lists.
+- Calendar visuals: titles and labels follow the theme (they were hard-coded white and unreadable in light theme), collapsed months no longer show a stray border strip, today's date pill no longer shifts the date column, countdowns read "Завтра" / "через 21 день" with correct plurals, dates are parsed as local days, and show names are real links (middle-click opens a new tab).
 - Fix "IMDb —" on card pages for films whose IMDb rating exists: Ratings, bookmarks, watching, watchlist, search and collections no longer rely only on ratings some other page happened to cache. A shared `ProviderRatingsBackfill` applies ratings already in the shared card cache at once and fetches the missing ones through the Movie Details path (Kinopoisk GraphQL, hidden page fallback, three at a time), stores them back and updates every card of the title; a recent real "no IMDb rating" answer is respected.
 
 - Load Kinopoisk/IMDb ratings much faster on Home, catalog and Movie Details: title search and ratings with vote counts now come from Kinopoisk's own GraphQL API (`SuggestSearch`, `TouchMovieRating`, one JSON request each) instead of loading hidden Kinopoisk pages. Hidden pages remain the fallback, including new titles whose IMDb rating Kinopoisk's API does not have yet, and the hidden scraper now runs two frames in parallel.
