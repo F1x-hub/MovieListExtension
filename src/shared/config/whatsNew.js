@@ -1,5 +1,16 @@
 export const whatsNew = [
     {
+        id: '1.3.8', version: '1.3.8', date: '2026-10-18',
+        highlights: [
+            { id: 'discovery', title: { ru: 'Быстрее поиск и оценки', en: 'Faster search and ratings' }, text: { ru: 'Поиск и загрузка оценок Кинопоиска и IMDb сначала используют быстрые запросы. Недостающие оценки догружаются на карточках, а страницы Кинопоиска остаются запасным вариантом.', en: 'Search and Kinopoisk/IMDb ratings try fast requests first. Missing ratings fill in on cards, with Kinopoisk pages retained as a fallback.' } },
+            { id: 'rating-sync', title: { ru: 'Оценки в ваших аккаунтах', en: 'Sync ratings to your accounts' }, text: { ru: 'В настройках интеграций можно включить перенос новых и удалённых оценок в IMDb и Кинопоиск через ваш вход на этих сайтах. Неудачные отправки повторяются в фоне.', en: 'Enable IMDb and Kinopoisk integrations in Settings to mirror ratings and removals through your signed-in site sessions. Failed sends retry in the background.' } },
+            { id: 'calendar', title: { ru: 'Календарь открывается быстрее', en: 'A faster calendar' }, text: { ru: 'Сохранённый календарь появляется сразу, свежие даты догружаются постепенно. Подписи читаются в обеих темах, а названия открываются в новой вкладке средней кнопкой мыши.', en: 'The saved calendar appears immediately while fresh dates load progressively. Labels follow both themes, and title links support opening a new tab.' } },
+            { id: 'player', title: { ru: 'Удобнее управление плеером', en: 'Refined player controls' }, text: { ru: 'Кнопки плеера получили единые значки и более плавное появление. Горячие клавиши продолжают работать после клика по управлению; настройки озвучки и качества запоминаются для фильма.', en: 'Player buttons share consistent icons and smoother transitions. Shortcuts keep working after clicking controls, and voiceover and quality preferences are remembered per title.' } },
+            { id: 'movie-details', title: { ru: 'Полнее карточки фильмов', en: 'More complete film details' }, text: { ru: 'Поздно пришедшие данные восстанавливают сезоны, фон и оценки без перезагрузки. В наградах видны имена победителей и номинантов, а в профиле можно отфильтровать фильмы по своей оценке.', en: 'Late data restores seasons, artwork and ratings without a reload. Awards show winners and nominees, and profile ratings can be filtered by your score.' } },
+            { id: 'identity', title: { ru: 'Новый знак MovieList', en: 'A new MovieList mark' }, text: { ru: 'Хлопушка с символом воспроизведения объединяет значки расширения и навигацию. Отдельный значок вкладки остаётся различимым на светлой и тёмной панели браузера.', en: 'A clapperboard and play symbol unify the extension icons and navigation. A dedicated tab icon stays readable on light and dark browser bars.' } }
+        ]
+    },
+    {
         id: '1.3.7', version: '1.3.7', date: '2026-10-15',
         highlights: [
             { id: 'sorting', title: { ru: 'Сортировка в одном стиле', en: 'Consistent sorting everywhere' }, text: { ru: 'Оценённые, избранное и другие списки используют одинаковые элементы сортировки. Названия вариантов читаются целиком, а выбирать их можно с клавиатуры.', en: 'Rated, Favorites and other lists share the same sorting controls. Option labels stay readable, with full keyboard navigation.' } },
