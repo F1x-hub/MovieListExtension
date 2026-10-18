@@ -1630,7 +1630,7 @@ class RandomManager {
             const data = await this.kinopoiskService.searchMovies(query, 1, 20);
             if (this._disposed || searchId !== this._poolSearchId || document.getElementById('poolSearchInput').value.trim() !== query) return;
             const movies = data.docs || [];
-            const sortedMovies = (data.searchSource === 'kinopoisk-offscreen-scrape' || data.searchSource === 'kinopoisk-scrape')
+            const sortedMovies = (data.searchSource === 'kinopoisk-graphql' || data.searchSource === 'kinopoisk-offscreen-scrape' || data.searchSource === 'kinopoisk-scrape')
                 ? movies.slice(0, 8)
                 : this.kinopoiskService.sortMoviesByRelevance(movies, query).slice(0, 8);
             this._renderSearchResults(sortedMovies, resultsEl);

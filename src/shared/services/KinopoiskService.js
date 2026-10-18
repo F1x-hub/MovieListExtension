@@ -371,7 +371,8 @@ class KinopoiskService {
         const service = this.getGraphqlService();
         if (!service || options.skipGraphql === true) return null;
         try {
-            const items = await service.searchMovies(query, { limit: Math.min(options.limit || 10, 20) });
+            // The suggest endpoint returns up to 50 titles per request.
+            const items = await service.searchMovies(query, { limit: Math.min(options.limit || 10, 50) });
             return items.length > 0 ? items : null;
         } catch (error) {
             console.warn('[KinopoiskGraphql] search failed, using the hidden page:', error.message);
@@ -902,13 +903,33 @@ class KinopoiskService {
             let scrapedItems = null;
             let scrapeSource = 'kinopoisk-offscreen-scrape';
 
+            // Tier 0: Kinopoisk's own GraphQL search over the network (one JSON
+            // request, no page parsing). Independent of skipOffscreen, so callers
+            // that avoid hidden pages still search without spending API quota.
+            if (filters?.skipGraphql !== true) {
+                const stageStartedAt = kinopoiskTraceNow();
+                trace.mark('tier-0-graphql:start');
+                const graphqlItems = await this.searchViaGraphql(cleanQuery, { limit: Math.max(limit, 30) });
+                trace.mark('tier-0-graphql:end', {
+                    stageDurationMs: stageDurationMs(stageStartedAt),
+                    itemCount: graphqlItems?.length || 0,
+                    success: Boolean(graphqlItems)
+                });
+                if (graphqlItems) {
+                    scrapedItems = graphqlItems;
+                    scrapeSource = 'kinopoisk-graphql';
+                }
+            }
+
             // Tier 1: Real Browser Context Scraping (Offscreen Document + iframe + Content Script)
-            if (!filters?.skipOffscreen) {
+            if (!scrapedItems && !filters?.skipOffscreen) {
                 const stageStartedAt = kinopoiskTraceNow();
                 trace.mark('tier-1-offscreen:start');
                 try {
                     scrapedItems = await this.scrapeSearchResultsOffscreen(query, {
                         limit: Math.max(limit, 30),
+                        // Tier 0 already asked GraphQL (or the caller opted out); go straight to the hidden page.
+                        skipGraphql: true,
                         signal: filters?.signal,
                         traceId: trace.traceId,
                         traceStartedAt: trace.startedAt
