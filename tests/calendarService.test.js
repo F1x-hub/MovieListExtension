@@ -162,4 +162,68 @@ assert.equal(movieEvent.kinoId, 2002);
 assert.equal(movieEvent.tmdbId, 202);
 assert.equal(movieEvent.isMovie, true);
 
+// 7. Load cost: long-released movies make no requests; finished shows fetch no seasons.
+{
+    const urls = [];
+    class CountingTmdb extends MockTMDBServiceProxy {
+        async _fetchWithRotation(url) {
+            urls.push(url);
+            if (url.includes('/tv/303')) {
+                return { ok: true, json: async () => ({ id: 303, status: 'Ended', number_of_seasons: 5, last_episode_to_air: { season_number: 5 } }) };
+            }
+            return super._fetchWithRotation(url);
+        }
+    }
+    const thisYear = new Date().getFullYear();
+    const counted = await fetchCalendarEpisodes({
+        tmdbService: new CountingTmdb(),
+        useCache: false,
+        items: [
+            { movieId: 4004, movieTitle: 'Old Classic', year: thisYear - 30, isSeries: false },
+            { movieId: 3003, movieTitle: 'Finished Show', tmdbId: 303, isSeries: true }
+        ]
+    });
+    assert.equal(counted.total, 0);
+    assert.ok(!urls.some(url => /Old%20Classic|search\/movie/.test(url)), 'a movie released decades ago is not looked up');
+    assert.ok(!urls.some(url => url.includes('/season/')), 'an ended show needs no season requests');
+    assert.equal(urls.length, 1, 'one details request for the ended show and nothing else');
+}
+
+// 8. Cache: a second open reuses TMDB IDs and events instead of refetching; snapshot paints instantly.
+{
+    const store = { user: { uid: 'u1' } };
+    globalThis.chrome = { storage: { local: {
+        get: async keys => Object.fromEntries(keys.filter(key => key in store).map(key => [key, structuredClone(store[key])])),
+        set: async values => { Object.assign(store, structuredClone(values)); }
+    } } };
+    let requests = 0;
+    class CountingTmdb extends MockTMDBServiceProxy {
+        async _fetchWithRotation(url) { requests++; return super._fetchWithRotation(url); }
+    }
+    const items = [{ ...mockSeriesItem }];
+    const first = await fetchCalendarEpisodes({ tmdbService: new CountingTmdb(), items });
+    const afterFirst = requests;
+    assert.ok(afterFirst > 0);
+    const second = await fetchCalendarEpisodes({ tmdbService: new CountingTmdb(), items });
+    assert.equal(requests, afterFirst, 'second open is served from the cache');
+    assert.deepEqual(second, first);
+    const { readCalendarSnapshot } = await import('../src/shared/services/CalendarService.js');
+    const snapshot = await readCalendarSnapshot();
+    assert.equal(snapshot.total, 1, 'snapshot of the last result is available for the first paint');
+    delete globalThis.chrome;
+}
+
+// 9. Countdown wording and local dates.
+{
+    const { formatCountdown, parseLocalDate } = await import('../src/pages/calendar/CalendarView.js');
+    assert.equal(formatCountdown(0).text, 'Сегодня');
+    assert.equal(formatCountdown(1).text, 'Завтра');
+    assert.equal(formatCountdown(3).text, 'через 3 дня');
+    assert.equal(formatCountdown(11).text, 'через 11 дней');
+    assert.equal(formatCountdown(21).text, 'через 21 день');
+    assert.equal(formatCountdown(22).text, 'через 22 дня');
+    assert.equal(formatCountdown(25).text, 'через 25 дней');
+    assert.equal(parseLocalDate('2026-03-01').getDate(), 1, 'YYYY-MM-DD is a local date, not UTC midnight');
+}
+
 console.log('✅ ALL CalendarService Tests Passed Successfully!');

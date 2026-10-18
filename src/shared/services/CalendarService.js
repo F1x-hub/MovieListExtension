@@ -5,6 +5,104 @@ const MONTHS_RU = [
 ];
 const SERIES_TYPE_HINTS = ['tv', 'series', 'anime', 'animated'];
 const PLACEHOLDER_TITLES = new Set(['unknown title', 'неизвестное название']);
+const FINISHED_SERIES_STATUSES = new Set(['Ended', 'Canceled']);
+
+// Every open used to re-search TMDB for each tracked title and refetch its
+// seasons, all at once. Results are now cached and requests run in a small pool.
+const CACHE_KEY = 'calendar_cache_v1';
+const SNAPSHOT_KEY = 'calendar_snapshot_v1';
+const EVENTS_TTL_MS = 6 * 60 * 60 * 1000;
+const TMDB_ID_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const TMDB_ID_MISS_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+const MAX_CONCURRENT_ITEMS = 6;
+const MAX_CACHE_ENTRIES = 600;
+
+function hasChromeStorage() {
+    return typeof chrome !== 'undefined' && Boolean(chrome.storage?.local);
+}
+
+async function readStorage(key) {
+    if (!hasChromeStorage()) return null;
+    try {
+        const result = await chrome.storage.local.get([key]);
+        return result[key] || null;
+    } catch {
+        return null;
+    }
+}
+
+async function writeStorage(key, value) {
+    if (!hasChromeStorage()) return;
+    try {
+        await chrome.storage.local.set({ [key]: value });
+    } catch (error) {
+        console.warn('[Calendar] Cache write failed:', error);
+    }
+}
+
+function pruneEntries(entries) {
+    const list = Object.entries(entries || {});
+    if (list.length <= MAX_CACHE_ENTRIES) return entries || {};
+    return Object.fromEntries(list.sort((a, b) => (b[1]?.at || 0) - (a[1]?.at || 0)).slice(0, MAX_CACHE_ENTRIES));
+}
+
+async function getStoredUserId() {
+    const user = await readStorage('user');
+    return user?.uid || null;
+}
+
+function itemKey(item) {
+    return String(item.movieId || item.kinopoiskId || item.id || '');
+}
+
+/** A movie that came out more than a year ago will not get a premiere in the window. */
+function isLongReleasedMovie(item, now = new Date()) {
+    if (hasSeriesHints(item)) return false;
+    const year = Number(item.releaseYear || item.year || 0);
+    return Number.isInteger(year) && year > 0 && year < now.getFullYear() - 1;
+}
+
+async function runPool(items, limit, worker) {
+    let next = 0;
+    const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+        while (next < items.length) {
+            const index = next++;
+            await worker(items[index], index);
+        }
+    });
+    await Promise.all(runners);
+}
+
+function groupEvents(events) {
+    const sorted = [...events].sort((a, b) => String(a.airDate).localeCompare(String(b.airDate)));
+    const grouped = {};
+    sorted.forEach((event) => {
+        const [year, month] = String(event.airDate).split('-').map(Number);
+        const monthKey = `${MONTHS_RU[month - 1]}__${year}`;
+        grouped[monthKey] = grouped[monthKey] || {};
+        grouped[monthKey][event.airDate] = grouped[monthKey][event.airDate] || [];
+        grouped[monthKey][event.airDate].push(event);
+    });
+    return { grouped, total: sorted.length };
+}
+
+function isUpcoming(airDate, now = new Date()) {
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+    const maxDate = new Date(today);
+    maxDate.setDate(maxDate.getDate() + DAYS_AHEAD);
+    const [year, month, day] = String(airDate).split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+    return date >= today && date <= maxDate;
+}
+
+/** Last calendar result for the signed-in user, for an instant first paint. */
+export async function readCalendarSnapshot() {
+    const [snapshot, userId] = await Promise.all([readStorage(SNAPSHOT_KEY), getStoredUserId()]);
+    if (!snapshot || !userId || snapshot.userId !== userId || !Array.isArray(snapshot.events)) return null;
+    // Drop dates that have passed since the snapshot was taken.
+    return groupEvents(snapshot.events.filter(event => isUpcoming(event.airDate)));
+}
 
 function resolveTMDBService(customService = null) {
     if (customService) return customService;
@@ -470,16 +568,14 @@ async function getUpcomingEpisodes(tmdbId, showName, kinoId, tmdbService = resol
     const episodes = [];
     const addedEpisodes = new Set();
     const seasonsToCheck = new Set();
+    const nextSeason = info.next_episode_to_air?.season_number;
 
-    if (info.next_episode_to_air?.season_number) {
-        seasonsToCheck.add(info.next_episode_to_air.season_number);
-    }
-
-    if (info.last_episode_to_air?.season_number) {
-        seasonsToCheck.add(info.last_episode_to_air.season_number);
-    }
-
-    if (info.number_of_seasons) {
+    // Only seasons that can still have upcoming episodes: the one with the next
+    // episode and the newest announced one. Finished shows need no season fetch.
+    if (nextSeason) {
+        seasonsToCheck.add(nextSeason);
+        if (info.number_of_seasons > nextSeason) seasonsToCheck.add(info.number_of_seasons);
+    } else if (!FINISHED_SERIES_STATUSES.has(info.status) && info.number_of_seasons) {
         seasonsToCheck.add(info.number_of_seasons);
     }
 
@@ -528,69 +624,65 @@ export async function fetchCalendarEpisodes(options = {}) {
         throw new Error('TMDB API key is not configured');
     }
 
+    const useCache = options.useCache !== false && hasChromeStorage();
+    const now = options.now || new Date();
     const items = options.items || await getTrackedItems();
     if (!items.length) {
+        if (useCache) await writeStorage(SNAPSHOT_KEY, { userId: await getStoredUserId(), at: Date.now(), events: [] });
         return { grouped: {}, total: 0 };
     }
 
+    const cache = useCache ? (await readStorage(CACHE_KEY)) || {} : {};
+    cache.ids = cache.ids || {};
+    cache.events = cache.events || {};
     const allEvents = [];
+    const relevantItems = items.filter(item => !isLongReleasedMovie(item, now));
 
-    await Promise.allSettled(
-        items.map(async (item) => {
-            try {
-                const tmdbId = item.tmdbId || await getTmdbId(item, tmdbService);
-                if (!tmdbId) {
-                    return;
-                }
-
-                let events = [];
-                if (hasSeriesHints(item)) {
-                    events = await getUpcomingEpisodes(
-                        tmdbId,
-                        getPrimaryTitle(item),
-                        item.movieId || item.kinopoiskId || item.id,
-                        tmdbService
-                    );
+    await runPool(relevantItems, MAX_CONCURRENT_ITEMS, async (item) => {
+        try {
+            const key = itemKey(item);
+            const isSeries = hasSeriesHints(item);
+            let tmdbId = item.tmdbId || null;
+            if (!tmdbId) {
+                const cachedId = key ? cache.ids[key] : null;
+                const ttl = cachedId?.tmdbId ? TMDB_ID_TTL_MS : TMDB_ID_MISS_TTL_MS;
+                if (cachedId && Date.now() - cachedId.at < ttl) {
+                    tmdbId = cachedId.tmdbId;
                 } else {
-                    events = await getMovieRelease(
-                        tmdbId,
-                        getPrimaryTitle(item),
-                        item.movieId || item.kinopoiskId || item.id,
-                        tmdbService
-                    );
+                    tmdbId = await getTmdbId(item, tmdbService);
+                    if (key) cache.ids[key] = { tmdbId: tmdbId || null, at: Date.now() };
                 }
-
-                allEvents.push(...events);
-            } catch (error) {
-                console.warn('[Calendar] Failed to resolve item', getPrimaryTitle(item), error);
             }
-        })
-    );
+            if (!tmdbId) return;
 
-    allEvents.sort((a, b) => new Date(a.airDate) - new Date(b.airDate));
+            const eventsKey = `${isSeries ? 'tv' : 'movie'}:${tmdbId}`;
+            const cachedEvents = cache.events[eventsKey];
+            let events;
+            if (cachedEvents && Date.now() - cachedEvents.at < EVENTS_TTL_MS) {
+                events = cachedEvents.events;
+            } else {
+                events = isSeries
+                    ? await getUpcomingEpisodes(tmdbId, getPrimaryTitle(item), key, tmdbService)
+                    : await getMovieRelease(tmdbId, getPrimaryTitle(item), key, tmdbService);
+                cache.events[eventsKey] = { at: Date.now(), events };
+            }
 
-    const grouped = {};
-
-    allEvents.forEach((event) => {
-        const date = new Date(event.airDate);
-        const monthKey = `${MONTHS_RU[date.getMonth()]}__${date.getFullYear()}`;
-        const dayKey = event.airDate;
-
-        if (!grouped[monthKey]) {
-            grouped[monthKey] = {};
+            // Names and links come from the user's own list entry.
+            allEvents.push(...events
+                .filter(event => isUpcoming(event.airDate, now))
+                .map(event => ({ ...event, showName: getPrimaryTitle(item) || event.showName, kinoId: item.movieId || item.kinopoiskId || item.id || event.kinoId, tmdbId })));
+            options.onProgress?.(groupEvents(allEvents));
+        } catch (error) {
+            console.warn('[Calendar] Failed to resolve item', getPrimaryTitle(item), error);
         }
-
-        if (!grouped[monthKey][dayKey]) {
-            grouped[monthKey][dayKey] = [];
-        }
-
-        grouped[monthKey][dayKey].push(event);
     });
 
-    return {
-        grouped,
-        total: allEvents.length
-    };
+    if (useCache) {
+        await writeStorage(CACHE_KEY, { ids: pruneEntries(cache.ids), events: pruneEntries(cache.events) });
+        await writeStorage(SNAPSHOT_KEY, { userId: await getStoredUserId(), at: Date.now(), events: allEvents });
+    }
+
+    return groupEvents(allEvents);
 }
 
 export {
