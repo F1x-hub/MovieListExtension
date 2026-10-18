@@ -972,7 +972,12 @@ body.player-modal-open {
     border-radius: 16px !important;
     box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42), inset 0 1px rgba(255, 255, 255, 0.05) !important;
     backdrop-filter: blur(18px) saturate(130%) !important;
-    transition: opacity 180ms ease, transform 180ms cubic-bezier(0.23, 1, 0.32, 1) !important;
+    transition: opacity 280ms cubic-bezier(0.4, 0, 0.2, 1), transform 340ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.video-container .controls-visible .player-control-dock,
+.video-container.controls-visible .player-control-dock {
+    transition: opacity 200ms ease-out, transform 380ms cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 
 .video-container .player-progress-track {
@@ -1057,6 +1062,12 @@ body.player-modal-open {
 
 .video-container .player-control-dock .player-control-button--primary {
     line-height: 0 !important;
+}
+
+/* Buttons have a fixed size; padding would shrink the content box below the glyph
+   (26px Play, 22px icons at the 32px mobile size) and push it off-center. */
+.video-container .player-control-dock button.player-control-button {
+    padding: 0 !important;
 }
 
 .video-container .player-timecode {
