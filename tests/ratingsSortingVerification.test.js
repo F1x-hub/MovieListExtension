@@ -320,4 +320,5 @@ assert.strictEqual(
 );
 console.log('✅ Legacy popup cache self-heals missing movie metadata');
 
+
 console.log('\n🎉 ALL VERIFICATION TESTS PASSED SUCCESSFULLY!');
