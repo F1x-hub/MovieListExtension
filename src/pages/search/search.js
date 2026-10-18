@@ -1001,7 +1001,8 @@ class SearchManager {
             this.elements.resultsInfo.textContent = i18n.get('search.found_count').replace('{count}', this.currentResults.total);
             this.elements.resultsGrid.classList.remove('single-item');
             
-            const isScrapeSource = searchResults?.searchSource?.includes('scrape');
+            // Kinopoisk-ordered candidate pools: hidden-page scrapes and the GraphQL search.
+            const isScrapeSource = /scrape|graphql/.test(searchResults?.searchSource || '');
             const renderStartedAt = searchTraceNow();
             this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'cards-render:start', {
                 source: isScrapeSource ? 'scrape-pool' : 'api',

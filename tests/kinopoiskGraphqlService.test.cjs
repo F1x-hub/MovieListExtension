@@ -95,6 +95,28 @@ function fetchReturning(data, calls) {
             assert.equal(pageLoads, 1, 'the hidden page still supplies IMDb for new titles');
             delete global.chrome;
         }
+
+        // Search: GraphQL is its own first tier, used even when hidden pages are skipped.
+        if (proto?.searchMovies) {
+            const host = Object.create(proto);
+            let pageScrapes = 0;
+            let requestedLimit = 0;
+            host.graphqlService = { searchMovies: async (q, { limit }) => { requestedLimit = limit; return [{ id: 301, type: 'film' }, { id: 302, type: 'film' }]; } };
+            host.scrapeSearchResultsOffscreen = async () => { pageScrapes++; return null; };
+            host.scrapeSearchResults = async () => { pageScrapes++; return null; };
+            host.getMoviesByIdsBatch = async items => items.map(item => ({ id: item.id, kinopoiskId: item.id }));
+            const result = await host.searchMovies('матрица', 1, 20, { skipOffscreen: true, skipFetchScraper: true });
+            assert.equal(result.searchSource, 'kinopoisk-graphql');
+            assert.deepEqual(result.docs.map(movie => movie.id), [301, 302], 'Kinopoisk order is kept');
+            assert.equal(pageScrapes, 0, 'no hidden-page parsing when the network search answers');
+            assert.ok(requestedLimit >= 30, 'GraphQL asks for as many titles as the page scrape used to return');
+
+            host.graphqlService = { searchMovies: async () => { throw new Error('the query is not allowed'); } };
+            host.scrapeSearchResultsOffscreen = async (q, options) => { pageScrapes++; assert.equal(options.skipGraphql, true, 'the hidden page does not repeat GraphQL'); return [{ id: 303, type: 'film' }]; };
+            const fallback = await host.searchMovies('матрица', 1, 20, {});
+            assert.equal(fallback.searchSource, 'kinopoisk-offscreen-scrape');
+            assert.equal(pageScrapes, 1, 'hidden page stays the fallback when GraphQL fails');
+        }
     }
 
     console.log('Kinopoisk GraphQL service tests passed');
