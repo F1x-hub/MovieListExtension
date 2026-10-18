@@ -7,7 +7,27 @@
         : (typeof chrome !== 'undefined' && chrome.runtime?.getURL
             ? import(chrome.runtime.getURL('src/shared/services/player/PlayerLocale.js')).then(() => window.PlayerLocale?.init()).catch(() => false)
             : Promise.resolve(false));
-    
+
+    // One icon set for the whole control dock: 24px grid, 2px rounded stroke,
+    // currentColor. Play/Pause are solid so the primary action reads first.
+    const playerIcon = (body, { size = 24, solid = false } = {}) => `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="${solid ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+    const PLAYER_ICONS = {
+        play: (size) => playerIcon('<path d="M8 5v14l11-7z"/>', { size, solid: true }),
+        pause: (size) => playerIcon('<rect x="6" y="5" width="3.5" height="14" rx="1"/><rect x="14.5" y="5" width="3.5" height="14" rx="1"/>', { size, solid: true }),
+        prev: playerIcon('<path d="M15 18l-6-6 6-6"/>'),
+        next: playerIcon('<path d="M9 18l6-6-6-6"/>'),
+        volumeHigh: playerIcon('<path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>'),
+        // Same footprint as volumeHigh (faint outer wave) so the speaker stays centered and does not jump.
+        volumeLow: playerIcon('<path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13" opacity=".3"/>'),
+        volumeMute: playerIcon('<g transform="translate(-0.5 0)"><path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="m16 9 6 6"/><path d="m22 9-6 6"/></g>'),
+        subtitles: playerIcon('<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 11h3"/><path d="M13 11h4"/><path d="M7 15h6"/><path d="M16 15h1"/>'),
+        pip: playerIcon('<rect x="3" y="5" width="18" height="14" rx="3"/><rect x="12" y="11" width="6" height="5" rx="1"/>'),
+        pipActive: playerIcon('<rect x="3" y="5" width="18" height="14" rx="3"/><rect x="12" y="11" width="6" height="5" rx="1" fill="currentColor"/>'),
+        settings: playerIcon('<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>'),
+        fullscreen: playerIcon('<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>'),
+        fullscreenExit: playerIcon('<path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/>')
+    };
+
 
     // Only run if we are in an iframe (optional, but good practice since we expect to be embedded)
     if (window.self === window.top) {
@@ -1683,7 +1703,7 @@
             centerPlayBtn.style.display = 'flex';
             centerPlayBtn.style.alignItems = 'center';
             centerPlayBtn.style.justifyContent = 'center';
-            centerPlayBtn.style.transition = 'opacity 160ms ease, transform 140ms cubic-bezier(0.23, 1, 0.32, 1)';
+            centerPlayBtn.style.transition = 'opacity 220ms ease, transform 140ms cubic-bezier(0.23, 1, 0.32, 1), scale 320ms cubic-bezier(0.16, 1, 0.3, 1)';
             centerPlayBtn.style.backdropFilter = 'blur(16px) saturate(130%)';
             centerPlayBtn.style.boxShadow = '0 18px 48px rgba(0, 0, 0, 0.45), inset 0 1px rgba(255, 255, 255, 0.08)';
             makeKeyboardActivatable(centerPlayBtn, pt('play_pause', 'Воспроизвести или поставить на паузу'));
@@ -1900,7 +1920,24 @@
                     border-radius: 16px !important;
                     box-shadow: 0 18px 48px rgba(0, 0, 0, .42), inset 0 1px rgba(255, 255, 255, .05) !important;
                     backdrop-filter: blur(18px) saturate(130%) !important;
-                    transition: opacity 180ms ease, transform 180ms cubic-bezier(.23, 1, .32, 1) !important;
+                    /* Hiding: the dock eases down and fades out unhurriedly. */
+                    transition: opacity 280ms cubic-bezier(.4, 0, .2, 1), transform 340ms cubic-bezier(.4, 0, .2, 1) !important;
+                    will-change: opacity, transform;
+                }
+                /* Showing: quicker, with a soft settle at the end. */
+                .native-player-wrapper.controls-visible .player-control-dock {
+                    transition: opacity 200ms ease-out, transform 380ms cubic-bezier(.16, 1, .3, 1) !important;
+                }
+                @keyframes mre-icon-swap {
+                    from { opacity: 0; scale: .72; }
+                    to { opacity: 1; scale: 1; }
+                }
+                /* Icons that change state (play/pause, fullscreen, PiP) pop in when swapped. */
+                .native-player-wrapper .player-control-dock .player-control-button--primary svg,
+                .native-player-wrapper .player-control-dock .pip-toggle-btn svg,
+                .native-player-wrapper .player-control-dock .mre-fullscreen-button svg,
+                .native-player-wrapper .player-center-action svg {
+                    animation: mre-icon-swap 200ms cubic-bezier(.16, 1, .3, 1);
                 }
                 .native-player-wrapper .player-progress-track {
                     bottom: 62px !important;
@@ -1960,6 +1997,11 @@
                 }
                 .native-player-wrapper .player-control-dock .player-control-button--primary {
                     line-height: 0 !important;
+                }
+                /* Buttons have a fixed size; padding would shrink the content box below the glyph
+                   (26px Play, 22px icons at the 32px mobile size) and push it off-center. */
+                .native-player-wrapper .player-control-dock button.player-control-button {
+                    padding: 0 !important;
                 }
                 .native-player-wrapper .player-control-dock .player-control-button:hover {
                     color: #fff !important;
@@ -2435,8 +2477,8 @@
             bottomControls.style.alignItems = 'center';
             bottomControls.style.gap = '8px';
             bottomControls.style.opacity = '0';
-            bottomControls.style.transform = 'translateY(8px)';
-            bottomControls.style.transition = 'opacity 180ms ease, transform 180ms cubic-bezier(0.23, 1, 0.32, 1)';
+            bottomControls.style.transform = 'translateY(16px) scale(.985)';
+            bottomControls.style.transition = 'opacity 280ms cubic-bezier(0.4, 0, 0.2, 1), transform 340ms cubic-bezier(0.4, 0, 0.2, 1)';
             bottomControls.style.zIndex = '2147483625'; 
 
             // --- PROGRESS BAR WITH THUMBNAIL PREVIEW START ---
@@ -2767,7 +2809,7 @@
                 
                 // Update bottom controls
                 bottomControls.style.opacity = opacity;
-                bottomControls.style.transform = shouldShow ? 'translateY(0)' : 'translateY(8px)';
+                bottomControls.style.transform = shouldShow ? 'translateY(0) scale(1)' : 'translateY(16px) scale(.985)';
                 bottomControls.style.pointerEvents = shouldShow ? 'auto' : 'none';
                 
                 // Toggle class for CSS-based subtitle movement
@@ -2781,6 +2823,7 @@
                 // Update center button visibility
                 // Hide center button if loading
                 centerPlayBtn.style.opacity = (shouldShow && !isLoading) ? opacity : '0';
+                centerPlayBtn.style.scale = (shouldShow && !isLoading) ? '1' : '0.9';
 
                 // Also update top-left selector if needed (wrapper)
                 const voiceoverSelect = newContainer.querySelector('#nativeVoiceoverSelect')?.parentElement;
@@ -2882,14 +2925,14 @@
                 
                 if (currentVid.paused) {
                     // Bottom Btn: Play
-                    playPauseBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>';
+                    playPauseBtn.innerHTML = PLAYER_ICONS.play(32);
                     // Center Btn: Play (Large)
-                    centerPlayBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>';
+                    centerPlayBtn.innerHTML = PLAYER_ICONS.play(48);
                 } else {
                     // Bottom Btn: Pause
-                    playPauseBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="white"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
+                    playPauseBtn.innerHTML = PLAYER_ICONS.pause(32);
                     // Center Btn: Pause (Large)
-                    centerPlayBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="white"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
+                    centerPlayBtn.innerHTML = PLAYER_ICONS.pause(48);
                 }
             };
             
@@ -3237,8 +3280,8 @@
                 });
     
                 // Icons
-                prevEpisodeBtn.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
-                nextEpisodeBtn.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>';
+                prevEpisodeBtn.innerHTML = PLAYER_ICONS.prev;
+                nextEpisodeBtn.innerHTML = PLAYER_ICONS.next;
     
                 // Tooltips
                 const createTooltip = (text) => {
@@ -3761,9 +3804,9 @@
             const volumeBtn = document.createElement('button');
             volumeBtn.className = 'player-control-button mre-volume-button';
 
-            const volHighIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>';
-            const volLowIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>';
-            const volMuteIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>';
+            const volHighIcon = PLAYER_ICONS.volumeHigh;
+            const volLowIcon = PLAYER_ICONS.volumeLow;
+            const volMuteIcon = PLAYER_ICONS.volumeMute;
 
             const updateVolumeIcon = () => {
                 const currentVid = permanentVideo || video;
@@ -4006,7 +4049,7 @@
             // --- SUBTITLES BUTTON START ---
             const subtitlesBtn = document.createElement('button');
             subtitlesBtn.className = 'subtitles-toggle-btn player-control-button';
-            subtitlesBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="#ffffffff" width="32px" height="32px" viewBox="0 0 512 512"><title>subtitles</title><path d="M96 416Q82 416 73 407 64 398 64 384L64 128Q64 114 73 105 82 96 96 96L416 96Q430 96 439 105 448 114 448 128L448 384Q448 398 439 407 430 416 416 416L96 416ZM176 296L176 256 112 256 112 296 176 296ZM400 296L400 256 208 256 208 296 400 296ZM304 368L304 328 112 328 112 368 304 368ZM400 368L400 328 336 328 336 368 400 368Z"/></svg>`;
+            subtitlesBtn.innerHTML = PLAYER_ICONS.subtitles;
             subtitlesBtn.style.background = 'none';
             subtitlesBtn.style.border = 'none';
             subtitlesBtn.style.cursor = 'pointer';
@@ -4108,7 +4151,7 @@
             if (document.pictureInPictureEnabled) {
                 const pipBtn = document.createElement('button');
                 pipBtn.className = 'pip-toggle-btn player-control-button';
-                pipBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" x="0px" y="0px" viewBox="0 0 64 64" style="enable-background:new 0 0 64 64;" xml:space="preserve"><path fill="#ffffff" d="M55.156,30.219H33.781c-1.965,0-3.563,1.598-3.563,3.563v15.141c0,1.965,1.598,3.563,3.563,3.563h21.375  c1.965,0,3.563-1.598,3.563-3.563V33.781C58.719,31.817,57.121,30.219,55.156,30.219z M33.781,48.922V33.781h21.375l0.003,15.141  H33.781z"/><path fill="#ffffff" d="M27.851,17.139c-0.984,0-1.781,0.798-1.781,1.781v4.517l-5.776-5.776c-0.696-0.696-1.823-0.696-2.519,0  c-0.696,0.695-0.696,1.823,0,2.519l5.776,5.776h-4.517c-0.984,0-1.781,0.798-1.781,1.781c0,0.984,0.798,1.781,1.781,1.781h8.817  c0.117,0,0.234-0.012,0.349-0.035c0.053-0.01,0.102-0.03,0.153-0.045c0.06-0.018,0.121-0.032,0.18-0.056  c0.061-0.025,0.115-0.059,0.172-0.091c0.045-0.025,0.091-0.044,0.134-0.073c0.195-0.13,0.363-0.298,0.494-0.494  c0.03-0.044,0.05-0.093,0.075-0.139c0.03-0.055,0.064-0.109,0.088-0.167c0.025-0.06,0.039-0.122,0.057-0.183  c0.015-0.05,0.034-0.098,0.044-0.149c0.023-0.115,0.035-0.232,0.035-0.349V18.92C29.633,17.937,28.835,17.139,27.851,17.139z"/><path fill="#ffffff" d="M25.765,48.923H9.734c-0.491,0-0.891-0.399-0.891-0.891V15.969c0-0.491,0.399-0.891,0.891-0.891h44.531  c0.491,0,0.891,0.4,0.891,0.891v9.797c0,0.984,0.798,1.781,1.781,1.781c0.983,0,1.781-0.798,1.781-1.781v-9.797  c0.001-2.456-1.997-4.453-4.452-4.453H9.734c-2.455,0-4.453,1.998-4.453,4.453v32.063c0,2.455,1.998,4.453,4.453,4.453h16.031  c0.984,0,1.781-0.798,1.781-1.781C27.546,49.721,26.748,48.923,25.765,48.923z"/></svg>`;
+                pipBtn.innerHTML = PLAYER_ICONS.pip;
                 pipBtn.style.background = 'none';
                 pipBtn.style.border = 'none';
                 pipBtn.style.cursor = 'pointer';
@@ -4152,12 +4195,12 @@
                         pipBtn.style.color = '#f4f4f5';
                         pipBtn.style.opacity = '1';
                         // Ensure button stays visible/highlighted
-                        pipBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" x="0px" y="0px" viewBox="0 0 64 64" style="enable-background:new 0 0 64 64;" xml:space="preserve"><path fill="#ffffff" d="M55.156,30.219H33.781c-1.965,0-3.563,1.598-3.563,3.563v15.141c0,1.965,1.598,3.563,3.563,3.563h21.375  c1.965,0,3.563-1.598,3.563-3.563V33.781C58.719,31.817,57.121,30.219,55.156,30.219z M33.781,48.922V33.781h21.375l0.003,15.141  H33.781z"/><path fill="#ffffff" d="M27.851,17.139c-0.984,0-1.781,0.798-1.781,1.781v4.517l-5.776-5.776c-0.696-0.696-1.823-0.696-2.519,0  c-0.696,0.695-0.696,1.823,0,2.519l5.776,5.776h-4.517c-0.984,0-1.781,0.798-1.781,1.781c0,0.984,0.798,1.781,1.781,1.781h8.817  c0.117,0,0.234-0.012,0.349-0.035c0.053-0.01,0.102-0.03,0.153-0.045c0.06-0.018,0.121-0.032,0.18-0.056  c0.061-0.025,0.115-0.059,0.172-0.091c0.045-0.025,0.091-0.044,0.134-0.073c0.195-0.13,0.363-0.298,0.494-0.494  c0.03-0.044,0.05-0.093,0.075-0.139c0.03-0.055,0.064-0.109,0.088-0.167c0.025-0.06,0.039-0.122,0.057-0.183  c0.015-0.05,0.034-0.098,0.044-0.149c0.023-0.115,0.035-0.232,0.035-0.349V18.92C29.633,17.937,28.835,17.139,27.851,17.139z"/><path fill="#ffffff" d="M25.765,48.923H9.734c-0.491,0-0.891-0.399-0.891-0.891V15.969c0-0.491,0.399-0.891,0.891-0.891h44.531  c0.491,0,0.891,0.4,0.891,0.891v9.797c0,0.984,0.798,1.781,1.781,1.781c0.983,0,1.781-0.798,1.781-1.781v-9.797  c0.001-2.456-1.997-4.453-4.452-4.453H9.734c-2.455,0-4.453,1.998-4.453,4.453v32.063c0,2.455,1.998,4.453,4.453,4.453h16.031  c0.984,0,1.781-0.798,1.781-1.781C27.546,49.721,26.748,48.923,25.765,48.923z"/></svg>`;
+                        pipBtn.innerHTML = PLAYER_ICONS.pipActive;
                         postToHost({ type: 'PIP_ENTER' });
                     } else {
                         pipBtn.style.color = 'white';
                         pipBtn.style.opacity = '0.7';
-                        pipBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" x="0px" y="0px" viewBox="0 0 64 64" style="enable-background:new 0 0 64 64;" xml:space="preserve"><path fill="#ffffff" d="M55.156,30.219H33.781c-1.965,0-3.563,1.598-3.563,3.563v15.141c0,1.965,1.598,3.563,3.563,3.563h21.375  c1.965,0,3.563-1.598,3.563-3.563V33.781C58.719,31.817,57.121,30.219,55.156,30.219z M33.781,48.922V33.781h21.375l0.003,15.141  H33.781z"/><path fill="#ffffff" d="M27.851,17.139c-0.984,0-1.781,0.798-1.781,1.781v4.517l-5.776-5.776c-0.696-0.696-1.823-0.696-2.519,0  c-0.696,0.695-0.696,1.823,0,2.519l5.776,5.776h-4.517c-0.984,0-1.781,0.798-1.781,1.781c0,0.984,0.798,1.781,1.781,1.781h8.817  c0.117,0,0.234-0.012,0.349-0.035c0.053-0.01,0.102-0.03,0.153-0.045c0.06-0.018,0.121-0.032,0.18-0.056  c0.061-0.025,0.115-0.059,0.172-0.091c0.045-0.025,0.091-0.044,0.134-0.073c0.195-0.13,0.363-0.298,0.494-0.494  c0.03-0.044,0.05-0.093,0.075-0.139c0.03-0.055,0.064-0.109,0.088-0.167c0.025-0.06,0.039-0.122,0.057-0.183  c0.015-0.05,0.034-0.098,0.044-0.149c0.023-0.115,0.035-0.232,0.035-0.349V18.92C29.633,17.937,28.835,17.139,27.851,17.139z"/><path fill="#ffffff" d="M25.765,48.923H9.734c-0.491,0-0.891-0.399-0.891-0.891V15.969c0-0.491,0.399-0.891,0.891-0.891h44.531  c0.491,0,0.891,0.4,0.891,0.891v9.797c0,0.984,0.798,1.781,1.781,1.781c0.983,0,1.781-0.798,1.781-1.781v-9.797  c0.001-2.456-1.997-4.453-4.452-4.453H9.734c-2.455,0-4.453,1.998-4.453,4.453v32.063c0,2.455,1.998,4.453,4.453,4.453h16.031  c0.984,0,1.781-0.798,1.781-1.781C27.546,49.721,26.748,48.923,25.765,48.923z"/></svg>`;
+                        pipBtn.innerHTML = PLAYER_ICONS.pip;
                         postToHost({ type: 'PIP_EXIT' });
                     }
                 };
@@ -4188,7 +4231,7 @@
             // Settings Button (User Provided)
             const settingsBtn = document.createElement('button');
             settingsBtn.className = 'player-control-button';
-            settingsBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24px" height="24px" viewBox="0 0 512 512"><title>ionicons-v5-q</title><path d="M262.29,192.31a64,64,0,1,0,57.4,57.4A64.13,64.13,0,0,0,262.29,192.31ZM416.39,256a154.34,154.34,0,0,1-1.53,20.79l45.21,35.46A10.81,10.81,0,0,1,462.52,326l-42.77,74a10.81,10.81,0,0,1-13.14,4.59l-44.9-18.08a16.11,16.11,0,0,0-15.17,1.75A164.48,164.48,0,0,1,325,400.8a15.94,15.94,0,0,0-8.82,12.14l-6.73,47.89A11.08,11.08,0,0,1,298.77,470H213.23a11.11,11.11,0,0,1-10.69-8.87l-6.72-47.82a16.07,16.07,0,0,0-9-12.22,155.3,155.3,0,0,1-21.46-12.57,16,16,0,0,0-15.11-1.71l-44.89,18.07a10.81,10.81,0,0,1-13.14-4.58l-42.77-74a10.8,10.8,0,0,1,2.45-13.75l38.21-30a16.05,16.05,0,0,0,6-14.08c-.36-4.17-.58-8.33-.58-12.5s.21-8.27.58-12.35a16,16,0,0,0-6.07-13.94l-38.19-30A10.81,10.81,0,0,1,49.48,186l42.77-74a10.81,10.81,0,0,1,13.14-4.59l44.9,18.08a16.11,16.11,0,0,0,15.17-1.75A164.48,164.48,0,0,1,187,111.2a15.94,15.94,0,0,0,8.82-12.14l6.73-47.89A11.08,11.08,0,0,1,213.23,42h85.54a11.11,11.11,0,0,1,10.69,8.87l6.72,47.82a16.07,16.07,0,0,0,9,12.22,155.3,155.3,0,0,1,21.46,12.57,16,16,0,0,0,15.11,1.71l44.89-18.07a10.81,10.81,0,0,1,13.14,4.58l42.77,74a10.8,10.8,0,0,1-2.45,13.75l-38.21,30a16.05,16.05,0,0,0-6.05,14.08C416.17,247.67,416.39,251.83,416.39,256Z" style="fill:none;stroke:#ffffff;stroke-linecap:round;stroke-linejoin:round;stroke-width:32px"/></svg>`;
+            settingsBtn.innerHTML = PLAYER_ICONS.settings;
             settingsBtn.style.background = 'none';
             settingsBtn.style.border = 'none';
             settingsBtn.style.cursor = 'pointer';
@@ -4827,7 +4870,7 @@
 
             // Fullscreen Button
             const fullscreenBtn = document.createElement('button');
-            fullscreenBtn.className = 'player-control-button';
+            fullscreenBtn.className = 'player-control-button mre-fullscreen-button';
             fullscreenBtn.style.background = 'none';
             fullscreenBtn.style.border = 'none';
             fullscreenBtn.style.cursor = 'pointer';
@@ -4836,9 +4879,9 @@
             
             const updateFullIcon = () => {
                 if (document.fullscreenElement) {
-                     fullscreenBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" fill="#ffffffff" height="24px" width="24px" version="1.1" id="Layer_1" viewBox="0 0 512 512" xml:space="preserve"><g><g><g><path d="M505.752,6.248c-8.331-8.331-21.839-8.331-30.17,0L320,161.83V64c0-11.782-9.551-21.333-21.333-21.333     c-11.782,0-21.333,9.551-21.333,21.333v149.333c0,0.007,0.001,0.015,0.001,0.022c0.001,0.695,0.037,1.39,0.105,2.083     c0.031,0.318,0.091,0.627,0.136,0.94c0.054,0.375,0.098,0.75,0.171,1.122c0.071,0.359,0.17,0.708,0.259,1.061     c0.081,0.322,0.151,0.645,0.248,0.964c0.105,0.346,0.234,0.68,0.356,1.018c0.114,0.318,0.219,0.639,0.349,0.953     c0.131,0.316,0.284,0.618,0.43,0.926c0.152,0.323,0.296,0.649,0.465,0.966c0.158,0.295,0.338,0.575,0.509,0.861     c0.186,0.311,0.361,0.626,0.564,0.929c0.211,0.316,0.447,0.613,0.674,0.917c0.19,0.253,0.365,0.513,0.568,0.759     c0.892,1.087,1.889,2.085,2.977,2.977c0.246,0.202,0.506,0.378,0.759,0.568c0.304,0.228,0.601,0.463,0.917,0.674     c0.303,0.203,0.618,0.379,0.929,0.564c0.286,0.171,0.566,0.351,0.861,0.509c0.317,0.169,0.643,0.313,0.966,0.465     c0.308,0.145,0.611,0.299,0.926,0.43c0.314,0.13,0.635,0.235,0.953,0.349c0.338,0.122,0.672,0.251,1.018,0.356     c0.318,0.096,0.642,0.167,0.964,0.248c0.353,0.089,0.701,0.188,1.061,0.259c0.372,0.074,0.748,0.118,1.122,0.171     c0.314,0.045,0.622,0.104,0.94,0.136c0.693,0.068,1.388,0.105,2.083,0.105c0.007,0,0.015,0.001,0.022,0.001H448     c11.782,0,21.333-9.551,21.333-21.333c0-11.782-9.551-21.333-21.333-21.333h-97.83L505.752,36.418     C514.083,28.087,514.083,14.58,505.752,6.248z"/><path d="M234.56,296.562c-0.031-0.318-0.091-0.627-0.136-0.94c-0.054-0.375-0.098-0.75-0.171-1.122     c-0.071-0.359-0.17-0.708-0.259-1.061c-0.081-0.322-0.151-0.645-0.248-0.964c-0.105-0.346-0.234-0.68-0.356-1.018     c-0.114-0.318-0.219-0.639-0.349-0.953c-0.131-0.316-0.284-0.618-0.43-0.926c-0.152-0.323-0.296-0.649-0.465-0.966     c-0.158-0.295-0.338-0.575-0.509-0.861c-0.186-0.311-0.361-0.626-0.564-0.929c-0.211-0.316-0.447-0.613-0.674-0.917     c-0.19-0.253-0.365-0.513-0.568-0.759c-0.892-1.087-1.889-2.085-2.977-2.977c-0.246-0.202-0.506-0.378-0.759-0.568     c-0.304-0.228-0.601-0.463-0.917-0.674c-0.303-0.203-0.618-0.379-0.929-0.564c-0.286-0.171-0.566-0.351-0.861-0.509     c-0.317-0.169-0.643-0.313-0.966-0.465c-0.308-0.145-0.611-0.299-0.926-0.43c-0.314-0.13-0.635-0.235-0.953-0.349     c-0.338-0.122-0.672-0.251-1.018-0.356c-0.318-0.096-0.642-0.167-0.964-0.248c-0.353-0.089-0.701-0.188-1.061-0.259     c-0.372-0.074-0.748-0.118-1.122-0.171c-0.314-0.045-0.622-0.104-0.94-0.136c-0.7-0.069-1.402-0.106-2.105-0.106l0,0H64     c-11.782,0-21.333,9.551-21.333,21.333C42.667,310.449,52.218,320,64,320h97.83L6.248,475.582c-8.331,8.331-8.331,21.839,0,30.17     c8.331,8.331,21.839,8.331,30.17,0L192,350.17V448c0,11.782,9.551,21.333,21.333,21.333c11.782,0,21.333-9.551,21.333-21.333     V298.667l0,0C234.667,297.964,234.629,297.262,234.56,296.562z"/></g></g></g></svg>'; // Exit (approx)
+                     fullscreenBtn.innerHTML = PLAYER_ICONS.fullscreenExit; // Exit (approx)
                 } else {
-                     fullscreenBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24px" height="24px" viewBox="0 0 24 24" fill="none"><path d="M3 21L10.5 13.5M3 21V15.4M3 21H8.6" stroke="#ffffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M21.0711 3L13.5 10.5M21.0711 3V8.65685M21.0711 3H15.4142" stroke="#ffffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'; // Enter
+                     fullscreenBtn.innerHTML = PLAYER_ICONS.fullscreen; // Enter
                 }
             };
             updateFullIcon();
