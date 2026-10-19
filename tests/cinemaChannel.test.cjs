@@ -81,3 +81,14 @@ test('a viewer with a wrong computer clock still lands on the server-time positi
         global.fetch = realFetch;
     }
 });
+
+test('fallback relay: signaling rules keep offers admin-only and docs small', () => {
+    const rules = fs.readFileSync(path.join(__dirname, '../rules/firestore.rules'), 'utf8');
+    assert.match(rules, /match \/liveRelay\/\{docId\}/);
+    assert.match(rules, /request\.resource\.data\.state in \['request', 'answered'\]/);
+    assert.match(rules, /allow delete: if isAdmin\(\) \|\| \(isAuthenticated\(\) && request\.auth\.uid == viewerId\)/);
+    const { isValidSdp } = require('../src/shared/services/LiveRelayService.js');
+    assert.equal(isValidSdp({ type: 'offer', sdp: 'v=0' }, 'offer'), true);
+    assert.equal(isValidSdp({ type: 'answer', sdp: 'v=0' }, 'offer'), false);
+    assert.equal(isValidSdp({ type: 'offer', sdp: 'x'.repeat(300_000) }, 'offer'), false);
+});

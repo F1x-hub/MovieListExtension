@@ -21,6 +21,12 @@
     // YouTube wrapper telemetry for the mounted frame.
     const yt = { origin: '', time: 0, at: 0, state: 'UNSTARTED', muted: false, lastCommandAt: 0, mountedAt: 0, forcedMute: false };
 
+    // Fallback relay (WebRTC from the admin's tab) for viewers whose sources fail.
+    const AUTO_RELAY_AFTER_MS = 45000;
+    const relay = { status: { active: false, sessionId: '' }, service: null, host: null, viewer: null, watching: false, video: null, sourceFailed: false };
+    let mediaMountedAt = 0;
+    let playbackConfirmed = false;
+
     function ensureNavigation() {
         if (window.navigation && typeof window.navigation.updateActivePage === 'function') {
             window.navigation.updateActivePage('live');
@@ -95,8 +101,13 @@
     }
 
     function mountMedia(force = false) {
+        // While a viewer watches the admin's relay, the relay is the picture.
+        if (relay.watching) return;
         const key = channelKey(channel);
         if (!force && key === mountedKey) return;
+        mediaMountedAt = Date.now();
+        playbackConfirmed = false;
+        relay.sourceFailed = false;
         const { CinemaChannel } = window;
         const position = CinemaChannel.computePosition(channel);
 
@@ -219,16 +230,27 @@
             else if (data.event === 'STATE_CHANGE' && payload.state === 'PLAYING' && previousState === 'PAUSED') publishAdminAction('resume', yt.time);
             else if (Math.abs(yt.time - expected) > DRIFT_SEC && previousState === 'PLAYING') publishAdminAction('seek', yt.time);
         }
-        if (data.event === 'TIME_UPDATE') yt.state = 'PLAYING';
+        if (data.event === 'TIME_UPDATE') { yt.state = 'PLAYING'; playbackConfirmed = true; }
         if (data.event === 'READY') yt.state = yt.state === 'UNSTARTED' ? 'CUED' : yt.state;
         if (data.event === 'ERROR') {
-            els.notice.hidden = false;
-            els.notice.textContent = 'YouTube не даёт показать это видео на сторонних сайтах. Админу стоит выбрать другой ролик.';
+            relay.sourceFailed = true;
+            if (!maybeAutoRelay()) {
+                els.notice.hidden = false;
+                els.notice.textContent = 'YouTube не даёт показать это видео здесь. Если ведущий включит трансляцию, вы подключитесь к ней автоматически.';
+            }
         }
     }
 
     // ---- Sound / fullscreen ----------------------------------------------------
     function renderSound() {
+        if (relay.watching) {
+            const muted = relay.video?.muted !== false;
+            els.sound.hidden = false;
+            els.sound.textContent = muted ? 'Включить звук' : 'Выключить звук';
+            els.sound.classList.toggle('btn-primary', muted);
+            els.sound.classList.toggle('btn-secondary', !muted);
+            return;
+        }
         const isYoutube = channel?.mode === 'youtube';
         els.sound.hidden = !isYoutube || els.stage.hidden;
         els.sound.textContent = yt.muted ? 'Включить звук' : 'Выключить звук';
@@ -237,6 +259,12 @@
     }
 
     function toggleSound() {
+        if (relay.watching && relay.video) {
+            relay.video.muted = !relay.video.muted;
+            if (!relay.video.muted) relay.video.play().catch(() => {});
+            renderSound();
+            return;
+        }
         yt.muted = !yt.muted;
         ytCommand(yt.muted ? 'MUTE' : 'UNMUTE');
         renderSound();
@@ -248,6 +276,123 @@
         } else {
             els.stage.requestFullscreen?.().catch(() => {});
         }
+    }
+
+    // ---- Fallback relay --------------------------------------------------------
+    function renderRelayButtons() {
+        const on = relay.status.active;
+        els.relayHost.hidden = !isAdmin || !relay.service || !channel || channel.mode === 'off';
+        if (!els.relayHost.hidden) {
+            const viewers = relay.host ? relay.host.viewerCount() : 0;
+            els.relayHost.textContent = relay.host ? `Остановить трансляцию · зрителей: ${viewers}` : 'Транслировать мою вкладку';
+            els.relayHost.classList.toggle('btn-primary', Boolean(relay.host));
+            els.relayHost.classList.toggle('btn-secondary', !relay.host);
+        }
+        els.relayWatch.hidden = isAdmin || !on;
+        els.relayWatch.textContent = relay.watching ? 'Вернуться к источнику' : 'Смотреть трансляцию ведущего';
+    }
+
+    async function toggleHosting() {
+        if (!relay.service) return;
+        if (relay.host) {
+            const host = relay.host;
+            relay.host = null;
+            await host.stop();
+            renderRelayButtons();
+            return;
+        }
+        if (!navigator.mediaDevices?.getDisplayMedia) {
+            Utils?.showToast?.('Этот браузер не умеет транслировать вкладку', 'error');
+            return;
+        }
+        try {
+            // Capture this tab (the player is on it) with its sound.
+            const stream = await navigator.mediaDevices.getDisplayMedia({
+                video: { frameRate: { ideal: 30, max: 30 }, height: { ideal: 720, max: 1080 } },
+                audio: { suppressLocalAudioPlayback: false },
+                preferCurrentTab: true,
+                selfBrowserSurface: 'include',
+                surfaceSwitching: 'exclude',
+                systemAudio: 'include'
+            });
+            relay.host = await relay.service.startHosting(stream, { onViewersChange: renderRelayButtons });
+            stream.getVideoTracks()[0]?.addEventListener('ended', () => { relay.host = null; renderRelayButtons(); });
+            Utils?.showToast?.('Трансляция включена. Не закрывайте и не сворачивайте эту вкладку.', 'success', 5000);
+        } catch (error) {
+            if (error?.name !== 'NotAllowedError') {
+                console.warn('[Live] Could not start the relay:', error);
+                Utils?.showToast?.(error?.code === 'permission-denied' ? 'Транслировать может только администратор' : 'Не удалось начать трансляцию', 'error');
+            }
+        }
+        renderRelayButtons();
+    }
+
+    async function enterRelay({ auto = false } = {}) {
+        if (relay.watching || !relay.status.active || !relay.service || isAdmin) return;
+        relay.watching = true;
+        const video = document.createElement('video');
+        video.className = 'live-relay-video';
+        video.autoplay = true;
+        video.playsInline = true;
+        relay.video = video;
+        els.empty.hidden = true;
+        els.stage.hidden = false;
+        els.screen.classList.remove('live-screen--movie');
+        els.screen.replaceChildren(video);
+        mountedKey = 'relay';
+        els.notice.hidden = false;
+        els.notice.textContent = auto
+            ? 'Источник недоступен у вас — подключаемся к трансляции ведущего…'
+            : 'Подключаемся к трансляции ведущего…';
+        try {
+            relay.viewer = await relay.service.join(relay.status.sessionId, {
+                onStream: stream => {
+                    video.srcObject = stream;
+                    video.play().catch(() => {
+                        video.muted = true;
+                        video.play().catch(() => {});
+                        els.notice.textContent = 'Трансляция идёт без звука — нажмите «Включить звук».';
+                        renderSound();
+                    });
+                    if (!video.muted) els.notice.hidden = true;
+                    renderSound();
+                },
+                onState: state => {
+                    if (state === 'failed') {
+                        els.notice.hidden = false;
+                        els.notice.textContent = 'Не удалось соединиться с ведущим (сеть блокирует прямое подключение).';
+                    }
+                }
+            });
+        } catch (error) {
+            console.warn('[Live] Could not join the relay:', error);
+            els.notice.hidden = false;
+            els.notice.textContent = error?.message || 'Не удалось подключиться к трансляции ведущего.';
+        }
+        renderRelayButtons();
+        renderSound();
+    }
+
+    async function leaveRelay() {
+        if (!relay.watching) return;
+        relay.watching = false;
+        const viewer = relay.viewer;
+        relay.viewer = null;
+        relay.video = null;
+        await viewer?.leave();
+        els.notice.hidden = true;
+        mountedKey = '';
+        if (channel) mountMedia(true);
+        renderRelayButtons();
+    }
+
+    /** Switch a stuck or failing viewer to the relay. Returns true when it did. */
+    function maybeAutoRelay() {
+        if (isAdmin || relay.watching || !relay.status.active || !channel || channel.mode === 'off') return false;
+        const stuck = !playbackConfirmed && mediaMountedAt && Date.now() - mediaMountedAt > AUTO_RELAY_AFTER_MS;
+        if (!relay.sourceFailed && !stuck) return false;
+        enterRelay({ auto: true });
+        return true;
     }
 
     // ---- Clock & status --------------------------------------------------------
@@ -277,6 +422,8 @@
         }
 
         enforceYoutube(position);
+        renderRelayButtons();
+        if (position.state === 'live' || position.state === 'paused') maybeAutoRelay();
 
         // Switch screens when the broadcast starts or runs past its duration.
         if ((position.state === 'live' && (mountedKey.startsWith('upcoming:') || mountedKey.startsWith('ended:')))
@@ -356,17 +503,22 @@
 
     async function start() {
         ['liveBadge', 'liveBadgeText', 'liveTitle', 'liveSubtitle', 'liveClock', 'liveStage', 'liveScreen', 'liveEmpty',
-            'liveEmptyTitle', 'liveEmptyText', 'liveSoundBtn', 'liveFullscreenBtn', 'liveNotice']
+            'liveEmptyTitle', 'liveEmptyText', 'liveSoundBtn', 'liveFullscreenBtn', 'liveNotice', 'liveRelayHostBtn', 'liveRelayWatchBtn']
             .forEach(id => { els[id.replace(/^live/, '').replace(/^./, c => c.toLowerCase())] = document.getElementById(id); });
         els.sound = els.soundBtn;
         els.fullscreen = els.fullscreenBtn;
+        els.relayHost = els.relayHostBtn;
+        els.relayWatch = els.relayWatchBtn;
 
         ensureNavigation();
         els.sound.addEventListener('click', toggleSound);
         els.fullscreen.addEventListener('click', toggleFullscreen);
+        els.relayHost.addEventListener('click', toggleHosting);
+        els.relayWatch.addEventListener('click', () => (relay.watching ? leaveRelay() : enterRelay()));
         window.addEventListener('message', event => {
             if (event.origin === window.location.origin && event.source === frameEl()?.contentWindow) {
                 if (event.data?.type === 'BROADCAST_READY') postBroadcastState();
+                if (event.data?.type === 'BROADCAST_PLAYING') playbackConfirmed = true;
                 if (event.data?.type === 'BROADCAST_ADMIN_ACTION' && ['pause', 'resume', 'seek'].includes(event.data.action)) {
                     publishAdminAction(event.data.action, event.data.atSec);
                 }
@@ -402,6 +554,19 @@
         try {
             const manager = await waitForFirebase();
             service = new window.CinemaChannelService(manager);
+            if (window.LiveRelayService && typeof RTCPeerConnection === 'function') {
+                relay.service = new window.LiveRelayService(manager);
+                // Signed-out viewers cannot read relay status; they simply never see it.
+                manager.waitForAuthReady?.(4000).then(user => {
+                    if (!user) return;
+                    relay.service.subscribeStatus(status => {
+                        relay.status = status;
+                        if (!status.active && relay.watching) leaveRelay();
+                        renderRelayButtons();
+                        maybeAutoRelay();
+                    }, error => console.warn('[Live] Relay status unavailable:', error));
+                });
+            }
             detectAdmin(manager);
             unsubscribe = service.subscribe(next => {
                 clearTimeout(stallTimer);
@@ -424,6 +589,8 @@
         window.addEventListener('pagehide', () => {
             clearInterval(clockTimer);
             unsubscribe?.();
+            relay.host?.stop();
+            relay.viewer?.leave();
         }, { once: true });
     }
 
