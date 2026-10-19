@@ -214,7 +214,7 @@ body.player-modal-open {
 
 .watch-room-members-popover__list {
     display: grid;
-    gap: 5px;
+    gap: 4px;
     margin: 0;
     padding: 0;
     list-style: none;
@@ -223,7 +223,7 @@ body.player-modal-open {
 .watch-room-member {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: 8px;
     min-width: 0;
     color: var(--theme-text-primary);
     font-size: 12px;
@@ -261,7 +261,7 @@ body.player-modal-open {
     padding: 3px 6px;
     color: var(--theme-text-secondary);
     font: inherit;
-    font-size: 10px;
+    font-size: 11px;
     white-space: nowrap;
     background: transparent;
     border: 1px solid var(--theme-border);
@@ -569,7 +569,7 @@ body.player-modal-open {
 }
 
 .video-modal .player-source-lifecycle__action {
-    padding: 8px 13px;
+    padding: 8px 12px;
     color: var(--theme-text-primary);
     background: rgba(255, 255, 255, 0.06);
     border: 1px solid var(--theme-border-hover);
@@ -595,7 +595,7 @@ body.player-modal-open {
     flex: 0 0 auto;
     gap: 8px;
     min-height: 50px;
-    padding: 6px 7px;
+    padding: 6px 8px;
     background: rgba(255, 255, 255, 0.035);
     border: 1px solid var(--theme-border);
     border-radius: 14px;
@@ -725,7 +725,7 @@ body.player-modal-open {
     background-color: transparent;
     color: var(--theme-text-secondary);
     border: 1px solid var(--theme-border);
-    padding: 7px 13px 7px 26px;
+    padding: 8px 12px 8px 26px;
     border-radius: 10px;
     font-size: 13px;
     font-weight: 500;
@@ -965,7 +965,7 @@ body.player-modal-open {
 
 .video-container .player-control-dock {
     min-height: 52px;
-    padding: 7px 10px !important;
+    padding: 8px 10px !important;
     gap: 8px !important;
     background: rgba(18, 18, 20, 0.76) !important;
     border: 1px solid rgba(255, 255, 255, 0.1) !important;
@@ -1108,14 +1108,14 @@ body.player-modal-open {
         left: 8px !important;
         bottom: 8px !important;
         width: calc(100% - 16px) !important;
-        padding: 5px 7px !important;
+        padding: 4px 8px !important;
         gap: 3px !important;
     }
 
     .video-container .player-control-dock .player-control-button {
         width: 32px !important;
         height: 32px !important;
-        padding: 5px !important;
+        padding: 4px !important;
     }
 
     .video-container .player-controls-group {
@@ -1162,7 +1162,7 @@ body.player-modal-open {
     left: 0;
     width: 100%;
     background: linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0));
-    padding: 40px 15px 15px;
+    padding: 40px 16px 16px;
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -1223,7 +1223,7 @@ body.player-modal-open {
 .controls-left, .controls-right {
     display: flex;
     align-items: center;
-    gap: 15px;
+    gap: 16px;
 }
 
 .control-btn {
@@ -1667,7 +1667,7 @@ body.player-modal-open {
     width: 320px;
     max-width: calc(100% - 32px);
     max-height: 420px;
-    z-index: 1000;
+    z-index: var(--z-dropdown, 1000);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -1810,7 +1810,7 @@ body.player-modal-open {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 5px 12px;
+    padding: 4px 12px;
     font-size: 12px;
     font-weight: 550;
     white-space: nowrap;
@@ -1949,7 +1949,7 @@ body.player-modal-open {
     position: absolute;
     top: 2px;
     right: 4px;
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 700;
     line-height: 1;
     color: var(--ui-color-content-muted);

@@ -58,7 +58,7 @@
 }
 
 .favorites-count {
-    color: #6b7280;
+    color: var(--theme-text-secondary);
     font-size: 1.1rem;
     margin-top: 10px;
 }
@@ -129,7 +129,7 @@
     background: rgba(255, 255, 255, 0.05);
     color: var(--text-primary);
     font-size: 14px;
-    transition: all 0.3s ease;
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, opacity 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease, filter 0.3s ease;
 }
 
 .search-input:focus {
@@ -211,7 +211,7 @@
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.3s ease;
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, opacity 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease, filter 0.3s ease;
     z-index: 10;
     font-size: 20px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
@@ -343,7 +343,7 @@
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.3s ease;
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, opacity 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease, filter 0.3s ease;
 }
 
 .empty-state-btn:hover {
@@ -379,18 +379,19 @@
 
 .error-state-btn {
     padding: 12px 24px;
-    background: rgba(255, 255, 255, 0.1);
-    color: var(--text-primary);
+    background: var(--ui-button-primary-bg);
+    color: var(--ui-button-primary-content);
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: var(--radius-md);
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.3s ease;
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, opacity 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease, filter 0.3s ease;
 }
 
 .error-state-btn:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--ui-button-primary-bg-hover);
+    color: var(--ui-button-primary-content-hover);
 }
 
 /* Limit Modal */
@@ -682,4 +683,8 @@
 
 .light-theme *:focus {
     outline-color: var(--theme-stat-color);
+}
+
+.light-theme .favorites-count .current {
+    color: #b91c1c;
 }

@@ -153,7 +153,7 @@
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 9px 18px;
+    padding: 8px 18px;
     background: var(--theme-bg-secondary);
     border: 1px solid var(--theme-border-hover);
     border-radius: var(--radius-lg);
@@ -228,7 +228,7 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 5px 12px;
+    padding: 4px 12px;
     background: var(--theme-bg-card);
     border: 1px solid var(--theme-border);
     border-radius: 9999px;
@@ -439,7 +439,7 @@
 }
 
 .dashboard-section-subtitle {
-    margin: 5px 0 0;
+    margin: 4px 0 0;
     color: var(--theme-text-muted);
     font-size: 0.8rem;
     line-height: 1.4;
@@ -466,9 +466,9 @@
     z-index: 1;
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
     flex-shrink: 0;
-    padding: 7px 10px;
+    padding: 8px 10px;
     border: 1px solid var(--theme-border);
     border-radius: var(--radius-md);
     color: var(--theme-text-secondary);
@@ -657,7 +657,7 @@
 .taste-genres {
     display: flex;
     flex-wrap: wrap;
-    gap: 7px;
+    gap: 8px;
 }
 
 .taste-genre-chip {
@@ -849,7 +849,7 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 7px 14px;
+    padding: 8px 14px;
     background: transparent;
     border: 1px solid var(--theme-border);
     border-radius: var(--radius-lg);
@@ -976,7 +976,7 @@
 .recent-rating-card .genres {
     font-size: 0.8rem;
     color: var(--theme-text-secondary);
-    margin-bottom: 5px;
+    margin-bottom: 4px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -993,7 +993,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 5px;
+    gap: 4px;
     min-width: 62px;
     height: 34px;
     padding: 0 10px;
@@ -1123,7 +1123,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 10000;
+    z-index: var(--z-modal, 10000);
     padding: 20px;
     opacity: 1;
     animation: none;
@@ -1705,7 +1705,7 @@
     color: var(--theme-text-primary);
     font-size: 0.9rem;
     font-weight: 500;
-    z-index: 10001;
+    z-index: calc(var(--z-modal, 10000) + 1);
     animation: toastEnter 220ms var(--ease-out) forwards;
 }
 
@@ -1789,7 +1789,7 @@
     }
 }
 
-@media (max-width: 680px) {
+@media (max-width: 640px) {
     :root {
         --profile-cover-height: 180px;
         --profile-avatar-size: 100px;
@@ -1837,7 +1837,7 @@
     }
     
     .btn-profile-action {
-        padding: 7px 14px;
+        padding: 8px 14px;
         font-size: 0.8rem;
     }
     

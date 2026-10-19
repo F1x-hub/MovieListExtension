@@ -83,8 +83,15 @@
             </div>
 
             <!-- Loading State -->
-            <div class="loading-section app-loader app-loader--page" id="loadingSection" role="status" aria-live="polite">
-                <div class="app-loader__indicator" aria-hidden="true"></div>
+            <div class="loading-section app-loader app-loader--page app-loader--skeleton" id="loadingSection" role="status" aria-live="polite">
+                <div class="skeleton-grid" aria-hidden="true">
+                    <div class="skeleton-card"><div class="skeleton-card__poster"></div><div class="skeleton-card__lines"><span></span><span></span><span></span></div></div>
+                    <div class="skeleton-card"><div class="skeleton-card__poster"></div><div class="skeleton-card__lines"><span></span><span></span><span></span></div></div>
+                    <div class="skeleton-card"><div class="skeleton-card__poster"></div><div class="skeleton-card__lines"><span></span><span></span><span></span></div></div>
+                    <div class="skeleton-card"><div class="skeleton-card__poster"></div><div class="skeleton-card__lines"><span></span><span></span><span></span></div></div>
+                    <div class="skeleton-card"><div class="skeleton-card__poster"></div><div class="skeleton-card__lines"><span></span><span></span><span></span></div></div>
+                    <div class="skeleton-card"><div class="skeleton-card__poster"></div><div class="skeleton-card__lines"><span></span><span></span><span></span></div></div>
+                </div>
                 <p class="app-loader__label">Loading your favorites...</p>
             </div>
 
@@ -249,6 +256,7 @@
     <!-- Components -->
     <script defer src="../../shared/components/MovieCard.js"></script>
     <script defer src="../../shared/components/BackToTop.js"></script>
+    <script defer src="../../shared/components/ConfirmDialog.js"></script>
     <script defer src="../../shared/components/Navigation.js"></script>
     <script defer src="../../shared/components/Router.js"></script>
 

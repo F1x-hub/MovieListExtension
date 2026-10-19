@@ -119,7 +119,6 @@ class AdminPanelManager {
 
             // Bind controls before network work so the shell never becomes inert
             this.setupEventListeners();
-            await this.setupProPlayerPreference();
             console.timeEnd('[Admin Perf] 4. UI & Event Setup');
 
             console.time('[Admin Perf] 5. Load Data Sequentially');
@@ -1801,33 +1800,6 @@ class AdminPanelManager {
         this.userToDelete = null;
     }
 
-    async setupProPlayerPreference() {
-        const toggle = document.getElementById('proPlayerEnabled');
-        const status = document.getElementById('proPlayerStatus');
-        if (!toggle || !status || !this.isAdmin || !window.ProPlayerPreferences) return;
-        toggle.checked = await window.ProPlayerPreferences.isEnabled();
-        toggle.disabled = !this.isAdmin;
-        toggle.addEventListener('change', async () => {
-            if (!this.isAdmin || this.proPlayerSavePending) return;
-            this.proPlayerSavePending = true;
-            toggle.disabled = true;
-            const desired = toggle.checked;
-            try {
-                await window.ProPlayerPreferences.setEnabled(desired);
-                status.textContent = desired ? '«Смотреть» включено в этом браузере.' : '«Смотреть» выключено.';
-            } catch {
-                toggle.checked = await window.ProPlayerPreferences.isEnabled();
-                status.textContent = 'Не удалось сохранить настройку. Повторите попытку.';
-            } finally {
-                this.proPlayerSavePending = false;
-                toggle.disabled = !this.isAdmin;
-            }
-        });
-        this.proPlayerUnsubscribe?.();
-        this.proPlayerUnsubscribe = window.ProPlayerPreferences.subscribe(enabled => { toggle.checked = enabled; });
-        window.addEventListener('pagehide', () => this.proPlayerUnsubscribe?.(), { once: true });
-    }
-
     setupEventListeners() {
         // Listen for auth state changes (e.g. user logged out from popup or another tab)
         window.addEventListener('authStateChanged', async (e) => {
@@ -2245,9 +2217,6 @@ class AdminPanelManager {
 
     setAdminAccessState(isAdmin) {
         this.isAdmin = Boolean(isAdmin);
-        const playerToggle = document.getElementById('proPlayerEnabled');
-        if (playerToggle) playerToggle.disabled = !this.isAdmin || Boolean(this.proPlayerSavePending);
-
         const adminContent = document.getElementById('adminContent');
         const sectionNav = document.getElementById('adminSectionNav');
         const display = this.isAdmin ? 'block' : 'none';
@@ -3258,7 +3227,7 @@ class AdminPanelManager {
                     await firebaseManager.updateReportStatus(id, 'resolved');
                 } catch (err) {
                     console.error('Ошибка:', err);
-                    alert('Ошибка: ' + err.message);
+                    (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: 'Ошибка: ' + err.message }) : window.alert('Ошибка: ' + err.message));
                     e.target.disabled = false;
                     e.target.textContent = '✔ Решено';
                 }
@@ -3282,7 +3251,7 @@ class AdminPanelManager {
                     await firebaseManager.deleteReport(id, photoPath);
                 } catch (err) {
                     console.error('Ошибка:', err);
-                    alert('Ошибка: ' + err.message);
+                    (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: 'Ошибка: ' + err.message }) : window.alert('Ошибка: ' + err.message));
                     e.target.disabled = false;
                     e.target.textContent = '🗑 Удалить';
                 }

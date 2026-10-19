@@ -24,7 +24,7 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-sm);
-    padding: 7px 14px;
+    padding: 8px 14px;
     border-radius: var(--radius-md);
     font-size: 13px;
     font-weight: 500;
@@ -236,9 +236,43 @@
     }
 }
 
+.movie-detail-hero-backdrop--poster .movie-detail-hero-backdrop-img {
+    filter: blur(64px) saturate(1.5);
+    transform: translate3d(0, 0, 0) scale(1.3);
+}
+
+/* Soft colour halo cast by the poster onto the page behind it */
+.movie-detail-poster-glow {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 250px;
+    height: 375px;
+    border-radius: var(--radius-lg);
+    object-fit: cover;
+    filter: blur(36px) saturate(1.6);
+    opacity: 0.5;
+    transform: translateY(16px) scale(0.94);
+    z-index: -1;
+    pointer-events: none;
+    user-select: none;
+}
+
+.light-theme .movie-detail-poster-glow {
+    opacity: 0.32;
+}
+
+@media (max-width: 768px) {
+    .movie-detail-poster-glow {
+        left: 50%;
+        translate: -50% 0;
+    }
+}
+
 .movie-detail-poster-container {
     position: relative;
     flex-shrink: 0;
+    isolation: isolate;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -473,7 +507,7 @@
     grid-template-columns: 160px 1fr;
     align-items: baseline;
     gap: 16px;
-    padding: 9px 0;
+    padding: 8px 0;
     border-bottom: 1px solid var(--theme-border);
     max-width: 100%;
 }
@@ -638,7 +672,7 @@
 .meta-item--finance .meta-value.meta-finance-group {
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 4px;
     text-align: left;
 }
 
@@ -668,8 +702,8 @@
 }
 
 .meta-finance-subgroup + .meta-finance-subgroup {
-    margin-top: 7px;
-    padding-top: 7px;
+    margin-top: 8px;
+    padding-top: 8px;
     border-top: 1px solid var(--theme-border-subtle, rgba(255, 255, 255, 0.08));
 }
 
@@ -683,7 +717,7 @@
 
 .meta-finance-estimated {
     color: var(--theme-text-muted);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 500;
 }
 
@@ -717,7 +751,7 @@
 }
 
 .the-numbers-chart--inline {
-    margin-top: 7px;
+    margin-top: 8px;
     border: 0;
     border-top: 1px solid var(--theme-border-subtle, rgba(255, 255, 255, 0.08));
     border-radius: 0;
@@ -748,7 +782,7 @@
 .the-numbers-chart__summary-meta {
     color: var(--theme-text-muted);
     font-family: var(--font-data);
-    font-size: 10px;
+    font-size: 11px;
     letter-spacing: 0.04em;
     text-transform: uppercase;
 }
@@ -782,7 +816,7 @@
 }
 
 .the-numbers-chart--inline .the-numbers-chart__summary {
-    padding: 8px 0 5px;
+    padding: 8px 0 4px;
 }
 
 .the-numbers-chart--inline .the-numbers-chart__content {
@@ -801,13 +835,13 @@
     margin-bottom: 4px;
     color: var(--theme-text-muted);
     font-family: var(--font-data);
-    font-size: 10px;
+    font-size: 11px;
 }
 
 .the-numbers-chart__legend span {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
 }
 
 .the-numbers-chart__legend-line,
@@ -953,7 +987,7 @@
     position: absolute;
     z-index: 2;
     min-width: 188px;
-    padding: 8px 9px;
+    padding: 8px 8px;
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 8px;
     background: rgba(12, 13, 16, 0.95);
@@ -976,7 +1010,7 @@
 }
 
 .the-numbers-chart__tooltip-date {
-    margin-bottom: 5px;
+    margin-bottom: 4px;
     color: var(--theme-text-primary);
     font-family: var(--font-family);
     font-size: 11px;
@@ -987,7 +1021,7 @@
     display: grid;
     grid-template-columns: 10px auto 1fr;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
 }
 
 .the-numbers-chart__tooltip-swatch {
@@ -1027,7 +1061,7 @@
     justify-content: space-between;
     gap: 12px;
     color: var(--theme-text-muted);
-    font-size: 10px;
+    font-size: 11px;
 }
 
 .the-numbers-chart__footer a {
@@ -1059,8 +1093,8 @@
     }
 
     .the-numbers-chart__legend {
-        gap: 7px 10px;
-        font-size: 9px;
+        gap: 8px 10px;
+        font-size: 11px;
     }
 }
 
@@ -1114,7 +1148,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 9px 8px 8px;
+    padding: 8px 8px 8px;
     border: 0;
     border-radius: 0;
     text-align: center;
@@ -1156,7 +1190,7 @@
 
 .rating-label {
     font-family: var(--font-family);
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 650;
     text-transform: uppercase;
     letter-spacing: 0.45px;
@@ -1214,7 +1248,7 @@
 .rating-votes {
     font-family: var(--font-family);
     font-variant-numeric: tabular-nums;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 450;
     color: var(--theme-text-muted);
     line-height: 1.1;
@@ -1267,7 +1301,7 @@
     }
 
     .rating-votes {
-        font-size: 9px;
+        font-size: 11px;
     }
 }
 
@@ -1604,7 +1638,7 @@
     border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: var(--radius-md);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
-    z-index: 99999;
+    z-index: calc(var(--z-top, 100000) - 1);
     min-width: 150px;
     padding: 4px 0;
 }
@@ -1744,7 +1778,7 @@
 
 .actor-character {
     font-family: var(--font-family);
-    font-size: 10.5px;
+    font-size: 11px;
     color: var(--theme-text-muted);
     line-height: 1.35;
     word-break: break-word;
@@ -1804,7 +1838,7 @@
     align-items: center;
     justify-content: center;
     gap: 8px;
-    padding: 9px 22px;
+    padding: 8px 22px;
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid var(--theme-border);
     border-radius: var(--radius-md, 6px);
@@ -2049,7 +2083,7 @@
 
 .sequel-year {
     font-family: var(--font-data);
-    font-size: 10px;
+    font-size: 11px;
     color: var(--theme-text-muted);
     font-weight: 500;
 }
@@ -2228,7 +2262,7 @@
     color: #fff;
     padding: 2px 6px;
     border-radius: 4px;
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 500;
     pointer-events: none;
     font-family: var(--font-data);
@@ -2681,7 +2715,7 @@
 
 .award-group-summary {
     color: var(--theme-text-muted);
-    font-size: 10px;
+    font-size: 11px;
     line-height: 1.3;
     margin-top: 2px;
 }
@@ -2730,9 +2764,9 @@
     flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
-    padding: 3px 7px;
+    padding: 3px 8px;
     border-radius: 4px;
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 600;
     line-height: 1.2;
     white-space: nowrap;
@@ -2776,7 +2810,7 @@
     background: transparent;
     border: 1px solid var(--theme-border);
     color: var(--theme-text-secondary);
-    padding: 7px 20px;
+    padding: 8px 20px;
     border-radius: 20px;
     cursor: pointer;
     font-size: 13px;
@@ -2908,7 +2942,7 @@
     align-items: center;
     gap: 6px;
     font-family: var(--font-family);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     color: var(--theme-text-muted);
     text-transform: uppercase;
@@ -3374,7 +3408,7 @@
     position: absolute;
     top: 6px;
     left: 6px;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     padding: 2px 6px;
     border-radius: 4px;
@@ -3405,8 +3439,8 @@
     backdrop-filter: blur(4px);
     color: var(--theme-text-secondary, #d4d4d8);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    font-size: 10px;
-    padding: 1px 5px;
+    font-size: 11px;
+    padding: 1px 4px;
 }
 
 .franchise-info {
@@ -3635,7 +3669,7 @@
 }
 
 .movie-video-badge {
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 600;
     padding: 2px 6px;
     border-radius: 3px;
@@ -3750,7 +3784,7 @@
 
 .btn-show-all-facts {
     margin-top: 14px;
-    padding: 9px 18px;
+    padding: 8px 18px;
     font-size: 13px;
     font-weight: 500;
     color: var(--theme-text-primary);
@@ -4171,7 +4205,7 @@
     display: flex;
     justify-content: center;
     gap: 3px;
-    font-size: 10px;
+    font-size: 11px;
     line-height: 16px;
     color: var(--ui-color-content);
     pointer-events: none;
@@ -4288,7 +4322,7 @@
     border-radius: 4px;
     background: var(--ui-color-surface-card);
     color: var(--ui-color-content-muted);
-    font-size: 10px;
+    font-size: 11px;
 }
 
 .episode-badges {
@@ -4299,7 +4333,7 @@
 }
 
 .episode-user-rating-badge {
-    padding: 3px 7px;
+    padding: 3px 8px;
     border-radius: 999px;
     font-size: 11px;
     background: var(--ui-color-interactive);
@@ -4453,7 +4487,7 @@
     display: none !important;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 768px) {
     .episode-chart-shell {
         --episode-graph-height: 56px;
         --episode-height-range: 30px;
@@ -4543,7 +4577,7 @@
 .seasons-continue-banner__badge {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
     font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
@@ -4634,7 +4668,7 @@
 }
 
 .badge-resume-episode {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
     padding: 1px 6px;
@@ -4644,7 +4678,7 @@
 }
 
 .badge-personal-next {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
     padding: 1px 6px;
@@ -4657,7 +4691,7 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
     padding: 1px 6px;
@@ -4685,7 +4719,7 @@
     display: inline-flex;
     align-items: center;
     gap: 3px;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
     padding: 1px 6px;
@@ -4737,7 +4771,7 @@
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    gap: 5px;
+    gap: 4px;
     width: 100%;
     min-width: 0;
     margin-top: 4px;
@@ -4785,7 +4819,7 @@
 }
 
 .hero-next-episode-badge {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -4826,7 +4860,7 @@
 .hero-next-episode__play-btn {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
     padding: 3px 10px;
     margin-left: 4px;
     font-family: var(--font-family);
@@ -4858,7 +4892,7 @@
 }
 
 .hero-next-episode__play-btn .play-icon {
-    font-size: 9px;
+    font-size: 11px;
     line-height: 1;
 }
 
@@ -4899,7 +4933,7 @@
     align-items: center;
     justify-content: center;
     min-height: 32px;
-    padding: 5px 9px;
+    padding: 4px 8px;
     border: 1px solid var(--ui-color-border);
     border-radius: var(--ui-control-radius, 8px);
     color: var(--ui-color-content);
@@ -4955,7 +4989,7 @@
 .user-rating-review__label,
 .review-reader-eyebrow {
     color: var(--theme-text-muted);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.12em;
     text-transform: uppercase;
@@ -4974,7 +5008,7 @@
 .user-rating-review__read {
     justify-self: start;
     min-height: 30px;
-    padding: 5px 9px;
+    padding: 4px 8px;
     font-size: 12px;
     background: transparent;
 }
@@ -5007,11 +5041,11 @@
 }
 
 .review-reader-eyebrow {
-    margin: 0 0 5px;
+    margin: 0 0 4px;
 }
 
 .review-reader-meta {
-    margin: 5px 0 0;
+    margin: 4px 0 0;
     color: var(--theme-text-muted);
     font-size: 12px;
 }
@@ -5146,7 +5180,7 @@
 .torrent-source-controls__filters {
     display: flex;
     flex-wrap: wrap;
-    gap: 5px;
+    gap: 4px;
 }
 
 .torrent-quality-chip,
@@ -5167,7 +5201,7 @@
 .torrent-quality-chip,
 .torrent-source-controls__search,
 .torrent-download-card__action {
-    padding: 5px 9px;
+    padding: 4px 8px;
     cursor: pointer;
 }
 
@@ -5183,14 +5217,14 @@
 .torrent-source-controls__sort {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
+    gap: 8px;
     margin-left: auto;
     color: var(--theme-text-muted);
     font-size: 11px;
 }
 
 .torrent-source-controls__sort select {
-    padding: 4px 7px;
+    padding: 4px 8px;
     outline: none;
 }
 
@@ -5214,7 +5248,7 @@
 
 .torrent-download-library {
     margin-top: 12px;
-    padding: 11px;
+    padding: 12px;
     border: 1px solid var(--theme-border);
     border-radius: 10px;
     background: color-mix(in srgb, var(--theme-text-primary) 3%, var(--theme-bg-primary));
@@ -5236,18 +5270,18 @@
 
 .torrent-download-library__heading span {
     color: var(--theme-text-muted);
-    font-size: 10px;
+    font-size: 11px;
 }
 
 .torrent-download-list {
     display: grid;
     gap: 8px;
-    margin-top: 9px;
+    margin-top: 8px;
 }
 
 .torrent-download-card {
     display: grid;
-    gap: 7px;
+    gap: 8px;
     padding: 10px;
     border: 1px solid var(--theme-border);
     border-radius: 9px;
@@ -5339,7 +5373,7 @@
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 4px 12px;
     width: 100%;
-    padding: 11px 12px;
+    padding: 12px 12px;
     border: 1px solid var(--theme-border);
     border-radius: 10px;
     background: var(--theme-bg-primary);
@@ -5403,7 +5437,7 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    padding: 14px 16px 13px;
+    padding: 14px 16px 12px;
     border: 1px solid color-mix(in srgb, var(--theme-border) 82%, transparent);
     border-left: 3px solid var(--theme-text-primary);
     border-radius: 12px;
@@ -5422,7 +5456,7 @@
 .torrent-playback-status__metric-label {
     display: block;
     color: var(--theme-text-muted);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.08em;
     line-height: 1.3;
@@ -5439,7 +5473,7 @@
 
 .torrent-playback-status__state {
     flex: 0 0 auto;
-    padding: 5px 8px;
+    padding: 4px 8px;
     border: 1px solid color-mix(in srgb, var(--theme-text-primary) 22%, transparent);
     border-radius: 999px;
     color: var(--theme-text-primary);
@@ -5456,7 +5490,7 @@
 
 .torrent-playback-status__metric {
     min-width: 0;
-    padding: 9px 10px;
+    padding: 8px 10px;
     border: 1px solid color-mix(in srgb, var(--theme-border) 65%, transparent);
     border-radius: 9px;
     background: color-mix(in srgb, var(--theme-bg-primary) 42%, transparent);
@@ -5703,7 +5737,7 @@
 
 .torrent-playback-status {
     margin: 14px 0 0;
-    padding: 15px;
+    padding: 16px;
     border: 1px solid var(--ui-color-border);
     border-left: 3px solid var(--ui-color-interactive);
     border-radius: 12px;
@@ -5722,7 +5756,7 @@
 .torrent-playback-status__context {
     display: flex;
     flex-wrap: wrap;
-    gap: 5px 12px;
+    gap: 4px 12px;
     margin-top: 4px;
     font-size: 11px;
 }
@@ -5769,7 +5803,7 @@
 .torrent-playback-status__actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 7px;
+    gap: 8px;
 }
 
 .torrent-playback-status__action {
@@ -5808,7 +5842,7 @@
     border: 1px solid var(--ui-color-border);
     border-radius: 999px;
     color: var(--ui-color-content-subtle);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 500;
 }
 
@@ -5816,7 +5850,7 @@
     display: flex;
     align-items: center;
     min-height: 28px;
-    padding: 6px 9px;
+    padding: 6px 8px;
     border: 1px solid color-mix(in srgb, var(--ui-color-interactive) 32%, var(--ui-color-border));
     border-radius: var(--ui-control-radius, 8px);
     background: color-mix(in srgb, var(--ui-color-interactive) 7%, transparent);
@@ -5874,7 +5908,7 @@
 .torrent-playback-status {
     position: relative;
     display: grid;
-    gap: 7px;
+    gap: 8px;
     margin: 12px 0 0;
     padding: 10px 12px;
     overflow: hidden;
@@ -5897,7 +5931,7 @@
 .torrent-playback-status__eyebrow {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
+    gap: 8px;
 }
 
 .torrent-playback-status__eyebrow::before {
@@ -5921,7 +5955,7 @@
 
 .torrent-playback-status__title {
     max-width: 70ch;
-    margin: 5px 0 0;
+    margin: 4px 0 0;
     font-size: 14px;
     letter-spacing: -0.01em;
 }
@@ -5929,13 +5963,13 @@
 .torrent-playback-status__context {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px 11px;
+    gap: 4px 12px;
     margin-top: 4px;
     font-size: 11px;
 }
 
 .torrent-playback-status__context span + span::before {
-    margin-right: 11px;
+    margin-right: 12px;
     content: '·';
 }
 
@@ -5945,7 +5979,7 @@
     border: 1px solid color-mix(in srgb, var(--ui-color-interactive) 36%, var(--ui-color-border));
     border-radius: 999px;
     background: color-mix(in srgb, var(--ui-color-interactive) 9%, transparent);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 650;
     line-height: 1.2;
     white-space: nowrap;
@@ -5972,7 +6006,7 @@
 .torrent-playback-status__metric-label {
     overflow: hidden;
     color: var(--ui-color-content-subtle);
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 650;
     letter-spacing: 0.07em;
     line-height: 1.2;
@@ -6011,7 +6045,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 7px;
+    gap: 8px;
     margin-top: -2px;
 }
 
@@ -6053,7 +6087,7 @@
 
 .torrent-playback-status__note,
 .torrent-playback-status__remaining {
-    font-size: 10px;
+    font-size: 11px;
     line-height: 1.35;
 }
 
@@ -6296,7 +6330,7 @@
     .meta-item {
         grid-template-columns: 120px 1fr;
         gap: 10px;
-        padding: 7px 0;
+        padding: 8px 0;
     }
     
     .meta-item--nested {
@@ -6316,9 +6350,9 @@
 .selection-popup-btn {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
+    gap: 8px;
     min-height: 36px;
-    padding: 0 11px;
+    padding: 0 12px;
     border: 1px solid rgba(255, 255, 255, 0.17);
     border-radius: 9px;
     background: #25262b;

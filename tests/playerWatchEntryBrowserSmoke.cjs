@@ -20,7 +20,6 @@ async function main() {
             }
             await page.evaluate(async theme => {
                 document.documentElement.className = document.body.className = theme;
-                await ProPlayerPreferences.setEnabled(false);
                 const container = document.getElementById('sourceButtonsContainer');
                 const add = (value, text) => {
                     const button = document.createElement('button'); button.className = 'source-btn';
@@ -39,8 +38,6 @@ async function main() {
                 };
                 await manager.initializeWatchEntry(); manager.syncWatchEntry();
             }, theme);
-            assert.equal(await page.locator('#watchEntryGroup').count(), 0, 'default off preserves provider rail');
-            await page.evaluate(() => ProPlayerPreferences.setEnabled(true));
             await page.locator('#watchEntryBtn').waitFor();
             assert.equal(await page.locator('.source-toolbar .player-diagnostics-trigger').count(), 0);
             assert.equal(await page.locator('#minimizeVideoBtn').evaluate(node => node.previousElementSibling.classList.contains('player-diagnostics-trigger')), true);
@@ -103,9 +100,6 @@ async function main() {
             const closeBox = await page.locator('dialog [data-action="close"]').boundingBox();
             assert.ok(closeBox && closeBox.y >= 0 && closeBox.y + closeBox.height <= 780, 'long QoE summary leaves dialog controls reachable by scrolling');
             await page.keyboard.press('Escape');
-            await page.evaluate(() => ProPlayerPreferences.setEnabled(false));
-            await page.waitForFunction(() => !document.getElementById('watchEntryGroup'));
-            assert.equal(await page.evaluate(() => document.getElementById('sourceButtonsContainer') === originalContainer), true);
             await page.close();
         }
         const matched = await harness.worker.evaluate(async id => {

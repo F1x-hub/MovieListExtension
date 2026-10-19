@@ -490,7 +490,11 @@ class Utils {
      * @param {string} type - Type: success, error, warning, info
      * @param {number} duration - Duration in milliseconds
      */
-    static showToast(message, type = 'info', duration = 3000) {
+    /**
+     * Show a neutral toast. `options.actionLabel` + `options.onAction` add an inline
+     * action button (for example «Отменить»); the toast then stays a little longer.
+     */
+    static showToast(message, type = 'info', duration = 3000, options = {}) {
         // Remove existing toasts
         const existingToasts = document.querySelectorAll('.utils-toast');
         existingToasts.forEach(toast => toast.remove());
@@ -499,39 +503,41 @@ class Utils {
         toast.className = `utils-toast utils-toast-${type} motion-toast`;
         toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
         toast.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
-        toast.textContent = message;
-        
-        // Add styles
-        Object.assign(toast.style, {
-            position: 'fixed',
-            top: '20px',
-            right: '20px',
-            padding: '12px 20px',
-            borderRadius: '8px',
-            color: 'white',
-            fontWeight: '500',
-            fontSize: '14px',
-            zIndex: '10000',
-            maxWidth: '300px',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-            backgroundColor: type === 'success' ? '#28a745' : 
-                           type === 'error' ? '#dc3545' : 
-                           type === 'warning' ? '#ffc107' : '#17a2b8'
-        });
 
-        document.body.appendChild(toast);
+        const text = document.createElement('span');
+        text.className = 'utils-toast__text';
+        text.textContent = message;
+        toast.appendChild(text);
 
-        // Animate out and remove
-        setTimeout(() => {
+        let timer = null;
+        const dismiss = () => {
+            clearTimeout(timer);
             if (!toast.isConnected) return;
             if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
                 toast.remove();
                 return;
             }
             toast.classList.add('is-leaving');
-            const duration = parseFloat(getComputedStyle(toast).getPropertyValue('--motion-duration-fast')) || 120;
-            setTimeout(() => toast.remove(), duration);
-        }, duration);
+            const leaveMs = parseFloat(getComputedStyle(toast).getPropertyValue('--motion-duration-fast')) || 120;
+            setTimeout(() => toast.remove(), leaveMs);
+        };
+
+        const hasAction = Boolean(options?.actionLabel && typeof options.onAction === 'function');
+        if (hasAction) {
+            const action = document.createElement('button');
+            action.type = 'button';
+            action.className = 'utils-toast__action';
+            action.textContent = options.actionLabel;
+            action.addEventListener('click', () => {
+                dismiss();
+                try { options.onAction(); } catch (error) { console.error('Toast action failed:', error); }
+            });
+            toast.appendChild(action);
+        }
+
+        document.body.appendChild(toast);
+        timer = setTimeout(dismiss, hasAction ? Math.max(duration, 5000) : duration);
+        return { dismiss };
     }
 
     /**

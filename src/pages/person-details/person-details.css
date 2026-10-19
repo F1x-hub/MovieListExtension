@@ -150,7 +150,7 @@
 .person-badge {
     display: inline-flex;
     align-items: center;
-    padding: 4px 9px;
+    padding: 4px 8px;
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.12));
     border-radius: var(--radius-sm, 6px);
@@ -292,7 +292,7 @@
     display: inline-block;
     width: 16px;
     height: 16px;
-    margin: 0 5px 0 1px;
+    margin: 0 4px 0 1px;
     vertical-align: -2px;
     color: currentColor;
     flex-shrink: 0;
@@ -352,7 +352,7 @@
 
 .person-fact-item {
     position: relative;
-    padding: 9px 0;
+    padding: 8px 0;
     font-size: 14px;
     line-height: 1.65;
     color: var(--theme-text-secondary, #d4d4d8);
@@ -536,7 +536,7 @@
     font-weight: 600;
     color: var(--theme-text-secondary, #a1a1aa);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
 }
 
 .filmography-filter-pill:hover {
@@ -654,7 +654,7 @@
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
 }
 
 .btn-show-more-filmography:hover {

@@ -8,6 +8,11 @@
  *       danger: true
  *   });
  *
+ *   await ConfirmDialog.alert({ title: 'Не удалось сохранить', message: error.message });
+ *
+ * `alert()` is the one-button replacement for window.alert(): it shows only the
+ * acknowledge button and resolves once the dialog is dismissed.
+ *
  * Resolves true only when the confirm button is pressed. Cancel, Escape and a
  * backdrop click resolve false. Focus starts on Cancel so Enter never confirms a
  * destructive action by accident, stays trapped inside the dialog, and returns
@@ -18,7 +23,9 @@
     const DEFAULT_LABELS = {
         title: ['confirm_dialog.title', 'Подтвердите действие'],
         confirm: ['confirm_dialog.confirm', 'Подтвердить'],
-        cancel: ['confirm_dialog.cancel', 'Отмена']
+        cancel: ['confirm_dialog.cancel', 'Отмена'],
+        notice: ['confirm_dialog.notice', 'Внимание'],
+        ok: ['confirm_dialog.ok', 'Понятно']
     };
 
     function translate([key, fallback]) {
@@ -82,7 +89,7 @@
          * @param {{ title?: string, message?: string, confirmLabel?: string, cancelLabel?: string, danger?: boolean }} [options]
          * @returns {Promise<boolean>}
          */
-        confirm({ title, message = '', confirmLabel, cancelLabel, danger = false } = {}) {
+        confirm({ title, message = '', confirmLabel, cancelLabel, danger = false, acknowledgeOnly = false } = {}) {
             if (typeof document === 'undefined' || !document.body) {
                 return Promise.resolve(false);
             }
@@ -98,22 +105,38 @@
             root.querySelector('.confirm-dialog__message').textContent = message || '';
             confirmButton.textContent = confirmLabel || translate(DEFAULT_LABELS.confirm);
             cancelButton.textContent = cancelLabel || translate(DEFAULT_LABELS.cancel);
+            cancelButton.hidden = acknowledgeOnly;
             confirmButton.classList.toggle('btn-danger', danger);
             confirmButton.classList.toggle('btn-primary', !danger);
 
             this.returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null;
             root.hidden = false;
             root.inert = false;
-            cancelButton.focus();
+            const initialFocus = acknowledgeOnly ? confirmButton : cancelButton;
+            initialFocus.focus();
             // Callers opened from a mousedown handler would otherwise get focus moved
             // back to the pressed element by the browser's default action.
             setTimeout(() => {
-                if (this.isOpen() && !root.contains(document.activeElement)) cancelButton.focus();
+                if (this.isOpen() && !root.contains(document.activeElement)) initialFocus.focus();
             }, 0);
 
             return new Promise((resolve) => {
                 this.pending = resolve;
             });
+        }
+
+        /**
+         * @param {{ title?: string, message?: string, okLabel?: string, danger?: boolean }} [options]
+         * @returns {Promise<void>}
+         */
+        alert({ title, message = '', okLabel, danger = false } = {}) {
+            return this.confirm({
+                title: title || translate(DEFAULT_LABELS.notice),
+                message,
+                confirmLabel: okLabel || translate(DEFAULT_LABELS.ok),
+                danger,
+                acknowledgeOnly: true
+            }).then(() => undefined);
         }
 
         isOpen() {
@@ -174,6 +197,7 @@
     const controller = new ConfirmDialogController();
     const api = {
         confirm: (options) => controller.confirm(options),
+        alert: (options) => controller.alert(options),
         isOpen: () => controller.isOpen(),
         cancel: () => controller.cancel(),
         getElement: () => controller.getElement()

@@ -896,13 +896,13 @@ class BookmarksPageManager {
             // Validate file type
             const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif'];
             if (!validTypes.includes(file.type)) {
-                alert('Please select a valid image file (PNG, JPG, or GIF)');
+                (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: 'Please select a valid image file (PNG, JPG, or GIF)' }) : window.alert('Please select a valid image file (PNG, JPG, or GIF)'));
                 return;
             }
 
             // Validate file size (500KB)
             if (file.size > 500 * 1024) {
-                alert('Image size must be less than 500KB');
+                (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: 'Image size must be less than 500KB' }) : window.alert('Image size must be less than 500KB'));
                 return;
             }
 
@@ -918,12 +918,12 @@ class BookmarksPageManager {
 
                         // Validate aspect ratio (prevent too wide or too tall)
                         if (aspectRatio > 1.5) {
-                            alert('Image is too wide. Please use a square or near-square image.');
+                            (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: 'Image is too wide. Please use a square or near-square image.' }) : window.alert('Image is too wide. Please use a square or near-square image.'));
                             customIconInput.value = ''; // Clear input
                             return;
                         }
                         if (aspectRatio < 0.67) {
-                            alert('Image is too tall. Please use a square or near-square image.');
+                            (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: 'Image is too tall. Please use a square or near-square image.' }) : window.alert('Image is too tall. Please use a square or near-square image.'));
                             customIconInput.value = ''; // Clear input
                             return;
                         }
@@ -1010,7 +1010,7 @@ class BookmarksPageManager {
                                 }
                             } catch (error) {
                                 console.error('Error processing icon:', error);
-                                alert('Failed to process icon');
+                                (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: 'Failed to process icon' }) : window.alert('Failed to process icon'));
                             } finally {
                                 uploadIconBtn.innerHTML = originalBtnContent;
                                 uploadIconBtn.disabled = false;
@@ -1022,7 +1022,7 @@ class BookmarksPageManager {
                 reader.readAsDataURL(file);
             } catch (error) {
                 console.error('Error processing image:', error);
-                alert('Failed to process image');
+                (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: 'Failed to process image' }) : window.alert('Failed to process image'));
             }
         });
 
@@ -1160,7 +1160,7 @@ class BookmarksPageManager {
             const name = nameInput.value.trim();
 
             if (!name) {
-                alert('Collection name is required');
+                (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: 'Collection name is required' }) : window.alert('Collection name is required'));
                 return;
             }
 
@@ -1191,7 +1191,7 @@ class BookmarksPageManager {
                 close();
             } catch (error) {
                 console.error('Error saving collection:', error);
-                alert(error.message || 'Failed to save collection');
+                (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: error.message || 'Failed to save collection' }) : window.alert(error.message || 'Failed to save collection'));
             }
         });
     }
@@ -1609,7 +1609,7 @@ class BookmarksPageManager {
             this.setFilter('all');
         } catch (error) {
             console.error('Error deleting collection:', error);
-            alert('Failed to delete collection: ' + error.message);
+            (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: 'Failed to delete collection: ' + error.message }) : window.alert('Failed to delete collection: ' + error.message));
         }
     }
     

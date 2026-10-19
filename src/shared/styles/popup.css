@@ -191,7 +191,7 @@
 
 .popup-page .avatar-dropdown {
     position: fixed;
-    z-index: 1000;
+    z-index: var(--z-dropdown, 1000);
     display: flex;
     flex-direction: column;
     width: 220px;
@@ -733,7 +733,7 @@
     top: calc(100% + 8px);
     right: 0;
     left: 0;
-    z-index: 1000;
+    z-index: var(--z-dropdown, 1000);
     max-height: min(280px, calc(100dvh - 120px));
     box-sizing: border-box;
     overflow-y: auto;
@@ -1027,7 +1027,7 @@
 
 .popup-page .average-score-tooltip {
     position: fixed;
-    z-index: 1000;
+    z-index: var(--z-dropdown, 1000);
     max-width: calc(100vw - 24px);
     padding: 8px 10px;
     box-sizing: border-box;
@@ -1055,7 +1055,7 @@
 
 .popup-page .rating-menu-dropdown {
     position: fixed;
-    z-index: 1000;
+    z-index: var(--z-dropdown, 1000);
     display: flex;
     flex-direction: column;
     min-width: 160px;
@@ -1356,7 +1356,7 @@
 .popup-page .update-playback-dialog-overlay {
     position: fixed;
     inset: 0;
-    z-index: 1000;
+    z-index: var(--z-dropdown, 1000);
     display: flex;
     align-items: center;
     justify-content: center;

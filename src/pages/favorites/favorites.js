@@ -548,7 +548,7 @@ class FavoritesPageManager {
              if (typeof MigrationTool !== 'undefined') {
                  this.migrationTool = new MigrationTool(firebaseManager);
              } else {
-                 alert('Migration tool not loaded. Please refresh the page.');
+                 (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: 'Migration tool not loaded. Please refresh the page.' }) : window.alert('Migration tool not loaded. Please refresh the page.'));
                  return;
              }
         }
@@ -568,10 +568,10 @@ class FavoritesPageManager {
             const result = await this.migrationTool.migrateFavoritesForUser(user.uid);
             
             if (result.count > 0) {
-                alert(`Successfully migrated ${result.count} favorites! The page will reload.`);
+                await (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: `Successfully migrated ${result.count} favorites! The page will reload.` }) : window.alert(`Successfully migrated ${result.count} favorites! The page will reload.`));
                 window.location.reload();
             } else {
-                alert('No old favorites found to migrate.');
+                (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: 'No old favorites found to migrate.' }) : window.alert('No old favorites found to migrate.'));
                 if (btn) {
                     btn.disabled = false;
                     btn.textContent = 'No data found';
@@ -579,7 +579,7 @@ class FavoritesPageManager {
             }
         } catch (error) {
             console.error('Migration error:', error);
-            alert(`Migration failed: ${error.message}`);
+            (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: `Migration failed: ${error.message}` }) : window.alert(`Migration failed: ${error.message}`));
             if (btn) {
                 btn.disabled = false;
                 btn.textContent = 'Retry Migration';

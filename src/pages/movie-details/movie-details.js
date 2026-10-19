@@ -3097,7 +3097,7 @@ class MovieDetailsManager {
             const valueText = rating > 0 ? String(parseFloat(rating.toFixed(1))) : '—';
             body = `<span class="rating-label">${label}</span>
                 ${rating > 0
-                    ? `<span class="rating-value">${valueText}</span>`
+                    ? `<span class="rating-value" data-count-to="${valueText}">${valueText}</span>`
                     : '<span class="rating-value rating-value--unavailable">—</span>'}
                 ${votes > 0
                     ? `<span class="rating-votes">${i18n.get('movie_details.votes_count').replace('{count}', this.formatVotes(votes))}</span>`
@@ -3209,6 +3209,8 @@ class MovieDetailsManager {
 
         const backdropUrl = movie.backdropUrl || movie.backdrop || '';
         const hasBackdrop = Boolean(backdropUrl && typeof backdropUrl === 'string' && backdropUrl.startsWith('http'));
+        // Without a backdrop the poster itself tints the hero, so the page keeps the title's colour.
+        const ambientPosterUrl = !hasBackdrop && /^https?:/.test(String(posterUrl)) ? posterUrl : '';
 
         const hasShortDesc = this.shouldRenderShortDescription(movie.shortDescription, description);
         const shortDescToRender = hasShortDesc ? movie.shortDescription.trim() : '';
@@ -3347,9 +3349,14 @@ class MovieDetailsManager {
                 <div class="movie-detail-hero-backdrop" aria-hidden="true">
                     <img src="${this.escapeHtml(backdropUrl)}" alt="" class="movie-detail-hero-backdrop-img" data-fallback="backdrop" loading="eager" decoding="async">
                     <div class="movie-detail-hero-backdrop-overlay"></div>
+                </div>` : ambientPosterUrl ? `
+                <div class="movie-detail-hero-backdrop movie-detail-hero-backdrop--poster" aria-hidden="true">
+                    <img src="${this.escapeHtml(ambientPosterUrl)}" alt="" class="movie-detail-hero-backdrop-img" loading="eager" decoding="async">
+                    <div class="movie-detail-hero-backdrop-overlay"></div>
                 </div>` : ''}
                 <div class="movie-detail-header">
                     <div class="movie-detail-poster-container">
+                        ${/^https?:/.test(String(posterUrl)) ? `<img src="${this.escapeHtml(posterUrl)}" alt="" class="movie-detail-poster-glow" aria-hidden="true" decoding="async">` : ''}
                         <img src="${this.escapeHtml(posterUrl)}" alt="${this.escapeHtml(movieName)}" class="movie-detail-page-poster" data-fallback="detail" decoding="async" fetchpriority="high">
                         <div class="movie-poster-placeholder" style="display: none;"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg></div>
                         
@@ -11327,7 +11334,7 @@ class MovieDetailsManager {
                 inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>'
             });
             
-            if (typeof Utils !== 'undefined') Utils.showToast(newStatus ? i18n.get('movie_card.add_favorite') : i18n.get('movie_card.remove_favorite'), 'success');
+            if (typeof Utils !== 'undefined') Utils.showToast(newStatus ? i18n.get('movie_card.add_favorite') : i18n.get('movie_card.remove_favorite'), 'success', 3000, { actionLabel: i18n.get('confirm_dialog.undo'), onAction: () => this.toggleFavorite(ratingId, newStatus, buttonElement, movieId) });
         } catch (error) { console.error('Error toggling favorite:', error); }
     }
 

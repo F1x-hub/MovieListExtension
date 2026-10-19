@@ -8,7 +8,7 @@
     background: var(--gradient-card);
     border-radius: var(--radius-xl);
     /* overflow: hidden; Removed to allow menu to overflow */
-    box-shadow: var(--shadow-lg);
+    box-shadow: var(--elevation-2, var(--shadow-lg));
     transition: transform var(--motion-duration-menu) var(--motion-ease-out), background-color 160ms ease, box-shadow 160ms ease;
     cursor: pointer;
     backdrop-filter: blur(10px);
@@ -31,7 +31,7 @@
 
 .movie-card-component:hover {
     transform: translateY(-5px);
-    box-shadow: var(--shadow-xl);
+    box-shadow: var(--elevation-3, var(--shadow-xl));
     border-color: var(--theme-border-hover);
     z-index: 10; /* Bring to front on hover so menu doesn't get hidden by next card */
 }
@@ -68,7 +68,13 @@
     object-fit: cover;
     display: block;
     /* Smooth fade-in when image loads */
-    transition: opacity 0.3s ease;
+    transition: opacity 0.3s ease, transform 420ms var(--ease-out-soft, ease-out);
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+    .movie-card-component:hover .mc-poster {
+        transform: scale(1.045);
+    }
 }
 
 /* Three-Dot Menu Button */
@@ -86,7 +92,7 @@
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.3s ease;
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, opacity 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease, filter 0.3s ease;
     z-index: 20;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
     backdrop-filter: blur(4px);
@@ -202,7 +208,7 @@
     border-radius: 999px;
     background: rgba(234, 179, 8, 0.12);
     color: var(--theme-accent, #facc15);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     line-height: 1.2;
     white-space: nowrap;
@@ -239,7 +245,7 @@
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.3s ease;
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, opacity 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease, filter 0.3s ease;
     z-index: 10;
     font-size: 20px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
@@ -353,7 +359,7 @@
 }
 
 .mc-rating-label {
-    font-size: 10px;
+    font-size: 11px;
     color: var(--theme-text-muted);
     font-weight: 500;
     text-transform: uppercase;
@@ -475,7 +481,7 @@
 
 .mc-user-info.clickable-username {
     cursor: pointer;
-    transition: all var(--transition-base);
+    transition: background-color var(--transition-base), border-color var(--transition-base), color var(--transition-base), opacity var(--transition-base), transform var(--transition-base), box-shadow var(--transition-base), filter var(--transition-base);
 }
 
 .mc-user-info.clickable-username:hover {
@@ -535,7 +541,7 @@
     opacity: 0;
     visibility: hidden;
     transform: translateY(10px);
-    transition: all 0.3s ease;
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, opacity 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease, filter 0.3s ease;
     z-index: 100;
     display: flex;
     flex-direction: column;
@@ -616,7 +622,7 @@
 }
 
 .mc-rater-date {
-    font-size: 10px;
+    font-size: 11px;
     color: #999;
 }
 
@@ -719,7 +725,7 @@ span.mc-user-name.mc-skeleton {
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.3s ease;
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, opacity 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease, filter 0.3s ease;
 }
 
 .mc-btn-primary {
@@ -791,7 +797,7 @@ span.mc-user-name.mc-skeleton {
     overflow: hidden;
     min-height: 420px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.4s cubic-bezier(0.4, 0, 0.2, 1), color 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1), transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.4s cubic-bezier(0.4, 0, 0.2, 1), filter 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .movie-card-component.anime-style:hover {
@@ -908,7 +914,7 @@ span.mc-user-name.mc-skeleton {
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.3s ease;
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, opacity 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease, filter 0.3s ease;
 }
 
 .mc-progress-display:hover {
@@ -947,7 +953,7 @@ span.mc-user-name.mc-skeleton {
     background: rgba(255, 255, 255, 0.06);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 14px;
-    transition: all 0.3s ease;
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, opacity 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease, filter 0.3s ease;
     backdrop-filter: blur(4px);
 }
 
@@ -1122,7 +1128,7 @@ span.mc-user-name.mc-skeleton {
     left: 8px;
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 4px;
     z-index: 5;
     pointer-events: none;
 }
@@ -1142,7 +1148,7 @@ span.mc-user-name.mc-skeleton {
 }
 
 .mc-variant-search .mc-badge-star {
-    font-size: 10px;
+    font-size: 11px;
 }
 
 .mc-badge-kp {
@@ -1159,7 +1165,7 @@ span.mc-user-name.mc-skeleton {
 }
 
 .mc-badge-source {
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 800;
     letter-spacing: 0.15px;
 }
@@ -1188,7 +1194,7 @@ span.mc-user-name.mc-skeleton {
 }
 
 .mc-rating-skeleton-label {
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 800;
 }
 

@@ -40,6 +40,6 @@ assert.ok(!js.includes('localStorage.setItem(\'providerKey'), 'Raw provider keys
 assert.ok(!js.includes('data-secret'), 'Raw provider keys must not enter DOM data attributes');
 assert.ok(css.includes('.provider-keys-table'), 'Provider key table needs dedicated styling');
 assert.ok(css.includes('.provider-keys-quota-summary'), 'Provider key quota summary needs dedicated styling');
-assert.ok(css.includes('@media (max-width: 760px)'), 'Provider keys need a mobile card layout');
+assert.ok(css.includes('@media (max-width: 768px)'), 'Provider keys need a mobile card layout');
 
 console.log('adminProviderKeysUIContract.test.js: all tests passed');
