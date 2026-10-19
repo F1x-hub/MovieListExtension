@@ -752,7 +752,7 @@ const searchHtml = `<!doctype html><html><body><div class="ani-grid">
     // 6. Wiring: registry order, page scripts, manifest, and Referer rule.
     {
         const init = fs.readFileSync('src/shared/services/parsers/parser-init.js', 'utf8');
-        assert.match(init, /new ParserRegistry\(\['kinogo', 'exfs', 'seasonvar', 'rutube', 'animego'\]\)/,
+        assert.match(init, /new ParserRegistry\(\['kinogo', 'exfs', 'seasonvar', 'rutube', 'animego'(, 'officialyt')?\]\)/,
             'AnimeGo stays last: the Search page uses the first parser as its primary source');
         assert.match(init, /registry\.register\(new AnimeGoParser\(\)\)/);
 

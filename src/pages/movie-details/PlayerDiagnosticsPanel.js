@@ -1,7 +1,7 @@
 (function (global) {
     'use strict';
     let sequence = 0;
-    const sources = new Set(['animego', 'seasonvar', 'exfs', 'kinogo', 'rutube', 'kodik', 'vidsrc', 'torrent', 'unknown']);
+    const sources = new Set(['animego', 'seasonvar', 'exfs', 'kinogo', 'rutube', 'officialyt', 'kodik', 'vidsrc', 'torrent', 'unknown']);
     const types = new Set(['resolveOk', 'resolveFail', 'fallback', 'decodeFailed']);
     const reasons = new Set(['policy', 'decode', 'aborted', 'timeout', 'network', 'http', 'unknown']);
     const number = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.min(value, 2100000000000) : 0;

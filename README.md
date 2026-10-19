@@ -324,6 +324,9 @@ keeps npm-compatible three-component semver metadata.
 
 ### Features
 
+- New «Официально · YouTube» source: free, licensed full-length films from film studios' own YouTube channels (Мосфильм, Ленфильм, Киностудия Горького, Беларусьфильм, Союзмультфильм and others). A result is accepted only from a verified channel on the studio allowlist, at feature length (40+ min), with a matching title and year; a complete upload is preferred over «1 серия». Plays through the extension's YouTube wrapper and is offered for films, not series.
+- More reliable sources: the default and fallback order now follows each user's own last-7-day start rate and first-frame time per source (sources with fewer than three attempts stay neutral); a source that times out gets a 12-second grace period and then the player moves on automatically; every automatic switch shows «X не запустился — пробуем Y (2 из 4)», and when nothing starts the viewer is pointed to «Торрент».
+
 - «Эфир» schedule: in the admin section a show can start «Сейчас» or «По расписанию» at a date and time in the admin's own time zone. Planned shows start and end on their own for every viewer (with a countdown before), a later start supersedes an earlier one, «Остановить эфир» also stops a running scheduled show, and the admin's player controls drive whichever show is on air. The admin sees the schedule with times, covers and status and can delete entries; finished entries older than a day are swept automatically. Optional length for YouTube items lets scheduled videos and streams end on time. Requires publishing the updated Firestore rules (`cinemaSchedule`).
 
 ### Fixes

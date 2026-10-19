@@ -67,19 +67,37 @@
             return { anime: Boolean(global.MediaClassifier?.isAnime?.(movie)
                 || /^anime/.test(movie?.type || '')
                 || movie?.genres?.some(genre => /^(аниме|anime)$/i.test(typeof genre === 'string' ? genre : genre?.name || genre?.genre || ''))),
-            film: this.isTorrentMovie() };
+            film: this.isTorrentMovie(), health: this.watchSourceHealth || null };
+        },
+        async loadWatchSourceHealth() {
+            try {
+                const report = await global.PlayerMetrics?.report?.();
+                this.watchSourceHealth = report ? global.WatchSourcePolicy.healthFromReport(report) : null;
+            } catch { this.watchSourceHealth = null; }
+            return this.watchSourceHealth;
+        },
+        sourceLabel(value) {
+            const button = [...(this.elements?.sourceButtonsContainer?.querySelectorAll('.source-btn') || [])]
+                .find(candidate => candidate.dataset.value === value);
+            const text = (button?.textContent || '').replace(/\s+/g, ' ').split('—')[0].trim();
+            return text || 'источник';
+        },
+        notifySourceSwitch(fromValue, toValue, attemptNumber, total) {
+            if (typeof global.Utils?.showToast !== 'function') return;
+            const message = `«${this.sourceLabel(fromValue)}» не запустился — пробуем «${this.sourceLabel(toValue)}» (${attemptNumber} из ${total})`;
+            global.Utils.showToast(message, 'info', 4000);
         },
         async resolveWatchSource() {
             const movieId = this.selectedMovie?.kinopoiskId;
             const generation = this.sourceSwitchRequestId;
             const [preference, last] = await Promise.all([
-                global.WatchSourcePolicy.read(movieId), this.getLastSource(movieId)
+                global.WatchSourcePolicy.read(movieId), this.getLastSource(movieId), this.loadWatchSourceHealth()
             ]);
             if (this.selectedMovie?.kinopoiskId !== movieId || this.sourceSwitchRequestId !== generation) return null;
             const room = this.watchRoomController?.room && this.watchRoomController.activeProviderHint;
             return global.WatchSourcePolicy.select(this.getWatchInnerValues(), {
                 room: room ? `parser:${room}` : null, explicit: this.activeSourceValue,
-                preference, last, anime: this.getWatchRankOptions().anime
+                preference, last, ...this.getWatchRankOptions()
             });
         },
         getPlayerCapabilitySnapshot() {
@@ -142,7 +160,13 @@
         },
         async handleWatchSourceFailure(value, requestId, reason = 'error') {
             const run = this.watchSourceRun;
-            if (!this.proPlayerEnabled || !run || run.switching || run.manual || reason === 'timeout'
+            // A timeout may just be a slow source: give it a grace period, then move
+            // on only if it still never came up.
+            if (reason === 'timeout') {
+                this.scheduleTimeoutFallback?.(value, requestId);
+                return false;
+            }
+            if (!this.proPlayerEnabled || !run || run.switching || run.manual
                 || this.watchRoomController?.room || run.movieId !== String(this.selectedMovie?.kinopoiskId)
                 || !this.isSourceSwitchRequestCurrent(requestId) || this.activeSourceValue !== value
                 || run.failed.has(requestId)) return false;
@@ -153,9 +177,15 @@
                 let expectedRequest = requestId;
                 while (this.watchSourceRun === run && !run.manual && !this.watchRoomController?.room
                     && this.isSourceSwitchRequestCurrent(expectedRequest)) {
-                    const next = global.WatchSourcePolicy.rank(this.getWatchInnerValues(), this.getWatchRankOptions())
-                        .find(candidate => !run.attempted.has(candidate));
-                    if (!next) return false;
+                    const ordered = global.WatchSourcePolicy.rank(this.getWatchInnerValues(), this.getWatchRankOptions());
+                    const next = ordered.find(candidate => !run.attempted.has(candidate));
+                    if (!next) {
+                        if (typeof global.Utils?.showToast === 'function' && ordered.length > 1) {
+                            global.Utils.showToast('Ни один источник не запустился. Попробуйте «Торрент» или зайдите позже.', 'warning', 6000);
+                        }
+                        return false;
+                    }
+                    this.notifySourceSwitch(value, next, run.attempted.size + 1, ordered.length);
                     void global.PlayerMetrics?.record('fallback', { providerId: global.PlayerDiagnostics?.safeSourceId(value) || 'unknown', reason });
                     const selection = this.playbackController?.getSelection?.();
                     const runtime = this.playbackController?.getRuntimeState?.();
@@ -172,6 +202,17 @@
                 }
                 return false;
             } finally { run.switching = false; }
+        },
+        scheduleTimeoutFallback(value, requestId) {
+            const GRACE_MS = 12000;
+            clearTimeout(this.watchTimeoutFallbackTimer);
+            this.watchTimeoutFallbackTimer = setTimeout(() => {
+                const container = this.elements?.videoContainer;
+                // Came up in the meantime, or the user/another request moved on.
+                if (!container || container.dataset?.sourceState !== 'unavailable') return;
+                if (!this.isSourceSwitchRequestCurrent?.(requestId) || this.activeSourceValue !== value) return;
+                void this.handleWatchSourceFailure(value, requestId, 'stalled');
+            }, GRACE_MS);
         },
         tryOtherWatchSource() {
             if (!this.proPlayerEnabled || this.watchRoomController?.room) return;
