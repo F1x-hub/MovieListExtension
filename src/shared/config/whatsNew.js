@@ -1,5 +1,15 @@
 export const whatsNew = [
     {
+        id: '1.3.9', version: '1.3.9', date: '2026-10-19',
+        highlights: [
+            { id: 'live', title: { ru: 'Эфир — кино как по телевизору', en: 'Live — watch together like TV' }, text: { ru: 'Новая страница «Эфир» в верхнем меню: один показ для всех, кто зайдёт позже, попадает на тот же момент. Ведущий запускает фильм или ссылку YouTube и управляет показом прямо в плеере.', en: 'A new Live page in the top menu: one shared showing, and late joiners land on the same moment. The host starts a film or a YouTube link and drives it from the player.' } },
+            { id: 'live-relay', title: { ru: 'Трансляция ведущего', en: 'Host relay' }, text: { ru: 'Если у зрителя источник недоступен, он подключается к трансляции вкладки ведущего. Озвучка, качество и субтитры остаются у каждого свои.', en: 'If a source is unavailable for a viewer, they join a relay of the host\'s tab. Voiceover, quality and subtitles stay personal.' } },
+            { id: 'watch-default', title: { ru: 'Новый просмотр для всех', en: 'The new player for everyone' }, text: { ru: 'Интерфейс «Смотреть» теперь включён у всех пользователей — без настроек и админ-панели.', en: 'The Watch interface is now on for every user, with no settings or admin switch.' } },
+            { id: 'polish', title: { ru: 'Аккуратнее интерфейс', en: 'A cleaner interface' }, text: { ru: 'Скелетоны вместо мигающих загрузчиков, мягкое свечение постера, плавные отклики кнопок и всплывающие уведомления с отменой.', en: 'Skeletons instead of flashing loaders, a soft poster glow, gentle button feedback and toasts with undo.' } },
+            { id: 'contrast', title: { ru: 'Светлая тема читается', en: 'Readable light theme' }, text: { ru: 'Исправлен контраст админки, каталога, кнопок ошибок и счётчиков; мелкий текст стал крупнее.', en: 'Contrast fixes across admin, catalog, error buttons and counters; small text is larger.' } }
+        ]
+    },
+    {
         id: '1.3.8', version: '1.3.8', date: '2026-10-18',
         highlights: [
             { id: 'discovery', title: { ru: 'Быстрее поиск и оценки', en: 'Faster search and ratings' }, text: { ru: 'Поиск и загрузка оценок Кинопоиска и IMDb сначала используют быстрые запросы. Недостающие оценки догружаются на карточках, а страницы Кинопоиска остаются запасным вариантом.', en: 'Search and Kinopoisk/IMDb ratings try fast requests first. Missing ratings fill in on cards, with Kinopoisk pages retained as a fallback.' } },
