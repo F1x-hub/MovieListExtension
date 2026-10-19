@@ -42,8 +42,8 @@ lists, provider-aware playback, and Firebase synchronization in one interface.
   HLS/file alternative cannot supply frames to the independent preview decoder.
 - Add watchlist and rating controls to supported external movie websites through
   content scripts.
-- Use light/dark themes, Popup or Side Panel mode, localized UI, and accessible
-  controls.
+- Use light/dark themes with optional seasonal decor, Popup or Side Panel mode,
+  localized UI, and accessible controls.
 - Give administrators tools for user approval, moderation, mappings, and service
   diagnostics.
 
@@ -238,6 +238,7 @@ local MediaPlayer and Jackett services; an older Suite version requires the curr
 | `npm run test-word-guess` | Run WordGuess data, controller, and persistence tests |
 | `npm run test-games-modal` | Run mini-games launcher, Rubik's Cube, and games regression tests |
 | `npm run test:visual-design` | Verify the monochrome palette and shared UI token contract |
+| `npm run test:seasonal-theme` | Check seasonal decor dates, opt-out, Settings preview and the Home season banner |
 | `npm run test:popup` | Verify popup interactions, request races, failure recovery, profile caches and shared surface contracts |
 | `npm run test:media-player` | Verify the local MediaPlayer client and torrent picker contract |
 | `npm run test:player-smoke` | Load the unpacked extension in Chromium and verify synthetic HLS frames with local fixtures and blocked external probes |
@@ -258,6 +259,31 @@ listener. For the T0 harness, use a free loopback port if the real MediaPlayer
 already occupies that port (PowerShell: `$env:PLAYER_FIXTURE_PORT='0'; npm run test:player-smoke`).
 This verifies the offline harness; the separate `test:player-hls-policy` checks the
 implemented controlled-HLS boundary. Neither test verifies live providers.
+
+## HDRezka playback pilot
+
+Open `src/pages/hdrezka-probe/hdrezka-probe.html` under the loaded extension's
+`chrome-extension://<extension-id>/` origin after rebuilding and reloading it.
+Import a local Network HAR and press **Воспроизвести** to test a captured stream
+in the shared HLS player. **Остановить** disposes playback; **Очистить** also
+forgets the imported sources. The HAR is not uploaded and signed URLs are kept
+only in page memory. Captures may expire and need to be recorded again.
+
+This is a manual playback pilot, not an automatic catalogue provider. It does
+not search HDRezka, solve browser challenges, select dubbing, or refresh signed
+links. Only successful `.m3u8` responses on the two observed final hosts
+`weyland.stream.voidboost.one` and `hronos.stream.voidboost.one` are accepted.
+Its separate `hdrezka` transport profile omits cookies, rejects redirects, and
+restricts child requests to the captured manifest's origin and directory. The
+existing remote-provider profile retains its previous host allowlist.
+
+Run `npm run test:hdrezka-probe` for offline import, playback, seeking, error and
+layout checks. An explicit live check uses
+`$env:HDREZKA_PROBE_HAR='<absolute HAR path>'; node tests/hdrezkaProbeBrowser.cjs`
+in PowerShell; it loads only the pilot/player files into an empty Chromium
+profile and contacts the captured CDN. Reports contain aggregate results, not
+signed URLs, and are written under `artifacts/hdrezka-probe/`.
+Set `$env:HDREZKA_PROBE_DIST='1'` as well to check the generated `dist/` files.
 
 ## Data and security notes
 
@@ -324,15 +350,19 @@ keeps npm-compatible three-component semver metadata.
 
 ### Features
 
+- Added a manual HDRezka playback pilot that opens captured HLS streams from a local HAR in the shared player, with a separate CDN and session-directory policy, stop/clear controls, and explicit expired-link errors. Automatic HDRezka search and source discovery are not included.
+
 - The source rail only offers sources that really have the film: every source searches for the title in the background (with the same options playback uses, so starting it reuses the cached result) and a button appears only once its source confirms the title. While checking the rail says «Ищем фильм в источниках…», and «Фильм не найден в источниках» when none has it; «Смотреть» waits for the check instead of guessing.
 
 - New «Официально · YouTube» source: free, licensed full-length films from film studios' own YouTube channels (Мосфильм, Ленфильм, Киностудия Горького, Беларусьфильм, Союзмультфильм and others). A result is accepted only from a verified channel on the studio allowlist, at feature length (40+ min), with a matching title and year; a complete upload is preferred over «1 серия». Plays through the extension's YouTube wrapper and is offered for films, not series.
 - More reliable sources: the default and fallback order now follows each user's own last-7-day start rate and first-frame time per source (sources with fewer than three attempts stay neutral); a source that times out gets a 12-second grace period and then the player moves on automatically; every automatic switch shows «X не запустился — пробуем Y (2 из 4)», and when nothing starts the viewer is pointed to «Торрент».
 
 - «Эфир» schedule: in the admin section a show can start «Сейчас» or «По расписанию» at a date and time in the admin's own time zone. Planned shows start and end on their own for every viewer (with a countdown before), a later start supersedes an earlier one, «Остановить эфир» also stops a running scheduled show, and the admin's player controls drive whichever show is on air. The admin sees the schedule with times, covers and status and can delete entries; finished entries older than a day are swept automatically. Optional length for YouTube items lets scheduled videos and streams end on time. Requires publishing the updated Firestore rules (`cinemaSchedule`).
+- Halloween season decor, on automatically from 17 October to 7 November (local time) in both light and dark themes: the navigation gets a faint orange-violet tint, a glowing lower edge and a carved jack-o'-lantern clapperboard logo (also in the popup); seven glowing pumpkin lanterns hang from the navigation and tuck away on scroll; three bats cross the page on load (at most every 3 minutes). On wide screens (1640px+) the empty side margins get their own illustrated art on every page: a shaded branch with dry leaves and a sleeping bat wrapped in its wings and a foggy graveyard on the left (shaded headstones with «RIP», a crow on a cross, an iron fence, a lit candle and a glowing ghost), a black-widow spider with a glowing hourglass on a fading thread and a pumpkin patch on the right (ribbed jack-o'-lanterns with candle-lit faces, a plain pumpkin, fallen leaves and a warm glow on the ground); both corners fade softly toward the content. Every 20–35 seconds one small scene plays in turn: the spider climbs its thread and glides back down, the ghost vanishes and peeks out by the graves, and the jack-o'-lanterns gutter out and flare up (paused in hidden tabs and under reduced motion). Home shows a dismissible night-scene «Сезон Хэллоуина» banner (moon, graves and a haunted house with lit windows) with a countdown to 31 October and an orange «Подборка ужасов» button that opens horror films in Catalog. Shared buttons, menus and focus stay neutral; decor ignores clicks and stops animating under reduced motion. Settings → «Дополнительно» → «Сезонное оформление» turns it off.
 
 ### Fixes
 
+- Catalog header («Все фильмы», result count) is readable in the light theme again: it used a fixed dark gradient under dark light-theme text; it now uses the light surface tokens there, while the dark theme is unchanged.
 - Fixed sources opening a different film: a shared check now rejects any search result whose year is more than one year away from the film's (remakes and namesakes such as «Король Лев» 2019 for 1994; series are exempt for later seasons) or whose title is not the film's Russian or original title — extra meaningful words («Мама, я дома» for «Мама») no longer pass, while provider noise like «смотреть онлайн HD» is ignored. Ex-FS and Kinogo no longer let an identical title excuse a wrong year for films. Rejections are logged to the console for diagnosis.
 - Reaction notifications now reach users whose page restores sign-in from the cached session: the inbox is read only after Firebase Auth is signed in as that user, and a failed read no longer silences the check for the next 10 minutes.
 - Updater no longer reloads the extension in an endless loop when the host replaced a different folder than the one Chrome loaded: after one reload with the old version still running, the update stops with `RELOAD_VERSION_MISMATCH`. `MovieListSetup.exe` can now switch the extension folder while such an update is stuck in «awaiting confirmation» (it closes that operation instead of refusing with «Нельзя сменить папку во время активного обновления»).

@@ -1,0 +1,914 @@
+/**
+ * Seasonal decoration — documented exception to the neutral palette.
+ *
+ * Owned by SeasonalThemeService. Every chromatic value is a token on the
+ * season root (`.season-halloween`, plus its light-theme variant); rules below
+ * consume those tokens or neutral values only. Decoration never recolors
+ * functional chrome: buttons, menus, focus rings and form controls stay
+ * neutral. The navigation receives only a decorative tint, edge glow and the
+ * seasonal logo; the Home banner is an illustration with its own scene.
+ */
+
+.season-halloween {
+    --season-ember: #ff8a2a;
+    --season-ember-deep: #c2560f;
+    --season-ember-glow: rgba(255, 138, 42, 0.5);
+    --season-carve: #1c0b02;
+    --season-stem: #5b6b2c;
+    --season-window: #ffb04a;
+    --season-candle: #ffe9a8;
+    --season-nav-tint: linear-gradient(90deg, rgba(255, 118, 20, 0.07), rgba(124, 72, 230, 0.06) 50%, rgba(255, 118, 20, 0.07));
+    --season-nav-line: linear-gradient(90deg, transparent, #ff8a2a 18%, #8b5cf6 50%, #ff8a2a 82%, transparent);
+    --season-night: linear-gradient(115deg, #140b22 0%, #2a1242 52%, #4a1d0c 100%);
+    --season-banner-border: rgba(255, 138, 42, 0.35);
+    --season-decor-ink-strong: rgba(var(--theme-ink-rgb, 255, 255, 255), 0.32);
+    --season-side-ink: rgba(var(--theme-ink-rgb, 255, 255, 255), 0.17);
+    /* Graveyard corner */
+    --season-stone-hi: #52525b;
+    --season-stone-lo: #27272a;
+    --season-stone-side: #18181b;
+    --season-stone-rim: rgba(255, 255, 255, 0.16);
+    --season-engrave: rgba(0, 0, 0, 0.55);
+    --season-ground-top: #27272a;
+    --season-ground-bottom: #09090b;
+    --season-ground-rim: rgba(255, 255, 255, 0.1);
+    --season-grass: #52525b;
+    --season-fence: #27272a;
+    --season-fog: rgba(228, 228, 231, 0.13);
+    --season-shadow: rgba(0, 0, 0, 0.55);
+    --season-ghost-top: rgba(250, 250, 250, 0.95);
+    --season-ghost-bottom: rgba(250, 250, 250, 0);
+    --season-ghost-stroke: transparent;
+    --season-ghost-eye: #18181b;
+    --season-ghost-glow: rgba(255, 255, 255, 0.35);
+    --season-crow: #000000;
+    --season-crow-rim: rgba(255, 255, 255, 0.4);
+    --season-crow-wing: #3f3f46;
+    --season-wax: #e4e4e7;
+    --season-glow-core: rgba(255, 176, 74, 0.45);
+    --season-glow-edge: rgba(255, 176, 74, 0);
+    /* Pumpkin patch corner */
+    --season-pk-hi: #ffb15c;
+    --season-pk-mid: #f27a1a;
+    --season-pk-lo: #a9470b;
+    --season-pk-rib: rgba(110, 40, 4, 0.6);
+    --season-pk-carve-rim: #6b2604;
+    --season-pk-face-core: #fff6cf;
+    --season-pk-face-edge: #ffa62b;
+    --season-stem-hi: #8c7d3c;
+    --season-stem-lo: #463d1c;
+    --season-vine: #5f7030;
+    --season-leaf-a: #a8461b;
+    --season-leaf-b: #7a3412;
+    --season-pool-core: rgba(255, 138, 42, 0.32);
+    --season-pool-edge: rgba(255, 138, 42, 0);
+    /* Bats cross posters too: a dark silhouette with a pale rim reads on both. */
+    --season-bat-fill: #000000;
+    --season-bat-rim: rgba(255, 255, 255, 0.55);
+}
+
+.season-halloween.light-theme {
+    --season-ember: #d9620f;
+    --season-ember-deep: #a3470a;
+    --season-ember-glow: rgba(217, 98, 15, 0.45);
+    --season-nav-tint: linear-gradient(90deg, rgba(234, 110, 20, 0.06), rgba(124, 72, 230, 0.05) 50%, rgba(234, 110, 20, 0.06));
+    --season-nav-line: linear-gradient(90deg, transparent, #d9620f 18%, #7c3aed 50%, #d9620f 82%, transparent);
+    --season-decor-ink-strong: rgba(var(--theme-ink-rgb, 9, 9, 11), 0.3);
+    --season-side-ink: rgba(var(--theme-ink-rgb, 9, 9, 11), 0.15);
+    --season-stone-hi: #e4e4e7;
+    --season-stone-lo: #a1a1aa;
+    --season-stone-side: #71717a;
+    --season-stone-rim: rgba(255, 255, 255, 0.8);
+    --season-engrave: rgba(9, 9, 11, 0.35);
+    --season-ground-top: #d4d4d8;
+    --season-ground-bottom: #f4f4f5;
+    --season-ground-rim: rgba(255, 255, 255, 0.7);
+    --season-grass: #a1a1aa;
+    --season-fence: #d4d4d8;
+    --season-fog: rgba(255, 255, 255, 0.75);
+    --season-shadow: rgba(9, 9, 11, 0.18);
+    --season-ghost-top: #ffffff;
+    --season-ghost-bottom: rgba(255, 255, 255, 0);
+    --season-ghost-stroke: rgba(9, 9, 11, 0.18);
+    --season-ghost-glow: rgba(9, 9, 11, 0.16);
+    --season-crow: #18181b;
+    --season-crow-rim: transparent;
+    --season-crow-wing: #52525b;
+    --season-glow-core: rgba(234, 140, 40, 0.32);
+    --season-glow-edge: rgba(234, 140, 40, 0);
+    --season-pool-core: rgba(234, 110, 20, 0.2);
+    --season-pool-edge: rgba(234, 110, 20, 0);
+    --season-bat-fill: #18181b;
+    --season-bat-rim: rgba(255, 255, 255, 0.75);
+}
+
+/* ---------- Logo mark ---------- */
+
+.season-logo {
+    display: none;
+    fill: var(--theme-text-primary, currentColor);
+}
+
+.season-logo__ember {
+    fill: var(--season-ember, transparent);
+}
+
+.season-halloween .season-logo {
+    display: block;
+}
+
+.season-halloween .nav-logo-image--default,
+html.season-halloween .popup-logo-img {
+    display: none;
+}
+
+.popup-logo-mark {
+    width: 24px;
+    height: 24px;
+}
+
+.season-halloween .nav-logo .season-logo,
+.season-halloween .popup-logo .season-logo {
+    filter: drop-shadow(0 0 7px var(--season-ember-glow));
+}
+
+.season-halloween .season-logo__ember {
+    animation: season-ember-flicker 2.6s ease-in-out 0.4s 3;
+}
+
+@keyframes season-ember-flicker {
+    0%, 100% { opacity: 1; }
+    18% { opacity: 0.72; }
+    26% { opacity: 0.95; }
+    44% { opacity: 0.8; }
+    70% { opacity: 1; }
+}
+
+/* ---------- Navigation: decorative tint and glowing edge ---------- */
+
+.season-halloween .nav-header {
+    background-image: var(--season-nav-tint);
+    border-bottom-color: transparent;
+}
+
+.season-halloween .nav-header::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    bottom: -1px;
+    left: 0;
+    height: 2px;
+    background: var(--season-nav-line);
+    box-shadow: 0 0 10px 0 var(--season-ember-glow);
+    opacity: 0.7;
+    pointer-events: none;
+}
+
+/* ---------- Lit windows and moon (Home banner scene) ---------- */
+
+.season-scene__window {
+    fill: var(--season-window);
+    filter: drop-shadow(0 0 4px var(--season-ember-glow));
+    animation: season-ember-flicker 3.4s ease-in-out 1s 2;
+}
+
+
+.season-scene__moon {
+    fill: #fafafa;
+}
+
+.season-scene__halo {
+    fill: rgba(255, 255, 255, 0.12);
+}
+
+/*
+ * Side art fills the empty page margins. It sizes itself from the widest page
+ * content (1440px) and is hidden when the margins are too narrow, so it never
+ * reaches posters or text.
+ */
+.seasonal-decor {
+    --season-side-art: min(calc((100vw - 1440px) / 2 - 16px), 280px);
+}
+
+.seasonal-side {
+    position: absolute;
+    display: block;
+    overflow: visible;
+    color: var(--season-side-ink);
+}
+
+.seasonal-side__branch {
+    top: calc(var(--season-nav-bottom, 53px) + 64px);
+    left: 0;
+    width: var(--season-side-art);
+    height: auto;
+}
+
+.seasonal-side__graves {
+    bottom: 0;
+    left: 0;
+    width: var(--season-side-art);
+    height: auto;
+    /* The scene dissolves toward the content instead of ending at a hard edge. */
+    -webkit-mask-image: linear-gradient(to right, #000000 76%, transparent 100%);
+    mask-image: linear-gradient(to right, #000000 76%, transparent 100%);
+}
+
+/* Gradient stops: colors come from the season tokens above. */
+.season-stop--stone-hi { stop-color: var(--season-stone-hi); }
+.season-stop--stone-lo { stop-color: var(--season-stone-lo); }
+.season-stop--ground-top { stop-color: var(--season-ground-top); }
+.season-stop--ground-bottom { stop-color: var(--season-ground-bottom); }
+.season-stop--ghost-top { stop-color: var(--season-ghost-top); }
+.season-stop--ghost-bottom { stop-color: var(--season-ghost-bottom); }
+.season-stop--glow-core { stop-color: var(--season-glow-core); }
+.season-stop--glow-edge { stop-color: var(--season-glow-edge); }
+.season-stop--pk-hi { stop-color: var(--season-pk-hi); }
+.season-stop--pk-mid { stop-color: var(--season-pk-mid); }
+.season-stop--pk-lo { stop-color: var(--season-pk-lo); }
+.season-stop--face-core { stop-color: var(--season-pk-face-core); }
+.season-stop--face-edge { stop-color: var(--season-pk-face-edge); }
+.season-stop--stem-hi { stop-color: var(--season-stem-hi); }
+.season-stop--stem-lo { stop-color: var(--season-stem-lo); }
+.season-stop--pool-core { stop-color: var(--season-pool-core); }
+.season-stop--pool-edge { stop-color: var(--season-pool-edge); }
+.season-stop--bat-hi { stop-color: var(--season-crow-wing); }
+.season-stop--bat-lo { stop-color: var(--season-bat-fill); }
+
+.season-gy-fence {
+    fill: var(--season-fence);
+}
+
+.season-gy-far {
+    opacity: 0.55;
+}
+
+.season-gy-fog {
+    fill: var(--season-fog);
+}
+
+.season-gy-fog-front {
+    animation: season-fog-drift 8s ease-in-out 1s 4 alternate;
+}
+
+@keyframes season-fog-drift {
+    from { transform: translateX(0); }
+    to { transform: translateX(12px); }
+}
+
+.season-gy-rim {
+    fill: none;
+    stroke: var(--season-ground-rim);
+    stroke-width: 1.5;
+}
+
+.season-gy-grass {
+    fill: none;
+    stroke: var(--season-grass);
+    stroke-width: 1.3;
+    stroke-linecap: round;
+}
+
+.season-gy-shadow {
+    fill: var(--season-shadow);
+}
+
+.season-gy-side {
+    fill: var(--season-stone-side);
+}
+
+.season-gy-edge {
+    fill: none;
+    stroke: var(--season-stone-rim);
+    stroke-width: 1.4;
+    stroke-linecap: round;
+}
+
+.season-gy-engrave {
+    fill: var(--season-engrave);
+    font: 700 11px/1 system-ui, sans-serif;
+    letter-spacing: 1px;
+}
+
+.season-gy-groove,
+.season-gy-crack {
+    fill: none;
+    stroke: var(--season-engrave);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.season-gy-groove {
+    stroke-width: 1.6;
+}
+
+.season-gy-crack {
+    stroke-width: 1;
+}
+
+.season-gy-crow {
+    fill: var(--season-crow);
+    filter: drop-shadow(0 0 1px var(--season-crow-rim));
+}
+
+.season-gy-crow-legs,
+.season-gy-wick {
+    fill: none;
+    stroke: var(--season-crow);
+    stroke-width: 1.2;
+}
+
+.season-gy-crow-wing {
+    fill: none;
+    stroke: var(--season-crow-wing);
+    stroke-width: 1.2;
+    stroke-linecap: round;
+}
+
+.season-gy-crow-eye {
+    fill: var(--season-ember);
+}
+
+.season-gy-wax {
+    fill: var(--season-wax);
+}
+
+.season-gy-flame {
+    fill: var(--season-candle);
+    filter: drop-shadow(0 0 3px var(--season-window));
+}
+
+.season-gy-flame,
+.season-gy-candle-glow {
+    animation: season-ember-flicker 2.2s ease-in-out 0.3s 4;
+}
+
+.season-ghost {
+    transform-box: fill-box;
+    transform-origin: 50% 50%;
+    filter: drop-shadow(0 0 10px var(--season-ghost-glow));
+    animation: season-ghost-float 4.5s ease-in-out 1s 3;
+}
+
+/* Fill comes from the markup gradient; CSS adds only the outline. */
+.season-ghost__body {
+    stroke: var(--season-ghost-stroke);
+    stroke-width: 1.2;
+}
+
+.season-ghost__shadow {
+    opacity: 0.45;
+}
+
+.season-ghost__eye {
+    fill: var(--season-ghost-eye);
+}
+
+.season-ghost__shine {
+    fill: rgba(255, 255, 255, 0.85);
+}
+
+
+@keyframes season-ghost-float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+}
+
+.seasonal-side__spider {
+    top: var(--season-nav-bottom, 53px);
+    right: calc(var(--season-side-art) * 0.66);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transform-origin: 50% 0;
+    animation: season-spider-drop 1.8s var(--motion-ease-out, ease-out) 0.6s both;
+}
+
+.seasonal-side__thread {
+    display: block;
+    width: 1px;
+    height: 26vh;
+    background: linear-gradient(to bottom, transparent, currentColor 30%);
+}
+
+.seasonal-side__spider-body {
+    width: 42px;
+    height: 42px;
+    margin-top: -10px;
+    filter: drop-shadow(0 0 1px var(--season-bat-rim));
+}
+
+.season-sp-legs {
+    fill: none;
+    stroke: var(--season-bat-fill);
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.season-sp-mark,
+.season-sp-eye {
+    fill: var(--season-ember);
+}
+
+.season-sp-eye {
+    filter: drop-shadow(0 0 2px var(--season-ember-glow));
+}
+
+.season-sp-sheen {
+    fill: rgba(255, 255, 255, 0.25);
+}
+
+.season-br-limb {
+    fill: none;
+    stroke-linecap: round;
+}
+
+.season-br-bat {
+    filter: drop-shadow(0 0 1px var(--season-bat-rim));
+    transform-box: fill-box;
+    transform-origin: 50% 0;
+    animation: season-ornament-sway 4s ease-in-out 1.2s 2;
+}
+
+@keyframes season-spider-drop {
+    from { transform: translateY(-30vh); }
+    to { transform: translateY(0); }
+}
+
+.seasonal-side__pumpkins {
+    right: 0;
+    bottom: 0;
+    width: var(--season-side-art);
+    height: auto;
+    -webkit-mask-image: linear-gradient(to left, #000000 82%, transparent 100%);
+    mask-image: linear-gradient(to left, #000000 82%, transparent 100%);
+}
+
+.season-pk-lobe {
+    stroke: var(--season-pk-rib);
+    stroke-width: 1.2;
+}
+
+.season-pk-vine {
+    fill: none;
+    stroke: var(--season-vine);
+    stroke-width: 1.6;
+    stroke-linecap: round;
+}
+
+.season-pk-leaf {
+    fill: var(--season-vine);
+}
+
+.season-pk-leaf-vein {
+    fill: none;
+    stroke: var(--season-stem-lo);
+    stroke-width: 0.8;
+}
+
+.season-pk-shine {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.35);
+    stroke-width: 2.5;
+    stroke-linecap: round;
+}
+
+.season-pk-rim {
+    fill: var(--season-pk-carve-rim);
+}
+
+.season-pk-tooth {
+    fill: var(--season-pk-mid);
+}
+
+.season-pk-face {
+    filter: drop-shadow(0 0 3px var(--season-pk-face-edge)) drop-shadow(0 0 9px var(--season-ember-glow));
+    animation: season-ember-flicker 3s ease-in-out 0.6s 3;
+}
+
+.season-pk-fallen--a {
+    fill: var(--season-leaf-a);
+}
+
+.season-pk-fallen--b {
+    fill: var(--season-leaf-b);
+}
+
+.season-pk-fallen-vein {
+    fill: none;
+    stroke: rgba(0, 0, 0, 0.3);
+    stroke-width: 0.8;
+}
+
+@media (max-width: 1639px) {
+    .seasonal-side {
+        display: none;
+    }
+}
+
+/* ---------- Decorative layer above content ---------- */
+
+.seasonal-decor {
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--z-dropdown, 1000) - 100);
+    overflow: hidden;
+    pointer-events: none;
+    contain: strict;
+}
+
+/* Garland hanging from the navigation; it tucks away once the page scrolls. */
+.seasonal-decor__garland {
+    position: absolute;
+    top: var(--season-nav-bottom, 53px);
+    right: 0;
+    left: 0;
+    height: 52px;
+    color: var(--season-decor-ink-strong);
+    transition: opacity var(--motion-duration-slow, 240ms) var(--motion-ease-out, ease-out),
+        transform var(--motion-duration-slow, 240ms) var(--motion-ease-out, ease-out);
+}
+
+.seasonal-decor.is-scrolled .seasonal-decor__garland {
+    opacity: 0;
+    transform: translateY(-18px);
+}
+
+.seasonal-decor__garland-string {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 20px;
+}
+
+.seasonal-decor__ornament {
+    position: absolute;
+    top: 2px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-left: -11px;
+    transform-origin: 50% 0;
+    animation: season-ornament-sway 3.2s ease-in-out 0.8s 2;
+}
+
+.seasonal-decor__ornament:nth-of-type(odd) {
+    animation-delay: 1.3s;
+}
+
+.seasonal-decor__ornament-thread {
+    display: block;
+    width: 1px;
+    height: var(--season-drop, 8px);
+    background: currentColor;
+}
+
+.season-ornament {
+    display: block;
+    width: 22px;
+    height: 22px;
+    filter: drop-shadow(0 0 6px var(--season-ember-glow));
+}
+
+.season-ornament__body {
+    fill: var(--season-ember);
+}
+
+.season-ornament__rib {
+    fill: var(--season-ember-deep);
+}
+
+.season-ornament__carve {
+    fill: var(--season-carve);
+}
+
+.season-ornament__stem {
+    fill: var(--season-stem);
+}
+
+@keyframes season-ornament-sway {
+    0%, 100% { transform: rotate(0deg); }
+    30% { transform: rotate(5deg); }
+    70% { transform: rotate(-4deg); }
+}
+
+.seasonal-decor__bats {
+    position: absolute;
+    inset: 0;
+}
+
+.seasonal-decor__bat {
+    position: absolute;
+    left: 0;
+    top: var(--season-bat-top, 18%);
+    width: var(--season-bat-size, 44px);
+    color: var(--season-bat-fill);
+    filter: drop-shadow(0 0 1px var(--season-bat-rim));
+    opacity: 0;
+    animation: season-bat-flight var(--season-bat-duration, 8s) linear var(--season-bat-delay, 1s) 1 both;
+}
+
+.seasonal-decor__bat-wings {
+    display: block;
+    width: 100%;
+    height: auto;
+    transform-origin: 50% 60%;
+    animation: season-bat-flap 0.2s ease-in-out var(--season-bat-delay, 1s) 50 alternate;
+}
+
+.seasonal-decor__bat--1 {
+    --season-bat-top: 18%;
+    --season-bat-size: 40px;
+    --season-bat-delay: 0.9s;
+}
+
+.seasonal-decor__bat--2 {
+    --season-bat-top: 26%;
+    --season-bat-size: 30px;
+    --season-bat-delay: 1.3s;
+    --season-bat-duration: 9s;
+}
+
+.seasonal-decor__bat--3 {
+    --season-bat-top: 12%;
+    --season-bat-size: 24px;
+    --season-bat-delay: 1.7s;
+    --season-bat-duration: 10s;
+}
+
+@keyframes season-bat-flight {
+    0% { opacity: 0; transform: translate(-60px, 0); }
+    5% { opacity: 0.95; }
+    25% { transform: translate(25vw, -30px); }
+    50% { transform: translate(50vw, 14px); }
+    75% { transform: translate(75vw, -22px); }
+    95% { opacity: 0.95; }
+    100% { opacity: 0; transform: translate(calc(100vw + 60px), 6px); }
+}
+
+@keyframes season-bat-flap {
+    from { transform: scaleY(1); }
+    to { transform: scaleY(0.4); }
+}
+
+@media (max-width: 768px) {
+    .seasonal-decor__garland {
+        top: var(--season-nav-bottom, 58px);
+    }
+
+    /* Narrow screens keep every other lantern. */
+    .seasonal-decor__ornament:nth-of-type(even) {
+        display: none;
+    }
+}
+
+/* ---------- Home banner: a small night scene ---------- */
+
+.season-banner {
+    display: none;
+}
+
+.season-halloween .season-banner:not([hidden]) {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    min-height: 128px;
+    margin: 0 0 48px;
+    padding: 24px 56px 24px 28px;
+    overflow: hidden;
+    background: var(--season-night);
+    border: 1px solid var(--season-banner-border);
+    border-radius: 20px;
+    box-shadow: 0 14px 44px -18px var(--season-ember-glow);
+}
+
+/* The scene sits left of the call-to-action so nothing covers the house. */
+.season-banner__scene {
+    position: absolute;
+    right: 230px;
+    bottom: 0;
+    width: 260px;
+    height: 100%;
+    pointer-events: none;
+}
+
+.season-banner__scene .season-scene {
+    position: absolute;
+    right: 0;
+    bottom: -1px;
+    width: 100%;
+    height: 100%;
+}
+
+.season-banner .season-scene__ground {
+    fill: rgba(0, 0, 0, 0.62);
+}
+
+.season-banner .season-scene__tree {
+    stroke: rgba(0, 0, 0, 0.62);
+}
+
+.season-banner__mark {
+    position: relative;
+    z-index: 1;
+    flex: 0 0 64px;
+    width: 64px;
+    height: 64px;
+}
+
+.season-banner__mark::before {
+    content: "";
+    position: absolute;
+    inset: 10px 2px -2px;
+    border-radius: 50%;
+    background: radial-gradient(closest-side, var(--season-ember-glow), transparent);
+    filter: blur(8px);
+}
+
+.season-banner__mark .season-logo {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    fill: #fafafa;
+}
+
+.season-banner__text {
+    position: relative;
+    z-index: 1;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.season-halloween .season-banner__title {
+    margin: 0 0 6px;
+    color: #fafafa;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.season-halloween .season-banner__message {
+    margin: 0;
+    color: rgba(250, 250, 250, 0.8);
+    font-size: 15px;
+    line-height: 1.5;
+}
+
+.season-halloween .season-banner .season-banner__cta {
+    position: relative;
+    z-index: 1;
+    flex: 0 0 auto;
+    color: #09090b;
+    text-decoration: none;
+    background: var(--season-ember);
+    border-color: transparent;
+    box-shadow: 0 6px 20px -6px var(--season-ember-glow);
+}
+
+.season-halloween .season-banner .season-banner__cta:hover:not(:disabled) {
+    color: #000000;
+    background: var(--season-ember);
+    filter: brightness(1.08);
+}
+
+.season-banner__close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    color: rgba(250, 250, 250, 0.75);
+    background: transparent;
+    border: 0;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: color var(--motion-duration-fast, 120ms) var(--motion-ease-out, ease-out),
+        background-color var(--motion-duration-fast, 120ms) var(--motion-ease-out, ease-out);
+}
+
+.season-banner__close:hover {
+    color: #fafafa;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.season-banner__close svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* Medium widths: the CTA moves closer, so the scene steps back behind it. */
+@media (max-width: 1000px) {
+    .season-banner__scene {
+        right: 0;
+        width: 260px;
+        opacity: 0.45;
+    }
+}
+
+@media (max-width: 600px) {
+    .season-halloween .season-banner:not([hidden]) {
+        flex-wrap: wrap;
+        gap: 14px;
+        padding: 18px 48px 18px 18px;
+    }
+
+    .season-banner__scene {
+        right: 0;
+        width: 200px;
+        opacity: 0.6;
+    }
+
+    .season-banner .season-scene__moon,
+    .season-banner .season-scene__halo {
+        display: none;
+    }
+
+    .season-banner__mark {
+        flex-basis: 48px;
+        width: 48px;
+        height: 48px;
+    }
+
+    .season-banner__text {
+        flex-basis: calc(100% - 62px);
+    }
+
+    .season-halloween .season-banner .season-banner__cta {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+/* ---------- Rare side-art scenes (SeasonalThemeService rotates them) ---------- */
+
+.seasonal-decor.is-ready .seasonal-side__spider {
+    animation: none;
+}
+
+.seasonal-decor.is-scene-spider .seasonal-side__spider {
+    animation: season-scene-spider 7s ease-in-out both;
+}
+
+@keyframes season-scene-spider {
+    0%, 100% { transform: translateY(0); }
+    40%, 60% { transform: translateY(-24vh); }
+}
+
+.seasonal-decor.is-scene-ghost .season-ghost {
+    animation: season-scene-ghost 6s ease-in-out both;
+}
+
+@keyframes season-scene-ghost {
+    0%, 100% { opacity: 1; transform: translate(0, 0); }
+    25% { opacity: 0; transform: translate(0, -16px); }
+    55% { opacity: 0; transform: translate(-140px, 90px); }
+    70% { opacity: 1; transform: translate(-140px, 50px); }
+    82% { opacity: 1; transform: translate(-140px, 56px); }
+    90% { opacity: 0; transform: translate(-140px, 90px); }
+    95% { opacity: 0; transform: translate(0, -10px); }
+}
+
+.seasonal-decor.is-scene-pumpkins .season-pk-face {
+    animation: season-scene-pumpkins 4s ease-in-out both;
+}
+
+@keyframes season-scene-pumpkins {
+    0%, 100% { opacity: 1; }
+    15% { opacity: 0.15; }
+    25% { opacity: 0.6; }
+    35% { opacity: 0.05; }
+    60% { opacity: 0.05; }
+    75% { opacity: 1; filter: drop-shadow(0 0 6px var(--season-pk-face-edge)) drop-shadow(0 0 18px var(--season-ember-glow)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .season-halloween .season-logo__ember,
+    .season-scene__window,
+    .season-ghost,
+    .season-br-bat,
+    .season-gy-fog-front,
+    .season-gy-flame,
+    .season-gy-candle-glow,
+    .season-pk-face,
+    .seasonal-side__spider,
+    .seasonal-decor__ornament,
+    .seasonal-decor__bat-wings {
+        animation: none;
+    }
+
+    .seasonal-decor__garland {
+        transition: none;
+    }
+
+    .seasonal-decor__bats {
+        display: none;
+    }
+}
