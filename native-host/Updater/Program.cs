@@ -1263,7 +1263,14 @@ xwIDAQAB
                         extensionPath,
                         StringComparison.OrdinalIgnoreCase))
                 {
-                    throw new InvalidOperationException("Нельзя сменить папку во время активного обновления.");
+                    if (!string.Equals(existingOperation.Status, "awaiting_confirmation", StringComparison.Ordinal))
+                        throw new InvalidOperationException("Нельзя сменить папку во время активного обновления.");
+                    // Files were already written to the old folder, but Chrome runs another one.
+                    // Close the stuck operation so the extension stops waiting for that version.
+                    existingOperation.Status = "failed";
+                    existingOperation.ErrorCode = "SETUP_PATH_CHANGED";
+                    existingOperation.ErrorMessage = "Setup switched to another extension folder.";
+                    WriteJsonAtomic(StatePath, existingOperation);
                 }
                 var config = new InstallConfig { ExtensionPath = extensionPath, ExtensionId = extensionId, SetupVersion = UpdaterVersion, HostVersion = UpdaterVersion };
                 var permanentExecutable = Path.Combine(DataRoot, "MovieListUpdater.exe");
