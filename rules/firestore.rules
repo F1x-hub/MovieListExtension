@@ -399,8 +399,18 @@ service cloud.firestore {
 
     // The catalog is public read-only configuration. Only admins can publish
     // the allowlisted IDs consumed by reaction writes and client pickers.
+    // `cinemaChannel` is the shared «Эфир» broadcast: everyone reads it, only admins
+    // publish what is on air. It never holds media, only the item and start time.
     match /settings/{settingId} {
-      allow read: if settingId == 'commentReactions';
+      allow read: if settingId == 'commentReactions' || settingId == 'cinemaChannel';
+      allow create, update: if settingId == 'cinemaChannel'
+        && isAdmin()
+        && request.resource.data.mode in ['off', 'youtube', 'movie']
+        && request.resource.data.title is string
+        && request.resource.data.title.size() <= 120
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.startedAt is timestamp
+        && request.resource.data.keys().hasOnly(['mode', 'title', 'youtube', 'movie', 'startedAt', 'updatedAt', 'updatedBy']);
       allow create, update: if settingId == 'commentReactions'
         && isAdmin()
         && request.resource.data.reactions is list

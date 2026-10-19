@@ -510,28 +510,7 @@ a:hover {
     font-variant-numeric: tabular-nums;
 }
 
-/* Cross-page transitions between extension pages (same origin) */
-@view-transition {
-    navigation: auto;
-}
-
-::view-transition-old(root) {
-    animation: page-fade-out 140ms var(--ease-out-soft) both;
-}
-
-::view-transition-new(root) {
-    animation: page-fade-in 220ms var(--ease-out-soft) both;
-}
-
-@keyframes page-fade-out {
-    to { opacity: 0; }
-}
-
-@keyframes page-fade-in {
-    from { opacity: 0; transform: translateY(6px); }
-}
-
-/* Loaders stay invisible for the first 150ms so fast loads never flash */
+ /* Loaders stay invisible for the first 150ms so fast loads never flash */
 .app-loader__indicator,
 .app-loader__label,
 .loading-spinner,
@@ -664,8 +643,6 @@ a:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
-    ::view-transition-old(root),
-    ::view-transition-new(root),
     .empty-state,
     .ui-pop,
     .skeleton-card__poster,

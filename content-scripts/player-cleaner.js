@@ -331,6 +331,81 @@
         return permanentVideo || document.querySelector('video:not(.ghost-video)');
     }
 
+    // «Эфир» broadcast lock. The embedding extension page sends the channel clock
+    // ({ startMs, pausedAtSec }); viewers cannot pause or seek, the media simply
+    // follows the shared timeline like a TV channel. Only the admin moves that
+    // timeline, from the live page, and every viewer follows the new state.
+    let broadcastState = null;
+    const broadcastVideos = new WeakSet();
+    const BROADCAST_DRIFT_SEC = 3;
+
+    function broadcastTargetSec() {
+        if (!broadcastState) return null;
+        if (Number.isFinite(broadcastState.pausedAtSec)) return broadcastState.pausedAtSec;
+        return (Date.now() - broadcastState.startMs) / 1000;
+    }
+
+    function enforceBroadcast(video = getRoomSyncVideo()) {
+        if (!broadcastState || !video || !video.isConnected) return;
+        const duration = Number(video.duration);
+        if (!Number.isFinite(duration) || duration <= 0) return;
+        const target = broadcastTargetSec();
+        if (target >= duration - 1) return;
+        const paused = Number.isFinite(broadcastState.pausedAtSec);
+        const tolerance = paused ? 1 : BROADCAST_DRIFT_SEC;
+        if (Math.abs(video.currentTime - target) > tolerance) {
+            try { video.currentTime = Math.max(0, target); } catch { /* not seekable yet */ }
+        }
+        if (paused) {
+            if (!video.paused) video.pause();
+        } else if (video.paused && !video.ended) {
+            video.play().catch(() => {
+                video.muted = true;
+                video.play().catch(() => {});
+            });
+        }
+    }
+
+    function watchBroadcastVideo(video) {
+        if (!video || broadcastVideos.has(video)) return;
+        broadcastVideos.add(video);
+        const later = () => setTimeout(() => enforceBroadcast(video), 120);
+        ['loadedmetadata', 'canplay', 'play', 'pause', 'seeked'].forEach(type => video.addEventListener(type, later));
+    }
+
+    function blockBroadcastKeys(event) {
+        if (!broadcastState) return;
+        const keys = [' ', 'k', 'K', 'j', 'J', 'l', 'L', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'MediaPlayPause', 'MediaTrackNext', 'MediaTrackPrevious'];
+        if (keys.includes(event.key) || /^[0-9]$/.test(event.key)) {
+            event.stopImmediatePropagation();
+            event.preventDefault();
+        }
+    }
+
+    function applyBroadcastState(data) {
+        const startMs = Number(data.startMs);
+        if (!Number.isFinite(startMs) || startMs <= 0) return;
+        const pausedAtSec = data.pausedAtSec === null || data.pausedAtSec === undefined ? NaN : Number(data.pausedAtSec);
+        const first = !broadcastState;
+        broadcastState = { startMs, pausedAtSec: Number.isFinite(pausedAtSec) && pausedAtSec >= 0 ? pausedAtSec : NaN };
+        if (first) {
+            document.documentElement.classList.add('mre-broadcast');
+            const style = document.createElement('style');
+            style.textContent = [
+                '.mre-broadcast .player-controls-group--left .player-control-button { display: none !important; }',
+                '.mre-broadcast .player-progress-track { pointer-events: none !important; }'
+            ].join(' ');
+            (document.head || document.documentElement).appendChild(style);
+            window.addEventListener('keydown', blockBroadcastKeys, true);
+            setInterval(() => {
+                document.querySelectorAll('video:not(.ghost-video)').forEach(watchBroadcastVideo);
+                enforceBroadcast();
+            }, 1000);
+        }
+        document.querySelectorAll('video:not(.ghost-video)').forEach(watchBroadcastVideo);
+        enforceBroadcast();
+    }
+
     function clearRoomSyncTelemetry() {
         roomSyncTelemetryDisposers.forEach(dispose => dispose());
         roomSyncTelemetryDisposers = [];
@@ -627,6 +702,8 @@
                 acknowledge('UNAVAILABLE', 'provider-native-selector-not-ready');
             };
             void tryDispatch();
+        } else if (event.source === window.parent && event.data?.type === 'BROADCAST_STATE' && isTrustedHostMessage(event)) {
+            applyBroadcastState(event.data);
         } else if (event.source === window.parent && event.data?.type === 'ROOM_SYNC_PROBE') {
             const video = getRoomSyncVideo();
             postRoomSyncMessage(event.source, event.origin, {

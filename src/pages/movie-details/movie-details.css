@@ -6404,3 +6404,43 @@
         animation-iteration-count: infinite !important;
     }
 }
+
+/* «Эфир» broadcast embed: player only, full frame, no controls that break the shared clock */
+html.broadcast-mode,
+html.broadcast-mode body {
+    overflow: hidden;
+    background: #000000;
+}
+
+html.broadcast-mode body > :not(#videoPlayerModal):not(script):not(style) {
+    display: none !important;
+}
+
+html.broadcast-mode #videoPlayerModal {
+    padding: 0;
+    background: #000000;
+    backdrop-filter: none;
+}
+
+html.broadcast-mode #videoPlayerModal .video-modal {
+    width: 100vw;
+    max-width: none;
+    height: 100vh;
+    max-height: none;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+html.broadcast-mode #videoPlayerModal .video-header,
+html.broadcast-mode #watchRoomControls,
+html.broadcast-mode #minimizeVideoBtn,
+html.broadcast-mode #closeVideoBtn,
+html.broadcast-mode .player-controls-group--left .player-control-button {
+    display: none !important;
+}
+
+html.broadcast-mode .player-progress-track {
+    pointer-events: none;
+}

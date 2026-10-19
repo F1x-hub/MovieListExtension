@@ -86,6 +86,10 @@
                             <span>Реакции</span>
                             <span class="admin-nav-count" id="adminNavReactionCount">—</span>
                         </button>
+                        <button class="sidebar-link" data-target="live-channel" type="button">
+                            <span class="icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="2"></circle><path d="M16.24 7.76a6 6 0 0 1 0 8.49"></path><path d="M7.76 16.24a6 6 0 0 1 0-8.49"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path><path d="M4.93 19.07a10 10 0 0 1 0-14.14"></path></svg></span>
+                            <span>Эфир</span>
+                        </button>
                         <div class="sidebar-spacer"></div>
                     </nav>
                 </aside>
@@ -604,6 +608,88 @@
                             </div>
                         </div>
 
+                        <!-- Live Channel Pane -->
+                        <div class="settings-pane" id="pane-live-channel">
+                            <div class="pane-header admin-pane-header">
+                                <div>
+                                    <h2>Эфир</h2>
+                                    <p>Общий показ на странице «Эфир». Каждый зритель подключается к текущему моменту.</p>
+                                </div>
+                            </div>
+
+                            <section class="live-now" id="liveNowCard" data-state="off" aria-labelledby="liveNowLabel">
+                                <div class="live-now__media" id="liveNowMedia" aria-hidden="true"></div>
+                                <div class="live-now__body">
+                                    <span class="live-now__label" id="liveNowLabel"><span class="live-now__dot" aria-hidden="true"></span><span id="liveNowState">Эфир выключен</span></span>
+                                    <h3 class="live-now__title" id="liveNowTitle">Сейчас ничего не идёт</h3>
+                                    <p class="live-now__meta" id="liveNowMeta">Выберите источник ниже и запустите показ.</p>
+                                </div>
+                                <div class="live-now__actions">
+                                    <a class="btn btn-secondary" href="../live/live.html" target="_blank" rel="noopener">Открыть эфир</a>
+                                    <button type="button" class="btn btn-danger" id="liveStopBtn" hidden>Остановить</button>
+                                </div>
+                            </section>
+
+                            <form class="live-editor" id="liveChannelForm" novalidate>
+                                <h3 class="live-editor__heading">Новый показ</h3>
+                                <div class="live-source-picker" role="radiogroup" aria-label="Источник показа">
+                                    <label class="live-source">
+                                        <input type="radio" name="liveMode" value="youtube" checked>
+                                        <span class="live-source__icon"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"></path><polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon></svg></span>
+                                        <span class="live-source__text"><strong>YouTube</strong><small>Видео или прямая трансляция по ссылке</small></span>
+                                    </label>
+                                    <label class="live-source">
+                                        <input type="radio" name="liveMode" value="movie">
+                                        <span class="live-source__icon"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line></svg></span>
+                                        <span class="live-source__text"><strong>Фильм</strong><small>Из каталога, через наш плеер</small></span>
+                                    </label>
+                                </div>
+
+                                <div class="live-channel-group" data-live-mode="youtube">
+                                    <label class="admin-form-field" for="liveYoutubeInput">
+                                        <span>Ссылка на YouTube</span>
+                                        <input id="liveYoutubeInput" class="admin-input" type="url" autocomplete="off" placeholder="https://www.youtube.com/watch?v=… или youtube.com/live/…">
+                                    </label>
+                                    <div class="live-preview" id="liveYoutubePreview" hidden>
+                                        <img class="live-preview__thumb" id="liveYoutubeThumb" alt="" loading="lazy">
+                                        <div class="live-preview__body">
+                                            <strong id="liveYoutubeName">Видео YouTube</strong>
+                                            <label class="live-switch"><input id="liveYoutubeLive" type="checkbox"><span class="live-switch__track" aria-hidden="true"></span>Прямая трансляция — без перемотки</label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="live-channel-group" data-live-mode="movie" hidden>
+                                    <label class="admin-form-field" for="liveMovieSearch">
+                                        <span>Найти фильм</span>
+                                        <input id="liveMovieSearch" class="admin-input" type="search" autocomplete="off" placeholder="Название или Kinopoisk ID">
+                                    </label>
+                                    <div class="live-results" id="liveMovieResults" role="listbox" aria-label="Результаты поиска"></div>
+                                    <div class="live-preview" id="liveMoviePreview" hidden>
+                                        <img class="live-preview__thumb live-preview__thumb--poster" id="liveMoviePoster" alt="" loading="lazy">
+                                        <div class="live-preview__body">
+                                            <strong id="liveMovieName"></strong>
+                                            <span class="live-preview__meta" id="liveMovieMeta"></span>
+                                            <label class="admin-form-field live-duration" for="liveMovieDurationInput">
+                                                <span>Длительность, мин</span>
+                                                <input id="liveMovieDurationInput" class="admin-input" type="text" inputmode="decimal" autocomplete="off" placeholder="136">
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <label class="admin-form-field" for="liveTitleInput">
+                                    <span>Название показа</span>
+                                    <input id="liveTitleInput" class="admin-input" type="text" maxlength="120" autocomplete="off" placeholder="Подставится из видео или фильма">
+                                </label>
+
+                                <div class="live-editor__footer">
+                                    <p class="live-channel-status" id="liveChannelStatus" role="status" aria-live="polite"></p>
+                                    <button type="submit" class="btn btn-primary" id="liveStartBtn" disabled>Запустить эфир</button>
+                                </div>
+                            </form>
+                        </div>
+
                         <!-- Comment Reactions Pane -->
                         <div class="settings-pane" id="pane-reaction-settings">
                             <div class="pane-header admin-pane-header reaction-settings-header">
@@ -897,7 +983,9 @@
     <script src="/src/shared/components/ImageLightbox.js"></script>
     <script src="/src/shared/components/ConfirmDialog.js"></script>
     <script src="../../shared/services/player/ProPlayerPreferences.js"></script>
+    <script src="../../shared/services/CinemaChannelService.js"></script>
     <script src="admin.js"></script>
+    <script src="admin-live.js"></script>
     <script defer src="../../shared/components/ReportWidget.js"></script>
 </body>
 </html>

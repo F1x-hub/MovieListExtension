@@ -3594,3 +3594,391 @@
 .admin-text-right {
     text-align: right;
 }
+
+/* Live channel («Эфир») editor */
+.live-now {
+    display: grid;
+    grid-template-columns: 168px 1fr auto;
+    align-items: center;
+    gap: var(--space-mlg);
+    margin-bottom: var(--space-lg);
+    padding: var(--space-md);
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-xl);
+    background: var(--theme-bg-secondary);
+    box-shadow: var(--elevation-1);
+}
+
+.live-now__media {
+    aspect-ratio: 16 / 9;
+    border-radius: var(--radius-md);
+    background: rgba(var(--theme-ink-rgb), 0.05) center / cover no-repeat;
+    border: 1px solid var(--theme-border);
+}
+
+.live-now__media.is-poster {
+    background-size: contain;
+    background-color: rgba(var(--theme-ink-rgb), 0.08);
+}
+
+.live-now[data-state="off"] .live-now__media,
+.live-now[data-state="ended"] .live-now__media {
+    opacity: 0.5;
+}
+
+.live-now__body {
+    min-width: 0;
+}
+
+.live-now__label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--theme-text-secondary);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.live-now__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--theme-text-muted);
+}
+
+.live-now[data-state="live"] .live-now__label {
+    color: var(--theme-text-primary);
+}
+
+.live-now[data-state="live"] .live-now__dot {
+    background: var(--danger);
+    animation: live-now-pulse 1.8s ease-out infinite;
+}
+
+@keyframes live-now-pulse {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 55%, transparent); }
+    70% { box-shadow: 0 0 0 8px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+.live-now__title {
+    margin: 6px 0 4px;
+    overflow: hidden;
+    color: var(--theme-text-primary);
+    font-size: 18px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.live-now__meta {
+    margin: 0;
+    color: var(--theme-text-secondary);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+}
+
+.live-now__actions {
+    display: flex;
+    gap: var(--space-sm);
+}
+
+.live-now__actions [hidden] {
+    display: none;
+}
+
+.live-editor {
+    display: grid;
+    gap: var(--space-mlg);
+    max-width: 760px;
+    padding: var(--space-mlg);
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-xl);
+    background: var(--theme-bg-card);
+}
+
+.live-editor__heading {
+    margin: 0;
+    color: var(--theme-text-primary);
+    font-size: 16px;
+}
+
+.live-source-picker {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-smd);
+}
+
+.live-source {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--space-smd);
+    padding: var(--space-md);
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-lg);
+    background: rgba(var(--theme-ink-rgb), 0.02);
+    cursor: pointer;
+    transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.live-source:hover {
+    border-color: var(--theme-border-hover);
+}
+
+.live-source input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.live-source:has(input:checked) {
+    border-color: var(--theme-text-primary);
+    background: rgba(var(--theme-ink-rgb), 0.06);
+    box-shadow: var(--elevation-1);
+}
+
+.live-source:has(input:focus-visible) {
+    outline: 2px solid var(--theme-text-primary);
+    outline-offset: 2px;
+}
+
+.live-source__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: rgba(var(--theme-ink-rgb), 0.06);
+    color: var(--theme-text-primary);
+}
+
+.live-source__text {
+    display: grid;
+    gap: 2px;
+}
+
+.live-source__text strong {
+    color: var(--theme-text-primary);
+    font-size: 15px;
+}
+
+.live-source__text small {
+    color: var(--theme-text-secondary);
+    font-size: 12px;
+}
+
+.live-channel-group {
+    display: grid;
+    gap: var(--space-smd);
+}
+
+.live-channel-group[hidden],
+.live-preview[hidden] {
+    display: none;
+}
+
+.live-preview {
+    display: flex;
+    gap: var(--space-md);
+    padding: var(--space-smd);
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-lg);
+    background: rgba(var(--theme-ink-rgb), 0.03);
+    animation: live-preview-in 220ms var(--ease-out-soft, ease-out) both;
+}
+
+@keyframes live-preview-in {
+    from { opacity: 0; transform: translateY(4px); }
+}
+
+.live-preview__thumb {
+    flex: 0 0 160px;
+    aspect-ratio: 16 / 9;
+    border-radius: var(--radius-md);
+    object-fit: cover;
+    background: rgba(var(--theme-ink-rgb), 0.06);
+}
+
+.live-preview__thumb--poster {
+    flex-basis: 92px;
+    aspect-ratio: 2 / 3;
+}
+
+.live-preview__body {
+    display: grid;
+    align-content: start;
+    gap: var(--space-sm);
+    min-width: 0;
+}
+
+.live-preview__body strong {
+    color: var(--theme-text-primary);
+    font-size: 15px;
+    line-height: 1.35;
+}
+
+.live-preview__meta {
+    color: var(--theme-text-secondary);
+    font-size: 13px;
+}
+
+.live-duration {
+    max-width: 180px;
+}
+
+.live-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--theme-text-primary);
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.live-switch input {
+    position: absolute;
+    opacity: 0;
+}
+
+.live-switch__track {
+    position: relative;
+    flex: 0 0 36px;
+    height: 20px;
+    border-radius: 999px;
+    background: rgba(var(--theme-ink-rgb), 0.16);
+    transition: background-color 160ms ease;
+}
+
+.live-switch__track::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--theme-bg-primary);
+    box-shadow: var(--elevation-1);
+    transition: transform 180ms var(--ease-out-soft, ease-out);
+}
+
+.live-switch input:checked + .live-switch__track {
+    background: var(--theme-text-primary);
+}
+
+.live-switch input:checked + .live-switch__track::after {
+    transform: translateX(16px);
+}
+
+.live-switch input:focus-visible + .live-switch__track {
+    outline: 2px solid var(--theme-text-primary);
+    outline-offset: 2px;
+}
+
+.live-results {
+    display: grid;
+    gap: 4px;
+}
+
+.live-results:empty {
+    display: none;
+}
+
+.live-result {
+    display: flex;
+    align-items: center;
+    gap: var(--space-smd);
+    padding: 8px;
+    border: 0;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 140ms ease;
+}
+
+.live-result:hover,
+.live-result:focus-visible {
+    background: rgba(var(--theme-ink-rgb), 0.06);
+}
+
+.live-result img {
+    flex: 0 0 36px;
+    width: 36px;
+    height: 54px;
+    border-radius: 4px;
+    object-fit: cover;
+    background: rgba(var(--theme-ink-rgb), 0.06);
+}
+
+.live-result span {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.live-result strong {
+    overflow: hidden;
+    color: var(--theme-text-primary);
+    font-size: 14px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.live-result small {
+    color: var(--theme-text-secondary);
+    font-size: 12px;
+}
+
+.live-editor__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+}
+
+.live-channel-status {
+    flex: 1;
+    min-height: 1.4em;
+    margin: 0;
+    color: var(--theme-text-secondary);
+    font-size: 13px;
+}
+
+.live-channel-status[data-tone="error"] {
+    color: var(--danger);
+}
+
+.light-theme .live-channel-status[data-tone="error"] {
+    color: #b91c1c;
+}
+
+@media (max-width: 768px) {
+    .live-now {
+        grid-template-columns: 112px 1fr;
+    }
+
+    .live-now__actions {
+        grid-column: 1 / -1;
+    }
+
+    .live-source-picker {
+        grid-template-columns: 1fr;
+    }
+
+    .live-preview__thumb {
+        flex-basis: 112px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .live-now[data-state="live"] .live-now__dot,
+    .live-preview {
+        animation: none;
+    }
+}
