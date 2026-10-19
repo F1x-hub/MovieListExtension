@@ -16,6 +16,7 @@
     <link rel="stylesheet" href="settings.css">
     <link rel="stylesheet" href="../../shared/styles/report-widget.css">
     <script src="/src/shared/services/ThemeService.js"></script>
+    <script src="/src/shared/services/SeasonalThemeService.js"></script>
     <link rel="icon" type="image/png" sizes="16x16" href="../../shared/assets/icons/app/favicon16.png">
     <link rel="icon" type="image/png" sizes="32x32" href="../../shared/assets/icons/app/favicon32.png">
 </head>
@@ -278,6 +279,18 @@
                                 </div>
                                 <label class="toggle-switch">
                                     <input type="checkbox" id="gamesToggle">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+
+                            <!-- Seasonal Decor Toggle -->
+                            <div class="setting-group-row" style="margin-top: var(--space-lg); border-top: 1px solid var(--border-color); padding-top: var(--space-lg);">
+                                <div class="setting-info">
+                                    <h3 class="setting-title" id="seasonalDecorTitle">Сезонное оформление</h3>
+                                    <p class="setting-desc" id="seasonalDecorDesc">Праздничный декор в светлой и тёмной теме. Хэллоуин: с 17 октября по 7 ноября</p>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="seasonalDecorToggle" aria-labelledby="seasonalDecorTitle" aria-describedby="seasonalDecorDesc" checked>
                                     <span class="toggle-slider"></span>
                                 </label>
                             </div>

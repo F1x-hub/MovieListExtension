@@ -27,6 +27,7 @@ const migrationGuardFiles = {
     movieDetails: 'src/pages/movie-details/movie-details.css',
     personDetails: 'src/pages/person-details/person-details.css',
     live: 'src/pages/live/live.css',
+    hdrezkaProbe: 'src/pages/hdrezka-probe/hdrezka-probe.css',
 };
 
 const exceptionScopedFiles = [
@@ -46,6 +47,14 @@ const exceptionScopedFiles = [
     'src/shared/styles/poster-fixes.css',
     'src/shared/styles/router.css',
 ];
+
+// Seasonal decoration is a bounded exception owned by SeasonalThemeService:
+// its only chromatic value is the pumpkin ember, scoped to `.season-*`.
+const seasonalFiles = [
+    'src/shared/styles/seasonal.css',
+];
+
+const seasonalEmberHex = new Set(['#ff8a2a', '#d9620f']);
 
 const neutralHex = new Set([
     '#000000', '#09090b', '#111111', '#111113', '#121214', '#18181b',
@@ -94,6 +103,10 @@ for (const file of exceptionScopedFiles) {
     assert.ok(fs.existsSync(file), `Missing classified exception stylesheet: ${file}`);
 }
 
+for (const file of seasonalFiles) {
+    assert.ok(fs.existsSync(file), `Missing seasonal stylesheet: ${file}`);
+}
+
 const cssFilesInSource = fs.readdirSync('src', { recursive: true })
     .filter((file) => file.endsWith('.css'))
     .map((file) => `src/${file.replaceAll('\\', '/')}`)
@@ -102,6 +115,7 @@ const classifiedCssFiles = [
     ...Object.values(files),
     ...Object.values(migrationGuardFiles),
     ...exceptionScopedFiles,
+    ...seasonalFiles,
 ].sort();
 assert.deepStrictEqual(classifiedCssFiles, cssFilesInSource, 'Every stylesheet must be classified by the visual contract');
 
@@ -221,6 +235,34 @@ for (const [name, file] of Object.entries(files)) {
     for (const color of forbiddenDecorativeColors) {
         if (name === 'components' && color === '#f43f5e') continue;
         assert.ok(!source.includes(color), `${file} contains forbidden decorative color ${color}`);
+    }
+}
+
+// Every chromatic value in seasonal.css is a token on a season root; other
+// rules may only use neutral hexes, grayscale rgb()/rgba() or var() tokens.
+const seasonal = read(seasonalFiles[0]);
+const seasonalRules = seasonal.replace(/\/\*[\s\S]*?\*\//g, '');
+const seasonRootSelector = /^\.season-[a-z]+(?:\.light-theme)?$/;
+for (const [, selector, body] of seasonalRules.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (seasonRootSelector.test(selector.trim())) continue;
+    const chromaticHexes = extractHexes(body).filter((hex) => !neutralHex.has(hex));
+    assert.deepStrictEqual(chromaticHexes, [], `Seasonal color outside a season root token: ${selector.trim()}`);
+    for (const [, channels] of body.matchAll(/rgba?\(\s*(\d+\s*,\s*\d+\s*,\s*\d+)/g)) {
+        const [r, g, b] = channels.split(',').map((value) => Number(value.trim()));
+        assert.ok(r === g && g === b, `Seasonal color outside a season root token: ${selector.trim()} uses rgb(${channels})`);
+    }
+}
+assert.match(seasonalRules, /\.season-halloween\s*\{[^}]*--season-ember:\s*#ff8a2a;/);
+assert.match(seasonalRules, /\.season-halloween\.light-theme\s*\{[^}]*--season-ember:\s*#d9620f;/);
+assert.doesNotMatch(seasonalRules, /\.(?:btn|dropdown|nav-link|nav-menu)[\w-]*(?![\w-])(?![^{]*season-banner)[^{]*\{/,
+    'Seasonal decor must not restyle shared buttons, menus or navigation links');
+assert.match(seasonal, /\.seasonal-decor\s*\{[\s\S]*?pointer-events:\s*none;/, 'Seasonal decor must never intercept input');
+assert.match(seasonal, /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.seasonal-decor__bats\s*\{\s*display:\s*none;/);
+assert.match(read(files.common), /@import url\('\.\/seasonal\.css'\);/);
+for (const file of cssFilesInSource.filter((item) => !seasonalFiles.includes(item))) {
+    const source = read(file).toLowerCase();
+    for (const color of seasonalEmberHex) {
+        assert.ok(!source.includes(color), `${file} reuses the seasonal ember ${color} outside seasonal decor`);
     }
 }
 

@@ -36,11 +36,60 @@ Color is allowed only when it carries content or an unavoidable semantic:
 1. posters, photos, thumbnails, avatars, and title artwork;
 2. external provider or brand marks such as IMDb, Kinopoisk, Telegram, or Google;
 3. game boards, pieces, and game-specific feedback;
-4. essential success, warning, or danger feedback.
+4. essential success, warning, or danger feedback;
+5. seasonal decoration owned by `SeasonalThemeService` (see below).
 
 Exceptions must remain local, documented, and visually subordinate to the
 neutral interface. Semantic states require a label, icon, shape, border style, or
 pattern in addition to color. Color must never be the only carrier of meaning.
+
+## Seasonal decoration
+
+`SeasonalThemeService` owns holiday windows (inclusive local days), the
+`seasonalDecorEnabled` opt-out in `chrome.storage.local` with a synchronous
+`localStorage` mirror for first paint, the `season-*` class on `<html>`, and the
+decorative `#seasonalDecor` layer. `ThemeService` still owns dark/light state;
+seasonal decor is a layer on top of either theme, never a third theme.
+`src/shared/styles/seasonal.css`, imported by `common.css`, is its only stylesheet.
+
+The Halloween window is 17 October – 7 November. Its palette (pumpkin ember
+`#ff8a2a`/`#d9620f`, a violet accent in the navigation edge, lit windows and a
+night-sky gradient) exists only as tokens on the season root; every other
+seasonal rule consumes those tokens or neutral values. The set is intentionally
+small, so the season is obvious without crowding content:
+
+- the navigation's faint orange-violet tint, glowing lower edge and the carved
+  pumpkin logo (also in the popup);
+- in `#seasonalDecor` (above content, below navigation and dialogs,
+  `pointer-events: none`): seven pumpkin lanterns hanging from the navigation,
+  hidden once the page scrolls (every other one on narrow screens), and three
+  bats crossing on page load at most every three minutes;
+- side art in the empty page margins at 1640px and wider: a shaded bark branch
+  with dry leaves and a sleeping bat wrapped in its wings, a black-widow spider
+  with an ember hourglass on a fading thread, and a graveyard on the left (shaded headstones, a crow on a
+  cross, an iron fence, a candle, fog and a floating ghost), a dangling spider
+  and a pumpkin patch on the right (two lit jack-o'-lanterns, a plain pumpkin,
+  fallen leaves and a glow pool). Both corners use SVG gradients whose stop
+  colors come from `.season-stop--*` CSS classes and fade toward the content
+  with a mask instead of ending at a hard edge. It is sized from the widest
+  page content (1440px) so it stays out of posters and text, and it sits in the
+  decor layer because some pages paint an opaque root over the backdrop;
+- Home's night-scene `HomeSeasonalBanner` (moon, graves, a dead tree and a house
+  with lit windows, kept left of the call-to-action), dismissible per season and
+  year, with an ember call-to-action scoped to that banner.
+
+Every 20–35 seconds one rare side-art scene plays, in rotation: the spider climbs
+its thread and glides back down (entry animations never replay), the ghost vanishes and peeks out by the headstones, and the jack-o'-lanterns gutter
+out and flare. Scenes wait while the tab is hidden and never run under reduced
+motion; they are classes on `#seasonalDecor`, so CSS owns every movement.
+
+Shared buttons, menus, focus rings, form controls and navigation links never
+take seasonal color. Reduced motion removes the flight and stops sway, ghost,
+spider and flicker animations.
+`npm run test:seasonal-theme` covers window boundaries, the countdown, opt-out,
+Settings preview, banner copy and token-only scene markup; `test:visual-design`
+requires every chromatic seasonal value to be a season-root token and blocks
+seasonal restyling of shared buttons, menus and navigation links.
 
 ## Token ownership
 
@@ -203,6 +252,7 @@ Each generic visual primitive has one owner:
 | Primitive | Owner |
 | --- | --- |
 | Base tokens and theme roles | `src/shared/styles/tokens.css` and `theme.css` |
+| Seasonal decoration and Home season banner | `src/shared/styles/seasonal.css` and `SeasonalThemeService.js` |
 | Buttons, modals, dropdowns, menus, tooltips, popovers | `src/shared/styles/components.css` |
 | Filter choices, ranges and discovery panels | `src/shared/components/FilterControls.js` and `src/shared/styles/filter-controls.css` |
 | Movie cards | `src/shared/styles/movie-card.css` and `MovieCard.js` |

@@ -619,6 +619,19 @@ export const locales = {
         home: {
             page_title: "Home | MovieList Extension",
             page_heading: "Home",
+            season: {
+                halloween: {
+                    title: "Halloween season",
+                    before: {
+                        one: "{count} day until Halloween. Perfect time for a horror movie night.",
+                        other: "{count} days until Halloween. Perfect time for a horror movie night."
+                    },
+                    today: "Happy Halloween! Lights off, something scary on.",
+                    after: "Halloween is over, but it is never too late for a scary story.",
+                    cta: "Horror picks",
+                    dismiss: "Hide Halloween banner"
+                }
+            },
             loading: "Loading showcase...",
             error_title: "Loading error",
             error_message: "Could not load data",
@@ -1915,6 +1928,21 @@ export const locales = {
         home: {
             page_title: "Главная | MovieList Extension",
             page_heading: "Главная",
+            season: {
+                halloween: {
+                    title: "Сезон Хэллоуина",
+                    before: {
+                        one: "До Хэллоуина {count} день. Самое время для вечера ужасов.",
+                        few: "До Хэллоуина {count} дня. Самое время для вечера ужасов.",
+                        many: "До Хэллоуина {count} дней. Самое время для вечера ужасов.",
+                        other: "До Хэллоуина {count} дней. Самое время для вечера ужасов."
+                    },
+                    today: "Счастливого Хэллоуина! Выключайте свет и включайте что-нибудь страшное.",
+                    after: "Хэллоуин позади, но для страшной истории никогда не поздно.",
+                    cta: "Подборка ужасов",
+                    dismiss: "Скрыть баннер Хэллоуина"
+                }
+            },
             loading: "Загрузка витрины...",
             error_title: "Ошибка загрузки",
             error_message: "Не удалось загрузить данные",

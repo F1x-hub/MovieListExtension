@@ -140,6 +140,7 @@ let initialState = {
     showAnimeRadio: false,
     animeRadioSource: 'anison',
     showGames: false,
+    seasonalDecorEnabled: true,
     torrentRetentionDays: 7,
     mediaPlayerEnabled: false,
     mediaPlayerSetup: createDefaultMediaPlayerSetup(),
@@ -262,6 +263,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Mini Games Elements
     const gamesToggle = document.getElementById('gamesToggle');
+    const seasonalDecorToggle = document.getElementById('seasonalDecorToggle');
     const extensionCurrentVersion = document.getElementById('extensionCurrentVersion');
     const extensionAutoUpdateToggle = document.getElementById('extensionAutoUpdateToggle');
     const extensionUpdateStatus = document.getElementById('extensionUpdateStatus');
@@ -350,6 +352,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     /**
+     * Shows an unsaved seasonal-decor choice on this page only; a saved or
+     * reverted value hands control back to SeasonalThemeService.
+     */
+    function previewSeasonalDecor() {
+        const changed = currentState.seasonalDecorEnabled !== initialState.seasonalDecorEnabled;
+        window.SeasonalThemeService?.preview(changed ? currentState.seasonalDecorEnabled !== false : null);
+    }
+
+    /**
      * Handle Setting Changes tracking
      */
     function updateDirtyState() {
@@ -359,6 +370,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             currentState.showAnimeRadio !== initialState.showAnimeRadio ||
             currentState.animeRadioSource !== initialState.animeRadioSource ||
             currentState.showGames !== initialState.showGames ||
+            currentState.seasonalDecorEnabled !== initialState.seasonalDecorEnabled ||
             currentState.mediaPlayerEnabled !== initialState.mediaPlayerEnabled ||
             !haveMatchingMediaPlayerSetup(currentState.mediaPlayerSetup, initialState.mediaPlayerSetup) ||
             !haveMatchingSubtitleAppearances(currentState.subtitleAppearance, initialState.subtitleAppearance) ||
@@ -441,6 +453,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         showAnimeRadio: false,
         animeRadioSource: 'anison',
         showGames: false,
+        seasonalDecorEnabled: true,
         mediaPlayerEnabled: false
     };
 
@@ -1208,6 +1221,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         }
 
+        if (seasonalDecorToggle) {
+            seasonalDecorToggle.checked = currentState.seasonalDecorEnabled !== false;
+        }
+        previewSeasonalDecor();
+
         if (extensionAutoUpdateToggle) {
             extensionAutoUpdateToggle.checked = currentState.autoUpdateEnabled === true;
         }
@@ -1233,6 +1251,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 'showAnimeRadio',
                 'animeRadioSource',
                 'showGames',
+                'seasonalDecorEnabled',
                 'mediaPlayerEnabled',
                 MEDIA_PLAYER_SETUP_STORAGE_KEY,
                 SUBTITLE_APPEARANCE_STORAGE_KEY
@@ -1254,6 +1273,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 showAnimeRadio: result.showAnimeRadio ?? false,
                 animeRadioSource: result.animeRadioSource || 'anison',
                 showGames: result.showGames ?? false,
+                seasonalDecorEnabled: result.seasonalDecorEnabled !== false,
                 torrentRetentionDays: initialState.torrentRetentionDays ?? 7,
                 mediaPlayerEnabled,
                 mediaPlayerSetup: storedMediaPlayerSetup,
@@ -1432,11 +1452,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 showAnimeRadio: currentState.showAnimeRadio,
                 animeRadioSource: currentState.animeRadioSource,
                 showGames: currentState.showGames,
+                seasonalDecorEnabled: currentState.seasonalDecorEnabled !== false,
                 mediaPlayerEnabled: currentState.mediaPlayerEnabled,
                 [MEDIA_PLAYER_SETUP_STORAGE_KEY]: currentState.mediaPlayerSetup,
                 [SUBTITLE_APPEARANCE_STORAGE_KEY]: subtitleAppearance
             });
             await chrome.storage.sync.set({ language: currentState.language });
+            window.SeasonalThemeService?.setEnabled(currentState.seasonalDecorEnabled !== false);
 
             if (autoUpdateChanged) {
                 await new Promise((resolve, reject) => {
@@ -1608,6 +1630,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (gamesBtn) {
                 gamesBtn.style.display = e.target.checked ? 'inline-flex' : 'none';
             }
+        });
+    }
+
+    if (seasonalDecorToggle) {
+        seasonalDecorToggle.addEventListener('change', (e) => {
+            currentState.seasonalDecorEnabled = e.target.checked;
+            updateDirtyState();
+            previewSeasonalDecor();
         });
     }
 

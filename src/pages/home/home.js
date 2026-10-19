@@ -128,6 +128,10 @@ class HomePage {
                 this.i18nReady = true;
                 window.i18n.onLocaleChange?.(locale => this.handleLocaleChange(locale));
             }
+            if (window.HomeSeasonalBanner && !this.seasonalBanner) {
+                this.seasonalBanner = new window.HomeSeasonalBanner();
+            }
+            this.seasonalBanner?.render();
             globalThis.quotaTracker?.resetForNewPageLoad();
             // Reserve the personal layout before revealing the page, without
             // waiting for Firestore or treating unresolved auth as a guest.
@@ -230,6 +234,7 @@ class HomePage {
 
     handleLocaleChange(locale) {
         document.documentElement.lang = locale || 'ru';
+        this.seasonalBanner?.render();
         // Discovery titles are language-specific, so reload that payload
         // (usually from its own cache) instead of re-rendering old titles.
         this.loadDiscovery();

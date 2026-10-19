@@ -9,6 +9,14 @@
     --catalog-accent: var(--ui-color-interactive);
     --catalog-accent-soft: var(--theme-hover-bg);
     --catalog-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --catalog-hero-bg: linear-gradient(120deg, rgba(24, 24, 27, 0.98), rgba(18, 18, 20, 0.78));
+    --catalog-hero-shadow: 0 14px 44px rgba(0, 0, 0, 0.18);
+}
+
+/* Light surfaces keep the hero's hierarchy readable with dark text. */
+.light-theme {
+    --catalog-hero-bg: linear-gradient(120deg, var(--theme-bg-secondary), var(--theme-bg-primary));
+    --catalog-hero-shadow: 0 14px 44px rgba(9, 9, 11, 0.06);
 }
 
 .catalog-page {
@@ -29,8 +37,8 @@
     padding: 24px 28px;
     border: 1px solid var(--catalog-border);
     border-radius: 18px;
-    background: linear-gradient(120deg, rgba(24, 24, 27, 0.98), rgba(18, 18, 20, 0.78));
-    box-shadow: 0 14px 44px rgba(0, 0, 0, 0.18);
+    background: var(--catalog-hero-bg);
+    box-shadow: var(--catalog-hero-shadow);
 }
 
 .catalog-hero::after {
