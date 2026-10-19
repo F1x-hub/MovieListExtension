@@ -4,6 +4,9 @@
     // Grounded in existing Kodik fixtures and Rutube's declared CDN consumers.
     // New provider/CDN hosts need a reviewed update; this is not live availability proof.
     const MANIFEST_HOSTS = Object.freeze(['solodcdn.com', 'rtbcdn.ru', 'rutube.ru']);
+    // Final CDN hosts observed in the HDRezka capture. The routing host and
+    // arbitrary Voidboost subdomains are deliberately outside this pilot.
+    const HDREZKA_HOSTS = new Set(['weyland.stream.voidboost.one', 'hronos.stream.voidboost.one']);
     const KINDS = new Set(['manifest', 'level', 'init', 'fragment', 'key', 'file']);
 
     function publicV4(parts) {
@@ -52,7 +55,7 @@
         }
         const allowed = manifestHosts.map(host => String(host).toLowerCase().replace(/\.+$/, ''));
         function check(value, { kind = 'manifest', profile = 'remote' } = {}) {
-            if (!KINDS.has(kind) || !['remote', 'local'].includes(profile)) return { ok: false, reason: 'unknown-context' };
+            if (!KINDS.has(kind) || !['remote', 'local', 'hdrezka'].includes(profile)) return { ok: false, reason: 'unknown-context' };
             let url;
             try { url = new URL(value); } catch { return { ok: false, reason: 'invalid-url' }; }
             if (url.username || url.password) return { ok: false, reason: 'credentials' };
@@ -62,6 +65,8 @@
                 ? { ok: true, url: url.href } : { ok: false, reason: 'local-origin' };
             if (url.protocol !== 'https:' || !publicHost(url.hostname)) return { ok: false, reason: 'non-public-url' };
             const host = url.hostname.toLowerCase().replace(/\.+$/, '');
+            if (profile === 'hdrezka') return HDREZKA_HOSTS.has(host)
+                ? { ok: true, url: url.href } : { ok: false, reason: 'unapproved-host' };
             if (['manifest', 'file'].includes(kind) && !allowed.some(base => host === base || host.endsWith(`.${base}`))) {
                 return { ok: false, reason: 'unapproved-host' };
             }

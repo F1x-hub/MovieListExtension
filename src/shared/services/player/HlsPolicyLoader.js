@@ -11,7 +11,7 @@
         };
     }
 
-    function forProfile(profile = 'remote', { localManifestUrl } = {}) {
+    function forProfile(profile = 'remote', { localManifestUrl, providerManifestUrl } = {}) {
         // Decode before URL dot-segment normalization so encoded separators
         // cannot turn an in-directory URL into a sibling backend request.
         const scopeUrl = value => {
@@ -21,9 +21,10 @@
             return { origin: url.origin, pathname: path.pathname };
         };
         let localScope = null;
-        if (profile === 'local') {
+        const scoped = profile === 'local' || profile === 'hdrezka';
+        if (scoped) {
             try {
-                const initial = global.UrlPolicy.check(localManifestUrl, { kind: 'manifest', profile });
+                const initial = global.UrlPolicy.check(profile === 'local' ? localManifestUrl : providerManifestUrl, { kind: 'manifest', profile });
                 if (initial.ok) {
                     const normalized = scopeUrl(initial.url);
                     const directory = new global.URL('.', normalized.origin + normalized.pathname).pathname;
@@ -32,7 +33,7 @@
             } catch { /* invalid or absent session scope fails closed */ }
         }
         const inScope = url => {
-            if (profile !== 'local') return true;
+            if (!scoped) return true;
             if (!localScope) return false;
             const normalized = scopeUrl(url);
             return normalized.origin === localScope.origin && normalized.pathname.startsWith(localScope.directory);
