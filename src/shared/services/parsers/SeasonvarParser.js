@@ -12,6 +12,8 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
             name: 'Seasonvar',
             baseUrl: 'http://seasonvar.ru'
         });
+        // Titles are matched by this parser's own rules; the shared check keeps only the year gate.
+        this.ownTitleMatching = true;
         this.searchUrl = 'http://seasonvar.ru/search';
         this.selectionRequestId = 0;
         this.renderRequestId = 0;

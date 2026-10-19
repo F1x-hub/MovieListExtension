@@ -34,7 +34,7 @@ class ScriptedParser extends BaseParserService {
     // 1. A miss (a parser's swallowed network failure) is not cached, so a
     //    retry searches again instead of replaying "not found" for an hour.
     const flaky = new ScriptedParser('flaky', (_title, attempt) => (
-        attempt === 1 ? null : { url: 'https://provider.test/film', title: 'Film' }
+        attempt === 1 ? null : { url: 'https://provider.test/film', title: 'Фильм' }
     ));
     assert.equal(await flaky.cachedSearch('Фильм', 2020), null);
     const retried = await flaky.cachedSearch('Фильм', 2020);

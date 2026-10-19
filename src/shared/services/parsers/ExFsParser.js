@@ -26,7 +26,7 @@ class ExFsParser extends BaseParserService {
      * @param {string|number|null} year - Movie year
      * @returns {Promise<SearchResult|null>}
      */
-    async search(title, year) {
+    async search(title, year, options = {}) {
         try {
             const targetYear = year ? year.toString() : null;
 
@@ -48,7 +48,7 @@ class ExFsParser extends BaseParserService {
             }
 
             const html = await response.text();
-            const result = this.parseSearchResults(html, title, targetYear);
+            const result = this.parseSearchResults(html, title, targetYear, options?.mediaType || null);
 
             if (result) {
                 result.parserId = this.id;
@@ -90,7 +90,7 @@ class ExFsParser extends BaseParserService {
     /**
      * Parse search results HTML to find the best matching movie
      */
-    parseSearchResults(html, targetTitle, targetYear) {
+    parseSearchResults(html, targetTitle, targetYear, mediaType = null) {
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
         
@@ -164,12 +164,13 @@ class ExFsParser extends BaseParserService {
             }
         }
 
-        // Whole-word title matching (shared isTitleMatch) plus year ranking;
-        // a wrong-year best match is rejected unless its title is exact.
+        // Whole-word title matching (shared isTitleMatch) plus year ranking.
+        // A wrong-year best match is a different film (a remake or a namesake)
+        // even with an identical title; only series may differ by year.
         const best = this.rankTitleMatches(matches, targetTitle, targetYear);
         if (!best) return null;
         if (BaseParserService.hasYearDivergence(best, targetYear)
-            && BaseParserService.compactTitle(best.title) !== BaseParserService.compactTitle(targetTitle)) {
+            && !(this.isSeriesMediaType(mediaType) && BaseParserService.compactTitle(best.title) === BaseParserService.compactTitle(targetTitle))) {
             return null;
         }
         return best;

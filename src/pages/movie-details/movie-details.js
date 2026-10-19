@@ -1012,6 +1012,7 @@ class MovieDetailsManager {
                     if (!hasInitialized) {
                         this.preloadAllPlayers(movieId);
                     }
+                    void this.probeSourceAvailability(movieId);
                 }, 300);
             }
         }, true);
@@ -1363,6 +1364,7 @@ class MovieDetailsManager {
             this.initPlayerRegistry();
             if (this.selectedMovie) {
                 this.preloadAllPlayers(movieId);
+                void this.probeSourceAvailability(movieId);
                 this.perf?.complete();
             }
             if (autoplay && this.selectedMovie) {
@@ -8511,7 +8513,12 @@ class MovieDetailsManager {
                 let targetSource = this.proPlayerEnabled ? await this.resolveWatchSource() : null;
                 this.watchSearching = false;
                 this.syncWatchEntry?.();
-                if (this.proPlayerEnabled && !targetSource) return;
+                if (this.proPlayerEnabled && !targetSource) {
+                    if (this.sourceProbeDone && typeof Utils !== 'undefined') {
+                        Utils.showToast('Этого фильма нет ни в одном источнике. Попробуйте «Торрент».', 'warning', 6000);
+                    }
+                    return;
+                }
 
                 // A source button click is an explicit user intent. Preserve it
                 // across the async watch flow instead of allowing stale storage or
@@ -9816,6 +9823,83 @@ class MovieDetailsManager {
         return `${parserName}: ${label}`;
     }
 
+    /**
+     * Searches every source for the current title in the background and keeps a
+     * per-source verdict, so the rail only offers sources that really have the
+     * film. Uses the same search options as playback, so starting a source then
+     * reuses the cached result instead of searching again.
+     */
+    probeSourceAvailability(movieId = this.selectedMovie?.kinopoiskId) {
+        const key = String(movieId || '');
+        if (!key || !this.selectedMovie || !this.parserRegistry) return Promise.resolve();
+        if (this.sourceProbeMovieId === key && this.sourceProbePromise) return this.sourceProbePromise;
+        const PROBE_TIMEOUT_MS = 20000;
+        const movie = this.selectedMovie;
+        this.sourceProbeMovieId = key;
+        this.sourceProbeDone = false;
+        this.sourceAvailability = new Map();
+        const name = movie.name || movie.alternativeName;
+        const altName = movie.alternativeName || null;
+        const requestedMediaType = movie.type || (movie.isSeries ? 'tv-series' : null);
+        const selection = this.playbackController?.getSelection?.();
+        const isCurrent = () => String(this.selectedMovie?.kinopoiskId) === key && this.sourceProbeMovieId === key;
+        let repaintQueued = false;
+        const repaint = () => {
+            if (repaintQueued) return;
+            repaintQueued = true;
+            setTimeout(() => {
+                repaintQueued = false;
+                if (isCurrent()) this.populateSourceSelector();
+            }, 50);
+        };
+
+        const probeOne = async (parser) => {
+            let result = null;
+            if (parser.searchBestMatch) {
+                result = await parser.searchBestMatch(name, altName, movie.year, { mediaType: requestedMediaType });
+            } else {
+                const titles = [...new Set([name, altName].map(value => (typeof value === 'string' ? value.trim() : '')).filter(Boolean))];
+                for (const title of titles) {
+                    result = await parser.cachedSearch(title, movie.year, {
+                        mediaType: requestedMediaType,
+                        seasonNumber: selection?.seasonNumber ?? null,
+                        altName
+                    });
+                    if (result) break;
+                }
+            }
+            if (result && typeof parser.isSearchResultCompatible === 'function' && !parser.isSearchResultCompatible(result, movie.type)) result = null;
+            return Boolean(result);
+        };
+
+        const ids = [...this.getParserSelectorIds(movie.type)];
+        this.sourceProbePromise = Promise.allSettled(ids.map(async id => {
+            const parser = this.parserRegistry.get(id);
+            if (!parser) return;
+            let found;
+            try {
+                found = await Promise.race([
+                    probeOne(parser),
+                    new Promise(resolve => setTimeout(() => resolve(false), PROBE_TIMEOUT_MS))
+                ]);
+            } catch { found = false; }
+            if (!isCurrent()) return;
+            this.sourceAvailability.set(id, found ? 'found' : 'missing');
+            repaint();
+        })).then(() => {
+            if (!isCurrent()) return;
+            this.sourceProbeDone = true;
+            repaint();
+        });
+        return this.sourceProbePromise;
+    }
+
+    /** A parser button is offered only once its source confirmed the title (or it is playing). */
+    isParserSourceOffered(parserId) {
+        if (this.activeSourceValue === `parser:${parserId}`) return true;
+        return this.sourceAvailability?.get(parserId) === 'found';
+    }
+
     getParserSelectorIds(movieType = this.selectedMovie?.type) {
         return new Set(
             this.parserRegistry.getAll()
@@ -9923,7 +10007,7 @@ class MovieDetailsManager {
         const movieType = this.selectedMovie?.type;
         const parserSelectorIds = this.getParserSelectorIds(movieType);
         this.parserRegistry.getAll().forEach(parser => {
-            if (parserSelectorIds.has(parser.id)) {
+            if (parserSelectorIds.has(parser.id) && this.isParserSourceOffered(parser.id)) {
 
                 const btn = document.createElement('button');
                 btn.type = 'button';
@@ -9977,6 +10061,17 @@ class MovieDetailsManager {
             });
         }
         
+        // While sources are being checked, or when none has the title, say so instead of an empty rail.
+        if (!this.elements.sourceButtonsContainer.querySelector('.source-btn')) {
+            const note = document.createElement('span');
+            note.className = 'source-rail-note';
+            note.setAttribute('role', 'status');
+            note.textContent = this.sourceProbeDone
+                ? 'Фильм не найден в источниках'
+                : 'Ищем фильм в источниках…';
+            this.elements.sourceButtonsContainer.appendChild(note);
+        }
+
         const hasSavedValue = savedValue && [...this.elements.sourceButtonsContainer.querySelectorAll('.source-btn')].some(button => button.dataset.value === savedValue);
         if (hasSavedValue) {
             this.updateActiveSourceButton(savedValue);
@@ -10164,7 +10259,6 @@ class MovieDetailsManager {
             }
             if (!state && this.proPlayerEnabled) {
                 if (providerKey && this.currentSources?.some(source => source.parserId === providerKey)) state = 'discovered';
-                else if (providerKey === 'seasonvar') state = 'pending';
             }
 
             if (state) btn.dataset.sourceState = state;

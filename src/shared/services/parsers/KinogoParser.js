@@ -853,7 +853,9 @@ class KinogoParser extends BaseParserService {
                     === BaseParserService.compactTitle(targetTitle);
                 const bestMatchesRequestedSeason = requestedSeasonNumber != null
                     && this.extractSearchSeasonNumber(best) === requestedSeasonNumber;
-                if (!exactTitle && !bestMatchesRequestedSeason) {
+                // An identical title only excuses another year for series
+                // (later seasons); for a film it means a remake or a namesake.
+                if (!(exactTitle && this.isSeriesMediaType(movieType)) && !bestMatchesRequestedSeason) {
                     this.debugLog(`[DEBUG KinogoParser] Rejecting match "${best.title}" (${best.year}) for "${targetTitle}" (${targetYear}) due to year divergence (${diff} yrs)`);
                     return null;
                 }
