@@ -422,6 +422,20 @@ service cloud.firestore {
       allow delete: if false;
     }
     
+    // «Эфир» schedule: planned shows that start on their own at `startedAt`.
+    // Everyone reads it (the live page resolves what is on air); only admins plan.
+    match /cinemaSchedule/{itemId} {
+      allow read: if true;
+      allow create, update: if isAdmin()
+        && request.resource.data.mode in ['youtube', 'movie']
+        && request.resource.data.title is string
+        && request.resource.data.title.size() <= 120
+        && request.resource.data.startedAt is timestamp
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.keys().hasOnly(['mode', 'title', 'youtube', 'movie', 'startedAt', 'updatedAt', 'updatedBy']);
+      allow delete: if isAdmin();
+    }
+
     // «Эфир» fallback relay (WebRTC from the admin's browser). Only signaling lives
     // here: who is relaying, plus one small offer/answer doc per viewer.
     match /liveRelay/{docId} {

@@ -31,7 +31,7 @@ test('Firestore timestamps and live YouTube streams', () => {
 
 test('admin payloads accept YouTube links and Kinopoisk IDs and reject junk', () => {
     assert.deepEqual(buildChannelPayload({ mode: 'youtube', youtubeUrl: 'https://www.youtube.com/live/dQw4w9WgXcQ', youtubeLive: true, title: ' Стрим ' }).youtube,
-        { videoId: 'dQw4w9WgXcQ', live: true, pausedAtSec: null });
+        { videoId: 'dQw4w9WgXcQ', live: true, durationSec: 0, pausedAtSec: null });
     assert.equal(buildChannelPayload({ mode: 'youtube', youtubeUrl: 'https://youtu.be/dQw4w9WgXcQ?t=30', title: ' Стрим ' }).title, 'Стрим');
     assert.deepEqual(buildChannelPayload({ mode: 'movie', kinopoiskId: '301', durationMin: '136', posterUrl: 'https://st.kp.yandex.net/301.jpg' }).movie, { kinopoiskId: 301, durationSec: 8160, posterUrl: 'https://st.kp.yandex.net/301.jpg', pausedAtSec: null });
     assert.equal(buildChannelPayload({ mode: 'movie', kinopoiskId: '301', posterUrl: 'javascript:alert(1)' }).movie.posterUrl, '');
@@ -91,4 +91,36 @@ test('fallback relay: signaling rules keep offers admin-only and docs small', ()
     assert.equal(isValidSdp({ type: 'offer', sdp: 'v=0' }, 'offer'), true);
     assert.equal(isValidSdp({ type: 'answer', sdp: 'v=0' }, 'offer'), false);
     assert.equal(isValidSdp({ type: 'offer', sdp: 'x'.repeat(300_000) }, 'offer'), false);
+});
+
+test('schedule: planned shows start on their own and later starts supersede earlier ones', () => {
+    const { resolveChannel } = require('../src/shared/services/CinemaChannelService.js');
+    const H = 3600 * 1000;
+    const sched = (id, startMs, extra = {}) => normalizeChannel(
+        { mode: 'movie', title: id, movie: { kinopoiskId: 301, durationSec: 7200, ...extra }, startedAt: new Date(startMs) },
+        { id, docPath: `cinemaSchedule/${id}`, scheduled: true });
+    const manualOff = normalizeChannel({ mode: 'off', startedAt: new Date(START - H) });
+    const evening = sched('evening', START + 2 * H);
+    const night = sched('night', START + 5 * H);
+
+    // Before anything starts: the next show is announced with a countdown.
+    let shown = resolveChannel(manualOff, [evening, night], START);
+    assert.equal(shown.id, 'evening');
+    assert.equal(computePosition(shown, START).state, 'upcoming');
+    // At its time it is on air, without anyone pressing a button.
+    shown = resolveChannel(manualOff, [evening, night], START + 2 * H + 60_000);
+    assert.equal(shown.id, 'evening');
+    assert.deepEqual(computePosition(shown, START + 2 * H + 60_000), { state: 'live', offsetSec: 60 });
+    // After it ends, the next planned show counts down again.
+    assert.equal(resolveChannel(manualOff, [evening, night], START + 4 * H + 1000).id, 'night');
+    // A manual stop during a show takes it off air.
+    const stopped = normalizeChannel({ mode: 'off', startedAt: new Date(START + 3 * H) });
+    assert.equal(resolveChannel(stopped, [evening], START + 3 * H + 1000).mode, 'off');
+    // Admin controls write to the schedule entry, not the manual channel.
+    assert.equal(evening.docPath, 'cinemaSchedule/evening');
+});
+
+test('schedule rules: anyone reads planned shows, only admins plan them', () => {
+    const rules = fs.readFileSync(path.join(__dirname, '../rules/firestore.rules'), 'utf8');
+    assert.match(rules, /match \/cinemaSchedule\/\{itemId\} \{\s*allow read: if true;\s*allow create, update: if isAdmin\(\)/);
 });

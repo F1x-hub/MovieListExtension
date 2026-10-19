@@ -322,6 +322,10 @@ keeps npm-compatible three-component semver metadata.
 <details open>
 <summary><strong>Unreleased</strong></summary>
 
+### Features
+
+- «Эфир» schedule: in the admin section a show can start «Сейчас» or «По расписанию» at a date and time in the admin's own time zone. Planned shows start and end on their own for every viewer (with a countdown before), a later start supersedes an earlier one, «Остановить эфир» also stops a running scheduled show, and the admin's player controls drive whichever show is on air. The admin sees the schedule with times, covers and status and can delete entries; finished entries older than a day are swept automatically. Optional length for YouTube items lets scheduled videos and streams end on time. Requires publishing the updated Firestore rules (`cinemaSchedule`).
+
 ### Fixes
 
 - «Эфир» host relay now shares only the player (Element Capture, with Region Capture as a fallback on older Chrome) instead of the whole page.
