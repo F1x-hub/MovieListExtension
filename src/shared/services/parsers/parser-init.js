@@ -10,7 +10,7 @@
 (function() {
     'use strict';
 
-    const registry = new ParserRegistry(['kinogo', 'exfs', 'seasonvar', 'rutube', 'animego']);
+    const registry = new ParserRegistry(['kinogo', 'exfs', 'seasonvar', 'rutube', 'animego', 'officialyt']);
 
     // Register KinoGo parser
     if (typeof KinogoParser !== 'undefined') {
@@ -46,6 +46,13 @@
         registry.register(new AnimeGoParser());
     } else {
         console.warn('[ParserInit] AnimeGoParser is unavailable');
+    }
+
+    // Official free films from studios' own YouTube channels (Мосфильм, Ленфильм, …).
+    if (typeof OfficialYouTubeParser !== 'undefined') {
+        registry.register(new OfficialYouTubeParser());
+    } else {
+        console.warn('[ParserInit] OfficialYouTubeParser is unavailable');
     }
 
     // Expose globally
