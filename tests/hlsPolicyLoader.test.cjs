@@ -43,7 +43,9 @@ function harness(fetchResult = () => Promise.resolve(response()), options = {}) 
         clearTimeout: id => timers.delete(id)
     });
     vm.runInContext(source, scope);
-    const Loader = scope.HlsPolicyLoader.forProfile(options.profile, { localManifestUrl: options.localManifestUrl });
+    const Loader = scope.HlsPolicyLoader.forProfile(options.profile, {
+        localManifestUrl: options.localManifestUrl, providerManifestUrl: options.providerManifestUrl
+    });
     const loader = new Loader(options.hlsConfig);
     const callbacks = Object.fromEntries(['onSuccess', 'onProgress', 'onError', 'onTimeout', 'onAbort']
         .map(name => [name, (...args) => { events.push([name, ...args]); options[name]?.(loader, ...args); }]));
@@ -294,5 +296,34 @@ test('session scope rejects sibling directories, backend paths and encoded path 
         await flush();
         assert.equal(h.calls.length, 0, pathname);
         assert.equal(h.events[0][1].text, 'POLICY_VIOLATION', pathname);
+    }
+});
+
+test('HDRezka profile binds every resource to the captured final host and directory before fetch', async () => {
+    const policyScope = vm.createContext({ URL });
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/shared/services/player/UrlPolicy.js'), 'utf8'), policyScope);
+    const providerManifestUrl = 'https://weyland.stream.voidboost.one/signed/movie/index.m3u8';
+    for (const kind of ['manifest', 'level', 'fragment', 'init', 'key']) {
+        const policy = { ...policyScope.UrlPolicy, kindOf: () => kind };
+        const allowed = harness(() => Promise.resolve(response({ url: providerManifestUrl })), { profile: 'hdrezka', providerManifestUrl, policy });
+        allowed.start({ url: providerManifestUrl });
+        await flush();
+        assert.equal(allowed.calls.length, 1);
+        assert.equal(allowed.events.at(-1)[0], 'onSuccess');
+        for (const denied of ['https://hronos.stream.voidboost.one/signed/movie/part.ts',
+            'https://weyland.stream.voidboost.one/signed/other/part.ts',
+            'https://weyland.stream.voidboost.one/signed/movie/sub/%2e%2e%2f%2e%2e%2fother/part.ts']) {
+            const h = harness(undefined, { profile: 'hdrezka', providerManifestUrl, policy });
+            h.start({ url: denied });
+            await flush();
+            assert.equal(h.calls.length, 0, `${kind}: reject outside session before fetch`);
+            assert.equal(h.events[0][1].text, 'POLICY_VIOLATION');
+        }
+    }
+    for (const missing of [undefined, 'https://weyland.stream.voidboost.one/index.m3u8']) {
+        const h = harness(undefined, { profile: 'hdrezka', providerManifestUrl: missing, policy: policyScope.UrlPolicy });
+        h.start({ url: providerManifestUrl });
+        await flush();
+        assert.equal(h.calls.length, 0, 'missing/root session scope fails closed');
     }
 });

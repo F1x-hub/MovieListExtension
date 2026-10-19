@@ -87,15 +87,15 @@
      * bandwidth (provider streams only), then caller quality/buffer overrides.
      * Transport restrictions are applied last and cannot be overridden.
      * @param {Object} [overrides]
-     * @param {{rememberBandwidth?: boolean, networkProfile?: 'remote'|'local', localManifestUrl?: string}} [options]
+     * @param {{rememberBandwidth?: boolean, networkProfile?: 'remote'|'local'|'hdrezka', localManifestUrl?: string, providerManifestUrl?: string}} [options]
      * @returns {Object|null}
      */
-    function buildConfig(overrides = {}, { rememberBandwidth = true, networkProfile = 'remote', localManifestUrl } = {}) {
-        if (!['remote', 'local'].includes(networkProfile)
+    function buildConfig(overrides = {}, { rememberBandwidth = true, networkProfile = 'remote', localManifestUrl, providerManifestUrl } = {}) {
+        if (!['remote', 'local', 'hdrezka'].includes(networkProfile)
             || typeof global.UrlPolicy?.check !== 'function'
             || typeof global.UrlPolicy?.kindOf !== 'function'
             || typeof global.HlsPolicyLoader?.forProfile !== 'function') return null;
-        const loader = global.HlsPolicyLoader.forProfile(networkProfile, { localManifestUrl });
+        const loader = global.HlsPolicyLoader.forProfile(networkProfile, { localManifestUrl, providerManifestUrl });
         if (typeof loader !== 'function') return null;
         const config = { ...DEFAULT_HLS_CONFIG };
         const estimate = rememberBandwidth ? readBandwidthEstimate() : null;
@@ -140,8 +140,9 @@
      * @param {Function} [options.Hls] - hls.js constructor (defaults to global Hls)
      * @param {Object} [options.config] - Extra hls.js config
      * @param {'bounded'|'persistent'} [options.policy='bounded']
-     * @param {'remote'|'local'} [options.networkProfile='remote'] - Independent URL trust boundary
+     * @param {'remote'|'local'|'hdrezka'} [options.networkProfile='remote'] - Independent URL trust boundary
      * @param {string} [options.localManifestUrl] - Captured local session manifest; scopes every local request
+     * @param {string} [options.providerManifestUrl] - Captured HDRezka manifest; scopes every pilot request
      * @param {number} [options.maxNetworkRetries=3] - bounded policy only
      * @param {number} [options.maxMediaRecoveries=2]
      * @param {number} [options.retryBaseDelayMs=1000] - Backoff unit (1, 2, 4, 8 units)
@@ -171,7 +172,8 @@
 
         const rememberBandwidth = options.rememberBandwidth ?? policy === 'bounded';
         const config = buildConfig(options.config, {
-            rememberBandwidth, networkProfile: options.networkProfile, localManifestUrl: options.localManifestUrl
+            rememberBandwidth, networkProfile: options.networkProfile, localManifestUrl: options.localManifestUrl,
+            providerManifestUrl: options.providerManifestUrl
         });
         if (!config) return null;
         const hls = new HlsCtor(config);
