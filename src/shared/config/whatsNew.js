@@ -1,5 +1,15 @@
 export const whatsNew = [
     {
+        id: '1.3.10', version: '1.3.10', date: '2026-10-19',
+        highlights: [
+            { id: 'halloween', title: { ru: 'Хэллоуин в расширении', en: 'Halloween in the extension' }, text: { ru: 'С 17 октября по 7 ноября: тыква-логотип, гирлянда, кладбище с призраком и тыквы по краям экрана. Оформление отключается в Настройках.', en: 'From 17 October to 7 November: a pumpkin logo, a lantern garland, a graveyard with a ghost and pumpkins at the screen edges. Turn it off in Settings.' } },
+            { id: 'horror-picks', title: { ru: 'Подборка ужасов', en: 'Horror picks' }, text: { ru: 'Баннер на Главной с отсчётом до 31 октября ведёт прямо к фильмам ужасов в Каталоге.', en: 'A Home banner counts down to 31 October and leads straight to horror films in the Catalog.' } },
+            { id: 'youtube-official', title: { ru: 'Официальные фильмы на YouTube', en: 'Official films on YouTube' }, text: { ru: 'Новый источник с лицензионными фильмами Мосфильма, Ленфильма и других студий.', en: 'A new source with licensed films from Mosfilm, Lenfilm and other studios.' } },
+            { id: 'sources', title: { ru: 'Источники надёжнее', en: 'More reliable sources' }, text: { ru: 'В списке только те источники, где фильм точно есть. Если один не запустился, плеер сам пробует следующий.', en: 'Only sources that really have the film are listed. If one does not start, the player tries the next one.' } },
+            { id: 'live-schedule', title: { ru: 'Эфир по расписанию', en: 'Scheduled Live shows' }, text: { ru: 'Ведущий может запланировать показ на дату и время.', en: 'The host can schedule a showing for a date and time.' } }
+        ]
+    },
+    {
         id: '1.3.9', version: '1.3.9', date: '2026-10-19',
         highlights: [
             { id: 'live', title: { ru: 'Эфир — кино как по телевизору', en: 'Live — watch together like TV' }, text: { ru: 'Новая страница «Эфир» в верхнем меню: один показ для всех, кто зайдёт позже, попадает на тот же момент. Ведущий запускает фильм или ссылку YouTube и управляет показом прямо в плеере.', en: 'A new Live page in the top menu: one shared showing, and late joiners land on the same moment. The host starts a film or a YouTube link and drives it from the player.' } },
