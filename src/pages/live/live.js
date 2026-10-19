@@ -52,7 +52,8 @@
     // and clock corrections move the existing player in place.
     function channelKey(c) {
         if (!c || c.mode === 'off') return 'off';
-        return c.mode === 'movie' ? `movie:${c.movie.kinopoiskId}` : `youtube:${c.youtube.videoId}`;
+        // Different schedule entries of the same title are still different shows.
+        return c.mode === 'movie' ? `movie:${c.docPath}:${c.movie.kinopoiskId}` : `youtube:${c.docPath}:${c.youtube.videoId}`;
     }
 
     function frameEl() {
@@ -450,6 +451,29 @@
     }
 
     // ---- Clock & status --------------------------------------------------------
+    // The manual channel plus the schedule; `channel` is whatever is on air now.
+    let manualChannel = null;
+    let scheduleItems = [];
+    let channelSignature = '';
+
+    function signatureOf(c) {
+        const media = c?.[c?.mode];
+        return [c?.docPath, c?.mode, c?.startedAtMs, media?.pausedAtSec, media?.videoId || media?.kinopoiskId, c?.title].join('|');
+    }
+
+    function refreshChannel({ force = false } = {}) {
+        if (!manualChannel) return;
+        const next = window.CinemaChannel.resolveChannel(manualChannel, scheduleItems);
+        const signature = signatureOf(next);
+        if (!force && signature === channelSignature) return;
+        channelSignature = signature;
+        channel = next;
+        yt.lastCommandAt = 0;
+        mountMedia();
+        postBroadcastState();
+        renderClock();
+    }
+
     function renderClock() {
         if (!channel || channel.mode === 'off') return;
         const { CinemaChannel } = window;
@@ -605,6 +629,8 @@
             if (!channel) showEmpty('Эфир недоступен', 'Не удалось подключиться к каналу. Проверьте соединение и обновите страницу.');
         }, 12000);
 
+        let unsubscribeManual = null;
+        let unsubscribeSchedule = null;
         try {
             const manager = await waitForFirebase();
             service = new window.CinemaChannelService(manager);
@@ -622,13 +648,14 @@
                 });
             }
             detectAdmin(manager);
-            unsubscribe = service.subscribe(next => {
+            unsubscribeSchedule = service.subscribeSchedule(items => {
+                scheduleItems = items;
+                if (manualChannel) refreshChannel();
+            }, error => console.warn('[Live] Schedule unavailable:', error));
+            unsubscribeManual = service.subscribe(next => {
                 clearTimeout(stallTimer);
-                channel = next;
-                yt.lastCommandAt = 0;
-                mountMedia();
-                postBroadcastState();
-                renderClock();
+                manualChannel = next;
+                refreshChannel({ force: true });
             }, error => {
                 console.warn('[Live] Channel subscription failed:', error);
                 showEmpty('Эфир недоступен', 'Не удалось подключиться к каналу. Проверьте соединение и попробуйте позже.');
@@ -639,7 +666,12 @@
             showEmpty('Эфир недоступен', 'Не удалось подключиться к каналу. Проверьте соединение и попробуйте позже.');
         }
 
-        clockTimer = setInterval(renderClock, 1000);
+        unsubscribe = () => {
+            unsubscribeManual?.();
+            unsubscribeSchedule?.();
+        };
+        // Planned shows start (and end) by time alone, so re-resolve every second.
+        clockTimer = setInterval(() => { refreshChannel(); renderClock(); }, 1000);
         window.addEventListener('pagehide', () => {
             clearInterval(clockTimer);
             unsubscribe?.();

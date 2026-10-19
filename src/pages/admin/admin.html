@@ -655,6 +655,10 @@
                                         <div class="live-preview__body">
                                             <strong id="liveYoutubeName">Видео YouTube</strong>
                                             <label class="live-switch"><input id="liveYoutubeLive" type="checkbox"><span class="live-switch__track" aria-hidden="true"></span>Прямая трансляция — без перемотки</label>
+                                            <label class="admin-form-field live-duration" for="liveYoutubeDurationInput">
+                                                <span>Длительность, мин</span>
+                                                <input id="liveYoutubeDurationInput" class="admin-input" type="text" inputmode="decimal" autocomplete="off" placeholder="Необязательно">
+                                            </label>
                                         </div>
                                     </div>
                                 </div>
@@ -683,11 +687,29 @@
                                     <input id="liveTitleInput" class="admin-input" type="text" maxlength="120" autocomplete="off" placeholder="Подставится из видео или фильма">
                                 </label>
 
+                                <fieldset class="live-when">
+                                    <legend>Когда начать</legend>
+                                    <div class="live-when__options" role="radiogroup">
+                                        <label class="live-when__option"><input type="radio" name="liveWhen" value="now" checked> Сейчас</label>
+                                        <label class="live-when__option"><input type="radio" name="liveWhen" value="later"> По расписанию</label>
+                                    </div>
+                                    <label class="admin-form-field live-when__time" for="liveStartAtInput" hidden>
+                                        <span>Дата и время начала <small id="liveTimezoneHint"></small></span>
+                                        <input id="liveStartAtInput" class="admin-input" type="datetime-local" step="60">
+                                    </label>
+                                </fieldset>
+
                                 <div class="live-editor__footer">
                                     <p class="live-channel-status" id="liveChannelStatus" role="status" aria-live="polite"></p>
                                     <button type="submit" class="btn btn-primary" id="liveStartBtn" disabled>Запустить эфир</button>
                                 </div>
                             </form>
+
+                            <section class="live-schedule" aria-labelledby="liveScheduleHeading">
+                                <h3 class="live-editor__heading" id="liveScheduleHeading">Расписание</h3>
+                                <p class="live-schedule__empty" id="liveScheduleEmpty">Запланированных показов нет. Выберите «По расписанию» выше, чтобы добавить.</p>
+                                <ol class="live-schedule__list" id="liveScheduleList"></ol>
+                            </section>
                         </div>
 
                         <!-- Comment Reactions Pane -->

@@ -20,6 +20,7 @@
  */
 (function () {
     const COLLECTION = 'settings';
+    const SCHEDULE_COLLECTION = 'cinemaSchedule';
     const DOC_ID = 'cinemaChannel';
     const MODES = ['off', 'youtube', 'movie'];
     const MAX_TITLE = 120;
@@ -87,9 +88,20 @@
         return Number.isFinite(parsed) ? parsed : NaN;
     }
 
-    /** Normalizes a raw document into a safe channel object (or an «off» channel). */
-    function normalizeChannel(raw) {
-        const off = { mode: 'off', title: '', youtube: null, movie: null, startedAtMs: NaN };
+    function readDuration(value) {
+        const sec = Number(value);
+        return Number.isFinite(sec) && sec > 0 ? Math.round(sec) : 0;
+    }
+
+    /**
+     * Normalizes a raw document into a safe channel object (or an «off» channel).
+     * `meta.docPath` says where the item lives: the manual channel or a schedule entry.
+     */
+    function normalizeChannel(raw, meta = {}) {
+        const docPath = meta.docPath || `${COLLECTION}/${DOC_ID}`;
+        const base = { id: meta.id || DOC_ID, docPath, scheduled: meta.scheduled === true };
+        // «Off» keeps its timestamp: stopping is itself an event on the timeline.
+        const off = { ...base, mode: 'off', title: '', youtube: null, movie: null, startedAtMs: raw?.mode === 'off' ? toMillis(raw.startedAt) : NaN };
         if (!raw || typeof raw !== 'object' || !MODES.includes(raw.mode)) return off;
         const title = typeof raw.title === 'string' ? raw.title.trim().slice(0, MAX_TITLE) : '';
         const startedAtMs = toMillis(raw.startedAt);
@@ -99,9 +111,10 @@
             if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) return off;
             const live = raw.youtube?.live === true;
             return {
+                ...base,
                 mode: 'youtube',
                 title,
-                youtube: { videoId, live, pausedAtSec: live ? null : readPause(raw.youtube?.pausedAtSec) },
+                youtube: { videoId, live, durationSec: readDuration(raw.youtube?.durationSec), pausedAtSec: live ? null : readPause(raw.youtube?.pausedAtSec) },
                 movie: null,
                 startedAtMs
             };
@@ -111,6 +124,7 @@
             if (!Number.isSafeInteger(kinopoiskId) || kinopoiskId <= 0) return off;
             const durationSec = Number(raw.movie?.durationSec);
             return {
+                ...base,
                 mode: 'movie',
                 title,
                 youtube: null,
@@ -133,8 +147,18 @@
     function computePosition(channel, nowMs = now()) {
         if (!channel || channel.mode === 'off') return { state: 'off', offsetSec: 0 };
         // A live YouTube stream is always «now»: there is nothing to seek to.
-        if (channel.mode === 'youtube' && channel.youtube?.live) return { state: 'live', offsetSec: 0 };
         const media = channel[channel.mode];
+        if (channel.mode === 'youtube' && channel.youtube?.live) {
+            // A scheduled stream still has a start (and an optional end) on the timeline.
+            if (Number.isFinite(channel.startedAtMs) && nowMs < channel.startedAtMs) {
+                return { state: 'upcoming', offsetSec: Math.ceil((channel.startedAtMs - nowMs) / 1000) };
+            }
+            const runFor = media?.durationSec || 0;
+            if (runFor > 0 && Number.isFinite(channel.startedAtMs) && nowMs - channel.startedAtMs >= runFor * 1000) {
+                return { state: 'ended', offsetSec: 0 };
+            }
+            return { state: 'live', offsetSec: 0 };
+        }
         if (Number.isFinite(media?.pausedAtSec)) {
             return { state: 'paused', offsetSec: Math.floor(media.pausedAtSec) };
         }
@@ -142,7 +166,7 @@
 
         const elapsed = Math.floor((nowMs - channel.startedAtMs) / 1000);
         if (elapsed < 0) return { state: 'upcoming', offsetSec: -elapsed };
-        const duration = channel.movie?.durationSec || 0;
+        const duration = media?.durationSec || 0;
         if (duration > 0 && elapsed >= duration) return { state: 'ended', offsetSec: duration };
         return { state: 'live', offsetSec: elapsed };
     }
@@ -158,7 +182,18 @@
                 ? Utils.extractYouTubeVideoInfo(String(youtubeUrl || '').trim())
                 : null;
             if (!info?.id) throw new Error('Укажите ссылку на видео или трансляцию YouTube');
-            return { mode: 'youtube', title: cleanTitle, youtube: { videoId: info.id, live: youtubeLive === true, pausedAtSec: null }, movie: null };
+            const ytMinutes = Number(String(durationMin || '').replace(',', '.'));
+            return {
+                mode: 'youtube',
+                title: cleanTitle,
+                youtube: {
+                    videoId: info.id,
+                    live: youtubeLive === true,
+                    durationSec: Number.isFinite(ytMinutes) && ytMinutes > 0 ? Math.round(ytMinutes * 60) : 0,
+                    pausedAtSec: null
+                },
+                movie: null
+            };
         }
 
         const id = Number(String(kinopoiskId || '').trim());
@@ -185,6 +220,34 @@
         return '';
     }
 
+    /** Scheduled items without a known length stop being «on air» after this long. */
+    const SCHEDULE_FALLBACK_SEC = 4 * 3600;
+
+    /**
+     * Picks what the live page shows from the manual channel plus the schedule.
+     * The most recently started item wins (a later start supersedes earlier ones,
+     * a manual «stop» is an item too). With nothing on air, the next upcoming
+     * scheduled item is returned so viewers see its countdown.
+     */
+    function resolveChannel(manual, scheduleItems = [], nowMs = now()) {
+        const items = [manual, ...scheduleItems].filter(item => item && Number.isFinite(item.startedAtMs));
+        const started = items.filter(item => item.startedAtMs <= nowMs).sort((a, b) => b.startedAtMs - a.startedAtMs);
+        const latest = started[0];
+        if (latest && latest.mode !== 'off') {
+            const position = computePosition(latest, nowMs);
+            const media = latest[latest.mode];
+            const capped = latest.scheduled && !media?.durationSec && !Number.isFinite(media?.pausedAtSec)
+                && nowMs - latest.startedAtMs > SCHEDULE_FALLBACK_SEC * 1000;
+            if (position.state !== 'ended' && !capped) return latest;
+        }
+        const upcoming = scheduleItems
+            .filter(item => item && item.mode !== 'off' && Number.isFinite(item.startedAtMs) && item.startedAtMs > nowMs)
+            .sort((a, b) => a.startedAtMs - b.startedAtMs)[0];
+        if (upcoming) return upcoming;
+        if (latest && latest.mode !== 'off') return latest; // shows «Показ завершился»
+        return normalizeChannel(null);
+    }
+
     function formatClock(totalSec) {
         const sec = Math.max(0, Math.floor(totalSec || 0));
         const h = Math.floor(sec / 3600);
@@ -201,6 +264,62 @@
 
         get ref() {
             return this.firebaseManager.db.collection(COLLECTION).doc(DOC_ID);
+        }
+
+        get scheduleRef() {
+            return this.firebaseManager.db.collection(SCHEDULE_COLLECTION);
+        }
+
+        refFor(channel) {
+            const path = channel?.docPath || `${COLLECTION}/${DOC_ID}`;
+            const [collection, id] = path.split('/');
+            return this.firebaseManager.db.collection(collection).doc(id);
+        }
+
+        /** Everyone: the planned shows, as normalized channels. */
+        subscribeSchedule(onItems, onError) {
+            return this.scheduleRef.onSnapshot(
+                snapshot => onItems(snapshot.docs
+                    .map(doc => normalizeChannel(doc.data(), { id: doc.id, docPath: `${SCHEDULE_COLLECTION}/${doc.id}`, scheduled: true }))
+                    .filter(item => item.mode !== 'off')
+                    .sort((a, b) => a.startedAtMs - b.startedAtMs)),
+                error => { if (typeof onError === 'function') onError(error); }
+            );
+        }
+
+        /** Admin only: plans a show for `startDate` (a Date in the admin's local time). */
+        async schedule(input, startDate) {
+            const payload = buildChannelPayload(input);
+            if (payload.mode === 'off') throw new Error('Выберите, что показывать');
+            const startMs = startDate instanceof Date ? startDate.getTime() : NaN;
+            if (!Number.isFinite(startMs)) throw new Error('Укажите дату и время начала');
+            if (startMs < now() - 60_000) throw new Error('Это время уже прошло');
+            const FieldValue = firebase.firestore.FieldValue;
+            const user = this.firebaseManager.getCurrentUser?.();
+            await this.scheduleRef.add({
+                ...payload,
+                startedAt: startDate,
+                updatedAt: FieldValue.serverTimestamp(),
+                updatedBy: user?.uid || ''
+            });
+            return payload;
+        }
+
+        async unschedule(itemId) {
+            if (!/^[A-Za-z0-9_-]{1,64}$/.test(String(itemId || ''))) return;
+            await this.scheduleRef.doc(itemId).delete();
+        }
+
+        /** Admin housekeeping: drops shows that finished more than a day ago. */
+        async sweepFinished(items, nowMs = now()) {
+            const stale = items.filter(item => {
+                const position = computePosition(item, nowMs);
+                const ageMs = nowMs - item.startedAtMs;
+                return Number.isFinite(item.startedAtMs) && ageMs > 24 * 3600 * 1000
+                    && (position.state === 'ended' || ageMs > (SCHEDULE_FALLBACK_SEC * 1000 + 24 * 3600 * 1000));
+            });
+            await Promise.all(stale.map(item => this.unschedule(item.id).catch(() => {})));
+            return stale.length;
         }
 
         /** Live subscription; returns an unsubscribe function. */
@@ -250,7 +369,7 @@
             } else {
                 throw new Error('Неизвестное действие');
             }
-            await this.ref.set(data, { merge: true });
+            await this.refFor(channel).set(data, { merge: true });
         }
 
         /** Admin only (enforced by Firestore rules). `restart` resets the broadcast clock to now. */
@@ -269,7 +388,7 @@
         }
     }
 
-    const api = { CinemaChannelService, normalizeChannel, computePosition, buildChannelPayload, formatClock, coverUrl, now, syncClock, toLocalMs, DOC_ID };
+    const api = { CinemaChannelService, normalizeChannel, computePosition, resolveChannel, buildChannelPayload, formatClock, coverUrl, now, syncClock, toLocalMs, DOC_ID };
     if (typeof window !== 'undefined') Object.assign(window, { CinemaChannelService, CinemaChannel: api });
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();
