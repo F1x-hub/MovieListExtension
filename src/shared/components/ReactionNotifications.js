@@ -150,6 +150,10 @@ export class ReactionNotificationCenter {
                 unread = snapshot?.exists ? getUnreadReactions(snapshot.data()) : [];
             } catch (error) {
                 console.warn('[ReactionNotifications] Inbox read failed:', error?.message || error);
+                // Release the claim so the next page retries instead of
+                // staying silent for the whole interval.
+                await this.writeCache(userId, { checkedAt: 0, unread: [] });
+                this.checkedUid = null;
                 return [];
             }
             await this.writeCache(userId, { checkedAt: this.now(), unread });

@@ -331,6 +331,7 @@ keeps npm-compatible three-component semver metadata.
 
 ### Fixes
 
+- Reaction notifications now reach users whose page restores sign-in from the cached session: the inbox is read only after Firebase Auth is signed in as that user, and a failed read no longer silences the check for the next 10 minutes.
 - Updater no longer reloads the extension in an endless loop when the host replaced a different folder than the one Chrome loaded: after one reload with the old version still running, the update stops with `RELOAD_VERSION_MISMATCH`. `MovieListSetup.exe` can now switch the extension folder while such an update is stuck in «awaiting confirmation» (it closes that operation instead of refusing with «Нельзя сменить папку во время активного обновления»).
 - «Эфир» host relay now shares only the player (Element Capture, with Region Capture as a fallback on older Chrome) instead of the whole page.
 - Relay and YouTube viewers get a small on-video bar with mute, a volume slider (relay) and fullscreen; the page-level «На весь экран» and sound buttons were removed because movie players already have their own.
