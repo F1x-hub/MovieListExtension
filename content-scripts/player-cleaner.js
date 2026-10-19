@@ -331,13 +331,17 @@
         return permanentVideo || document.querySelector('video:not(.ghost-video)');
     }
 
-    // «Эфир» broadcast lock. The embedding extension page sends the channel clock
-    // ({ startMs, pausedAtSec }); viewers cannot pause or seek, the media simply
-    // follows the shared timeline like a TV channel. Only the admin moves that
-    // timeline, from the live page, and every viewer follows the new state.
+    // «Эфир» broadcast lock. The live page sends the channel clock
+    // ({ startMs, pausedAtSec, admin }). Viewers cannot pause or seek: the media
+    // follows the shared timeline like a TV channel. The admin uses the normal
+    // controls; their pause/play/seek is reported up and becomes the new timeline
+    // for everyone. Audio, quality and subtitles stay personal for each viewer.
     let broadcastState = null;
+    let broadcastMutedReported = false;
+    let broadcastSuppressUntil = 0;
     const broadcastVideos = new WeakSet();
     const BROADCAST_DRIFT_SEC = 3;
+    const BROADCAST_ADMIN_DRIFT_SEC = 8;
 
     function broadcastTargetSec() {
         if (!broadcastState) return null;
@@ -345,65 +349,141 @@
         return (Date.now() - broadcastState.startMs) / 1000;
     }
 
-    function enforceBroadcast(video = getRoomSyncVideo()) {
+    function broadcastPlay(video) {
+        video.play().catch(() => {
+            // Autoplay with sound is blocked: play muted and tell the live page.
+            video.muted = true;
+            video.play().catch(() => {});
+            if (!broadcastMutedReported) {
+                broadcastMutedReported = true;
+                postToHost({ type: 'BROADCAST_MUTED' });
+            }
+        });
+    }
+
+    // Moves the media to the broadcast moment. Changes made here are ours, so the
+    // admin listeners ignore the events they cause.
+    function enforceBroadcast(video = getRoomSyncVideo(), { force = false } = {}) {
         if (!broadcastState || !video || !video.isConnected) return;
         const duration = Number(video.duration);
         if (!Number.isFinite(duration) || duration <= 0) return;
         const target = broadcastTargetSec();
         if (target >= duration - 1) return;
         const paused = Number.isFinite(broadcastState.pausedAtSec);
-        const tolerance = paused ? 1 : BROADCAST_DRIFT_SEC;
-        if (Math.abs(video.currentTime - target) > tolerance) {
+        const tolerance = paused ? 1 : (broadcastState.admin ? BROADCAST_ADMIN_DRIFT_SEC : BROADCAST_DRIFT_SEC);
+        const needsSeek = Math.abs(video.currentTime - target) > (force ? 1 : tolerance);
+        const needsPause = paused && !video.paused;
+        const needsPlay = !paused && video.paused && !video.ended;
+        if (!needsSeek && !needsPause && !needsPlay) return;
+        broadcastSuppressUntil = Date.now() + 1500;
+        if (needsSeek) {
             try { video.currentTime = Math.max(0, target); } catch { /* not seekable yet */ }
         }
-        if (paused) {
-            if (!video.paused) video.pause();
-        } else if (video.paused && !video.ended) {
-            video.play().catch(() => {
-                video.muted = true;
-                video.play().catch(() => {});
-            });
-        }
+        if (needsPause) video.pause();
+        else if (needsPlay) broadcastPlay(video);
+    }
+
+    function reportAdminAction(action, video) {
+        if (!broadcastState?.admin || Date.now() < broadcastSuppressUntil) return;
+        postToHost({ type: 'BROADCAST_ADMIN_ACTION', action, atSec: Math.max(0, Number(video.currentTime) || 0) });
+    }
+
+    // Providers often nest the real <video> one frame deeper: pass the clock down.
+    function relayBroadcastState(state) {
+        const message = {
+            type: 'BROADCAST_STATE',
+            startMs: state.startMs,
+            pausedAtSec: Number.isFinite(state.pausedAtSec) ? state.pausedAtSec : null,
+            admin: state.admin,
+            relayed: true
+        };
+        document.querySelectorAll('iframe').forEach(frame => {
+            let origin;
+            try { origin = new URL(frame.src, window.location.href).origin; } catch { return; }
+            if (!/^https?:/.test(origin)) return;
+            try { frame.contentWindow?.postMessage(message, origin); } catch { /* frame gone */ }
+        });
     }
 
     function watchBroadcastVideo(video) {
         if (!video || broadcastVideos.has(video)) return;
         broadcastVideos.add(video);
-        const later = () => setTimeout(() => enforceBroadcast(video), 120);
-        ['loadedmetadata', 'canplay', 'play', 'pause', 'seeked'].forEach(type => video.addEventListener(type, later));
+        const settle = () => setTimeout(() => {
+            // Viewers are pulled back; the admin is only aligned on join.
+            if (!broadcastState?.admin) enforceBroadcast(video);
+        }, 120);
+        video.addEventListener('loadedmetadata', () => setTimeout(() => enforceBroadcast(video, { force: true }), 120));
+        video.addEventListener('canplay', settle);
+        video.addEventListener('pause', () => {
+            if (broadcastState?.admin) { if (!video.ended) reportAdminAction('pause', video); } else settle();
+        });
+        video.addEventListener('play', () => {
+            if (broadcastState?.admin) reportAdminAction('resume', video); else settle();
+        });
+        video.addEventListener('seeked', () => {
+            if (broadcastState?.admin) reportAdminAction('seek', video); else settle();
+        });
+        enforceBroadcast(video, { force: true });
     }
 
     function blockBroadcastKeys(event) {
-        if (!broadcastState) return;
-        const keys = [' ', 'k', 'K', 'j', 'J', 'l', 'L', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'MediaPlayPause', 'MediaTrackNext', 'MediaTrackPrevious'];
+        if (!broadcastState || broadcastState.admin) return;
+        const keys = [' ', 'k', 'K', 'j', 'J', 'l', 'L', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'MediaPlayPause'];
         if (keys.includes(event.key) || /^[0-9]$/.test(event.key)) {
             event.stopImmediatePropagation();
             event.preventDefault();
         }
     }
 
+    // Inline display rules set by the player win over stylesheets, so hide in place.
+    function applyBroadcastChrome() {
+        if (!broadcastState) return;
+        const viewer = !broadcastState.admin;
+        document.documentElement.classList.toggle('mre-broadcast-viewer', viewer);
+        // A broadcast is always one movie: episode arrows never apply.
+        document.querySelectorAll('[data-player-episode-action], .provider-native-episode-nav').forEach(button => {
+            button.style.setProperty('display', 'none', 'important');
+        });
+        document.querySelectorAll('.player-control-button--primary').forEach(button => {
+            if (viewer) button.style.setProperty('display', 'none', 'important');
+            else if (button.style.getPropertyValue('display') === 'none') button.style.removeProperty('display');
+        });
+    }
+
     function applyBroadcastState(data) {
         const startMs = Number(data.startMs);
         if (!Number.isFinite(startMs) || startMs <= 0) return;
         const pausedAtSec = data.pausedAtSec === null || data.pausedAtSec === undefined ? NaN : Number(data.pausedAtSec);
+        const next = {
+            startMs,
+            pausedAtSec: Number.isFinite(pausedAtSec) && pausedAtSec >= 0 ? pausedAtSec : NaN,
+            admin: data.admin === true
+        };
         const first = !broadcastState;
-        broadcastState = { startMs, pausedAtSec: Number.isFinite(pausedAtSec) && pausedAtSec >= 0 ? pausedAtSec : NaN };
+        const changed = first || next.admin !== broadcastState.admin
+            || Math.abs(next.startMs - broadcastState.startMs) > 1500
+            || (Number.isFinite(next.pausedAtSec) !== Number.isFinite(broadcastState.pausedAtSec))
+            || (Number.isFinite(next.pausedAtSec) && Math.abs(next.pausedAtSec - broadcastState.pausedAtSec) > 1);
+        broadcastState = next;
         if (first) {
-            document.documentElement.classList.add('mre-broadcast');
             const style = document.createElement('style');
-            style.textContent = [
-                '.mre-broadcast .player-controls-group--left .player-control-button { display: none !important; }',
-                '.mre-broadcast .player-progress-track { pointer-events: none !important; }'
-            ].join(' ');
+            style.textContent = '.mre-broadcast-viewer .player-progress-track { pointer-events: none !important; }';
             (document.head || document.documentElement).appendChild(style);
             window.addEventListener('keydown', blockBroadcastKeys, true);
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') enforceBroadcast(undefined, { force: !broadcastState?.admin });
+            });
             setInterval(() => {
                 document.querySelectorAll('video:not(.ghost-video)').forEach(watchBroadcastVideo);
-                enforceBroadcast();
+                applyBroadcastChrome();
+                if (!broadcastState.admin) enforceBroadcast();
             }, 1000);
         }
         document.querySelectorAll('video:not(.ghost-video)').forEach(watchBroadcastVideo);
-        enforceBroadcast();
+        applyBroadcastChrome();
+        // A new timeline (admin action, clock fix) is applied to everyone, admin included.
+        if (changed) enforceBroadcast(undefined, { force: true });
+        relayBroadcastState(broadcastState);
     }
 
     function clearRoomSyncTelemetry() {
@@ -702,7 +782,9 @@
                 acknowledge('UNAVAILABLE', 'provider-native-selector-not-ready');
             };
             void tryDispatch();
-        } else if (event.source === window.parent && event.data?.type === 'BROADCAST_STATE' && isTrustedHostMessage(event)) {
+        } else if (event.source === window.parent && event.data?.type === 'BROADCAST_STATE'
+            && (isTrustedHostMessage(event) || event.data.relayed === true
+                || (isExtensionPageContext() && event.origin === window.location.origin))) {
             applyBroadcastState(event.data);
         } else if (event.source === window.parent && event.data?.type === 'ROOM_SYNC_PROBE') {
             const video = getRoomSyncVideo();

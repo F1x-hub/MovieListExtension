@@ -6436,11 +6436,6 @@ html.broadcast-mode #videoPlayerModal .video-modal {
 html.broadcast-mode #videoPlayerModal .video-header,
 html.broadcast-mode #watchRoomControls,
 html.broadcast-mode #minimizeVideoBtn,
-html.broadcast-mode #closeVideoBtn,
-html.broadcast-mode .player-controls-group--left .player-control-button {
+html.broadcast-mode #closeVideoBtn {
     display: none !important;
-}
-
-html.broadcast-mode .player-progress-track {
-    pointer-events: none;
 }

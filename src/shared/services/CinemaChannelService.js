@@ -24,6 +24,54 @@
     const MODES = ['off', 'youtube', 'movie'];
     const MAX_TITLE = 120;
 
+    function readPause(value) {
+        const sec = Number(value);
+        return value !== null && value !== undefined && Number.isFinite(sec) && sec >= 0 ? sec : null;
+    }
+
+    // ---- Shared clock ---------------------------------------------------------
+    // Viewers' computer clocks can be minutes apart; positions are computed against
+    // Google's server time (HTTP Date of a tiny request) so everyone sees one moment.
+    let clockOffsetMs = 0;
+    let clockPromise = null;
+
+    function now() {
+        return Date.now() + clockOffsetMs;
+    }
+
+    async function sampleServerClock(url) {
+        const sentAt = Date.now();
+        const response = await fetch(url, { method: 'HEAD', cache: 'no-store', credentials: 'omit' });
+        const receivedAt = Date.now();
+        const serverMs = Date.parse(response.headers.get('date') || '');
+        if (!Number.isFinite(serverMs)) throw new Error('NO_DATE_HEADER');
+        const rtt = receivedAt - sentAt;
+        // The Date header has 1s resolution: aim at the middle of that second.
+        return { offset: serverMs + 500 - (sentAt + rtt / 2), rtt };
+    }
+
+    function syncClock() {
+        if (clockPromise) return clockPromise;
+        clockPromise = (async () => {
+            const samples = [];
+            for (let i = 0; i < 3; i += 1) {
+                try { samples.push(await sampleServerClock('https://firestore.googleapis.com/')); } catch { /* offline */ }
+            }
+            if (!samples.length) return clockOffsetMs;
+            samples.sort((a, b) => a.rtt - b.rtt);
+            const best = samples[0].offset;
+            // Ignore sub-second noise; only correct clocks that are really off.
+            clockOffsetMs = Math.abs(best) > 1000 ? Math.round(best) : 0;
+            return clockOffsetMs;
+        })();
+        return clockPromise;
+    }
+
+    /** Converts a server-time instant to this computer's clock (for players that use Date.now()). */
+    function toLocalMs(serverMs) {
+        return serverMs - clockOffsetMs;
+    }
+
     function safeImageUrl(value) {
         const url = String(value || '').trim();
         return /^https:\/\/[^\s"'<>]{1,500}$/.test(url) ? url : '';
@@ -49,7 +97,14 @@
         if (raw.mode === 'youtube') {
             const videoId = String(raw.youtube?.videoId || '');
             if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) return off;
-            return { mode: 'youtube', title, youtube: { videoId, live: raw.youtube?.live === true }, movie: null, startedAtMs };
+            const live = raw.youtube?.live === true;
+            return {
+                mode: 'youtube',
+                title,
+                youtube: { videoId, live, pausedAtSec: live ? null : readPause(raw.youtube?.pausedAtSec) },
+                movie: null,
+                startedAtMs
+            };
         }
         if (raw.mode === 'movie') {
             const kinopoiskId = Number(raw.movie?.kinopoiskId);
@@ -63,9 +118,7 @@
                     kinopoiskId,
                     durationSec: Number.isFinite(durationSec) && durationSec > 0 ? Math.round(durationSec) : 0,
                     posterUrl: safeImageUrl(raw.movie?.posterUrl),
-                    pausedAtSec: Number.isFinite(Number(raw.movie?.pausedAtSec)) && raw.movie?.pausedAtSec !== null && Number(raw.movie.pausedAtSec) >= 0
-                        ? Number(raw.movie.pausedAtSec)
-                        : null
+                    pausedAtSec: readPause(raw.movie?.pausedAtSec)
                 },
                 startedAtMs
             };
@@ -77,12 +130,13 @@
      * Where the broadcast is right now.
      * @returns {{ state: 'off'|'live'|'paused'|'upcoming'|'ended', offsetSec: number }}
      */
-    function computePosition(channel, nowMs = Date.now()) {
+    function computePosition(channel, nowMs = now()) {
         if (!channel || channel.mode === 'off') return { state: 'off', offsetSec: 0 };
         // A live YouTube stream is always «now»: there is nothing to seek to.
         if (channel.mode === 'youtube' && channel.youtube?.live) return { state: 'live', offsetSec: 0 };
-        if (channel.mode === 'movie' && Number.isFinite(channel.movie?.pausedAtSec)) {
-            return { state: 'paused', offsetSec: Math.floor(channel.movie.pausedAtSec) };
+        const media = channel[channel.mode];
+        if (Number.isFinite(media?.pausedAtSec)) {
+            return { state: 'paused', offsetSec: Math.floor(media.pausedAtSec) };
         }
         if (!Number.isFinite(channel.startedAtMs)) return { state: 'live', offsetSec: 0 };
 
@@ -104,7 +158,7 @@
                 ? Utils.extractYouTubeVideoInfo(String(youtubeUrl || '').trim())
                 : null;
             if (!info?.id) throw new Error('Укажите ссылку на видео или трансляцию YouTube');
-            return { mode: 'youtube', title: cleanTitle, youtube: { videoId: info.id, live: youtubeLive === true }, movie: null };
+            return { mode: 'youtube', title: cleanTitle, youtube: { videoId: info.id, live: youtubeLive === true, pausedAtSec: null }, movie: null };
         }
 
         const id = Number(String(kinopoiskId || '').trim());
@@ -167,8 +221,11 @@
          * YouTube video: seek). Moves `startedAt` so every viewer follows.
          * @param {'pause'|'resume'|'seek'} action
          */
-        async control(channel, action, { offsetSec = 0 } = {}) {
+        async control(channel, action, { offsetSec = null } = {}) {
             if (!channel || channel.mode === 'off') throw new Error('Эфир не запущен');
+            if (channel.mode === 'youtube' && channel.youtube.live) throw new Error('Прямую трансляцию нельзя перематывать');
+            const key = channel.mode;
+            const media = channel[key];
             const position = computePosition(channel);
             const duration = channel.movie?.durationSec || 0;
             const clamp = sec => Math.max(0, duration > 0 ? Math.min(sec, duration - 5) : sec);
@@ -176,20 +233,19 @@
             const user = this.firebaseManager.getCurrentUser?.();
             const data = { updatedAt: FieldValue.serverTimestamp(), updatedBy: user?.uid || '' };
 
+            const hasAt = Number.isFinite(offsetSec);
             if (action === 'pause') {
-                if (channel.mode !== 'movie') throw new Error('Пауза доступна только для фильма');
-                data.movie = { ...channel.movie, pausedAtSec: clamp(position.offsetSec) };
+                data[key] = { ...media, pausedAtSec: clamp(hasAt ? offsetSec : position.offsetSec) };
             } else if (action === 'resume') {
-                if (channel.mode !== 'movie') return;
-                const at = Number.isFinite(channel.movie.pausedAtSec) ? channel.movie.pausedAtSec : position.offsetSec;
-                data.movie = { ...channel.movie, pausedAtSec: null };
-                data.startedAt = new Date(Date.now() - clamp(at) * 1000);
+                const at = hasAt ? offsetSec : (Number.isFinite(media.pausedAtSec) ? media.pausedAtSec : position.offsetSec);
+                data[key] = { ...media, pausedAtSec: null };
+                data.startedAt = new Date(now() - clamp(at) * 1000);
             } else if (action === 'seek') {
-                const next = clamp(offsetSec);
-                if (channel.mode === 'movie' && Number.isFinite(channel.movie.pausedAtSec)) {
-                    data.movie = { ...channel.movie, pausedAtSec: next };
+                const next = clamp(hasAt ? offsetSec : 0);
+                if (Number.isFinite(media.pausedAtSec)) {
+                    data[key] = { ...media, pausedAtSec: next };
                 } else {
-                    data.startedAt = new Date(Date.now() - next * 1000);
+                    data.startedAt = new Date(now() - next * 1000);
                 }
             } else {
                 throw new Error('Неизвестное действие');
@@ -213,7 +269,7 @@
         }
     }
 
-    const api = { CinemaChannelService, normalizeChannel, computePosition, buildChannelPayload, formatClock, coverUrl, DOC_ID };
+    const api = { CinemaChannelService, normalizeChannel, computePosition, buildChannelPayload, formatClock, coverUrl, now, syncClock, toLocalMs, DOC_ID };
     if (typeof window !== 'undefined') Object.assign(window, { CinemaChannelService, CinemaChannel: api });
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();

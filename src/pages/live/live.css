@@ -79,6 +79,7 @@
     font-variant-numeric: tabular-nums;
 }
 
+.live-notice[hidden],
 .live-clock[hidden],
 .live-sync-btn[hidden],
 .live-stage[hidden] {
@@ -92,35 +93,6 @@
 .live-badge.is-paused .live-badge__dot {
     background: var(--theme-text-secondary);
     animation: none;
-}
-
-/* Admin-only timeline controls: every viewer follows these actions */
-.live-admin {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-sm);
-    margin-bottom: var(--space-md);
-    padding: var(--space-smd) var(--space-md);
-    border: 1px dashed var(--theme-border-hover);
-    border-radius: var(--radius-lg);
-    background: rgba(var(--theme-ink-rgb), 0.03);
-}
-
-.live-admin[hidden],
-.live-admin [hidden] {
-    display: none;
-}
-
-.live-admin__label {
-    margin-right: auto;
-    color: var(--theme-text-secondary);
-    font-size: 13px;
-    font-weight: 600;
-}
-
-.live-admin .btn {
-    font-variant-numeric: tabular-nums;
 }
 
 .live-screen {

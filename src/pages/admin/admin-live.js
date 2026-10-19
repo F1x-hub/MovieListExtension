@@ -76,12 +76,13 @@
             }
             const live = channel.mode === 'youtube' && channel.youtube.live;
             ui.nowTitle.textContent = channel.title || (channel.mode === 'youtube' ? 'Видео YouTube' : `Фильм #${channel.movie.kinopoiskId}`);
-            ui.nowState.textContent = position.state === 'ended' ? 'Показ завершён' : 'В эфире';
+            ui.nowState.textContent = position.state === 'ended' ? 'Показ завершён' : position.state === 'paused' ? 'Пауза' : 'В эфире';
             const source = channel.mode === 'youtube' ? (live ? 'YouTube · прямая трансляция' : 'YouTube') : 'Фильм';
             const total = channel.movie?.durationSec;
-            const clock = live ? '' : position.state === 'ended'
-                ? ''
-                : ` · идёт ${formatClock(position.offsetSec)}${total ? ` из ${formatClock(total)}` : ''}`;
+            const clock = live || position.state === 'ended' ? ''
+                : position.state === 'paused'
+                    ? ` · пауза на ${formatClock(position.offsetSec)}`
+                    : ` · идёт ${formatClock(position.offsetSec)}${total ? ` из ${formatClock(total)}` : ''}`;
             ui.nowMeta.textContent = source + clock;
         }
 

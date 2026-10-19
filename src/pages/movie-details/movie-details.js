@@ -1208,84 +1208,52 @@ class MovieDetailsManager {
     }
 
     /**
-     * Broadcast lock for «Эфир»: the player follows the shared channel clock like a
-     * TV channel. The live page sends { startMs, pausedAtSec } (the admin moves it);
-     * this page applies it to its own <video> elements and forwards it to provider
-     * frames, where player-cleaner enforces the same rule on the real media.
+     * «Эфир» embed: this page hosts a player-only broadcast. player-cleaner (loaded
+     * here and inside provider frames) enforces the channel clock on the media;
+     * this page only relays messages between the live page and the player frames.
      */
-    startBroadcastLock(startMs) {
+    startBroadcastLock() {
         if (this.broadcastLock) return;
         document.documentElement.classList.add('broadcast-mode');
-        const state = { startMs, pausedAtSec: null };
-        const DRIFT_SEC = 3;
-        const tracked = new Set();
-        const targetSec = () => (Number.isFinite(state.pausedAtSec) ? state.pausedAtSec : (Date.now() - state.startMs) / 1000);
+        // A broadcast is not personal viewing: keep it out of watch progress (and
+        // Firestore writes per viewer), and don't let Esc close the only thing on screen.
+        if (this.progressService) this.progressService.saveProgress = async () => {};
+        window.addEventListener('keydown', event => {
+            if (event.key === 'Escape') { event.stopImmediatePropagation(); event.preventDefault(); }
+        }, true);
 
-        const sync = (video) => {
-            if (!video.isConnected) { tracked.delete(video); return; }
-            const duration = video.duration;
-            if (!Number.isFinite(duration) || duration <= 0) return;
-            const target = targetSec();
-            if (target >= duration - 1) return;
-            const paused = Number.isFinite(state.pausedAtSec);
-            if (Math.abs(video.currentTime - target) > (paused ? 1 : DRIFT_SEC)) {
-                try { video.currentTime = Math.max(0, target); } catch { /* not seekable yet */ }
-            }
-            if (paused) {
-                if (!video.paused) video.pause();
-            } else if (video.paused && !video.ended) {
-                video.play().catch(() => {
-                    video.muted = true;
-                    video.play().catch(() => {});
-                });
-            }
+        let lastState = null;
+        const toParent = message => {
+            try { window.parent?.postMessage(message, window.location.origin); } catch { /* not embedded */ }
         };
-
-        const attach = (video) => {
-            if (tracked.has(video)) return;
-            tracked.add(video);
-            ['loadedmetadata', 'canplay', 'play', 'pause', 'seeked'].forEach(type => video.addEventListener(type, () => setTimeout(() => sync(video), 120)));
-            sync(video);
-        };
-
         const forward = () => {
-            const message = { type: 'BROADCAST_STATE', startMs: state.startMs, pausedAtSec: state.pausedAtSec };
+            if (!lastState) return;
             document.querySelectorAll('iframe').forEach(frame => {
                 let origin;
                 try { origin = new URL(frame.src, window.location.href).origin; } catch { return; }
                 if (!/^(https?|chrome-extension):/.test(origin)) return;
-                try { frame.contentWindow?.postMessage(message, origin); } catch { /* frame gone */ }
+                try { frame.contentWindow?.postMessage(lastState, origin); } catch { /* frame gone */ }
             });
         };
 
-        const apply = () => {
-            tracked.forEach(sync);
-            forward();
-        };
-
         window.addEventListener('message', (event) => {
-            if (event.source !== window.parent || event.origin !== window.location.origin) return;
-            if (event.data?.type !== 'BROADCAST_STATE') return;
-            const nextStart = Number(event.data.startMs);
-            if (!Number.isFinite(nextStart) || nextStart <= 0) return;
-            const paused = Number(event.data.pausedAtSec);
-            state.startMs = nextStart;
-            state.pausedAtSec = event.data.pausedAtSec === null || !Number.isFinite(paused) ? null : paused;
-            apply();
+            const type = event.data?.type;
+            if (event.source === window.parent && event.origin === window.location.origin && type === 'BROADCAST_STATE') {
+                lastState = { type, startMs: event.data.startMs, pausedAtSec: event.data.pausedAtSec ?? null, admin: event.data.admin === true };
+                forward();
+                return;
+            }
+            // Reports from the player (this page or provider frames) go up to the live page.
+            if (event.source !== window.parent && (type === 'BROADCAST_MUTED' || type === 'BROADCAST_ADMIN_ACTION')) {
+                toParent(type === 'BROADCAST_MUTED' ? { type } : { type, action: event.data.action, atSec: Number(event.data.atSec) || 0 });
+            }
         });
 
-        const scan = (root) => {
-            if (!(root instanceof Element)) return;
-            if (root.tagName === 'VIDEO') attach(root);
-            root.querySelectorAll?.('video').forEach(attach);
-        };
-        const observer = new MutationObserver(records => records.forEach(r => r.addedNodes.forEach(scan)));
-        observer.observe(document.documentElement, { childList: true, subtree: true });
-        scan(document.documentElement);
         // Provider frames load late and can reload, so keep re-sending the clock.
-        const timer = setInterval(apply, 2000);
-        this.broadcastLock = { observer, timer, state };
-        try { window.parent?.postMessage({ type: 'BROADCAST_READY' }, window.location.origin); } catch { /* not embedded */ }
+        const timer = setInterval(forward, 2000);
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') forward(); });
+        this.broadcastLock = { timer };
+        toParent({ type: 'BROADCAST_READY' });
     }
 
     async initializeUI() {
@@ -1297,7 +1265,7 @@ class MovieDetailsManager {
         // «Эфир» embeds this page as a locked, player-only broadcast tied to the channel clock.
         const broadcastStart = Number.parseInt(urlParams.get('broadcastStart') || '', 10);
         if (this.isEmbedded && Number.isSafeInteger(broadcastStart) && broadcastStart > 0) {
-            this.startBroadcastLock(broadcastStart);
+            this.startBroadcastLock();
         }
         const clearMovieCache = urlParams.get('clearMovieCache') === '1';
 
