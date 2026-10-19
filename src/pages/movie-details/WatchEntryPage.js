@@ -90,6 +90,12 @@
         async resolveWatchSource() {
             const movieId = this.selectedMovie?.kinopoiskId;
             const generation = this.sourceSwitchRequestId;
+            // «Смотреть» right after opening the page waits for the availability
+            // check, so it starts a source that really has the film.
+            if (this.sourceProbePromise && !this.sourceProbeDone) {
+                await Promise.race([this.sourceProbePromise, new Promise(resolve => setTimeout(resolve, 10000))]);
+                if (this.selectedMovie?.kinopoiskId !== movieId || this.sourceSwitchRequestId !== generation) return null;
+            }
             const [preference, last] = await Promise.all([
                 global.WatchSourcePolicy.read(movieId), this.getLastSource(movieId), this.loadWatchSourceHealth()
             ]);

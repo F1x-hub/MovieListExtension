@@ -324,6 +324,8 @@ keeps npm-compatible three-component semver metadata.
 
 ### Features
 
+- The source rail only offers sources that really have the film: every source searches for the title in the background (with the same options playback uses, so starting it reuses the cached result) and a button appears only once its source confirms the title. While checking the rail says «Ищем фильм в источниках…», and «Фильм не найден в источниках» when none has it; «Смотреть» waits for the check instead of guessing.
+
 - New «Официально · YouTube» source: free, licensed full-length films from film studios' own YouTube channels (Мосфильм, Ленфильм, Киностудия Горького, Беларусьфильм, Союзмультфильм and others). A result is accepted only from a verified channel on the studio allowlist, at feature length (40+ min), with a matching title and year; a complete upload is preferred over «1 серия». Plays through the extension's YouTube wrapper and is offered for films, not series.
 - More reliable sources: the default and fallback order now follows each user's own last-7-day start rate and first-frame time per source (sources with fewer than three attempts stay neutral); a source that times out gets a 12-second grace period and then the player moves on automatically; every automatic switch shows «X не запустился — пробуем Y (2 из 4)», and when nothing starts the viewer is pointed to «Торрент».
 
@@ -331,6 +333,7 @@ keeps npm-compatible three-component semver metadata.
 
 ### Fixes
 
+- Fixed sources opening a different film: a shared check now rejects any search result whose year is more than one year away from the film's (remakes and namesakes such as «Король Лев» 2019 for 1994; series are exempt for later seasons) or whose title is not the film's Russian or original title — extra meaningful words («Мама, я дома» for «Мама») no longer pass, while provider noise like «смотреть онлайн HD» is ignored. Ex-FS and Kinogo no longer let an identical title excuse a wrong year for films. Rejections are logged to the console for diagnosis.
 - Reaction notifications now reach users whose page restores sign-in from the cached session: the inbox is read only after Firebase Auth is signed in as that user, and a failed read no longer silences the check for the next 10 minutes.
 - Updater no longer reloads the extension in an endless loop when the host replaced a different folder than the one Chrome loaded: after one reload with the old version still running, the update stops with `RELOAD_VERSION_MISMATCH`. `MovieListSetup.exe` can now switch the extension folder while such an update is stuck in «awaiting confirmation» (it closes that operation instead of refusing with «Нельзя сменить папку во время активного обновления»).
 - «Эфир» host relay now shares only the player (Element Capture, with Region Capture as a fallback on older Chrome) instead of the whole page.

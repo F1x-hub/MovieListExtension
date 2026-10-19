@@ -6405,6 +6405,14 @@
     }
 }
 
+/* Shown in the source rail while sources are checked or when none has the title */
+.source-rail-note {
+    align-self: center;
+    padding: 0 6px;
+    color: var(--theme-text-secondary);
+    font-size: 13px;
+}
+
 /* «Эфир» broadcast embed: player only, full frame, no controls that break the shared clock */
 html.broadcast-mode,
 html.broadcast-mode body {

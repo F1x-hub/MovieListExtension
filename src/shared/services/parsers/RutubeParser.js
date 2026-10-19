@@ -11,6 +11,8 @@ class RutubeParser extends BaseParserService {
             name: 'Rutube',
             baseUrl: 'https://rutube.ru'
         });
+        // Rutube is user uploads: its own scorer filters titles; the shared check keeps the year gate.
+        this.ownTitleMatching = true;
     }
 
     // ─── BaseParserService Contract ───────────────────────────────────

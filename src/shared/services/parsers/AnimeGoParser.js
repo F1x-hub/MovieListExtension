@@ -19,6 +19,8 @@ class AnimeGoParser extends BaseParserService {
             name: 'AnimeGo',
             baseUrl: 'https://animego.me'
         });
+        // Titles are matched by this parser's own rules; the shared check keeps only the year gate.
+        this.ownTitleMatching = true;
         /** @private @type {Map<string, {data: Array<VideoSource>, timestamp: number}>} */
         this._episodePlayerCache = new Map();
         /** @private @type {Map<string, Promise<Array<VideoSource>>>} */

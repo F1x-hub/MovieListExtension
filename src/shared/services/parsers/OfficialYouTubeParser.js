@@ -69,7 +69,7 @@ class OfficialYouTubeParser extends BaseParserService {
                     videoId: best.videoId,
                     channelName: best.channel,
                     duration: best.durationSec,
-                    year: year ? String(year) : undefined
+                    titleVerified: true
                 };
             }
         }

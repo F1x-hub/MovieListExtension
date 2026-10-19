@@ -468,6 +468,66 @@ class BaseParserService {
      * @param {string|number|null} targetYear
      * @returns {boolean}
      */
+    /**
+     * Last line of defence shared by every source: a result whose year or title
+     * says it is another film (a remake, a namesake, an unrelated upload) is
+     * dropped, so the player never opens «not that movie».
+     *  - Films: a known result year must be within ±1 of the target year.
+     *    Series are exempt (later seasons legitimately carry later years).
+     *  - Title: one of the result's title variants («Рус / Original») must match
+     *    the requested title or the original title, unless the parser already
+     *    verified the title itself (`titleVerified`) or matches titles its own
+     *    way (`ownTitleMatching`, e.g. stem-based anime matching).
+     */
+    verifySearchResult(result, title, year, options = {}) {
+        if (!result || this.skipResultVerification) return true;
+        const mediaType = options?.mediaType || null;
+        const series = this.isSeriesMediaType?.(mediaType) || options?.seasonNumber != null;
+        const target = Number.parseInt(year, 10);
+        const found = Number.parseInt(result.year, 10);
+        if (!series && Number.isFinite(target) && Number.isFinite(found) && Math.abs(found - target) > 1) return false;
+
+        if (result.titleVerified || this.ownTitleMatching || !result.title) return true;
+        const wanted = [title, options?.altName].filter(value => typeof value === 'string' && value.trim());
+        if (!wanted.length) return true;
+        const variants = String(result.title).split(/\s+\/\s+|\s+\|\s+/).map(part => part.trim()).filter(Boolean);
+        return variants.some(variant => wanted.some(name => {
+            if (BaseParserService.compactTitle(variant) === BaseParserService.compactTitle(name)) return true;
+            return this.isTitleMatch(variant, name, { allowSeriesSuffix: series })
+                && BaseParserService.extraTitleWords(variant, name, series) <= (BaseParserService.significantWords(name).length >= 3 ? 1 : 0);
+        }));
+    }
+
+    /** Words that providers add around a title and that never make it another film. */
+    static get TITLE_NOISE_WORDS() {
+        return new Set(['фильм', 'фильма', 'кино', 'мультфильм', 'мультик', 'аниме', 'сериал', 'смотреть', 'онлайн', 'бесплатно',
+            'хорошем', 'качестве', 'полный', 'полностью', 'hd', 'fullhd', 'full', 'uhd', '4k', '4к', '1080', '1080p', '720', '720p',
+            'год', 'года', 'г', 'русская', 'озвучка', 'дубляж', 'дублированный', 'the', 'a', 'an', 'movie', 'film']);
+    }
+
+    static significantWords(value) {
+        const noise = BaseParserService.TITLE_NOISE_WORDS;
+        return BaseParserService.normalizeTitle(String(value || '').replace(/\(\s*(?:19|20)\d{2}\s*\)/g, ' '))
+            .split(' ')
+            .filter(word => word.length > 1 && !noise.has(word) && !/^(?:19|20)\d{2}$/.test(word));
+    }
+
+    /**
+     * How many meaningful words the found title has beyond the wanted one
+     * («Мама, я дома» vs «Мама» → 1). Season suffixes are ignored for series.
+     */
+    static extraTitleWords(found, wanted, series = false) {
+        let cleanFound = String(found || '');
+        if (series) cleanFound = cleanFound.replace(/\s+(?:\d+\s+)?(?:сезон\S*|season|серия|серии|series)(?:\s.*)?$/i, ' ');
+        const wantedSet = new Set(BaseParserService.significantWords(wanted));
+        return BaseParserService.significantWords(cleanFound).filter(word => !wantedSet.has(word) && !/^\d+$/.test(word)).length;
+    }
+
+    /** Whether a media type describes episodic content. */
+    isSeriesMediaType(mediaType) {
+        return /series|tv|show|serial/i.test(String(mediaType || ''));
+    }
+
     static hasYearDivergence(candidate, targetYear) {
         const year = Number.parseInt(targetYear, 10);
         const candidateYear = Number.parseInt(candidate?.year, 10);
@@ -569,7 +629,15 @@ class BaseParserService {
 
         const request = (async () => {
             try {
-                const result = await this.search(title, year, options);
+                let result = await this.search(title, year, options);
+                if (result && !this.verifySearchResult(result, title, year, options)) {
+                    console.info('[BaseParserService] Rejected a result for a different title', {
+                        parserId: this.id,
+                        wanted: { title, year: year || null },
+                        found: { title: result.title || null, year: result.year || null }
+                    });
+                    result = null;
+                }
                 // Parsers report a failed mirror or query as "no result", so a
                 // miss may be transient. Do not let it block a retry for the
                 // whole TTL; concurrent callers still share the in-flight request.
