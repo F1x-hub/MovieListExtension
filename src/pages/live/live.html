@@ -32,18 +32,12 @@
             </div>
             <div class="live-meta">
                 <span class="live-clock" id="liveClock" hidden></span>
-                <button type="button" class="btn btn-secondary live-sync-btn" id="liveSyncBtn" hidden>Синхронизировать</button>
+                <button type="button" class="btn btn-secondary live-sync-btn" id="liveSoundBtn" hidden>Выключить звук</button>
+                <button type="button" class="btn btn-secondary live-sync-btn" id="liveFullscreenBtn" hidden>На весь экран</button>
             </div>
         </header>
 
-        <div class="live-admin" id="liveAdmin" role="group" aria-label="Управление эфиром (админ)" hidden>
-            <span class="live-admin__label">Управление эфиром</span>
-            <button type="button" class="btn btn-secondary" data-live-admin="restart">Сначала</button>
-            <button type="button" class="btn btn-secondary" data-live-admin="seek" data-delta="-30">−30 с</button>
-            <button type="button" class="btn btn-primary" id="liveAdminToggle" data-live-admin="toggle">Пауза</button>
-            <button type="button" class="btn btn-secondary" data-live-admin="seek" data-delta="30">+30 с</button>
-            <button type="button" class="btn btn-secondary" data-live-admin="seek" data-delta="300">+5 мин</button>
-        </div>
+        <p class="live-notice" id="liveNotice" role="status" hidden></p>
 
         <section class="live-stage" id="liveStage" aria-live="polite">
             <div class="live-screen" id="liveScreen">
