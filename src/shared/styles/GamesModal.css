@@ -33,7 +33,7 @@
     background-color: color-mix(in srgb, var(--ui-color-page, #09090b) 82%, transparent);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
-    z-index: 10000;
+    z-index: var(--z-modal, 10000);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -42,7 +42,7 @@
     pointer-events: none;
     transition: opacity var(--motion-duration-fast) var(--motion-ease-in),
         visibility 0s linear var(--motion-duration-fast);
-    font-family: 'Outfit', sans-serif;
+    font-family: var(--font-family);
 }
 
 .games-modal-overlay.active {
@@ -107,7 +107,7 @@
 }
 
 .games-menu-copy h3 {
-    margin: 7px 0 5px;
+    margin: 8px 0 4px;
     color: var(--games-content);
     font-size: clamp(1.45rem, 3vw, 1.8rem);
     line-height: 1.1;
@@ -131,7 +131,7 @@
     grid-template-columns: 38px minmax(0, 1fr) auto;
     align-items: center;
     gap: 10px;
-    padding: 13px 14px;
+    padding: 12px 14px;
     color: var(--games-content);
     text-align: left;
     background: var(--games-fill);
@@ -209,7 +209,7 @@
     margin: 0 24px;
     padding: 4px 0;
     color: var(--games-content-muted);
-    font: 600 0.75rem 'Outfit', sans-serif;
+    font: 600 0.75rem var(--font-family);
     background: transparent;
     border: 0;
     cursor: pointer;
@@ -288,7 +288,7 @@
     color: var(--games-content-muted);
     font-size: 0.85rem;
     font-weight: 600;
-    font-family: 'Outfit', sans-serif;
+    font-family: var(--font-family);
     cursor: pointer;
     transition: transform 160ms ease, background 160ms ease, color 160ms ease, border-color 160ms ease;
 }
@@ -459,7 +459,7 @@
     gap: 8px;
     color: var(--games-content);
     text-align: left;
-    font: 600 0.75rem 'Outfit', sans-serif;
+    font: 600 0.75rem var(--font-family);
     background: var(--games-fill);
     border: 1px solid var(--games-border);
     border-radius: 8px;
@@ -549,7 +549,7 @@
 }
 
 .games-modal-container.tetris-game .game-card {
-    padding-block: 7px;
+    padding-block: 8px;
 }
 
 .games-modal-container.square-game .game-sidebar {
@@ -676,7 +676,7 @@
     min-height: 28px;
     padding: 0 10px;
     color: var(--games-content-muted);
-    font: 700 0.68rem 'Outfit', sans-serif;
+    font: 700 0.68rem var(--font-family);
     background: transparent;
     border: 1px solid transparent;
     border-radius: 6px;
@@ -757,7 +757,7 @@
     gap: 3px;
     width: 236px;
     height: 236px;
-    padding: 5px;
+    padding: 4px;
     background: #020617;
     border: 2px solid #020617;
     border-radius: 7px;
@@ -834,7 +834,7 @@
     position: absolute;
     top: -22px;
     left: 50%;
-    padding: 3px 9px;
+    padding: 3px 8px;
     color: #e2e8f0;
     font-size: 0.66rem;
     font-weight: 700;
@@ -913,8 +913,8 @@
     bottom: 12px;
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    padding: 5px 8px;
+    gap: 4px;
+    padding: 4px 8px;
     color: #cbd5e1;
     font-size: 0.66rem;
     background: rgba(2, 6, 23, 0.7);
@@ -942,7 +942,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 9px 12px;
+    padding: 8px 12px;
     color: var(--games-content);
     font-size: 0.7rem;
     font-weight: 700;
@@ -965,7 +965,7 @@
 .rubiks-controls {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 7px;
+    gap: 8px;
 }
 
 .rubiks-move-group {
@@ -1090,7 +1090,7 @@
 .game-btn-primary {
     padding: 10px 22px;
     color: var(--ui-button-primary-content, #09090b);
-    font: 600 0.9rem 'Outfit', sans-serif;
+    font: 600 0.9rem var(--font-family);
     background: var(--ui-button-primary-bg, #fafafa);
     border: 1px solid var(--ui-button-primary-border, transparent);
     border-radius: 8px;
@@ -1128,7 +1128,7 @@
     background: var(--games-fill);
     border: 1px solid var(--games-border);
     border-radius: 12px;
-    padding: 9px 12px;
+    padding: 8px 12px;
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -1179,7 +1179,7 @@
     color: var(--games-content-muted);
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 4px;
 }
 
 .game-control-row {
@@ -1193,7 +1193,7 @@
     background: var(--games-fill-hover);
     border: 1px solid var(--games-border-hover);
     color: var(--games-content);
-    padding: 2px 5px;
+    padding: 2px 4px;
     border-radius: 4px;
     font-family: 'Geist Mono', monospace;
     font-size: 0.68rem;
@@ -1275,7 +1275,7 @@
     min-height: 34px;
     padding: 0 14px;
     color: var(--games-content);
-    font: 600 0.8rem 'Outfit', sans-serif;
+    font: 600 0.8rem var(--font-family);
     background: var(--games-fill);
     border: 1px solid var(--games-border-hover);
     border-radius: 8px;
@@ -1302,7 +1302,7 @@
     }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 768px) {
     .games-modal-container.quiz-game .movie-quiz {
         width: min(100%, 590px);
     }
@@ -1329,7 +1329,7 @@
     }
 }
 
-@media (max-width: 680px) {
+@media (max-width: 640px) {
     .games-modal-overlay {
         align-items: flex-start;
         overflow-y: auto;

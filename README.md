@@ -319,6 +319,36 @@ Release entries are intentionally collapsed to keep this page readable.
 The extension manifest is the source of truth for the Chrome build version; `package.json`
 keeps npm-compatible three-component semver metadata.
 
+<details open>
+<summary><strong>Unreleased</strong></summary>
+
+### Features
+
+- The new «Смотреть» watch interface is now always on for every user; the admin-only «Плеер» toggle that gated it has been removed.
+- Movie details: the poster now casts a soft colour halo behind itself, and titles without a backdrop get a blurred poster-tinted hero instead of a flat page.
+- Smooth cross-page fades between extension pages via cross-document View Transitions (disabled under reduced motion).
+- Watchlist, Watching, Favorites and Collection show card-shaped skeletons while loading; spinners and loaders stay hidden for the first 150ms so fast loads no longer flash.
+- Empty states gained a soft icon medallion and a short rise-in; toggle actions (favourite, watchlist, watched, rate) answer with a small spring pop; movie-card posters zoom slightly on hover.
+- `Utils.showToast` is now a neutral bottom-centred toast with a status bar and an optional action button; removing/adding a favourite on the movie page offers «Отменить».
+- Provider ratings on the movie page count up from zero when they appear.
+
+### Fixes
+
+- The admin panel now follows the light theme: hard-coded white overlays, dark slate backgrounds and light text were moved onto theme tokens, and status colours get darker light-theme tones, so all admin text meets WCAG AA contrast in both themes.
+- Fixed light/dark contrast defects found by a page-wide contrast sweep: Catalog type tabs no longer sit on a dark glass strip in the light theme, the «Try Again» error buttons on Collection, Watchlist, Watching, Ratings and Favorites use the neutral primary-button tokens (previously white text on a near-white or rose fill), and the Favorites counter and unavailable Home rating badges gained readable tones.
+
+### Refactor
+
+- Added a shared `--theme-ink-rgb` overlay channel and a `--z-dropdown` / `--z-modal` / `--z-top` stacking scale; ad-hoc 1000–100001 z-index values now use it with unchanged ordering.
+- Replaced `transition: all` across page styles with explicit colour, opacity, transform, shadow and filter transitions, so layout properties no longer animate by accident.
+- Extension pages now show in-page `ConfirmDialog` notices instead of native `alert()`/`confirm()` (new one-button `ConfirmDialog.alert()`, loaded on every page with navigation); third-party content-script overlays still use native alerts.
+- Typography: hard-coded `'Outfit'` stacks now use `--font-family`, and 9–10.5px text was raised to an 11px minimum.
+- Repeated inline styles in the admin panel moved into utility classes, and near-duplicate 760/720/680px breakpoints were folded into the shared 768px and 640px ones.
+- Added `--elevation-1…3` surface levels (soft shadows in light, hairline ring + deep shadow in dark) used by cards, modals and dropdowns, extra `--space-2xs/smd/mlg` steps, and tabular numerals for ratings, counters and stats; off-grid 5/7/9/11/13/15px paddings, margins and gaps were snapped to the 4/8px grid.
+- Remaining text-glyph icons in the admin sidebar and TMDB queue filter were replaced with matching stroke SVG icons.
+
+</details>
+
 <details>
 <summary><strong>1.3.8</strong> — faster discovery, account rating sync and refined playback</summary>
 

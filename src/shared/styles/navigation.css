@@ -9,7 +9,7 @@
     top: 0;
     left: 0;
     width: 100%;
-    z-index: 1000;
+    z-index: var(--z-dropdown, 1000);
     background: rgba(9, 9, 11, 0.55);
     border-bottom: 1px solid rgba(255, 255, 255, 0.04);
     box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
@@ -82,7 +82,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 7px 14px;
+    padding: 8px 14px;
     color: var(--theme-text-secondary, #a1a1aa);
     text-decoration: none;
     border-radius: 100px;
@@ -129,7 +129,7 @@
 }
 
 .nav-dropdown-arrow {
-    font-size: 9px;
+    font-size: 11px;
     margin-left: 4px;
     transition: transform 160ms var(--ease-out);
     opacity: 0.7;
@@ -154,7 +154,7 @@
     transform: translateY(-8px);
     transition: opacity 160ms var(--ease-out), transform 160ms var(--ease-out), visibility 160ms;
     pointer-events: none;
-    z-index: 1000;
+    z-index: var(--z-dropdown, 1000);
     backdrop-filter: blur(20px);
     visibility: hidden;
 }
@@ -224,7 +224,7 @@
 
 .dropdown-section-header {
     padding: 6px 16px 4px;
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     color: var(--theme-text-muted);
@@ -387,7 +387,7 @@
     width: 0;
     overflow: hidden;
     opacity: 0;
-    transition: all 200ms var(--ease-out);
+    transition: background-color 200ms var(--ease-out), border-color 200ms var(--ease-out), color 200ms var(--ease-out), opacity 200ms var(--ease-out), transform 200ms var(--ease-out), box-shadow 200ms var(--ease-out), filter 200ms var(--ease-out);
 }
 
 .nav-search-input-wrapper.active {
@@ -552,7 +552,7 @@
     transform: translateY(var(--motion-distance-enter));
     transition: opacity var(--motion-duration-fast) var(--motion-ease-in),
         transform var(--motion-duration-fast) var(--motion-ease-in), visibility 0s linear var(--motion-duration-fast);
-    z-index: 1000;
+    z-index: var(--z-dropdown, 1000);
     margin-top: 6px;
 }
 
@@ -848,7 +848,7 @@
 }
 
 .nav-radio-duration {
-    font-size: 9.5px;
+    font-size: 11px;
     color: var(--theme-text-muted);
     white-space: nowrap;
 }

@@ -1095,8 +1095,13 @@ class MovieDetailsTorrentPanelMethods {
     async deleteSavedTorrent(downloadId) {
         const record = this.torrentDownloads.find(download => download.id === downloadId);
         if (!record || !this.mediaPlayerService) return false;
-        if (typeof window !== 'undefined' && typeof window.confirm === 'function'
-            && !window.confirm(`Удалить загрузку «${record.title || 'фильм'}»?`)) return false;
+        const question = `Удалить загрузку «${record.title || 'фильм'}»?`;
+        if (typeof window !== 'undefined') {
+            const confirmed = window.ConfirmDialog
+                ? await window.ConfirmDialog.confirm({ title: question, confirmLabel: 'Удалить', danger: true })
+                : (typeof window.confirm !== 'function' || window.confirm(question));
+            if (!confirmed) return false;
+        }
         try {
             await this.mediaPlayerService.deleteDownload(downloadId);
             this.torrentDownloads = this.torrentDownloads.filter(download => download.id !== downloadId);

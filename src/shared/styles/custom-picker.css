@@ -10,7 +10,7 @@
 }
 
 .custom-picker-wrapper.active {
-    z-index: 1000;
+    z-index: var(--z-dropdown, 1000);
 }
 
 /* Custom Trigger Button (replaces unstyled input) */
@@ -178,7 +178,7 @@
     border: 1px solid rgba(255, 255, 255, 0.08);
     color: var(--theme-text-secondary, #a1a1aa);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
 }
 
 .light-theme .custom-calendar-nav-btn {
@@ -233,7 +233,7 @@
     background: transparent;
     color: var(--theme-text-primary, #f4f4f5);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
     position: relative;
     padding: 0;
 }
@@ -299,7 +299,7 @@
     font-size: 11.5px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
     text-align: center;
     white-space: nowrap;
 }
@@ -357,7 +357,7 @@
 }
 
 .custom-time-presets-title {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     color: var(--theme-text-muted, #71717a);
     text-transform: uppercase;
@@ -373,10 +373,10 @@
     border-radius: 4px;
     padding: 2px 6px;
     color: #2aabee;
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
 }
 
 .custom-time-add-trigger-btn:hover {
@@ -427,7 +427,7 @@
     font-size: 11px;
     font-weight: 700;
     cursor: pointer;
-    transition: all 0.1s ease;
+    transition: background-color 0.1s ease, border-color 0.1s ease, color 0.1s ease, opacity 0.1s ease, transform 0.1s ease, box-shadow 0.1s ease, filter 0.1s ease;
 }
 
 .custom-time-add-save:hover {
@@ -446,7 +446,7 @@
     border: none;
     font-size: 11px;
     cursor: pointer;
-    transition: all 0.1s ease;
+    transition: background-color 0.1s ease, border-color 0.1s ease, color 0.1s ease, opacity 0.1s ease, transform 0.1s ease, box-shadow 0.1s ease, filter 0.1s ease;
 }
 
 .custom-time-add-cancel:hover {
@@ -475,7 +475,7 @@
     font-family: var(--font-data, monospace);
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.12s ease;
+    transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease, opacity 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
 }
 
 .light-theme .custom-time-preset-pill {
@@ -574,7 +574,7 @@
     background: rgba(255, 255, 255, 0.04);
     color: var(--theme-text-secondary, #a1a1aa);
     cursor: pointer;
-    transition: all 0.12s ease;
+    transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease, opacity 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
 }
 
 .light-theme .custom-time-step-btn {
@@ -612,7 +612,7 @@
 }
 
 .custom-time-column-header {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     color: var(--theme-text-muted, #71717a);
     text-transform: uppercase;
@@ -662,7 +662,7 @@
     font-size: 12.5px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.12s ease;
+    transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease, opacity 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
     flex-shrink: 0;
 }
 

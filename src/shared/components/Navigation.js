@@ -1625,7 +1625,7 @@ class Navigation {
             const file = avatarInput.files && avatarInput.files[0];
             if (!file) return;
             const valid = ['image/jpeg','image/png','image/webp'].includes(file.type) && file.size <= 5 * 1024 * 1024;
-            if (!valid) { alert('Invalid file. Use JPG/PNG/WEBP up to 5MB.'); avatarInput.value=''; return; }
+            if (!valid) { (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: 'Invalid file. Use JPG/PNG/WEBP up to 5MB.' }) : window.alert('Invalid file. Use JPG/PNG/WEBP up to 5MB.')); avatarInput.value=''; return; }
             const reader = new FileReader();
             reader.onload = () => {
                 avatarPreview.src = reader.result;
@@ -1663,7 +1663,7 @@ class Navigation {
                     photo = upload.photoURL;
                     photoPath = upload.photoPath;
                 } catch {
-                    alert('Avatar upload failed');
+                    (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: 'Avatar upload failed' }) : window.alert('Avatar upload failed'));
                     return;
                 }
             }
@@ -2469,7 +2469,7 @@ class Navigation {
             }
         } catch (error) {
             console.error('Logout error:', error);
-            alert('Failed to sign out. Please try again.');
+            (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: 'Failed to sign out. Please try again.' }) : window.alert('Failed to sign out. Please try again.'));
         }
     }
 
@@ -2530,6 +2530,59 @@ if (typeof window !== 'undefined' && !window.location.pathname.includes('popup.h
 }
 
 // Export for use in other modules
+// Tactile feedback: toggle-style actions (favourite, watchlist, watched…) give a short spring pop.
+if (typeof window !== 'undefined' && typeof document !== 'undefined' && document.addEventListener && !window.__uiPopFeedbackBound) {
+    window.__uiPopFeedbackBound = true;
+    document.addEventListener('click', (event) => {
+        const target = event.target instanceof Element
+            ? event.target.closest('[data-action^="toggle-"], .rate-movie-btn')
+            : null;
+        if (!target) return;
+        const icon = target.querySelector('svg') || target;
+        icon.classList.remove('ui-pop');
+        // Restart the animation when the same control is pressed again quickly.
+        void icon.getBoundingClientRect();
+        icon.classList.add('ui-pop');
+        icon.addEventListener('animationend', () => icon.classList.remove('ui-pop'), { once: true });
+    }, true);
+}
+
+// Count-up: numbers marked with data-count-to roll up from zero once when they appear.
+if (typeof window !== 'undefined' && typeof document !== 'undefined' && typeof MutationObserver === 'function' && !window.__countUpBound) {
+    window.__countUpBound = true;
+    const reduceMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const animate = (element) => {
+        if (element.dataset.counted) return;
+        element.dataset.counted = 'true';
+        const raw = String(element.dataset.countTo || '');
+        const target = parseFloat(raw.replace(',', '.'));
+        if (!Number.isFinite(target) || target <= 0 || reduceMotion()) return;
+        const decimals = (raw.split(/[.,]/)[1] || '').length;
+        const start = performance.now();
+        const duration = 650;
+        const step = (now) => {
+            if (!element.isConnected) return;
+            const progress = Math.min(1, (now - start) / duration);
+            const eased = 1 - Math.pow(1 - progress, 3);
+            element.textContent = progress < 1 ? (target * eased).toFixed(decimals) : raw;
+            if (progress < 1) requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+    };
+    const scan = (root) => {
+        if (!(root instanceof Element)) return;
+        if (root.matches('[data-count-to]')) animate(root);
+        root.querySelectorAll('[data-count-to]:not([data-counted])').forEach(animate);
+    };
+    const start = () => {
+        scan(document.body);
+        new MutationObserver((records) => {
+            for (const record of records) record.addedNodes.forEach(scan);
+        }).observe(document.body, { childList: true, subtree: true });
+    };
+    if (document.body) start(); else document.addEventListener('DOMContentLoaded', start, { once: true });
+}
+
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = Navigation;
 } else {

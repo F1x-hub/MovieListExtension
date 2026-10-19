@@ -19,7 +19,7 @@
 .word-guess-game {
     width: min(100%, 640px);
     color: var(--theme-text-primary, #f4f4f5);
-    font-family: 'Outfit', sans-serif;
+    font-family: var(--font-family);
 }
 
 .word-guess-game [hidden] {
@@ -105,7 +105,7 @@
 .word-guess-form {
     display: flex;
     flex-direction: column;
-    gap: 7px;
+    gap: 8px;
 }
 
 .word-guess-form label {
@@ -122,13 +122,13 @@
 .word-guess-input-row input {
     min-width: 0;
     flex: 1;
-    padding: 12px 13px;
+    padding: 12px 12px;
     color: var(--theme-input-text, #f4f4f5);
     background: var(--theme-input-bg, #121214);
     border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
     border-radius: 8px;
     outline: none;
-    font: 600 0.95rem 'Outfit', sans-serif;
+    font: 600 0.95rem var(--font-family);
     transition: border-color 160ms ease-out, box-shadow 160ms ease-out;
 }
 
@@ -144,7 +144,7 @@
     border: 1px solid var(--theme-accent, #fbbf24);
     border-radius: 8px;
     cursor: pointer;
-    font: 700 0.78rem 'Outfit', sans-serif;
+    font: 700 0.78rem var(--font-family);
     transition: transform 140ms ease-out, background-color 140ms ease-out;
 }
 
@@ -208,7 +208,7 @@
     border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.12));
     border-radius: 8px;
     cursor: pointer;
-    font: 600 0.74rem 'Outfit', sans-serif;
+    font: 600 0.74rem var(--font-family);
     transition: transform 140ms ease-out, color 140ms ease-out, border-color 140ms ease-out;
 }
 
@@ -233,7 +233,7 @@
 
 .word-guess-hint-badge {
     margin-left: 4px;
-    padding: 1px 5px;
+    padding: 1px 4px;
     color: var(--theme-text-secondary, #a1a1aa);
     font-size: 0.62rem;
     font-weight: 600;
@@ -243,7 +243,7 @@
 
 .word-guess-history {
     min-height: 170px;
-    padding: 13px;
+    padding: 12px;
     background: var(--theme-bg-secondary, #121214);
     border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
     border-radius: 10px;
@@ -259,7 +259,7 @@
     max-height: min(46vh, 420px);
     display: flex;
     flex-direction: column;
-    gap: 7px;
+    gap: 8px;
     margin: 12px 0 0;
     padding: 0 6px 0 0;
     list-style: none;
@@ -301,7 +301,7 @@
     align-items: center;
     gap: 10px;
     min-height: 42px;
-    padding: 9px 12px;
+    padding: 8px 12px;
     background: var(--theme-bg-tertiary, #18181b);
     border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
     border-left: 3px solid var(--word-guess-rank-color, #71717a);
@@ -387,7 +387,7 @@
     font-size: 0.82rem;
 }
 
-@media (max-width: 680px) {
+@media (max-width: 640px) {
     .games-modal-container.word-guess-game-mode .games-modal-body {
         gap: 12px;
     }

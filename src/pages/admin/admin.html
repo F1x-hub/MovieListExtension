@@ -63,7 +63,7 @@
                             <span class="admin-nav-count" id="adminNavReportsCount">—</span>
                         </button>
                         <button class="sidebar-link" data-target="tmdb-fallbacks">
-                            <span class="icon">↔</span>
+                            <span class="icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></span>
                             <span>Проверка TMDB</span>
                             <span class="admin-nav-count admin-nav-count-warning" id="adminNavTmdbCount">—</span>
                         </button>
@@ -82,13 +82,9 @@
                             <span class="admin-nav-count" id="adminNavProviderKeysCount">—</span>
                         </button>
                         <button class="sidebar-link" data-target="reaction-settings">
-                            <span class="icon" aria-hidden="true">😊</span>
+                            <span class="icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg></span>
                             <span>Реакции</span>
                             <span class="admin-nav-count" id="adminNavReactionCount">—</span>
-                        </button>
-                        <button class="sidebar-link" data-target="player-settings" type="button">
-                            <span class="icon" aria-hidden="true">▷</span>
-                            <span>Плеер</span>
                         </button>
                         <div class="sidebar-spacer"></div>
                     </nav>
@@ -149,7 +145,7 @@
                                                 <th>С нами с</th>
                                                 <th>Оценки</th>
                                                 <th>Коллекции</th>
-                                                <th style="text-align: right;">Действия</th>
+                                                <th class="admin-text-right">Действия</th>
                                             </tr>
                                         </thead>
                                         <tbody id="usersTableBody">
@@ -210,7 +206,7 @@
                                                 <th>ID</th>
                                                 <th>Дата регистрации</th>
                                                 <th>Статус</th>
-                                                <th style="text-align: right;">Действия</th>
+                                                <th class="admin-text-right">Действия</th>
                                             </tr>
                                         </thead>
                                         <tbody id="approvalsTableBody">
@@ -434,22 +430,22 @@
                                 <div class="settings-section" style="margin-bottom: 24px;">
                                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                                         <div>
-                                            <h3 style="margin: 0; font-size: 1.1rem; color: var(--theme-text-primary);">Приоритетная очередь новинок TMDB</h3>
-                                            <p style="margin: 4px 0 0; color: var(--text-secondary); font-size: 0.875rem;">Тайтлы с Главной, требующие ручной привязки к Кинопоиску, отсортированные по влиянию на Top-12.</p>
+                                            <h3 class="admin-section-title">Приоритетная очередь новинок TMDB</h3>
+                                            <p class="admin-section-subtitle">Тайтлы с Главной, требующие ручной привязки к Кинопоиску, отсортированные по влиянию на Top-12.</p>
                                         </div>
                                         <div style="display: flex; gap: 8px; align-items: center;">
-                                            <button id="autoMapQueueBtn" class="btn-primary" type="button" style="font-size: 0.8rem; padding: 6px 14px; border-radius: 6px; display: flex; align-items: center; gap: 6px;">
+                                            <button id="autoMapQueueBtn" class="btn-primary admin-btn-sm admin-btn-sm--icon" type="button">
                                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
                                                 Автоматически сопоставить очередь
                                             </button>
-                                            <button id="clearUnmappedQueueBtn" class="btn btn-secondary" type="button" style="font-size: 0.8rem; padding: 6px 12px; border-radius: 6px;">Очистить очередь</button>
+                                            <button id="clearUnmappedQueueBtn" class="btn btn-secondary admin-btn-sm" type="button">Очистить очередь</button>
                                         </div>
                                     </div>
 
                                     <!-- Priority & Category Filters -->
                                     <div class="queue-filter-bar" id="tmdbQueueFilterBar">
                                         <button class="queue-filter-btn active" data-filter="all" type="button">Все <span class="badge-count-inline" id="filterCountAll">0</span></button>
-                                        <button class="queue-filter-btn" data-filter="critical" type="button" style="color: #f87171;">🔥 Critical (Top-12) <span class="badge-count-inline" id="filterCountCritical">0</span></button>
+                                        <button class="queue-filter-btn" data-filter="critical" type="button"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path></svg> Critical (Top-12) <span class="badge-count-inline" id="filterCountCritical">0</span></button>
                                         <button class="queue-filter-btn" data-filter="films" type="button">Фильмы <span class="badge-count-inline" id="filterCountFilms">0</span></button>
                                         <button class="queue-filter-btn" data-filter="series" type="button">Сериалы <span class="badge-count-inline" id="filterCountSeries">0</span></button>
                                         <button class="queue-filter-btn" data-filter="cartoons" type="button">Мультфильмы <span class="badge-count-inline" id="filterCountCartoons">0</span></button>
@@ -464,15 +460,15 @@
 
                                 <!-- Active Manual Mappings -->
                                 <div class="settings-section">
-                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
+                                    <div class="admin-section-head">
                                         <div>
-                                            <h3 style="margin: 0; font-size: 1.1rem; color: var(--theme-text-primary);">Активные ручные привязки</h3>
+                                            <h3 class="admin-section-title">Активные ручные привязки</h3>
                                             <p style="margin: 4px 0 0; color: var(--text-secondary); font-size: 0.8rem;">Подтверждённые связи публикуются в общей базе для авторизованных пользователей.</p>
                                         </div>
                                         <div style="display: flex; gap: 8px;">
-                                            <button id="publishManualMappingsBtn" class="btn btn-secondary" type="button" style="font-size: 0.8rem; padding: 6px 12px; border-radius: 6px;">Опубликовать локальные связи</button>
-                                            <button id="exportManualMappingsBtn" class="btn btn-secondary" type="button" style="font-size: 0.8rem; padding: 6px 12px; border-radius: 6px;">Экспорт JSON</button>
-                                            <button id="importManualMappingsBtn" class="btn btn-secondary" type="button" style="font-size: 0.8rem; padding: 6px 12px; border-radius: 6px;">Импорт JSON</button>
+                                            <button id="publishManualMappingsBtn" class="btn btn-secondary admin-btn-sm" type="button">Опубликовать локальные связи</button>
+                                            <button id="exportManualMappingsBtn" class="btn btn-secondary admin-btn-sm" type="button">Экспорт JSON</button>
+                                            <button id="importManualMappingsBtn" class="btn btn-secondary admin-btn-sm" type="button">Импорт JSON</button>
                                             <input type="file" id="importManualMappingsFile" accept=".json" style="display: none;">
                                         </div>
                                     </div>
@@ -485,12 +481,12 @@
                             <!-- Sub-tab 2: Kinopoisk -> IMDb Fallback Queue -->
                             <div class="admin-subtab-content" id="subtab-kp-to-imdb" role="tabpanel" aria-labelledby="tab-kp-to-imdb" hidden>
                                 <div class="settings-section">
-                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
+                                    <div class="admin-section-head">
                                         <div>
-                                            <h3 style="margin: 0; font-size: 1.1rem; color: var(--theme-text-primary);">Фильмы Кинопоиска без IMDb ID</h3>
-                                            <p style="margin: 4px 0 0; color: var(--text-secondary); font-size: 0.875rem;">Фильмы, для которых КП не передал IMDb ID. Укажите проверенный ID в формате tt1234567.</p>
+                                            <h3 class="admin-section-title">Фильмы Кинопоиска без IMDb ID</h3>
+                                            <p class="admin-section-subtitle">Фильмы, для которых КП не передал IMDb ID. Укажите проверенный ID в формате tt1234567.</p>
                                         </div>
-                                        <button id="autoMapKpToImdbBtn" class="btn-primary" type="button" style="font-size: 0.8rem; padding: 6px 14px; border-radius: 6px; display: flex; align-items: center; gap: 6px;">
+                                        <button id="autoMapKpToImdbBtn" class="btn-primary admin-btn-sm admin-btn-sm--icon" type="button">
                                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
                                             Авто-поиск IMDb через TMDB
                                         </button>
@@ -605,17 +601,6 @@
                                 <div class="provider-keys-list" id="providerKeysList" aria-live="polite">
                                     <div class="provider-keys-empty">Откройте раздел, чтобы загрузить реестр ключей.</div>
                                 </div>
-                            </div>
-                        </div>
-
-                        <div class="settings-pane" id="pane-player-settings">
-                            <div class="pane-header admin-pane-header">
-                                <div><h2>Плеер</h2><p>Экспериментальный интерфейс просмотра в этом браузере.</p></div>
-                            </div>
-                            <div class="settings-section">
-                                <label for="proPlayerEnabled"><input id="proPlayerEnabled" type="checkbox" aria-describedby="proPlayerDescription proPlayerStatus" disabled> Включить «Смотреть»</label>
-                                <p id="proPlayerDescription">По умолчанию выключено. Настройка сохраняется только в этом профиле браузера и не изменяет настройки других пользователей. Доступные озвучки и качества зависят от выбранного источника; объединение дорожек разных источников пока недоступно.</p>
-                                <p id="proPlayerStatus" role="status" aria-live="polite"></p>
                             </div>
                         </div>
 

@@ -977,7 +977,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s;
+    transition: background-color 0.2s, border-color 0.2s, color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s, filter 0.2s;
 }
 
 .rating-modal-header .modal-close:hover {
@@ -1480,7 +1480,7 @@
     font-size: var(--font-size-base);
     font-weight: 600;
     cursor: pointer;
-    transition: all var(--transition-base);
+    transition: background-color var(--transition-base), border-color var(--transition-base), color var(--transition-base), opacity var(--transition-base), transform var(--transition-base), box-shadow var(--transition-base), filter var(--transition-base);
     margin-bottom: -2px;
     white-space: nowrap;
     flex-shrink: 0;
@@ -1589,7 +1589,7 @@
     overflow: hidden;
     background: var(--secondary-bg);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    transition: all var(--transition-base);
+    transition: background-color var(--transition-base), border-color var(--transition-base), color var(--transition-base), opacity var(--transition-base), transform var(--transition-base), box-shadow var(--transition-base), filter var(--transition-base);
     cursor: pointer;
 }
 
@@ -1656,7 +1656,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all var(--transition-base);
+    transition: background-color var(--transition-base), border-color var(--transition-base), color var(--transition-base), opacity var(--transition-base), transform var(--transition-base), box-shadow var(--transition-base), filter var(--transition-base);
     z-index: 10;
     user-select: none;
 }
@@ -1711,7 +1711,7 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: var(--radius-md);
     padding: var(--space-md);
-    transition: all var(--transition-base);
+    transition: background-color var(--transition-base), border-color var(--transition-base), color var(--transition-base), opacity var(--transition-base), transform var(--transition-base), box-shadow var(--transition-base), filter var(--transition-base);
     max-width: 100%;
     overflow: hidden;
     box-sizing: border-box;
@@ -1817,7 +1817,7 @@
     cursor: pointer;
     padding: 4px 8px;
     border-radius: var(--radius-sm);
-    transition: all var(--transition-base);
+    transition: background-color var(--transition-base), border-color var(--transition-base), color var(--transition-base), opacity var(--transition-base), transform var(--transition-base), box-shadow var(--transition-base), filter var(--transition-base);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1838,7 +1838,7 @@
     --popover-surface-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     --popover-surface-backdrop: none;
     position: fixed;
-    z-index: 10000;
+    z-index: var(--z-modal, 10000);
     min-width: 160px;
     overflow: hidden;
 }
@@ -2085,7 +2085,7 @@
     border-radius: 0 0 var(--radius-lg) var(--radius-lg);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
     backdrop-filter: blur(10px);
-    z-index: 1000;
+    z-index: var(--z-dropdown, 1000);
     max-height: 300px;
     overflow: hidden;
     animation: slideDown 0.2s ease-out;
@@ -2126,7 +2126,7 @@
     cursor: pointer;
     padding: var(--space-xs);
     border-radius: var(--radius-sm);
-    transition: all var(--transition-base);
+    transition: background-color var(--transition-base), border-color var(--transition-base), color var(--transition-base), opacity var(--transition-base), transform var(--transition-base), box-shadow var(--transition-base), filter var(--transition-base);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2172,7 +2172,7 @@
     justify-content: space-between;
     padding: var(--space-sm) var(--space-md);
     cursor: pointer;
-    transition: all var(--transition-base);
+    transition: background-color var(--transition-base), border-color var(--transition-base), color var(--transition-base), opacity var(--transition-base), transform var(--transition-base), box-shadow var(--transition-base), filter var(--transition-base);
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
@@ -2221,7 +2221,7 @@
     cursor: pointer;
     padding: var(--space-xs);
     border-radius: var(--radius-sm);
-    transition: all var(--transition-base);
+    transition: background-color var(--transition-base), border-color var(--transition-base), color var(--transition-base), opacity var(--transition-base), transform var(--transition-base), box-shadow var(--transition-base), filter var(--transition-base);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2713,7 +2713,7 @@ html:not(.light-theme) #searchBtn:hover {
     font-size: 0.95rem;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.3s ease;
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, opacity 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease, filter 0.3s ease;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 

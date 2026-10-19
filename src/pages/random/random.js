@@ -1175,7 +1175,7 @@ class RandomManager {
         if (!this.marathonIsAdmin && ownCount >= RandomMarathonService.maxMoviesPerUser) {
             const error = new Error('Вы уже добавили три фильма в этот раунд.');
             error.code = 'MOVIE_LIMIT';
-            if (!this._disposed) window.alert(this._formatMarathonError(error));
+            if (!this._disposed) (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: this._formatMarathonError(error) }) : window.alert(this._formatMarathonError(error)));
             return null;
         }
 
@@ -1524,7 +1524,7 @@ class RandomManager {
             return nextState;
         } catch (error) {
             console.warn('RandomManager: marathon action failed', error);
-            if (!this._disposed) window.alert(this._formatMarathonError(error));
+            if (!this._disposed) (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: this._formatMarathonError(error) }) : window.alert(this._formatMarathonError(error)));
             return null;
         } finally {
             if (pendingRemovalId) this._marathonPendingRemovals.delete(pendingRemovalId);

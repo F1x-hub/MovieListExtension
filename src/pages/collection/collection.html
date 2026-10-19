@@ -47,6 +47,7 @@
     <script src="../../shared/services/RatingsRefreshService.js"></script>
     <script src="../../shared/services/ProviderRatingsBackfill.js"></script>
     <script src="../../shared/components/BackToTop.js"></script>
+    <script src="../../shared/components/ConfirmDialog.js"></script>
     <script src="../../shared/components/Navigation.js"></script>
     <script src="../../shared/components/Router.js"></script>
     <link rel="stylesheet" href="../../shared/styles/report-widget.css">
@@ -124,8 +125,15 @@
             </div>
 
             <!-- Loading State -->
-            <div class="loading-section app-loader app-loader--page" id="loadingSection" role="status" aria-live="polite">
-                <div class="app-loader__indicator" aria-hidden="true"></div>
+            <div class="loading-section app-loader app-loader--page app-loader--skeleton" id="loadingSection" role="status" aria-live="polite">
+                <div class="skeleton-grid" aria-hidden="true">
+                    <div class="skeleton-card"><div class="skeleton-card__poster"></div><div class="skeleton-card__lines"><span></span><span></span><span></span></div></div>
+                    <div class="skeleton-card"><div class="skeleton-card__poster"></div><div class="skeleton-card__lines"><span></span><span></span><span></span></div></div>
+                    <div class="skeleton-card"><div class="skeleton-card__poster"></div><div class="skeleton-card__lines"><span></span><span></span><span></span></div></div>
+                    <div class="skeleton-card"><div class="skeleton-card__poster"></div><div class="skeleton-card__lines"><span></span><span></span><span></span></div></div>
+                    <div class="skeleton-card"><div class="skeleton-card__poster"></div><div class="skeleton-card__lines"><span></span><span></span><span></span></div></div>
+                    <div class="skeleton-card"><div class="skeleton-card__poster"></div><div class="skeleton-card__lines"><span></span><span></span><span></span></div></div>
+                </div>
                 <p class="app-loader__label">Loading collection...</p>
             </div>
 

@@ -30,6 +30,6 @@ assert.match(script, /publishLocalManualMappings\(\)/);
 assert.match(styles, /\.identity-workspace/);
 assert.match(styles, /\.identity-workstream-list/);
 assert.match(styles, /\.identity-verification-card/);
-assert.match(styles, /@media \(max-width: 680px\)/);
+assert.match(styles, /@media \(max-width: 640px\)/);
 
 console.log('Admin identity workspace contract passed');

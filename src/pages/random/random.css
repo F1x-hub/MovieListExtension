@@ -135,7 +135,7 @@
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid var(--theme-border);
     color: var(--theme-text-secondary);
-    padding: 7px 14px;
+    padding: 8px 14px;
     border-radius: var(--radius-md);
     font-size: 13px;
     font-weight: 500;
@@ -305,7 +305,7 @@
     background: var(--theme-bg-secondary);
     border: 2px solid var(--theme-text-primary);
     cursor: grab;
-    margin-top: -5px;
+    margin-top: -4px;
     box-shadow: 0 2px 5px rgba(0,0,0,0.25);
     transition: transform 100ms var(--ease-out), background-color 100ms;
 }
@@ -877,7 +877,7 @@
 
 .cmc-rating-label {
     font-family: var(--font-family);
-    font-size: 9.5px;
+    font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.8px;
@@ -902,7 +902,7 @@
 
 .cmc-rating-votes {
     font-family: var(--font-data);
-    font-size: 9.5px;
+    font-size: 11px;
     color: var(--theme-text-muted);
     margin-top: 4px;
 }
@@ -1673,7 +1673,7 @@
 .pool-list-item-marathon-state {
     flex-shrink: 0;
     max-width: 100%;
-    font-size: 10px;
+    font-size: 11px;
     line-height: 1;
     white-space: nowrap;
 }
@@ -1712,7 +1712,7 @@
 @media (max-width: 440px) {
     .pool-list-item {
         gap: 8px;
-        padding: 9px 10px;
+        padding: 8px 10px;
     }
 
     .pool-list-item-actions {
@@ -1817,7 +1817,7 @@
     left: 16px;
     display: flex;
     flex-direction: column;
-    gap: 9px;
+    gap: 8px;
     box-sizing: border-box;
     width: min(270px, calc(100% - 32px));
     padding: 16px;
@@ -2045,7 +2045,7 @@
 .roll-action-btn {
     flex: 1;
     min-height: 42px;
-    padding: 9px 12px;
+    padding: 8px 12px;
     border: 1px solid var(--ui-color-content);
     border-radius: var(--radius-md);
     background: var(--ui-color-content);

@@ -12,7 +12,7 @@
     align-items: center !important;
     justify-content: center !important;
     cursor: pointer !important;
-    transition: all 0.3s ease !important;
+    transition: background-color 0.3s ease !important, border-color 0.3s ease !important, color 0.3s ease !important, opacity 0.3s ease !important, transform 0.3s ease !important, box-shadow 0.3s ease !important, filter 0.3s ease !important;
     z-index: 9999 !important;
     font-size: 20px !important;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;

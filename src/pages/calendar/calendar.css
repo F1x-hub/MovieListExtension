@@ -308,7 +308,7 @@ span.calendar-show-name {
     }
 }
 
-@media (max-width: 720px) {
+@media (max-width: 768px) {
     .calendar-root {
         padding: 24px 16px 40px;
     }

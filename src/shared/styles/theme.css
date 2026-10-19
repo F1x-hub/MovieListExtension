@@ -5,6 +5,14 @@
 
 /* Default Dark Theme Variables */
 :root {
+    /* Foreground ink channel for translucent overlays: white on dark, near-black on light */
+    --theme-ink-rgb: 255, 255, 255;
+
+    /* Stacking scale */
+    --z-dropdown: 1000;
+    --z-modal: 10000;
+    --z-top: 100000;
+
     /* Background Colors */
     --theme-bg-primary: #09090b;
     --theme-bg-secondary: #121214;
@@ -47,6 +55,8 @@
 
 /* Light Theme Variables */
 .light-theme {
+    --theme-ink-rgb: 9, 9, 11;
+
     /* Background Colors */
     --theme-bg-primary: #f4f4f5;
     --theme-bg-secondary: #ffffff;
