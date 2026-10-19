@@ -422,6 +422,28 @@ service cloud.firestore {
       allow delete: if false;
     }
     
+    // «Эфир» fallback relay (WebRTC from the admin's browser). Only signaling lives
+    // here: who is relaying, plus one small offer/answer doc per viewer.
+    match /liveRelay/{docId} {
+      allow read: if isAuthenticated() && docId == 'current';
+      allow create, update: if isAdmin() && docId == 'current'
+        && request.resource.data.keys().hasOnly(['active', 'sessionId', 'startedAt', 'updatedBy'])
+        && request.resource.data.active is bool;
+      allow delete: if false;
+
+      match /peers/{viewerId} {
+        allow read: if isAdmin() || (isAuthenticated() && request.auth.uid == viewerId);
+        // Viewers may only ask to join or answer; only the admin writes offers.
+        allow create, update: if docId == 'current'
+          && request.resource.data.keys().hasOnly(['sessionId', 'state', 'offer', 'answer', 'updatedAt'])
+          && request.resource.data.sessionId is string
+          && (isAdmin()
+            || (isAuthenticated() && request.auth.uid == viewerId
+                && request.resource.data.state in ['request', 'answered']));
+        allow delete: if isAdmin() || (isAuthenticated() && request.auth.uid == viewerId);
+      }
+    }
+
     // Watchlist collection (Top-level)
     match /watchlist/{watchlistId} {
       allow read: if true; // Anyone can read watchlists

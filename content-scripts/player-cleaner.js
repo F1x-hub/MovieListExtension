@@ -338,6 +338,7 @@
     // for everyone. Audio, quality and subtitles stay personal for each viewer.
     let broadcastState = null;
     let broadcastMutedReported = false;
+    let broadcastPlayingReported = false;
     let broadcastSuppressUntil = 0;
     const broadcastVideos = new WeakSet();
     const BROADCAST_DRIFT_SEC = 3;
@@ -414,6 +415,12 @@
         }, 120);
         video.addEventListener('loadedmetadata', () => setTimeout(() => enforceBroadcast(video, { force: true }), 120));
         video.addEventListener('canplay', settle);
+        video.addEventListener('playing', () => {
+            if (!broadcastPlayingReported) {
+                broadcastPlayingReported = true;
+                postToHost({ type: 'BROADCAST_PLAYING' });
+            }
+        });
         video.addEventListener('pause', () => {
             if (broadcastState?.admin) { if (!video.ended) reportAdminAction('pause', video); } else settle();
         });

@@ -1244,8 +1244,8 @@ class MovieDetailsManager {
                 return;
             }
             // Reports from the player (this page or provider frames) go up to the live page.
-            if (event.source !== window.parent && (type === 'BROADCAST_MUTED' || type === 'BROADCAST_ADMIN_ACTION')) {
-                toParent(type === 'BROADCAST_MUTED' ? { type } : { type, action: event.data.action, atSec: Number(event.data.atSec) || 0 });
+            if (event.source !== window.parent && ['BROADCAST_MUTED', 'BROADCAST_PLAYING', 'BROADCAST_ADMIN_ACTION'].includes(type)) {
+                toParent(type === 'BROADCAST_ADMIN_ACTION' ? { type, action: event.data.action, atSec: Number(event.data.atSec) || 0 } : { type });
             }
         });
 
