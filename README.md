@@ -319,6 +319,16 @@ Release entries are intentionally collapsed to keep this page readable.
 The extension manifest is the source of truth for the Chrome build version; `package.json`
 keeps npm-compatible three-component semver metadata.
 
+<details open>
+<summary><strong>Unreleased</strong></summary>
+
+### Fixes
+
+- «Эфир» host relay now shares only the player (Element Capture, with Region Capture as a fallback on older Chrome) instead of the whole page.
+- Relay and YouTube viewers get a small on-video bar with mute, a volume slider (relay) and fullscreen; the page-level «На весь экран» and sound buttons were removed because movie players already have their own.
+
+</details>
+
 <details>
 <summary><strong>1.3.9</strong> — «Эфир» live channel, the new watch interface by default and a visual polish pass</summary>
 

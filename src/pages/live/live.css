@@ -120,6 +120,81 @@
     --app-loader-track: rgba(255, 255, 255, 0.16);
 }
 
+/* Overlay controls for the relay and YouTube viewers */
+.live-controls {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    border-radius: 12px;
+    background: rgba(9, 9, 11, 0.62);
+    color: #f4f4f5;
+    backdrop-filter: blur(8px);
+    opacity: 0;
+    transition: opacity 200ms ease;
+}
+
+.live-controls[hidden] {
+    display: none;
+}
+
+.live-stage:hover .live-controls,
+.live-controls:focus-within,
+.live-controls.is-attention {
+    opacity: 1;
+}
+
+.live-controls__spacer {
+    flex: 1;
+}
+
+.live-control {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+}
+
+.live-control:hover {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.live-control:focus-visible {
+    outline: 2px solid #f4f4f5;
+    outline-offset: 2px;
+}
+
+.live-control .live-icon-off,
+.live-control.is-muted .live-icon-on {
+    display: none;
+}
+
+.live-control.is-muted .live-icon-off {
+    display: block;
+}
+
+.live-volume {
+    width: 110px;
+    accent-color: #f4f4f5;
+    cursor: pointer;
+}
+
+.live-volume[hidden] {
+    display: none;
+}
+
 .live-relay-video {
     display: block;
     width: 100%;

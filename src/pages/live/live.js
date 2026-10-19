@@ -67,8 +67,7 @@
         els.emptyText.textContent = text;
         els.badge.hidden = true;
         els.clock.hidden = true;
-        els.sound.hidden = true;
-        els.fullscreen.hidden = true;
+        els.controls.hidden = true;
         els.notice.hidden = true;
         els.title.textContent = 'Эфир';
         mountedKey = '';
@@ -242,31 +241,58 @@
     }
 
     // ---- Sound / fullscreen ----------------------------------------------------
+    // Movies keep their own player controls; the relay video and a viewer's
+    // control-less YouTube embed get this small overlay instead.
+    const VOLUME_KEY = 'movieExtension.liveRelayVolume';
+
+    function savedVolume() {
+        try {
+            const value = Number(localStorage.getItem(VOLUME_KEY));
+            return Number.isFinite(value) && value >= 0 && value <= 1 ? value : 1;
+        } catch { return 1; }
+    }
+
     function renderSound() {
-        if (relay.watching) {
-            const muted = relay.video?.muted !== false;
-            els.sound.hidden = false;
-            els.sound.textContent = muted ? 'Включить звук' : 'Выключить звук';
-            els.sound.classList.toggle('btn-primary', muted);
-            els.sound.classList.toggle('btn-secondary', !muted);
-            return;
-        }
-        const isYoutube = channel?.mode === 'youtube';
-        els.sound.hidden = !isYoutube || els.stage.hidden;
-        els.sound.textContent = yt.muted ? 'Включить звук' : 'Выключить звук';
-        els.sound.classList.toggle('btn-primary', yt.muted);
-        els.sound.classList.toggle('btn-secondary', !yt.muted);
+        const relayOn = relay.watching && relay.video;
+        const youtubeViewer = !relay.watching && channel?.mode === 'youtube' && !isAdmin;
+        els.controls.hidden = els.stage.hidden || !(relayOn || youtubeViewer);
+        if (els.controls.hidden) return;
+        const muted = relayOn ? relay.video.muted || relay.video.volume === 0 : yt.muted;
+        els.mute.classList.toggle('is-muted', muted);
+        // Keep the controls visible while sound is off, so viewers find the button.
+        els.controls.classList.toggle('is-attention', muted);
+        els.mute.setAttribute('aria-label', muted ? 'Включить звук' : 'Выключить звук');
+        // The wrapper bridge only knows mute/unmute, so volume is relay-only.
+        els.volume.hidden = !relayOn;
+        if (relayOn) els.volume.value = String(muted ? 0 : relay.video.volume);
     }
 
     function toggleSound() {
         if (relay.watching && relay.video) {
-            relay.video.muted = !relay.video.muted;
-            if (!relay.video.muted) relay.video.play().catch(() => {});
+            const video = relay.video;
+            if (video.muted || video.volume === 0) {
+                video.muted = false;
+                if (video.volume === 0) video.volume = 0.5;
+                video.play().catch(() => {});
+            } else {
+                video.muted = true;
+            }
             renderSound();
             return;
         }
         yt.muted = !yt.muted;
         ytCommand(yt.muted ? 'MUTE' : 'UNMUTE');
+        renderSound();
+    }
+
+    function onVolumeInput() {
+        const video = relay.video;
+        if (!video) return;
+        const value = Number(els.volume.value);
+        video.volume = value;
+        video.muted = value === 0;
+        if (value > 0) video.play().catch(() => {});
+        try { localStorage.setItem(VOLUME_KEY, String(value)); } catch { /* storage blocked */ }
         renderSound();
     }
 
@@ -292,6 +318,32 @@
         els.relayWatch.textContent = relay.watching ? 'Вернуться к источнику' : 'Смотреть трансляцию ведущего';
     }
 
+    /**
+     * Narrows a capture of this tab to the player only. Element Capture (Chrome 132+)
+     * shows just the element even if something overlaps it; Region Capture crops
+     * to its box on older Chrome. If the admin picked another tab, we keep it whole.
+     */
+    async function restrictCaptureToPlayer(stream) {
+        const track = stream.getVideoTracks()[0];
+        const target = frameEl() || els.screen;
+        if (!track || !target) return;
+        try {
+            if (window.RestrictionTarget && typeof track.restrictTo === 'function') {
+                await track.restrictTo(await window.RestrictionTarget.fromElement(target));
+                return;
+            }
+        } catch (error) {
+            console.info('[Live] Element Capture unavailable, trying Region Capture:', error?.message);
+        }
+        try {
+            if (window.CropTarget && typeof track.cropTo === 'function') {
+                await track.cropTo(await window.CropTarget.fromElement(target));
+            }
+        } catch (error) {
+            console.info('[Live] Region Capture unavailable, sharing the whole tab:', error?.message);
+        }
+    }
+
     async function toggleHosting() {
         if (!relay.service) return;
         if (relay.host) {
@@ -315,6 +367,7 @@
                 surfaceSwitching: 'exclude',
                 systemAudio: 'include'
             });
+            await restrictCaptureToPlayer(stream);
             relay.host = await relay.service.startHosting(stream, { onViewersChange: renderRelayButtons });
             stream.getVideoTracks()[0]?.addEventListener('ended', () => { relay.host = null; renderRelayButtons(); });
             Utils?.showToast?.('Трансляция включена. Не закрывайте и не сворачивайте эту вкладку.', 'success', 5000);
@@ -334,6 +387,7 @@
         video.className = 'live-relay-video';
         video.autoplay = true;
         video.playsInline = true;
+        video.volume = savedVolume();
         relay.video = video;
         els.empty.hidden = true;
         els.stage.hidden = false;
@@ -351,7 +405,7 @@
                     video.play().catch(() => {
                         video.muted = true;
                         video.play().catch(() => {});
-                        els.notice.textContent = 'Трансляция идёт без звука — нажмите «Включить звук».';
+                        els.notice.textContent = 'Трансляция идёт без звука — включите звук кнопкой на видео.';
                         renderSound();
                     });
                     if (!video.muted) els.notice.hidden = true;
@@ -407,7 +461,6 @@
         els.badgeText.textContent = position.state === 'paused' ? 'Пауза' : 'В эфире';
         els.badge.classList.toggle('is-paused', position.state === 'paused');
         els.clock.hidden = isLiveStream || (!playing && position.state !== 'upcoming');
-        els.fullscreen.hidden = !playing;
         renderSound();
 
         if (position.state === 'paused') {
@@ -503,15 +556,16 @@
 
     async function start() {
         ['liveBadge', 'liveBadgeText', 'liveTitle', 'liveSubtitle', 'liveClock', 'liveStage', 'liveScreen', 'liveEmpty',
-            'liveEmptyTitle', 'liveEmptyText', 'liveSoundBtn', 'liveFullscreenBtn', 'liveNotice', 'liveRelayHostBtn', 'liveRelayWatchBtn']
+            'liveEmptyTitle', 'liveEmptyText', 'liveControls', 'liveMuteBtn', 'liveVolume', 'liveFullscreenBtn', 'liveNotice', 'liveRelayHostBtn', 'liveRelayWatchBtn']
             .forEach(id => { els[id.replace(/^live/, '').replace(/^./, c => c.toLowerCase())] = document.getElementById(id); });
-        els.sound = els.soundBtn;
+        els.mute = els.muteBtn;
         els.fullscreen = els.fullscreenBtn;
         els.relayHost = els.relayHostBtn;
         els.relayWatch = els.relayWatchBtn;
 
         ensureNavigation();
-        els.sound.addEventListener('click', toggleSound);
+        els.mute.addEventListener('click', toggleSound);
+        els.volume.addEventListener('input', onVolumeInput);
         els.fullscreen.addEventListener('click', toggleFullscreen);
         els.relayHost.addEventListener('click', toggleHosting);
         els.relayWatch.addEventListener('click', () => (relay.watching ? leaveRelay() : enterRelay()));
