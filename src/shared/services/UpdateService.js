@@ -36,6 +36,7 @@
     let activeCheckDidFetch = false;
     let reloadScheduled = false;
     const DIAGNOSTIC_PREFIX = 'update_diagnostic_';
+    const RELOAD_MISMATCH_CODE = 'RELOAD_VERSION_MISMATCH';
 
     function diagnostic(event, details = {}) {
         const record = { at: new Date().toISOString(), event, details };
@@ -564,6 +565,11 @@
         if (!operation?.operationId) return response;
         const { state } = await readState();
         if (state.operationId && state.operationId !== operation.operationId) return response;
+        if (state.status === 'failed' && state.errorCode === RELOAD_MISMATCH_CODE
+            && state.operationId === operation.operationId) {
+            clearOperationAlarm();
+            return response;
+        }
 
         if (operation.status === 'failed') {
             clearOperationAlarm();
@@ -591,7 +597,19 @@
             const targetVersion = operation.version || state.availableVersion;
             if (targetVersion === chrome.runtime.getManifest().version) {
                 await confirmInstalled();
+            } else if (state.reloadOperationId === operation.operationId) {
+                // Already reloaded once for this operation and Chrome still runs
+                // the old version: the host replaced a different folder than the
+                // one Chrome loaded. Reloading again would loop forever.
+                clearOperationAlarm();
+                await writeState({
+                    status: 'failed',
+                    operationId: operation.operationId,
+                    errorCode: RELOAD_MISMATCH_CODE,
+                    errorMessage: 'Chrome still runs the old version after reload. Run MovieListSetup.exe and select the folder loaded in Chrome.'
+                });
             } else {
+                await writeState({ reloadOperationId: operation.operationId });
                 scheduleExtensionReload();
             }
         } else if (operation.status === 'succeeded') {
@@ -630,6 +648,16 @@
                     operationId: hostStatus.operation.operationId || null,
                     errorCode: hostStatus.operation.errorCode || 'RECOVERY_REQUIRED',
                     errorMessage: hostStatus.operation.errorMessage || 'UPDATE_RECOVERY_REQUIRED'
+                });
+            }
+            if (hostStatus.operation?.status === 'awaiting_confirmation'
+                && state.reloadOperationId === hostStatus.operation.operationId
+                && hostStatus.operation.version !== chrome.runtime.getManifest().version) {
+                return writeState({
+                    status: 'failed',
+                    operationId: hostStatus.operation.operationId,
+                    errorCode: RELOAD_MISMATCH_CODE,
+                    errorMessage: 'Chrome still runs the old version after reload. Run MovieListSetup.exe and select the folder loaded in Chrome.'
                 });
             }
             if (isOperationPending(hostStatus.operation)) {
