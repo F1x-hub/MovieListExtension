@@ -1307,10 +1307,19 @@ class Navigation {
      */
     async checkReactionNotifications(user) {
         const uid = user?.uid;
-        const db = typeof firebaseManager !== 'undefined' ? firebaseManager?.db : null;
-        if (!uid || !db || this._reactionNotificationsUid === uid) return;
+        const manager = typeof firebaseManager !== 'undefined' ? firebaseManager : null;
+        if (!uid || !manager || this._reactionNotificationsUid === uid) return;
         this._reactionNotificationsUid = uid;
         try {
+            // The first call often comes from the chrome.storage auth copy,
+            // before Firebase Auth restores the session. Reading the inbox then
+            // fails the owner rule, so wait until Firebase signs in as this uid.
+            await manager.waitForAuthReady?.(10000);
+            const db = manager.db;
+            if (!db || manager.getCurrentUser?.()?.uid !== uid) {
+                this._reactionNotificationsUid = null;
+                return;
+            }
             const { ReactionNotificationCenter } = await import('./ReactionNotifications.js');
             this.reactionNotifications = this.reactionNotifications
                 || new ReactionNotificationCenter({ db, i18n: this.i18n });
