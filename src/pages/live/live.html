@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Эфир - Movie Rating Extension</title>
+
+    <link rel="stylesheet" href="../../shared/styles/common.css">
+    <script defer src="../../shared/components/NumberStepper.js"></script>
+    <link rel="stylesheet" href="../../shared/styles/theme.css">
+    <link rel="stylesheet" href="../../shared/styles/components.css">
+    <link rel="stylesheet" href="../../shared/styles/navigation.css">
+    <link rel="stylesheet" href="../../shared/styles/router.css">
+    <link rel="stylesheet" href="../../shared/styles/report-widget.css">
+    <link rel="stylesheet" href="live.css">
+
+    <link rel="preload" as="script" href="../../../libs/firebase-app-compat.js">
+    <link rel="preload" as="script" href="../../../libs/firebase-firestore-compat.js">
+    <script src="../../shared/services/ThemeService.js"></script>
+    <link rel="icon" type="image/png" sizes="16x16" href="../../shared/assets/icons/app/favicon16.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="../../shared/assets/icons/app/favicon32.png">
+</head>
+<body>
+    <!-- Navigation will be inserted here by Navigation.js -->
+
+    <main class="live-root">
+        <header class="live-header">
+            <div class="live-heading">
+                <span class="live-badge" id="liveBadge" hidden><span class="live-badge__dot" aria-hidden="true"></span><span id="liveBadgeText">В эфире</span></span>
+                <h1 class="live-title" id="liveTitle">Эфир</h1>
+                <p class="live-subtitle" id="liveSubtitle">Общий показ для всех: заходите — и смотрите с того же момента, что и остальные.</p>
+            </div>
+            <div class="live-meta">
+                <span class="live-clock" id="liveClock" hidden></span>
+                <button type="button" class="btn btn-secondary live-sync-btn" id="liveSyncBtn" hidden>Синхронизировать</button>
+            </div>
+        </header>
+
+        <div class="live-admin" id="liveAdmin" role="group" aria-label="Управление эфиром (админ)" hidden>
+            <span class="live-admin__label">Управление эфиром</span>
+            <button type="button" class="btn btn-secondary" data-live-admin="restart">Сначала</button>
+            <button type="button" class="btn btn-secondary" data-live-admin="seek" data-delta="-30">−30 с</button>
+            <button type="button" class="btn btn-primary" id="liveAdminToggle" data-live-admin="toggle">Пауза</button>
+            <button type="button" class="btn btn-secondary" data-live-admin="seek" data-delta="30">+30 с</button>
+            <button type="button" class="btn btn-secondary" data-live-admin="seek" data-delta="300">+5 мин</button>
+        </div>
+
+        <section class="live-stage" id="liveStage" aria-live="polite">
+            <div class="live-screen" id="liveScreen">
+                <div class="app-loader app-loader--section" id="liveLoading" role="status">
+                    <div class="app-loader__indicator" aria-hidden="true"></div>
+                    <p class="app-loader__label">Подключаемся к эфиру…</p>
+                </div>
+            </div>
+        </section>
+
+        <div class="empty-state live-empty" id="liveEmpty" hidden>
+            <div class="empty-state-icon"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect><polyline points="17 2 12 7 7 2"></polyline></svg></div>
+            <h3 class="empty-state-title" id="liveEmptyTitle">Сейчас ничего не идёт</h3>
+            <p class="empty-state-text" id="liveEmptyText">Когда начнётся показ, он появится здесь автоматически — страницу обновлять не нужно.</p>
+        </div>
+    </main>
+
+    <script defer src="../../../libs/firebase-app-compat.js"></script>
+    <script defer src="../../../libs/firebase-auth-compat.js"></script>
+    <script defer src="../../../libs/firebase-firestore-compat.js"></script>
+
+    <script defer src="../../shared/firestore.js"></script>
+    <script defer src="../../shared/config/kinopoisk.config.js"></script>
+    <script defer src="../../shared/config/player.config.js"></script>
+    <script defer src="../../shared/services/UserService.js"></script>
+    <script defer src="../../shared/services/WatchlistService.js"></script>
+    <script defer src="../../shared/services/WatchingService.js"></script>
+    <script defer src="../../shared/services/FavoriteService.js"></script>
+    <script defer src="../../shared/services/CollectionService.js"></script>
+    <script defer src="../../shared/utils/Utils.js"></script>
+    <script defer src="../../shared/utils/IconUtils.js"></script>
+    <script defer src="../../shared/utils/Icons.js"></script>
+    <script defer src="../../shared/components/BackToTop.js"></script>
+    <script defer src="../../shared/components/ConfirmDialog.js"></script>
+    <script defer src="../../shared/components/Navigation.js"></script>
+    <script defer src="../../shared/services/CinemaChannelService.js"></script>
+    <script defer src="live.js"></script>
+</body>
+</html>

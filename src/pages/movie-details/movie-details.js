@@ -1207,12 +1207,98 @@ class MovieDetailsManager {
         }
     }
 
+    /**
+     * Broadcast lock for «Эфир»: the player follows the shared channel clock like a
+     * TV channel. The live page sends { startMs, pausedAtSec } (the admin moves it);
+     * this page applies it to its own <video> elements and forwards it to provider
+     * frames, where player-cleaner enforces the same rule on the real media.
+     */
+    startBroadcastLock(startMs) {
+        if (this.broadcastLock) return;
+        document.documentElement.classList.add('broadcast-mode');
+        const state = { startMs, pausedAtSec: null };
+        const DRIFT_SEC = 3;
+        const tracked = new Set();
+        const targetSec = () => (Number.isFinite(state.pausedAtSec) ? state.pausedAtSec : (Date.now() - state.startMs) / 1000);
+
+        const sync = (video) => {
+            if (!video.isConnected) { tracked.delete(video); return; }
+            const duration = video.duration;
+            if (!Number.isFinite(duration) || duration <= 0) return;
+            const target = targetSec();
+            if (target >= duration - 1) return;
+            const paused = Number.isFinite(state.pausedAtSec);
+            if (Math.abs(video.currentTime - target) > (paused ? 1 : DRIFT_SEC)) {
+                try { video.currentTime = Math.max(0, target); } catch { /* not seekable yet */ }
+            }
+            if (paused) {
+                if (!video.paused) video.pause();
+            } else if (video.paused && !video.ended) {
+                video.play().catch(() => {
+                    video.muted = true;
+                    video.play().catch(() => {});
+                });
+            }
+        };
+
+        const attach = (video) => {
+            if (tracked.has(video)) return;
+            tracked.add(video);
+            ['loadedmetadata', 'canplay', 'play', 'pause', 'seeked'].forEach(type => video.addEventListener(type, () => setTimeout(() => sync(video), 120)));
+            sync(video);
+        };
+
+        const forward = () => {
+            const message = { type: 'BROADCAST_STATE', startMs: state.startMs, pausedAtSec: state.pausedAtSec };
+            document.querySelectorAll('iframe').forEach(frame => {
+                let origin;
+                try { origin = new URL(frame.src, window.location.href).origin; } catch { return; }
+                if (!/^(https?|chrome-extension):/.test(origin)) return;
+                try { frame.contentWindow?.postMessage(message, origin); } catch { /* frame gone */ }
+            });
+        };
+
+        const apply = () => {
+            tracked.forEach(sync);
+            forward();
+        };
+
+        window.addEventListener('message', (event) => {
+            if (event.source !== window.parent || event.origin !== window.location.origin) return;
+            if (event.data?.type !== 'BROADCAST_STATE') return;
+            const nextStart = Number(event.data.startMs);
+            if (!Number.isFinite(nextStart) || nextStart <= 0) return;
+            const paused = Number(event.data.pausedAtSec);
+            state.startMs = nextStart;
+            state.pausedAtSec = event.data.pausedAtSec === null || !Number.isFinite(paused) ? null : paused;
+            apply();
+        });
+
+        const scan = (root) => {
+            if (!(root instanceof Element)) return;
+            if (root.tagName === 'VIDEO') attach(root);
+            root.querySelectorAll?.('video').forEach(attach);
+        };
+        const observer = new MutationObserver(records => records.forEach(r => r.addedNodes.forEach(scan)));
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+        scan(document.documentElement);
+        // Provider frames load late and can reload, so keep re-sending the clock.
+        const timer = setInterval(apply, 2000);
+        this.broadcastLock = { observer, timer, state };
+        try { window.parent?.postMessage({ type: 'BROADCAST_READY' }, window.location.origin); } catch { /* not embedded */ }
+    }
+
     async initializeUI() {
         // Get movieId from URL
         const urlParams = new URLSearchParams(window.location.search);
         const movieId = urlParams.get('movieId');
         const resolveTmdbId = urlParams.get('resolveTmdbId');
         const autoplay = urlParams.get('autoplay') === 'true';
+        // «Эфир» embeds this page as a locked, player-only broadcast tied to the channel clock.
+        const broadcastStart = Number.parseInt(urlParams.get('broadcastStart') || '', 10);
+        if (this.isEmbedded && Number.isSafeInteger(broadcastStart) && broadcastStart > 0) {
+            this.startBroadcastLock(broadcastStart);
+        }
         const clearMovieCache = urlParams.get('clearMovieCache') === '1';
 
         if (resolveTmdbId) {

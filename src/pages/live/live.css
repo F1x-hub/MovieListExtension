@@ -1,0 +1,205 @@
+.live-root {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: var(--space-lg) var(--space-md) var(--space-2xl);
+}
+
+.live-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--space-md);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-mlg);
+}
+
+.live-heading {
+    min-width: 0;
+}
+
+.live-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: var(--space-sm);
+    padding: 4px 10px;
+    border: 1px solid var(--theme-border);
+    border-radius: 999px;
+    background: rgba(var(--theme-ink-rgb), 0.04);
+    color: var(--theme-text-primary);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.live-badge[hidden] {
+    display: none;
+}
+
+/* Semantic «on air» marker: the text label carries the meaning, the dot reinforces it */
+.live-badge__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--danger);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 60%, transparent);
+    animation: live-dot-pulse 1.8s ease-out infinite;
+}
+
+@keyframes live-dot-pulse {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 55%, transparent); }
+    70% { box-shadow: 0 0 0 8px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+.live-title {
+    margin: 0;
+    color: var(--theme-text-primary);
+    font-size: clamp(24px, 3vw, 32px);
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.live-subtitle {
+    margin: var(--space-xs) 0 0;
+    color: var(--theme-text-secondary);
+    font-size: 14px;
+}
+
+.live-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-smd);
+}
+
+.live-clock {
+    color: var(--theme-text-secondary);
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+}
+
+.live-clock[hidden],
+.live-sync-btn[hidden],
+.live-stage[hidden] {
+    display: none;
+}
+
+.live-stage {
+    position: relative;
+}
+
+.live-badge.is-paused .live-badge__dot {
+    background: var(--theme-text-secondary);
+    animation: none;
+}
+
+/* Admin-only timeline controls: every viewer follows these actions */
+.live-admin {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-md);
+    padding: var(--space-smd) var(--space-md);
+    border: 1px dashed var(--theme-border-hover);
+    border-radius: var(--radius-lg);
+    background: rgba(var(--theme-ink-rgb), 0.03);
+}
+
+.live-admin[hidden],
+.live-admin [hidden] {
+    display: none;
+}
+
+.live-admin__label {
+    margin-right: auto;
+    color: var(--theme-text-secondary);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.live-admin .btn {
+    font-variant-numeric: tabular-nums;
+}
+
+.live-screen {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-xl);
+    background: #000000;
+    box-shadow: var(--elevation-3);
+}
+
+/* The embedded movie page carries its own player chrome, so it needs room to scroll */
+.live-screen--movie {
+    aspect-ratio: auto;
+    height: min(82vh, 900px);
+    background: var(--theme-bg-primary);
+}
+
+.live-screen .app-loader {
+    position: absolute;
+    inset: 0;
+    color: rgba(255, 255, 255, 0.72);
+    --app-loader-color: #f4f4f5;
+    --app-loader-track: rgba(255, 255, 255, 0.16);
+}
+
+.live-frame {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    opacity: 0;
+    transform: scale(0.985);
+    transition: opacity 420ms var(--ease-out-soft, ease-out), transform 520ms var(--ease-out-soft, ease-out);
+}
+
+.live-frame.is-ready {
+    opacity: 1;
+    transform: none;
+}
+
+.live-stage,
+.live-empty {
+    animation: live-enter 360ms var(--ease-out-soft, ease-out) both;
+}
+
+@keyframes live-enter {
+    from { opacity: 0; transform: translateY(8px); }
+}
+
+.live-empty {
+    padding: var(--space-2xl) var(--space-md);
+    text-align: center;
+}
+
+.live-empty[hidden] {
+    display: none;
+}
+
+@media (max-width: 640px) {
+    .live-root {
+        padding-top: var(--space-md);
+    }
+
+    .live-screen {
+        border-radius: var(--radius-lg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .live-badge__dot,
+    .live-stage,
+    .live-empty {
+        animation: none;
+    }
+
+    .live-frame {
+        transition: none;
+        transform: none;
+    }
+}

@@ -26,6 +26,7 @@ const migrationGuardFiles = {
     externalWatchlist: 'src/shared/styles/ex-fs-watchlist.css',
     movieDetails: 'src/pages/movie-details/movie-details.css',
     personDetails: 'src/pages/person-details/person-details.css',
+    live: 'src/pages/live/live.css',
 };
 
 const exceptionScopedFiles = [
