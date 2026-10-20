@@ -60,6 +60,12 @@
         return els.screen.querySelector('.live-frame');
     }
 
+    // renderClock runs every second; skip DOM writes when nothing changed so the
+    // page does not relayout under the playing video for no reason.
+    function setText(el, text) {
+        if (el && el.textContent !== text) el.textContent = text;
+    }
+
     function showEmpty(title, text) {
         els.screen.replaceChildren();
         els.stage.hidden = true;
@@ -265,7 +271,10 @@
         els.mute.setAttribute('aria-label', muted ? 'Включить звук' : 'Выключить звук');
         // The wrapper bridge only knows mute/unmute, so volume is relay-only.
         els.volume.hidden = !relayOn;
-        if (relayOn) els.volume.value = String(muted ? 0 : relay.video.volume);
+        if (relayOn) {
+            const volume = String(muted ? 0 : relay.video.volume);
+            if (els.volume.value !== volume) els.volume.value = volume;
+        }
     }
 
     function toggleSound() {
@@ -311,12 +320,12 @@
         els.relayHost.hidden = !isAdmin || !relay.service || !channel || channel.mode === 'off';
         if (!els.relayHost.hidden) {
             const viewers = relay.host ? relay.host.viewerCount() : 0;
-            els.relayHost.textContent = relay.host ? `Остановить трансляцию · зрителей: ${viewers}` : 'Транслировать мою вкладку';
+            setText(els.relayHost, relay.host ? `Остановить трансляцию · зрителей: ${viewers}` : 'Транслировать мою вкладку');
             els.relayHost.classList.toggle('btn-primary', Boolean(relay.host));
             els.relayHost.classList.toggle('btn-secondary', !relay.host);
         }
         els.relayWatch.hidden = isAdmin || !on;
-        els.relayWatch.textContent = relay.watching ? 'Вернуться к источнику' : 'Смотреть трансляцию ведущего';
+        setText(els.relayWatch, relay.watching ? 'Вернуться к источнику' : 'Смотреть трансляцию ведущего');
     }
 
     /**
@@ -482,20 +491,20 @@
         const playing = !els.stage.hidden;
 
         els.badge.hidden = position.state !== 'live' && position.state !== 'paused';
-        els.badgeText.textContent = position.state === 'paused' ? 'Пауза' : 'В эфире';
+        setText(els.badgeText, position.state === 'paused' ? 'Пауза' : 'В эфире');
         els.badge.classList.toggle('is-paused', position.state === 'paused');
         els.clock.hidden = isLiveStream || (!playing && position.state !== 'upcoming');
         renderSound();
 
         if (position.state === 'paused') {
-            els.clock.textContent = `Пауза на ${CinemaChannel.formatClock(position.offsetSec)}`;
+            setText(els.clock, `Пауза на ${CinemaChannel.formatClock(position.offsetSec)}`);
         } else if (position.state === 'upcoming') {
-            els.clock.textContent = `Начало через ${CinemaChannel.formatClock(position.offsetSec)}`;
+            setText(els.clock, `Начало через ${CinemaChannel.formatClock(position.offsetSec)}`);
         } else if (position.state === 'live' && !isLiveStream) {
             const total = channel.movie?.durationSec;
-            els.clock.textContent = total
+            setText(els.clock, total
                 ? `${CinemaChannel.formatClock(position.offsetSec)} / ${CinemaChannel.formatClock(total)}`
-                : `Идёт ${CinemaChannel.formatClock(position.offsetSec)}`;
+                : `Идёт ${CinemaChannel.formatClock(position.offsetSec)}`);
         }
 
         enforceYoutube(position);
@@ -507,13 +516,13 @@
             || (position.state === 'ended' && els.empty.hidden)) {
             mountMedia(true);
         }
-        els.subtitle.textContent = isLiveStream
+        setText(els.subtitle, isLiveStream
             ? 'Прямая трансляция — все смотрят одно и то же прямо сейчас.'
             : isAdmin
                 ? 'Вы ведёте эфир: пауза и перемотка в плеере сразу меняют показ у всех зрителей.'
             : position.state === 'paused'
                 ? 'Показ на паузе — продолжится у всех одновременно.'
-                : 'Общий показ, как по телевизору: пауза и перемотка недоступны, все смотрят один момент.';
+                : 'Общий показ, как по телевизору: пауза и перемотка недоступны, все смотрят один момент.');
     }
 
     // ---- Admin timeline controls ------------------------------------------------

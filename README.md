@@ -345,6 +345,15 @@ Release entries are intentionally collapsed to keep this page readable.
 The extension manifest is the source of truth for the Chrome build version; `package.json`
 keeps npm-compatible three-component semver metadata.
 
+<details open>
+<summary><strong>Unreleased</strong></summary>
+
+### Fixes
+
+- Lighter GPU load during playback: the open player uses a solid backdrop instead of a full-screen blur, controls over the video no longer blur it, and page or seasonal-decor animations behind the player pause until it is minimized or closed. The live page no longer rewrites its clock and buttons every second when nothing changed, and its sound controls use a solid scrim. Removed leftover debug logs from player setup.
+
+</details>
+
 <details>
 <summary><strong>1.3.10</strong> — Halloween season decor, official studio films on YouTube and more reliable sources</summary>
 

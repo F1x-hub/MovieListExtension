@@ -132,9 +132,9 @@
     gap: 10px;
     padding: 6px 10px;
     border-radius: 12px;
-    background: rgba(9, 9, 11, 0.62);
+    /* Solid scrim, not backdrop-filter: a blur over playing video re-composites every frame. */
+    background: rgba(9, 9, 11, 0.82);
     color: #f4f4f5;
-    backdrop-filter: blur(8px);
     opacity: 0;
     transition: opacity 200ms ease;
 }

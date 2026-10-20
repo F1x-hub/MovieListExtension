@@ -6424,6 +6424,30 @@ html.broadcast-mode body > :not(#videoPlayerModal):not(script):not(style) {
     display: none !important;
 }
 
+/* Playback performance: while the player is open the page behind it is covered,
+   yet a live full-screen backdrop blur re-composites on every video frame and
+   page animations behind it keep the GPU busy. Use a solid scrim, drop blurs
+   over the video and pause animations in the page content behind it
+   (toasts stay animated: they are appended to body). */
+body.player-modal-open #videoPlayerModal {
+    background: rgba(9, 9, 11, 0.94);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+body.player-modal-open #videoPlayerModal .video-container,
+body.player-modal-open #videoPlayerModal .video-container * {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+body.player-modal-open .movie-details-page-container,
+body.player-modal-open .movie-details-page-container *,
+body.player-modal-open .seasonal-decor,
+body.player-modal-open .seasonal-decor * {
+    animation-play-state: paused !important;
+}
+
 html.broadcast-mode #videoPlayerModal {
     padding: 0;
     background: #000000;
