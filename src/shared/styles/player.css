@@ -945,7 +945,7 @@ body.player-modal-open {
     width: 66px !important;
     height: 66px !important;
     color: #fafafa;
-    background: rgba(18, 18, 20, 0.72) !important;
+    background: rgba(18, 18, 20, 0.86) !important;
     border: 1px solid rgba(255, 255, 255, 0.16) !important;
     border-radius: 20px !important;
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.42), inset 0 1px rgba(255, 255, 255, 0.08);
@@ -967,7 +967,7 @@ body.player-modal-open {
     min-height: 52px;
     padding: 8px 10px !important;
     gap: 8px !important;
-    background: rgba(18, 18, 20, 0.76) !important;
+    background: rgba(18, 18, 20, 0.88) !important;
     border: 1px solid rgba(255, 255, 255, 0.1) !important;
     border-radius: 16px !important;
     box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42), inset 0 1px rgba(255, 255, 255, 0.05) !important;

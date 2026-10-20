@@ -1329,11 +1329,9 @@ class MovieDetailsManager {
         }
         
         const isAuth = firebaseManager.isAuthenticated();
-        console.log('[DIAG] Auth check:', JSON.stringify({ isAuth: firebaseManager.isAuthenticated() }));
         if (!isAuth) {
             this.authDecision = 'guest';
             this.perf?.setScenarioHint('guest');
-            console.log('[DIAG] Auth check failed; returning before loadMovieById.');
             this.page.showError(createAppError('AUTH_REQUIRED', {
                 category: 'auth',
                 retryable: false,
@@ -11080,8 +11078,6 @@ class MovieDetailsManager {
             && this.torrentPlaybackSession === torrentSession
             && (!isTorrentStream || (this.torrentRequestId === torrentRequestId
                 && torrentSession.sessionId === torrentSessionId && torrentSession.hlsUrl === url));
-        console.log('[DEBUG renderCustomPlayer] === renderCustomPlayer() START ===');
-        console.log('[DEBUG renderCustomPlayer] stream type', { isHls });
         
         // Create wrapper and logic for custom controls
         const wrapper = document.createElement('div');
@@ -11090,7 +11086,6 @@ class MovieDetailsManager {
         const video = document.createElement('video');
         video.id = 'nativeVideoPlayer';
         video.className = 'player-surface__media';
-        console.log('[DEBUG renderCustomPlayer] Created <video> element');
         video.autoplay = !this.torrentPlaybackSession;
         video.controls = true; // Native fallback until the shared cleaner UI mounts.
         video.dataset.playerProvider = this.torrentPlaybackSession ? 'torrent' : 'native';
@@ -11177,7 +11172,6 @@ class MovieDetailsManager {
     }
 
     setupCustomControls(video, wrapper) {
-        console.log('[DEBUG setupCustomControls] Initializing controls for video:', video.id);
 
         const playPauseBtn = wrapper.querySelector('#playPauseBtn');
         const progressBarContainer = wrapper.querySelector('#progressBarContainer');
@@ -11216,12 +11210,10 @@ class MovieDetailsManager {
 
         // PiP Listeners for auto-minimize
         video.addEventListener('enterpictureinpicture', () => {
-            console.log('[DEBUG setupCustomControls] Enter PiP (Native Video)');
             this.minimizePlayer(false); // don't pause
         });
 
         video.addEventListener('leavepictureinpicture', () => {
-            console.log('[DEBUG setupCustomControls] Leave PiP (Native Video)');
             this.restorePlayer();
         });
 
