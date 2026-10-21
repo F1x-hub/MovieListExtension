@@ -119,7 +119,8 @@ class PlaybackController {
             typeof KinogoAdapter !== 'undefined' ? KinogoAdapter : (typeof require !== 'undefined' ? require('./adapters/KinogoAdapter').KinogoAdapter : null),
             typeof ExFsAdapter !== 'undefined' ? ExFsAdapter : (typeof require !== 'undefined' ? require('./adapters/ExFsAdapter').ExFsAdapter : null),
             typeof RutubeAdapter !== 'undefined' ? RutubeAdapter : (typeof require !== 'undefined' ? require('./adapters/RutubeAdapter').RutubeAdapter : null),
-            typeof AnimeGoAdapter !== 'undefined' ? AnimeGoAdapter : (typeof require !== 'undefined' ? require('./adapters/AnimeGoAdapter').AnimeGoAdapter : null)
+            typeof AnimeGoAdapter !== 'undefined' ? AnimeGoAdapter : (typeof require !== 'undefined' ? require('./adapters/AnimeGoAdapter').AnimeGoAdapter : null),
+            typeof HdrezkaAdapter !== 'undefined' ? HdrezkaAdapter : (typeof require !== 'undefined' ? require('./adapters/HdrezkaAdapter').HdrezkaAdapter : null)
         ];
 
         for (const Cls of adapterClasses) {

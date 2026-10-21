@@ -5,7 +5,7 @@
     const LIMIT = 1000000;
     const MAX_TIME_MS = 300000;
     const TTFF_BUCKETS_MS = Object.freeze([250, 500, 1000, 2000, 4000, 8000, 15000, 30000, 60000, 120000, MAX_TIME_MS]);
-    const SOURCES = new Set(['animego', 'seasonvar', 'exfs', 'kinogo', 'rutube', 'officialyt', 'kodik', 'vidsrc', 'torrent', 'unknown']);
+    const SOURCES = new Set(['animego', 'seasonvar', 'exfs', 'kinogo', 'rutube', 'officialyt', 'hdrezka', 'kodik', 'vidsrc', 'torrent', 'unknown']);
     const TYPES = new Set(['resolveOk', 'resolveFail', 'fallback', 'decodeFailed']);
     const REASONS = new Set(['policy', 'decode', 'aborted', 'timeout', 'network', 'http', 'unknown']);
     let queue = Promise.resolve();

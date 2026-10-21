@@ -398,9 +398,23 @@ or remote provider URLs; adding a new definition remains a Jackett UI operation.
   not grant local access: `networkProfile: 'local'` also requires the matching
   current torrent session and `localManifestUrl`; its loader captures the manifest
   directory. Remote uses public HTTPS resources and reviewed initial manifest
-  hosts. The manual HDRezka pilot uses the separate `hdrezka` profile with
-  `providerManifestUrl`, two reviewed final CDN hosts, and the captured origin
-  and directory; its HAR import keeps signed URLs only in page memory.
+  hosts. HDRezka uses the separate `hdrezka` profile with
+  `providerManifestUrl`, seven reviewed final CDN hosts, and the resolved origin
+  and directory. Its film parser discovers fresh links through an already-open
+  site tab or extension requests with browser-managed cookies. Failed direct
+  requests use a shared hidden site frame in the existing offscreen document,
+  through an isolated nonce-bound bridge. Only the HDRezka homepage's
+  X-Frame-Options is removed for extension-initiated subframes. A temporary
+  inactive-tab fallback is shared across requests and removed after 1.5 idle
+  seconds; user-opened or user-focused contexts are preserved. Only the owned
+  tab ID is retained in session storage for interrupted cleanup. A separate
+  hidden bundled iframe resolves the routing host
+  with its own closed `connect-src` policy checking every redirect before HLS
+  playback. Access challenges require the user's open-site/retry action, which
+  reuses one normal site tab that stays open. Retry verifies film details as
+  well as search and resumes only the still-selected HDRezka playback.
+  Signed URLs stay only in memory, including in the
+  manual HAR pilot; cached descriptors contain only the public film page.
   Protective config is applied after overrides; policy failures destroy
   once without recovery. No unmanaged/native HLS escape is allowed on extension
   pages. Ghost previews inherit that loader and scope. Direct MP4, DNS rebinding

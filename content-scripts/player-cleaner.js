@@ -4421,6 +4421,13 @@
                 window.PlayerSettingsMenu.renderSubmenu({ menu: settingsMenu, title, items, onBack,
                     backLabel: pt('back', `Назад: ${title}`, { title }) });
             };
+            const refreshCurrentSettingsView = render => {
+                const view = settingsMenu.firstElementChild;
+                setTimeout(() => {
+                    if (settingsMenu.isConnected && settingsMenu.style.display !== 'none'
+                        && settingsMenu.firstElementChild === view) render();
+                }, 200);
+            };
 
             // Speed View
             const renderSpeedView = () => {
@@ -4861,7 +4868,7 @@
                         }
                     },
                     refreshFn: () => {
-                        setTimeout(renderQualityView, 200); 
+                        refreshCurrentSettingsView(renderQualityView);
                     }
                 }));
                 
@@ -4869,9 +4876,10 @@
             }
 
             // Voiceover View
+            const hasVoiceoverBridge = () => Boolean(document.querySelector('[data-player-voiceover-source] [data-voiceover-option], #seasonvar-voiceover-source .seasonvar-voiceover-item'));
             const renderVoiceoverView = () => {
                 const hls = (permanentVideo || video)._movieExtensionHls;
-                if (hls?.audioTracks?.length) {
+                if (hls?.audioTracks?.length && !hasVoiceoverBridge()) {
                     renderSubMenuView(pt('voiceover', 'Озвучка'), hls.audioTracks.map((track, index) => ({
                         label: track.name || track.lang || pt('track', `Дорожка ${index + 1}`, { number: index + 1 }),
                         isActive: hls.audioTrack === index,
@@ -4909,14 +4917,15 @@
                              currentVoiceoverOptions.forEach(o => o.isActive = false);
                              opt.isActive = true;
                              
-                             // Re-scan from bridge after a short delay to pick up new active state
-                             setTimeout(() => {
-                                 findAndRenderVoiceovers(controlsOverlay, newContainer);
-                                 renderVoiceoverView(); // Refresh the submenu view
-                             }, 200);
                          }
                     },
-                    refreshFn: renderVoiceoverView
+                    refreshFn: () => {
+                        renderVoiceoverView();
+                        refreshCurrentSettingsView(() => {
+                            findAndRenderVoiceovers(controlsOverlay, newContainer);
+                            renderVoiceoverView();
+                        });
+                    }
                 }));
                 renderSubMenuView(pt('voiceover', 'Озвучка'), items);
             };
@@ -4946,7 +4955,7 @@
 
                 // Voiceover Item (New)
                 const hlsAudio = currentVid._movieExtensionHls?.audioTracks || [];
-                if (hlsAudio.length) {
+                if (hlsAudio.length && !hasVoiceoverBridge()) {
                     const selected = hlsAudio[currentVid._movieExtensionHls.audioTrack];
                     const voiceItem = createMenuItem(pt('voiceover', 'Озвучка'), '');
                     voiceItem.querySelector('.player-settings-menu__value').textContent = selected?.name || selected?.lang || pt('main_track', 'Основная');

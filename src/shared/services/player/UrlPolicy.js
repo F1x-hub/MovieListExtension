@@ -4,9 +4,9 @@
     // Grounded in existing Kodik fixtures and Rutube's declared CDN consumers.
     // New provider/CDN hosts need a reviewed update; this is not live availability proof.
     const MANIFEST_HOSTS = Object.freeze(['solodcdn.com', 'rtbcdn.ru', 'rutube.ru']);
-    // Final CDN hosts observed in the HDRezka capture. The routing host and
-    // arbitrary Voidboost subdomains are deliberately outside this pilot.
-    const HDREZKA_HOSTS = new Set(['weyland.stream.voidboost.one', 'hronos.stream.voidboost.one']);
+    // Final CDN hosts observed in HDRezka captures. Routing is handled in a
+    // bundled resolver frame with a closed CSP, never by this HLS transport.
+    const HDREZKA_HOSTS = new Set(['weyland', 'hronos', 'dagon', 'magic', 'bingo', 'eleos', 'ember'].map(name => `${name}.stream.voidboost.one`));
     const KINDS = new Set(['manifest', 'level', 'init', 'fragment', 'key', 'file']);
 
     function publicV4(parts) {

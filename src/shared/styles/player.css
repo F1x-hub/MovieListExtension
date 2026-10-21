@@ -705,6 +705,37 @@ body.player-modal-open {
     display: none;
 }
 
+.source-buttons-container:has(.hdrezka-access-actions) {
+    flex-wrap: wrap;
+    max-height: none;
+    overflow: visible;
+}
+
+.hdrezka-access-actions {
+    display: flex;
+    flex: 1 0 100%;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+}
+
+.hdrezka-access-actions > .btn {
+    flex: 0 1 auto;
+    max-width: 100%;
+    min-height: 34px;
+    height: auto;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
+}
+
+.source-buttons-container:has(.hdrezka-access-actions) .source-rail-note {
+    flex-basis: 100%;
+    color: var(--ui-color-content-muted);
+    font-size: 13px;
+    line-height: 1.4;
+}
+
 .source-buttons-container::-webkit-scrollbar {
     height: 5px;
 }

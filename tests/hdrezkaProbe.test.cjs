@@ -35,3 +35,17 @@ test('HDRezka profile cannot expand the existing remote allowlist or permit rout
         }
     }
 });
+
+test('captured Eleos and Ember manifests use the HDRezka transport without allowing lookalike hosts', () => {
+    for (const host of ['eleos', 'ember']) {
+        const url = `https://${host}.stream.voidboost.one/session/movie/index.m3u8`;
+        assert.equal(scope.HdrezkaProbeSources.fromHar({ log: { entries: [entry(url)] } })[0]?.url, url);
+        for (const kind of ['manifest', 'level', 'fragment', 'init', 'key']) {
+            assert.equal(scope.UrlPolicy.check(url, { kind, profile: 'hdrezka' }).ok, true);
+            for (const rejected of [`https://evil.${host}.stream.voidboost.one/a.m3u8`, `https://${host}.stream.voidboost.one.evil.test/a.m3u8`]) {
+                assert.equal(scope.UrlPolicy.check(rejected, { kind, profile: 'hdrezka' }).ok, false);
+            }
+        }
+        assert.equal(scope.UrlPolicy.check(url).ok, false);
+    }
+});

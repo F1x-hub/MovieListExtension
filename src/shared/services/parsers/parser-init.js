@@ -10,7 +10,7 @@
 (function() {
     'use strict';
 
-    const registry = new ParserRegistry(['kinogo', 'exfs', 'seasonvar', 'rutube', 'animego', 'officialyt']);
+    const registry = new ParserRegistry(['kinogo', 'exfs', 'seasonvar', 'rutube', 'animego', 'officialyt', 'hdrezka']);
 
     // Register KinoGo parser
     if (typeof KinogoParser !== 'undefined') {
@@ -54,6 +54,8 @@
     } else {
         console.warn('[ParserInit] OfficialYouTubeParser is unavailable');
     }
+
+    if (typeof HdrezkaParser !== 'undefined') registry.register(new HdrezkaParser());
 
     // Expose globally
     window.parserRegistry = registry;

@@ -1,6 +1,6 @@
 (function (global) {
     'use strict';
-    const PROVIDERS = new Set(['animego', 'seasonvar', 'exfs', 'kinogo', 'rutube', 'officialyt', 'kodik', 'vidsrc']);
+    const PROVIDERS = new Set(['animego', 'seasonvar', 'exfs', 'kinogo', 'rutube', 'officialyt', 'hdrezka', 'kodik', 'vidsrc']);
     const queues = new Map();
 
     function storageKey(movieId) {
