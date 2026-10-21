@@ -350,6 +350,7 @@ keeps npm-compatible three-component semver metadata.
 
 ### Fixes
 
+- The random wheel now stops at a random point inside the chosen movie's slice instead of always its exact center. When only one movie is left in a marathon, the wheel is skipped: the button reads «Выбрать последний фильм» and the movie is picked at once, ready to be marked as watched.
 - Lighter GPU load during playback: the open player uses a solid backdrop instead of a full-screen blur, controls over the video no longer blur it, and page or seasonal-decor animations behind the player pause until it is minimized or closed. The live page no longer rewrites its clock and buttons every second when nothing changed, and its sound controls use a solid scrim. Removed leftover debug logs from player setup.
 
 </details>
