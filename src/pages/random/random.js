@@ -1358,7 +1358,9 @@ class RandomManager {
             actions.innerHTML += '<button class="btn-roll-from-pool" data-marathon-action="start">Начать марафон</button>';
         }
         if (this.marathonIsAdmin && round.status === 'active' && !round.currentItemId) {
-            actions.innerHTML += '<button class="btn-roll-from-pool" data-marathon-action="roll">Крутить рулетку</button>';
+            const queuedCount = displayItems.filter((item) => item.state !== 'watched' && item.state !== 'removed').length;
+            const rollLabel = queuedCount === 1 ? 'Выбрать последний фильм' : 'Крутить рулетку';
+            actions.innerHTML += `<button class="btn-roll-from-pool" data-marathon-action="roll">${rollLabel}</button>`;
         }
         if (this.marathonIsAdmin && round.status === 'active' && current) {
             actions.innerHTML += '<button class="btn-roll-from-pool" data-marathon-action="watched">Отметить просмотренным</button><button class="btn btn-danger" data-marathon-action="removed">Удалить выпавший</button>';
@@ -1377,6 +1379,12 @@ class RandomManager {
         const queuedItems = this._getMarathonDisplayItems()
             .filter((item) => item.state !== 'watched' && item.state !== 'removed');
         if (!queuedItems.length) return;
+
+        // Nothing to choose from: pick the last movie directly, without the wheel
+        if (queuedItems.length === 1) {
+            await this._runMarathonAction(() => this.marathonService.rollNext());
+            return;
+        }
 
         this._showRollPendingAnimation(queuedItems);
         const nextState = await this._runMarathonAction(
@@ -2043,7 +2051,9 @@ class RandomManager {
         this._renderRollCandidates(wheel, candidates);
         this._openModal('rollAnimOverlay');
         const stepAngle = 360 / candidates.length;
-        const targetAngle = (360 - (winnerIdx + .5) * stepAngle) % 360;
+        // Land at a random point inside the winner slice, away from its edges
+        const sliceOffset = .15 + Math.random() * .7;
+        const targetAngle = (360 - (winnerIdx + sliceOffset) * stepAngle) % 360;
         const forwardAngle = (targetAngle - startAngle + 360) % 360;
         const fullTurns = Math.max(2, Math.round(this.rollDurationSeconds * .65));
         const endAngle = startAngle + fullTurns * 360 + forwardAngle;
