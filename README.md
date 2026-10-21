@@ -408,6 +408,7 @@ keeps npm-compatible three-component semver metadata.
 ### Features
 
 - Added HDRezka as a film source with title/year matching, fresh stream discovery through the normal browser session, shared quality and dubbing controls, and an open-site/retry action when a browser check is required. Signed links stay in memory; playback is limited to observed CDN hosts and the resolved stream directory. Series and premium streams are excluded.
+- On the live page, a movie broadcast's title links to that movie's details page, so viewers can open it to rate it.
 
 ### Fixes
 

@@ -268,3 +268,15 @@ html:has(:fullscreen) *:not(:fullscreen, :fullscreen *)::before,
 html:has(:fullscreen) *:not(:fullscreen, :fullscreen *)::after {
     animation-play-state: paused !important;
 }
+
+.live-title__link {
+    color: inherit;
+    text-decoration: none;
+}
+
+.live-title__link:hover,
+.live-title__link:focus-visible {
+    color: var(--ui-color-interactive, var(--theme-text-primary));
+    text-decoration: underline;
+    text-underline-offset: 4px;
+}

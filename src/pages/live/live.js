@@ -76,7 +76,7 @@
         els.clock.hidden = true;
         els.controls.hidden = true;
         els.notice.hidden = true;
-        els.title.textContent = 'Эфир';
+        setTitle('Эфир');
         mountedKey = '';
     }
 
@@ -104,6 +104,20 @@
         }
         yt.origin = '';
         return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=1&start=${startSec}&rel=0&controls=${isAdmin ? 1 : 0}&disablekb=${isAdmin ? 0 : 1}`;
+    }
+
+    /** The movie title links to its details page, where it can be rated. */
+    function setTitle(text, movieId = NaN) {
+        if (!Number.isSafeInteger(movieId) || movieId <= 0) {
+            els.title.textContent = text;
+            return;
+        }
+        const link = document.createElement('a');
+        link.className = 'live-title__link';
+        link.href = `../movie-details/movie-details.html?movieId=${movieId}`;
+        link.textContent = text;
+        link.title = 'Открыть страницу фильма';
+        els.title.replaceChildren(link);
     }
 
     function mountMedia(force = false) {
@@ -136,7 +150,8 @@
         els.empty.hidden = true;
         els.stage.hidden = false;
         els.notice.hidden = true;
-        els.title.textContent = channel.title || (channel.mode === 'youtube' ? 'Эфир' : 'Фильм в эфире');
+        const movieId = channel.mode === 'movie' ? Number(channel.movie?.kinopoiskId) : NaN;
+        setTitle(channel.title || (channel.mode === 'youtube' ? 'Эфир' : 'Фильм в эфире'), movieId);
 
         let src;
         if (channel.mode === 'youtube') {
