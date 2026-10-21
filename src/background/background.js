@@ -9,8 +9,34 @@ try {
     importScripts('../shared/services/WhatsNewService.js');
     importScripts('../shared/services/WhatsNewPlaybackService.js');
     importScripts('../shared/services/ExternalRatingSync.js');
+    importScripts('../shared/services/player/HdrezkaProtocol.js');
+    importScripts('../shared/services/player/HdrezkaSessionService.js');
 } catch (e) {
     console.error('Failed to import scripts:', e);
+}
+
+// Hidden HTML discovery is separate from the closed CDN resolver. Only the
+// provider homepage, embedded by this extension, needs its X-Frame-Options
+// removed; other pages, CSP, origins and playback policies are unchanged.
+if (typeof HdrezkaSiteSessionCoordinator !== 'undefined') {
+    let hdrezkaFrameRule;
+    const hdrezkaSiteSession = new HdrezkaSiteSessionCoordinator(chrome, async (action, input) => {
+        if (!hdrezkaFrameRule) {
+            hdrezkaFrameRule = chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [5070], addRules: [{
+                id: 5070, priority: 1,
+                action: { type: 'modifyHeaders', responseHeaders: [{ header: 'x-frame-options', operation: 'remove' }] },
+                condition: { regexFilter: '^https://hdrezka\\.co/(#movielist-hdrezka=[a-f0-9]+)?$', initiatorDomains: [chrome.runtime.id], resourceTypes: ['sub_frame'] }
+            }] }).catch(error => { hdrezkaFrameRule = null; throw error; });
+        }
+        await hdrezkaFrameRule;
+        await ensureOffscreen();
+        return chrome.runtime.sendMessage({ type: 'HDREZKA_OFFSCREEN_REQUEST', target: 'offscreen-hdrezka', action, input });
+    });
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        if (!['HDREZKA_SITE_REQUEST', 'HDREZKA_OPEN_SITE'].includes(message?.type)) return false;
+        hdrezkaSiteSession.handleMessage(message, sender).then(sendResponse);
+        return true;
+    });
 }
 
 // External rating sync (IMDb, Kinopoisk): settings toggles, session detection

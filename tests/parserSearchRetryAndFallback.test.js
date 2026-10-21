@@ -64,6 +64,14 @@ class ScriptedParser extends BaseParserService {
     assert.deepEqual(noRussian.calls.map(call => call.title), ['Original Title']);
     assert.equal(ParserRegistry.getSearchTitles(undefined, '  ', null).length, 0);
 
+    // An access challenge applies to the session, not to a spelling of the
+    // title. Do not repeat it under the original title before user recovery.
+    const blocked = new ScriptedParser('blocked', () => { blocked.accessRequired = true; return null; });
+    const blockedRegistry = new ParserRegistry(['blocked']);
+    blockedRegistry.register(blocked);
+    assert.equal((await blockedRegistry.searchAll('Фильм', 2024, { fallbackTitle: 'Original' })).length, 0);
+    assert.deepEqual(blocked.calls.map(call => call.title), ['Фильм']);
+
     // 3. Adapters accept the single SearchResult that parser.search() returns
     //    and never pass the Kinopoisk ID as the release year.
     for (const AdapterClass of [ExFsAdapter, RutubeAdapter, SeasonvarAdapter]) {

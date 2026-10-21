@@ -2,7 +2,7 @@
     'use strict';
 
     // Values are copied only from these closed sets, never from URL/error text.
-    const SOURCES = new Set(['animego', 'seasonvar', 'exfs', 'kinogo', 'rutube', 'officialyt', 'kodik', 'vidsrc', 'torrent']);
+    const SOURCES = new Set(['animego', 'seasonvar', 'exfs', 'kinogo', 'rutube', 'officialyt', 'hdrezka', 'kodik', 'vidsrc', 'torrent']);
     const RESOURCES = new Set(['manifest', 'level', 'init', 'fragment', 'key', 'file', 'subtitle', 'iframe', 'preview']);
 
     function ownData(value, key) {

@@ -260,7 +260,65 @@ already occupies that port (PowerShell: `$env:PLAYER_FIXTURE_PORT='0'; npm run t
 This verifies the offline harness; the separate `test:player-hls-policy` checks the
 implemented controlled-HLS boundary. Neither test verifies live providers.
 
-## HDRezka playback pilot
+## HDRezka film source
+
+HDRezka searches the film's title and year from the normal source rail. Only
+matching films are offered; series and premium streams are not supported yet.
+The player requests fresh links on each start and dubbing change, with one
+bounded refresh if a link expires. Quality uses the shared player menu;
+quality and dubbing changes preserve position and pause. HDRezka dubbing is
+selected under **Settings → Voiceover** in the player, without a toolbar selector.
+Premium-labelled translations (including `b-prem_translator`) are excluded
+before choosing the default; duplicate mobile/desktop entries are merged.
+Errors distinguish a browser challenge from unavailable or Premium-only streams.
+Playback failures log `[HDRezka] Playback failed` with a closed stage/code
+record, a closed CDN/HLS reason and an HTTP error status when available,
+without stream URLs or tokens. CDN diagnostics distinguish a network failure,
+timeout, HTTP error, rejected final URL and a response without an HLS playlist;
+unexpected bodies are classified as HTML, JSON, empty or other without logging them.
+
+Search and stream discovery reuse an already-open HDRezka tab with its normal
+session, without navigating or closing it. When no site tab is open, requests
+first run from the extension with browser-managed cookies. If that context is
+rejected, discovery uses a shared hidden HDRezka frame in the existing offscreen
+document. Its isolated content bridge validates the extension sender, frame,
+origin and per-context nonce. The frame cannot open popups or navigate the film
+page. A narrow rule removes only the homepage's X-Frame-Options for subframes
+initiated by this extension; other pages, CSP and CDN policies are unchanged.
+
+If hidden discovery cannot acquire access, one temporary inactive site tab
+obtains the requested data and retries the hidden context. Concurrent requests
+share the temporary tab without switching focus. It closes after 1.5 seconds
+with no discovery requests in flight; quality changes use the acquired stream
+variants and do not reopen it. Session storage retains only its tab ID so an
+interrupted cleanup can recover after a service-worker restart. User-opened tabs,
+and temporary tabs that the user focuses or navigates, are preserved.
+If the site still requires a browser check, use **Открыть HDRezka** to focus
+the existing session, complete the check, then return and press
+**Повторить поиск HDRezka**. Retry validates both search and film details; if
+HDRezka is still the selected source, it resumes the pending playback. A different
+active provider keeps playing. The extension does not solve challenges or export
+cookies. Rebuild and reload the extension before testing from a film card
+(for example, «Человек-паук», 2002).
+
+Signed links stay in memory. Preferences store only quality and dubbing IDs.
+The routing host `stream.voidboost.one` resolves in a hidden bundled iframe
+inside the existing extension page. Its own Content Security Policy checks
+every connection and redirect, allowing only that host and the seven observed final hosts:
+`weyland`, `hronos`, `dagon`, `magic`, `bingo`, `eleos`, and `ember` under `.stream.voidboost.one`.
+Different quality variants can route to different hosts; the default 480p path
+is checked separately from higher-quality playback. CDN resolution and quality
+changes do not create browser tabs; the resolver frame is removed on success,
+failure, timeout or disposal.
+Playback omits cookies, rejects further redirects, and restricts HLS requests
+to the resolved manifest's origin and directory. Other provider policies keep
+their existing allowlists.
+
+Run `npm run test:hdrezka-provider` for synthetic search/session, matching,
+quality/dubbing, challenge, redirect-boundary and cleanup checks. These tests
+do not establish that a user's installed browser session passes the live site.
+
+### Manual playback pilot
 
 Open `src/pages/hdrezka-probe/hdrezka-probe.html` under the loaded extension's
 `chrome-extension://<extension-id>/` origin after rebuilding and reloading it.
@@ -269,10 +327,9 @@ in the shared HLS player. **Остановить** disposes playback; **Очис
 forgets the imported sources. The HAR is not uploaded and signed URLs are kept
 only in page memory. Captures may expire and need to be recorded again.
 
-This is a manual playback pilot, not an automatic catalogue provider. It does
-not search HDRezka, solve browser challenges, select dubbing, or refresh signed
-links. Only successful `.m3u8` responses on the two observed final hosts
-`weyland.stream.voidboost.one` and `hronos.stream.voidboost.one` are accepted.
+The separate pilot tests a captured stream. It does not search HDRezka, select
+dubbing, or refresh signed links. Only successful `.m3u8` responses on the seven
+final hosts listed above are accepted; routing URLs must resolve first.
 Its separate `hdrezka` transport profile omits cookies, rejects redirects, and
 restricts child requests to the captured manifest's origin and directory. The
 existing remote-provider profile retains its previous host allowlist.
@@ -348,11 +405,20 @@ keeps npm-compatible three-component semver metadata.
 <details open>
 <summary><strong>Unreleased</strong></summary>
 
+### Features
+
+- Added HDRezka as a film source with title/year matching, fresh stream discovery through the normal browser session, shared quality and dubbing controls, and an open-site/retry action when a browser check is required. Signed links stay in memory; playback is limited to observed CDN hosts and the resolved stream directory. Series and premium streams are excluded.
+
 ### Fixes
 
 - The random wheel now stops at a random point inside the chosen movie's slice instead of always its exact center. When only one movie is left in a marathon, the wheel is skipped: the button reads «Выбрать последний фильм» and the movie is picked at once, ready to be marked as watched.
 - The player drops backdrop blur from its overlays in fullscreen, aimed at stutter when a fullscreen broadcast or movie window loses focus.
 - The live page now shows the left-edge «Сообщить об ошибке» handle like other pages. The report drawer now sits above its scrim instead of under it, so the form is no longer dimmed and blurred, and the page behind is dimmed with a plain scrim.
+- HDRezka skips translations marked `b-prem_translator` when choosing playback, falls back to an ordinary dub, and merges duplicate translation entries. Stream failures retain their stage, closed CDN/HLS reason and HTTP error status without logging signed URLs or response bodies; CDN preparation and HLS failures have separate messages. Quality changes preserve pause when the shared player controls are active.
+- Move HDRezka dubbing into the shared player settings menu and hide its duplicate toolbar selector. Dubbing changes keep the current position, pause state, and preferred translation.
+- Acquire HDRezka data automatically through a shared hidden site frame when direct extension requests fail. A temporary inactive-tab fallback closes after discovery settles; it no longer leaves a service tab open, changes focus, or opens a tab for each quality switch. Concurrent pages share acquisition and interrupted cleanup recovers across worker restarts. CDN resolution stays in a separate hidden local frame with a closed policy; delayed settings updates no longer replace another menu.
+- Keep HDRezka access errors recoverable during search, film discovery, dubbing and expired-stream refresh. The open-site action reuses one normal browser tab, rejected background requests stop repeating, and a successful search/details retry resumes HDRezka only while it remains the selected source.
+- Allow HDRezka's observed Eleos and Ember CDN hosts in stream resolution and playback, fixing network failures when the default 480p stream uses a different server from higher-quality variants. Regression coverage exercises the default start and a quality switch across these hosts.
 - Lighter GPU load during playback: the open player uses a solid backdrop instead of a full-screen blur, controls over the video no longer blur it, and page or seasonal-decor animations behind the player pause until it is minimized or closed. The live page no longer rewrites its clock and buttons every second when nothing changed, and its sound controls use a solid scrim. Removed leftover debug logs from player setup.
 
 </details>

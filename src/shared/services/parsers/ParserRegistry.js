@@ -89,7 +89,7 @@ class ParserRegistry {
                 try {
                     for (const searchTitle of searchTitles) {
                         result = await parser.cachedSearch(searchTitle, year, parserOptions);
-                        if (result) break;
+                        if (result || parser.accessRequired) break;
                     }
                     if (result) {
                         // Ensure parserId is set

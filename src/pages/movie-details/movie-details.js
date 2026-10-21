@@ -9629,7 +9629,9 @@ class MovieDetailsManager {
                 sourceCount: entry.sources?.length || 0
             });
 
-            await parser.renderPlayer(this.elements.videoContainer, entry.sources, renderOptions);
+            if (parserId === 'hdrezka') renderOptions.onProviderDubChange = id => this.onProviderDubChange(id);
+            const rendered = await parser.renderPlayer(this.elements.videoContainer, entry.sources, renderOptions);
+            if (rendered === false) { this.populateSourceSelector(); return false; }
 
             if (this.elements.videoContainer?.__seasonvarPlaybackState) {
                 this.currentSeasonvarPlaybackState = this.elements.videoContainer.__seasonvarPlaybackState;
@@ -9882,7 +9884,7 @@ class MovieDetailsManager {
                 ]);
             } catch { found = false; }
             if (!isCurrent()) return;
-            this.sourceAvailability.set(id, found ? 'found' : 'missing');
+            this.sourceAvailability.set(id, found ? 'found' : parser.id === 'hdrezka' && parser.accessRequired ? 'access-required' : 'missing');
             repaint();
         })).then(() => {
             if (!isCurrent()) return;
@@ -10059,12 +10061,42 @@ class MovieDetailsManager {
             });
         }
         
+        // Access is an action, not a claim that the provider has this film.
+        const hdrezka = this.parserRegistry?.get?.('hdrezka');
+        if (hdrezka?.accessRequired && hdrezka.supportsMedia(this.selectedMovie, this.selectedMovie?.type)) {
+            const access = document.createElement('a');
+            access.className = 'btn btn-secondary';
+            access.href = `https://hdrezka.co/search/?do=search&subaction=search&q=${encodeURIComponent(this.selectedMovie.name || this.selectedMovie.alternativeName || '')}`;
+            access.target = '_blank'; access.rel = 'noopener noreferrer';
+            access.textContent = 'Открыть HDRezka';
+            access.title = 'Откройте сайт и оставьте вкладку открытой, затем повторите поиск здесь';
+            access.addEventListener('click', event => {
+                if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || !hdrezka.service?.openSite) return;
+                event.preventDefault();
+                const movieId = String(this.selectedMovie?.kinopoiskId);
+                void hdrezka.service.openSite(this.selectedMovie.name || this.selectedMovie.alternativeName || '').catch(() => {
+                    if (!access.isConnected || String(this.selectedMovie?.kinopoiskId) !== movieId) return;
+                    access.title = 'Не удалось открыть сайт. Попробуйте ещё раз.';
+                    access.textContent = 'Повторить открытие HDRezka';
+                });
+            });
+            const retry = document.createElement('button');
+            retry.type = 'button'; retry.className = 'btn btn-secondary';
+            retry.textContent = 'Повторить поиск HDRezka';
+            retry.addEventListener('click', () => { void this.retryHdrezkaSource(); });
+            const actions = document.createElement('div');
+            actions.className = 'hdrezka-access-actions';
+            actions.append(access, retry);
+            this.elements.sourceButtonsContainer.appendChild(actions);
+        }
+
         // While sources are being checked, or when none has the title, say so instead of an empty rail.
         if (!this.elements.sourceButtonsContainer.querySelector('.source-btn')) {
             const note = document.createElement('span');
             note.className = 'source-rail-note';
             note.setAttribute('role', 'status');
-            note.textContent = this.sourceProbeDone
+            note.textContent = hdrezka?.accessRequired && hdrezka.supportsMedia(this.selectedMovie, this.selectedMovie?.type)
+                ? 'Для HDRezka откройте сайт и оставьте вкладку открытой.' : this.sourceProbeDone
                 ? 'Фильм не найден в источниках'
                 : 'Ищем фильм в источниках…';
             this.elements.sourceButtonsContainer.appendChild(note);
@@ -10093,7 +10125,7 @@ class MovieDetailsManager {
 
         const state = providerId ? this.elements?.videoContainer?.__providerDubState : null;
         const translations = state?.providerId === providerId ? state.translations || [] : [];
-        if (translations.length < 2) {
+        if (state?.controlsLocation === 'settings' || translations.length < 2) {
             control.hidden = true;
             select.replaceChildren();
             return;
@@ -10113,6 +10145,43 @@ class MovieDetailsManager {
             });
         }
         control.hidden = false;
+    }
+
+    async retryHdrezkaSource() {
+        const movie = this.selectedMovie;
+        const parser = this.parserRegistry?.get('hdrezka');
+        if (!movie || !parser) return;
+        const request = this.hdrezkaRetryGeneration = (this.hdrezkaRetryGeneration || 0) + 1;
+        const resumePlayback = this.activeSourceValue === 'parser:hdrezka';
+        const sourceRequestId = this.sourceSwitchRequestId;
+        parser.clearCache();
+        const id = String(movie.kinopoiskId);
+        let found = false;
+        for (const title of [...new Set([movie.name, movie.alternativeName].filter(Boolean))]) {
+            const result = await parser.cachedSearch(title, movie.year, { mediaType: movie.type, altName: movie.alternativeName || null });
+            if (String(this.selectedMovie?.kinopoiskId) !== id || request !== this.hdrezkaRetryGeneration) return;
+            if (result) {
+                try { found = Boolean((await parser.cachedVideoSources(result))?.length); }
+                catch { found = false; }
+                break;
+            }
+            if (found || parser.accessRequired) break;
+        }
+        if (String(this.selectedMovie?.kinopoiskId) !== id || request !== this.hdrezkaRetryGeneration) return;
+        this.sourceAvailability?.set('hdrezka', found ? 'found' : parser.accessRequired ? 'access-required' : 'missing');
+        if (found || parser.accessRequired) this.unavailableProviderIds?.delete?.('hdrezka');
+        this.populateSourceSelector();
+        if (found && resumePlayback && this.activeSourceValue === 'parser:hdrezka' && this.sourceSwitchRequestId === sourceRequestId) {
+            await this.changeVideoSource('parser:hdrezka', { manualRetry: true });
+        }
+    }
+
+    refreshHdrezkaAccessActions() {
+        if (!this.parserRegistry?.get('hdrezka')?.accessRequired) return false;
+        this.sourceAvailability?.set('hdrezka', 'access-required');
+        this.unavailableProviderIds?.delete?.('hdrezka');
+        this.populateSourceSelector();
+        return true;
     }
 
     /**
@@ -10159,6 +10228,17 @@ class MovieDetailsManager {
         const parser = state ? this.parserRegistry?.get?.(state.providerId) : null;
         if (!parser?.setPreferredTranslation || !translationId || translationId === state.activeTranslationId) return;
         parser.setPreferredTranslation(state.contextId, translationId, this.selectedMovie?.kinopoiskId);
+        if (state.providerId === 'hdrezka' && parser.changeTranslation) {
+            const video = this.elements.videoContainer.querySelector('video[data-progress-owner="canonical"]');
+            const selection = this.playbackController?.getSelection?.();
+            if (selection && Number.isFinite(video?.currentTime)) {
+                this.playbackController.setSelection({ ...selection, initialTimestamp: video.currentTime });
+            }
+            await parser.changeTranslation(this.elements.videoContainer, translationId);
+            // The parser publishes the completed state through the mounted
+            // player's event. Do not refresh a different provider after await.
+            return;
+        }
         await this.changeVideoSource(`parser:${state.providerId}`);
     }
 
@@ -10315,7 +10395,7 @@ class MovieDetailsManager {
         if (!lifecycle || !this.elements.videoContainer) return;
         this.observePlayerMetrics?.(state, { requestId: this.sourceSwitchRequestId,
             parserId: this.getSourceButtonProviderKey(this.activeSourceValue), reason: options.reason || state });
-        if (this.proPlayerEnabled && !this.watchRoomController?.room && ['error', 'unavailable'].includes(state)) {
+        if (this.proPlayerEnabled && !this.watchRoomController?.room && options.reason !== 'access-required' && ['error', 'unavailable'].includes(state)) {
             options = { ...options, onTryOther: () => this.tryOtherWatchSource() };
             void this.handleWatchSourceFailure(this.activeSourceValue, this.sourceSwitchRequestId, options.reason || state);
         }
@@ -10345,6 +10425,7 @@ class MovieDetailsManager {
                 this.observePlayerMetrics?.(state, { requestId, parserId, reason: detail?.reason || state });
                 if (state === 'error' || state === 'unavailable') {
                     this.invalidateSourceCache(movieId);
+                    if (parserId === 'hdrezka' && this.refreshHdrezkaAccessActions()) return;
                     void this.handleWatchSourceFailure?.(url, requestId, detail?.reason || state);
                 }
             }
@@ -10658,7 +10739,7 @@ class MovieDetailsManager {
                             seasonNumber: selection?.seasonNumber ?? null,
                             altName: targetMovie.alternativeName || null
                         });
-                        if (searchResult) break;
+                        if (searchResult || parserId === 'hdrezka' && parser.accessRequired) break;
                     }
                 }
 
@@ -10675,6 +10756,14 @@ class MovieDetailsManager {
                 if (String(this.selectedMovie?.kinopoiskId) !== movieId || this.playerRegistry[parserId] !== entry || !isRequestCurrent()) return false;
 
                 if (!searchResult) {
+                    if (parserId === 'hdrezka' && this.refreshHdrezkaAccessActions()) {
+                        this.setPlayerSourceState('error', {
+                            reason: 'access-required',
+                            message: 'Для HDRezka откройте сайт и оставьте вкладку открытой, затем повторите поиск.',
+                            onRetry: () => this.retryHdrezkaSource()
+                        });
+                        return false;
+                    }
                     this.setPlayerSourceState('unavailable', {
                         message: `Ничего не найдено на ${parser.name}.`,
                         onRetry: () => this.changeVideoSource(`parser:${parserId}`),
@@ -10828,7 +10917,9 @@ class MovieDetailsManager {
 
             if (parser.getPlayerType() === 'custom' || parser.renderPlayer !== BaseParserService.prototype.renderPlayer) {
                 // Parser has custom rendering (like Seasonvar with episode selector)
-                await parser.renderPlayer(this.elements.videoContainer, sources, renderOptions);
+                if (parserId === 'hdrezka') renderOptions.onProviderDubChange = id => this.onProviderDubChange(id);
+                const rendered = await parser.renderPlayer(this.elements.videoContainer, sources, renderOptions);
+                if (rendered === false) { this.populateSourceSelector(); return false; }
             } else {
                 // Default source-aware rendering (iframe/video is selected from source.type)
                 await parser.renderPlayer(this.elements.videoContainer, sources, renderOptions);
@@ -10881,11 +10972,14 @@ class MovieDetailsManager {
         } catch (e) {
             console.error(`[MovieDetails] ${parser.name} load error:`, e);
             if (isRequestCurrent()) {
-                this.unavailableProviderIds?.add?.(parserId);
+                const accessRequired = parserId === 'hdrezka' && this.refreshHdrezkaAccessActions();
+                if (parserId === 'hdrezka' && !accessRequired) this.populateSourceSelector();
+                if (!accessRequired) this.unavailableProviderIds?.add?.(parserId);
                 this.invalidateSourceCache(movieId);
                 this.setPlayerSourceState('error', {
-                    message: `Ошибка загрузки ${parser.name}: ${e.message}`,
-                    onRetry: () => this.changeVideoSource(`parser:${parserId}`),
+                    reason: accessRequired ? 'access-required' : 'provider-unavailable',
+                    message: accessRequired ? 'Для HDRezka откройте сайт и оставьте вкладку открытой, затем повторите поиск.' : `Ошибка загрузки ${parser.name}: ${e.message}`,
+                    onRetry: () => accessRequired ? this.retryHdrezkaSource() : this.changeVideoSource(`parser:${parserId}`),
                     onResearch: () => this.forceResearchSources(`parser:${parserId}`, parserId)
                 });
                 this.updatePlayerNavigationControls();

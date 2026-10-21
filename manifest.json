@@ -52,6 +52,12 @@
     "https://hdrezka.co/*",
     "https://weyland.stream.voidboost.one/*",
     "https://hronos.stream.voidboost.one/*",
+    "https://dagon.stream.voidboost.one/*",
+    "https://magic.stream.voidboost.one/*",
+    "https://bingo.stream.voidboost.one/*",
+    "https://eleos.stream.voidboost.one/*",
+    "https://ember.stream.voidboost.one/*",
+    "https://stream.voidboost.one/*",
     "https://www.kinopoisk.ru/*",
     "https://kinopoisk.ru/*",
     "https://*.kinopoisk.ru/*",
@@ -178,6 +184,18 @@
     "extension_pages": "script-src 'self'; object-src 'self'"
   },
   "content_scripts": [
+    {
+      "matches": [
+        "https://hdrezka.co/*"
+      ],
+      "js": [
+        "src/shared/services/player/HdrezkaSessionService.js",
+        "content-scripts/hdrezka-session-bridge.js"
+      ],
+      "all_frames": true,
+      "world": "ISOLATED",
+      "run_at": "document_start"
+    },
     {
       "matches": [
         "https://ex-fs.net/*"
