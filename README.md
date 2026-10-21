@@ -413,6 +413,7 @@ keeps npm-compatible three-component semver metadata.
 
 - The random wheel now stops at a random point inside the chosen movie's slice instead of always its exact center. When only one movie is left in a marathon, the wheel is skipped: the button reads «Выбрать последний фильм» and the movie is picked at once, ready to be marked as watched.
 - The player drops backdrop blur from its overlays in fullscreen, aimed at stutter when a fullscreen broadcast or movie window loses focus.
+- The live page pauses its own animations (the «on air» pulse, seasonal decor) while the broadcast is fullscreen, matching the movie page, which already paused them behind the open player.
 - The live page now shows the left-edge «Сообщить об ошибке» handle like other pages. The report drawer now sits above its scrim instead of under it, so the form is no longer dimmed and blurred, and the page behind is dimmed with a plain scrim.
 - HDRezka skips translations marked `b-prem_translator` when choosing playback, falls back to an ordinary dub, and merges duplicate translation entries. Stream failures retain their stage, closed CDN/HLS reason and HTTP error status without logging signed URLs or response bodies; CDN preparation and HLS failures have separate messages. Quality changes preserve pause when the shared player controls are active.
 - Move HDRezka dubbing into the shared player settings menu and hide its duplicate toolbar selector. Dubbing changes keep the current position, pause state, and preferred translation.
