@@ -258,3 +258,13 @@
         transform: none;
     }
 }
+
+/* Playback performance, as on the movie page: while the broadcast is fullscreen
+   the page behind it is covered, yet its animations (the «on air» pulse,
+   seasonal decor) keep producing frames and make an unfocused fullscreen
+   window stutter. Pause everything outside the fullscreen element. */
+html:has(:fullscreen) *:not(:fullscreen, :fullscreen *),
+html:has(:fullscreen) *:not(:fullscreen, :fullscreen *)::before,
+html:has(:fullscreen) *:not(:fullscreen, :fullscreen *)::after {
+    animation-play-state: paused !important;
+}
