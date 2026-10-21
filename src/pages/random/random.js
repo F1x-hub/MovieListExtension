@@ -1747,7 +1747,7 @@ class RandomManager {
             item.className = 'pool-list-item';
             item.dataset.movieId = m.kpId;
             item.innerHTML = `
-                <img src="${this._escapeHtml(getSafePosterUrl(m.poster))}" alt="">
+                <img alt="">
                 <div class="pool-list-item-meta">
                     <a class="pool-list-item-title" href="${chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${m.kpId}`)}">${this._escapeHtml(m.title || '—')}</a>
                     <div class="pool-list-item-sub">${this._escapeHtml(m.year || '')} · КП ${ratingLabel}</div>
@@ -1769,12 +1769,17 @@ class RandomManager {
             // Add zoom-in cursor to poster
             const img = item.querySelector('img');
             if (img) {
-                if (!getSafePosterUrl(m.poster)) { img.removeAttribute('src'); img.hidden = true; }
+                // Fall back to the Kinopoisk poster by id; keep the empty slot so the row grid holds.
+                const posterUrls = getMarathonPosterUrls(m.poster, m.kpId);
+                const showNextPoster = () => {
+                    const next = posterUrls.shift();
+                    if (next) img.src = next;
+                    else { img.removeAttribute('src'); img.style.visibility = 'hidden'; }
+                };
+                img.addEventListener('error', showNextPoster);
+                showNextPoster();
                 this._makePosterAccessible(img, m.title);
                 img.style.cursor = 'zoom-in';
-                img.addEventListener('error', () => {
-                    img.style.display = 'none';
-                }, { once: true });
             }
 
             const removeButton = item.querySelector('.pool-list-item-remove');
