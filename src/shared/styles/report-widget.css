@@ -70,7 +70,8 @@
     transform: translateX(-100%);
     transition: transform var(--motion-duration-fast) var(--motion-ease-in),
         visibility 0s linear var(--motion-duration-fast);
-    z-index: var(--z-popover, 1050);
+    /* Always above its own scrim; theme.css raises --z-modal past --z-popover. */
+    z-index: calc(var(--z-modal, 1040) + 1);
     display: flex;
     flex-direction: column;
     visibility: hidden;
@@ -351,8 +352,8 @@
     left: 0;
     width: 100vw;
     height: 100vh;
-    background: rgba(0, 0, 0, 0.8);
-    backdrop-filter: blur(4px);
+    /* Plain scrim: a full-page blur read like the player backdrop. */
+    background: rgba(0, 0, 0, 0.5);
     z-index: var(--z-modal, 1040);
     opacity: 0;
     visibility: hidden;
