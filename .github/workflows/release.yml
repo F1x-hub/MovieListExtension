@@ -123,8 +123,10 @@ jobs:
       - name: Prepare latest mirror and reject older versions
         run: node scripts/update-mirror.cjs prepare
 
+      # Pinned: firebase-tools 15.34.1 started checking service enablement through
+      # serviceusage.googleapis.com, which the release service account may not read (HTTP 403).
       - name: Publish latest extension ZIP to Firebase Hosting
-        run: npx --yes firebase-tools@latest deploy --only hosting --config firebase.updates.json --project movielistdb-13208 --non-interactive
+        run: npx --yes firebase-tools@15.34.0 deploy --only hosting --config firebase.updates.json --project movielistdb-13208 --non-interactive
 
       - name: Verify mirror and remove previous archives
         run: node scripts/update-mirror.cjs verify-cleanup
