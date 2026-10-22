@@ -12497,6 +12497,12 @@ class MovieDetailsManager {
 
         const tabBtn = document.querySelector('.tab-btn[data-tab="seasons"]');
         const tabPane = document.getElementById('tab-seasons');
+        // Structured seasons win over a scraper fallback still running from a
+        // first render of the partial movie (see loadSeasonsFallback).
+        const snapshot = this.getRenderEnrichmentSnapshot(movie.kinopoiskId);
+        const hasStructuredSeasons = (Array.isArray(movie.seasons) && movie.seasons.length > 0)
+            || (Array.isArray(movie.seasonsInfo) && movie.seasonsInfo.length > 0);
+        if (snapshot && hasStructuredSeasons) snapshot.seasonsStructured = true;
 
         // Tier 1: TMDB structured seasons
         if (Array.isArray(movie.seasons) && movie.seasons.length > 0) {
@@ -12586,6 +12592,9 @@ class MovieDetailsManager {
             const seasons = await this.seasonsService.getSeasons(movieId);
             this.perf?.requestEnd(seasonsRequest);
             if (!this.isPageContextCurrent(pageContext)) return;
+            // The complete movie already rendered structured seasons: a late
+            // scraper answer (often empty on a cold start) must not hide the tab.
+            if (this.getRenderEnrichmentSnapshot(movieId)?.seasonsStructured) return;
             const tabBtn = document.querySelector('.tab-btn[data-tab="seasons"]');
             const tabPane = document.getElementById('tab-seasons');
 
@@ -12632,6 +12641,7 @@ class MovieDetailsManager {
             }
         } catch (e) {
             if (!this.isPageContextCurrent(pageContext)) return;
+            if (this.getRenderEnrichmentSnapshot(movieId)?.seasonsStructured) return;
             console.warn('[MovieDetails] Scraper seasons fallback failed (continuing gracefully):', e);
             const tabBtn = document.querySelector('.tab-btn[data-tab="seasons"]');
             if (tabBtn) tabBtn.style.display = 'none';
