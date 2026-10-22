@@ -104,6 +104,7 @@ const context = vm.createContext({
 
 const scriptSource = pageSource
     .replace(/^import \{ i18n \} from .*$/m, '')
+    .replace(/^import \{ ProfileInsightsView \} from .*$/m, 'class ProfileInsightsView {}')
     + '\nglobalThis.ProfilePageManager = ProfilePageManager; globalThis.safeImageUrl = safeImageUrl;';
 vm.runInContext(scriptSource, context, { filename: 'profile.js' });
 const { ProfilePageManager, safeImageUrl } = context;
