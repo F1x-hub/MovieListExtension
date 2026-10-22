@@ -26,7 +26,7 @@ assert.ok(
         < releaseWorkflow.indexOf('Create draft release with all assets'),
     'Firebase authentication must pass before a GitHub draft is created or updated'
 );
-assert.match(releaseWorkflow, /firebase-tools@latest deploy --only hosting/);
+assert.match(releaseWorkflow, /firebase-tools@15.34.0 deploy --only hosting/);
 assert.match(releaseWorkflow, /--config firebase.updates.json/);
 assert.match(releaseWorkflow, /Create Firebase Hosting API access token/);
 assert.match(releaseWorkflow, /create-google-access-token\.cjs/);

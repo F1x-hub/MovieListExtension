@@ -413,6 +413,7 @@ keeps npm-compatible three-component semver metadata.
 
 ### Fixes
 
+- The release workflow pins `firebase-tools@15.34.0` for the update-mirror deploy: 15.34.1 started reading service enablement through `serviceusage.googleapis.com`, which the release service account is not allowed to do, and failed the 1.4.0 release with HTTP 403.
 - The «Эфир» page and the random page's movie marathon, pool and wheel are translated: their text moved into `live_page.*` and `random.pool_marathon.*` locale keys with English and Russian versions. The live page loads the locale before its first render and re-renders on a language switch; the wheel overlay is now built after the locale loads, so it no longer starts in the default language. Server-side error texts of the live channel services stay Russian. `randomMarathonContract` now checks the random stop point inside the winner's slice instead of the old slice-center formula.
 - Series pages no longer lose the «Сезоны» tab on the first visit: a scraper fallback started from the partial first render no longer hides or overwrites the seasons that the complete movie already rendered.
 - Random pool movies saved without a poster now load the Kinopoisk poster by id, like the marathon list. If no poster loads, the empty slot is kept so the row layout no longer shifts.
