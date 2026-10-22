@@ -412,6 +412,7 @@ keeps npm-compatible three-component semver metadata.
 
 ### Fixes
 
+- Series pages no longer lose the «Сезоны» tab on the first visit: a scraper fallback started from the partial first render no longer hides or overwrites the seasons that the complete movie already rendered.
 - Random pool movies saved without a poster now load the Kinopoisk poster by id, like the marathon list. If no poster loads, the empty slot is kept so the row layout no longer shifts.
 - The random wheel now stops at a random point inside the chosen movie's slice instead of always its exact center. When only one movie is left in a marathon, the wheel is skipped: the button reads «Выбрать последний фильм» and the movie is picked at once, ready to be marked as watched.
 - The player drops backdrop blur from its overlays in fullscreen, aimed at stutter when a fullscreen broadcast or movie window loses focus.
