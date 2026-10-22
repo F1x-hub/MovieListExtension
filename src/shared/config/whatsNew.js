@@ -1,5 +1,16 @@
 export const whatsNew = [
     {
+        id: '1.4.0', version: '1.4.0', date: '2026-10-22',
+        highlights: [
+            { id: 'profile-favorites', title: { ru: 'Любимые фильмы в профиле', en: 'Favorite movies on your profile' }, text: { ru: 'Закрепите до пяти любимых фильмов вверху профиля: выберите их из своих оценок и расставьте по местам перетаскиванием.', en: 'Pin up to five favorite movies at the top of your profile: pick them from your ratings and drag them into order.' } },
+            { id: 'profile-stats', title: { ru: 'Статистика и совпадение вкусов', en: 'Statistics and taste match' }, text: { ru: 'Время за просмотром, оценки по месяцам, любимые десятилетия, актёры и режиссёры. В чужом профиле видно, насколько ваши вкусы совпадают.', en: 'Watch time, ratings per month, favorite decades, actors and directors. Another user\'s profile shows how closely your tastes match.' } },
+            { id: 'hdrezka', title: { ru: 'Новый источник HDRezka', en: 'A new HDRezka source' }, text: { ru: 'Фильмы с HDRezka с выбором качества и озвучки прямо в плеере расширения.', en: 'Films from HDRezka with quality and voiceover choice right in the extension player.' } },
+            { id: 'live-smooth', title: { ru: 'Эфир плавнее', en: 'Smoother Live' }, text: { ru: 'Полноэкранный показ больше не подтормаживает, когда окно не в фокусе, а по названию фильма можно перейти к его странице и оценить.', en: 'Fullscreen showings no longer stutter when the window is not focused, and the film title opens its page so you can rate it.' } },
+            { id: 'wheel', title: { ru: 'Честнее колесо марафона', en: 'A fairer marathon wheel' }, text: { ru: 'Колесо останавливается в случайной точке фильма, а когда остаётся последний фильм, он выбирается сразу без вращения.', en: 'The wheel stops at a random point of the chosen film, and the last remaining film is picked at once without a spin.' } },
+            { id: 'english', title: { ru: 'Эфир и марафон на английском', en: 'Live and marathon in English' }, text: { ru: 'Страница «Эфир», киномарафон, пул и колесо теперь переведены на английский язык.', en: 'The Live page, movie marathon, pool and wheel are now translated into English.' } }
+        ]
+    },
+    {
         id: '1.3.10', version: '1.3.10', date: '2026-10-19',
         highlights: [
             { id: 'halloween', title: { ru: 'Хэллоуин в расширении', en: 'Halloween in the extension' }, text: { ru: 'С 17 октября по 7 ноября: тыква-логотип, гирлянда, кладбище с призраком и тыквы по краям экрана. Оформление отключается в Настройках.', en: 'From 17 October to 7 November: a pumpkin logo, a lantern garland, a graveyard with a ghost and pumpkins at the screen edges. Turn it off in Settings.' } },
