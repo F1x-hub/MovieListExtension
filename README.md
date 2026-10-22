@@ -413,6 +413,7 @@ keeps npm-compatible three-component semver metadata.
 
 ### Fixes
 
+- The «Эфир» page and the random page's movie marathon, pool and wheel are translated: their text moved into `live_page.*` and `random.pool_marathon.*` locale keys with English and Russian versions. The live page loads the locale before its first render and re-renders on a language switch; the wheel overlay is now built after the locale loads, so it no longer starts in the default language. Server-side error texts of the live channel services stay Russian. `randomMarathonContract` now checks the random stop point inside the winner's slice instead of the old slice-center formula.
 - Series pages no longer lose the «Сезоны» tab on the first visit: a scraper fallback started from the partial first render no longer hides or overwrites the seasons that the complete movie already rendered.
 - Random pool movies saved without a poster now load the Kinopoisk poster by id, like the marathon list. If no poster loads, the empty slot is kept so the row layout no longer shifts.
 - The random wheel now stops at a random point inside the chosen movie's slice instead of always its exact center. When only one movie is left in a marathon, the wheel is skipped: the button reads «Выбрать последний фильм» and the movie is picked at once, ready to be marked as watched.
