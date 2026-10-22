@@ -37,7 +37,9 @@ service cloud.firestore {
         && (!keys.hasAny(['lastName']) || (data.lastName is string && data.lastName.size() <= 50))
         && (!keys.hasAny(['displayName']) || (data.displayName is string && data.displayName.size() <= 200))
         && (!keys.hasAny(['bio']) || (data.bio is string && data.bio.size() <= 200))
-        && (!keys.hasAny(['displayNameFormat']) || data.displayNameFormat in ['fullname', 'username']);
+        && (!keys.hasAny(['displayNameFormat']) || data.displayNameFormat in ['fullname', 'username'])
+        // Pinned top-5 favorites shown on the profile.
+        && (!keys.hasAny(['pinnedMovies']) || (data.pinnedMovies is list && data.pinnedMovies.size() <= 5));
     }
 
     // Helper function to check if user is admin

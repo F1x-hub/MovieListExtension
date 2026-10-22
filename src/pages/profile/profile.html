@@ -45,6 +45,7 @@
     <script src="../../shared/services/ProgressService.js"></script>
     <script src="../../shared/services/ImageCacheService.js"></script>
     <script src="../../shared/services/ProfileService.js"></script>
+    <script src="../../shared/services/CommentReactionService.js"></script>
     <script src="../../shared/utils/Utils.js"></script>
     <script src="../../shared/utils/genreStats.js"></script>
     <script src="../../shared/utils/IconUtils.js"></script>
@@ -118,6 +119,15 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Pinned favorites (top 5) -->
+            <section class="profile-favorites" id="profileFavorites" hidden>
+                <div class="profile-favorites__header">
+                    <h2 class="section-title" data-i18n="profile.insights.pinned_title">Любимые фильмы</h2>
+                    <p class="dashboard-section-subtitle" id="profileFavoritesHint" hidden></p>
+                </div>
+                <div class="profile-favorites__list" id="profileFavoritesList"></div>
+            </section>
 
             <!-- Statistics Grid -->
             <div class="profile-stats" id="profileStats">
@@ -214,6 +224,9 @@
                     </div>
                 </section>
             </div>
+
+            <!-- Insights: statistics, taste match, reactions, marathons -->
+            <div class="profile-insights" id="profileInsights" hidden></div>
 
             <!-- Recent Ratings Showcase -->
             <div class="recent-ratings-section">

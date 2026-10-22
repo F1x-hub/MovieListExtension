@@ -1,4 +1,5 @@
 import { i18n } from '../../shared/i18n/I18n.js';
+import { ProfileInsightsView } from './ProfileInsightsView.js';
 
 // Movie metadata comes from shared Firestore documents that any approved user may
 // edit, so image URLs are limited to the same schemes MovieCard.safeImageUrl allows.
@@ -27,7 +28,7 @@ class ProfilePageManager {
     // e-mail, admin/approval flags and preferences are never written to disk.
     static CACHED_PROFILE_FIELDS = [
         'uid', 'firstName', 'lastName', 'displayName', 'username', 'bio', 'photoURL',
-        'bannerURL', 'displayNameFormat', 'topGenres', 'socialLinks', 'stats'
+        'bannerURL', 'displayNameFormat', 'topGenres', 'socialLinks', 'stats', 'pinnedMovies'
     ];
     static OWN_CACHED_PROFILE_FIELDS = ['photoPath', 'bannerPath'];
 
@@ -112,6 +113,18 @@ class ProfilePageManager {
         this.firebaseReady = false;
         this.profileLoadId = 0;
         this.modalReturnFocus = new Map();
+        // Firestore services are attached in setupFirebase(); pinned favorites
+        // already render from the cached profile before that.
+        this.insightsView = new ProfileInsightsView({
+            db: null,
+            profileService: null,
+            userService: null,
+            i18n,
+            safeImageUrl,
+            escapeHtml: value => Utils.escapeHtml(value),
+            movieUrl: movieId => chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${encodeURIComponent(movieId)}`),
+            onPinnedChange: pinned => this.savePinnedMovies(pinned)
+        });
 
         this.init();
     }
@@ -506,6 +519,7 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
         firebaseManager.initializeServices();
         this.userService = firebaseManager.getUserService();
         this.profileService = new ProfileService(firebaseManager);
+        if (this.insightsView) Object.assign(this.insightsView, { db: firebaseManager.db, profileService: this.profileService, userService: this.userService });
 
         // Subscribe before waiting: a sign-in restored after the wait below (or in
         // another tab) must still load the profile instead of leaving the sign-in error.
@@ -602,7 +616,8 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
 
             await Promise.allSettled([
                 this.loadRecentRatings(targetUserId),
-                this.viewingOtherUser ? Promise.resolve() : this.loadPersonalDashboard(targetUserId)
+                this.viewingOtherUser ? Promise.resolve() : this.loadPersonalDashboard(targetUserId),
+                this.insightsView?.load({ targetUid: targetUserId, viewerUid: this.currentUser.uid, isOther: this.viewingOtherUser })
             ]);
             if (loadId !== this.profileLoadId) return;
 
@@ -747,6 +762,7 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
         }
 
         this.applyViewerMode(isUsernameFirst ? username : fullName);
+        this.insightsView?.renderFavorites(profile.pinnedMovies, { isOwn: !this.viewingOtherUser });
 
         if (this.elements.profileCover) {
             if (profile.bannerURL) {
@@ -1200,8 +1216,16 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
         const href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${encodeURIComponent(movieId)}`);
         const placeholderSvg = (typeof Icons !== 'undefined' && Icons.MOVIE_CLAPPER) ? Icons.MOVIE_CLAPPER : '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line></svg>';
         const safeTitle = Utils.escapeHtml(movieTitle);
+        // Only the owner pins favorites; the button sits beside the link, not inside it.
+        const pinButton = this.viewingOtherUser || !movieId || !this.insightsView ? '' : this.insightsView.pinButtonHTML({
+            movieId: String(movieId),
+            title: movie.name || movie.alternativeName || '',
+            posterUrl,
+            year: movie.year || ''
+        });
 
         return `
+            <div class="recent-rating-item${pinButton ? ' recent-rating-item--pinnable' : ''}">
             <a href="${Utils.escapeHtml(href)}" class="recent-rating-card" data-movie-id="${Utils.escapeHtml(movieId)}">
                 <div class="poster">
                     ${posterUrl 
@@ -1219,6 +1243,8 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
                     <span>${Utils.escapeHtml(rating.rating)}</span>
                 </div>
             </a>
+            ${pinButton}
+            </div>
         `;
     }
 
@@ -1248,6 +1274,7 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
 
         const ratingsHTML = uniqueRatings.map(rating => this.createRatingCardHTML(rating, ratedPrefix)).join('');
         this.elements.recentRatingsList.innerHTML = ratingsHTML;
+        this.insightsView?.bindPinButtons(this.elements.recentRatingsList);
     }
 
     appendRecentRatings(ratings) {
@@ -1279,6 +1306,21 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
         newCards.forEach(card => fragment.appendChild(card));
 
         this.elements.recentRatingsList.appendChild(fragment);
+    }
+
+    /** Stores the pinned top-5 on the user's profile and refreshes the profile cache. */
+    async savePinnedMovies(pinnedMovies) {
+        const uid = this.currentUser?.uid;
+        if (!uid || this.viewingOtherUser || !this.userService) throw new Error('Pinned favorites belong to the signed-in user');
+        // One write: updateUserProfile() also reads the document before and after.
+        await firebaseManager.db.collection('users').doc(uid).update({
+            pinnedMovies,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        if (this.userProfile) {
+            this.userProfile.pinnedMovies = pinnedMovies;
+            await this.saveProfileCache(uid, this.userProfile, this.userProfile.stats);
+        }
     }
 
     openEditModal() {
