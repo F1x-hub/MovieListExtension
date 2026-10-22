@@ -103,9 +103,10 @@ class RandomManager {
 
 
     async init() {
-        this._buildRollOverlay();
         await i18n.init();
         if (this._disposed) return;
+        // The wheel overlay is built from translated text, so the locale must be loaded first.
+        this._buildRollOverlay();
         i18n.translatePage();
         
         this.populateFilterData();
@@ -137,6 +138,9 @@ class RandomManager {
                 this.populateFilterData();
                 this.renderTags();
                 this._restoreTagFilters(filters);
+                // Marathon and pool text is rendered from the locale, not data-i18n.
+                this._renderMarathon();
+                this._refreshPoolModalIfOpen();
                 this.setupSliders();
                 if (this.currentMovie && !this._findBusy && this.elements.movieResult.style.display !== 'none') {
                     const focused = document.activeElement;
@@ -577,7 +581,7 @@ class RandomManager {
         const btn = document.createElement('button');
         const inPool = this._isInPool(movie.kinopoiskId);
         btn.className = 'cmc-pool-btn' + (inPool ? ' in-pool' : '');
-        btn.title = inPool ? 'Убрать из пула' : 'Добавить в пул';
+        btn.title = inPool ? this._t('pool_remove') : this._t('pool_add');
         btn.innerHTML = inPool ? svgCheck : svgPlus;
         btn._poolIcons = { added: svgCheck, removed: svgPlus };
         btn.dataset.movieId = RandomPoolService.getMovieId(movie);
@@ -809,7 +813,7 @@ class RandomManager {
             const added = this._isInPool(button.dataset.movieId);
             button.classList.toggle('added', added);
             button.setAttribute('aria-pressed', String(added));
-            button.title = added ? 'Уже в пуле' : 'Добавить';
+            button.title = added ? this._t('pool_already') : this._t('add');
         }
     }
 
@@ -819,7 +823,7 @@ class RandomManager {
         const added = this._isInPool(button.dataset.movieId);
         button.classList.toggle('in-pool', added);
         button.setAttribute('aria-pressed', String(added));
-        button.title = added ? 'Убрать из пула' : 'Добавить в пул';
+        button.title = added ? this._t('pool_remove') : this._t('pool_add');
         button.setAttribute('aria-label', button.title);
         button.innerHTML = button._poolIcons[added ? 'added' : 'removed'];
     }
@@ -1060,7 +1064,7 @@ class RandomManager {
         if (image.hidden || typeof window.ImageLightbox === 'undefined') return;
         image.tabIndex = 0;
         image.setAttribute('role', 'button');
-        image.setAttribute('aria-label', `Открыть постер: ${title || 'фильм'}`);
+        image.setAttribute('aria-label', this._t('open_poster', { title: title || this._t('movie') }));
         const show = () => window.ImageLightbox.show(image.src);
         image.addEventListener('click', show);
         image.addEventListener('keydown', event => {
@@ -1173,7 +1177,7 @@ class RandomManager {
         const user = typeof firebaseManager !== 'undefined' ? firebaseManager.getCurrentUser?.() : null;
         const ownCount = displayItems.filter((item) => item.addedBy === user?.uid && item.state !== 'removed').length;
         if (!this.marathonIsAdmin && ownCount >= RandomMarathonService.maxMoviesPerUser) {
-            const error = new Error('Вы уже добавили три фильма в этот раунд.');
+            const error = new Error(this._t('err_MOVIE_LIMIT'));
             error.code = 'MOVIE_LIMIT';
             if (!this._disposed) (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: this._formatMarathonError(error) }) : window.alert(this._formatMarathonError(error)));
             return null;
@@ -1184,7 +1188,7 @@ class RandomManager {
             id: `${round.roundId}_${entry.kpId}`,
             roundId: Number(round.roundId),
             addedBy: user?.uid || '',
-            addedByName: user?.displayName || user?.email || 'участник',
+            addedByName: user?.displayName || user?.email || this._t('participant'),
             state: 'queued',
             resolvedAt: null,
             resolvedBy: null,
@@ -1205,7 +1209,7 @@ class RandomManager {
         const user = typeof firebaseManager !== 'undefined' ? firebaseManager.getCurrentUser?.() : null;
         if (error) {
             summary.textContent = error;
-            list.innerHTML = '<div class="pool-list-empty">Попробуйте открыть окно позже.</div>';
+            list.innerHTML = `<div class="pool-list-empty">${this._escapeHtml(this._t('try_later'))}</div>`;
             actions.innerHTML = '';
             this._refreshPoolModalIfOpen();
             return;
@@ -1213,10 +1217,10 @@ class RandomManager {
         if (!round) {
             const marathonSearchInput = document.getElementById('marathonSearchInput');
             if (marathonSearchInput) marathonSearchInput.disabled = true;
-            summary.textContent = user ? 'Общего раунда ещё нет.' : 'Войдите в аккаунт, чтобы участвовать в киномарафоне.';
-            list.innerHTML = '<div class="pool-list-empty">Администратор может создать новый раунд.</div>';
+            summary.textContent = user ? this._t('no_round') : this._t('sign_in');
+            list.innerHTML = `<div class="pool-list-empty">${this._escapeHtml(this._t('admin_can_create'))}</div>`;
             actions.innerHTML = this.marathonIsAdmin
-                ? '<button class="btn-roll-from-pool" data-marathon-action="create">Создать раунд</button>' : '';
+                ? `<button class="btn-roll-from-pool" data-marathon-action="create">${this._escapeHtml(this._t('create_round'))}</button>` : '';
             this._bindMarathonActions();
             this._syncMarathonActionState();
             this._refreshPoolModalIfOpen();
@@ -1231,33 +1235,33 @@ class RandomManager {
                 && (this.marathonIsAdmin || ownCount < RandomMarathonService.maxMoviesPerUser);
             marathonSearchInput.disabled = !canAdd;
             marathonSearchInput.placeholder = canAdd
-                ? 'Добавить фильм в киномарафон...'
-                : (round.status === 'collecting' ? 'Лимит три фильма достигнут' : 'Добавление закрыто после запуска');
+                ? this._t('search_add')
+                : (round.status === 'collecting' ? this._t('limit_reached') : this._t('adding_closed'));
         }
         const activeItems = displayItems.filter((item) => item.state !== 'removed');
         const resolvedCount = activeItems.filter((item) => item.state === 'watched').length;
-        const statusLabel = { collecting: 'Сбор фильмов', active: 'Марафон идёт', completed: 'Раунд завершён', cancelled: 'Раунд отменён' }[round.status] || round.status;
-        const ownCountLabel = this.marathonIsAdmin ? `${ownCount} (без лимита)` : `${ownCount}/3`;
+        const statusLabel = ['collecting', 'active', 'completed', 'cancelled'].includes(round.status) ? this._t(`status_${round.status}`) : round.status;
+        const ownCountLabel = this.marathonIsAdmin ? this._t('own_unlimited', { n: ownCount }) : `${ownCount}/3`;
         summary.replaceChildren();
         const status = document.createElement('strong');
         status.textContent = statusLabel;
-        summary.append(status, ` · Раунд ${Number(round.roundId) || 0} · ${resolvedCount} просмотрено из ${activeItems.length}. Ваших фильмов: ${ownCountLabel}`);
+        summary.append(status, this._t('summary', { round: Number(round.roundId) || 0, done: resolvedCount, total: activeItems.length, own: ownCountLabel }));
         list.innerHTML = '';
-        if (!displayItems.length) list.innerHTML = '<div class="pool-list-empty">Пока никто не добавил фильм.</div>';
+        if (!displayItems.length) list.innerHTML = `<div class="pool-list-empty">${this._escapeHtml(this._t('round_empty'))}</div>`;
         displayItems.forEach((item) => {
             const row = document.createElement('div');
             row.className = 'pool-list-item marathon-list-item';
             row.tabIndex = 0;
             row.setAttribute('role', 'button');
-            row.setAttribute('aria-label', `Открыть фильм ${item.title || 'Без названия'}`);
+            row.setAttribute('aria-label', this._t('open_movie', { title: item.title || this._t('untitled') }));
             const stateLabel = item.__pending
-                ? 'добавляется…'
-                : ({ queued: 'в очереди', selected: 'выпал', watched: 'просмотрен', removed: 'удалён' }[item.state] || item.state);
-            const addedBy = item.addedByName || item.addedBy || 'участник';
+                ? this._t('state_adding')
+                : (['queued', 'selected', 'watched', 'removed'].includes(item.state) ? this._t(`state_${item.state}`) : item.state);
+            const addedBy = item.addedByName || item.addedBy || this._t('participant');
             const posterUrls = getMarathonPosterUrls(item.poster, item.kpId);
             const poster = document.createElement('img');
             poster.className = 'marathon-item-poster';
-            poster.alt = item.title ? `Открыть постер фильма «${item.title}»` : 'Открыть постер фильма';
+            poster.alt = item.title ? this._t('open_poster_of', { title: item.title }) : this._t('open_poster_plain');
             let posterUrlIndex = 0;
             const markPosterUnavailable = () => {
                 poster.classList.add('marathon-item-poster--unavailable');
@@ -1277,7 +1281,7 @@ class RandomManager {
             if (posterUrls.length) {
                 poster.addEventListener('error', loadNextPoster);
                 poster.setAttribute('role', 'button');
-                poster.title = 'Увеличить постер';
+                poster.title = this._t('zoom_poster');
                 const openPoster = (event) => {
                     event.stopPropagation();
                     if (!poster.hasAttribute('src')) return;
@@ -1298,14 +1302,14 @@ class RandomManager {
             meta.className = 'pool-list-item-meta';
             const title = document.createElement('div');
             title.className = 'pool-list-item-title';
-            title.textContent = item.title || 'Без названия';
+            title.textContent = item.title || this._t('untitled');
             const sub = document.createElement('div');
             sub.className = 'pool-list-item-sub';
             sub.textContent = item.year || '';
             const author = document.createElement('div');
             author.className = 'marathon-item-author';
             const authorLabel = document.createElement('span');
-            authorLabel.textContent = 'Добавил:';
+            authorLabel.textContent = this._t('added_by');
             author.append(authorLabel, ` ${addedBy}`);
             meta.append(title, sub, author);
             const state = document.createElement('span');
@@ -1328,8 +1332,8 @@ class RandomManager {
             if (!item.__pending && ((round.status === 'collecting' && item.addedBy === user?.uid) || (this.marathonIsAdmin && item.state !== 'watched' && item.state !== 'removed'))) {
                 const remove = document.createElement('button');
                 remove.className = 'pool-list-item-remove';
-                remove.title = 'Удалить из марафона';
-                remove.setAttribute('aria-label', `Удалить ${item.title || 'фильм'} из марафона`);
+                remove.title = this._t('remove_from_marathon');
+                remove.setAttribute('aria-label', this._t('remove_title_from_marathon', { title: item.title || this._t('movie') }));
                 remove.textContent = '×';
                 remove.addEventListener('click', async (event) => {
                     event.stopPropagation();
@@ -1349,24 +1353,24 @@ class RandomManager {
             const currentLink = document.createElement('a');
             currentLink.className = 'marathon-current-movie-link';
             currentLink.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${current.kpId}`);
-            currentLink.textContent = current.title || 'Без названия';
-            currentLabel.append('Сейчас выпал фильм: ', currentLink);
+            currentLink.textContent = current.title || this._t('untitled');
+            currentLabel.append(this._t('current_movie'), currentLink);
             list.prepend(currentLabel);
         }
         actions.innerHTML = '';
         if (this.marathonIsAdmin && round.status === 'collecting') {
-            actions.innerHTML += '<button class="btn-roll-from-pool" data-marathon-action="start">Начать марафон</button>';
+            actions.innerHTML += `<button class="btn-roll-from-pool" data-marathon-action="start">${this._escapeHtml(this._t('start_marathon'))}</button>`;
         }
         if (this.marathonIsAdmin && round.status === 'active' && !round.currentItemId) {
             const queuedCount = displayItems.filter((item) => item.state !== 'watched' && item.state !== 'removed').length;
-            const rollLabel = queuedCount === 1 ? 'Выбрать последний фильм' : 'Крутить рулетку';
+            const rollLabel = this._escapeHtml(queuedCount === 1 ? this._t('pick_last') : this._t('spin_wheel'));
             actions.innerHTML += `<button class="btn-roll-from-pool" data-marathon-action="roll">${rollLabel}</button>`;
         }
         if (this.marathonIsAdmin && round.status === 'active' && current) {
-            actions.innerHTML += '<button class="btn-roll-from-pool" data-marathon-action="watched">Отметить просмотренным</button><button class="btn btn-danger" data-marathon-action="removed">Удалить выпавший</button>';
+            actions.innerHTML += `<button class="btn-roll-from-pool" data-marathon-action="watched">${this._escapeHtml(this._t('mark_watched'))}</button><button class="btn btn-danger" data-marathon-action="removed">${this._escapeHtml(this._t('remove_picked'))}</button>`;
         }
         if (this.marathonIsAdmin && ['completed', 'cancelled'].includes(round.status)) {
-            actions.innerHTML += '<button class="btn-roll-from-pool" data-marathon-action="create">Открыть новый раунд</button>';
+            actions.innerHTML += `<button class="btn-roll-from-pool" data-marathon-action="create">${this._escapeHtml(this._t('open_new_round'))}</button>`;
         }
         this._bindMarathonActions();
         this._syncMarathonActionState();
@@ -1406,7 +1410,7 @@ class RandomManager {
         }
 
         this._showRollAnimation(candidates, winnerIndex, {
-            actionLabel: () => 'Вернуться к марафону',
+            actionLabel: () => this._t('back_to_marathon'),
             onWinner: async (_winner, overlay) => {
                 this._closeModal(overlay.id);
                 this._renderMarathon();
@@ -1424,11 +1428,11 @@ class RandomManager {
         if (!candidates.length || !overlay || !wheel || !center || !actionsBox) return;
 
         this._renderRollCandidates(wheel, candidates);
-        if (title) title.textContent = 'Выбираем фильм...';
+        if (title) title.textContent = this._t('choosing');
         actionsBox.style.visibility = 'hidden';
         overlay.querySelector('#rollPoolHint').hidden = true;
         center.disabled = true;
-        center.textContent = 'Крутим';
+        center.textContent = this._t('spinning');
         wheel.classList.add('roll-wheel--pending');
         this._openModal('rollAnimOverlay');
         this._setRollBusy(true);
@@ -1489,10 +1493,10 @@ class RandomManager {
 
     _syncMarathonActionState() {
         const labels = {
-            create: 'Создаём…',
-            start: 'Запускаем…',
-            watched: 'Отмечаем…',
-            removed: 'Удаляем…'
+            create: this._t('pending_create'),
+            start: this._t('pending_start'),
+            watched: this._t('pending_watched'),
+            removed: this._t('pending_removed')
         };
         const buttons = [...document.querySelectorAll('#marathonActions [data-marathon-action]')];
         const loadingButton = this._marathonMutationRunning && this._marathonPendingAction
@@ -1504,7 +1508,7 @@ class RandomManager {
             button.classList.toggle('marathon-action-loading', loading);
             if (loading) {
                 button.dataset.marathonIdleLabel ||= button.textContent;
-                button.textContent = labels[this._marathonPendingAction] || 'Сохраняем…';
+                button.textContent = labels[this._marathonPendingAction] || this._t('pending_saving');
                 button.setAttribute('aria-busy', 'true');
             } else {
                 if (button.dataset.marathonIdleLabel) {
@@ -1548,39 +1552,39 @@ class RandomManager {
 
     _formatMarathonError(error) {
         const messages = {
-            AUTH_REQUIRED: 'Войдите в аккаунт, чтобы выполнить это действие.',
-            ADMIN_REQUIRED: 'Это действие доступно только администратору.',
-            APPROVAL_REQUIRED: 'Ваш аккаунт ещё не одобрен для участия в киномарафоне.',
-            MOVIE_LIMIT: 'Вы уже добавили три фильма в этот раунд.',
-            COLLECTION_CLOSED: 'Сбор фильмов уже закрыт: раунд начат.',
-            DUPLICATE_MOVIE: 'Этот фильм уже добавлен в текущий раунд.',
-            MOVIE_NOT_FOUND: 'Фильм уже удалён или относится к другому раунду.',
-            STALE_MOVIE: 'Фильм относится к завершённому раунду.',
-            INVALID_ITEM: 'Не удалось определить фильм для удаления.',
-            FORBIDDEN: 'У вас нет права удалить этот фильм.',
-            EMPTY_ROUND: 'Добавьте хотя бы один фильм перед запуском.',
-            ROUND_NOT_FOUND: 'Активный раунд не найден.',
-            ROUND_NOT_COLLECTING: 'Сбор фильмов уже закрыт.',
-            CURRENT_MOVIE_EXISTS: 'Сначала завершите текущий фильм.',
-            CURRENT_MOVIE_MISSING: 'Сначала выберите фильм рулеткой.',
-            CURRENT_MOVIE_STALE: 'Текущий фильм уже обработан. Обновите окно.',
-            ROUND_NOT_ACTIVE: 'Раунд сейчас не запущен.',
-            ROUND_IN_PROGRESS: 'Текущий раунд ещё не завершён.',
-            ORIGIN_NOT_ALLOWED: 'Источник запроса не разрешён.',
-            INVALID_MOVIE: 'Не удалось проверить данные фильма.',
-            INVALID_RESOLUTION: 'Неизвестный результат просмотра.'
+            AUTH_REQUIRED: this._t('err_AUTH_REQUIRED'),
+            ADMIN_REQUIRED: this._t('err_ADMIN_REQUIRED'),
+            APPROVAL_REQUIRED: this._t('err_APPROVAL_REQUIRED'),
+            MOVIE_LIMIT: this._t('err_MOVIE_LIMIT'),
+            COLLECTION_CLOSED: this._t('err_COLLECTION_CLOSED'),
+            DUPLICATE_MOVIE: this._t('err_DUPLICATE_MOVIE'),
+            MOVIE_NOT_FOUND: this._t('err_MOVIE_NOT_FOUND'),
+            STALE_MOVIE: this._t('err_STALE_MOVIE'),
+            INVALID_ITEM: this._t('err_INVALID_ITEM'),
+            FORBIDDEN: this._t('err_FORBIDDEN'),
+            EMPTY_ROUND: this._t('err_EMPTY_ROUND'),
+            ROUND_NOT_FOUND: this._t('err_ROUND_NOT_FOUND'),
+            ROUND_NOT_COLLECTING: this._t('err_ROUND_NOT_COLLECTING'),
+            CURRENT_MOVIE_EXISTS: this._t('err_CURRENT_MOVIE_EXISTS'),
+            CURRENT_MOVIE_MISSING: this._t('err_CURRENT_MOVIE_MISSING'),
+            CURRENT_MOVIE_STALE: this._t('err_CURRENT_MOVIE_STALE'),
+            ROUND_NOT_ACTIVE: this._t('err_ROUND_NOT_ACTIVE'),
+            ROUND_IN_PROGRESS: this._t('err_ROUND_IN_PROGRESS'),
+            ORIGIN_NOT_ALLOWED: this._t('err_ORIGIN_NOT_ALLOWED'),
+            INVALID_MOVIE: this._t('err_INVALID_MOVIE'),
+            INVALID_RESOLUTION: this._t('err_INVALID_RESOLUTION')
         };
         if (error?.code && messages[error.code]) return messages[error.code];
         if (error?.code === 'permission-denied' || /permission|insufficient permissions/i.test(error?.message || '')) {
-            return 'Нет доступа к киномарафону. Проверьте, что опубликованы правила Firestore и ваш аккаунт одобрен администратором.';
+            return this._t('no_access');
         }
-        return error?.message || 'Не удалось выполнить действие';
+        return error?.message || this._t('action_failed');
     }
 
     async _searchForMarathon(query, searchId = ++this._marathonSearchId) {
         const results = document.getElementById('marathonSearchResults');
         if (!results || !this.marathonService) return;
-        results.innerHTML = '<div style="padding:12px;color:#999;font-size:13px">Поиск...</div>';
+        results.innerHTML = `<div style="padding:12px;color:#999;font-size:13px">${this._escapeHtml(this._t('searching'))}</div>`;
         results.classList.remove('hidden');
         try {
             const data = await this.kinopoiskService.searchMovies(query, 1, 20);
@@ -1588,7 +1592,7 @@ class RandomManager {
             const movies = data.docs || [];
             results.innerHTML = '';
             if (!movies.length) {
-                results.innerHTML = '<div style="padding:12px;color:#999;font-size:13px">Ничего не найдено</div>';
+                results.innerHTML = `<div style="padding:12px;color:#999;font-size:13px">${this._escapeHtml(this._t('nothing_found'))}</div>`;
                 return;
             }
             movies.slice(0, 8).forEach((movie) => {
@@ -1606,7 +1610,7 @@ class RandomManager {
                 button.type = 'button';
                 button.className = 'pool-result-add';
                 button.textContent = '+';
-                button.setAttribute('aria-label', 'Добавить фильм в киномарафон');
+                button.setAttribute('aria-label', this._t('add_to_marathon'));
                 row.append(poster, meta, button);
                 this._makePosterAccessible(poster, movie.name || movie.alternativeName);
                 row.querySelector('button').addEventListener('click', async (event) => {
@@ -1620,8 +1624,15 @@ class RandomManager {
             });
         } catch (error) {
             if (this._disposed || searchId !== this._marathonSearchId || document.getElementById('marathonSearchInput').value.trim() !== query) return;
-            results.innerHTML = `<div style="padding:12px;color:#999;font-size:13px">${this._escapeHtml(error.message || 'Ошибка поиска')}</div>`;
+            results.innerHTML = `<div style="padding:12px;color:#999;font-size:13px">${this._escapeHtml(error.message || this._t('search_error'))}</div>`;
         }
+    }
+
+    /** Marathon, pool and wheel text in the interface language. */
+    _t(key, params = {}) {
+        let text = i18n.get(`random.pool_marathon.${key}`);
+        Object.entries(params).forEach(([name, value]) => { text = text.replaceAll(`{${name}}`, String(value)); });
+        return text;
     }
 
     _escapeHtml(value) {
@@ -1631,7 +1642,7 @@ class RandomManager {
     /** Search Kinopoisk and display dropdown results */
     async _searchForPool(query, searchId = ++this._poolSearchId) {
         const resultsEl = document.getElementById('poolSearchResults');
-        resultsEl.innerHTML = '<div style="padding:12px;color:#999;font-size:13px">Поиск...</div>';
+        resultsEl.innerHTML = `<div style="padding:12px;color:#999;font-size:13px">${this._escapeHtml(this._t('searching'))}</div>`;
         resultsEl.classList.remove('hidden');
 
         try {
@@ -1645,14 +1656,14 @@ class RandomManager {
             this._poolRenderedQuery = query;
         } catch {
             if (this._disposed || searchId !== this._poolSearchId || document.getElementById('poolSearchInput').value.trim() !== query) return;
-            resultsEl.innerHTML = '<div style="padding:12px;color:#e74c3c;font-size:13px">Ошибка поиска</div>';
+            resultsEl.innerHTML = `<div style="padding:12px;color:#e74c3c;font-size:13px">${this._escapeHtml(this._t('search_error'))}</div>`;
         }
     }
 
     /** Render dropdown search results */
     _renderSearchResults(movies, container) {
         if (!movies.length) {
-            container.innerHTML = '<div style="padding:12px;color:#999;font-size:13px">Ничего не найдено</div>';
+            container.innerHTML = `<div style="padding:12px;color:#999;font-size:13px">${this._escapeHtml(this._t('nothing_found'))}</div>`;
             return;
         }
         container.innerHTML = '';
@@ -1670,15 +1681,15 @@ class RandomManager {
             sub.className = 'pool-result-sub';
             const rawRating = m.kpRating;
             const rating = rawRating !== null && rawRating !== undefined && rawRating !== '' && Number.isFinite(Number(rawRating)) ? Number(rawRating).toFixed(1) : '—';
-            sub.textContent = `${m.year || ''} · КП ${rating}`;
+            sub.textContent = this._t('kp_rating', { year: m.year || '', rating });
             meta.append(title, sub);
             const addBtn = document.createElement('button');
             addBtn.type = 'button';
             addBtn.className = `pool-result-add${inPool ? ' added' : ''}`;
             addBtn.textContent = '+';
             addBtn.dataset.movieId = kpId;
-            addBtn.title = inPool ? 'Уже в пуле' : 'Добавить';
-            addBtn.setAttribute('aria-label', `Добавить в пул: ${m.name || m.alternativeName || 'фильм'}`);
+            addBtn.title = inPool ? this._t('pool_already') : this._t('add');
+            addBtn.setAttribute('aria-label', this._t('add_to_pool_title', { title: m.name || m.alternativeName || this._t('movie') }));
             addBtn.setAttribute('aria-pressed', String(inPool));
             addBtn.addEventListener('click', async () => {
                 if (!this._isInPool(kpId)) await this._mutatePool(() => RandomPoolService.addMovie(m), addBtn);
@@ -1693,7 +1704,7 @@ class RandomManager {
         const list = document.getElementById('poolList');
         list.innerHTML = '';
         if (!this.pool.length) {
-            list.innerHTML = '<div class="pool-list-empty">Пул пуст. Добавляй фильмы через поиск или кнопку «+» на постере.</div>';
+            list.innerHTML = `<div class="pool-list-empty">${this._escapeHtml(this._t('pool_empty'))}</div>`;
             return;
         }
 
@@ -1728,7 +1739,7 @@ class RandomManager {
             let dateStr;
             const today = new Date();
             if (today.toDateString() === addedDate.toDateString()) {
-                dateStr = 'сегодня';
+                dateStr = this._t('today');
             } else {
                 dateStr = addedDate.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
             }
@@ -1739,9 +1750,9 @@ class RandomManager {
                 && marathonItem.state !== 'removed'
             );
             const marathonAction = inMarathon
-                ? '<span class="pool-list-item-marathon-state" aria-label="Фильм уже в киномарафоне">В марафоне</span>'
+                ? `<span class="pool-list-item-marathon-state" aria-label="${this._escapeHtml(this._t('in_marathon_label'))}">${this._escapeHtml(this._t('in_marathon'))}</span>`
                 : (marathonCanAdd
-                    ? `<button type="button" class="pool-list-item-marathon-add" title="Добавить в киномарафон" aria-label="Добавить ${this._escapeHtml(m.title || 'фильм')} в киномарафон">В марафон</button>`
+                    ? `<button type="button" class="pool-list-item-marathon-add" title="${this._escapeHtml(this._t('to_marathon_title'))}" aria-label="${this._escapeHtml(this._t('to_marathon_aria', { title: m.title || this._t('movie') }))}">${this._escapeHtml(this._t('to_marathon'))}</button>`
                     : '');
             const item = document.createElement('div');
             item.className = 'pool-list-item';
@@ -1750,16 +1761,16 @@ class RandomManager {
                 <img alt="">
                 <div class="pool-list-item-meta">
                     <a class="pool-list-item-title" href="${chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${m.kpId}`)}">${this._escapeHtml(m.title || '—')}</a>
-                    <div class="pool-list-item-sub">${this._escapeHtml(m.year || '')} · КП ${ratingLabel}</div>
+                    <div class="pool-list-item-sub">${this._escapeHtml(this._t('kp_rating', { year: m.year || '', rating: ratingLabel }))}</div>
                     <div class="pool-list-item-bonus">
-                        <span>Добавлен: ${dateStr}</span>
-                        <span class="bonus-tag" title="Базовый шанс + ${bonusPercent}% (+1% за каждый день)">+${bonusPercent}%</span>
-                        <span class="chance-tag" title="Итоговый шанс выпадения">${chancePercent}%</span>
+                        <span>${this._escapeHtml(this._t('added_on', { date: dateStr }))}</span>
+                        <span class="bonus-tag" title="${this._escapeHtml(this._t('bonus_title', { n: bonusPercent }))}">+${bonusPercent}%</span>
+                        <span class="chance-tag" title="${this._escapeHtml(this._t('chance_title'))}">${chancePercent}%</span>
                     </div>
                 </div>
                 <div class="pool-list-item-actions">
                     ${marathonAction}
-                    <button type="button" class="pool-list-item-remove" title="Удалить из пула" aria-label="Удалить ${this._escapeHtml(m.title || 'фильм')} из пула">
+                    <button type="button" class="pool-list-item-remove" title="${this._escapeHtml(this._t('pool_remove'))}" aria-label="${this._escapeHtml(this._t('remove_from_pool_aria', { title: m.title || this._t('movie') }))}">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                     </svg>
@@ -1837,7 +1848,7 @@ class RandomManager {
             },
             reroll: () => this._rollFromPool(),
             poolRemovalHint: true,
-            actionLabel: (winner) => `Смотреть · ${winner.title}`
+            actionLabel: (winner) => this._t('watch_title', { title: winner.title })
         });
     }
 
@@ -1849,36 +1860,36 @@ class RandomManager {
         el.className = 'roll-modal-overlay hidden';
         el.innerHTML = `
             <div class="roll-modal-box" role="dialog" aria-modal="true" aria-labelledby="rollTitle">
-                <button class="roll-settings-btn" id="rollSettingsBtn" type="button" aria-label="Настроить время вращения" aria-expanded="false" aria-controls="rollSettingsPanel">
+                <button class="roll-settings-btn" id="rollSettingsBtn" type="button" aria-label="${this._escapeHtml(this._t('wheel_settings'))}" aria-expanded="false" aria-controls="rollSettingsPanel">
                     <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-1.88 1.88-.06-.06A1.7 1.7 0 0 0 16 18.4a1.7 1.7 0 0 0-1 1.57V21h-6v-1.03A1.7 1.7 0 0 0 8 18.4a1.7 1.7 0 0 0-1.88.34l-.06.06-1.88-1.88.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.57-1H2v-4h1.03A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88L4.2 7.06l1.88-1.88.06.06A1.7 1.7 0 0 0 8 5.6a1.7 1.7 0 0 0 1-1.57V3h6v1.03A1.7 1.7 0 0 0 16 5.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 1.88 1.88-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.57 1H22v4h-1.03A1.7 1.7 0 0 0 19.4 15Z"/></svg>
                 </button>
-                <button class="roll-volume-btn" id="rollVolumeBtn" type="button" aria-label="Громкость" aria-expanded="false" aria-controls="rollVolumePanel">
+                <button class="roll-volume-btn" id="rollVolumeBtn" type="button" aria-label="${this._escapeHtml(this._t('volume'))}" aria-expanded="false" aria-controls="rollVolumePanel">
                     <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path class="roll-volume-waves" d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/><path class="roll-volume-muted-mark" d="m16 9 5 6m0-6-5 6"/></svg>
                 </button>
-                <button class="roll-close-btn" id="rollCloseBtn" type="button" aria-label="Закрыть колесо">×</button>
-                <div class="roll-title" id="rollTitle">Колесо фильмов</div>
+                <button class="roll-close-btn" id="rollCloseBtn" type="button" aria-label="${this._escapeHtml(this._t('close_wheel'))}">×</button>
+                <div class="roll-title" id="rollTitle">${this._escapeHtml(this._t('wheel_title'))}</div>
                 <form class="roll-settings-panel" id="rollSettingsPanel" novalidate hidden>
-                    <label for="rollDurationInput">Время вращения</label>
-                    <div class="roll-settings-field"><input id="rollDurationInput" type="number" min="2" max="1800" step="1" inputmode="numeric" aria-describedby="rollSettingsHint rollSettingsError" required><span>секунд</span></div>
-                    <div class="roll-settings-hint" id="rollSettingsHint">От 2 секунд до 30 минут (1800 секунд). Начало быстрое, конец плавный.</div>
+                    <label for="rollDurationInput">${this._escapeHtml(this._t('spin_time'))}</label>
+                    <div class="roll-settings-field"><input id="rollDurationInput" type="number" min="2" max="1800" step="1" inputmode="numeric" aria-describedby="rollSettingsHint rollSettingsError" required><span>${this._escapeHtml(this._t('seconds'))}</span></div>
+                    <div class="roll-settings-hint" id="rollSettingsHint">${this._escapeHtml(this._t('spin_hint'))}</div>
                     <div class="roll-settings-error" id="rollSettingsError" aria-live="polite"></div>
-                    <button class="roll-settings-save" type="submit">Сохранить</button>
+                    <button class="roll-settings-save" type="submit">${this._escapeHtml(this._t('save'))}</button>
                 </form>
                 <div class="popover-surface roll-volume-panel roll-volume-control" id="rollVolumePanel" hidden>
-                    <label for="rollVolumeInput">Громкость</label>
+                    <label for="rollVolumeInput">${this._escapeHtml(this._t('volume'))}</label>
                     <output id="rollVolumeValue" for="rollVolumeInput" aria-hidden="true"></output>
                     <input id="rollVolumeInput" type="range" min="0" max="100" step="1">
                 </div>
                 <div class="roll-wheel-stage">
                     <div class="roll-wheel-pointer" aria-hidden="true"></div>
                     <div class="roll-wheel-frame"><div class="roll-wheel" id="rollWheel" aria-hidden="true"></div></div>
-                    <button class="roll-wheel-center" id="rollCenterBtn">Крутить</button>
+                    <button class="roll-wheel-center" id="rollCenterBtn">${this._escapeHtml(this._t('spin'))}</button>
                 </div>
                 <div class="roll-result" id="rollResult" aria-live="polite"></div>
                 <p id="rollPoolHint" hidden aria-live="polite"></p>
                 <div class="roll-actions" id="rollActions" style="visibility:hidden">
-                    <button class="roll-action-btn secondary" id="rollRerollBtn">Крутить снова</button>
-                    <button class="roll-action-btn" id="rollGoBtn" style="flex:3">Смотреть</button>
+                    <button class="roll-action-btn secondary" id="rollRerollBtn">${this._escapeHtml(this._t('spin_again'))}</button>
+                    <button class="roll-action-btn" id="rollGoBtn" style="flex:3">${this._escapeHtml(this._t('watch'))}</button>
                 </div>
             </div>`;
         document.body.appendChild(el);
@@ -1893,12 +1904,12 @@ class RandomManager {
         };
         const showVolume = () => {
             volumeValue.textContent = `${this.rollVolumePercent}%`;
-            const label = this.rollVolumePercent === 0 ? 'Звук выключен. Настроить громкость' : `Громкость: ${this.rollVolumePercent}%`;
+            const label = this.rollVolumePercent === 0 ? this._t('volume_off_label') : this._t('volume_label', { n: this.rollVolumePercent });
             volumeButton.setAttribute('aria-label', label);
             volumeButton.title = label;
             volumeButton.classList.toggle('is-muted', this.rollVolumePercent === 0);
             volumeInput.setAttribute('aria-valuetext', this.rollVolumePercent === 0
-                ? 'Звук выключен' : `${this.rollVolumePercent}%`);
+                ? this._t('volume_off') : `${this.rollVolumePercent}%`);
         };
         volumeInput.value = this.rollVolumePercent;
         showVolume();
@@ -1945,7 +1956,7 @@ class RandomManager {
             event.preventDefault();
             const seconds = Number(durationInput.value);
             if (!Number.isInteger(seconds) || seconds < MIN_ROLL_DURATION_SECONDS || seconds > MAX_ROLL_DURATION_SECONDS) {
-                settingsError.textContent = 'Введите целое число от 2 до 1800 секунд (до 30 минут).';
+                settingsError.textContent = this._t('spin_time_error');
                 durationInput.focus();
                 return;
             }
@@ -2012,9 +2023,9 @@ class RandomManager {
         wheel.style.transform = 'rotate(0deg)';
         this._renderRollCandidates(wheel, candidates);
         center.disabled = false;
-        center.textContent = 'Крутить';
-        overlay.querySelector('.roll-title').textContent = 'Колесо фильмов';
-        overlay.querySelector('#rollResult').textContent = `Фильмов на колесе: ${candidates.length}`;
+        center.textContent = this._t('spin');
+        overlay.querySelector('.roll-title').textContent = this._t('wheel_title');
+        overlay.querySelector('#rollResult').textContent = this._t('on_wheel', { n: candidates.length });
         overlay.querySelector('#rollActions').style.visibility = 'hidden';
         overlay.querySelector('#rollPoolHint').hidden = true;
         this._openModal('rollAnimOverlay', 'rollCenterBtn');
@@ -2045,9 +2056,9 @@ class RandomManager {
         overlay.querySelector('#rollPoolHint').hidden = true;
         goBtn.disabled = true;
         center.disabled = true;
-        center.textContent = 'Крутим';
+        center.textContent = this._t('spinning');
         this._setRollBusy(true);
-        result.textContent = 'Выбираем фильм...';
+        result.textContent = this._t('choosing');
         const matrix = getComputedStyle(wheel).transform;
         const values = matrix.match(/^matrix\(([^)]+)\)$/)?.[1].split(',').map(Number);
         const startAngle = values ? Math.atan2(values[1], values[0]) * 180 / Math.PI : 0;
@@ -2082,7 +2093,7 @@ class RandomManager {
                 const winner = candidates[winnerIdx];
                 const title = document.createElement('a');
                 title.className = 'roll-result-link';
-                title.textContent = winner.title || 'Без названия';
+                title.textContent = winner.title || this._t('untitled');
                 const movieId = Number(winner.kpId);
                 if (Number.isSafeInteger(movieId) && movieId > 0) {
                     title.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`);
@@ -2093,13 +2104,13 @@ class RandomManager {
                 const hint = overlay.querySelector('#rollPoolHint');
                 hint.textContent = i18n.get('random.pool.watch_removes');
                 hint.hidden = !poolRemovalHint;
-                overlay.querySelector('.roll-title').textContent = 'Выпал фильм';
+                overlay.querySelector('.roll-title').textContent = this._t('picked');
                 goBtn.textContent = typeof actionLabel === 'function'
                     ? actionLabel(winner)
-                    : `Смотреть · ${winner.title}`;
+                    : this._t('watch_title', { title: winner.title });
                 actionsBox.style.visibility = 'visible';
                 goBtn.disabled = false;
-                center.textContent = 'Готово';
+                center.textContent = this._t('done');
                 goBtn.onclick = async () => {
                     if (animationId !== this._rollAnimationId || this.rollAnimRunning || this._disposed) return;
                     this._rollAudio.stop();

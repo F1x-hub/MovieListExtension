@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { JSDOM } from 'jsdom';
+import { locales } from '../src/shared/i18n/locales.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const audioCode = fs.readFileSync(path.join(root, 'src/pages/random/RandomWheelAudio.js'), 'utf8');
@@ -241,7 +242,7 @@ for (const options of [{ supported: false }, { fetchAudio: async () => ({ ok: fa
     dom.window.matchMedia = () => ({ matches: reducedMotion });
     const context = {
         document: dom.window.document, window: dom.window, localStorage: dom.window.localStorage,
-        URL, RandomWheelAudio: Audio, KinopoiskService: class {}, i18n: { get: key => key },
+        URL, RandomWheelAudio: Audio, KinopoiskService: class {}, i18n: { get: key => key.split('.').reduce((node, part) => node?.[part], locales.ru) ?? key },
         setTimeout, clearTimeout, setInterval, clearInterval,
         performance: { now: () => now }, requestAnimationFrame: fn => frames.push(fn),
         getComputedStyle: () => ({ transform: 'none' }),

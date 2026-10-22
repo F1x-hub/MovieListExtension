@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { fileURLToPath } from 'node:url';
+import { locales } from '../src/shared/i18n/locales.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const service = fs.readFileSync(path.join(root, 'src/shared/services/RandomMarathonService.js'), 'utf8');
@@ -80,7 +81,9 @@ assert.match(page, /this\._stopRollAnimation\(\)/);
 assert.match(page, /this\._renderRollCandidates\(wheel, candidates\)/);
 assert.match(page, /this\._showRollReady\(candidates, \(\) => this\._rollMarathonWithAnimation\(\)\)/);
 assert.match(page, /this\._showRollReady\(this\.pool, \(\) => this\._rollFromPool\(\)\)/);
-assert.match(page, /const targetAngle = \(360 - \(winnerIdx \+ \.5\) \* stepAngle\) % 360/);
+// The wheel stops at a random point inside the winner's slice, away from its edges.
+assert.match(page, /const sliceOffset = \.15 \+ Math\.random\(\) \* \.7;/);
+assert.match(page, /const targetAngle = \(360 - \(winnerIdx \+ sliceOffset\) \* stepAngle\) % 360/);
 assert.match(page, /aria-labelledby="rollTitle"/);
 assert.match(page, /id="rollSettingsBtn"/);
 assert.match(page, /id="rollDurationInput" type="number" min="2" max="1800"/);
@@ -96,13 +99,13 @@ assert.match(page, /PosterUrl\.safe\(value\)/);
 assert.match(page, /window\.ImageLightbox\.show\(currentPosterUrl\)/);
 assert.match(page, /currentLink\.className = 'marathon-current-movie-link'/);
 assert.match(page, /currentLink\.href = chrome\.runtime\.getURL\(`src\/pages\/movie-details\/movie-details\.html\?movieId=\$\{current\.kpId\}`\)/);
-assert.match(page, /currentLabel\.append\('Сейчас выпал фильм: ', currentLink\)/);
+assert.match(page, /currentLabel\.append\(this\._t\('current_movie'\), currentLink\)/);
 assert.match(page, /_rollMarathonWithAnimation\(\)/);
 assert.match(page, /this\._showRollAnimation\(candidates, winnerIndex/);
 assert.match(page, /deferRender = false/);
 assert.match(page, /let shouldRender = true/);
 assert.match(page, /if \(shouldRender\) this\._renderMarathon\(\)/);
-assert.match(page, /actionLabel: \(\) => 'Вернуться к марафону'/);
+assert.match(page, /actionLabel: \(\) => this\._t\('back_to_marathon'\)/);
 assert.match(css, /\.pool-list-item\s*\{[\s\S]*display:\s*grid/);
 assert.match(css, /grid-template-columns:\s*36px\s+minmax\(0,\s*1fr\)\s+auto/);
 assert.match(css, /\.pool-list-item-actions\s*\{/);
@@ -192,7 +195,8 @@ const managerContext = {
         createElementNS(ns, tag) { return mockElement(tag, ns); }
     },
     window: { alert(message) { alerts.push(message); } },
-    console: { warn() {} }
+    console: { warn() {} },
+    i18n: { get: key => key.split('.').reduce((node, part) => node?.[part], locales.ru) ?? key }
 };
 runInNewContext(`${page.replace(/^import .*;\r?\n/gm, '')}\nglobalThis.RandomManager = RandomManager;`, managerContext);
 const manager = Object.create(managerContext.RandomManager.prototype);

@@ -66,17 +66,29 @@
         if (el && el.textContent !== text) el.textContent = text;
     }
 
-    function showEmpty(title, text) {
+    /** Text of a `live_page.*` locale key with {name} placeholders filled in. */
+    function t(key, params = {}) {
+        let text = window.i18n?.get?.(`live_page.${key}`) ?? key;
+        Object.entries(params).forEach(([name, value]) => { text = text.replaceAll(`{${name}}`, String(value)); });
+        return text;
+    }
+
+    // Empty-state text is re-rendered on a language switch; data-i18n is not used for
+    // dynamic text because Navigation's translatePage() would overwrite it.
+    let emptyKeys = null;
+
+    function showEmpty(titleKey, textKey) {
         els.screen.replaceChildren();
         els.stage.hidden = true;
         els.empty.hidden = false;
-        els.emptyTitle.textContent = title;
-        els.emptyText.textContent = text;
+        emptyKeys = [titleKey, textKey];
+        els.emptyTitle.textContent = t(titleKey);
+        els.emptyText.textContent = t(textKey);
         els.badge.hidden = true;
         els.clock.hidden = true;
         els.controls.hidden = true;
         els.notice.hidden = true;
-        setTitle('Эфир');
+        setTitle(t('title'));
         mountedKey = '';
     }
 
@@ -84,7 +96,7 @@
         const frame = document.createElement('iframe');
         frame.className = 'live-frame';
         frame.src = src;
-        frame.title = title || 'Эфир';
+        frame.title = title || t('title');
         frame.allow = 'autoplay; encrypted-media; fullscreen; picture-in-picture';
         frame.allowFullscreen = true;
         frame.referrerPolicy = 'strict-origin-when-cross-origin';
@@ -116,7 +128,7 @@
         link.className = 'live-title__link';
         link.href = `../movie-details/movie-details.html?movieId=${movieId}`;
         link.textContent = text;
-        link.title = 'Открыть страницу фильма';
+        link.title = t('open_movie');
         els.title.replaceChildren(link);
     }
 
@@ -132,16 +144,16 @@
         const position = CinemaChannel.computePosition(channel);
 
         if (channel.mode === 'off') {
-            showEmpty('Сейчас ничего не идёт', 'Когда начнётся показ, он появится здесь автоматически — страницу обновлять не нужно.');
+            showEmpty('off_title', 'off_text');
             return;
         }
         if (position.state === 'ended') {
-            showEmpty('Показ завершился', 'Следующий эфир появится здесь, как только его запустят.');
+            showEmpty('ended_title', 'ended_text');
             mountedKey = `ended:${key}`;
             return;
         }
         if (position.state === 'upcoming') {
-            showEmpty('Скоро начнётся', 'Показ стартует автоматически — оставайтесь на странице.');
+            showEmpty('upcoming_title', 'upcoming_text');
             mountedKey = `upcoming:${key}`;
             els.clock.hidden = false;
             return;
@@ -151,7 +163,7 @@
         els.stage.hidden = false;
         els.notice.hidden = true;
         const movieId = channel.mode === 'movie' ? Number(channel.movie?.kinopoiskId) : NaN;
-        setTitle(channel.title || (channel.mode === 'youtube' ? 'Эфир' : 'Фильм в эфире'), movieId);
+        setTitle(channel.title || (channel.mode === 'youtube' ? t('title') : t('movie_on_air')), movieId);
 
         let src;
         if (channel.mode === 'youtube') {
@@ -257,7 +269,7 @@
             relay.sourceFailed = true;
             if (!maybeAutoRelay()) {
                 els.notice.hidden = false;
-                els.notice.textContent = 'YouTube не даёт показать это видео здесь. Если ведущий включит трансляцию, вы подключитесь к ней автоматически.';
+                els.notice.textContent = t('youtube_blocked');
             }
         }
     }
@@ -283,7 +295,7 @@
         els.mute.classList.toggle('is-muted', muted);
         // Keep the controls visible while sound is off, so viewers find the button.
         els.controls.classList.toggle('is-attention', muted);
-        els.mute.setAttribute('aria-label', muted ? 'Включить звук' : 'Выключить звук');
+        els.mute.setAttribute('aria-label', muted ? t('unmute') : t('mute'));
         // The wrapper bridge only knows mute/unmute, so volume is relay-only.
         els.volume.hidden = !relayOn;
         if (relayOn) {
@@ -335,12 +347,12 @@
         els.relayHost.hidden = !isAdmin || !relay.service || !channel || channel.mode === 'off';
         if (!els.relayHost.hidden) {
             const viewers = relay.host ? relay.host.viewerCount() : 0;
-            setText(els.relayHost, relay.host ? `Остановить трансляцию · зрителей: ${viewers}` : 'Транслировать мою вкладку');
+            setText(els.relayHost, relay.host ? t('relay_stop', { count: viewers }) : t('relay_start'));
             els.relayHost.classList.toggle('btn-primary', Boolean(relay.host));
             els.relayHost.classList.toggle('btn-secondary', !relay.host);
         }
         els.relayWatch.hidden = isAdmin || !on;
-        setText(els.relayWatch, relay.watching ? 'Вернуться к источнику' : 'Смотреть трансляцию ведущего');
+        setText(els.relayWatch, relay.watching ? t('relay_back') : t('relay_watch'));
     }
 
     /**
@@ -379,7 +391,7 @@
             return;
         }
         if (!navigator.mediaDevices?.getDisplayMedia) {
-            Utils?.showToast?.('Этот браузер не умеет транслировать вкладку', 'error');
+            Utils?.showToast?.(t('relay_unsupported'), 'error');
             return;
         }
         try {
@@ -395,11 +407,11 @@
             await restrictCaptureToPlayer(stream);
             relay.host = await relay.service.startHosting(stream, { onViewersChange: renderRelayButtons });
             stream.getVideoTracks()[0]?.addEventListener('ended', () => { relay.host = null; renderRelayButtons(); });
-            Utils?.showToast?.('Трансляция включена. Не закрывайте и не сворачивайте эту вкладку.', 'success', 5000);
+            Utils?.showToast?.(t('relay_started'), 'success', 5000);
         } catch (error) {
             if (error?.name !== 'NotAllowedError') {
                 console.warn('[Live] Could not start the relay:', error);
-                Utils?.showToast?.(error?.code === 'permission-denied' ? 'Транслировать может только администратор' : 'Не удалось начать трансляцию', 'error');
+                Utils?.showToast?.(error?.code === 'permission-denied' ? t('relay_admin_only') : t('relay_failed'), 'error');
             }
         }
         renderRelayButtons();
@@ -421,8 +433,8 @@
         mountedKey = 'relay';
         els.notice.hidden = false;
         els.notice.textContent = auto
-            ? 'Источник недоступен у вас — подключаемся к трансляции ведущего…'
-            : 'Подключаемся к трансляции ведущего…';
+            ? t('relay_connecting_fallback')
+            : t('relay_connecting');
         try {
             relay.viewer = await relay.service.join(relay.status.sessionId, {
                 onStream: stream => {
@@ -430,7 +442,7 @@
                     video.play().catch(() => {
                         video.muted = true;
                         video.play().catch(() => {});
-                        els.notice.textContent = 'Трансляция идёт без звука — включите звук кнопкой на видео.';
+                        els.notice.textContent = t('relay_muted');
                         renderSound();
                     });
                     if (!video.muted) els.notice.hidden = true;
@@ -439,14 +451,14 @@
                 onState: state => {
                     if (state === 'failed') {
                         els.notice.hidden = false;
-                        els.notice.textContent = 'Не удалось соединиться с ведущим (сеть блокирует прямое подключение).';
+                        els.notice.textContent = t('relay_blocked');
                     }
                 }
             });
         } catch (error) {
             console.warn('[Live] Could not join the relay:', error);
             els.notice.hidden = false;
-            els.notice.textContent = error?.message || 'Не удалось подключиться к трансляции ведущего.';
+            els.notice.textContent = error?.message || t('relay_connect_failed');
         }
         renderRelayButtons();
         renderSound();
@@ -506,20 +518,20 @@
         const playing = !els.stage.hidden;
 
         els.badge.hidden = position.state !== 'live' && position.state !== 'paused';
-        setText(els.badgeText, position.state === 'paused' ? 'Пауза' : 'В эфире');
+        setText(els.badgeText, position.state === 'paused' ? t('badge_paused') : t('badge_live'));
         els.badge.classList.toggle('is-paused', position.state === 'paused');
         els.clock.hidden = isLiveStream || (!playing && position.state !== 'upcoming');
         renderSound();
 
         if (position.state === 'paused') {
-            setText(els.clock, `Пауза на ${CinemaChannel.formatClock(position.offsetSec)}`);
+            setText(els.clock, t('clock_paused', { time: CinemaChannel.formatClock(position.offsetSec) }));
         } else if (position.state === 'upcoming') {
-            setText(els.clock, `Начало через ${CinemaChannel.formatClock(position.offsetSec)}`);
+            setText(els.clock, t('clock_upcoming', { time: CinemaChannel.formatClock(position.offsetSec) }));
         } else if (position.state === 'live' && !isLiveStream) {
             const total = channel.movie?.durationSec;
             setText(els.clock, total
                 ? `${CinemaChannel.formatClock(position.offsetSec)} / ${CinemaChannel.formatClock(total)}`
-                : `Идёт ${CinemaChannel.formatClock(position.offsetSec)}`);
+                : t('clock_playing', { time: CinemaChannel.formatClock(position.offsetSec) }));
         }
 
         enforceYoutube(position);
@@ -532,12 +544,12 @@
             mountMedia(true);
         }
         setText(els.subtitle, isLiveStream
-            ? 'Прямая трансляция — все смотрят одно и то же прямо сейчас.'
+            ? t('subtitle_stream')
             : isAdmin
-                ? 'Вы ведёте эфир: пауза и перемотка в плеере сразу меняют показ у всех зрителей.'
+                ? t('subtitle_admin')
             : position.state === 'paused'
-                ? 'Показ на паузе — продолжится у всех одновременно.'
-                : 'Общий показ, как по телевизору: пауза и перемотка недоступны, все смотрят один момент.');
+                ? t('subtitle_paused')
+                : t('subtitle_default'));
     }
 
     // ---- Admin timeline controls ------------------------------------------------
@@ -574,7 +586,7 @@
         } catch (error) {
             console.warn('[Live] Admin control failed:', error);
             if (typeof Utils !== 'undefined') {
-                Utils.showToast(error?.code === 'permission-denied' ? 'Управлять эфиром может только администратор' : (error?.message || 'Не удалось изменить эфир'), 'error');
+                Utils.showToast(error?.code === 'permission-denied' ? t('control_admin_only') : (error?.message || t('control_failed')), 'error');
             }
         } finally {
             adminBusy = false;
@@ -611,6 +623,33 @@
         els.relayHost = els.relayHostBtn;
         els.relayWatch = els.relayWatchBtn;
 
+        try {
+            const { i18n } = await import('../../shared/i18n/I18n.js');
+            await i18n.init();
+            i18n.translatePage();
+            document.documentElement.lang = i18n.currentLocale;
+            document.title = t('page_title');
+            els.subtitle.textContent = t('intro');
+            i18n.onLocaleChange(lang => {
+                document.documentElement.lang = lang;
+                document.title = t('page_title');
+                if (emptyKeys && !els.empty.hidden) {
+                    els.emptyTitle.textContent = t(emptyKeys[0]);
+                    els.emptyText.textContent = t(emptyKeys[1]);
+                    setTitle(t('title'));
+                }
+                if (!channel) {
+                    els.subtitle.textContent = t('intro');
+                    return;
+                }
+                if (els.empty.hidden) mountMedia(true);
+                renderClock();
+                renderRelayButtons();
+            });
+        } catch (error) {
+            console.warn('[Live] Translations unavailable:', error);
+        }
+
         ensureNavigation();
         els.mute.addEventListener('click', toggleSound);
         els.volume.addEventListener('input', onVolumeInput);
@@ -626,7 +665,7 @@
                 }
                 if (event.data?.type === 'BROADCAST_MUTED') {
                     els.notice.hidden = false;
-                    els.notice.textContent = 'Браузер запустил фильм без звука — включите звук кнопкой громкости в плеере.';
+                    els.notice.textContent = t('movie_muted');
                 }
                 return;
             }
@@ -650,7 +689,7 @@
 
         // A snapshot that never arrives (offline, blocked) must not leave the loader spinning forever.
         const stallTimer = setTimeout(() => {
-            if (!channel) showEmpty('Эфир недоступен', 'Не удалось подключиться к каналу. Проверьте соединение и обновите страницу.');
+            if (!channel) showEmpty('unavailable_title', 'unavailable_reload');
         }, 12000);
 
         let unsubscribeManual = null;
@@ -682,12 +721,12 @@
                 refreshChannel({ force: true });
             }, error => {
                 console.warn('[Live] Channel subscription failed:', error);
-                showEmpty('Эфир недоступен', 'Не удалось подключиться к каналу. Проверьте соединение и попробуйте позже.');
+                showEmpty('unavailable_title', 'unavailable_later');
             });
         } catch (error) {
             console.warn('[Live] Firebase is not ready:', error);
             detectAdmin(null);
-            showEmpty('Эфир недоступен', 'Не удалось подключиться к каналу. Проверьте соединение и попробуйте позже.');
+            showEmpty('unavailable_title', 'unavailable_later');
         }
 
         unsubscribe = () => {
