@@ -28,6 +28,7 @@ const {
 } = require("./ratingAggregation");
 const { scanRatingProjectionIntegrity } = require("./ratingIntegrityService");
 const { createReactionNotifier } = require("./reactionNotifications");
+const { achievementStatsDelta, statsUpdate } = require("./achievementStats");
 
 const app = initializeApp();
 const db = getFirestore(app);
@@ -609,3 +610,17 @@ exports.cleanupUnratedMovies = onRequest(
     }
   }
 );
+
+/**
+ * Keeps achievementStats/global in step with users/{uid}.achievements so the
+ * client can show the share of users who reached each tier. Writes that do
+ * not change achievements return before touching the stats document.
+ */
+exports.aggregateAchievementStats = onDocumentWritten("users/{userId}", async (event) => {
+  const before = event.data?.before?.exists ? event.data.before.data() : null;
+  const after = event.data?.after?.exists ? event.data.after.data() : null;
+  const delta = achievementStatsDelta(before, after);
+  if (delta.empty) return null;
+  await db.collection("achievementStats").doc("global").set(statsUpdate(delta, FieldValue), { merge: true });
+  return null;
+});
