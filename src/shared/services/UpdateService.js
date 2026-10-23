@@ -13,6 +13,9 @@
     const SETTINGS_KEY = 'extension_update_settings_v1';
     const METADATA_URL = 'https://github.com/F1x-hub/MovieListExtension/releases/latest/download/update.json';
     const SIGNATURE_URL = 'https://github.com/F1x-hub/MovieListExtension/releases/latest/download/update.json.sig';
+    const COMPONENTS_URL = 'https://github.com/F1x-hub/MovieListExtension/releases/latest/download/components.json';
+    const COMPONENTS_SIGNATURE_URL = COMPONENTS_URL + '.sig';
+    const COMPONENT_IDS = ['updater', 'mediaPlayerSuite'];
     const MIRROR_ROOT = 'https://movielistdb-13208-updates.web.app/updates/latest/';
     const SETUP_URL = 'https://github.com/F1x-hub/MovieListExtension/releases/latest/download/MovieListSetup.exe';
     const FIREBASE_ASSET_URL = MIRROR_ROOT + 'MovieList-extension-latest.zip';
@@ -148,16 +151,39 @@
             requiresConfirmation: false,
             playbackReasons: [],
             configured: null,
-            updaterVersion: null
+            updaterVersion: null,
+            components: {},
+            componentCatalogStatus: 'unknown',
+            componentCapabilities: null,
+            componentInventory: null
         };
     }
 
     function defaultSettings() {
-        return { autoUpdateEnabled: true };
+        return { autoUpdateEnabled: true, componentAutoUpdateEnabled: { updater: false, mediaPlayerSuite: false } };
+    }
+
+    async function updateSettings(change) {
+        // Settings pages and the service worker share storage, but have separate
+        // service instances. Re-read inside an origin-wide lock before merging.
+        if (typeof global.navigator?.locks?.request !== 'function') {
+            throw new Error('UPDATE_SETTINGS_LOCK_UNAVAILABLE');
+        }
+        return global.navigator.locks.request(SETTINGS_KEY, async () => {
+            const { settings } = await readState();
+            const next = change(settings);
+            await chrome.storage.local.set({ [SETTINGS_KEY]: next });
+            return next;
+        });
     }
 
     function isOperationPending(state) {
         return OPERATION_STATUSES.has(state?.status);
+    }
+
+    function isComponentOperationPending(state) {
+        return Object.values(state?.components || {}).some(item =>
+            ['queued', 'downloading', 'replacing', 'installing', 'verifying'].includes(item?.status));
     }
 
     function createOperationAlarm() {
@@ -227,7 +253,8 @@
         const result = await chrome.storage.local.get([STATE_KEY, SETTINGS_KEY]);
         return {
             state: { ...defaultState(), ...(result[STATE_KEY] || {}) },
-            settings: { ...defaultSettings(), ...(result[SETTINGS_KEY] || {}) }
+            settings: { ...defaultSettings(), ...(result[SETTINGS_KEY] || {}), componentAutoUpdateEnabled: {
+                ...defaultSettings().componentAutoUpdateEnabled, ...result[SETTINGS_KEY]?.componentAutoUpdateEnabled } }
         };
     }
 
@@ -389,6 +416,9 @@
                 if (!options.force && state.nextCheckAt > now()) return state;
 
                 activeCheckDidFetch = true;
+                // Independent inventory/catalog reconciliation must run even when
+                // the legacy extension feed reports the current extension version.
+                await checkComponentUpdates({ force: true, interactive: options.interactive === true });
                 const release = await fetchReleaseMetadata();
                 const availableVersion = normalizeVersion(release.metadata.version);
                 if (compareVersions(availableVersion, currentVersion) <= 0) {
@@ -445,6 +475,7 @@
                 }
 
                 if (settings.autoUpdateEnabled && !nextState.deferredUntil && options.interactive !== true) {
+                    if (isComponentOperationPending((await readState()).state)) return (await readState()).state;
                     return applyUpdate({ automatic: options.interactive !== true });
                 }
                 return nextState;
@@ -476,7 +507,9 @@
             const response = await nativeMessage({ action: 'status' });
             await writeState({
                 configured: response.configured === true,
-                updaterVersion: response.updaterVersion || null
+                updaterVersion: response.updaterVersion || null,
+                componentCapabilities: response.componentCapabilities || null,
+                componentInventory: response.components || null
             });
             return response;
         } catch (error) {
@@ -561,8 +594,13 @@
 
     async function syncNativeOperation() {
         const response = await getNativeStatus();
+        await syncComponentOperation(response);
         const operation = response.operation;
         if (!operation?.operationId) return response;
+        // A completed legacy extension journal must not cancel polling for a
+        // concurrently running component worker.
+        if (isComponentOperationPending((await readState()).state)
+            && !isOperationPending(operation) && operation.status !== 'awaiting_confirmation') return response;
         const { state } = await readState();
         if (state.operationId && state.operationId !== operation.operationId) return response;
         if (state.status === 'failed' && state.errorCode === RELOAD_MISMATCH_CODE
@@ -771,7 +809,8 @@
 
     async function getState() {
         const snapshot = await readState();
-        if (isOperationPending(snapshot.state) || snapshot.state.status === 'awaiting_confirmation') {
+        if (isOperationPending(snapshot.state) || snapshot.state.status === 'awaiting_confirmation'
+            || isComponentOperationPending(snapshot.state)) {
             try {
                 await syncNativeOperation();
             } catch {
@@ -782,8 +821,7 @@
     }
 
     async function setAutoUpdateEnabled(enabled) {
-        const settings = { autoUpdateEnabled: enabled === true };
-        await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
+        const settings = await updateSettings(current => ({ ...current, autoUpdateEnabled: enabled === true }));
         const { state } = await readState();
         if (settings.autoUpdateEnabled && state.availableVersion && !state.deferredUntil) {
             return applyUpdate({ automatic: true });
@@ -805,6 +843,185 @@
             }
         }
         createOperationAlarm();
+    }
+
+    function isExpectedComponentCatalog(catalog) {
+        if (catalog?.schemaVersion !== 1 || catalog.productId !== 'movielist' || catalog.channel !== 'stable'
+            || !Number.isFinite(Date.parse(catalog.publishedAt)) || !catalog.components
+            || Array.isArray(catalog.components) || typeof catalog.components !== 'object') return false;
+        const entries = Object.entries(catalog.components);
+        if (!entries.length || entries.some(([id]) => !['extension', ...COMPONENT_IDS].includes(id))) return false;
+        return entries.every(([id, descriptor]) => {
+            if (!descriptor || typeof descriptor !== 'object') return false;
+            const version = normalizeVersion(descriptor.version);
+            const name = id === 'extension' ? `MovieList-extension-${version}.zip`
+                : id === 'updater' ? 'MovieListSetup.exe' : 'MediaPlayerSuiteSetup.exe';
+            const prefix = 'https://github.com/F1x-hub/MovieListExtension/releases/download/';
+            const suffix = typeof descriptor.assetUrl === 'string' && descriptor.assetUrl.startsWith(prefix)
+                ? descriptor.assetUrl.slice(prefix.length) : '';
+            const slash = suffix.indexOf('/');
+            return version && descriptor.version === version && descriptor.assetName === name
+                && suffix[0] === 'v' && normalizeVersion(suffix.slice(1, slash)) === suffix.slice(1, slash)
+                && slash > 1 && suffix.slice(slash + 1) === name
+                && /^[a-f0-9]{64}$/i.test(descriptor.sha256)
+                && Number.isSafeInteger(descriptor.size) && descriptor.size > 0 && descriptor.size <= 1024 ** 3
+                && (descriptor.minUpdaterVersion === undefined
+                    || normalizeVersion(descriptor.minUpdaterVersion) === descriptor.minUpdaterVersion)
+                && (descriptor.apiMajor === undefined || (id === 'mediaPlayerSuite'
+                    && Number.isInteger(descriptor.apiMajor) && descriptor.apiMajor >= 1 && descriptor.apiMajor <= 100))
+                && (descriptor.buildId === undefined || (id === 'mediaPlayerSuite'
+                    && /^[A-Za-z0-9._-]{1,128}$/.test(descriptor.buildId)));
+        });
+    }
+
+    async function writeComponent(componentId, patch) {
+        const { state } = await readState();
+        return writeState({ components: { ...state.components,
+            [componentId]: { ...state.components?.[componentId], componentId, ...patch } } });
+    }
+
+    async function syncComponentOperation(response) {
+        const operation = response.componentOperation;
+        if (!COMPONENT_IDS.includes(operation?.componentId) || !operation.operationId) return;
+        const { state } = await readState();
+        const previous = state.components?.[operation.componentId];
+        if (previous?.operationId && previous.operationId !== operation.operationId
+            && ['queued', 'downloading', 'replacing', 'installing', 'verifying'].includes(previous.status)) return;
+        const inventory = response.components?.[operation.componentId];
+        const deferred = operation.status === 'failed' && operation.errorCode === 'SUITE_BROKER_DEFERRED';
+        await writeComponent(operation.componentId, {
+            status: deferred ? 'waiting_for_safe_moment' : operation.status === 'recovery_required' ? 'failed' : operation.status,
+            operationId: operation.operationId,
+            availableVersion: operation.status === 'succeeded' ? null : operation.version,
+            currentVersion: inventory?.version || previous?.currentVersion || null,
+            installed: inventory?.installed,
+            errorCode: operation.errorCode || null
+        });
+        if (['queued', 'downloading', 'replacing', 'installing', 'verifying'].includes(operation.status)) createOperationAlarm();
+        if (deferred) chrome.alarms.create(SAFE_RETRY_ALARM, { delayInMinutes: 10 });
+    }
+
+    async function checkComponentUpdates({ force = false, interactive = false } = {}) {
+        const snapshot = await readState();
+        if (!force && snapshot.state.componentNextCheckAt > now()) return snapshot.state;
+        try {
+            const host = await getNativeStatus();
+            await syncComponentOperation(host);
+            if (host.componentCapabilities?.protocolVersion !== 1 || host.componentCapabilities.signedCatalog !== true) {
+                for (const id of COMPONENT_IDS) await writeComponent(id, {
+                    status: 'setup_required', currentVersion: id === 'updater' ? host.updaterVersion || null : null,
+                    errorCode: 'UPDATER_COMPONENT_SETUP_REQUIRED'
+                });
+                return writeState({ componentCatalogStatus: 'setup_required' });
+            }
+            const response = await diagnosticFetch(COMPONENTS_URL, 'component_catalog');
+            if (response.status === 404) return writeState({ componentCatalogStatus: 'legacy', componentCatalog: null });
+            if (!response.ok) throw new Error('COMPONENT_CATALOG_HTTP_FAILED');
+            const text = await response.text();
+            if (text.length > 128 * 1024) throw new Error('COMPONENT_CATALOG_TOO_LARGE');
+            const signatureResponse = await diagnosticFetch(COMPONENTS_SIGNATURE_URL, 'component_signature');
+            if (!signatureResponse.ok) throw new Error('COMPONENT_SIGNATURE_HTTP_FAILED');
+            const signature = (await signatureResponse.text()).trim();
+            if (!signature || signature.length > 4096) throw new Error('COMPONENT_SIGNATURE_INVALID');
+            const catalog = JSON.parse(text);
+            if (!isExpectedComponentCatalog(catalog)) throw new Error('COMPONENT_CATALOG_INVALID');
+            await nativeMessage({ action: 'validate_component_catalog', metadataText: text, signature });
+            await writeState({ componentCatalogStatus: 'available', componentNextCheckAt: now() + CHECK_INTERVAL_MINUTES * 60000,
+                componentCatalog: { metadataText: text, signature, metadata: catalog, verified: true } });
+            for (const id of COMPONENT_IDS) {
+                const inventory = host.components?.[id];
+                const descriptor = catalog.components[id];
+                const latest = (await readState()).state.components?.[id];
+                if (host.componentOperation?.componentId === id && host.componentOperation.status === 'recovery_required') continue;
+                if (['queued', 'downloading', 'replacing', 'installing', 'verifying'].includes(latest?.status)) continue;
+                const current = normalizeVersion(inventory?.version || (id === 'updater' ? host.updaterVersion : null));
+                let status = 'up_to_date';
+                let errorCode = null;
+                if (id === 'mediaPlayerSuite' && inventory?.installed === false) status = 'absent';
+                else if (!inventory || inventory.installed !== true) { status = 'setup_required'; errorCode = 'COMPONENT_INVENTORY_UNAVAILABLE'; }
+                else if (id === 'mediaPlayerSuite' && inventory.layoutValid === false) { status = 'failed'; errorCode = 'SUITE_INSTALLATION_INVALID'; }
+                else if (!current) { status = 'migration_required'; errorCode = 'SUITE_MIGRATION_REQUIRED'; }
+                else if (descriptor && compareVersions(descriptor.version, current) > 0) {
+                    status = snapshot.settings.componentAutoUpdateEnabled?.[id] === true ? 'available' : 'available_manual';
+                    if (descriptor.minUpdaterVersion && compareVersions(host.updaterVersion, descriptor.minUpdaterVersion) < 0) {
+                        status = 'setup_required'; errorCode = 'UPDATER_UPGRADE_REQUIRED';
+                    } else if (id === 'mediaPlayerSuite' && descriptor.apiMajor !== undefined && descriptor.apiMajor !== 1) {
+                        status = 'failed'; errorCode = 'SUITE_API_UNSUPPORTED';
+                    } else if (id === 'mediaPlayerSuite' && snapshot.settings.componentAutoUpdateEnabled?.[id] === true
+                        && inventory.brokerAvailable !== true) {
+                        status = 'setup_required'; errorCode = 'SUITE_MAINTENANCE_SETUP_REQUIRED';
+                    }
+                }
+                await writeComponent(id, { currentVersion: current, installed: inventory?.installed,
+                    availableVersion: descriptor && current && compareVersions(descriptor.version, current) > 0 ? descriptor.version : null,
+                    status, errorCode, brokerAvailable: inventory?.brokerAvailable === true,
+                    apiMajor: inventory?.apiMajor ?? null, buildId: inventory?.buildId || null });
+            }
+            if (!interactive) {
+                for (const id of COMPONENT_IDS) {
+                    const latest = (await readState()).state;
+                    if (!isComponentOperationPending(latest) && latest.components?.[id]?.status === 'available'
+                        && snapshot.settings.componentAutoUpdateEnabled?.[id] === true) await applyComponent(id, { automatic: true });
+                }
+            }
+            return (await readState()).state;
+        } catch {
+            // Component transport/schema failures do not disable the established
+            // independently signed legacy extension feed.
+            return writeState({ componentCatalogStatus: 'check_failed', componentNextCheckAt: now() + RETRY_DELAY_MINUTES * 60000 });
+        }
+    }
+
+    async function applyComponent(componentId, { automatic = false } = {}) {
+        if (!COMPONENT_IDS.includes(componentId)) throw new Error('COMPONENT_ID_INVALID');
+        const snapshot = await readState();
+        const envelope = snapshot.state.componentCatalog;
+        const descriptor = envelope?.metadata?.components?.[componentId];
+        if (!descriptor || !envelope.signature || !envelope.metadataText) return writeComponent(componentId, { status: 'failed', errorCode: 'NO_COMPONENT_READY' });
+        if (isComponentOperationPending(snapshot.state) || isOperationPending(snapshot.state)
+            || snapshot.state.status === 'awaiting_confirmation') return snapshot.state;
+        if (automatic && snapshot.settings.componentAutoUpdateEnabled?.[componentId] !== true) return snapshot.state;
+        try {
+            const host = await getNativeStatus();
+            if (host.componentCapabilities?.protocolVersion !== 1) return writeComponent(componentId,
+                { status: 'setup_required', errorCode: 'UPDATER_COMPONENT_SETUP_REQUIRED' });
+            const inventory = host.components?.[componentId];
+            if (componentId === 'mediaPlayerSuite' && inventory?.installed === false)
+                return writeComponent(componentId, { status: 'absent', installed: false, errorCode: 'SUITE_NOT_INSTALLED' });
+            if (inventory?.installed !== true || !normalizeVersion(inventory.version))
+                return writeComponent(componentId, { status: 'migration_required', errorCode: 'COMPONENT_VERSION_UNKNOWN' });
+            if (componentId === 'mediaPlayerSuite' && inventory.layoutValid === false)
+                return writeComponent(componentId, { status: 'failed', errorCode: 'SUITE_INSTALLATION_INVALID' });
+            if (compareVersions(descriptor.version, inventory.version) <= 0)
+                return writeComponent(componentId, { status: 'up_to_date', availableVersion: null, currentVersion: inventory.version, errorCode: null });
+            if (descriptor.minUpdaterVersion && compareVersions(host.updaterVersion, descriptor.minUpdaterVersion) < 0)
+                return writeComponent(componentId, { status: 'setup_required', errorCode: 'UPDATER_UPGRADE_REQUIRED' });
+            if (componentId === 'mediaPlayerSuite' && descriptor.apiMajor !== undefined && descriptor.apiMajor !== 1)
+                return writeComponent(componentId, { status: 'failed', errorCode: 'SUITE_API_UNSUPPORTED' });
+            if (automatic && componentId === 'mediaPlayerSuite' && inventory.brokerAvailable !== true)
+                return writeComponent(componentId, { status: 'setup_required', errorCode: 'SUITE_MAINTENANCE_SETUP_REQUIRED' });
+            if (componentId === 'mediaPlayerSuite') {
+                const playback = await inspectPlaybackSafety();
+                if (!playback.safe) {
+                    chrome.alarms.create(SAFE_RETRY_ALARM, { delayInMinutes: 10 });
+                    return writeComponent(componentId, { status: 'waiting_for_safe_moment', errorCode: 'PLAYBACK_ACTIVE' });
+                }
+            }
+            const operationId = crypto.randomUUID();
+            const response = await nativeMessage({ action: 'apply_component', componentId, operationId,
+                metadataText: envelope.metadataText, signature: envelope.signature });
+            createOperationAlarm();
+            return writeComponent(componentId, { status: response.status || 'queued', operationId: response.operationId || operationId, errorCode: null });
+        } catch (error) {
+            return writeComponent(componentId, { status: 'failed', errorCode: error.message || 'COMPONENT_APPLY_FAILED' });
+        }
+    }
+
+    async function setComponentAutoUpdateEnabled(componentId, enabled) {
+        if (!COMPONENT_IDS.includes(componentId)) throw new Error('COMPONENT_ID_INVALID');
+        await updateSettings(current => ({ ...current, componentAutoUpdateEnabled: {
+            ...current.componentAutoUpdateEnabled, [componentId]: enabled === true } }));
+        return checkComponentUpdates({ force: true, interactive: true });
     }
 
     function setupBackground() {
@@ -829,7 +1046,8 @@
         await syncNativeOperation().catch(() => {});
         await confirmInstalled();
         const refreshed = await readState();
-        if (isOperationPending(refreshed.state) || refreshed.state.status === 'awaiting_confirmation') return;
+        if (isOperationPending(refreshed.state) || refreshed.state.status === 'awaiting_confirmation'
+            || isComponentOperationPending(refreshed.state)) return;
         if (alarm.name === OPERATION_ALARM) {
             clearOperationAlarm();
             return;
@@ -838,6 +1056,9 @@
     }
 
     global.UpdateService = {
+        checkComponentUpdates,
+        applyComponent,
+        setComponentAutoUpdateEnabled,
         inspectPlaybackSafety,
         exportDiagnostics,
         applyUpdate,
@@ -851,6 +1072,12 @@
         syncNativeOperation,
         setupBackground,
         checkAndInstallLatestRelease,
+        getComponentSetupUrl: async (id) => {
+            if (id === 'updater') return SETUP_URL;
+            const { state } = await readState();
+            return id === 'mediaPlayerSuite' && state.componentCatalog?.verified === true
+                ? state.componentCatalog.metadata?.components?.mediaPlayerSuite?.assetUrl || null : null;
+        },
         getSetupUrl: () => SETUP_URL
     };
 }(globalThis));

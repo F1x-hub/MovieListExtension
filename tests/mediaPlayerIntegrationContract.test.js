@@ -54,10 +54,10 @@ assert.match(movieDetails, /typeof isSeriesMedia === 'function'\) return !isSeri
 assert.match(movieDetails, /movie\.seasons\) && movie\.seasons\.length > 0/);
 assert.match(movieDetails, /movie\.seasonsInfo\) && movie\.seasonsInfo\.length > 0/);
 assert.match(serviceSource, /com\.movielist\.mediaplayer/);
-assert.match(serviceSource, /\/api\/catalog\/movie\//);
+assert.match(serviceSource, /mediaType === 'tv' \? 'tv' : 'movie'/);
 assert.match(serviceSource, /\/api\/playback\/sessions/);
 assert.match(serviceSource, /async listDownloads\(options = \{\}\)/);
-assert.match(serviceSource, /async playDownload\(downloadId\)/);
+assert.match(serviceSource, /async playDownload\(downloadId, options = \{\}\)/);
 assert.match(serviceSource, /async pauseDownload\(downloadId\)/);
 assert.match(serviceSource, /async resumeDownload\(downloadId\)/);
 assert.match(serviceSource, /async deleteDownload\(downloadId\)/);
@@ -98,9 +98,9 @@ assert.match(
 assert.match(serviceSource, /selectInstallFolder/);
 assert.match(serviceSource, /verifyInstallation/);
 assert.match(serviceSource, /unknown_action:/);
-assert.match(movieDetails, /this\.mediaPlayerReady && this\.isTorrentMovie\(\)/);
-assert.match(serviceSource, /async getSettings\(\)/);
-assert.match(serviceSource, /async updateSettings\(\{ torrentRetentionDays \}/);
+assert.match(movieDetails, /this\.mediaPlayerReady && this\.isTorrentAvailable\(\)/);
+assert.match(serviceSource, /async getSettings\(\{ signal \} = \{\}\)/);
+assert.match(serviceSource, /async updateSettings\(changes = \{\}/);
 assert.match(serviceSource, /async getJackettIndexers\(\)/);
 assert.match(serviceSource, /async getAvailableJackettIndexers\(\)/);
 assert.match(serviceSource, /async addJackettIndexer\(indexerId\)/);

@@ -22,6 +22,7 @@ const html = fs.readFileSync(filename, 'utf8')
             for (const [width, height] of [[1366, 768], [1920, 1080], [390, 844], [910, 512]]) {
                 await page.setViewportSize({ width, height });
                 await page.setContent(html);
+                await page.addScriptTag({ path: path.join(root, 'src/pages/movie-details/TorrentSourcePanel.js') });
                 await page.evaluate(themeName => {
                     document.body.className = `${themeName} player-modal-open`;
                     const modal = document.querySelector('#videoPlayerModal');
@@ -35,6 +36,13 @@ const html = fs.readFileSync(filename, 'utf8')
                     document.querySelector('#torrentSourceControls').hidden = false;
                     document.querySelector('#torrentSourceList').innerHTML = Array.from({ length: 30 }, (_, i) =>
                         `<button class="torrent-source-card">Раздача ${i} — 4K 2160p<br>11 ГБ · Сиды: 20</button>`).join('');
+                    const panel = new window.MovieDetailsTorrentPanelMethods();
+                    panel.elements = { torrentSourcePanel: document.querySelector('#torrentSourcePanel') };
+                    panel.showTorrentFileSelection('fixture', [1, 2, 3].map(episode => ({
+                        fileId: String(episode), name: `Series.S01E0${episode}.2160p.WEB-DL.MultiAudio.mkv`,
+                        seasonNumber: 1, episodeNumber: episode, sizeBytes: 4 * 1024 ** 3
+                    })), { mediaType: 'tv', seasonNumber: 1, episodeNumber: 2 });
+                    document.querySelector('#videoPlayerModal .video-body').scrollTop = 0;
                 }, theme);
                 await page.waitForTimeout(350);
                 const geometry = await page.evaluate(() => {
@@ -58,6 +66,7 @@ const html = fs.readFileSync(filename, 'utf8')
                 if (width === 1366) {
                     await page.evaluate(() => { document.querySelector('#videoPlayerModal .video-body').scrollTop = 0; });
                     await page.screenshot({ path: path.join(require('node:os').tmpdir(), `torrent-modal-${theme}.png`) });
+                    await page.locator('#torrentFilePicker').screenshot({ path: path.join(require('node:os').tmpdir(), `torrent-files-${theme}.png`) });
                 }
                 console.log(`PASS ${theme} ${width}x${height}`);
             }

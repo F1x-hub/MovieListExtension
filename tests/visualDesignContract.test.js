@@ -36,6 +36,7 @@ const exceptionScopedFiles = [
     'src/pages/settings/settings.css',
     'src/shared/styles/GamesModal.css',
     'src/shared/styles/WordGuessGame.css',
+    'src/shared/styles/achievements.css',
     'src/shared/styles/back-to-top.css',
     'src/shared/styles/comments.css',
     'src/shared/styles/custom-picker.css',

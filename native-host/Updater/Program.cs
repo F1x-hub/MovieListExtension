@@ -7,7 +7,7 @@ using System.Text.Json.Serialization;
 using Microsoft.Win32;
 using System.Windows.Forms;
 
-internal static class Program
+internal static partial class Program
 {
     private const string HostName = "com.movielist.updater";
     private const string RepositoryPrefix = "https://github.com/F1x-hub/MovieListExtension/releases/download/";
@@ -15,7 +15,8 @@ internal static class Program
     private const string AppName = "MovieListExtensionUpdater";
     private const int ProtocolVersion = 1;
     private const string UpdaterVersion = "1.1.4";
-    private const string ApplyMutexName = @"Local\MovieListExtensionUpdater.Apply";
+    private const string ApplyMutexName = @"Global\MovieListExtensionUpdater.Apply";
+    private static string UserApplyMutexName => ApplyMutexName + "." + System.Security.Principal.WindowsIdentity.GetCurrent().User!.Value;
     private const string SetupMutexName = @"Local\MovieListExtensionUpdater.Setup";
     private const string RecoveryRunOnceName = "MovieListExtensionUpdaterRecovery";
     private const string RecoveryRunOncePath = @"Software\Microsoft\Windows\CurrentVersion\RunOnce";
@@ -56,6 +57,7 @@ xwIDAQAB
     [STAThread]
     private static int Main(string[] args)
     {
+        if (TryRunComponentMode(args, out var componentExitCode)) return componentExitCode;
         Directory.CreateDirectory(DataRoot);
         if (args.Length >= 2 && string.Equals(args[0], "--recover", StringComparison.OrdinalIgnoreCase))
         {
@@ -155,6 +157,8 @@ xwIDAQAB
         {
             "status" => StatusResponse(config),
             "apply" => StartApply(request, config),
+            "apply_component" => StartComponentApply(request),
+            "validate_component_catalog" => ValidateComponentCatalogRequest(request),
             "confirm" => Confirm(request, config),
             _ => ErrorResponse("ACTION_UNSUPPORTED", "Unsupported updater action.")
         };
@@ -163,6 +167,7 @@ xwIDAQAB
     private static object StatusResponse(InstallConfig config)
     {
         RecoverStaleOperationIfPossible(config);
+        RecoverStaleComponentOperation();
         var operation = ReadJson<OperationState>(StatePath);
         if (operation?.CleanupPending == true)
         {
@@ -178,12 +183,17 @@ xwIDAQAB
             extensionId = config.ExtensionId,
             extensionVersion = currentVersion?.ToString(),
             updaterVersion = UpdaterVersion,
+            componentCapabilities = new { protocolVersion = 1, signedCatalog = true, updaterSelfUpdate = true, mediaPlayerSuite = true },
+            components = GetComponentInventory(config),
+            componentOperation = ReadComponentOperation(),
             operation
         };
     }
 
     private static object StartApply(JsonElement request, InstallConfig config)
     {
+        if (IsComponentOperationPending(ReadComponentOperation()))
+            return ErrorResponse("UPDATE_IN_PROGRESS", "A component update is already running.");
         var operationId = request.TryGetProperty("operationId", out var operationElement)
             ? operationElement.GetString()
             : null;
@@ -216,7 +226,7 @@ xwIDAQAB
             return ErrorResponse("UPDATE_SIGNATURE_INVALID", "The release metadata signature is invalid.");
         }
 
-        using var operationMutex = new Mutex(false, ApplyMutexName);
+        using var operationMutex = new Mutex(false, UserApplyMutexName);
         var mutexAcquired = false;
         OperationState? state = null;
         try
@@ -354,7 +364,7 @@ xwIDAQAB
             return ErrorResponse("CONFIRMATION_INVALID", "The update operation identifier is invalid.");
         }
 
-        using var operationMutex = new Mutex(false, ApplyMutexName);
+        using var operationMutex = new Mutex(false, UserApplyMutexName);
         var mutexAcquired = false;
         try
         {
@@ -395,7 +405,7 @@ xwIDAQAB
 
     private static void ExecuteOperation(string operationId)
     {
-        using var operationMutex = new Mutex(false, ApplyMutexName);
+        using var operationMutex = new Mutex(false, UserApplyMutexName);
         var mutexAcquired = false;
         try
         {
@@ -731,7 +741,7 @@ xwIDAQAB
         var state = ReadJson<OperationState>(StatePath);
         if (state is null || !IsRecoverableStaleOperation(state)) return;
 
-        using var operationMutex = new Mutex(false, ApplyMutexName);
+        using var operationMutex = new Mutex(false, UserApplyMutexName);
         if (!TryAcquireOperationMutex(operationMutex)) return;
         try
         {
@@ -814,7 +824,7 @@ xwIDAQAB
         var config = LoadConfig();
         if (config is null) return 1;
 
-        using var operationMutex = new Mutex(false, ApplyMutexName);
+        using var operationMutex = new Mutex(false, UserApplyMutexName);
         if (!TryAcquireOperationMutex(operationMutex)) return 1;
         try
         {
@@ -1238,7 +1248,7 @@ xwIDAQAB
 
         private void Install()
         {
-            using var operationMutex = new Mutex(false, ApplyMutexName);
+            using var operationMutex = new Mutex(false, UserApplyMutexName);
             if (!TryAcquireOperationMutex(operationMutex))
             {
                 status.ForeColor = Color.Firebrick;
@@ -1284,9 +1294,11 @@ xwIDAQAB
                 }
                 if (!string.Equals(Path.GetFullPath(runningExecutable), Path.GetFullPath(permanentExecutable), StringComparison.OrdinalIgnoreCase))
                 {
-                    if (installedVersion is null || runningVersion.CompareTo(installedVersion) > 0)
+                    if (ShouldReplaceSetupUpdater(runningVersion, installedVersion,
+                        runningCapable: true, installedCapable: installedVersion is not null && ProbeUpdater(permanentExecutable, UpdaterVersion)))
                     {
-                        CopyExecutableWithRetry(runningExecutable, permanentExecutable);
+                        ReplaceUpdaterFile(runningExecutable, permanentExecutable, Path.Combine(DataRoot, "setup-previous.exe"),
+                            path => ProbeUpdater(path, UpdaterVersion));
                     }
                 }
                 WriteJsonAtomic(ConfigPath, config);

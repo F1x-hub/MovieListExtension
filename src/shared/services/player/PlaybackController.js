@@ -530,6 +530,9 @@ class PlaybackController {
         this.hasCompletedCurrentSession = false;
         this.isSeeking = false;
 
+        const mediaDuration = () => typeof adapter?.getMediaDuration === 'function'
+            ? adapter.getMediaDuration(video) : video.duration;
+
         const mediaIdentity = {
             kinopoiskId: selection?.kinopoiskId != null ? selection.kinopoiskId : null,
             seasonNumber: selection?.seasonNumber != null ? selection.seasonNumber : null,
@@ -548,8 +551,9 @@ class PlaybackController {
         // 1. loadedmetadata: Sets total duration and performs timestamp resume if supported
         addScopedListener('loadedmetadata', () => {
             if (this.mountRequestId !== token) return;
-            const dur = typeof video.duration === 'number' && !Number.isNaN(video.duration) && video.duration >= 0
-                ? video.duration
+            const duration = mediaDuration();
+            const dur = typeof duration === 'number' && !Number.isNaN(duration) && duration >= 0
+                ? duration
                 : 0;
 
             this.updateRuntimeState({ duration: dur }, token, mediaIdentity);
@@ -574,8 +578,9 @@ class PlaybackController {
             const curTime = typeof video.currentTime === 'number' && !Number.isNaN(video.currentTime)
                 ? video.currentTime
                 : 0;
-            const curDur = (typeof video.duration === 'number' && !Number.isNaN(video.duration) && video.duration >= 0)
-                ? video.duration
+            const duration = mediaDuration();
+            const curDur = (typeof duration === 'number' && !Number.isNaN(duration) && duration >= 0)
+                ? duration
                 : (this.runtimeState.duration || 0);
 
             this.updateRuntimeState({
@@ -616,6 +621,7 @@ class PlaybackController {
         // 5. ended: Updates playback flags, records completion, and forces immediate progress flush
         addScopedListener('ended', () => {
             if (this.mountRequestId !== token) return;
+            if (typeof adapter?.canReportEnded === 'function' && !adapter.canReportEnded(video)) return;
             const endDuration = video.duration || video.currentTime || 0;
             this.updateRuntimeState({
                 isPlaying: false,

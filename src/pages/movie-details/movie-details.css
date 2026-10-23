@@ -5368,6 +5368,33 @@
     overflow: auto;
 }
 
+.torrent-file-picker {
+    margin: 12px 16px;
+    padding: 16px;
+    border: 1px solid var(--ui-color-border);
+    border-radius: 12px;
+    background: var(--ui-color-surface);
+    color: var(--ui-color-content);
+}
+
+.torrent-file-picker[hidden] { display: none; }
+.torrent-file-picker__heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.torrent-file-picker__heading h4 { margin: 0; font-size: 15px; }
+.torrent-file-picker p, .torrent-file-picker__meta { color: var(--ui-color-content-muted); font-size: 12px; }
+.torrent-file-picker__list { display: grid; gap: 8px; max-height: 300px; overflow-y: auto; }
+.torrent-file-picker button {
+    min-height: 44px;
+    padding: 10px 12px;
+    border: 1px solid var(--ui-color-border);
+    border-radius: 8px;
+    color: var(--ui-color-content);
+    background: var(--ui-color-surface-muted);
+    cursor: pointer;
+}
+.torrent-file-picker__list button { display: grid; gap: 5px; width: 100%; text-align: left; overflow-wrap: anywhere; }
+.torrent-file-picker button:hover { border-color: var(--ui-color-border-hover); }
+.torrent-file-picker button:focus-visible { outline: 2px solid var(--ui-color-content); outline-offset: 2px; }
+
 .torrent-source-card {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;

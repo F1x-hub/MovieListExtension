@@ -741,6 +741,11 @@ class MovieDetailsManager {
                 const sourceButton = event.target.closest('.torrent-source-card__select');
                 const sourceId = sourceButton?.getAttribute('data-source-id');
                 if (sourceButton && sourceId) void this.startTorrentPlayback(sourceId);
+                const fileButton = event.target.closest('[data-torrent-file-id]');
+                if (fileButton && this.torrentPreparedSource) {
+                    void this.startTorrentPlayback(this.torrentPreparedSource.sourceId, fileButton.dataset.torrentFileId);
+                }
+                if (event.target.closest('[data-torrent-files-cancel]')) this.clearTorrentFileSelection();
             });
         }
         document.addEventListener('visibilitychange', () => {
@@ -8273,6 +8278,13 @@ class MovieDetailsManager {
         }
 
         // 5. If player has active source / provider, reload direct provider or preserve title-only
+        if (this.activeSourceValue === MEDIA_PLAYER_TORRENT_SOURCE || this.torrentPlaybackSession) {
+            // Episode intent stays canonical: opening another episode must never
+            // keep the previous episode's torrent silently playing.
+            await this.revokeTorrentPlaybackSession();
+            await this.openTorrentPicker();
+            return;
+        }
         const activeProvider = this.playbackController?.getActiveProvider() || this.activeSource?.parserId || (this.currentVideoUrl?.startsWith('vidsrc:') ? 'vidsrc' : null);
 
         if (activeProvider) {
@@ -9991,6 +10003,12 @@ class MovieDetailsManager {
         return Number.isSafeInteger(numericId) && numericId > 0 ? numericId : null;
     }
 
+    isTorrentAvailable(movie = this.selectedMovie) {
+        if (this.isTorrentMovie(movie)) return true;
+        const television = this.mediaPlayerService?.capabilities?.torrents?.television;
+        return Boolean(movie && television?.supported === true && television.status === 'ready');
+    }
+
     populateSourceSelector() {
         this.watchEntryController?.beforeRebuild();
         let savedValue = this.activeSourceValue;
@@ -10021,7 +10039,7 @@ class MovieDetailsManager {
 
         // MediaPlayer is a local backend source, not an iframe parser. Keep it
         // in the same provider rail while opening a dedicated torrent picker.
-        if (this.mediaPlayerReady && this.isTorrentMovie() && !this.proPlayerEnabled) {
+        if (this.mediaPlayerReady && this.isTorrentAvailable() && !this.proPlayerEnabled) {
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'source-btn';
@@ -10371,7 +10389,7 @@ class MovieDetailsManager {
         });
         this.refreshSourceButtonStates();
         this.syncWatchEntry?.();
-        return found || Boolean(this.proPlayerEnabled && value === 'mediaplayer:torrent' && this.mediaPlayerReady && this.isTorrentMovie());
+        return found || Boolean(this.proPlayerEnabled && value === 'mediaplayer:torrent' && this.mediaPlayerReady && this.isTorrentAvailable());
     }
 
     resetHlsRecoveryState() {
@@ -10536,6 +10554,10 @@ class MovieDetailsManager {
 
         const movieId = String(this.selectedMovie?.kinopoiskId || '');
         const requestId = this.beginSourceSwitchRequest();
+        if (this.torrentPlaybackSession || this.torrentPlaybackVideo) {
+            await this.revokeTorrentPlaybackSession();
+            if (!this.isSourceSwitchRequestCurrent(requestId, movieId)) return false;
+        }
         this.manualRefreshRequestId = manualRetry ? requestId : null;
         this.sourceRefreshGeneration = (this.sourceRefreshGeneration || 0) + 1;
         if (this.proPlayerEnabled) {

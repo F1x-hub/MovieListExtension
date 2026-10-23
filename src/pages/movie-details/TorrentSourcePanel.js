@@ -75,6 +75,7 @@ class MovieDetailsTorrentPanelMethods {
         const panel = this.elements?.torrentSourcePanel;
         const movie = this.selectedMovie;
         if (!panel || !movie) return false;
+        this.clearTorrentFileSelection(false);
 
         if (!(await this.refreshMediaPlayerReadiness())) {
             panel.hidden = true;
@@ -124,8 +125,8 @@ class MovieDetailsTorrentPanelMethods {
         this.cancelActiveTorrentSearch();
         this.setTorrentSourceStatus('Проверяем локальный MediaPlayer…');
 
-        if (!this.isTorrentMovie(movie)) {
-            this.setTorrentSourceStatus('Торрент-источник доступен только для фильмов.', 'error');
+        if (!this.isTorrentAvailable(movie)) {
+            this.setTorrentSourceStatus('Для просмотра сериалов обновите MediaPlayer и проверьте подключение в настройках.', 'error');
             return false;
         }
         if (!this.mediaPlayerService) {
@@ -136,7 +137,8 @@ class MovieDetailsTorrentPanelMethods {
         try {
             const capabilities = await this.mediaPlayerService.getCapabilities();
             if (!this.isTorrentRequestCurrent(requestId, movie)) return false;
-            const moviesCapability = capabilities?.torrents?.movies;
+            const moviesCapability = this.isTorrentMovie(movie)
+                ? capabilities?.torrents?.movies : capabilities?.torrents?.television;
             if (moviesCapability?.supported === false || moviesCapability?.status !== 'ready') {
                 throw new MediaPlayerServiceError(
                     'torrent_not_configured',
@@ -177,15 +179,17 @@ class MovieDetailsTorrentPanelMethods {
     cancelActiveTorrentSearch() {
         const jobId = this.torrentSearchJobId;
         const tmdbId = this.torrentSearchTmdbId;
+        const mediaType = this.torrentSearchMediaType;
         this.torrentSearchJobId = null;
         this.torrentSearchTmdbId = null;
-        if (jobId) void this.mediaPlayerService?.cancelMovieSourceSearch(jobId, tmdbId).catch(() => undefined);
+        if (jobId) void this.mediaPlayerService?.cancelMovieSourceSearch(jobId, tmdbId, mediaType).catch(() => undefined);
     }
 
     async searchTorrentSources(requestId = null) {
         const movie = this.selectedMovie;
         if (!movie || !this.mediaPlayerService) return false;
         const activeRequestId = requestId === null ? ++this.torrentRequestId : requestId;
+        this.clearTorrentFileSelection(false);
         if (!this.isTorrentRequestCurrent(activeRequestId, movie)) return false;
         this.startTorrentDownloadMonitoring(movie, activeRequestId);
         this.cancelActiveTorrentSearch();
@@ -199,6 +203,7 @@ class MovieDetailsTorrentPanelMethods {
         this.setTorrentSourceStatus('Ищем раздачи…');
 
         const searchArgs = {
+            ...this.getTorrentPlaybackIdentity(movie),
             tmdbId: this.getMediaPlayerTmdbId(movie),
             title: movie.name || movie.nameRu || movie.alternativeName,
             originalTitle: movie.nameEn || movie.originalTitle || movie.alternativeName,
@@ -210,11 +215,12 @@ class MovieDetailsTorrentPanelMethods {
                 pollIntervalMs: 350,
                 onStart: (job) => {
                     if (!this.isTorrentRequestCurrent(activeRequestId, movie)) {
-                        void this.mediaPlayerService.cancelMovieSourceSearch(job.jobId, searchArgs.tmdbId).catch(() => undefined);
+                        void this.mediaPlayerService.cancelMovieSourceSearch(job.jobId, searchArgs.tmdbId, searchArgs.mediaType).catch(() => undefined);
                         return;
                     }
                     this.torrentSearchJobId = job.jobId;
                     this.torrentSearchTmdbId = searchArgs.tmdbId;
+                    this.torrentSearchMediaType = searchArgs.mediaType;
                 },
                 onBatch: (_batch, state) => {
                     if (!this.isTorrentRequestCurrent(activeRequestId, movie)) return;
@@ -256,6 +262,7 @@ class MovieDetailsTorrentPanelMethods {
     }
 
     closeTorrentPicker() {
+        this.clearTorrentFileSelection(false);
         if (this.elements?.torrentSourcePanel) this.elements.torrentSourcePanel.hidden = true;
         const workspaceButton = document.getElementById('torrentWorkspaceBtn');
         if (workspaceButton) workspaceButton.hidden = true;
@@ -543,7 +550,63 @@ class MovieDetailsTorrentPanelMethods {
 
     getTorrentMovieKey(movie = this.selectedMovie) {
         if (!movie) return '';
-        return String(this.getMediaPlayerTmdbId(movie) || movie.kinopoiskId || movie.id || '');
+        const id = String(this.getMediaPlayerTmdbId(movie) || movie.kinopoiskId || movie.id || '');
+        return this.isTorrentMovie(movie) ? id : `tv:${id}`;
+    }
+
+    getTorrentPlaybackIdentity(movie = this.selectedMovie) {
+        const mediaType = this.isTorrentMovie(movie) ? 'movie' : 'tv';
+        const selection = this.playbackController?.getSelection?.();
+        return { mediaType, tmdbId: this.getMediaPlayerTmdbId(movie),
+            title: movie?.name || movie?.nameRu || movie?.alternativeName,
+            year: movie?.year,
+            ...(mediaType === 'tv' ? { seasonNumber: selection?.seasonNumber ?? undefined,
+                episodeNumber: selection?.episodeNumber ?? undefined } : {}) };
+    }
+
+    clearTorrentFileSelection(restoreFocus = true) {
+        this.torrentPlaybackGeneration = (this.torrentPlaybackGeneration || 0) + 1;
+        this.torrentPreparedSource = null;
+        const picker = this.elements?.torrentSourcePanel?.querySelector('#torrentFilePicker');
+        if (picker) picker.hidden = true;
+        this.elements?.torrentSourceList?.querySelectorAll('.torrent-source-card__select').forEach(button => { button.disabled = false; });
+        if (restoreFocus) {
+            this.setTorrentSourceStatus('Выберите раздачу.');
+            this.elements?.torrentSourceList?.querySelector('.torrent-source-card__select')?.focus();
+        }
+    }
+
+    showTorrentFileSelection(sourceId, files = [], identity = this.getTorrentPlaybackIdentity(), loading = false) {
+        const picker = this.elements?.torrentSourcePanel?.querySelector('#torrentFilePicker');
+        if (!picker) return;
+        picker.hidden = false;
+        picker.setAttribute('aria-busy', String(loading));
+        picker.querySelector('[data-torrent-files-hint]').textContent = loading
+            ? 'Получаем список видео… Можно вернуться к раздачам.'
+            : identity.mediaType === 'tv'
+                ? `Сезон ${identity.seasonNumber ?? '—'}, серия ${identity.episodeNumber ?? '—'}. Проверьте название файла перед запуском.`
+                : 'Выберите видео для просмотра.';
+        const list = picker.querySelector('[data-torrent-files-list]');
+        list.replaceChildren();
+        for (const file of files) {
+            const row = document.createElement('div');
+            row.setAttribute('role', 'listitem');
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.dataset.torrentFileId = file.fileId;
+            const title = document.createElement('span');
+            title.textContent = file.name;
+            const details = document.createElement('span');
+            details.className = 'torrent-file-picker__meta';
+            details.textContent = [file.seasonNumber != null && file.episodeNumber != null
+                ? `S${String(file.seasonNumber).padStart(2, '0')}E${String(file.episodeNumber).padStart(2, '0')}` : '',
+            this.formatTorrentBytes(file.sizeBytes)].filter(Boolean).join(' · ');
+            button.append(title, details);
+            row.append(button);
+            list.append(row);
+        }
+        this.torrentPreparedSource = { sourceId, files, identity };
+        this.focusTorrentRegion(picker);
     }
 
     getTorrentActiveDownload() {
@@ -731,9 +794,12 @@ class MovieDetailsTorrentPanelMethods {
 
     getMatchingTorrentDownloads(downloads = this.torrentDownloads, movie = this.selectedMovie) {
         const tmdbId = this.getMediaPlayerTmdbId(movie);
+        const identity = this.getTorrentPlaybackIdentity(movie);
         return (Array.isArray(downloads) ? downloads : [])
-            .filter(download => String(download?.mediaType || 'movie') === 'movie')
+            .filter(download => String(download?.mediaType || 'movie') === (this.isTorrentMovie(movie) ? 'movie' : 'tv'))
             .filter(download => Number(download?.tmdbId) === tmdbId)
+            .filter(download => identity.mediaType !== 'tv' || (download.seasonNumber === identity.seasonNumber
+                && download.episodeNumber === identity.episodeNumber))
             .sort((first, second) => {
                 const order = { downloading: 0, starting: 1, paused: 2, error: 3, complete: 4 };
                 const statusDifference = (order[first.status] ?? 5) - (order[second.status] ?? 5);
@@ -1004,10 +1070,10 @@ class MovieDetailsTorrentPanelMethods {
         this.torrentDownloadRequestActive = false;
     }
 
-    async playSavedTorrent(downloadId) {
+    async playSavedTorrent(downloadId, options = {}) {
         const movie = this.selectedMovie;
         if (!movie || !this.mediaPlayerService) return false;
-        const record = this.torrentDownloads.find(download => String(download.id) === String(downloadId));
+        const record = this.getMatchingTorrentDownloads(this.torrentDownloads, movie).find(download => String(download.id) === String(downloadId));
         if (!record) return false;
         this.setTorrentActiveContext({
             movieKey: this.getTorrentMovieKey(movie),
@@ -1018,18 +1084,21 @@ class MovieDetailsTorrentPanelMethods {
             sizeBytes: record.sizeBytes || record.totalBytes
         });
         const requestId = this.torrentRequestId;
+        const generation = this.torrentPlaybackGeneration = (this.torrentPlaybackGeneration || 0) + 1;
         const action = Array.from(
             this.elements.torrentDownloadList?.querySelectorAll('[data-download-action="play"]') || []
         ).find(item => item.dataset.downloadId === downloadId);
         if (action) action.disabled = true;
         try {
-            const session = await this.mediaPlayerService.playDownload(downloadId);
-            if (!this.isTorrentRequestCurrent(requestId, movie)) {
+            const session = await this.mediaPlayerService.playDownload(downloadId, options);
+            if (!this.isTorrentRequestCurrent(requestId, movie) || generation !== this.torrentPlaybackGeneration) {
                 void this.mediaPlayerService.revokePlaybackSession(session.sessionId).catch(() => undefined);
                 return false;
             }
-            return await this.mountTorrentPlaybackSession(session, requestId, movie);
+            this.torrentPlaybackResume = options.resume || null;
+            return await this.mountTorrentPlaybackSession(session, requestId, movie, generation);
         } catch (error) {
+            if (!this.isTorrentRequestCurrent(requestId, movie) || generation !== this.torrentPlaybackGeneration) return false;
             this.setTorrentSourceStatus(this.formatTorrentError(error), 'error');
             if (action) action.disabled = false;
             return false;
@@ -1120,11 +1189,14 @@ class MovieDetailsTorrentPanelMethods {
         }
     }
 
-    async startTorrentPlayback(sourceId) {
+    async startTorrentPlayback(sourceId, fileId = null, options = {}) {
         const source = this.torrentSources.find(candidate => candidate?.sourceId === sourceId);
         const movie = this.selectedMovie;
         if (!source || !movie || !this.mediaPlayerService) return false;
         const requestId = this.torrentRequestId;
+        const generation = this.torrentPlaybackGeneration = (this.torrentPlaybackGeneration || 0) + 1;
+        const isCurrent = () => this.isTorrentRequestCurrent(requestId, movie) && generation === this.torrentPlaybackGeneration;
+        const identity = this.getTorrentPlaybackIdentity(movie);
         this.setTorrentActiveContext({
             movieKey: this.getTorrentMovieKey(movie),
             sourceId: source.sourceId,
@@ -1134,36 +1206,86 @@ class MovieDetailsTorrentPanelMethods {
             sizeBytes: source.sizeBytes
         });
         this.cancelActiveTorrentSearch();
-        this.elements.torrentSourceList?.querySelectorAll('.torrent-source-card').forEach(card => {
+        this.elements.torrentSourceList?.querySelectorAll('.torrent-source-card__select').forEach(card => {
             card.disabled = true;
         });
         this.setTorrentSourceStatus('Подготавливаем просмотр…');
 
         try {
-            await this.revokeTorrentPlaybackSession();
+            if (this.mediaPlayerService.capabilities?.playback?.fileSelection === true) {
+                const cached = this.torrentPreparedSource;
+                let prepared = cached?.sourceId === sourceId && fileId ? cached : null;
+                if (!prepared) {
+                    this.showTorrentFileSelection(sourceId, [], identity, true);
+                    prepared = await this.mediaPlayerService.preparePlayback({ sourceId, ...identity });
+                    if (!isCurrent()) return false;
+                }
+                if (fileId && !prepared.files.some(file => file.fileId === fileId)) {
+                    throw new Error('Файл отсутствует в выбранной раздаче. Повторите выбор.');
+                }
+                if (!fileId) {
+                    const exact = identity.mediaType === 'tv' ? prepared.files.filter(file =>
+                        file.seasonNumber != null && file.episodeNumber != null
+                        && file.seasonNumber === identity.seasonNumber && file.episodeNumber === identity.episodeNumber) : [];
+                    fileId = identity.mediaType === 'movie' && prepared.files.length === 1
+                        ? prepared.files[0].fileId : exact.length === 1 ? exact[0].fileId : null;
+                }
+                if (!fileId) {
+                    this.showTorrentFileSelection(sourceId, prepared.files, identity);
+                    this.setTorrentSourceStatus('Выберите видео из раздачи.');
+                    return false;
+                }
+                const file = prepared.files.find(candidate => candidate.fileId === fileId);
+                if (identity.mediaType === 'tv' && file.seasonNumber != null && file.episodeNumber != null) {
+                    identity.seasonNumber = file.seasonNumber;
+                    identity.episodeNumber = file.episodeNumber;
+                }
+            } else if (identity.mediaType === 'tv') {
+                throw new Error('Для выбора серий обновите MediaPlayer.');
+            }
             const session = await this.mediaPlayerService.createPlaybackSession({
-                sourceId: source.sourceId,
-                tmdbId: this.getMediaPlayerTmdbId(movie),
-                title: movie.name || movie.nameRu || movie.alternativeName,
-                year: movie.year
+                sourceId: source.sourceId, ...identity, fileId,
+                audioStreamIndex: options.audioStreamIndex
             });
-            return await this.mountTorrentPlaybackSession(session, requestId, movie);
+            if (!isCurrent()) {
+                void this.mediaPlayerService.revokePlaybackSession(session.sessionId).catch(() => undefined);
+                return false;
+            }
+            this.torrentPlaybackSourceArgs = { sourceId, fileId, ...identity };
+            this.torrentPlaybackResume = options.resume || null;
+            return await this.mountTorrentPlaybackSession(session, requestId, movie, generation);
         } catch (error) {
+            if (!isCurrent()) return false;
             this.setTorrentSourceStatus(this.formatTorrentError(error), 'error');
-            this.elements.torrentSourceList?.querySelectorAll('.torrent-source-card').forEach(card => {
+            this.elements.torrentSourceList?.querySelectorAll('.torrent-source-card__select').forEach(card => {
                 card.disabled = false;
             });
             return false;
         }
     }
 
-    async mountTorrentPlaybackSession(session, requestId, movie) {
-        if (!session || !this.isTorrentRequestCurrent(requestId, movie)) {
+    async mountTorrentPlaybackSession(session, requestId, movie, generation = this.torrentPlaybackGeneration) {
+        if (!session || !this.isTorrentRequestCurrent(requestId, movie) || generation !== this.torrentPlaybackGeneration) {
             if (session?.sessionId) void this.mediaPlayerService?.revokePlaybackSession(session.sessionId).catch(() => undefined);
             return false;
         }
 
+        const obsolete = this.torrentPlaybackSession;
+        if (this.torrentPlaybackResume && obsolete?.sessionId && obsolete.sessionId !== session.sessionId) {
+            const ready = await this.waitForTorrentReplacement(session, requestId, movie, generation);
+            if (!ready) return false;
+        }
+        if (!this.isTorrentRequestCurrent(requestId, movie) || generation !== this.torrentPlaybackGeneration) {
+            void this.mediaPlayerService?.revokePlaybackSession(session.sessionId).catch(() => undefined);
+            return false;
+        }
+        if (obsolete?.sessionId && obsolete.sessionId !== session.sessionId) {
+            void this.mediaPlayerService.revokePlaybackSession(obsolete.sessionId).catch(() => undefined);
+        }
+        const picker = this.elements?.torrentSourcePanel?.querySelector('#torrentFilePicker');
+        if (picker) picker.hidden = true;
         this.beginSourceSwitchRequest();
+        this.disposeTorrentPlaybackVideo();
         this.unmountActivePlayer();
         this.resetHlsRecoveryState();
         if (this.currentHls) {
@@ -1171,6 +1293,24 @@ class MovieDetailsTorrentPanelMethods {
             this.currentHls = null;
         }
         this.torrentPlaybackSession = session;
+        if (!this.torrentPlaybackResume) this.torrentSubtitlePreference = null;
+        const selectedFile = session.selectedFile;
+        const canonical = this.playbackController?.getSelection?.();
+        if (canonical) this.playbackController.setSelection({ ...canonical, providerId: MOVIE_DETAILS_TORRENT_SOURCE });
+        if (!this.isTorrentMovie(movie) && canonical && selectedFile?.seasonNumber != null && selectedFile?.episodeNumber != null) {
+            this.playbackController.setSelection({ ...canonical, providerId: MOVIE_DETAILS_TORRENT_SOURCE, seasonNumber: selectedFile.seasonNumber,
+                episodeNumber: selectedFile.episodeNumber, initialTimestamp: this.torrentPlaybackResume?.currentTime || 0 });
+            this.updatePlayerHeaderTitle?.();
+            this.updatePlayerNavigationControls?.();
+        }
+        if (!this.torrentPlaybackResume && canonical?.initialTimestamp > 0
+            && (this.isTorrentMovie(movie) || (selectedFile?.seasonNumber === canonical.seasonNumber
+                && selectedFile?.episodeNumber === canonical.episodeNumber))) {
+            this.torrentPlaybackResume = { currentTime: canonical.initialTimestamp, paused: false,
+                volume: 1, muted: false, playbackRate: 1 };
+        }
+        this.torrentTracksSnapshot = null;
+        this.torrentTracksRefreshState = '';
         if (session.downloadId) {
             this.setTorrentActiveContext({
                 ...(this.torrentActiveContext || {}),
@@ -1189,11 +1329,40 @@ class MovieDetailsTorrentPanelMethods {
         if (session.downloadId) void this.refreshTorrentDownloads(movie, requestId);
         this.startTorrentProgressMonitoring(session);
         if (this.elements.torrentSourceDisclosure) this.elements.torrentSourceDisclosure.open = false;
-        this.elements.torrentSourceList?.querySelectorAll('.torrent-source-card').forEach(card => {
+        this.elements.torrentSourceList?.querySelectorAll('.torrent-source-card__select').forEach(card => {
             card.disabled = false;
         });
         this.focusTorrentRegion(this.elements.videoContainer);
         return true;
+    }
+
+    async waitForTorrentReplacement(session, requestId, movie, generation) {
+        const deadline = Date.now() + 30_000;
+        while (Date.now() < deadline && this.isTorrentRequestCurrent(requestId, movie) && generation === this.torrentPlaybackGeneration) {
+            try {
+                await this.mediaPlayerService.warmPlaybackSession?.(session);
+                const progress = await this.mediaPlayerService.getPlaybackProgress(session.progressUrl);
+                if (!this.isTorrentRequestCurrent(requestId, movie) || generation !== this.torrentPlaybackGeneration) break;
+                const playback = progress?.playback;
+                const audioSwitch = this.torrentAudioSwitch;
+                const liveResume = audioSwitch && audioSwitch.session === this.torrentPlaybackSession
+                    && audioSwitch.video === this.torrentPlaybackVideo
+                    ? this.getTorrentVideoResume(audioSwitch.video) : null;
+                const target = (liveResume || this.torrentPlaybackResume)?.currentTime || 0;
+                if (['error', 'failed'].includes(playback?.state)) break;
+                if (playback?.isReady && (playback.isComplete || playback.availableDurationSeconds >= target + 2)) {
+                    if (liveResume) this.torrentPlaybackResume = liveResume;
+                    return true;
+                }
+            } catch { /* The replacement may still be starting; retain the old player. */ }
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        void this.mediaPlayerService.revokePlaybackSession(session.sessionId).catch(() => undefined);
+        if (generation === this.torrentPlaybackGeneration) {
+            this.torrentPlaybackResume = null;
+            this.setTorrentSourceStatus('Не удалось быстро подготовить выбранную озвучку. Предыдущая дорожка сохранена — повторите попытку позже.', 'error');
+        }
+        return false;
     }
 
     ensureTorrentPlaybackStatusMarkup(status) {
@@ -1293,6 +1462,7 @@ class MovieDetailsTorrentPanelMethods {
         if (!status) return;
         if (Object.keys(progress).length) this.latestTorrentPlaybackProgress = progress;
         else progress = this.latestTorrentPlaybackProgress || {};
+        if (this.torrentPlaybackVideo) this.torrentPlaybackVideo._torrentPlaybackSnapshot = progress.playback || null;
         const activeDownload = this.getTorrentActiveDownload();
         if (activeDownload) {
             this.renderTorrentDownloads(this.torrentDownloads);
@@ -1476,6 +1646,15 @@ class MovieDetailsTorrentPanelMethods {
         if (!video) return;
 
         this.torrentPlaybackVideo = video;
+        const controller = this.playbackController;
+        if (controller?.registerAdapter && typeof window.TorrentAdapter === 'function') {
+            if (!controller.getAdapter(MOVIE_DETAILS_TORRENT_SOURCE)) controller.registerAdapter(new window.TorrentAdapter());
+            video.dataset.progressOwner = 'canonical';
+            video._torrentPlaybackSnapshot = this.latestTorrentPlaybackProgress?.playback || null;
+            controller.attachExternalVideo(video, { providerId: MOVIE_DETAILS_TORRENT_SOURCE, selection: controller.getSelection() });
+        }
+        this.applyTorrentTrackSnapshot(video);
+        void this.refreshTorrentTracks();
         const updateAvailability = () => this.updateTorrentPlaybackAvailability(video);
         const events = ['loadedmetadata', 'durationchange', 'progress', 'canplay'];
         events.forEach(eventName => video.addEventListener(eventName, updateAvailability));
@@ -1489,6 +1668,11 @@ class MovieDetailsTorrentPanelMethods {
     }
 
     detachTorrentPlaybackVideo() {
+        this.clearTorrentSubtitleResources();
+        if (this.torrentPlaybackVideo && this.playbackController?.externalVideoElement === this.torrentPlaybackVideo) {
+            this.playbackController.flushProgress({ force: true });
+            this.playbackController.detachExternalVideo();
+        }
         if (this.torrentPlaybackStartTimer) clearTimeout(this.torrentPlaybackStartTimer);
         this.torrentPlaybackStartTimer = null;
         if (this.torrentPlaybackVideoCleanup) {
@@ -1497,6 +1681,206 @@ class MovieDetailsTorrentPanelMethods {
         }
         this.torrentPlaybackVideo = null;
         this.torrentPlaybackAvailableDurationSeconds = null;
+    }
+
+    disposeTorrentPlaybackVideo() {
+        const video = this.torrentPlaybackVideo;
+        // A newer source may already own currentHls. Dispose only this video's instance.
+        const hls = video?._movieExtensionHls
+            || (video && this.currentHls?.media === video ? this.currentHls : null);
+        video?.pause();
+        this.detachTorrentPlaybackVideo();
+        if (hls) {
+            if (this.currentHls === hls) this.currentHls = null;
+            delete video._movieExtensionHls;
+            hls.destroy();
+        }
+        video?.removeAttribute?.('src');
+        video?.load?.();
+    }
+
+    getTorrentTrackLabel(track) {
+        return [track.title || track.language || `Дорожка ${track.streamIndex + 1}`,
+            track.channels ? `${track.channels} ch` : '', track.codec || ''].filter(Boolean).join(' · ');
+    }
+
+    clearTorrentSubtitleResources() {
+        this.torrentSubtitleAbortController?.abort();
+        this.torrentSubtitleAbortController = null;
+        for (const url of this.torrentSubtitleBlobUrls || []) URL.revokeObjectURL(url);
+        this.torrentSubtitleBlobUrls = new Set();
+    }
+
+    async loadTorrentSubtitle(video, track, subtitle, session, controller) {
+        const service = this.mediaPlayerService;
+        const url = new URL(service.normalizeServiceUrl(subtitle.url));
+        const manifest = new URL(service.normalizeServiceUrl(session.hlsUrl));
+        if (!Number.isSafeInteger(subtitle.streamIndex) || subtitle.streamIndex < 0
+            || url.origin !== manifest.origin
+            || url.pathname !== `/api/playback/sessions/${encodeURIComponent(session.sessionId)}/subtitles/${subtitle.streamIndex}.vtt`
+            || !manifest.searchParams.get('token') || url.searchParams.get('token') !== manifest.searchParams.get('token')
+            || url.username || url.password || url.hash) throw new Error('Invalid subtitle capability');
+        const requestController = new AbortController();
+        const abort = () => requestController.abort();
+        if (controller.signal.aborted) abort();
+        else controller.signal.addEventListener('abort', abort, { once: true });
+        const timer = setTimeout(abort, 35_000);
+        let reader;
+        try {
+            // Keep the same abort signal through headers and the entire body.
+            const response = await service.fetchImpl(url.toString(), {
+                headers: { Accept: 'text/vtt' }, redirect: 'error', credentials: 'omit', signal: requestController.signal
+            });
+            if (!response.ok || !/^text\/vtt(?:\s*;|$)/i.test(response.headers.get('content-type') || '')
+                || Number(response.headers.get('content-length')) > 4 * 1024 * 1024 || !response.body) {
+                await response.body?.cancel();
+                throw new Error('Subtitle unavailable');
+            }
+            reader = response.body.getReader();
+            const chunks = [];
+            let bytes = 0;
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                bytes += value.byteLength;
+                if (bytes > 4 * 1024 * 1024) throw new Error('Subtitle too large');
+                chunks.push(value);
+            }
+            if (requestController.signal.aborted || this.torrentPlaybackSession !== session
+                || this.torrentPlaybackVideo !== video || !video.contains(track)) return;
+            const blob = new Blob(chunks, { type: 'text/vtt' });
+            if (!/^\uFEFF?WEBVTT(?:\s|$)/.test(await blob.text())) throw new Error('Invalid subtitle content');
+            if (requestController.signal.aborted || this.torrentPlaybackSession !== session
+                || this.torrentPlaybackVideo !== video || !video.contains(track)) return;
+            const blobUrl = URL.createObjectURL(blob);
+            this.torrentSubtitleBlobUrls.add(blobUrl);
+            track.src = blobUrl;
+        } finally {
+            clearTimeout(timer);
+            controller.signal.removeEventListener('abort', abort);
+            await reader?.cancel().catch(() => undefined);
+        }
+    }
+
+    applyTorrentTrackSnapshot(video = this.torrentPlaybackVideo) {
+        const snapshot = this.torrentTracksSnapshot;
+        if (!video || !snapshot) return;
+        video._movieExtensionMediaTracks = {
+            audio: snapshot.audio.map(track => ({ ...track, label: this.getTorrentTrackLabel(track) })),
+            subtitles: snapshot.subtitles,
+            selectedAudioStreamIndex: snapshot.selectedAudioStreamIndex,
+            selectAudio: streamIndex => { void this.changeTorrentAudioTrack(streamIndex); }
+        };
+        const previousModes = new Map(Array.from(video.querySelectorAll('track[data-torrent-subtitle]'))
+            .map(track => [track.dataset.torrentSubtitle, track.track?.mode]));
+        this.clearTorrentSubtitleResources();
+        const controller = new AbortController();
+        this.torrentSubtitleAbortController = controller;
+        const session = this.torrentPlaybackSession;
+        const pending = [];
+        video.querySelectorAll('track[data-torrent-subtitle]').forEach(track => track.remove());
+        for (const subtitle of snapshot.subtitles) {
+            if (!subtitle.supported || !subtitle.url) continue;
+            const track = document.createElement('track');
+            track.kind = 'subtitles';
+            track.dataset.torrentSubtitle = String(subtitle.streamIndex);
+            track.label = this.getTorrentTrackLabel(subtitle);
+            track.srclang = subtitle.language || 'und';
+            const mode = previousModes.get(String(subtitle.streamIndex))
+                || (this.torrentSubtitlePreference === String(subtitle.streamIndex) ? 'showing' : 'disabled');
+            video.append(track);
+            if (track.track) track.track.mode = mode;
+            pending.push({ track, subtitle });
+        }
+        // Fetch only the selected language, serially, within the converter pool limit.
+        const attempted = new Set();
+        let loading = false;
+        const selectedTrack = () => {
+            const enabled = pending.filter(({ track }) => video.contains(track) && track.track?.mode !== 'disabled');
+            const selected = enabled.find(({ subtitle }) => this.torrentSubtitlePreference === String(subtitle.streamIndex)) || enabled[0];
+            // Native automatic selection can enable extra tracks as they are appended.
+            for (const item of enabled) if (item !== selected) item.track.track.mode = 'disabled';
+            this.torrentSubtitlePreference = selected ? String(selected.subtitle.streamIndex) : null;
+            return selected;
+        };
+        const loadSelected = async () => {
+            if (controller.signal.aborted) return;
+            selectedTrack();
+            if (loading) return;
+            loading = true;
+            try {
+                let selected;
+                while (!controller.signal.aborted && (selected = selectedTrack()) && !attempted.has(selected.track)) {
+                    const { track, subtitle } = selected;
+                    attempted.add(track);
+                    try {
+                        await this.loadTorrentSubtitle(video, track, subtitle, session, controller);
+                    } catch {
+                        if (controller.signal.aborted || this.torrentPlaybackSession !== session || this.torrentPlaybackVideo !== video) return;
+                        track.remove();
+                        this.setTorrentSourceStatus('Не удалось загрузить субтитры. Повторите запуск просмотра.', 'error');
+                        video.dispatchEvent(new Event('extension-player-tracks-ready'));
+                    }
+                }
+            } finally {
+                loading = false;
+            }
+        };
+        const onTrackChange = () => { void loadSelected(); };
+        video.textTracks.addEventListener('change', onTrackChange);
+        controller.signal.addEventListener('abort', () => video.textTracks.removeEventListener('change', onTrackChange), { once: true });
+        void loadSelected();
+        video.dispatchEvent(new Event('extension-player-tracks-ready'));
+    }
+
+    async refreshTorrentTracks() {
+        const session = this.torrentPlaybackSession;
+        if (!session || !this.mediaPlayerService?.getPlaybackTracks
+            || this.mediaPlayerService.capabilities?.playback?.trackSelection !== true) return;
+        if (this.torrentTracksRequestSession === session.sessionId) return;
+        this.torrentTracksRequestSession = session.sessionId;
+        try {
+            const tracks = await this.mediaPlayerService.getPlaybackTracks(session);
+            if (this.torrentPlaybackSession !== session) return;
+            this.torrentTracksSnapshot = tracks;
+            this.applyTorrentTrackSnapshot();
+        } catch {
+            if (this.torrentPlaybackSession !== session) return;
+            if (this.latestTorrentPlaybackProgress?.playback?.isReady) {
+                this.setTorrentSourceStatus('Не удалось получить дорожки. Повторите запуск просмотра.', 'error');
+            }
+        } finally {
+            if (this.torrentTracksRequestSession === session.sessionId) this.torrentTracksRequestSession = null;
+        }
+    }
+
+    getTorrentVideoResume(video) {
+        return { currentTime: Number(video?.currentTime) || 0, paused: video?.paused !== false,
+            volume: video?.volume ?? 1, muted: video?.muted === true, playbackRate: video?.playbackRate || 1 };
+    }
+
+    async changeTorrentAudioTrack(audioStreamIndex) {
+        const session = this.torrentPlaybackSession;
+        const snapshot = this.torrentTracksSnapshot;
+        if (!session || !snapshot?.audio.some(track => track.streamIndex === audioStreamIndex)
+            || snapshot.selectedAudioStreamIndex === audioStreamIndex) return false;
+        const video = this.torrentPlaybackVideo;
+        const pending = this.torrentAudioSwitch;
+        const resume = pending?.session === session && pending.video === video
+            ? pending.resume : this.getTorrentVideoResume(video);
+        const operation = { session, video, resume };
+        this.torrentAudioSwitch = operation;
+        this.torrentSubtitlePreference = video?.querySelector('track[data-torrent-subtitle]')
+            ? Array.from(video.querySelectorAll('track[data-torrent-subtitle]')).find(track => track.track?.mode === 'showing')?.dataset.torrentSubtitle || null : null;
+        this.setTorrentSourceStatus('Переключаем озвучку. Позиция просмотра сохранена…');
+        try {
+            // Keep the old session playing while the selected audio is prepared.
+            if (session.downloadId) return await this.playSavedTorrent(session.downloadId, { audioStreamIndex, resume });
+            const args = this.torrentPlaybackSourceArgs;
+            return args ? await this.startTorrentPlayback(args.sourceId, args.fileId, { audioStreamIndex, resume }) : false;
+        } finally {
+            if (this.torrentAudioSwitch === operation) this.torrentAudioSwitch = null;
+        }
     }
 
     waitForTorrentPlaybackStart(video, isCurrentPlayer) {
@@ -1523,9 +1907,35 @@ class MovieDetailsTorrentPanelMethods {
                 && (playback?.isComplete || enoughBuffered || (playback?.isReady && video.readyState >= 3));
 
             if (ready) {
+                const resume = this.torrentPlaybackResume;
+                if (resume) {
+                    // A new HLS stream keeps the full timeline. Wait until the
+                    // saved position is seekable instead of restarting at zero.
+                    const target = resume.currentTime;
+                    const seekableEnd = video.seekable?.length ? video.seekable.end(video.seekable.length - 1) : 0;
+                    if (target > 0 && seekableEnd < target && !playback?.isComplete) {
+                        this.torrentPlaybackSeekDeadline ||= Date.now() + 30_000;
+                        if (Date.now() >= this.torrentPlaybackSeekDeadline) {
+                            this.torrentPlaybackResume = null;
+                            this.torrentPlaybackSeekDeadline = null;
+                            this.setTorrentSourceStatus('Позиция просмотра ещё не готова. Возобновите просмотр после буферизации.', 'error');
+                            video.pause();
+                            return;
+                        }
+                        this.torrentPlaybackStartTimer = setTimeout(attempt, 400);
+                        return;
+                    }
+                    video.currentTime = Math.min(target, Number.isFinite(video.duration) ? video.duration : target);
+                    video.volume = resume.volume;
+                    video.muted = resume.muted;
+                    video.playbackRate = resume.playbackRate;
+                    this.torrentPlaybackResume = null;
+                    this.torrentPlaybackSeekDeadline = null;
+                }
                 this.torrentPlaybackStartTimer = null;
                 this.hlsPlaybackState = '';
                 this.renderTorrentPlaybackStatus();
+                if (resume?.paused) { video.pause(); return; }
                 video.play().catch(error => console.log('Autoplay blocked', error));
                 return;
             }
@@ -1566,6 +1976,12 @@ class MovieDetailsTorrentPanelMethods {
                     this.torrentProgressPollDelayMs = 2500;
                     this.torrentHasPlaybackSnapshot = true;
                     this.renderTorrentPlaybackStatus(progress || {});
+                    const trackState = progress?.playback?.isComplete ? 'complete'
+                        : progress?.playback?.isReady ? 'ready' : '';
+                    if (trackState && trackState !== this.torrentTracksRefreshState) {
+                        this.torrentTracksRefreshState = trackState;
+                        void this.refreshTorrentTracks();
+                    }
                 }
             } catch (error) {
                 if (monitorToken !== this.torrentProgressMonitorToken) return;
@@ -1614,8 +2030,12 @@ class MovieDetailsTorrentPanelMethods {
     async revokeTorrentPlaybackSession() {
         const session = this.torrentPlaybackSession;
         this.torrentPlaybackSession = null;
+        this.torrentPlaybackGeneration = (this.torrentPlaybackGeneration || 0) + 1;
+        this.torrentAudioSwitch = null;
+        this.torrentPlaybackResume = null;
+        this.torrentPlaybackSeekDeadline = null;
         this.stopTorrentProgressMonitoring();
-        this.detachTorrentPlaybackVideo();
+        this.disposeTorrentPlaybackVideo();
         if (!session?.sessionId || !this.mediaPlayerService) return;
         try {
             await this.mediaPlayerService.revokePlaybackSession(session.sessionId);

@@ -26,6 +26,8 @@ The hardened updater requires MovieListSetup.exe version 1.1.4 or newer. A user
 who already connected an older Setup must run the current Setup once, select the same
 extension folder, and click **Connect automatic updates**. This is a one-time
 migration; future extension releases do not require reinstalling the Setup executable.
+Component capability migration also supports legacy 1.1.4 installations: current
+Setup repairs an equal-version host only when its component probe is missing.
 
 Before the first signed release, generate a release key pair once:
 
@@ -92,7 +94,7 @@ The repository secret must contain the complete JSON object, including
 exact name `FIREBASE_SERVICE_ACCOUNT`; do not paste the JSON into the workflow.
 The release job validates this secret before creating a draft release, and a
 rerun resumes a draft left by an interrupted job. If the selected tag already
-has a published non-prerelease, the job replaces only that release's four
+has a published non-prerelease, the job replaces only that release's generated
 generated assets with the files built from the current tag; this supports
 recovering an interrupted or stale release without creating a second version.
 Prereleases are rejected. The error
@@ -124,3 +126,75 @@ HTTP 404 and integrity failures switch sources immediately. Transient network an
 408/429/5xx failures retry up to three attempts per source; disk write failures stop
 the operation. Header waits are bounded to 15 seconds, idle reads to 30 seconds,
 each transfer to two minutes and the download operation to ten minutes.
+
+## Component updates
+
+`components.json` and `components.json.sig` are a separate RSA-PSS/SHA-256 signed
+stable catalog. Each component has its own version, exact immutable GitHub asset
+URL, SHA-256, size and compatibility requirement. The old `update.json` feed is
+still published for older extension clients. A missing component catalog does not
+disable that feed. Component checks run even when the extension is current.
+The API-v1 compatibility floor remains 1.1.4 independently of newer updater
+patch versions; change that floor only for a real protocol compatibility change.
+
+Settings expose independent updater and Suite auto-update opt-ins, initially off.
+The native updater inventories the exact HKLM-registered Suite and committed
+`current/suite-version.json`; missing Suites are skipped and unknown legacy
+versions require a one-time full manual Setup. Current MovieListSetup upgrades a
+legacy equal-version 1.1.4 host only when it lacks the component capability probe.
+Future updater releases need a strictly greater native project/CLI version.
+
+A full Suite Setup installs `MediaPlayerSuiteUpdateService` as SYSTEM, preserving
+the original user's SID and per-user DPAPI/Native Messaging registration. Its
+protected named pipe accepts only status and signed Suite descriptors from that
+owner; the broker downloads and verifies the fixed installer itself. No caller
+command or executable/destination path is accepted. Background updates never ask
+for UAC. A missing broker requires manual setup/elevation; its version must not be
+guessed from an HTTP failure. A known stopped service is updated only when there
+is no listener or orphan server, probed temporarily and returned to stopped.
+
+Suite upgrades gate new playback and download resumes before draining viewers,
+snapshot the closed database/WAL and configuration, rename the old runtime on the
+same volume and commit only after the registered service's process ancestry and
+version/build readiness match. Failed activation restores the old runtime, broker,
+configuration and database. Downloads and the saved download folder are preserved.
+The detached protected worker survives the broker service's stop/replacement.
+Temporary pipe connection/read timeouts during that replacement remain retryable
+until the operation deadline. Activation and stopped-service checks read the
+validated port from the protected installed environment configuration.
+
+A healthy full manual Setup can reconcile a previous `recovery_required` journal
+after the installer exits. Reconciliation requires a fresh committed manual
+transaction, matching runtime identity and the actual service state; it preserves
+the failed-operation diagnostic instead of replaying its installer. Work caches
+retain active/recovery operations and bounded terminal rollback/diagnostic files;
+safe later operations prune obsolete GUID work directories without following
+reparse points. Independent preference writes use an origin-wide Web Lock shared
+by Settings pages and the service worker.
+
+`npm run package-release` builds MovieListSetup. With the production signing
+secret configured, `npm run generate-component-metadata` signs the catalog and
+validates the updater's compiled probe. An extension-only release preserves the
+previous verified Suite descriptor and its original immutable URL. To include a
+Suite, explicitly provide these release-environment values before packaging and
+signing:
+
+```text
+MEDIAPLAYER_SUITE_ASSET=<fresh MediaPlayerSuiteSetup.exe absolute path>
+MEDIAPLAYER_SUITE_VERSION=<actual Suite package.json and Inno AppVersion>
+MEDIAPLAYER_SUITE_API_MAJOR=1
+MEDIAPLAYER_SUITE_BUILD_ID=<buildId from that bundle-version.json>
+```
+
+The release workflow uploads both catalog files and an explicitly supplied Suite
+asset. It does not build the sibling MediaPlayer repository automatically; make
+that artifact available to the release job before using these variables. Never
+reuse a published Suite version for different installer bytes. Verify both native
+public keys (`ReleasePublicKey` and MediaPlayer update-host `ReleaseKeys.PublicKey`)
+match before a Suite release. Key rotation requires an explicit migration of both
+trust roots; do not regenerate a key as ordinary release housekeeping.
+
+Run `npm run test:component-updates`, native Updater.Tests and the MediaPlayer
+upgrade/broker fixtures before release. Local build and fixture success do not
+establish clean-machine installation, cross-account UAC behavior or a published
+signed update round trip.

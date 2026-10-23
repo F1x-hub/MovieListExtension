@@ -297,6 +297,14 @@
                         <button class="torrent-source-panel__close" id="torrentSourceCloseBtn" type="button" aria-label="Закрыть список раздач" title="Закрыть">×</button>
                     </div>
                     <div class="torrent-source-panel__status" id="torrentSourceStatus" role="status" aria-live="polite"></div>
+                    <section class="torrent-file-picker" id="torrentFilePicker" hidden aria-labelledby="torrentFilePickerTitle" tabindex="-1">
+                        <div class="torrent-file-picker__heading">
+                            <h4 id="torrentFilePickerTitle">Выберите файл</h4>
+                            <button type="button" data-torrent-files-cancel>Назад к раздачам</button>
+                        </div>
+                        <p data-torrent-files-hint></p>
+                        <div class="torrent-file-picker__list" data-torrent-files-list role="list" aria-label="Видеофайлы раздачи"></div>
+                    </section>
                     <section class="torrent-playback-status" id="torrentPlaybackStatus" hidden aria-labelledby="torrentPlaybackTitle"></section>
                     <section class="torrent-download-library" id="torrentDownloadLibrary" hidden aria-labelledby="torrentDownloadLibraryTitle">
                         <div class="torrent-download-library__heading">
@@ -500,6 +508,7 @@
     <script defer src="../../shared/services/player/adapters/RutubeAdapter.js"></script>
     <script defer src="../../shared/services/player/adapters/AnimeGoAdapter.js"></script>
     <script defer src="../../shared/services/player/adapters/HdrezkaAdapter.js"></script>
+    <script defer src="../../shared/services/player/adapters/TorrentAdapter.js"></script>
     <script defer src="../../shared/services/player/PlaybackRuntime.js"></script>
     <script defer src="../../shared/services/player/PlaybackController.js"></script>
     <script defer src="../../shared/services/player/RutubeWatchRoomBridge.js"></script>
