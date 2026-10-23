@@ -375,20 +375,65 @@
                                 <p class="setting-desc updates-install-status" id="extensionUpdateInstallStatus" role="status" aria-live="polite" hidden></p>
                             </div>
                         </div>
+
+                        <section class="settings-section component-updates-section" aria-labelledby="componentUpdatesTitle">
+                            <div class="component-updates-header">
+                                <div class="setting-info">
+                                    <h3 class="section-title" id="componentUpdatesTitle" data-i18n="settings.component_updates.title">Компоненты Windows</h3>
+                                    <p class="setting-desc" data-i18n="settings.component_updates.description">Обновлятор и установленный MediaPlayer обновляются независимо. Автообновление каждого компонента включается отдельно.</p>
+                                </div>
+                                <button class="btn btn-secondary" id="componentUpdatesCheckBtn" type="button" data-i18n="settings.component_updates.check">Проверить версии компонентов</button>
+                            </div>
+                            <p class="component-updates-catalog-status" id="componentUpdatesStatus" role="status" aria-live="polite" aria-atomic="true"></p>
+                            <div class="component-updates-list">
+                                <article class="component-update-card" data-component-id="updater" aria-labelledby="componentUpdaterTitle">
+                                    <div class="component-update-info">
+                                        <h4 class="setting-title" id="componentUpdaterTitle" data-i18n="settings.component_updates.updater">Обновлятор MovieList</h4>
+                                        <p class="setting-desc"><span data-i18n="settings.component_updates.version">Установленная версия</span>: <strong data-component-version>—</strong></p>
+                                        <p class="component-update-status" data-component-status role="status" aria-live="polite" aria-atomic="true"></p>
+                                        <p class="setting-desc component-update-note" data-component-note hidden></p>
+                                    </div>
+                                    <div class="component-update-actions">
+                                        <button class="btn btn-secondary" type="button" data-component-apply disabled data-i18n="settings.component_updates.update">Обновить</button>
+                                        <a class="btn btn-secondary" data-component-setup target="_blank" rel="noopener noreferrer" hidden data-i18n="settings.component_updates.setup">Открыть Setup</a>
+                                    </div>
+                                    <label class="component-auto-update">
+                                        <input type="checkbox" role="switch" data-component-auto disabled aria-labelledby="componentUpdaterAutoLabel componentUpdaterTitle">
+                                        <span id="componentUpdaterAutoLabel" data-i18n="settings.component_updates.automatic">Обновлять автоматически</span>
+                                    </label>
+                                </article>
+                                <article class="component-update-card" data-component-id="mediaPlayerSuite" aria-labelledby="componentSuiteTitle">
+                                    <div class="component-update-info">
+                                        <h4 class="setting-title" id="componentSuiteTitle">MediaPlayer Suite</h4>
+                                        <p class="setting-desc"><span data-i18n="settings.component_updates.version">Установленная версия</span>: <strong data-component-version>—</strong></p>
+                                        <p class="component-update-status" data-component-status role="status" aria-live="polite" aria-atomic="true"></p>
+                                        <p class="setting-desc component-update-note" data-component-note hidden></p>
+                                    </div>
+                                    <div class="component-update-actions">
+                                        <button class="btn btn-secondary" type="button" data-component-apply disabled data-i18n="settings.component_updates.update">Обновить</button>
+                                        <a class="btn btn-secondary" data-component-setup target="_blank" rel="noopener noreferrer" hidden data-i18n="settings.component_updates.setup">Открыть Setup</a>
+                                    </div>
+                                    <label class="component-auto-update">
+                                        <input type="checkbox" role="switch" data-component-auto disabled aria-labelledby="componentSuiteAutoLabel componentSuiteTitle">
+                                        <span id="componentSuiteAutoLabel" data-i18n="settings.component_updates.automatic">Обновлять автоматически</span>
+                                    </label>
+                                </article>
+                            </div>
+                        </section>
                     </div>
 
                     <!-- MediaPlayer Pane -->
                     <div class="settings-pane" id="pane-mediaplayer">
                         <div class="pane-header">
                             <h2>MediaPlayer</h2>
-                            <p>Настройки локального торрент-плеера и хранения скачанных фильмов.</p>
+                            <p>Подключение торрент-плеера и хранение скачанных фильмов и серий.</p>
                         </div>
 
                         <div class="settings-section mediaplayer-setup-section">
                             <div class="setting-group-row">
                                 <div class="setting-info">
                                     <h3 class="setting-title">Использовать MediaPlayer</h3>
-                                    <p class="setting-desc">Торрент появится в плеере только после проверки установки.</p>
+                                    <p class="setting-desc">Установите MediaPlayer Suite один раз и включите — подключение проверится автоматически.</p>
                                 </div>
                                 <label class="toggle-switch">
                                     <input type="checkbox" id="mediaPlayerEnabledToggle">
@@ -400,13 +445,13 @@
                                 <div class="mediaplayer-setup-path-row">
                                     <label class="setting-info" for="mediaPlayerInstallPath">
                                         <span class="setting-title">Папка установки</span>
-                                        <span class="setting-desc">Выберите каталог, где установлен MediaPlayer.</span>
+                                        <span class="setting-desc">Определяется автоматически. При необходимости можно выбрать другую папку.</span>
                                     </label>
                                     <input id="mediaPlayerInstallPath" class="mediaplayer-install-path" type="text" readonly placeholder="Папка не выбрана">
                                     <button id="mediaPlayerChooseFolderBtn" class="btn btn-secondary" type="button">Выбрать папку</button>
                                 </div>
                                 <div class="mediaplayer-setup-actions">
-                                    <button id="mediaPlayerVerifyBtn" class="btn btn-primary" type="button" disabled>Проверить MediaPlayer</button>
+                                    <button id="mediaPlayerVerifyBtn" class="btn btn-primary" type="button" disabled>Подключить MediaPlayer</button>
                                 </div>
                                 <p class="mediaplayer-setup-status" id="mediaPlayerSetupStatus" role="status" aria-live="polite"></p>
                                 <ul class="mediaplayer-setup-checks" id="mediaPlayerSetupChecks" aria-live="polite"></ul>
@@ -416,6 +461,27 @@
                         <div class="settings-section">
                             <h3 class="section-title">Хранение фильмов</h3>
                             <p class="section-description">Готовый фильм удаляется автоматически после выбранного срока с последнего открытия.</p>
+
+                            <div class="mediaplayer-storage" id="mediaPlayerStorage" aria-busy="false">
+                                <label class="setting-info" for="mediaPlayerDownloadPath">
+                                    <span class="setting-title" data-i18n="settings.mediaplayer_storage.title">Папка для фильмов и сериалов</span>
+                                    <span class="setting-desc" id="mediaPlayerDownloadHelp" data-i18n="settings.mediaplayer_storage.description">Новые загрузки сохраняются в эту папку. Уже скачанные файлы остаются на прежнем месте.</span>
+                                </label>
+                                <div class="mediaplayer-storage-path-row">
+                                    <input id="mediaPlayerDownloadPath" class="mediaplayer-install-path" type="text" readonly aria-describedby="mediaPlayerDownloadHelp mediaPlayerStorageStatus" placeholder="Папка недоступна" data-i18n="[placeholder]settings.mediaplayer_storage.unavailable_path">
+                                    <button id="mediaPlayerDownloadChooseBtn" class="btn btn-secondary" type="button" disabled data-i18n="settings.mediaplayer_storage.choose">Выбрать папку</button>
+                                </div>
+                                <div class="mediaplayer-storage-draft" id="mediaPlayerDownloadDraft" hidden>
+                                    <span id="mediaPlayerDownloadPreviewLabel" class="setting-desc" data-i18n="settings.mediaplayer_storage.preview">После сохранения</span>
+                                    <output id="mediaPlayerDownloadPreview" aria-labelledby="mediaPlayerDownloadPreviewLabel"></output>
+                                    <div class="mediaplayer-storage-actions">
+                                        <button id="mediaPlayerDownloadSaveBtn" class="btn btn-primary" type="button" disabled data-i18n="settings.mediaplayer_storage.save">Сохранить папку</button>
+                                        <button id="mediaPlayerDownloadCancelBtn" class="btn btn-secondary" type="button" disabled data-i18n="settings.mediaplayer_storage.cancel">Отмена</button>
+                                        <button id="mediaPlayerDownloadGrantBtn" class="btn btn-secondary" type="button" hidden disabled data-i18n="settings.mediaplayer_storage.grant_access">Разрешить MediaPlayer доступ к этой папке</button>
+                                    </div>
+                                </div>
+                                <p class="mediaplayer-storage-status" id="mediaPlayerStorageStatus" role="status" aria-live="polite" aria-atomic="true"></p>
+                            </div>
 
                             <div class="setting-group-row mediaplayer-retention-row">
                                 <div class="setting-info">

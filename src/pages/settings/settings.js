@@ -3,6 +3,9 @@ import { bindWhatsNewSettings } from '../../shared/components/WhatsNewSettings.j
 
 const SUBTITLE_APPEARANCE_STORAGE_KEY = 'movieExtensionSubtitleAppearanceV1';
 const EXTENSION_UPDATE_STATE_STORAGE_KEY = 'extension_update_state_v2';
+const EXTENSION_UPDATE_SETTINGS_STORAGE_KEY = 'extension_update_settings_v1';
+const COMPONENT_UPDATE_IDS = Object.freeze(['updater', 'mediaPlayerSuite']);
+const COMPONENT_OPERATION_STATUSES = new Set(['queued', 'downloading', 'replacing', 'installing', 'verifying']);
 const MEDIA_PLAYER_SETUP_STORAGE_KEY = 'mediaplayer_setup_v1';
 const ACTIVE_SETTINGS_PANE_STORAGE_KEY = 'movieExtensionActiveSettingsPaneV1';
 const JACKETT_CATEGORY_FILTER_VALUES = Object.freeze([
@@ -224,6 +227,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     const resetBtn = document.getElementById('resetBtn');
     const torrentRetentionSelect = document.getElementById('torrentRetentionDays');
     const mediaplayerRetentionStatus = document.getElementById('mediaplayerRetentionStatus');
+    const mediaPlayerStorage = document.getElementById('mediaPlayerStorage');
+    const mediaPlayerDownloadPath = document.getElementById('mediaPlayerDownloadPath');
+    const mediaPlayerDownloadChooseBtn = document.getElementById('mediaPlayerDownloadChooseBtn');
+    const mediaPlayerDownloadDraft = document.getElementById('mediaPlayerDownloadDraft');
+    const mediaPlayerDownloadPreview = document.getElementById('mediaPlayerDownloadPreview');
+    const mediaPlayerDownloadSaveBtn = document.getElementById('mediaPlayerDownloadSaveBtn');
+    const mediaPlayerDownloadCancelBtn = document.getElementById('mediaPlayerDownloadCancelBtn');
+    const mediaPlayerDownloadGrantBtn = document.getElementById('mediaPlayerDownloadGrantBtn');
+    const mediaPlayerStorageStatus = document.getElementById('mediaPlayerStorageStatus');
     const mediaPlayerEnabledToggle = document.getElementById('mediaPlayerEnabledToggle');
     const mediaPlayerSetupPanel = document.getElementById('mediaPlayerSetupPanel');
     const mediaPlayerInstallPath = document.getElementById('mediaPlayerInstallPath');
@@ -235,6 +247,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         ? new window.MediaPlayerService()
         : null;
     let mediaPlayerRetentionLoaded = false;
+    let mediaPlayerSetupRequest = 0;
+    // Download destinations live only in this page and the local MediaPlayer API.
+    // Never include them in browser storage, cloud settings, or setup state.
+    let mediaPlayerStorageState = { supported: false, downloadPath: '', defaultDownloadPath: '' };
+    let mediaPlayerDownloadDraftPath = '';
+    let mediaPlayerFolderAccessDeniedPath = '';
+    let mediaPlayerFolderAccessIncludeRetention = false;
+    let mediaPlayerStorageStatusState = { key: 'loading', detail: '' };
+    let mediaPlayerSettingsRequest = 0;
+    let mediaPlayerSettingsController = null;
+    let mediaPlayerFolderController = null;
+    let mediaPlayerStorageLoading = false;
+    let mediaPlayerFolderChoosing = false;
+    let mediaPlayerSettingsSaving = false;
+    let settingsSaveInFlight = false;
     const jackettIndexersStatus = document.getElementById('jackettIndexersStatus');
     const jackettIndexersList = document.getElementById('jackettIndexersList');
     const jackettIndexerAddBtn = document.getElementById('jackettIndexerAddBtn');
@@ -279,6 +306,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         setTimeout(() => URL.revokeObjectURL(url), 10000);
     });
     const extensionUpdateInstallStatus = document.getElementById('extensionUpdateInstallStatus');
+    const componentUpdatesCheckBtn = document.getElementById('componentUpdatesCheckBtn');
+    const componentUpdatesStatus = document.getElementById('componentUpdatesStatus');
+    const componentUpdateCards = Array.from(document.querySelectorAll('.component-update-card'));
+    let componentUpdateSnapshot = null;
+    let componentUpdateSettings = { updater: false, mediaPlayerSuite: false };
+    let componentActionBusy = false;
+    let componentActionStatusKey = 'checking';
+    let extensionUpdateActionBusy = false;
+    let componentActionError = '';
+    let componentActionRequest = 0;
+    let componentSnapshotRevision = 0;
+    let componentUiLive = true;
+    let componentSetupUrls = { updater: '', mediaPlayerSuite: '' };
+    let componentSetupUrlKey = '';
 
     if (extensionCurrentVersion) {
         let currentVersion = '';
@@ -375,7 +416,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             !haveMatchingMediaPlayerSetup(currentState.mediaPlayerSetup, initialState.mediaPlayerSetup) ||
             !haveMatchingSubtitleAppearances(currentState.subtitleAppearance, initialState.subtitleAppearance) ||
             currentState.autoUpdateEnabled !== initialState.autoUpdateEnabled ||
-            (mediaPlayerRetentionLoaded && currentState.torrentRetentionDays !== initialState.torrentRetentionDays);
+            (mediaPlayerRetentionLoaded && currentState.torrentRetentionDays !== initialState.torrentRetentionDays) ||
+            hasMediaPlayerDownloadDraft();
             
         saveBtn.classList.toggle('is-dirty', isDirty);
         return isDirty;
@@ -515,17 +557,213 @@ document.addEventListener('DOMContentLoaded', async () => {
         return setup.errorMessage || 'Проверка установки MediaPlayer не пройдена.';
     }
 
+    function hasMediaPlayerDownloadDraft() {
+        return Boolean(mediaPlayerDownloadDraftPath && mediaPlayerDownloadDraftPath !== mediaPlayerStorageState.downloadPath);
+    }
+
+    function invalidateMediaPlayerStorage() {
+        mediaPlayerSettingsRequest += 1;
+        mediaPlayerSettingsController?.abort();
+        mediaPlayerFolderController?.abort();
+        mediaPlayerStorageLoading = false;
+        mediaPlayerStorageState = { supported: false, downloadPath: '', defaultDownloadPath: '' };
+        mediaPlayerDownloadDraftPath = '';
+        mediaPlayerFolderAccessDeniedPath = '';
+        mediaPlayerStorageStatusState = { key: 'disabled', detail: '' };
+    }
+
+    function setMediaPlayerStorageStatus(key, detail = '') {
+        mediaPlayerStorageStatusState = { key, detail };
+        renderMediaPlayerStorage();
+    }
+
+    function mediaPlayerStorageErrorMessage(error) {
+        const reason = error?.reason || error?.code || '';
+        const key = `settings.mediaplayer_storage.errors.${reason}`;
+        const translated = i18n.get(key);
+        return translated !== key ? translated : (error?.message || i18n.get('settings.mediaplayer_storage.failed'));
+    }
+
+    function renderMediaPlayerStorage() {
+        const enabled = currentState.mediaPlayerEnabled === true;
+        const ready = enabled && currentState.mediaPlayerSetup.status === 'ready' && mediaPlayerRetentionLoaded;
+        const busy = mediaPlayerFolderChoosing || mediaPlayerSettingsSaving || settingsSaveInFlight;
+        const supported = ready && mediaPlayerStorageState.supported;
+        const draft = hasMediaPlayerDownloadDraft();
+        if (mediaPlayerStorage) mediaPlayerStorage.setAttribute('aria-busy', String(busy || mediaPlayerStorageLoading));
+        if (mediaPlayerDownloadPath) {
+            mediaPlayerDownloadPath.value = mediaPlayerStorageState.downloadPath;
+            mediaPlayerDownloadPath.title = mediaPlayerStorageState.downloadPath;
+        }
+        if (mediaPlayerDownloadChooseBtn) mediaPlayerDownloadChooseBtn.disabled = !supported || busy;
+        if (mediaPlayerDownloadDraft) mediaPlayerDownloadDraft.hidden = !draft;
+        if (mediaPlayerDownloadPreview) mediaPlayerDownloadPreview.textContent = mediaPlayerDownloadDraftPath;
+        if (mediaPlayerDownloadSaveBtn) mediaPlayerDownloadSaveBtn.disabled = !supported || !draft || busy;
+        if (mediaPlayerDownloadCancelBtn) mediaPlayerDownloadCancelBtn.disabled = !draft || busy;
+        if (mediaPlayerDownloadGrantBtn) {
+            mediaPlayerDownloadGrantBtn.hidden = !draft || mediaPlayerFolderAccessDeniedPath !== mediaPlayerDownloadDraftPath;
+            mediaPlayerDownloadGrantBtn.disabled = !supported || !draft || busy;
+        }
+        if (torrentRetentionSelect) torrentRetentionSelect.disabled = !ready || mediaPlayerSettingsSaving || settingsSaveInFlight;
+        saveBtn.disabled = busy;
+        resetBtn.disabled = busy;
+        let status = mediaPlayerStorageStatusState.key;
+        if (!enabled) status = 'disabled';
+        else if (mediaPlayerStorageLoading) status = 'loading';
+        else if (status !== 'error' && !ready) status = 'disabled';
+        else if (ready && !mediaPlayerStorageState.supported) status = 'update_required';
+        if (mediaPlayerStorageStatus) {
+            mediaPlayerStorageStatus.dataset.state = status;
+            mediaPlayerStorageStatus.textContent = status === 'error'
+                ? `${i18n.get('settings.mediaplayer_storage.failed')} ${mediaPlayerStorageStatusState.detail}`
+                : i18n.get(`settings.mediaplayer_storage.${status}`);
+        }
+    }
+
+    async function chooseMediaPlayerDownloadFolder() {
+        if (!mediaPlayerService || !mediaPlayerStorageState.supported || !mediaPlayerRetentionLoaded
+            || !currentState.mediaPlayerEnabled || currentState.mediaPlayerSetup.status !== 'ready'
+            || mediaPlayerFolderChoosing || mediaPlayerSettingsSaving || settingsSaveInFlight) return;
+        const request = mediaPlayerSettingsRequest;
+        const controller = new AbortController();
+        mediaPlayerFolderController = controller;
+        mediaPlayerFolderChoosing = true;
+        setMediaPlayerStorageStatus('choosing');
+        try {
+            const result = await mediaPlayerService.chooseDownloadFolder({ signal: controller.signal });
+            if (controller.signal.aborted || request !== mediaPlayerSettingsRequest || !currentState.mediaPlayerEnabled) return;
+            mediaPlayerDownloadDraftPath = result.downloadPath;
+            mediaPlayerFolderAccessDeniedPath = '';
+            setMediaPlayerStorageStatus(hasMediaPlayerDownloadDraft() ? 'selected' : 'ready');
+        } catch (error) {
+            if (controller.signal.aborted || request !== mediaPlayerSettingsRequest || !currentState.mediaPlayerEnabled) return;
+            setMediaPlayerStorageStatus(error?.code === 'folder_selection_cancelled' ? 'cancelled' : 'error', mediaPlayerStorageErrorMessage(error));
+        } finally {
+            if (mediaPlayerFolderController === controller) {
+                mediaPlayerFolderController = null;
+                mediaPlayerFolderChoosing = false;
+            }
+            renderMediaPlayerStorage();
+            updateDirtyState();
+        }
+    }
+
+    function cancelMediaPlayerDownloadDraft() {
+        if (mediaPlayerSettingsSaving || settingsSaveInFlight) return;
+        mediaPlayerDownloadDraftPath = '';
+        mediaPlayerFolderAccessDeniedPath = '';
+        setMediaPlayerStorageStatus('cancelled');
+        updateDirtyState();
+        mediaPlayerDownloadChooseBtn?.focus();
+    }
+
+    async function persistMediaPlayerSettings({ includeRetention = false } = {}) {
+        if (mediaPlayerSettingsSaving || mediaPlayerFolderChoosing) return false;
+        const pathChanged = hasMediaPlayerDownloadDraft();
+        const retentionChanged = includeRetention && mediaPlayerRetentionLoaded
+            && currentState.torrentRetentionDays !== initialState.torrentRetentionDays;
+        if (!pathChanged && !retentionChanged) return true;
+        if (!mediaPlayerService || !currentState.mediaPlayerEnabled || currentState.mediaPlayerSetup.status !== 'ready') return false;
+        const request = mediaPlayerSettingsRequest;
+        const controller = new AbortController();
+        mediaPlayerSettingsController = controller;
+        mediaPlayerSettingsSaving = true;
+        mediaPlayerFolderAccessDeniedPath = '';
+        setMediaPlayerStorageStatus('saving');
+        try {
+            const changes = {};
+            if (pathChanged) changes.downloadPath = mediaPlayerDownloadDraftPath;
+            if (retentionChanged) changes.torrentRetentionDays = currentState.torrentRetentionDays;
+            const settings = pathChanged && !retentionChanged
+                ? await mediaPlayerService.setDownloadPath(changes.downloadPath, { signal: controller.signal })
+                : await mediaPlayerService.updateSettings(changes, { signal: controller.signal });
+            if (controller.signal.aborted || request !== mediaPlayerSettingsRequest || !currentState.mediaPlayerEnabled) return false;
+            if (pathChanged) {
+                mediaPlayerStorageState = settings.storage;
+                mediaPlayerDownloadDraftPath = '';
+                mediaPlayerFolderAccessDeniedPath = '';
+            }
+            if (retentionChanged) {
+                currentState.torrentRetentionDays = settings.torrentRetentionDays;
+                initialState.torrentRetentionDays = settings.torrentRetentionDays;
+                if (mediaplayerRetentionStatus) mediaplayerRetentionStatus.textContent = 'Срок хранения обновлён.';
+            }
+            setMediaPlayerStorageStatus(pathChanged ? 'saved' : 'ready');
+            if (pathChanged) mediaPlayerDownloadChooseBtn?.focus();
+            return true;
+        } catch (error) {
+            if (controller.signal.aborted || request !== mediaPlayerSettingsRequest || !currentState.mediaPlayerEnabled) return false;
+            if (pathChanged && error?.reason === 'download_path_permission_denied') {
+                mediaPlayerFolderAccessDeniedPath = mediaPlayerDownloadDraftPath;
+                mediaPlayerFolderAccessIncludeRetention = includeRetention;
+            }
+            setMediaPlayerStorageStatus('error', mediaPlayerStorageErrorMessage(error));
+            return false;
+        } finally {
+            if (mediaPlayerSettingsController === controller) mediaPlayerSettingsController = null;
+            mediaPlayerSettingsSaving = false;
+            renderMediaPlayerStorage();
+            updateDirtyState();
+        }
+    }
+
+    async function grantMediaPlayerDownloadFolderAccess() {
+        if (!mediaPlayerService || !hasMediaPlayerDownloadDraft() || mediaPlayerFolderAccessDeniedPath !== mediaPlayerDownloadDraftPath
+            || !currentState.mediaPlayerEnabled || !mediaPlayerStorageState.supported || mediaPlayerSettingsSaving
+            || mediaPlayerFolderChoosing || settingsSaveInFlight) return;
+        const request = mediaPlayerSettingsRequest;
+        const controller = new AbortController();
+        mediaPlayerFolderController = controller;
+        mediaPlayerFolderChoosing = true;
+        setMediaPlayerStorageStatus('granting');
+        try {
+            const result = await mediaPlayerService.grantDownloadFolderAccess(mediaPlayerDownloadDraftPath, { signal: controller.signal });
+            if (controller.signal.aborted || request !== mediaPlayerSettingsRequest || !currentState.mediaPlayerEnabled) return;
+            mediaPlayerDownloadDraftPath = result.downloadPath;
+            mediaPlayerFolderAccessDeniedPath = '';
+            mediaPlayerFolderChoosing = false;
+            await persistMediaPlayerSettings({ includeRetention: mediaPlayerFolderAccessIncludeRetention });
+        } catch (error) {
+            if (controller.signal.aborted || request !== mediaPlayerSettingsRequest || !currentState.mediaPlayerEnabled) return;
+            setMediaPlayerStorageStatus('error', mediaPlayerStorageErrorMessage(error));
+        } finally {
+            if (mediaPlayerFolderController === controller) {
+                mediaPlayerFolderController = null;
+                mediaPlayerFolderChoosing = false;
+            }
+            renderMediaPlayerStorage();
+        }
+    }
+
+    i18n.onLocaleChange?.(() => {
+        renderMediaPlayerStorage();
+        renderComponentUpdates();
+    });
+    window.addEventListener('pagehide', () => {
+        invalidateMediaPlayerStorage();
+        componentUiLive = false;
+        componentActionRequest += 1;
+    });
+    window.addEventListener('pageshow', (event) => {
+        if (event.persisted) {
+            componentUiLive = true;
+            componentActionBusy = false;
+            componentSetupUrlKey = '';
+            void loadMediaPlayerSettings();
+            void refreshComponentSnapshot();
+        }
+    });
+
     function renderMediaPlayerSetup() {
         const setup = normalizeMediaPlayerSetup(currentState.mediaPlayerSetup, currentState.mediaPlayerEnabled);
         currentState.mediaPlayerSetup = setup;
         const enabled = currentState.mediaPlayerEnabled === true;
-        const hasPath = Boolean(setup.installPath);
 
         if (mediaPlayerEnabledToggle) mediaPlayerEnabledToggle.checked = enabled;
         if (mediaPlayerSetupPanel) mediaPlayerSetupPanel.hidden = !enabled;
         if (mediaPlayerInstallPath) mediaPlayerInstallPath.value = setup.installPath;
         if (mediaPlayerChooseFolderBtn) mediaPlayerChooseFolderBtn.disabled = !enabled || setup.status === 'verifying';
-        if (mediaPlayerVerifyBtn) mediaPlayerVerifyBtn.disabled = !enabled || !hasPath || setup.status === 'verifying';
+        if (mediaPlayerVerifyBtn) mediaPlayerVerifyBtn.disabled = !enabled || setup.status === 'verifying';
         if (mediaPlayerSetupStatus) {
             mediaPlayerSetupStatus.textContent = getMediaPlayerSetupStatusText(setup);
             mediaPlayerSetupStatus.dataset.state = setup.status;
@@ -548,6 +786,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (torrentRetentionSelect) {
             torrentRetentionSelect.disabled = !mediaPlayerRetentionLoaded || !enabled || setup.status !== 'ready';
         }
+        renderMediaPlayerStorage();
     }
 
     function renderJackettIndexers() {
@@ -1109,8 +1348,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     async function chooseMediaPlayerFolder() {
         if (!mediaPlayerService || !currentState.mediaPlayerEnabled) return;
+        const request = ++mediaPlayerSetupRequest;
         try {
             const result = await mediaPlayerService.selectInstallFolder();
+            if (request !== mediaPlayerSetupRequest || !currentState.mediaPlayerEnabled) return;
             currentState.mediaPlayerSetup = normalizeMediaPlayerSetup({
                 ...currentState.mediaPlayerSetup,
                 enabled: true,
@@ -1126,7 +1367,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 mediaplayerRetentionStatus.textContent = 'Проверьте установку MediaPlayer, чтобы открыть настройки торрентов.';
             }
             updateDirtyState();
+            await verifyMediaPlayerInstallation();
         } catch (error) {
+            if (request !== mediaPlayerSetupRequest || !currentState.mediaPlayerEnabled) return;
             currentState.mediaPlayerSetup = normalizeMediaPlayerSetup({
                 ...currentState.mediaPlayerSetup,
                 enabled: true,
@@ -1141,7 +1384,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     async function verifyMediaPlayerInstallation() {
         const installPath = currentState.mediaPlayerSetup?.installPath;
-        if (!mediaPlayerService || !currentState.mediaPlayerEnabled || !installPath) return;
+        if (!mediaPlayerService || !currentState.mediaPlayerEnabled) return;
+        invalidateMediaPlayerStorage();
+        const request = ++mediaPlayerSetupRequest;
+        const isCurrent = () => request === mediaPlayerSetupRequest && currentState.mediaPlayerEnabled;
         currentState.mediaPlayerSetup = normalizeMediaPlayerSetup({
             ...currentState.mediaPlayerSetup,
             enabled: true,
@@ -1151,7 +1397,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         }, true);
         renderMediaPlayerSetup();
         try {
-            const setup = await mediaPlayerService.verifyInstallation(installPath);
+            const setup = installPath
+                ? await mediaPlayerService.verifyInstallation(installPath, { shouldPersist: isCurrent })
+                : await mediaPlayerService.autoConnectInstallation({ shouldPersist: isCurrent });
+            if (!isCurrent()) return;
             currentState.mediaPlayerSetup = normalizeMediaPlayerSetup(setup, true);
             mediaPlayerRetentionLoaded = false;
             renderMediaPlayerSetup();
@@ -1162,6 +1411,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             updateDirtyState();
         } catch (error) {
+            if (!isCurrent()) return;
             currentState.mediaPlayerSetup = normalizeMediaPlayerSetup({
                 ...currentState.mediaPlayerSetup,
                 enabled: true,
@@ -1243,6 +1493,7 @@ document.addEventListener('DOMContentLoaded', async () => {
      */
     async function loadSettings() {
         try {
+            invalidateMediaPlayerStorage();
             mediaPlayerRetentionLoaded = false;
             if (torrentRetentionSelect) torrentRetentionSelect.disabled = true;
             const result = await chrome.storage.local.get([
@@ -1261,6 +1512,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     resolve(chrome.runtime.lastError ? null : response);
                 });
             });
+            readComponentUpdateSettings(updateStateResponse?.settings);
             const mediaPlayerEnabled = result.mediaPlayerEnabled === true;
             const storedMediaPlayerSetup = normalizeMediaPlayerSetup(
                 result[MEDIA_PLAYER_SETUP_STORAGE_KEY],
@@ -1304,6 +1556,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function renderExtensionUpdateState(state) {
         if (!state) return;
+        componentSnapshotRevision += 1;
+        renderComponentUpdates(state);
 
         const status = String(state.status || 'idle');
         const version = state.availableVersion || state.currentVersion || '';
@@ -1349,15 +1603,201 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    function readComponentUpdateSettings(settings) {
+        componentUpdateSettings = Object.fromEntries(COMPONENT_UPDATE_IDS.map(id => [id, settings?.componentAutoUpdateEnabled?.[id] === true]));
+    }
+
+    function componentUpdateMessage(key, values = {}) {
+        let text = i18n.get(`settings.component_updates.${key}`);
+        Object.entries(values).forEach(([name, value]) => { text = text.replace(`{${name}}`, String(value)); });
+        return text;
+    }
+
+    function componentErrorMessage(code) {
+        const key = `settings.component_updates.errors.${code}`;
+        const value = i18n.get(key);
+        return value !== key ? value : '';
+    }
+
+    function refreshComponentSetupUrls(state) {
+        const key = [state?.componentCatalogStatus || 'unknown', ...COMPONENT_UPDATE_IDS.map(id =>
+            `${state?.components?.[id]?.availableVersion || ''}:${state?.components?.[id]?.errorCode || ''}`)].join('|');
+        if (key === componentSetupUrlKey || !componentUiLive) return;
+        componentSetupUrlKey = key;
+        const updater = globalThis.UpdateService;
+        const requests = COMPONENT_UPDATE_IDS.map(id => typeof updater?.getComponentSetupUrl === 'function'
+            ? updater.getComponentSetupUrl(id)
+            : id === 'updater' ? updater?.getSetupUrl?.() : null);
+        void Promise.allSettled(requests).then(results => {
+            if (!componentUiLive || componentSetupUrlKey !== key) return;
+            componentSetupUrls = Object.fromEntries(COMPONENT_UPDATE_IDS.map((id, index) => {
+                const result = results[index];
+                const value = result.status === 'fulfilled' ? result.value : '';
+                // The service exposes only fixed or validated catalog destinations.
+                return [id, typeof value === 'string' && value.startsWith('https://github.com/F1x-hub/MovieListExtension/releases/') ? value : ''];
+            }));
+            renderComponentUpdates();
+        });
+    }
+
+    function renderComponentUpdates(state = componentUpdateSnapshot) {
+        if (state) componentUpdateSnapshot = state;
+        const snapshot = componentUpdateSnapshot || {};
+        const capabilities = snapshot.componentCapabilities;
+        const supported = capabilities?.protocolVersion === 1 && capabilities.signedCatalog === true;
+        const operationPending = COMPONENT_OPERATION_STATUSES.has(snapshot.status) || snapshot.status === 'awaiting_confirmation'
+            || Object.values(snapshot.components || {}).some(item => COMPONENT_OPERATION_STATUSES.has(item?.status));
+        const busy = componentActionBusy || extensionUpdateActionBusy || operationPending;
+        if (componentUpdatesCheckBtn) componentUpdatesCheckBtn.disabled = busy || typeof globalThis.UpdateService?.checkComponentUpdates !== 'function';
+        if (extensionUpdateInstallBtn) extensionUpdateInstallBtn.disabled = busy;
+        if (componentUpdatesStatus) {
+            const catalogStatus = snapshot.componentCatalogStatus || 'unknown';
+            componentUpdatesStatus.textContent = componentActionError
+                ? `${componentUpdateMessage('action_failed')} ${componentActionError}`
+                : componentActionBusy ? componentUpdateMessage(componentActionStatusKey)
+                    : componentUpdateMessage(`catalog.${['unknown', 'setup_required', 'legacy', 'available', 'check_failed'].includes(catalogStatus) ? catalogStatus : 'unknown'}`);
+        }
+        componentUpdateCards.forEach(card => {
+            const id = card.dataset.componentId;
+            const component = snapshot.components?.[id] || {};
+            const version = component.currentVersion || (id === 'updater' ? snapshot.updaterVersion : '') || '';
+            const absent = id === 'mediaPlayerSuite' && (component.installed === false || component.status === 'absent');
+            const installed = component.installed === true || (id === 'updater' && snapshot.configured === true && Boolean(version));
+            const status = absent ? 'absent' : component.status || (snapshot.componentCatalogStatus === 'setup_required' ? 'setup_required' : 'unknown');
+            const setupRequired = ['setup_required', 'migration_required'].includes(status);
+            const componentSupported = supported && capabilities[id === 'updater' ? 'updaterSelfUpdate' : 'mediaPlayerSuite'] === true;
+            const autoAllowed = componentSupported && installed && Boolean(version) && status !== 'migration_required'
+                && (id !== 'mediaPlayerSuite' || component.brokerAvailable === true);
+            const manualStatus = ['available', 'available_manual', 'waiting_for_safe_moment', 'deferred'].includes(status)
+                || (status === 'setup_required' && component.errorCode === 'SUITE_MAINTENANCE_SETUP_REQUIRED');
+            const canApply = componentSupported && installed && Boolean(version) && Boolean(component.availableVersion) && manualStatus;
+            card.dataset.state = status;
+            card.setAttribute('aria-busy', String(busy));
+            const versionElement = card.querySelector('[data-component-version]');
+            if (versionElement) versionElement.textContent = absent ? componentUpdateMessage('not_installed') : version || componentUpdateMessage('unknown_version');
+            const statusElement = card.querySelector('[data-component-status]');
+            if (statusElement) {
+                const translated = componentUpdateMessage(`status.${status}`, { version: component.availableVersion || '' });
+                statusElement.textContent = translated.startsWith('settings.component_updates.') ? componentUpdateMessage('status.unknown') : translated;
+                const error = componentErrorMessage(component.errorCode);
+                if (error) statusElement.textContent += ` ${error}`;
+            }
+            const apply = card.querySelector('[data-component-apply]');
+            if (apply) {
+                apply.disabled = !canApply || busy;
+                apply.hidden = absent;
+            }
+            const auto = card.querySelector('[data-component-auto]');
+            if (auto) {
+                auto.checked = !absent && componentUpdateSettings[id] === true;
+                auto.disabled = absent || !supported || (!autoAllowed && !auto.checked) || busy;
+            }
+            const setup = card.querySelector('[data-component-setup]');
+            if (setup) {
+                setup.hidden = !setupRequired || !componentSetupUrls[id] || busy || absent;
+                if (!setup.hidden) setup.href = componentSetupUrls[id];
+                else setup.removeAttribute('href');
+            }
+            const note = card.querySelector('[data-component-note]');
+            if (note) {
+                let noteKey = absent ? 'absent_hint'
+                    : id === 'mediaPlayerSuite' && installed && !version ? 'suite_setup_hint'
+                        : id === 'mediaPlayerSuite' && installed && component.brokerAvailable !== true ? 'suite_manual_hint'
+                            : setupRequired && id === 'mediaPlayerSuite' && !componentSetupUrls[id] ? 'suite_setup_hint' : '';
+                if (!supported && !absent && setupRequired) noteKey = 'updater_setup_hint';
+                note.hidden = !noteKey;
+                note.textContent = noteKey ? componentUpdateMessage(noteKey) : '';
+            }
+        });
+        refreshComponentSetupUrls(snapshot);
+    }
+
+    async function refreshComponentSnapshot() {
+        if (!componentUiLive || typeof globalThis.UpdateService?.getState !== 'function') return;
+        const request = ++componentActionRequest;
+        try {
+            const result = await globalThis.UpdateService.getState();
+            if (!componentUiLive || request !== componentActionRequest) return;
+            readComponentUpdateSettings(result?.settings);
+            renderExtensionUpdateState(result?.state);
+        } catch {
+            if (componentUiLive && request === componentActionRequest) {
+                componentActionError = componentUpdateMessage('read_failed');
+                renderComponentUpdates();
+            }
+        }
+    }
+
+    async function runComponentUpdateAction(action, statusKey = 'applying') {
+        if (componentActionBusy || extensionUpdateActionBusy || !componentUiLive || COMPONENT_OPERATION_STATUSES.has(componentUpdateSnapshot?.status)
+            || Object.values(componentUpdateSnapshot?.components || {}).some(item => COMPONENT_OPERATION_STATUSES.has(item?.status))) return;
+        const request = ++componentActionRequest;
+        const revision = componentSnapshotRevision;
+        componentActionBusy = true;
+        componentActionStatusKey = statusKey;
+        componentActionError = '';
+        renderComponentUpdates();
+        try {
+            const state = await action();
+            if (!componentUiLive || request !== componentActionRequest) return;
+            if (revision === componentSnapshotRevision && state) renderExtensionUpdateState(state);
+        } catch (error) {
+            if (!componentUiLive || request !== componentActionRequest) return;
+            componentActionError = componentErrorMessage(error?.message) || componentUpdateMessage('read_failed');
+        } finally {
+            if (componentUiLive && request === componentActionRequest) {
+                componentActionBusy = false;
+                renderComponentUpdates();
+            }
+        }
+    }
+
+    componentUpdatesCheckBtn?.addEventListener('click', () => {
+        if (componentUpdatesCheckBtn.disabled) return;
+        void runComponentUpdateAction(() => globalThis.UpdateService.checkComponentUpdates({ force: true, interactive: true }), 'checking');
+    });
+    componentUpdateCards.forEach(card => {
+        const id = card.dataset.componentId;
+        card.querySelector('[data-component-apply]')?.addEventListener('click', (event) => {
+            if (event.currentTarget.disabled) return;
+            void runComponentUpdateAction(() => globalThis.UpdateService.applyComponent(id, { automatic: false }));
+        });
+        card.querySelector('[data-component-auto]')?.addEventListener('change', (event) => {
+            const enabled = event.currentTarget.checked;
+            if (event.currentTarget.disabled) return;
+            const previous = componentUpdateSettings[id];
+            componentUpdateSettings = { ...componentUpdateSettings, [id]: enabled };
+            void runComponentUpdateAction(async () => {
+                try {
+                    return await globalThis.UpdateService.setComponentAutoUpdateEnabled(id, enabled);
+                } catch (error) {
+                    componentUpdateSettings = { ...componentUpdateSettings, [id]: previous };
+                    throw error;
+                }
+            }, 'saving_preference');
+        });
+    });
+
     if (chrome.storage?.onChanged?.addListener) {
         chrome.storage.onChanged.addListener((changes, areaName) => {
             if (areaName !== 'local') return;
             const updateChange = changes[EXTENSION_UPDATE_STATE_STORAGE_KEY];
             if (updateChange?.newValue) renderExtensionUpdateState(updateChange.newValue);
+            const settingsChange = changes[EXTENSION_UPDATE_SETTINGS_STORAGE_KEY];
+            if (settingsChange?.newValue) {
+                readComponentUpdateSettings(settingsChange.newValue);
+                renderComponentUpdates();
+            }
         });
     }
 
     async function loadMediaPlayerSettings() {
+        invalidateMediaPlayerStorage();
+        const request = mediaPlayerSettingsRequest;
+        const controller = new AbortController();
+        mediaPlayerSettingsController = controller;
+        const isCurrent = () => request === mediaPlayerSettingsRequest && !controller.signal.aborted
+            && currentState.mediaPlayerEnabled;
         if (!currentState.mediaPlayerEnabled) {
             mediaPlayerRetentionLoaded = false;
             if (mediaplayerRetentionStatus) mediaplayerRetentionStatus.textContent = 'Включите MediaPlayer и завершите проверку установки.';
@@ -1377,9 +1817,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (mediaplayerRetentionStatus) mediaplayerRetentionStatus.textContent = 'MediaPlayer недоступен на этой странице.';
             return;
         }
+        mediaPlayerStorageLoading = true;
+        setMediaPlayerStorageStatus('loading');
         if (mediaplayerRetentionStatus) mediaplayerRetentionStatus.textContent = 'Подключение к MediaPlayer…';
         try {
-            const runtimeSetup = await mediaPlayerService.getRuntimeReadiness();
+            const runtimeSetup = await mediaPlayerService.getRuntimeReadiness({ signal: controller.signal, shouldPersist: isCurrent });
+            if (!isCurrent()) return;
             currentState.mediaPlayerSetup = normalizeMediaPlayerSetup(runtimeSetup, true);
             initialState.mediaPlayerSetup = normalizeMediaPlayerSetup(runtimeSetup, true);
             if (currentState.mediaPlayerSetup.status !== 'ready') {
@@ -1392,18 +1835,23 @@ document.addEventListener('DOMContentLoaded', async () => {
                 await loadJackettIndexers();
                 return;
             }
-            const settings = await mediaPlayerService.getSettings();
+            const settings = await mediaPlayerService.getSettings({ signal: controller.signal });
+            if (!isCurrent()) return;
             const days = Number(settings.torrentRetentionDays);
             currentState.torrentRetentionDays = days;
             initialState.torrentRetentionDays = days;
             mediaPlayerRetentionLoaded = true;
+            mediaPlayerStorageState = settings.storage;
+            mediaPlayerStorageLoading = false;
+            setMediaPlayerStorageStatus('ready');
             torrentRetentionSelect.disabled = false;
             updateUIFromState();
             await loadJackettIndexers();
-
+            if (!isCurrent()) return;
             updateDirtyState();
             if (mediaplayerRetentionStatus) mediaplayerRetentionStatus.textContent = 'Изменения применяются после нажатия «Сохранить».';
         } catch (error) {
+            if (!isCurrent()) return;
             mediaPlayerRetentionLoaded = false;
             torrentRetentionSelect.disabled = true;
             currentState.mediaPlayerSetup = normalizeMediaPlayerSetup({
@@ -1414,9 +1862,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                 errorMessage: error?.message || 'Проверьте запуск службы.'
             }, true);
             renderMediaPlayerSetup();
+            mediaPlayerStorageLoading = false;
+            setMediaPlayerStorageStatus('error', mediaPlayerStorageErrorMessage(error));
             await loadJackettIndexers();
+            if (!isCurrent()) return;
             if (mediaplayerRetentionStatus) mediaplayerRetentionStatus.textContent = `MediaPlayer недоступен: ${error?.message || 'проверьте запуск службы.'}`;
             updateDirtyState();
+        } finally {
+            if (request === mediaPlayerSettingsRequest) {
+                mediaPlayerStorageLoading = false;
+                if (mediaPlayerSettingsController === controller) mediaPlayerSettingsController = null;
+                renderMediaPlayerStorage();
+            }
         }
     }
 
@@ -1424,18 +1881,12 @@ document.addEventListener('DOMContentLoaded', async () => {
      * Save settings to storage
      */
     async function saveSettings() {
+        if (settingsSaveInFlight || mediaPlayerSettingsSaving || mediaPlayerFolderChoosing) return false;
+        settingsSaveInFlight = true;
+        renderMediaPlayerStorage();
         try {
-            const retentionChanged = mediaPlayerRetentionLoaded
-                && currentState.torrentRetentionDays !== initialState.torrentRetentionDays;
             const autoUpdateChanged = currentState.autoUpdateEnabled !== initialState.autoUpdateEnabled;
-            if (retentionChanged) {
-                if (!mediaPlayerService) throw new Error('MediaPlayer недоступен.');
-                const settings = await mediaPlayerService.updateSettings({
-                    torrentRetentionDays: currentState.torrentRetentionDays
-                });
-                currentState.torrentRetentionDays = settings.torrentRetentionDays;
-                if (mediaplayerRetentionStatus) mediaplayerRetentionStatus.textContent = 'Срок хранения обновлён.';
-            }
+            if (!await persistMediaPlayerSettings({ includeRetention: true })) return false;
             const subtitleAppearance = normalizeSubtitleAppearance(currentState.subtitleAppearance);
             currentState.subtitleAppearance = subtitleAppearance;
             if (!currentState.mediaPlayerEnabled) {
@@ -1499,9 +1950,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             updateDirtyState();
 
             showToast(i18n.get('settings.saved'));
+            return true;
         } catch (error) {
             console.error('Failed to save settings:', error);
             showToast(i18n.get('settings.save_failed'), true);
+            return false;
+        } finally {
+            settingsSaveInFlight = false;
+            renderMediaPlayerStorage();
         }
     }
 
@@ -1509,6 +1965,7 @@ document.addEventListener('DOMContentLoaded', async () => {
      * Reset settings to defaults
      */
     async function resetSettings() {
+        if (settingsSaveInFlight || mediaPlayerSettingsSaving || mediaPlayerFolderChoosing) return;
         const confirmed = await ConfirmDialog.confirm({
             title: i18n.get('confirm_dialog.reset_settings_title'),
             message: i18n.get('settings.reset_confirm'),
@@ -1690,7 +2147,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (extensionUpdateInstallBtn) {
         extensionUpdateInstallBtn.addEventListener('click', async () => {
+            if (extensionUpdateActionBusy || componentActionBusy) return;
+            extensionUpdateActionBusy = true;
             extensionUpdateInstallBtn.disabled = true;
+            renderComponentUpdates();
             if (extensionUpdateInstallStatus) {
                 extensionUpdateInstallStatus.hidden = false;
                 extensionUpdateInstallStatus.textContent = i18n.get('settings.updates.install_latest_preparing');
@@ -1771,7 +2231,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     extensionUpdateInstallStatus.textContent = i18n.get(messageKey);
                 }
             } finally {
-                extensionUpdateInstallBtn.disabled = false;
+                extensionUpdateActionBusy = false;
+                renderComponentUpdates();
             }
         });
     }
@@ -1822,6 +2283,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (mediaPlayerEnabledToggle) {
         mediaPlayerEnabledToggle.addEventListener('change', (event) => {
+            mediaPlayerSetupRequest += 1;
+            invalidateMediaPlayerStorage();
             const enabled = event.target.checked;
             currentState.mediaPlayerEnabled = enabled;
             currentState.mediaPlayerSetup = normalizeMediaPlayerSetup({
@@ -1835,11 +2298,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             renderMediaPlayerSetup();
             if (mediaplayerRetentionStatus) {
                 mediaplayerRetentionStatus.textContent = enabled
-                    ? 'Выберите папку и завершите проверку MediaPlayer.'
+                    ? 'Подключаем установленный MediaPlayer…'
                     : 'Включите MediaPlayer и завершите проверку установки.';
             }
             void loadJackettIndexers();
             updateDirtyState();
+            if (enabled) void verifyMediaPlayerInstallation();
         });
     }
 
@@ -1850,6 +2314,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (mediaPlayerVerifyBtn) {
         mediaPlayerVerifyBtn.addEventListener('click', verifyMediaPlayerInstallation);
     }
+
+    mediaPlayerDownloadChooseBtn?.addEventListener('click', chooseMediaPlayerDownloadFolder);
+    mediaPlayerDownloadSaveBtn?.addEventListener('click', () => { void persistMediaPlayerSettings(); });
+    mediaPlayerDownloadCancelBtn?.addEventListener('click', cancelMediaPlayerDownloadDraft);
+    mediaPlayerDownloadGrantBtn?.addEventListener('click', grantMediaPlayerDownloadFolderAccess);
 
     if (jackettIndexersRefreshBtn) {
         jackettIndexersRefreshBtn.addEventListener('click', () => {
@@ -1936,6 +2405,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             // Revert state
             currentState = { ...initialState };
+            mediaPlayerDownloadDraftPath = '';
+            mediaPlayerStorageStatusState = { key: 'ready', detail: '' };
             updateUIFromState();
             updateDirtyState();
             if (i18n.currentLocale !== initialState.language) {
@@ -1954,9 +2425,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             overlay.classList.remove('active');
             removeOverlayAfterMotion(overlay);
             
-            await saveSettings();
-            
-            if (onSave) onSave();
+            const saved = await saveSettings();
+            if (saved && onSave) onSave();
         });
 
         actions.appendChild(cancelBtn);

@@ -102,6 +102,18 @@ if (fs.existsSync(updaterProject)) {
     fs.copyFileSync(publishedUpdater, path.join(root, 'MovieListSetup.exe'));
 }
 
+// A Suite release is explicit. Extension-only builds neither fabricate a Suite
+// version nor upload a stale setup left over from an earlier local package.
+const suiteAsset = process.env.MEDIAPLAYER_SUITE_ASSET;
+const suiteVersion = process.env.MEDIAPLAYER_SUITE_VERSION;
+if (Boolean(suiteAsset) !== Boolean(suiteVersion)) fail('MEDIAPLAYER_SUITE_ASSET and MEDIAPLAYER_SUITE_VERSION must be supplied together.');
+if (suiteAsset) {
+    if (!/^\d+(?:\.\d+){2,3}$/.test(suiteVersion) || !fs.existsSync(suiteAsset)) fail('The explicit Suite asset/version is invalid.');
+    if (Number(process.env.MEDIAPLAYER_SUITE_API_MAJOR) !== 1) fail('MEDIAPLAYER_SUITE_API_MAJOR=1 is required for Suite packaging.');
+    const destination = path.join(root, 'MediaPlayerSuiteSetup.exe');
+    if (path.resolve(suiteAsset) !== destination) fs.copyFileSync(suiteAsset, destination);
+}
+
 const digest = crypto.createHash('sha256').update(fs.readFileSync(assetPath)).digest('hex');
 const size = fs.statSync(assetPath).size;
 console.log(JSON.stringify({ version: manifest.version, assetName, assetPath, sha256: digest, size }, null, 2));

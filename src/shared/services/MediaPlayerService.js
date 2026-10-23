@@ -92,8 +92,10 @@
             };
         }
 
-        async getCapabilities() {
-            return this.requestJson('/api/capabilities', { authenticated: false });
+        async getCapabilities({ signal } = {}) {
+            const capabilities = await this.requestJson('/api/capabilities', { authenticated: false, signal });
+            this.capabilities = capabilities;
+            return capabilities;
         }
 
         async selectInstallFolder() {
@@ -111,7 +113,43 @@
             return { installPath };
         }
 
-        async verifyInstallation(installPath) {
+        async chooseDownloadFolder({ signal } = {}) {
+            const response = await this.sendNativeMessage(
+                { action: 'select_download_folder' },
+                FOLDER_SELECTION_TIMEOUT_MS,
+                { signal }
+            );
+            const downloadPath = typeof response?.downloadPath === 'string' ? response.downloadPath.trim() : '';
+            if (!downloadPath) {
+                throw new MediaPlayerServiceError('download_path_missing', 'Native Host не вернул папку загрузок.');
+            }
+            return { downloadPath };
+        }
+
+        async grantDownloadFolderAccess(downloadPath, { signal } = {}) {
+            const selectedPath = typeof downloadPath === 'string' ? downloadPath.trim() : '';
+            if (!selectedPath) throw new MediaPlayerServiceError('download_path_invalid', 'Не выбрана папка загрузок.');
+            const response = await this.sendNativeMessage({ action: 'grant_download_folder_access', downloadPath: selectedPath },
+                this.nativeMessageTimeoutMs, { signal });
+            if (response?.granted !== true || typeof response?.downloadPath !== 'string' || !response.downloadPath.trim()) {
+                throw new MediaPlayerServiceError('download_folder_access_denied', 'Не удалось предоставить службе доступ к выбранной папке.');
+            }
+            return { downloadPath: response.downloadPath.trim(), granted: true };
+        }
+
+        async autoConnectInstallation(options = {}) {
+            const detected = await this.sendNativeMessage({ action: 'detect_installation' });
+            const installPath = String(detected?.installPath || '').trim();
+            if (!installPath) {
+                throw new MediaPlayerServiceError(
+                    'installation_not_found',
+                    'Установите актуальный MediaPlayer Suite или выберите папку установки вручную.'
+                );
+            }
+            return this.verifyInstallation(installPath, options);
+        }
+
+        async verifyInstallation(installPath, { shouldPersist = () => true } = {}) {
             const normalizedPath = String(installPath || '').trim();
             if (!normalizedPath) {
                 throw new MediaPlayerServiceError(
@@ -161,7 +199,7 @@
                 }
             }
 
-            await this.writeSetupState(state);
+            if (shouldPersist()) await this.writeSetupState(state);
             return state;
         }
 
@@ -201,12 +239,12 @@
             return state;
         }
 
-        async getRuntimeReadiness() {
+        async getRuntimeReadiness({ signal, shouldPersist = () => true } = {}) {
             const storedState = await this.readSetupState();
             if (!storedState.enabled || storedState.status !== 'ready') return storedState;
 
             try {
-                const capabilities = await this.getCapabilities();
+                const capabilities = await this.getCapabilities({ signal });
                 const moviesCapability = capabilities?.torrents?.movies;
                 const ready = moviesCapability?.supported !== false
                     && moviesCapability?.status === 'ready';
@@ -216,39 +254,57 @@
                     errorCode: ready ? '' : 'torrent_not_configured',
                     errorMessage: ready ? '' : 'MediaPlayer запущен, но торрент-модуль ещё не готов.'
                 });
-                await this.writeSetupState(state);
+                if (shouldPersist()) await this.writeSetupState(state);
                 return state;
             } catch (error) {
+                if (this.isRequestAbortedError(error)) throw error;
                 const state = this.normalizeSetupState({
                     ...storedState,
                     status: 'error',
                     errorCode: error?.code || 'connection_failed',
                     errorMessage: error?.message || 'Не удалось проверить MediaPlayer.'
                 });
-                await this.writeSetupState(state);
+                if (shouldPersist()) await this.writeSetupState(state);
                 return state;
             }
         }
 
-        async getSettings() {
-            const response = await this.requestJson('/api/settings', { scope: 'torrent:control' });
+        async getSettings({ signal } = {}) {
+            const response = await this.requestJson('/api/settings', { scope: 'torrent:control', signal });
             return this.normalizeSettings(response);
         }
 
-        async updateSettings({ torrentRetentionDays } = {}) {
-            const days = this.normalizeRetentionDays(torrentRetentionDays);
-            if (days === null) {
-                throw new MediaPlayerServiceError(
-                    'invalid_settings',
-                    'Выберите допустимый срок хранения фильмов.'
-                );
+        async updateSettings(changes = {}, { signal } = {}) {
+            const body = {};
+            if (Object.hasOwn(changes, 'torrentRetentionDays')) {
+                const days = this.normalizeRetentionDays(changes.torrentRetentionDays);
+                if (days === null) {
+                    throw new MediaPlayerServiceError('invalid_settings', 'Выберите допустимый срок хранения фильмов.');
+                }
+                body.torrentRetentionDays = days;
             }
+            if (Object.hasOwn(changes, 'downloadPath')) {
+                if (typeof changes.downloadPath !== 'string' || !changes.downloadPath.trim() || changes.downloadPath.includes('\0')) {
+                    throw new MediaPlayerServiceError('download_path_invalid', 'Укажите корректную папку загрузок.');
+                }
+                body.downloadPath = changes.downloadPath.trim();
+            }
+            if (!Object.keys(body).length) throw new MediaPlayerServiceError('invalid_settings', 'Не выбраны настройки для сохранения.');
             const response = await this.requestJson('/api/settings', {
                 method: 'PATCH',
-                body: { torrentRetentionDays: days },
-                scope: 'torrent:control'
+                body,
+                scope: 'torrent:control',
+                signal
             });
-            return this.normalizeSettings(response);
+            const settings = this.normalizeSettings(response);
+            if (Object.hasOwn(body, 'downloadPath') && !settings.storage.supported) {
+                throw new MediaPlayerServiceError('download_path_unsupported', 'Обновите MediaPlayer Suite для выбора папки загрузок.');
+            }
+            return settings;
+        }
+
+        async setDownloadPath(downloadPath, options = {}) {
+            return this.updateSettings({ downloadPath }, options);
         }
 
         async getJackettIndexers() {
@@ -360,7 +416,7 @@
                 .map(download => this.normalizeDownload(download));
         }
 
-        async playDownload(downloadId) {
+        async playDownload(downloadId, options = {}) {
             if (!this.isUuid(downloadId)) {
                 throw new MediaPlayerServiceError('download_id_invalid', 'Сохранённая загрузка устарела. Обновите список.');
             }
@@ -368,7 +424,9 @@
                 `/api/downloads/${encodeURIComponent(downloadId)}/play`,
                 {
                     method: 'POST',
-                    body: { clientCapabilities: this.getPlaybackCapabilities() },
+                    body: { clientCapabilities: this.getPlaybackCapabilities(),
+                        ...(Number.isSafeInteger(options.audioStreamIndex) && options.audioStreamIndex >= 0
+                            ? { audioStreamIndex: options.audioStreamIndex } : {}) },
                     scope: 'playback'
                 }
             );
@@ -408,7 +466,7 @@
             return true;
         }
 
-        async searchMovieSources({ tmdbId, title, originalTitle, year } = {}) {
+        async searchMovieSources({ tmdbId, title, originalTitle, year, mediaType = 'movie', seasonNumber, episodeNumber } = {}) {
             const numericTmdbId = this.normalizePositiveInteger(tmdbId);
             const cleanTitle = String(title || '').trim();
             if (!numericTmdbId) {
@@ -423,16 +481,17 @@
             if (cleanOriginalTitle) params.set('originalTitle', cleanOriginalTitle);
             const numericYear = this.normalizeOptionalInteger(year);
             if (numericYear) params.set('year', String(numericYear));
+            this.addTorrentEpisodeParams(params, { mediaType, seasonNumber, episodeNumber });
 
             const response = await this.requestJson(
-                `/api/catalog/movie/${numericTmdbId}/sources?${params.toString()}`,
+                `/api/catalog/${mediaType === 'tv' ? 'tv' : 'movie'}/${numericTmdbId}/sources?${params.toString()}`,
                 { scope: 'torrent:read', timeoutMs: this.sourceSearchTimeoutMs }
             );
             const sources = Array.isArray(response) ? response : response?.sources;
             return Array.isArray(sources) ? sources : [];
         }
 
-        async startMovieSourceSearch({ tmdbId, title, originalTitle, year } = {}) {
+        async startMovieSourceSearch({ tmdbId, title, originalTitle, year, mediaType = 'movie', seasonNumber, episodeNumber } = {}) {
             const numericTmdbId = this.normalizePositiveInteger(tmdbId);
             const cleanTitle = String(title || '').trim();
             if (!numericTmdbId) {
@@ -447,9 +506,10 @@
             if (cleanOriginalTitle) params.set('originalTitle', cleanOriginalTitle);
             const numericYear = this.normalizeOptionalInteger(year);
             if (numericYear) params.set('year', String(numericYear));
+            this.addTorrentEpisodeParams(params, { mediaType, seasonNumber, episodeNumber });
 
             const response = await this.requestJson(
-                `/api/catalog/movie/${numericTmdbId}/sources/search?${params.toString()}`,
+                `/api/catalog/${mediaType === 'tv' ? 'tv' : 'movie'}/${numericTmdbId}/sources/search?${params.toString()}`,
                 { method: 'POST', scope: 'torrent' }
             );
             if (!response?.jobId || !this.isUuid(response.jobId)) {
@@ -458,7 +518,7 @@
             return response;
         }
 
-        async pollMovieSourceSearch(jobId, cursor = 0, tmdbId) {
+        async pollMovieSourceSearch(jobId, cursor = 0, tmdbId, mediaType = 'movie') {
             if (!this.isUuid(jobId)) {
                 throw new MediaPlayerServiceError('source_search_not_found', 'Задание поиска устарело.');
             }
@@ -469,17 +529,17 @@
             const numericCursor = Number(cursor);
             const safeCursor = Number.isSafeInteger(numericCursor) && numericCursor >= 0 ? numericCursor : 0;
             return this.requestJson(
-                `/api/catalog/movie/${numericTmdbId}/sources/search/${encodeURIComponent(jobId)}?cursor=${safeCursor}`,
+                `/api/catalog/${mediaType === 'tv' ? 'tv' : 'movie'}/${numericTmdbId}/sources/search/${encodeURIComponent(jobId)}?cursor=${safeCursor}`,
                 { scope: 'torrent' }
             );
         }
 
-        async cancelMovieSourceSearch(jobId, tmdbId) {
+        async cancelMovieSourceSearch(jobId, tmdbId, mediaType = 'movie') {
             if (!this.isUuid(jobId)) return false;
             const numericTmdbId = this.normalizePositiveInteger(tmdbId);
             if (!numericTmdbId) return false;
             await this.requestJson(
-                `/api/catalog/movie/${numericTmdbId}/sources/search/${encodeURIComponent(jobId)}`,
+                `/api/catalog/${mediaType === 'tv' ? 'tv' : 'movie'}/${numericTmdbId}/sources/search/${encodeURIComponent(jobId)}`,
                 { method: 'DELETE', scope: 'torrent' }
             );
             return true;
@@ -498,7 +558,7 @@
 
             try {
                 while (true) {
-                    const state = await this.pollMovieSourceSearch(jobId, cursor, numericTmdbId);
+                    const state = await this.pollMovieSourceSearch(jobId, cursor, numericTmdbId, args.mediaType);
                     if (!state || !['running', 'completed', 'failed', 'cancelled'].includes(state.status)) {
                         throw new MediaPlayerServiceError('source_search_invalid', 'MediaPlayer вернул некорректное состояние поиска.');
                     }
@@ -524,12 +584,53 @@
                     if (pollIntervalMs > 0) await this.delay(pollIntervalMs);
                 }
             } catch (error) {
-                await this.cancelMovieSourceSearch(jobId, numericTmdbId).catch(() => undefined);
+                await this.cancelMovieSourceSearch(jobId, numericTmdbId, args.mediaType).catch(() => undefined);
                 throw error;
             }
         }
 
-        async createPlaybackSession({ sourceId, tmdbId, title, year } = {}) {
+        addTorrentEpisodeParams(params, { mediaType, seasonNumber, episodeNumber }) {
+            if (mediaType !== 'tv') return;
+            if (Number.isSafeInteger(seasonNumber) && seasonNumber >= 0) params.set('seasonNumber', String(seasonNumber));
+            if (Number.isSafeInteger(episodeNumber) && episodeNumber > 0) params.set('episodeNumber', String(episodeNumber));
+        }
+
+        async preparePlayback({ sourceId, tmdbId, title, year, mediaType = 'movie', seasonNumber, episodeNumber } = {}) {
+            if (!this.isUuid(sourceId) || !this.normalizePositiveInteger(tmdbId)) {
+                throw new MediaPlayerServiceError('source_id_invalid', 'Раздача устарела. Повторите поиск.');
+            }
+            const response = await this.requestJson('/api/playback/prepare', {
+                method: 'POST', scope: 'playback', timeoutMs: this.sourceSearchTimeoutMs,
+                body: { sourceId, tmdbId: Number(tmdbId), title, year, mediaType, seasonNumber, episodeNumber }
+            });
+            const files = (Array.isArray(response?.files) ? response.files : [])
+                .filter(file => typeof file?.fileId === 'string' && file.fileId && typeof file.name === 'string')
+                .map(file => ({ ...file, sizeBytes: Number(file.sizeBytes) || 0 }));
+            if (!files.length) throw new MediaPlayerServiceError('torrent_no_video', 'В раздаче не найдено видео. Выберите другую раздачу.');
+            return { files, recommendedFileId: typeof response.recommendedFileId === 'string' ? response.recommendedFileId : null };
+        }
+
+        async getPlaybackTracks(session, options = {}) {
+            const tracksUrl = session.tracksUrl || (() => {
+                const url = new URL(this.normalizeServiceUrl(session.hlsUrl));
+                url.pathname = `/api/playback/sessions/${encodeURIComponent(session.sessionId)}/tracks`;
+                return url.toString();
+            })();
+            const response = await this.requestAbsoluteJson(this.normalizeServiceUrl(tracksUrl), options);
+            return { ...response,
+                audio: (Array.isArray(response?.audio) ? response.audio : []).filter(track => Number.isSafeInteger(track.streamIndex)),
+                subtitles: (Array.isArray(response?.subtitles) ? response.subtitles : []).map(track => ({ ...track,
+                    url: track.url ? this.normalizeServiceUrl(track.url) : null })) };
+        }
+
+        async warmPlaybackSession(session) {
+            const url = this.normalizeServiceUrl(session.hlsUrl);
+            const response = await this.fetchWithTimeout(url, { method: 'GET' });
+            if (response.body?.cancel) await response.body.cancel();
+            return response.ok;
+        }
+
+        async createPlaybackSession({ sourceId, tmdbId, title, year, fileId, mediaType = 'movie', seasonNumber, episodeNumber, audioStreamIndex } = {}) {
             const numericTmdbId = this.normalizePositiveInteger(tmdbId);
             if (!this.isUuid(sourceId)) {
                 throw new MediaPlayerServiceError('source_id_invalid', 'Раздача устарела. Повторите поиск.');
@@ -540,7 +641,7 @@
 
             const body = {
                 sourceId,
-                mediaType: 'movie',
+                mediaType: mediaType === 'tv' ? 'tv' : 'movie',
                 tmdbId: numericTmdbId,
                 clientCapabilities: this.getPlaybackCapabilities()
             };
@@ -548,6 +649,12 @@
             if (cleanTitle) body.title = cleanTitle;
             const numericYear = this.normalizeOptionalInteger(year);
             if (numericYear) body.year = numericYear;
+            if (typeof fileId === 'string' && fileId) body.fileId = fileId;
+            if (mediaType === 'tv') {
+                if (Number.isSafeInteger(seasonNumber) && seasonNumber >= 0) body.seasonNumber = seasonNumber;
+                if (Number.isSafeInteger(episodeNumber) && episodeNumber > 0) body.episodeNumber = episodeNumber;
+            }
+            if (Number.isSafeInteger(audioStreamIndex) && audioStreamIndex >= 0) body.audioStreamIndex = audioStreamIndex;
 
             const response = await this.requestJson('/api/playback/sessions', {
                 method: 'POST',
@@ -671,8 +778,13 @@
 
             if (!response.ok) {
                 const code = payload?.error || (response.status === 401 ? 'unauthorized' : 'request_failed');
-                const message = this.getErrorMessage(code, scope);
-                throw new MediaPlayerServiceError(code, message, response.status);
+                const reason = typeof payload?.reason === 'string' ? payload.reason : '';
+                const message = reason.startsWith('download_path_') && typeof payload?.message === 'string'
+                    ? payload.message.slice(0, 1024)
+                    : this.getErrorMessage(code, scope);
+                const error = new MediaPlayerServiceError(code, message, response.status);
+                if (reason) error.reason = reason;
+                throw error;
             }
             return payload;
         }
@@ -768,7 +880,10 @@
             } catch { /* Storage can be unavailable in restricted extension contexts. */ }
         }
 
-        sendNativeMessage(message, timeoutMs = this.nativeMessageTimeoutMs) {
+        sendNativeMessage(message, timeoutMs = this.nativeMessageTimeoutMs, { signal } = {}) {
+            if (signal?.aborted) {
+                return Promise.reject(new MediaPlayerServiceError('request_aborted', 'Запрос к MediaPlayer отменён.'));
+            }
             if (!this.chromeApi?.runtime?.sendNativeMessage) {
                 return Promise.reject(new MediaPlayerServiceError(
                     'native_host_unavailable',
@@ -779,8 +894,7 @@
             return new Promise((resolve, reject) => {
                 let settled = false;
                 const timer = setTimeout(() => {
-                    settled = true;
-                    reject(new MediaPlayerServiceError(
+                    finish(reject, new MediaPlayerServiceError(
                         'native_host_timeout',
                         'Native Host MediaPlayer не ответил вовремя.'
                     ));
@@ -789,8 +903,11 @@
                     if (settled) return;
                     settled = true;
                     clearTimeout(timer);
+                    signal?.removeEventListener('abort', abort);
                     callback(value);
                 };
+                const abort = () => finish(reject, new MediaPlayerServiceError('request_aborted', 'Запрос к MediaPlayer отменён.'));
+                signal?.addEventListener('abort', abort, { once: true });
 
                 try {
                     this.chromeApi.runtime.sendNativeMessage(this.nativeHostName, message, response => {
@@ -845,6 +962,7 @@
 
         normalizeDownload(value) {
             const id = typeof value?.id === 'string' ? value.id : '';
+            const file = value?.selectedFile && typeof value.selectedFile === 'object' ? value.selectedFile : null;
             return {
                 id,
                 mediaType: String(value?.mediaType || 'movie'),
@@ -868,6 +986,10 @@
                 errorMessage: value?.errorMessage ? String(value.errorMessage) : null,
                 createdAt: typeof value?.createdAt === 'string' ? value.createdAt : null,
                 updatedAt: typeof value?.updatedAt === 'string' ? value.updatedAt : null,
+                seasonNumber: Number.isSafeInteger(file?.seasonNumber) ? file.seasonNumber : (value?.seasonNumber ?? null),
+                episodeNumber: Number.isSafeInteger(file?.episodeNumber) ? file.episodeNumber : (value?.episodeNumber ?? null),
+                fileId: typeof file?.fileId === 'string' ? file.fileId : (value?.fileId ?? null),
+                selectedFile: file,
                 completedAt: typeof value?.completedAt === 'string' ? value.completedAt : null
             };
         }
@@ -901,7 +1023,18 @@
             return {
                 ...value,
                 torrentRetentionDays: days,
-                options: options.length ? options : [0, 1, 3, 7, 14, 30]
+                options: options.length ? options : [0, 1, 3, 7, 14, 30],
+                storage: this.normalizeStorageSettings(value?.storage)
+            };
+        }
+
+        normalizeStorageSettings(value) {
+            const downloadPath = typeof value?.downloadPath === 'string' ? value.downloadPath.trim() : '';
+            const defaultDownloadPath = typeof value?.defaultDownloadPath === 'string' ? value.defaultDownloadPath.trim() : '';
+            return {
+                supported: value?.supported === true && Boolean(downloadPath) && Boolean(defaultDownloadPath),
+                downloadPath,
+                defaultDownloadPath
             };
         }
 

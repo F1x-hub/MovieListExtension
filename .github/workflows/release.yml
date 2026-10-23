@@ -38,7 +38,7 @@ jobs:
         run: npm test
 
       - name: Run updater contract tests
-        run: npm run test:random-marathon && npm run test:update-service && npm run test:package-release && npm run test-popup-surface-contract && npm run test:updater-setup && node tests/updateMirror.test.cjs
+        run: npm run test:random-marathon && npm run test:update-service && npm run test:component-updates && npm run test:package-release && npm run test-popup-surface-contract && npm run test:updater-setup && node tests/updateMirror.test.cjs
 
       - name: Run interface browser regressions
         run: npm run test:filter-controls-browser && npm run test:filter-controls-layout && node tests/motionP2DecorationBrowserSmoke.cjs && node tests/motionP2SurfacesBrowserSmoke.cjs && node tests/motionP2ImageAckSmoke.cjs
@@ -58,7 +58,11 @@ jobs:
       - name: Create signed update metadata
         env:
           UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY }}
-        run: node scripts/generate-update-metadata.js
+        run: |
+          node scripts/generate-update-metadata.js
+          if ($LASTEXITCODE -ne 0) { throw 'Legacy metadata signing failed.' }
+          node scripts/generate-component-metadata.js
+          if ($LASTEXITCODE -ne 0) { throw 'Component catalog signing failed.' }
 
       - name: Validate Firebase deployment credentials
         shell: pwsh
@@ -117,8 +121,12 @@ jobs:
           $version = $env:GITHUB_REF_NAME.TrimStart('v')
           gh release upload $env:GITHUB_REF_NAME `
             --clobber `
-            "MovieList-extension-$version.zip" "MovieListSetup.exe" "update.json" "update.json.sig"
+            "MovieList-extension-$version.zip" "MovieListSetup.exe" "update.json" "update.json.sig" "components.json" "components.json.sig"
           if ($LASTEXITCODE -ne 0) { throw 'Could not upload release assets to GitHub.' }
+          if ($env:MEDIAPLAYER_SUITE_ASSET -and $env:MEDIAPLAYER_SUITE_VERSION) {
+            gh release upload $env:GITHUB_REF_NAME --clobber "MediaPlayerSuiteSetup.exe"
+            if ($LASTEXITCODE -ne 0) { throw 'Could not upload the explicit Suite asset.' }
+          }
 
       - name: Prepare latest mirror and reject older versions
         run: node scripts/update-mirror.cjs prepare

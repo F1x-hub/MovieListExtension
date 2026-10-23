@@ -30,7 +30,7 @@ lists, provider-aware playback, and Firebase synchronization in one interface.
   collections, ratings, and related titles.
 - Resume series playback, track watched episodes, switch providers, and select a
   season or episode without losing the active playback context.
-- Use the optional local MediaPlayer torrent source picker for films without exposing
+- Use the optional local MediaPlayer torrent source picker for films and series without exposing
   Jackett credentials or torrent locators to the extension.
 - Use HLS and direct-video playback, AniSkip integration, and the built-in anime
   radio.
@@ -81,8 +81,17 @@ Playback is isolated behind parser and provider capability contracts. The player
 controller owns selection, lifecycle, progress, and episode state so provider
 switches do not silently overwrite the user's explicit season or episode choice.
 The optional MediaPlayer torrent flow is a separate local capability: Native
-Messaging pairs the extension, while the extension handles only opaque source IDs
-and short-lived playback sessions.
+Messaging pairs the extension, while the extension handles only opaque source IDs,
+file IDs and short-lived playback sessions. Current Suite builds support movies
+and episode-aware TV torrents. A unique matching episode opens directly; ambiguous
+or unrecognized files require an explicit choice. Saved files retain their episode
+identity, and native playback uses the canonical progress controller.
+
+The shared player settings list actual audio streams and supported text subtitles.
+Subtitle extraction requires a completed file; bitmap subtitles remain unsupported.
+Audio changes prepare a replacement while retaining the previous session, with a
+bounded wait and the same position and paused state. Progressive HLS still limits
+seeking to prepared media; this is not full TorrServer/Lampa parity.
 
 ## Repository layout
 
@@ -208,7 +217,9 @@ that does not contain `manifest.json`. Do not keep several old Setup windows ope
 ## Jackett indexer selection
 
 1. Install the current `MediaPlayerSuiteSetup.exe` from the MediaPlayer project.
-2. Reload the extension, open Settings, enable MediaPlayer, and verify its connection.
+2. Reload the extension, open Settings, and enable MediaPlayer. The registered Suite
+   is detected and checked automatically; use **Выбрать папку** for an older or
+   custom installation, then **Подключить MediaPlayer** to retry.
 3. Open **Индексеры Jackett** and use **Добавить индексер** to search the available Jackett catalog.
    Select a source to add it through the MediaPlayer server, then open **Настроить** if it needs
    tracker credentials.
@@ -223,6 +234,19 @@ installations remain visible until removed in Jackett.
 **Проверить** confirms that Jackett responds and still lists the configured indexer. It does not
 perform a tracker search or validate tracker credentials. If the list cannot load, check the
 local MediaPlayer and Jackett services; an older Suite version requires the current installer.
+
+In **Settings → MediaPlayer → Папка для фильмов и сериалов**, choose a folder,
+review the new path and save it. New torrent stores use that destination; existing
+downloads retain their original paths. The local service persists the choice across
+restarts and upgrades. If Windows denies write access, the explicit access button
+can grant LocalService access to a safe folder owned by the current user. Missing
+disks and invalid paths are reported without silently changing the destination.
+
+**Settings → Updates → Компоненты Windows** shows separate updater and installed
+MediaPlayer versions, actions and automatic-update opt-ins. An absent Suite is
+skipped. Older installations need the current Setup once to enable the signed
+component protocol and protected Suite maintenance service. See the
+[release procedure](docs/UPDATER_RELEASE.md#component-updates) before publishing.
 
 ## Development commands
 
@@ -241,6 +265,7 @@ local MediaPlayer and Jackett services; an older Suite version requires the curr
 | `npm run test:seasonal-theme` | Check seasonal decor dates, opt-out, Settings preview and the Home season banner |
 | `npm run test:popup` | Verify popup interactions, request races, failure recovery, profile caches and shared surface contracts |
 | `npm run test:media-player` | Verify the local MediaPlayer client and torrent picker contract |
+| `npm run test:component-updates` | Verify signed component checks, opt-ins, migration and rendered Settings states |
 | `npm run test:player-smoke` | Load the unpacked extension in Chromium and verify synthetic HLS frames with local fixtures and blocked external probes |
 | `npm run test:player-menu-smoke` | Check escaped provider labels in the real cleaner menu at desktop/narrow widths in both themes |
 | `npm run test:player-network-experiment` | Reproduce redirect, DNR allow and iframe-initiator boundaries on test-owned local servers; does not enable production URL policy |
@@ -408,11 +433,29 @@ keeps npm-compatible three-component semver metadata.
 ### Features
 
 - Add achievements: 30 achievements (26 with up to seven tiers, four one-off or secret) for ratings, variety, watching, lists, reviews and reactions, the movie marathon and the profile. The profile now has «Обзор» and «Достижения» tabs under the header (`?tab=achievements` opens the second; the old `src/pages/achievements/` address leads there). Achievement points grow with the tier (10, 25, 50, 100, 200, 350, 500; one-offs 100) and set a profile rank I–VII (Новичок to Легенда) shown as a metal frame around the avatar in the same style as the badges (each rank adds a distinct shape: inner band, notches and rivets, laurels and ruby, wings and side gems, crown, rays; a dark outline keeps pale metals visible on the light theme, the photo meets the metal without the page-colored border, and the rank is also written in the header metadata for screen readers); the top rank needs 90% of all points, not every tier. The tab shows the rank with progress to the next one, overall progress, filters, cards grouped by category and a dialog that pages through every tier; «Обзор» keeps a showcase of the rank and the six highest badges. Badges use the approved medal-and-shield frames (I–VII: bronze to legend, laurels, wings, gem, crown, ribbon) with a line icon per achievement and the clapperboard for «Оценщик»; unearned tiers appear in grey. Progress is counted on the owner's client from data readable to them and stored on the user document as `achievements` and `achievementPoints` (validated in `rules/firestore.rules`); other users see that snapshot. The owner's profile refreshes it at most every six hours, the tab on every open. Unlock dates start from the first sync. «Есть у N%» comes from the new `aggregateAchievementStats` Cloud Function, which diffs tiers on every user write into `achievementStats/global` (users per tier and participants, readable to signed-in users); a tier not yet counted shows no share. Rules and the function are deployed. Logic lives in `src/shared/achievements/` and `functions/achievementStats.js`, with `tests/achievementEngine.test.mjs` and `functions/tests/achievementStats.test.cjs`.
+- Add torrent file selection and episode-aware series playback through the local MediaPlayer, with distinct saved downloads for each selected file and compatibility with older movie-only installations.
+- Discover embedded audio and subtitle tracks in the shared player settings. Audio changes preserve the viewing position and paused state; supported text subtitles become available when the file is ready for extraction. Bitmap subtitles are identified as unsupported.
+- Save torrent-series progress through the canonical playback controller using the full media duration, so the end of a growing HLS buffer cannot falsely complete an episode. Preserve original video dimensions during fallback conversion instead of silently reducing large sources to 1080p.
+- Detect the installed MediaPlayer Suite automatically when the integration is enabled. Keep manual folder selection as a fallback and discard late connection results after the integration is disabled.
+- Select, preview, save or cancel the MediaPlayer film/episode download folder in Settings. Persist it in the local service, retain existing download locations, validate service access and disk space, and offer an explicit original-user permission grant after a Windows access denial.
+- Add independent signed updates for the Windows updater and an already installed MediaPlayer Suite, with separate automatic-update opt-ins and version/status controls. Suite maintenance waits for playback, preserves configuration and database state, and rolls back failed activation; older installations require one manual Setup migration.
+
 - The profile rank frame can be turned off with «Показывать рамку вокруг фото» in the rank card; the choice is stored as `showRankFrame` on the user document (validated in `rules/firestore.rules`, deployed) and hides the frame for every viewer. The navbar avatar shows the signed-in user's frame too: the profile publishes `navRankFrame` ({uid, level}) to `chrome.storage.local`, so other pages draw it without reading Firestore; it appears after the profile has been opened once. Arrows beside the frame in the rank card let the owner pick any reached rank's frame; the choice is stored as `rankFrameLevel` (1–7, validated in the rules) and used on the profile avatar, for other viewers and in the navbar, while picking the current rank clears it so the frame follows future ranks.
 
 ### Fixes
 
 - The profile banner no longer tiles on the light theme: the light-theme cover rule used the `background` shorthand, which reset the banner's `cover` size and position.
+- Load torrent text subtitles through bounded session-validated requests and local Blob tracks so Chromium can display them. Retain subtitle choice during audio replacement, release obsolete subtitle resources, and ignore late saved-playback failures after the source changes.
+- Keep component progress polling active after an earlier extension operation ends, and retry deferred Suite maintenance after playback instead of treating it as a permanent failure. Replace the updater atomically with bounded locked-executable retries and rollback.
+- Preserve independent update preferences when Settings windows and the background worker save at the same time.
+- Stop and dispose torrent playback when changing episodes or providers. Keep the current audio playing while a replacement prepares, and preserve playback intent across overlapping audio changes.
+- Recover component updates across an expected maintenance-service restart and a healthy manual repair. Respect the installed service port, bound retained update files, and repair clean-install log permissions, original-user provisioning and failed-install service cleanup.
+- Patch MediaPlayer's Zod validation dependency to reject oversized bounded request collections before excessive per-element processing.
+
+### Docs
+
+- Review torrent playback completeness and MediaPlayer dependency advisories; distinguish patched packages, remaining advisory applicability, fixture verification and outstanding live installation/playback checks in the [integration record](docs/aegis/plans/2026-10-23-torrent-playback.md).
+- Document component catalog publication, one-time Setup migration, storage ownership and the distinction between local fixture checks and installed Windows upgrade verification in the [integration record](docs/aegis/plans/2026-10-23-torrent-playback.md).
 
 </details>
 

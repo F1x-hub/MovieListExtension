@@ -4660,6 +4660,8 @@
                     refreshFn: renderSubsView
                 }];
 
+                const pendingSubtitles = currentVid._movieExtensionMediaTracks?.subtitles?.filter(track => !track.url) || [];
+
                 if (tracks.length > 0) {
                     tracks.forEach((track, index) => {
                         // Skip if no label (often metadata tracks)
@@ -4690,6 +4692,15 @@
                 }
                 
                 renderSubMenuView(pt('subtitles', 'Субтитры'), items);
+                for (const track of pendingSubtitles) {
+                    const option = document.createElement('button');
+                    option.type = 'button';
+                    option.disabled = true;
+                    option.className = 'player-settings-menu__option';
+                    option.textContent = `${track.title || track.language || pt('subtitles', 'Субтитры')} · ${track.supported
+                        ? pt('subtitles_pending', 'после загрузки файла') : pt('subtitles_unsupported', 'формат не поддерживается')}`;
+                    settingsMenu.querySelector('.player-settings-menu__list')?.appendChild(option);
+                }
                 appendSubtitleAppearanceItem();
             };
 
@@ -4878,7 +4889,18 @@
             // Voiceover View
             const hasVoiceoverBridge = () => Boolean(document.querySelector('[data-player-voiceover-source] [data-voiceover-option], #seasonvar-voiceover-source .seasonvar-voiceover-item'));
             const renderVoiceoverView = () => {
-                const hls = (permanentVideo || video)._movieExtensionHls;
+                const currentVid = permanentVideo || video;
+                const mediaTracks = currentVid._movieExtensionMediaTracks;
+                if (mediaTracks?.audio?.length) {
+                    renderSubMenuView(pt('voiceover', 'Озвучка'), mediaTracks.audio.map(track => ({
+                        label: track.label,
+                        isActive: track.streamIndex === mediaTracks.selectedAudioStreamIndex,
+                        action: () => mediaTracks.selectAudio(track.streamIndex),
+                        refreshFn: renderVoiceoverView
+                    })));
+                    return;
+                }
+                const hls = currentVid._movieExtensionHls;
                 if (hls?.audioTracks?.length && !hasVoiceoverBridge()) {
                     renderSubMenuView(pt('voiceover', 'Озвучка'), hls.audioTracks.map((track, index) => ({
                         label: track.name || track.lang || pt('track', `Дорожка ${index + 1}`, { number: index + 1 }),
@@ -4955,7 +4977,13 @@
 
                 // Voiceover Item (New)
                 const hlsAudio = currentVid._movieExtensionHls?.audioTracks || [];
-                if (hlsAudio.length && !hasVoiceoverBridge()) {
+                const mediaAudio = currentVid._movieExtensionMediaTracks?.audio || [];
+                if (mediaAudio.length) {
+                    const selected = mediaAudio.find(track => track.streamIndex === currentVid._movieExtensionMediaTracks.selectedAudioStreamIndex);
+                    const voiceItem = createMenuItem(pt('voiceover', 'Озвучка'), selected?.label || pt('main_track', 'Основная'));
+                    voiceItem.onclick = e => { e.stopPropagation(); renderVoiceoverView(); };
+                    settingsMenu.appendChild(voiceItem);
+                } else if (hlsAudio.length && !hasVoiceoverBridge()) {
                     const selected = hlsAudio[currentVid._movieExtensionHls.audioTrack];
                     const voiceItem = createMenuItem(pt('voiceover', 'Озвучка'), '');
                     voiceItem.querySelector('.player-settings-menu__value').textContent = selected?.name || selected?.lang || pt('main_track', 'Основная');
@@ -5008,6 +5036,9 @@
 
             renderMainView();
             newContainer.appendChild(settingsMenu);
+            listenerScope.listen(permanentVideo || video, 'extension-player-tracks-ready', () => {
+                if (settingsMenu.style.display !== 'none') renderMainView();
+            });
 
             settingsBtn.addEventListener('click', (e) => {
                 e.stopPropagation();

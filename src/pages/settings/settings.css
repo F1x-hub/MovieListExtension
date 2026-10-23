@@ -237,8 +237,145 @@
     gap: 10px;
 }
 
+.updates-action-buttons .btn {
+    max-width: 100%;
+    min-height: 40px;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.4;
+}
+
+.updates-action-buttons [hidden],
+.updates-install-status[hidden] {
+    display: none;
+}
+
 .updates-install-status {
     margin-top: 12px;
+}
+
+.component-updates-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px 20px;
+}
+
+.component-updates-header .setting-info {
+    flex: 1 1 280px;
+}
+
+.component-updates-header .btn {
+    flex: 0 1 auto;
+    min-height: 42px;
+    white-space: normal;
+}
+
+.component-updates-catalog-status,
+.component-update-status {
+    min-height: 1.4em;
+    margin: 0;
+    color: var(--theme-text-secondary);
+    font-size: 0.82rem;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.component-updates-catalog-status {
+    margin: 12px 0;
+}
+
+.component-updates-list {
+    display: grid;
+    gap: 12px;
+}
+
+.component-update-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px 20px;
+    padding: 18px 20px;
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-md);
+    background: var(--theme-bg-secondary);
+}
+
+.component-update-card .setting-title {
+    margin: 0 0 6px;
+}
+
+.component-update-info {
+    min-width: 0;
+}
+
+.component-update-info .setting-desc {
+    margin: 0 0 6px;
+    overflow-wrap: anywhere;
+}
+
+.component-update-note {
+    padding-top: 6px;
+}
+
+.component-update-actions {
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.component-update-actions .btn {
+    min-height: 40px;
+    white-space: normal;
+    text-align: center;
+    text-decoration: none;
+}
+
+.component-update-actions [hidden],
+.component-update-note[hidden] {
+    display: none;
+}
+
+.component-auto-update {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    grid-column: 1 / -1;
+    width: fit-content;
+    color: var(--theme-text-primary);
+    font-size: 0.82rem;
+    line-height: 1.5;
+    cursor: pointer;
+}
+
+.component-auto-update input {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: var(--theme-text-primary);
+}
+
+.component-auto-update:has(input:disabled) {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.component-updates-section .btn:focus-visible,
+.component-auto-update input:focus-visible {
+    outline: 2px solid var(--theme-text-primary);
+    outline-offset: 3px;
+}
+
+.component-updates-section .btn:disabled {
+    opacity: 0.55;
+    cursor: default;
+}
+
+.component-update-card[data-state="failed"] {
+    border-left: 2px solid var(--theme-text-primary);
 }
 
 .section-title {
@@ -747,6 +884,89 @@
 
 .mediaplayer-retention-row {
     gap: 24px;
+}
+
+.mediaplayer-storage {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+    margin-bottom: var(--space-lg);
+    padding-bottom: var(--space-lg);
+    border-bottom: 1px solid var(--theme-border);
+}
+
+.mediaplayer-storage-path-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 12px;
+}
+
+.mediaplayer-storage .mediaplayer-install-path {
+    box-sizing: border-box;
+    min-width: 0;
+}
+
+.mediaplayer-storage .btn {
+    min-height: 42px;
+}
+
+.mediaplayer-storage input:focus-visible,
+.mediaplayer-storage .btn:focus-visible {
+    outline: 2px solid var(--theme-text-primary);
+    outline-offset: 2px;
+}
+
+.mediaplayer-storage-draft {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+    padding: var(--space-md);
+    border: 1px solid var(--theme-border-hover);
+    border-radius: var(--radius-md);
+    background: var(--theme-bg-secondary);
+}
+
+.mediaplayer-storage-draft[hidden] {
+    display: none;
+}
+
+.mediaplayer-storage-actions [hidden] {
+    display: none;
+}
+
+.mediaplayer-storage-draft output {
+    color: var(--theme-text-primary);
+    font-size: 0.85rem;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+.mediaplayer-storage-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 4px;
+}
+
+.mediaplayer-storage-status {
+    min-height: 1.25em;
+    margin: 0;
+    color: var(--theme-text-muted);
+    font-size: 0.82rem;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.mediaplayer-storage-status[data-state="error"] {
+    color: var(--theme-text-primary);
+    border-left: 2px solid var(--theme-text-primary);
+    padding-left: 10px;
+}
+
+.mediaplayer-storage .btn:disabled {
+    opacity: 0.55;
+    cursor: default;
 }
 
 .setting-select-wrap {
@@ -1377,6 +1597,12 @@
         align-items: stretch;
         flex-direction: column;
     }
+    .mediaplayer-storage-path-row {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .mediaplayer-storage-actions .btn {
+        flex: 1 1 160px;
+    }
     .setting-select-wrap {
         flex-basis: auto;
     }
@@ -1411,9 +1637,34 @@
     .updates-action-buttons .btn {
         flex: 1 1 220px;
     }
+    .component-updates-header .btn {
+        width: 100%;
+    }
+    .component-update-card {
+        grid-template-columns: minmax(0, 1fr);
+        padding: 16px;
+    }
+    .component-update-actions {
+        justify-content: stretch;
+    }
+    .component-update-actions .btn {
+        flex: 1 1 160px;
+    }
 }
 
 @media (max-width: 460px) {
+    .settings-content-area {
+        padding-bottom: 150px;
+    }
+    .settings-actions-footer {
+        padding: 16px 24px;
+        flex-direction: column;
+    }
+    .settings-actions-footer .btn {
+        width: 100%;
+        min-height: 42px;
+        white-space: normal;
+    }
     .subtitle-appearance-controls {
         grid-template-columns: 1fr;
     }
