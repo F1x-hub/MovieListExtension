@@ -35,17 +35,82 @@
 /* Rank card: the current avatar frame sits on the right as a preview. */
 .ach-stat--rank {
     position: relative;
-    min-height: 112px;
-    padding-right: 116px;
+    min-height: 132px;
+    padding-right: 188px;
 }
 
-.ach-stat__frame {
+/* Frame preview with arrows to pick any unlocked rank's frame. */
+.ach-frame-picker {
     position: absolute;
     top: 50%;
     right: 10px;
+    display: grid;
+    grid-template-columns: 28px 96px 28px;
+    align-items: center;
+    justify-items: center;
+    gap: 4px;
+    transform: translateY(-50%);
+}
+
+.ach-frame-picker__nav {
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-md);
+    background: var(--theme-bg-tertiary);
+    color: var(--theme-text-primary);
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.ach-frame-picker__nav[hidden] {
+    display: block;
+    visibility: hidden;
+}
+
+.ach-frame-picker__nav:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+
+.ach-frame-picker__nav:focus-visible {
+    outline: 2px solid var(--ui-color-content);
+    outline-offset: 2px;
+}
+
+.ach-frame-picker__name {
+    grid-column: 1 / -1;
+    min-height: 1em;
+    color: var(--theme-text-muted);
+    font-size: 0.72rem;
+}
+
+.ach-stat__frame {
     width: 96px;
     height: 96px;
-    transform: translateY(-50%);
+}
+
+.ach-frame-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    color: var(--theme-text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
+.ach-frame-toggle[hidden] {
+    display: none;
+}
+
+.ach-frame-toggle input {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: var(--ui-color-content);
+    cursor: pointer;
 }
 
 .ach-stat__frame svg {
@@ -383,6 +448,18 @@
 
     .ach-hero__stats {
         grid-template-columns: minmax(0, 1fr);
+    }
+
+    /* Too narrow for text and picker side by side: the picker moves under the text. */
+    .ach-stat--rank {
+        padding-right: 16px;
+    }
+
+    .ach-frame-picker {
+        position: static;
+        align-self: center;
+        margin-top: 10px;
+        transform: none;
     }
 }
 

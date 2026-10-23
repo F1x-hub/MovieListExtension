@@ -537,6 +537,11 @@ export const locales = {
         achievements: {
             page_title: "Achievements",
             title: "Achievements",
+            show_frame: "Show the frame around my photo",
+            frame_save_failed: "Could not save the frame setting. Try again.",
+            frame_prev: "Previous frame",
+            frame_next: "Next frame",
+            frame_name: "Frame: {name}",
             rank: "Profile rank",
             rank_none: "No rank yet",
             rank_points: "{n} points",
@@ -2172,6 +2177,11 @@ export const locales = {
         achievements: {
             page_title: "Достижения",
             title: "Достижения",
+            show_frame: "Показывать рамку вокруг фото",
+            frame_save_failed: "Не удалось сохранить настройку рамки. Попробуйте ещё раз.",
+            frame_prev: "Предыдущая рамка",
+            frame_next: "Следующая рамка",
+            frame_name: "Рамка: {name}",
             rank: "Ранг профиля",
             rank_none: "Пока без ранга",
             rank_points: "Очков: {n}",

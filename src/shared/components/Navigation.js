@@ -119,7 +119,35 @@ class Navigation {
                     const newCache = changes[Navigation.USER_DISPLAY_CACHE_KEY].newValue;
                     this.handleDisplayCacheUpdate(newCache);
                 }
+                if (areaName === 'local' && changes.navRankFrame) {
+                    this.applyRankFrame(changes.navRankFrame.newValue);
+                }
             });
+        }
+        chrome.storage?.local?.get(['navRankFrame']).then(result => this.applyRankFrame(result?.navRankFrame)).catch(() => {});
+    }
+
+    /**
+     * Profile rank frame around the navbar avatar. The profile page publishes
+     * {uid, level} to chrome.storage.local (level 0 = no rank or hidden by the
+     * owner), so other pages draw it without reading Firestore.
+     */
+    async applyRankFrame(state) {
+        const frame = document.getElementById('navRankFrame');
+        if (!frame) return;
+        const uid = this.user?.uid || this.cachedUserDisplay?.uid;
+        const level = Number(state?.level) || 0;
+        if (!state || !uid || state.uid !== uid || level <= 0) {
+            frame.hidden = true;
+            frame.innerHTML = '';
+            return;
+        }
+        try {
+            const { renderAvatarFrame } = await import('../achievements/AchievementBadge.js');
+            frame.innerHTML = renderAvatarFrame(level, { label: false });
+            frame.hidden = false;
+        } catch (error) {
+            console.warn('Navigation: rank frame unavailable', error);
         }
     }
 
@@ -285,7 +313,7 @@ class Navigation {
                         <!-- User Profile Dropdown -->
                         <div class="nav-user-profile" id="navUserProfile" style="display: ${userProfileDisplay};">
                             <button type="button" class="nav-user-trigger" id="navUserTrigger" aria-controls="navUserDropdown" aria-expanded="false">
-                                <img src="${cachedAvatar}" alt="User" class="nav-user-avatar" id="navUserAvatar">
+                                <span class="nav-user-avatar-wrap"><img src="${cachedAvatar}" alt="User" class="nav-user-avatar" id="navUserAvatar"><span class="nav-rank-frame" id="navRankFrame" hidden></span></span>
                                 <span class="nav-user-name" id="navUserName">${cachedName}</span>
                                 <span class="nav-dropdown-arrow">${typeof Icons !== 'undefined' && Icons.CHEVRON_DOWN ? Icons.CHEVRON_DOWN : '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>'}</span>
                             </button>
@@ -1339,6 +1367,8 @@ class Navigation {
 
         try {
             this.user = user;
+            // The rank frame belongs to one account: re-check it whenever the user changes.
+            chrome.storage?.local?.get(['navRankFrame']).then(result => this.applyRankFrame(result?.navRankFrame)).catch(() => {});
             const userProfile = document.getElementById('navUserProfile');
             const userAvatar = document.getElementById('navUserAvatar');
             const userName = document.getElementById('navUserName');

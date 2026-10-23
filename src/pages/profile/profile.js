@@ -3,7 +3,7 @@ import { ProfileInsightsView } from './ProfileInsightsView.js';
 import { renderShowcase, SYNC_INTERVAL_MS } from '../../shared/achievements/AchievementShowcase.js';
 import { AchievementService } from '../../shared/achievements/AchievementService.js';
 import { AchievementsView } from '../../shared/achievements/AchievementsView.js';
-import { rankFor, totalPoints } from '../../shared/achievements/AchievementEngine.js';
+import { frameLevel, rankFor, totalPoints } from '../../shared/achievements/AchievementEngine.js';
 import { renderAvatarFrame } from '../../shared/achievements/AchievementBadge.js';
 
 // Movie metadata comes from shared Firestore documents that any approved user may
@@ -33,7 +33,7 @@ class ProfilePageManager {
     // e-mail, admin/approval flags and preferences are never written to disk.
     static CACHED_PROFILE_FIELDS = [
         'uid', 'firstName', 'lastName', 'displayName', 'username', 'bio', 'photoURL',
-        'bannerURL', 'displayNameFormat', 'topGenres', 'socialLinks', 'stats', 'pinnedMovies', 'achievements', 'achievementPoints'
+        'bannerURL', 'displayNameFormat', 'topGenres', 'socialLinks', 'stats', 'pinnedMovies', 'achievements', 'showRankFrame', 'rankFrameLevel', 'achievementPoints'
     ];
     static OWN_CACHED_PROFILE_FIELDS = ['photoPath', 'bannerPath'];
 
@@ -529,7 +529,8 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
             i18n,
             db: firebaseManager.db,
             profileService: this.profileService,
-            onSynced: ({ stored, points }) => this.applyAchievements(stored, points)
+            onSynced: ({ stored, points }) => this.applyAchievements(stored, points),
+            onFrameChange: level => this.saveRankFrameLevel(level)
         });
         if (this.insightsView) Object.assign(this.insightsView, { db: firebaseManager.db, profileService: this.profileService, userService: this.userService });
 
@@ -1337,6 +1338,7 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
                 next.focus();
             });
         });
+        document.getElementById('achFrameToggle')?.addEventListener('change', event => this.saveRankFrameVisibility(event.target.checked));
         // Showcase links point at the tab; inside the profile they switch it in place.
         document.getElementById('profileAchievements')?.addEventListener('click', event => {
             const link = event.target.closest('a[href*="tab=achievements"]');
@@ -1378,6 +1380,54 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
         });
     }
 
+    /** Lets the navbar draw the signed-in user's frame without reading Firestore on every page. */
+    publishNavRankFrame(level) {
+        const uid = this.currentUser?.uid;
+        if (!uid || typeof chrome === 'undefined' || !chrome.storage?.local) return;
+        chrome.storage.local.set({ navRankFrame: { uid, level } }).catch?.(() => {});
+    }
+
+    /** Stores the chosen frame (null follows the current rank); the picker already updated the preview. */
+    async saveRankFrameLevel(level) {
+        const uid = this.currentUser?.uid;
+        if (!uid || this.viewingOtherUser || !this.userProfile) return;
+        this.renderAchievements();
+        clearTimeout(this.frameSaveTimer);
+        // Paging through frames quickly writes once, for the last choice.
+        this.frameSaveTimer = setTimeout(async () => {
+            try {
+                await firebaseManager.db.collection('users').doc(uid).update({
+                    rankFrameLevel: level ?? firebase.firestore.FieldValue.delete(),
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                await this.saveProfileCache(uid, this.userProfile, this.userProfile.stats);
+            } catch (error) {
+                console.error('ProfilePage: frame choice save failed', error);
+                if (typeof Utils !== 'undefined') Utils.showToast(i18n.get('achievements.frame_save_failed'), 'error');
+            }
+        }, 500);
+    }
+
+    async saveRankFrameVisibility(show) {
+        const uid = this.currentUser?.uid;
+        if (!uid || this.viewingOtherUser || !this.userProfile) return;
+        const previous = this.userProfile.showRankFrame;
+        this.userProfile.showRankFrame = show;
+        this.renderAchievements();
+        try {
+            await firebaseManager.db.collection('users').doc(uid).update({
+                showRankFrame: show,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            await this.saveProfileCache(uid, this.userProfile, this.userProfile.stats);
+        } catch (error) {
+            console.error('ProfilePage: frame visibility save failed', error);
+            this.userProfile.showRankFrame = previous;
+            this.renderAchievements();
+            if (typeof Utils !== 'undefined') Utils.showToast(i18n.get('achievements.frame_save_failed'), 'error');
+        }
+    }
+
     /** Keeps the showcase and the profile cache in step with a fresh recompute. */
     applyAchievements(stored, points) {
         if (!this.userProfile) return;
@@ -1391,12 +1441,22 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
         if (!this.userProfile) return;
         // Profile rank frame around the avatar, from the stored achievement tiers.
         const frame = document.getElementById('profileRankFrame');
+        const rank = rankFor(totalPoints(this.userProfile.achievements || {}));
+        // The owner can hide the frame; it is then hidden for every viewer.
+        const showFrame = this.userProfile.showRankFrame !== false;
+        const toggleWrap = document.getElementById('achFrameToggleWrap');
+        if (toggleWrap) {
+            toggleWrap.hidden = this.viewingOtherUser || rank.level === 0;
+            document.getElementById('achFrameToggle').checked = showFrame;
+        }
+        const shownLevel = frameLevel(rank.level, this.userProfile.rankFrameLevel);
+        if (!this.viewingOtherUser) this.publishNavRankFrame(showFrame ? shownLevel : 0);
         if (frame) {
-            const rank = rankFor(totalPoints(this.userProfile.achievements || {}));
-            frame.hidden = rank.level === 0;
+            const visible = rank.level > 0 && showFrame;
+            frame.hidden = !visible;
             // The ribbon hangs below the photo: keep it clear of the name.
-            frame.parentElement?.classList.toggle('has-rank-frame', rank.level > 0);
-            frame.innerHTML = rank.level ? renderAvatarFrame(rank.level) : '';
+            frame.parentElement?.classList.toggle('has-rank-frame', visible);
+            frame.innerHTML = visible ? renderAvatarFrame(shownLevel) : '';
             // The frame is decorative; the rank is spelled out in the header metadata.
             const label = document.getElementById('profileRank');
             const text = document.getElementById('profileRankText');
