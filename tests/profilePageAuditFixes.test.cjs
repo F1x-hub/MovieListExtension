@@ -105,6 +105,11 @@ const context = vm.createContext({
 const scriptSource = pageSource
     .replace(/^import \{ i18n \} from .*$/m, '')
     .replace(/^import \{ ProfileInsightsView \} from .*$/m, 'class ProfileInsightsView {}')
+    .replace(/^import \{ renderShowcase, SYNC_INTERVAL_MS \} from .*$/m, 'const renderShowcase = () => {}; const SYNC_INTERVAL_MS = 0;')
+    .replace(/^import \{ AchievementService \} from .*$/m, 'class AchievementService {}')
+    .replace(/^import \{ AchievementsView \} from .*$/m, 'class AchievementsView {}')
+    .replace(/^import \{ rankFor, totalPoints \} from .*$/m, 'const rankFor = () => ({ level: 0 }); const totalPoints = () => 0;')
+    .replace(/^import \{ renderAvatarFrame \} from .*$/m, 'const renderAvatarFrame = () => "";')
     + '\nglobalThis.ProfilePageManager = ProfilePageManager; globalThis.safeImageUrl = safeImageUrl;';
 vm.runInContext(scriptSource, context, { filename: 'profile.js' });
 const { ProfilePageManager, safeImageUrl } = context;

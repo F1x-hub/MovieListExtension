@@ -1,5 +1,10 @@
 import { i18n } from '../../shared/i18n/I18n.js';
 import { ProfileInsightsView } from './ProfileInsightsView.js';
+import { renderShowcase, SYNC_INTERVAL_MS } from '../../shared/achievements/AchievementShowcase.js';
+import { AchievementService } from '../../shared/achievements/AchievementService.js';
+import { AchievementsView } from '../../shared/achievements/AchievementsView.js';
+import { rankFor, totalPoints } from '../../shared/achievements/AchievementEngine.js';
+import { renderAvatarFrame } from '../../shared/achievements/AchievementBadge.js';
 
 // Movie metadata comes from shared Firestore documents that any approved user may
 // edit, so image URLs are limited to the same schemes MovieCard.safeImageUrl allows.
@@ -28,7 +33,7 @@ class ProfilePageManager {
     // e-mail, admin/approval flags and preferences are never written to disk.
     static CACHED_PROFILE_FIELDS = [
         'uid', 'firstName', 'lastName', 'displayName', 'username', 'bio', 'photoURL',
-        'bannerURL', 'displayNameFormat', 'topGenres', 'socialLinks', 'stats', 'pinnedMovies'
+        'bannerURL', 'displayNameFormat', 'topGenres', 'socialLinks', 'stats', 'pinnedMovies', 'achievements', 'achievementPoints'
     ];
     static OWN_CACHED_PROFILE_FIELDS = ['photoPath', 'bannerPath'];
 
@@ -131,6 +136,7 @@ class ProfilePageManager {
 
     async init() {
         this.initializeElements();
+        this.setupTabs();
         this.setupEventListeners();
         
         // Try to load cached profile immediately for instant render
@@ -519,6 +525,12 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
         firebaseManager.initializeServices();
         this.userService = firebaseManager.getUserService();
         this.profileService = new ProfileService(firebaseManager);
+        this.achievementsView = new AchievementsView({
+            i18n,
+            db: firebaseManager.db,
+            profileService: this.profileService,
+            onSynced: ({ stored, points }) => this.applyAchievements(stored, points)
+        });
         if (this.insightsView) Object.assign(this.insightsView, { db: firebaseManager.db, profileService: this.profileService, userService: this.userService });
 
         // Subscribe before waiting: a sign-in restored after the wait below (or in
@@ -613,11 +625,13 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
             this.displayProfile();
             this.displayStatistics(stats);
             this.page.showContent();
+            if (this.activeTab === 'achievements') this.showAchievementsTab();
 
             await Promise.allSettled([
                 this.loadRecentRatings(targetUserId),
                 this.viewingOtherUser ? Promise.resolve() : this.loadPersonalDashboard(targetUserId),
-                this.insightsView?.load({ targetUid: targetUserId, viewerUid: this.currentUser.uid, isOther: this.viewingOtherUser })
+                this.insightsView?.load({ targetUid: targetUserId, viewerUid: this.currentUser.uid, isOther: this.viewingOtherUser }),
+                this.viewingOtherUser ? Promise.resolve() : this.syncAchievements(targetUserId, loadId)
             ]);
             if (loadId !== this.profileLoadId) return;
 
@@ -763,6 +777,7 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
 
         this.applyViewerMode(isUsernameFirst ? username : fullName);
         this.insightsView?.renderFavorites(profile.pinnedMovies, { isOwn: !this.viewingOtherUser });
+        this.renderAchievements();
 
         if (this.elements.profileCover) {
             if (profile.bannerURL) {
@@ -1306,6 +1321,124 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
         newCards.forEach(card => fragment.appendChild(card));
 
         this.elements.recentRatingsList.appendChild(fragment);
+    }
+
+    /** «Обзор» / «Достижения» tabs under the profile header; ?tab=achievements opens the second. */
+    setupTabs() {
+        this.activeTab = new URLSearchParams(window.location.search).get('tab') === 'achievements' ? 'achievements' : 'overview';
+        const tabs = Array.from(document.querySelectorAll('[data-profile-tab]'));
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => this.setTab(tab.dataset.profileTab));
+            tab.addEventListener('keydown', event => {
+                if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+                event.preventDefault();
+                const next = tabs[(tabs.indexOf(tab) + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+                this.setTab(next.dataset.profileTab);
+                next.focus();
+            });
+        });
+        // Showcase links point at the tab; inside the profile they switch it in place.
+        document.getElementById('profileAchievements')?.addEventListener('click', event => {
+            const link = event.target.closest('a[href*="tab=achievements"]');
+            if (!link || event.ctrlKey || event.metaKey || event.shiftKey || event.button !== 0) return;
+            event.preventDefault();
+            this.setTab('achievements');
+            document.getElementById('profileTabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+        this.setTab(this.activeTab, { updateUrl: false });
+    }
+
+    setTab(name, { updateUrl = true } = {}) {
+        this.activeTab = name === 'achievements' ? 'achievements' : 'overview';
+        document.querySelectorAll('[data-profile-tab]').forEach(tab => {
+            const active = tab.dataset.profileTab === this.activeTab;
+            tab.classList.toggle('is-active', active);
+            tab.setAttribute('aria-selected', String(active));
+            tab.tabIndex = active ? 0 : -1;
+        });
+        const overview = document.getElementById('profileTabOverview');
+        const achievements = document.getElementById('profileTabAchievements');
+        if (overview) overview.hidden = this.activeTab !== 'overview';
+        if (achievements) achievements.hidden = this.activeTab !== 'achievements';
+        if (updateUrl) {
+            const url = new URL(window.location.href);
+            if (this.activeTab === 'achievements') url.searchParams.set('tab', 'achievements');
+            else url.searchParams.delete('tab');
+            history.replaceState(history.state, '', url);
+        }
+        if (this.activeTab === 'achievements') this.showAchievementsTab();
+    }
+
+    showAchievementsTab() {
+        if (!this.userProfile || !this.achievementsView) return;
+        this.achievementsView.show({
+            uid: this.userProfile.uid || this.currentUser?.uid,
+            isOwn: !this.viewingOtherUser,
+            profile: this.userProfile
+        });
+    }
+
+    /** Keeps the showcase and the profile cache in step with a fresh recompute. */
+    applyAchievements(stored, points) {
+        if (!this.userProfile) return;
+        this.userProfile.achievements = stored;
+        this.userProfile.achievementPoints = points;
+        this.renderAchievements();
+        try { localStorage.setItem(`achievementsSyncedAt_${this.userProfile.uid}`, String(Date.now())); } catch { /* optional throttle */ }
+    }
+
+    renderAchievements() {
+        if (!this.userProfile) return;
+        // Profile rank frame around the avatar, from the stored achievement tiers.
+        const frame = document.getElementById('profileRankFrame');
+        if (frame) {
+            const rank = rankFor(totalPoints(this.userProfile.achievements || {}));
+            frame.hidden = rank.level === 0;
+            // The ribbon hangs below the photo: keep it clear of the name.
+            frame.parentElement?.classList.toggle('has-rank-frame', rank.level > 0);
+            frame.innerHTML = rank.level ? renderAvatarFrame(rank.level) : '';
+            // The frame is decorative; the rank is spelled out in the header metadata.
+            const label = document.getElementById('profileRank');
+            const text = document.getElementById('profileRankText');
+            if (label && text) {
+                label.hidden = rank.level === 0;
+                text.textContent = rank.level ? `${i18n.get('achievements.rank')}: ${i18n.get('achievements.rank_' + rank.level)}` : '';
+            }
+        }
+        renderShowcase(document.getElementById('profileAchievements'), this.userProfile.achievements || {}, {
+            isOwn: !this.viewingOtherUser,
+            uid: this.userProfile.uid || this.currentUser?.uid,
+            i18n
+        });
+    }
+
+    /**
+     * Refreshes the owner's achievements in the background, at most once per
+     * SYNC_INTERVAL_MS; the «Достижения» tab always recomputes.
+     */
+    async syncAchievements(uid, loadId) {
+        if (!uid || !this.profileService || typeof firebaseManager === 'undefined') return;
+        if (this.activeTab === 'achievements') return;
+        const key = `achievementsSyncedAt_${uid}`;
+        try {
+            if (Date.now() - Number(localStorage.getItem(key) || 0) < SYNC_INTERVAL_MS) return;
+        } catch { /* storage unavailable: sync anyway */ }
+        try {
+            const service = new AchievementService({ db: firebaseManager.db, profileService: this.profileService });
+            const hadRecord = Object.keys(this.userProfile?.achievements || {}).length > 0;
+            const synced = await service.sync(uid, this.userProfile);
+            try { localStorage.setItem(key, String(Date.now())); } catch { /* optional throttle */ }
+            if (loadId !== this.profileLoadId || !this.userProfile) return;
+            this.userProfile.achievements = synced.stored;
+            this.userProfile.achievementPoints = synced.points;
+            this.renderAchievements();
+            if (hadRecord && synced.unlocked.length && typeof Utils !== 'undefined') {
+                const ids = new Set(synced.unlocked.map(item => item.id));
+                Utils.showToast(i18n.get('achievements.unlocked_many').replace('{n}', ids.size), 'success');
+            }
+        } catch (error) {
+            console.warn('ProfilePage: achievements sync failed', error);
+        }
     }
 
     /** Stores the pinned top-5 on the user's profile and refreshes the profile cache. */

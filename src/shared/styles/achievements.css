@@ -1,0 +1,394 @@
+/* Achievements tab of the profile: stats row, filters, badge cards and the tier dialog. */
+.ach-hero__stats {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    gap: 12px;
+    margin-bottom: 18px;
+}
+
+.ach-filters[hidden],
+.ach-note[hidden],
+.ach-message[hidden],
+.ach-modal[hidden],
+#achLoader[hidden] {
+    display: none;
+}
+
+/* .app-loader--inline sets its own display, which would override [hidden] above without the id. */
+#achLoader {
+    display: flex;
+    justify-content: center;
+    margin: 32px auto;
+}
+
+.ach-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    padding: 14px 16px;
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-lg);
+    background: var(--theme-bg-card);
+}
+
+/* Rank card: the current avatar frame sits on the right as a preview. */
+.ach-stat--rank {
+    position: relative;
+    min-height: 112px;
+    padding-right: 116px;
+}
+
+.ach-stat__frame {
+    position: absolute;
+    top: 50%;
+    right: 10px;
+    width: 96px;
+    height: 96px;
+    transform: translateY(-50%);
+}
+
+.ach-stat__frame svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.ach-stat__label {
+    color: var(--theme-text-muted);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.ach-stat__value {
+    font-family: var(--font-data);
+    font-size: 1.6rem;
+    line-height: 1.1;
+}
+
+.ach-stat__sub {
+    font-size: 0.85rem;
+}
+
+.ach-bar {
+    display: block;
+    height: 5px;
+    margin-top: 6px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--theme-bg-tertiary);
+}
+
+.ach-bar > span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--ui-color-content);
+    transition: width 300ms var(--ease-out, ease-out);
+}
+
+.ach-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.ach-filter {
+    padding: 7px 14px;
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--theme-text-muted);
+    font: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.ach-filter:hover {
+    color: var(--theme-text-primary);
+    border-color: var(--theme-border-hover);
+}
+
+.ach-filter.is-active {
+    border-color: var(--ui-color-content-muted);
+    background: var(--theme-bg-tertiary);
+    color: var(--theme-text-primary);
+}
+
+.ach-filter:focus-visible,
+.ach-card:focus-visible,
+.ach-dialog button:focus-visible {
+    outline: 2px solid var(--ui-color-content);
+    outline-offset: 2px;
+}
+
+.ach-note,
+.ach-message {
+    color: var(--theme-text-muted);
+    font-size: 0.85rem;
+}
+
+.ach-message {
+    padding: 80px 0;
+    text-align: center;
+}
+
+.ach-section {
+    margin-top: 28px;
+}
+
+.ach-section__title {
+    margin: 0 0 14px;
+    font-size: 1.05rem;
+    font-weight: 600;
+}
+
+.ach-section__title span {
+    margin-left: 6px;
+    color: var(--theme-text-muted);
+    font-family: var(--font-data);
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.ach-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+    gap: 14px;
+}
+
+/* A badge card hangs on a lanyard: the notch at the top echoes a badge clip. */
+.ach-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    min-width: 0;
+    padding: 22px 14px 14px;
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-lg);
+    background: var(--theme-bg-card);
+    color: var(--theme-text-primary);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: transform 180ms var(--ease-out, ease-out), border-color 180ms ease;
+}
+
+.ach-card::before {
+    content: "";
+    position: absolute;
+    top: -1px;
+    left: 50%;
+    width: 36px;
+    height: 8px;
+    margin-left: -18px;
+    border: 1px solid var(--theme-border);
+    border-top: 0;
+    border-radius: 0 0 8px 8px;
+    background: var(--theme-bg-primary);
+}
+
+.ach-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--theme-border-hover);
+}
+
+.ach-card--done {
+    border-color: color-mix(in srgb, var(--success, #22c55e) 55%, var(--theme-border));
+}
+
+.ach-card__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.ach-card__badge {
+    display: block;
+    width: 112px;
+    max-width: 100%;
+    margin: 0 auto 4px;
+}
+
+.ach-card__badge svg,
+.ach-dialog__badge svg {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+/* Not yet earned: the same artwork in grey, so the next goal stays visible. */
+.is-locked svg {
+    filter: grayscale(1) brightness(0.55);
+}
+
+.ach-card--secret .ach-card__badge svg {
+    filter: grayscale(1) brightness(0.35) blur(1.5px);
+}
+
+.ach-chip {
+    align-self: flex-start;
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: var(--theme-bg-tertiary);
+    color: var(--theme-text-secondary, var(--theme-text-muted));
+    font-size: 0.72rem;
+}
+
+.ach-chip--ok {
+    background: color-mix(in srgb, var(--success, #22c55e) 16%, transparent);
+    color: var(--success, #22c55e);
+}
+
+.ach-card__name {
+    font-size: 0.92rem;
+    font-weight: 600;
+}
+
+.ach-card__progress {
+    color: var(--theme-text-muted);
+    font-family: var(--font-data);
+    font-size: 0.75rem;
+}
+
+.ach-card--locked {
+    opacity: 0.8;
+}
+
+.ach-modal {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-modal, 1040);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.6);
+}
+
+.ach-dialog {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    width: min(440px, 100%);
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    padding: 22px 22px 20px;
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-xl);
+    background: var(--theme-bg-secondary, var(--theme-bg-primary));
+    text-align: center;
+}
+
+.ach-dialog__close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--theme-border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--theme-text-muted);
+    font-size: 1.1rem;
+    cursor: pointer;
+}
+
+.ach-dialog__tags {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    min-height: 22px;
+}
+
+.ach-dialog__stage {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 200px) 40px;
+    align-items: center;
+    gap: 8px;
+}
+
+.ach-dialog__nav {
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-md);
+    background: var(--theme-bg-tertiary);
+    color: var(--theme-text-primary);
+    font-size: 1.3rem;
+    cursor: pointer;
+}
+
+.ach-dialog__nav:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.ach-dialog__nav[hidden] {
+    visibility: hidden;
+    display: block;
+}
+
+.ach-dialog__title {
+    margin: 4px 0 0;
+    font-size: 1.25rem;
+}
+
+.ach-dialog__condition,
+.ach-dialog__text,
+.ach-dialog__progress {
+    margin: 0;
+}
+
+.ach-dialog__condition {
+    color: var(--theme-text-muted);
+    font-size: 0.9rem;
+}
+
+.ach-dialog .ach-chip {
+    align-self: center;
+}
+
+.ach-dialog__text {
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.ach-dialog__progress {
+    align-self: stretch;
+    margin-top: 6px;
+    color: var(--theme-text-muted);
+    font-family: var(--font-data);
+    font-size: 0.8rem;
+    text-align: left;
+}
+
+.ach-bar--wide {
+    align-self: stretch;
+}
+
+@media (max-width: 480px) {
+    .ach-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+
+    .ach-hero__stats {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ach-card,
+    .ach-bar > span {
+        transition: none;
+    }
+}

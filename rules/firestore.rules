@@ -39,7 +39,10 @@ service cloud.firestore {
         && (!keys.hasAny(['bio']) || (data.bio is string && data.bio.size() <= 200))
         && (!keys.hasAny(['displayNameFormat']) || data.displayNameFormat in ['fullname', 'username'])
         // Pinned top-5 favorites shown on the profile.
-        && (!keys.hasAny(['pinnedMovies']) || (data.pinnedMovies is list && data.pinnedMovies.size() <= 5));
+        && (!keys.hasAny(['pinnedMovies']) || (data.pinnedMovies is list && data.pinnedMovies.size() <= 5))
+        // Achievement tiers and points, recomputed by the owner's client.
+        && (!keys.hasAny(['achievements']) || (data.achievements is map && data.achievements.size() <= 64))
+        && (!keys.hasAny(['achievementPoints']) || (data.achievementPoints is int && data.achievementPoints >= 0));
     }
 
     // Helper function to check if user is admin
@@ -380,6 +383,12 @@ service cloud.firestore {
         && reactionId == request.resource.data.ratingId + '_' + request.auth.uid
         && ratingHasMovie(request.resource.data.ratingId, request.resource.data.movieId);
       allow delete: if isAdmin() || (isApprovedUser() && resource.data.userId == request.auth.uid);
+    }
+
+    // Server-maintained counts of users per achievement tier («Есть у N%»).
+    match /achievementStats/{statsId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
     }
 
     match /commentReactionSummaries/{ratingId} {

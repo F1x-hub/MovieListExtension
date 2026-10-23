@@ -102,6 +102,44 @@
     flex-shrink: 0;
 }
 
+/* Rank frame: its ring's inner edge (radius 39 of 120) meets the avatar edge, so the overlay is 120/78 of the avatar. */
+.profile-rank-frame {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    z-index: 3;
+    width: calc(var(--profile-avatar-size) * 120 / 78);
+    height: calc(var(--profile-avatar-size) * 120 / 78);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+.profile-rank-frame[hidden] {
+    display: none;
+}
+
+/* The rank ribbon reaches about 0.14 of the avatar size below the photo. */
+.profile-photo-wrapper.has-rank-frame {
+    margin-bottom: calc(var(--profile-avatar-size) * 0.16);
+}
+
+/* .meta-item sets its own display, which would otherwise override [hidden]. */
+.meta-item[hidden] {
+    display: none;
+}
+
+/* Inside a rank frame the photo meets the metal: no page-colored border ring or drop shadow. */
+.profile-photo-wrapper.has-rank-frame .profile-photo {
+    border-width: 0;
+    box-shadow: none;
+}
+
+.profile-rank-frame svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
 .profile-photo {
     width: var(--profile-avatar-size);
     height: var(--profile-avatar-size);
@@ -2644,6 +2682,152 @@
 
     .insight-metrics--three {
         grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+/* ==========================================================================
+   Profile tabs (same pill tabs as Movie Details)
+   ========================================================================== */
+.profile-tabs {
+    display: flex;
+    gap: 6px;
+    margin: 4px 0 24px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--theme-border);
+    overflow-x: auto;
+    scrollbar-width: none;
+    scroll-margin-top: 80px;
+}
+
+.profile-tabs::-webkit-scrollbar {
+    display: none;
+}
+
+.profile-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    height: 34px;
+    padding: 0 16px;
+    border: 1px solid transparent;
+    border-radius: 100px;
+    background: transparent;
+    color: var(--theme-text-secondary);
+    font-family: var(--font-family);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.profile-tab:hover {
+    color: var(--theme-text-primary);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.light-theme .profile-tab:hover {
+    background: rgba(9, 9, 11, 0.02);
+}
+
+.profile-tab:focus-visible {
+    outline: 2px solid var(--ui-color-content);
+    outline-offset: 2px;
+}
+
+.profile-tab.is-active {
+    border-color: var(--theme-text-primary);
+    background: var(--theme-text-primary);
+    color: var(--theme-bg-primary);
+    font-weight: 600;
+}
+
+.profile-tab-panel[hidden] {
+    display: none;
+}
+
+/* ==========================================================================
+   Achievements showcase
+   ========================================================================== */
+.profile-achievements {
+    margin-bottom: 28px;
+}
+
+.profile-achievements[hidden] {
+    display: none;
+}
+
+.profile-achievements__header {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    margin-bottom: 12px;
+}
+
+.profile-achievements__points {
+    color: var(--theme-text-muted);
+    font-size: 0.85rem;
+}
+
+.profile-achievements__points b {
+    color: var(--theme-text-primary);
+    font-family: var(--font-data);
+}
+
+.profile-achievements__link {
+    margin-left: auto;
+}
+
+.profile-achievements__list {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.profile-achievements__item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    color: var(--theme-text-muted);
+    font-size: 0.75rem;
+    text-align: center;
+    text-decoration: none;
+    transition: transform 180ms var(--ease-out);
+}
+
+.profile-achievements__item:hover {
+    transform: translateY(-2px);
+    color: var(--theme-text-primary);
+}
+
+.profile-achievements__item:focus-visible {
+    outline: 2px solid var(--ui-color-content);
+    outline-offset: 2px;
+    border-radius: var(--radius-md);
+}
+
+.profile-achievements__item svg {
+    display: block;
+    width: 100%;
+    max-width: 96px;
+    height: auto;
+}
+
+.profile-achievements__item span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+    .profile-achievements__list {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 }
 

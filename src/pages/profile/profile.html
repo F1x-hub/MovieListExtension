@@ -19,6 +19,7 @@
     <link rel="stylesheet" href="../../shared/styles/components.css">
     <link rel="stylesheet" href="../../shared/styles/navigation.css">
     <link rel="stylesheet" href="../../shared/styles/profile.css">
+    <link rel="stylesheet" href="../../shared/styles/achievements.css">
     <link rel="stylesheet" href="../../shared/styles/report-widget.css">
     
     <!-- Firebase -->
@@ -79,6 +80,7 @@
                 <div class="profile-nav-bar">
                     <!-- Floating Avatar -->
                     <div class="profile-photo-wrapper">
+                        <span class="profile-rank-frame" id="profileRankFrame" hidden></span>
                         <div class="profile-photo" id="profilePhoto">
                             <img id="profilePhotoImg" src="" alt="Profile photo" data-i18n="[alt]profile.ui.avatar_alt" style="display: none;">
                             <div class="profile-photo-placeholder" id="profilePhotoPlaceholder">
@@ -108,6 +110,10 @@
 
                     <!-- Metadata Badges -->
                     <div class="profile-meta" id="profileMeta">
+                        <span class="meta-item" id="profileRank" hidden>
+                            <span class="meta-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"></path><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"></path><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"></path></svg></span>
+                            <span id="profileRankText"></span>
+                        </span>
                         <span class="meta-item" id="profileJoinDate" style="display: none;">
                             <span class="meta-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg></span>
                             <span id="joinDateText"></span>
@@ -120,6 +126,13 @@
                 </div>
             </div>
 
+            <!-- Profile tabs: overview and achievements -->
+            <div class="profile-tabs" role="tablist" id="profileTabs">
+                <button type="button" class="profile-tab is-active" role="tab" id="profileTabOverviewBtn" data-profile-tab="overview" aria-selected="true" aria-controls="profileTabOverview" data-i18n="achievements.tab_overview">Обзор</button>
+                <button type="button" class="profile-tab" role="tab" id="profileTabAchievementsBtn" data-profile-tab="achievements" aria-selected="false" aria-controls="profileTabAchievements" tabindex="-1" data-i18n="achievements.tab_achievements">Достижения</button>
+            </div>
+
+            <div class="profile-tab-panel" id="profileTabOverview" role="tabpanel" aria-labelledby="profileTabOverviewBtn">
             <!-- Pinned favorites (top 5) -->
             <section class="profile-favorites" id="profileFavorites" hidden>
                 <div class="profile-favorites__header">
@@ -128,6 +141,9 @@
                 </div>
                 <div class="profile-favorites__list" id="profileFavoritesList"></div>
             </section>
+
+            <!-- Achievements showcase -->
+            <section class="profile-achievements" id="profileAchievements" hidden></section>
 
             <!-- Statistics Grid -->
             <div class="profile-stats" id="profileStats">
@@ -256,6 +272,36 @@
                     <div class="app-loader__indicator" aria-hidden="true"></div>
                 </div>
                 <div id="recentRatingsSentinel" style="height: 20px; margin-top: 10px;"></div>
+            </div>
+            </div>
+
+            <div class="profile-tab-panel" id="profileTabAchievements" role="tabpanel" aria-labelledby="profileTabAchievementsBtn" hidden>
+                <div class="ach-hero__stats">
+                    <div class="ach-stat ach-stat--rank">
+                        <span class="ach-stat__frame" id="achRankFrame" aria-hidden="true"></span>
+                        <span class="ach-stat__label" data-i18n="achievements.rank">Ранг профиля</span>
+                        <strong class="ach-stat__value" id="achRankName"></strong>
+                        <span class="ach-stat__sub" id="achRankNext"></span>
+                        <div class="ach-bar" aria-hidden="true"><span id="achRankBar"></span></div>
+                    </div>
+                    <div class="ach-stat">
+                        <span class="ach-stat__label" id="achEarned"></span>
+                        <span class="ach-stat__sub" id="achTiers"></span>
+                        <div class="ach-bar" aria-hidden="true"><span id="achTiersBar"></span></div>
+                    </div>
+                </div>
+                <div class="ach-filters" id="achFilters" role="toolbar">
+                    <button type="button" class="ach-filter is-active" data-filter="all" aria-pressed="true" data-i18n="achievements.filter_all">Все</button>
+                    <button type="button" class="ach-filter" data-filter="earned" aria-pressed="false" data-i18n="achievements.filter_earned">Получены</button>
+                    <button type="button" class="ach-filter" data-filter="progress" aria-pressed="false" data-i18n="achievements.filter_progress">В процессе</button>
+                    <button type="button" class="ach-filter" data-filter="locked" aria-pressed="false" data-i18n="achievements.filter_locked">Не начаты</button>
+                </div>
+                <p class="ach-note" id="achNote" hidden></p>
+                <div id="achSections"></div>
+                <div class="app-loader app-loader--inline app-loader--compact" id="achLoader" role="status">
+                    <div class="app-loader__indicator" aria-hidden="true"></div>
+                </div>
+                <p class="ach-message" id="achMessage" hidden></p>
             </div>
             </div>
 
@@ -469,6 +515,24 @@
     </div>
 
     <!-- Main Script -->
+    <div class="ach-modal" id="achModal" hidden>
+        <div class="ach-dialog" role="dialog" aria-modal="true" aria-labelledby="achDialogTitle">
+            <button type="button" class="ach-dialog__close" id="achClose" data-i18n="[aria-label]achievements.close" aria-label="Закрыть">×</button>
+            <div class="ach-dialog__tags" id="achDialogTags"></div>
+            <div class="ach-dialog__stage">
+                <button type="button" class="ach-dialog__nav" id="achPrev" data-i18n="[aria-label]achievements.prev" aria-label="Предыдущая ступень">‹</button>
+                <div class="ach-dialog__badge" id="achDialogBadge"></div>
+                <button type="button" class="ach-dialog__nav" id="achNext" data-i18n="[aria-label]achievements.next" aria-label="Следующая ступень">›</button>
+            </div>
+            <h2 class="ach-dialog__title" id="achDialogTitle"></h2>
+            <p class="ach-dialog__condition" id="achDialogCondition"></p>
+            <span class="ach-chip" id="achDialogLevel"></span>
+            <p class="ach-dialog__text" id="achDialogText"></p>
+            <p class="ach-dialog__progress" id="achDialogProgress"></p>
+            <div class="ach-bar ach-bar--wide" aria-hidden="true"><span id="achDialogBar"></span></div>
+        </div>
+    </div>
+
     <script src="profile.js" type="module"></script>
     <script defer src="../../shared/components/ReportWidget.js"></script>
 </body>
