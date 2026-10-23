@@ -200,6 +200,16 @@ export function maxPoints() {
     return ACHIEVEMENTS.reduce((sum, def) => sum + pointsFor(def, def.tiers.length), 0);
 }
 
+/**
+ * Frame shown for a rank: the owner may pick any unlocked rank's frame; an
+ * unset or out-of-range choice falls back to the current rank.
+ */
+export function frameLevel(rankLevel, chosen) {
+    const rank = Math.max(0, Number(rankLevel) || 0);
+    const pick = Math.floor(Number(chosen) || 0);
+    return pick >= 1 && pick <= rank ? pick : rank;
+}
+
 /** Point thresholds of ranks I–VII. */
 export function rankThresholds() {
     const max = maxPoints();

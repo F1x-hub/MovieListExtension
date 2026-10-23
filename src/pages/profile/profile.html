@@ -278,11 +278,20 @@
             <div class="profile-tab-panel" id="profileTabAchievements" role="tabpanel" aria-labelledby="profileTabAchievementsBtn" hidden>
                 <div class="ach-hero__stats">
                     <div class="ach-stat ach-stat--rank">
-                        <span class="ach-stat__frame" id="achRankFrame" aria-hidden="true"></span>
+                        <div class="ach-frame-picker">
+                            <button type="button" class="ach-frame-picker__nav" id="achFramePrev" data-i18n="[aria-label]achievements.frame_prev" aria-label="Предыдущая рамка" hidden>‹</button>
+                            <span class="ach-stat__frame" id="achRankFrame" aria-hidden="true"></span>
+                            <button type="button" class="ach-frame-picker__nav" id="achFrameNext" data-i18n="[aria-label]achievements.frame_next" aria-label="Следующая рамка" hidden>›</button>
+                            <span class="ach-frame-picker__name" id="achFrameName" aria-live="polite"></span>
+                        </div>
                         <span class="ach-stat__label" data-i18n="achievements.rank">Ранг профиля</span>
                         <strong class="ach-stat__value" id="achRankName"></strong>
                         <span class="ach-stat__sub" id="achRankNext"></span>
                         <div class="ach-bar" aria-hidden="true"><span id="achRankBar"></span></div>
+                        <label class="ach-frame-toggle" id="achFrameToggleWrap" hidden>
+                            <input type="checkbox" id="achFrameToggle" checked>
+                            <span data-i18n="achievements.show_frame">Показывать рамку вокруг фото</span>
+                        </label>
                     </div>
                     <div class="ach-stat">
                         <span class="ach-stat__label" id="achEarned"></span>

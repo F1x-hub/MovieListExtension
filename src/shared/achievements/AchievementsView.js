@@ -8,12 +8,12 @@
  * recomputed here); other users see the tiers stored on their user document.
  */
 import { ACHIEVEMENTS, ACHIEVEMENTS_BY_ID, CATEGORIES } from './AchievementCatalog.js';
-import { rankFor, totalPoints } from './AchievementEngine.js';
+import { frameLevel, rankFor, totalPoints } from './AchievementEngine.js';
 import { renderAvatarFrame, renderBadge } from './AchievementBadge.js';
 import { AchievementService } from './AchievementService.js';
 
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
-const ELEMENT_IDS = ['achRankFrame', 'achRankName', 'achRankNext', 'achRankBar', 'achEarned', 'achTiers', 'achTiersBar', 'achFilters', 'achNote', 'achSections', 'achLoader',
+const ELEMENT_IDS = ['achFramePrev', 'achFrameNext', 'achFrameName', 'achRankFrame', 'achRankName', 'achRankNext', 'achRankBar', 'achEarned', 'achTiers', 'achTiersBar', 'achFilters', 'achNote', 'achSections', 'achLoader',
     'achMessage', 'achModal', 'achClose', 'achPrev', 'achNext', 'achDialogTags', 'achDialogBadge', 'achDialogTitle',
     'achDialogCondition', 'achDialogLevel', 'achDialogText', 'achDialogProgress', 'achDialogBar'];
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -26,11 +26,12 @@ export class AchievementsView {
      * @param {Object} options.profileService
      * @param {Function} [options.onSynced] - receives {stored, points} after the owner's recompute
      */
-    constructor({ i18n, db, profileService, onSynced = null }) {
+    constructor({ i18n, db, profileService, onSynced = null, onFrameChange = null }) {
         this.i18n = i18n;
         this.db = db;
         this.service = new AchievementService({ db, profileService });
         this.onSynced = onSynced;
+        this.onFrameChange = onFrameChange;
         this.filter = 'all';
         this.stored = {};
         this.results = null;
@@ -162,7 +163,7 @@ export class AchievementsView {
         const earned = ACHIEVEMENTS.filter(def => this.tierOf(def.id) > 0).length;
         const rank = rankFor(totalPoints(this.stored));
         const points = this.t('rank_points', { n: rank.points.toLocaleString(this.locale) });
-        this.el.achRankFrame.innerHTML = rank.level ? renderAvatarFrame(rank.level, { label: false }) : '';
+        this.renderFramePicker(rank.level);
         this.el.achRankName.textContent = rank.level ? this.t('rank_' + rank.level) : this.t('rank_none');
         this.el.achRankNext.textContent = rank.next === null
             ? points + ' · ' + this.t('rank_max')
@@ -182,6 +183,31 @@ export class AchievementsView {
             </section>`;
         }).join('');
         if (this.dialog) this.renderDialog();
+    }
+
+    /**
+     * Frame preview with arrows: the owner pages through the frames of ranks
+     * already reached; the arrow beyond the current rank stays disabled.
+     */
+    renderFramePicker(rankLevel) {
+        const shown = frameLevel(rankLevel, this.profile?.rankFrameLevel);
+        this.el.achRankFrame.innerHTML = shown ? renderAvatarFrame(shown, { label: false }) : '';
+        const picker = this.isOwn && rankLevel > 1;
+        this.el.achFramePrev.hidden = this.el.achFrameNext.hidden = !picker;
+        this.el.achFramePrev.disabled = shown <= 1;
+        this.el.achFrameNext.disabled = shown >= rankLevel;
+        this.el.achFrameName.textContent = picker ? this.t('frame_name', { name: this.t('rank_' + shown) }) : '';
+    }
+
+    stepFrame(delta) {
+        if (!this.isOwn || !this.profile) return;
+        const rankLevel = rankFor(totalPoints(this.stored)).level;
+        const next = frameLevel(rankLevel, this.profile.rankFrameLevel) + delta;
+        if (next < 1 || next > rankLevel) return;
+        // Choosing the current rank clears the choice, so the frame follows future ranks.
+        this.profile.rankFrameLevel = next === rankLevel ? null : next;
+        this.renderFramePicker(rankLevel);
+        this.onFrameChange?.(this.profile.rankFrameLevel);
     }
 
     cardHTML(def) {
@@ -227,6 +253,8 @@ export class AchievementsView {
             const card = event.target.closest('.ach-card');
             if (card) this.openDialog(card.dataset.id, card);
         });
+        this.el.achFramePrev?.addEventListener('click', () => this.stepFrame(-1));
+        this.el.achFrameNext?.addEventListener('click', () => this.stepFrame(1));
         this.el.achClose?.addEventListener('click', () => this.closeDialog());
         this.el.achModal?.addEventListener('click', event => { if (event.target === this.el.achModal) this.closeDialog(); });
         this.el.achPrev?.addEventListener('click', () => this.stepDialog(-1));

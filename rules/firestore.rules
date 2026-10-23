@@ -42,7 +42,10 @@ service cloud.firestore {
         && (!keys.hasAny(['pinnedMovies']) || (data.pinnedMovies is list && data.pinnedMovies.size() <= 5))
         // Achievement tiers and points, recomputed by the owner's client.
         && (!keys.hasAny(['achievements']) || (data.achievements is map && data.achievements.size() <= 64))
-        && (!keys.hasAny(['achievementPoints']) || (data.achievementPoints is int && data.achievementPoints >= 0));
+        && (!keys.hasAny(['achievementPoints']) || (data.achievementPoints is int && data.achievementPoints >= 0))
+        && (!keys.hasAny(['showRankFrame']) || data.showRankFrame is bool)
+        && (!keys.hasAny(['rankFrameLevel']) || !('rankFrameLevel' in data)
+          || (data.rankFrameLevel is int && data.rankFrameLevel >= 1 && data.rankFrameLevel <= 7));
     }
 
     // Helper function to check if user is admin
