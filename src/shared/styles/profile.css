@@ -59,6 +59,7 @@
     background: linear-gradient(135deg, #18181b 0%, #27272a 45%, #18181b 80%, #09090b 100%);
     background-size: cover;
     background-position: center;
+    background-repeat: no-repeat;
     overflow: hidden;
     border: none;
     box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4), 0 12px 36px rgba(0, 0, 0, 0.45);
@@ -1769,8 +1770,9 @@
 /* ==========================================================================
    Light Theme Overrides
    ========================================================================== */
+/* Only the image: the shorthand reset background-size and tiled the user's banner. */
 .light-theme .profile-cover {
-    background: linear-gradient(135deg, #27272a 0%, #3f3f46 45%, #1e293b 80%, #18181b 100%);
+    background-image: linear-gradient(135deg, #27272a 0%, #3f3f46 45%, #1e293b 80%, #18181b 100%);
     box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
 }
 
