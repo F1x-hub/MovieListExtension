@@ -276,7 +276,8 @@ export function renderAvatarFrame(level, { label = true } = {}) {
     }
     if (rank === 4 || rank === 5) s += gem(CX, CY - 47, 6);
     if (rank === 5) for (const d of [-1, 1]) s += gem(CX + d * 46, CY, 4.2);
-    if (rank >= 6) s += crown(p, rank === 7, CY - 44);
+    // The crown rests on the ring; higher, its centre gem (17 + 4 units above the base) leaves the viewBox.
+    if (rank >= 6) s += crown(p, rank === 7, CY - 37);
     s += ribbon(p, rank, label ? (rank === 7 ? '★ VII ★' : ROMAN[rank - 1]) : '', CY + 41);
     return `<svg class="rank-frame" viewBox="0 0 120 120" aria-hidden="true">${s}</svg>`;
 }

@@ -136,6 +136,7 @@
 }
 
 .profile-rank-frame svg {
+    overflow: visible;
     display: block;
     width: 100%;
     height: 100%;
