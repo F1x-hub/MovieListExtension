@@ -331,7 +331,16 @@ class HomeRenderer {
         container.removeAttribute('aria-busy');
 
         if (!Array.isArray(items) || items.length === 0) {
-            container.innerHTML = `<p class="home-section-empty">${this.escapeHtml(this.t('no_data', 'Нет данных'))}</p>`;
+            // An empty section usually means its provider request failed while
+            // the others succeeded, so offer a retry next to the message.
+            const onRetry = typeof options.onRetry === 'function' ? options.onRetry : null;
+            container.innerHTML = `
+                <div class="home-section-message">
+                    <p class="home-section-empty">${this.escapeHtml(this.t('no_data', 'Нет данных'))}</p>
+                    ${onRetry ? `<button type="button" class="home-section-retry">${this.escapeHtml(this.t('retry', 'Повторить'))}</button>` : ''}
+                </div>
+            `;
+            if (onRetry) container.querySelector('.home-section-retry')?.addEventListener('click', onRetry);
             return;
         }
 
@@ -382,13 +391,14 @@ class HomeRenderer {
      * @param {Object} discoveryData
      * @param {Object} elements
      */
-    renderCategoryGrids(discoveryData = {}, elements = {}) {
+    renderCategoryGrids(discoveryData = {}, elements = {}, onRetry = null) {
         const { filmsGrid, seriesGrid, cartoonsGrid, tvShowsGrid } = elements;
+        const options = { onRetry };
 
-        this.renderCategoryGrid(discoveryData.films, filmsGrid);
-        this.renderCategoryGrid(discoveryData.series, seriesGrid);
-        this.renderCategoryGrid(discoveryData.cartoons, cartoonsGrid);
-        this.renderCategoryGrid(discoveryData.anime || discoveryData.shows || [], tvShowsGrid);
+        this.renderCategoryGrid(discoveryData.films, filmsGrid, options);
+        this.renderCategoryGrid(discoveryData.series, seriesGrid, options);
+        this.renderCategoryGrid(discoveryData.cartoons, cartoonsGrid, options);
+        this.renderCategoryGrid(discoveryData.anime || discoveryData.shows || [], tvShowsGrid, options);
     }
 
     renderSectionHeader({ icon, title, total, href, linkText }) {

@@ -2082,3 +2082,19 @@
     .skeleton-poster-img,
     .skeleton-poster-img.spinning { transform: none; }
 }
+
+.random-skip-seen {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.random-skip-seen input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--text-primary);
+    cursor: pointer;
+}
