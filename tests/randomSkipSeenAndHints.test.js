@@ -204,15 +204,26 @@ function drawsFrom(manager, movies) {
     h.dispose();
 }
 
-// A shown result gets a visible "roll again" that reuses the card's reload action.
+// The card's reload button is the only roll-again control and names the R shortcut;
+// a poster rejected by PosterUrl falls back to the Kinopoisk image by ID.
 {
     const h = harness();
-    await h.manager.displayMovie({ kinopoiskId: 9, name: 'Shown' }, { transition: false });
-    const again = h.element('movieResult').querySelector('.random-again-btn');
-    assert.ok(again, 'The result has a visible roll-again button');
-    assert.equal(again.dataset.action, 'reload');
-    assert.equal(again.getAttribute('aria-keyshortcuts'), 'R');
-    assert.ok(again.textContent.includes('Ещё раз'));
+    await h.manager.displayMovie({ id: 9, name: 'Shown', posterUrl: 'https://image.unknown-cdn.test/p.jpg' }, { transition: false });
+    const result = h.element('movieResult');
+    assert.equal(result.querySelectorAll('[data-action="reload"]').length, 1, 'No duplicate roll-again button');
+    const reload = result.querySelector('.cmc-reload-btn');
+    assert.equal(reload.getAttribute('aria-keyshortcuts'), 'R');
+    assert.equal(reload.title, 'Найти другой фильм (R)');
+    const poster = result.querySelector('.cmc-poster');
+    assert.equal(poster.getAttribute('src'), 'https://st.kp.yandex.net/images/film_iphone/iphone360_9.jpg');
+    // An allowed API URL comes first; a failed load moves to the Kinopoisk image.
+    await h.manager.displayMovie({ id: 10, name: 'Allowed', posterUrl: 'https://avatars.mds.yandex.net/get-kinopoisk-image/1/x/600x900' }, { transition: false });
+    const allowed = h.element('movieResult').querySelector('.cmc-poster');
+    assert.equal(allowed.getAttribute('src'), 'https://avatars.mds.yandex.net/get-kinopoisk-image/1/x/600x900');
+    allowed.dispatchEvent(new h.dom.window.Event('error'));
+    assert.equal(allowed.getAttribute('src'), 'https://st.kp.yandex.net/images/film_iphone/iphone360_10.jpg');
+    allowed.dispatchEvent(new h.dom.window.Event('error'));
+    assert.match(allowed.getAttribute('src'), /icon48\.png$/, 'After every URL fails the app icon remains');
     h.dispose();
 }
 
@@ -250,4 +261,4 @@ function drawsFrom(manager, movies) {
 // The hidden attribute wins over the block's flex display.
 assert.match(read('src/pages/random/random.css'), /\.random-relax-options\[hidden\]\s*\{\s*display:\s*none;/);
 
-console.log('Random skip-seen, filter summary, relax suggestions, roll-again button and R shortcut passed.');
+console.log('Random skip-seen, filter summary, relax suggestions, reload shortcut label, poster fallback and R shortcut passed.');

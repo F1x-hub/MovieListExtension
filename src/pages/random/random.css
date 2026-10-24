@@ -2138,21 +2138,3 @@
 .random-relax-options[hidden] {
     display: none;
 }
-
-.random-again-btn {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin: 16px auto 0;
-}
-
-.random-again-key {
-    min-width: 20px;
-    padding: 1px 6px;
-    border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.2));
-    border-radius: 4px;
-    font-family: inherit;
-    font-size: 12px;
-    line-height: 16px;
-    color: var(--theme-text-secondary, var(--text-secondary));
-}
