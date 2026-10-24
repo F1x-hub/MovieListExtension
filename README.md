@@ -7,7 +7,7 @@ series, cartoons, and anime.
 
 <p>
   <img src="https://img.shields.io/badge/MANIFEST-V3-1687c9?style=flat-square&logo=googlechrome&logoColor=white" alt="Manifest V3">
-  <img src="https://img.shields.io/badge/VERSION-1.4.0-69b500?style=flat-square" alt="Version 1.4.0">
+  <img src="https://img.shields.io/badge/VERSION-1.4.1-69b500?style=flat-square" alt="Version 1.4.1">
   <img src="https://img.shields.io/badge/JAVASCRIPT-ES6%2B-f0d000?style=flat-square&logo=javascript&logoColor=111827" alt="JavaScript ES6+">
   <img src="https://img.shields.io/badge/VANILLA-ES6%2B-e2c400?style=flat-square" alt="Vanilla ES6+">
   <img src="https://img.shields.io/badge/AUTHOR-FIX-f47721?style=flat-square" alt="Author Fix">
@@ -438,6 +438,15 @@ keeps npm-compatible three-component semver metadata.
 <details open>
 <summary><strong>Unreleased</strong></summary>
 
+### Fixes
+
+- Telegram announcements: the bot uploads supported posters from trusted image hosts and falls back to text when a poster is unavailable or rejected. Escape movie text and bound message/caption lengths to prevent formatting and length errors. Both local and Vercel handlers share the sender. This backend change requires a separate bot deployment.
+
+</details>
+
+<details>
+<summary><strong>1.4.1</strong> — MovieList Hub, MediaPlayer install and automatic updates, torrent series, achievements</summary>
+
 ### Features
 
 - Add achievements: 30 achievements (26 with up to seven tiers, four one-off or secret) for ratings, variety, watching, lists, reviews and reactions, the movie marathon and the profile. The profile now has «Обзор» and «Достижения» tabs under the header (`?tab=achievements` opens the second; the old `src/pages/achievements/` address leads there). Achievement points grow with the tier (10, 25, 50, 100, 200, 350, 500; one-offs 100) and set a profile rank I–VII (Новичок to Легенда) shown as a metal frame around the avatar in the same style as the badges (each rank adds a distinct shape: inner band, notches and rivets, laurels and ruby, wings and side gems, crown, rays; a dark outline keeps pale metals visible on the light theme, the photo meets the metal without the page-colored border, and the rank is also written in the header metadata for screen readers); the top rank needs 90% of all points, not every tier. The tab shows the rank with progress to the next one, overall progress, filters, cards grouped by category and a dialog that pages through every tier; «Обзор» keeps a showcase of the rank and the six highest badges. Badges use the approved medal-and-shield frames (I–VII: bronze to legend, laurels, wings, gem, crown, ribbon) with a line icon per achievement and the clapperboard for «Оценщик»; unearned tiers appear in grey. Progress is counted on the owner's client from data readable to them and stored on the user document as `achievements` and `achievementPoints` (validated in `rules/firestore.rules`); other users see that snapshot. The owner's profile refreshes it at most every six hours, the tab on every open. Unlock dates start from the first sync. «Есть у N%» comes from the new `aggregateAchievementStats` Cloud Function, which diffs tiers on every user write into `achievementStats/global` (users per tier and participants, readable to signed-in users); a tier not yet counted shows no share. Rules and the function are deployed. Logic lives in `src/shared/achievements/` and `functions/achievementStats.js`, with `tests/achievementEngine.test.mjs` and `functions/tests/achievementStats.test.cjs`.
@@ -448,6 +457,8 @@ keeps npm-compatible three-component semver metadata.
 - Select, preview, save or cancel the MediaPlayer film/episode download folder in Settings. Persist it in the local service, retain existing download locations, validate service access and disk space, and offer an explicit original-user permission grant after a Windows access denial.
 - Add independent signed updates for the Windows updater and an already installed MediaPlayer Suite, with separate automatic-update switches (on by default) and version/status controls. Suite maintenance waits for playback, preserves configuration and database state, and rolls back failed activation; older installations require one manual Setup migration.
 - Turn `MovieListSetup.exe` into MovieList Hub, the single Windows entry point. Its WebView2 window uses the extension's own `theme.css`/`tokens.css` and follows the Windows light/dark setting. On a clean machine it downloads the latest signed extension (signature, size and SHA-256 checked) into a chosen folder, registers automatic updates and walks through the one-time Chrome «Load unpacked» step. It shows installed and latest versions of the extension, MediaPlayer Suite and itself, installs or repairs the Suite from the signed component catalog through the Suite's interactive Setup (legacy installs below user-owned folders get the migration path), and updates itself. Running a newer hub upgrades the permanent copy and adds a Start-menu shortcut; afterwards it only runs in the background when the extension calls it. The extension still decides when the extension updates. Settings gain «Установить» / «Восстановить установку» for the Suite and «Сбросить ошибку» for a failed component operation.
+- Release: `scripts/suite-release.cjs stage` uploads a locally built MediaPlayer Suite installer to the `suite-v<version>` prerelease and pins its version, build, size and SHA-256 in `release/suite.json`; the release job downloads it only when it is newer than the published catalog, verifies it against git and signs it into `components.json`, so the Suite ships from the GitHub release without building it in CI.
+- On Windows, extension pages show a small non-modal «Установите MovieList Hub» notice when the host is missing, unregistered or registered for another extension, and «Обновите MovieList Hub» when the installed hub cannot install MediaPlayer. «Скачать MovieList Hub» downloads the latest `MovieListSetup.exe` from GitHub and shows how to finish; «Позже» hides the notice for a week. Transient host errors never trigger it, and the popup never shows it.
 
 - Home: signed-in users get a «Потому что вы оценили «X»» row built by `RecommendationService` from their most recently added rating of 8 or higher (read newest first through the indexed `userId` + `createdAt` query; recommendations they already rated are removed with one batched lookup; one request per user and language per page view; up to 12 picks, trimmed to complete rows for the current 6/4/3/2-column width so the last row is never half empty; the row stays hidden when nothing resolves). Discovery cards they have already rated carry a «★ N» badge in the top-right corner, clear of the Kinopoisk/IMDb badges; it also appears on cards whose Kinopoisk ID is resolved after render, and each ID is looked up once per page view.
 - Rated page: a «Моя оценка» filter (9–10, 7–8, 5–6, 1–4, not rated by me) that loads every page before filtering and never replaces the default first-screen cache, and the filters are mirrored into the address (`q`, `genre`, `year`, `user`, `my`, `sort`, `avg`), so a filtered view can be shared or reloaded; address values override the saved ones.
@@ -459,6 +470,8 @@ keeps npm-compatible three-component semver metadata.
 
 ### Fixes
 
+- The «Что нового» dialog opens only on full extension pages, no longer automatically in the popup.
+- Rated page: with the «Моя оценка» filter the filter panel grew to three rows on wide screens; it now uses five columns from 1200 px, so search and the four filters share the first row and sorting and the rating range the second.
 - Random movie: the result poster no longer falls back to the blurry app icon when the API poster URL is missing or fails the `PosterUrl` host check; the card tries the API URL, then the Kinopoisk poster by ID (as the marathon does), and only then the icon. A rejected host is reported once in the console.
 - Home: a discovery section that comes back empty now offers «Повторить» next to «Нет данных». The seasonal banner takes its link from the season definition in `SeasonalThemeService`, so a future season no longer inherits the Halloween horror catalog link.
 - Random and Rated pages: the tab title is translated, and `I18n.translatePage` sets the document `lang` to the interface language on every page; the random page's «Повторить» button is localized.
