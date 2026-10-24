@@ -197,6 +197,9 @@ h3 { font-size: 16px; font-weight: 600; }
     background: var(--ui-color-interactive);
     animation: hub-indeterminate 1.4s var(--motion-ease-standard) infinite;
 }
+.progress__bar--measured::after { content: none; }
+.progress__fill { width: 0; height: 100%; border-radius: 2px; background: var(--ui-color-interactive); transition: width var(--motion-duration-slow) var(--motion-ease-out); }
+.progress__bar:not(.progress__bar--measured) .progress__fill { display: none; }
 .progress__label { color: var(--ui-color-content-muted); font-size: 13px; }
 
 .notice {

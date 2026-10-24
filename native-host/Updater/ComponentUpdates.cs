@@ -37,6 +37,12 @@ internal static partial class Program
         public string? RepairTransactionId { get; set; }
         public string? RecoveryErrorCode { get; set; }
         public bool Install { get; set; }
+        // Mirrored from the Suite maintenance broker so the hub and the
+        // extension show the real phase and download progress.
+        public bool Broker { get; set; }
+        public string? BrokerPhase { get; set; }
+        public long? DownloadedBytes { get; set; }
+        public long? TotalBytes { get; set; }
     }
 
     private sealed record SuiteInventory(bool Installed, bool LayoutValid, string? InstallPath,
@@ -315,13 +321,23 @@ internal static partial class Program
                 var suite = ReadSuiteInventory();
                 if (suite.BrokerAvailable)
                 {
-                    SetComponentPhase(state, "installing");
+                    state.Broker = true;
+                    SetComponentPhase(state, "queued");
                     var broker = BrokerRequest(new { action = "apply", operationId = id, metadataText = input.MetadataText, signature = input.Signature });
                     if (!broker.TryGetProperty("success", out var ok) || !ok.GetBoolean()) throw new ComponentFailure("SUITE_BROKER_REJECTED");
-                    var operation = PollSuiteBroker(id, () => BrokerRequest(new { action = "status" }), DateTimeOffset.UtcNow.AddMinutes(45),
+                    // The broker's own download deadline follows the asset size (up
+                    // to 6 hours on slow links); only a broker that stops reporting
+                    // anything for 20 minutes is treated as stalled.
+                    var lastActivity = DateTimeOffset.UtcNow;
+                    string? lastMarker = null;
+                    var operation = PollSuiteBroker(id, () => BrokerRequest(new { action = "status" }), DateTimeOffset.UtcNow.AddHours(7),
                         () => DateTimeOffset.UtcNow, Thread.Sleep, observed => {
                             if (observed.TryGetProperty("wasRunning", out var running) && running.ValueKind is JsonValueKind.True or JsonValueKind.False)
-                            { state.WasRunning = running.GetBoolean(); WriteJsonAtomic(ComponentStatePath, state); }
+                                state.WasRunning = running.GetBoolean();
+                            var marker = MirrorBrokerPhase(state, observed);
+                            SetComponentPhase(state, state.Status);
+                            if (marker != lastMarker) { lastMarker = marker; lastActivity = DateTimeOffset.UtcNow; }
+                            else if (DateTimeOffset.UtcNow - lastActivity > TimeSpan.FromMinutes(20)) throw new ComponentFailure("SUITE_BROKER_TIMEOUT");
                         });
                     var phase = operation.GetProperty("status").GetString();
                     if (operation.TryGetProperty("wasRunning", out var wasRunning) && wasRunning.ValueKind is JsonValueKind.True or JsonValueKind.False)
@@ -375,6 +391,28 @@ internal static partial class Program
             return 1;
         }
         finally { if (acquired) mutex.ReleaseMutex(); }
+    }
+
+    // Maps the broker phase onto the journal statuses the extension understands
+    // (without persisting it) and returns a marker that changes whenever the
+    // broker makes progress.
+    private static string MirrorBrokerPhase(ComponentOperation state, JsonElement observed)
+    {
+        var phase = observed.TryGetProperty("status", out var value) ? value.GetString() : null;
+        long? Number(string name) => observed.TryGetProperty(name, out var item) && item.ValueKind == JsonValueKind.Number ? item.GetInt64() : null;
+        state.BrokerPhase = phase;
+        state.DownloadedBytes = phase == "downloading" ? Number("downloadedBytes") : null;
+        state.TotalBytes = phase == "downloading" ? Number("totalBytes") : null;
+        state.Status = phase switch
+        {
+            "queued" => "queued",
+            "downloading" => "downloading",
+            "draining" or "installing" => "installing",
+            "verifying" => "verifying",
+            _ => state.Status
+        };
+        var updatedAt = observed.TryGetProperty("updatedAt", out var stamp) ? stamp.ToString() : "";
+        return $"{phase}|{state.DownloadedBytes}|{updatedAt}";
     }
 
     private static Process StartInstaller(ProcessStartInfo start)
@@ -519,9 +557,14 @@ internal static partial class Program
         throw new ComponentFailure("SUITE_BROKER_TIMEOUT");
     }
 
+    // Same policy as the Suite broker: about 48 KB/s, 30 minutes to 6 hours, so a
+    // slow link finishes instead of failing at a fixed deadline.
+    internal static TimeSpan ComponentDownloadDeadline(long size) => TimeSpan.FromSeconds(
+        Math.Clamp(size / (48.0 * 1024), TimeSpan.FromMinutes(30).TotalSeconds, TimeSpan.FromHours(6).TotalSeconds));
+
     private static void DownloadComponentFile(ComponentDescriptor descriptor, string destination)
     {
-        using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(descriptor.AssetName == "MediaPlayerSuiteSetup.exe" ? 30 : 10));
+        using var deadline = new CancellationTokenSource(ComponentDownloadDeadline(descriptor.Size));
         using var client = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
         Exception? last = null;
         for (var attempt = 0; attempt < 3; attempt++)
@@ -540,7 +583,7 @@ internal static partial class Program
                     while (true)
                     {
                         using var idle = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
-                        idle.CancelAfter(TimeSpan.FromSeconds(30));
+                        idle.CancelAfter(TimeSpan.FromSeconds(60));
                         var count = source.ReadAsync(buffer, idle.Token).AsTask().GetAwaiter().GetResult();
                         if (count == 0) break;
                         total += count;

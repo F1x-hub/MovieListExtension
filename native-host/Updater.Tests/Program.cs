@@ -226,6 +226,27 @@ try
         || (string)exitCode.Invoke(null, new object[] { 5 })! != "SUITE_INSTALL_CANCELLED"
         || (string)exitCode.Invoke(null, new object[] { 3 })! != "SUITE_INSTALL_FAILED")
         throw new Exception("Installer exit codes are misclassified.");
+    var hubDeadline = updater.GetMethod("ComponentDownloadDeadline", flags)!;
+    if ((TimeSpan)hubDeadline.Invoke(null, new object[] { 485_271_103L })! < TimeSpan.FromHours(2.5)
+        || (TimeSpan)hubDeadline.Invoke(null, new object[] { 1_000_000L })! != TimeSpan.FromMinutes(30))
+        throw new Exception("Hub component download deadline must follow the asset size.");
+    var mirror = updater.GetMethod("MirrorBrokerPhase", flags)!;
+    var mirrored = Activator.CreateInstance(componentType)!;
+    componentType.GetProperty("OperationId")!.SetValue(mirrored, Guid.NewGuid().ToString("D"));
+    string Mirror(object phase) => (string)mirror.Invoke(null, new[] { mirrored, JsonSerializer.SerializeToElement(phase) })!;
+    var first = Mirror(new { status = "downloading", downloadedBytes = 1024L, totalBytes = 4096L, updatedAt = "t1" });
+    if ((string)componentType.GetProperty("Status")!.GetValue(mirrored)! != "downloading"
+        || (long?)componentType.GetProperty("DownloadedBytes")!.GetValue(mirrored) != 1024
+        || (long?)componentType.GetProperty("TotalBytes")!.GetValue(mirrored) != 4096)
+        throw new Exception("Broker download progress was not mirrored.");
+    if (Mirror(new { status = "downloading", downloadedBytes = 2048L, totalBytes = 4096L, updatedAt = "t2" }) == first)
+        throw new Exception("Download progress must count as broker activity.");
+    Mirror(new { status = "draining", updatedAt = "t3" });
+    if ((string)componentType.GetProperty("Status")!.GetValue(mirrored)! != "installing"
+        || (string?)componentType.GetProperty("BrokerPhase")!.GetValue(mirrored) != "draining"
+        || componentType.GetProperty("DownloadedBytes")!.GetValue(mirrored) is not null)
+        throw new Exception("Draining must map to installing without stale progress.");
+    Console.WriteLine("Size-based hub download deadline and mirrored broker phase/progress passed.");
     var hubResources = updater.Assembly.GetManifestResourceNames();
     foreach (var resource in new[] { "hub/index.html", "hub/hub.css", "hub/hub.js", "hub/theme.css", "hub/tokens.css", "hub/icon-black.png", "hub/icon-white.png" })
         if (!hubResources.Contains(resource)) throw new Exception($"Hub resource {resource} is not embedded.");

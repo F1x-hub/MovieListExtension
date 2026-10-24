@@ -1679,6 +1679,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (statusElement) {
                 const translated = componentUpdateMessage(`status.${status}`, { version: component.availableVersion || '' });
                 statusElement.textContent = translated.startsWith('settings.component_updates.') ? componentUpdateMessage('status.unknown') : translated;
+                if (status === 'downloading' && component.totalBytes > 0 && component.downloadedBytes >= 0) {
+                    const megabytes = bytes => Math.round(bytes / 1024 / 1024);
+                    statusElement.textContent += ` ${megabytes(component.downloadedBytes)} / ${megabytes(component.totalBytes)} MB (${Math.min(100, Math.floor(component.downloadedBytes / component.totalBytes * 100))}%)`;
+                }
                 const error = componentErrorMessage(component.errorCode);
                 if (error) statusElement.textContent += ` ${error}`;
             }

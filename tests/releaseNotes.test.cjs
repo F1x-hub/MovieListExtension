@@ -14,7 +14,7 @@ assert.throws(() => createReleaseNotes('1.3.8', readme), /No README changelog/);
 assert.throws(() => createReleaseNotes('latest', readme), /Expected a three-component/);
 const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
 const actual = createReleaseNotes(manifest.version, fs.readFileSync('README.md', 'utf8'));
-assert.match(actual, /### Features/);
-assert.match(actual, /### Fixes/);
+// A patch release may contain fixes only; it needs at least one standard section.
+assert.match(actual, /^### (?:Features|Fixes|Refactor|Docs)$/m);
 assert.doesNotMatch(actual, /<details|<summary/);
 console.log('Release notes: exact changelog version, curated body and previous-version comparison passed.');
