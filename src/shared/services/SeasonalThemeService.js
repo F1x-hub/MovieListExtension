@@ -24,7 +24,9 @@
             id: 'halloween',
             start: Object.freeze({ month: 10, day: 17 }),
             peak: Object.freeze({ month: 10, day: 31 }),
-            end: Object.freeze({ month: 11, day: 7 })
+            end: Object.freeze({ month: 11, day: 7 }),
+            // Home banner destination; each season owns its own catalog link.
+            ctaHref: '../catalog/catalog.html?category=films&genre=27'
         })
     ]);
 
@@ -117,7 +119,8 @@
                     year,
                     start,
                     peak: toLocalDate(year, season.peak),
-                    end
+                    end,
+                    ctaHref: season.ctaHref || ''
                 };
             }
         }

@@ -9,6 +9,11 @@ const MIN_ROLL_DURATION_SECONDS = 2;
 const MAX_ROLL_DURATION_SECONDS = 1800;
 const ROLL_DURATION_STORAGE_KEY = 'random_wheel_duration_seconds';
 const ROLL_VOLUME_STORAGE_KEY = 'random_wheel_volume_percent';
+const RECENT_RESULTS_STORAGE_KEY = 'random_recent_results';
+const SKIP_SEEN_STORAGE_KEY = 'random_skip_seen';
+const RECENT_RESULTS_LIMIT = 30;
+// Extra API draws spent looking for an unseen movie before showing a seen one.
+const SKIP_SEEN_MAX_ATTEMPTS = 5;
 const DEFAULT_ROLL_VOLUME_PERCENT = 100;
 function getSafePosterUrl(value) {
     return typeof PosterUrl !== 'undefined' ? PosterUrl.safe(value) : '';
@@ -285,6 +290,22 @@ class RandomManager {
         // Roll Dice
         this.elements.rollDiceBtn.addEventListener('click', () => this.findRandomMovie());
 
+        const skipSeenToggle = document.getElementById('skipSeenToggle');
+        if (skipSeenToggle) {
+            try {
+                skipSeenToggle.checked = localStorage.getItem(SKIP_SEEN_STORAGE_KEY) !== 'false';
+            } catch {
+                // Default stays on.
+            }
+            skipSeenToggle.addEventListener('change', () => {
+                try {
+                    localStorage.setItem(SKIP_SEEN_STORAGE_KEY, String(skipSeenToggle.checked));
+                } catch {
+                    // The toggle still applies to this page view.
+                }
+            });
+        }
+
         // Try Again
         if (this.elements.tryAgainBtn) {
             this.elements.tryAgainBtn.addEventListener('click', () => {
@@ -458,8 +479,9 @@ class RandomManager {
             }
             if (requestId !== this._requestId || this._disposed) return;
 
-            const movie = await this.kinopoiskService.getRandomMovie(filters);
+            const movie = await this._getUnseenRandomMovie(filters, requestId);
             if (requestId !== this._requestId || this._disposed) return;
+            if (movie) this._rememberRecentResult(movie);
 
             if (movie) {
                 await this.displayMovie(movie, { requestId });
@@ -473,6 +495,54 @@ class RandomManager {
         } finally {
             if (requestId === this._requestId) this._findBusy = false;
         }
+    }
+
+    _isSkipSeenEnabled() {
+        return document.getElementById('skipSeenToggle')?.checked !== false;
+    }
+
+    _readRecentResults() {
+        try {
+            const list = JSON.parse(localStorage.getItem(RECENT_RESULTS_STORAGE_KEY) || '[]');
+            return Array.isArray(list) ? list.map(String) : [];
+        } catch {
+            return [];
+        }
+    }
+
+    _rememberRecentResult(movie) {
+        const id = movie?.id ?? movie?.kinopoiskId;
+        if (id === undefined || id === null) return;
+        const list = [String(id), ...this._readRecentResults().filter(item => item !== String(id))];
+        try {
+            localStorage.setItem(RECENT_RESULTS_STORAGE_KEY, JSON.stringify(list.slice(0, RECENT_RESULTS_LIMIT)));
+        } catch {
+            // History is a convenience; rolling still works without it.
+        }
+    }
+
+    async _isSeenMovie(movie, recent, user) {
+        const id = movie?.id ?? movie?.kinopoiskId;
+        if (id === undefined || id === null) return false;
+        if (recent.has(String(id))) return true;
+        if (!user) return false;
+        const rating = await firebaseManager.getRatingService?.()?.getRating(user.uid, id);
+        return Boolean(rating);
+    }
+
+    /** Draw until an unrated, not recently shown movie appears; fall back to the last draw. */
+    async _getUnseenRandomMovie(filters, requestId) {
+        if (!this._isSkipSeenEnabled()) return this.kinopoiskService.getRandomMovie(filters);
+        const recent = new Set(this._readRecentResults());
+        const user = typeof firebaseManager !== 'undefined' ? firebaseManager.getCurrentUser?.() : null;
+        let movie = null;
+        for (let attempt = 0; attempt < SKIP_SEEN_MAX_ATTEMPTS; attempt++) {
+            const candidate = await this.kinopoiskService.getRandomMovie(filters);
+            if (requestId !== this._requestId || this._disposed || !candidate) return candidate || movie;
+            movie = candidate;
+            if (!await this._isSeenMovie(candidate, recent, user)) return candidate;
+        }
+        return movie;
     }
 
     _showFailure(kind) {

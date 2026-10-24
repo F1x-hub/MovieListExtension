@@ -81,6 +81,9 @@ class I18n {
     }
 
     translatePage() {
+        if (typeof document !== 'undefined' && document.documentElement) {
+            document.documentElement.lang = this.currentLocale;
+        }
         const elements = document.querySelectorAll('[data-i18n]');
         elements.forEach(element => {
             let key = element.getAttribute('data-i18n');

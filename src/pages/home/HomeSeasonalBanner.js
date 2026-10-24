@@ -85,7 +85,13 @@
 
             if (this.title) this.title.textContent = this.translate('title');
             if (this.message) this.message.textContent = this.getMessage(date);
-            if (this.cta) this.cta.textContent = this.translate('cta');
+            if (this.cta) {
+                const label = this.translate('cta');
+                this.cta.textContent = label;
+                this.cta.hidden = !label || !season.ctaHref;
+                if (season.ctaHref) this.cta.setAttribute('href', season.ctaHref);
+                else this.cta.removeAttribute('href');
+            }
             if (this.closeButton) {
                 const label = this.translate('dismiss');
                 this.closeButton.setAttribute('aria-label', label);

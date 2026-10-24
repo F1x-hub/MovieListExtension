@@ -251,7 +251,7 @@ class HomePage {
     renderDiscovery(discovery) {
         this.renderer.renderFeaturedSlider(discovery.featured, this.featuredSlider);
         this.sliderController.init(discovery.featured);
-        this.renderer.renderCategoryGrids(discovery, this.categoryElements);
+        this.renderer.renderCategoryGrids(discovery, this.categoryElements, () => this.loadDiscovery());
     }
 
     async loadDiscovery() {

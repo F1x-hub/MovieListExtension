@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Random Movie - Movie Service</title>
+    <title data-i18n="random.page_title">Random Movie - Movie Service</title>
     <link rel="stylesheet" href="../../shared/styles/common.css">
     <script defer src="../../shared/components/NumberStepper.js"></script>
     <link rel="stylesheet" href="../../shared/styles/theme.css">
@@ -129,6 +129,12 @@
                                 <!-- Populated by JS -->
                             </div>
                         </div>
+                        <div class="filter-group wide-group filter-section">
+                            <label class="random-skip-seen">
+                                <input type="checkbox" id="skipSeenToggle" checked>
+                                <span data-i18n="random.config.skip_seen">Не предлагать оценённые и недавно выпавшие</span>
+                            </label>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -207,7 +213,7 @@
                         <span id="randomFailureText"></span><br>
                         <span id="randomFailureHint"></span>
                     </p>
-                    <button id="tryAgainBtn" class="btn btn-primary-gradient mt-4">Try Again</button>
+                    <button id="tryAgainBtn" class="btn btn-primary-gradient mt-4" data-i18n="random.states.try_again">Повторить</button>
                 </div>
             </div>
         </div>

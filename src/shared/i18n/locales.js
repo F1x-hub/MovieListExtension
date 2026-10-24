@@ -1151,6 +1151,7 @@ export const locales = {
             not_available: "N/A"
         },
         random: {
+            page_title: "Random movie - Movie Rating Extension",
             pool_marathon: {
                 pool_remove: "Remove from pool",
                 pool_add: "Add to pool",
@@ -1282,6 +1283,7 @@ export const locales = {
                 genres: "Genres",
                 countries: "Countries",
                 hint: "(Include / Exclude)",
+                skip_seen: "Skip rated and recently shown movies",
                 min: "Min",
                 max: "Max"
             },
@@ -2891,6 +2893,7 @@ export const locales = {
             not_available: "—"
         },
         random: {
+            page_title: "Случайный фильм - Movie Rating Extension",
             pool_marathon: {
                 pool_remove: "Убрать из пула",
                 pool_add: "Добавить в пул",
@@ -3022,6 +3025,7 @@ export const locales = {
                 genres: "Жанры",
                 countries: "Страны",
                 hint: "(Включить / Исключить)",
+                skip_seen: "Не предлагать оценённые и недавно выпавшие",
                 min: "Мин",
                 max: "Макс"
             },
