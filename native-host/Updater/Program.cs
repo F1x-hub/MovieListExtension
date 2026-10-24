@@ -14,7 +14,10 @@ internal static partial class Program
     private const string FirebaseAssetUrl = "https://movielistdb-13208-updates.web.app/updates/latest/MovieList-extension-latest.zip";
     private const string AppName = "MovieListExtensionUpdater";
     private const int ProtocolVersion = 1;
-    private const string UpdaterVersion = "1.1.4";
+    // MovieListUpdater.csproj <Version> is the single source; the probe, status
+    // and Setup comparisons must never drift from the compiled file version.
+    private static readonly string UpdaterVersion = ReadOwnVersion();
+    private static readonly TimeSpan ConfirmationExpiry = TimeSpan.FromHours(24);
     private const string ApplyMutexName = @"Global\MovieListExtensionUpdater.Apply";
     private static string UserApplyMutexName => ApplyMutexName + "." + System.Security.Principal.WindowsIdentity.GetCurrent().User!.Value;
     private const string SetupMutexName = @"Local\MovieListExtensionUpdater.Setup";
@@ -74,8 +77,8 @@ xwIDAQAB
             if (!TryAcquireOperationMutex(setupMutex))
             {
                 MessageBox.Show(
-                    "Окно подключения MovieList уже открыто.",
-                    "MovieList Extension",
+                    "MovieList Hub уже открыт.",
+                    "MovieList Hub",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
                 return 0;
@@ -84,7 +87,10 @@ xwIDAQAB
             try
             {
                 ApplicationConfiguration.Initialize();
-                Application.Run(new SetupForm());
+                // The styled hub needs the WebView2 runtime; the plain form keeps
+                // folder connection available on systems without it.
+                if (HubWindow.IsRuntimeAvailable()) Application.Run(new HubWindow());
+                else Application.Run(new SetupForm());
             }
             finally
             {
@@ -160,6 +166,8 @@ xwIDAQAB
             "apply_component" => StartComponentApply(request),
             "validate_component_catalog" => ValidateComponentCatalogRequest(request),
             "confirm" => Confirm(request, config),
+            "abandon" => Abandon(request),
+            "dismiss_component" => DismissComponentOperation(request),
             _ => ErrorResponse("ACTION_UNSUPPORTED", "Unsupported updater action.")
         };
     }
@@ -167,6 +175,7 @@ xwIDAQAB
     private static object StatusResponse(InstallConfig config)
     {
         RecoverStaleOperationIfPossible(config);
+        ExpireStaleConfirmationIfPossible();
         RecoverStaleComponentOperation();
         var operation = ReadJson<OperationState>(StatePath);
         if (operation?.CleanupPending == true)
@@ -174,6 +183,7 @@ xwIDAQAB
             RetryCleanup(operation);
             operation = ReadJson<OperationState>(StatePath);
         }
+        PruneOrphanOperationInputs(operation?.OperationId);
         var currentVersion = ReadCurrentManifestVersion(config.ExtensionPath);
         return new
         {
@@ -183,7 +193,8 @@ xwIDAQAB
             extensionId = config.ExtensionId,
             extensionVersion = currentVersion?.ToString(),
             updaterVersion = UpdaterVersion,
-            componentCapabilities = new { protocolVersion = 1, signedCatalog = true, updaterSelfUpdate = true, mediaPlayerSuite = true },
+            componentCapabilities = new { protocolVersion = 1, signedCatalog = true, updaterSelfUpdate = true, mediaPlayerSuite = true,
+                mediaPlayerInstall = true, abandonConfirmation = true, dismissComponent = true },
             components = GetComponentInventory(config),
             componentOperation = ReadComponentOperation(),
             operation
@@ -192,7 +203,9 @@ xwIDAQAB
 
     private static object StartApply(JsonElement request, InstallConfig config)
     {
-        if (IsComponentOperationPending(ReadComponentOperation()))
+        // Only a component worker that is actually running blocks the extension.
+        // A component waiting for repair must never freeze extension updates.
+        if (IsComponentOperationRunning(ReadComponentOperation()))
             return ErrorResponse("UPDATE_IN_PROGRESS", "A component update is already running.");
         var operationId = request.TryGetProperty("operationId", out var operationElement)
             ? operationElement.GetString()
@@ -260,6 +273,12 @@ xwIDAQAB
                 return ErrorResponse(
                     "RECOVERY_REQUIRED",
                     existing.ErrorMessage ?? "The previous update requires recovery before another update can start.");
+            }
+            if (existing is not null && IsExpiredConfirmation(existing))
+            {
+                CloseAwaitingConfirmation(existing, "CONFIRMATION_EXPIRED",
+                    "The installed version was never confirmed by the browser.");
+                existing = ReadJson<OperationState>(StatePath);
             }
             if (existing is not null && IsActiveOperation(existing))
             {
@@ -377,7 +396,9 @@ xwIDAQAB
             var state = ReadJson<OperationState>(StatePath);
             if (state is null || !string.Equals(state.OperationId, operationId, StringComparison.Ordinal)
                 || !string.Equals(state.Version, version, StringComparison.Ordinal)
-                || !string.Equals(state.Status, "awaiting_confirmation", StringComparison.Ordinal))
+                || !(string.Equals(state.Status, "awaiting_confirmation", StringComparison.Ordinal)
+                    // A browser started long after the swap still proves activation.
+                    || state.Status == "failed" && state.ErrorCode == "CONFIRMATION_EXPIRED"))
             {
                 return ErrorResponse("CONFIRMATION_INVALID", "No matching update is waiting for confirmation.");
             }
@@ -389,6 +410,8 @@ xwIDAQAB
             }
 
             state.Status = "succeeded";
+            state.ErrorCode = null;
+            state.ErrorMessage = null;
             state.ConfirmedAt = DateTimeOffset.UtcNow;
             state.CleanupPending = true;
             state.LastProgressAt = DateTimeOffset.UtcNow;
@@ -401,6 +424,101 @@ xwIDAQAB
         {
             if (mutexAcquired) operationMutex.ReleaseMutex();
         }
+    }
+
+    // The extension calls this after Chrome reloaded and still runs another
+    // version: the configured folder is not the loaded one, so waiting longer
+    // would only block every later extension and component update.
+    private static object Abandon(JsonElement request)
+    {
+        var operationId = request.TryGetProperty("operationId", out var operationElement)
+            ? operationElement.GetString()
+            : null;
+        if (!Guid.TryParse(operationId, out _))
+            return ErrorResponse("ABANDON_INVALID", "The update operation identifier is invalid.");
+        var errorCode = request.TryGetProperty("reason", out var reasonElement)
+            && reasonElement.GetString() is "RELOAD_VERSION_MISMATCH" ? "RELOAD_VERSION_MISMATCH" : "CONFIRMATION_ABANDONED";
+
+        using var operationMutex = new Mutex(false, UserApplyMutexName);
+        if (!TryAcquireOperationMutex(operationMutex))
+            return ErrorResponse("UPDATE_IN_PROGRESS", "Another update operation is already running.");
+        try
+        {
+            var state = ReadJson<OperationState>(StatePath);
+            if (state is null || !string.Equals(state.OperationId, operationId, StringComparison.Ordinal)
+                || !string.Equals(state.Status, "awaiting_confirmation", StringComparison.Ordinal))
+                return ErrorResponse("ABANDON_INVALID", "No matching update is waiting for confirmation.");
+            CloseAwaitingConfirmation(state, errorCode,
+                "Chrome did not load the updated folder. Select the folder loaded in Chrome in MovieList Hub.");
+            return new { success = true, status = "failed", operationId = state.OperationId };
+        }
+        finally
+        {
+            operationMutex.ReleaseMutex();
+        }
+    }
+
+    private static bool IsExpiredConfirmation(OperationState state) =>
+        string.Equals(state.Status, "awaiting_confirmation", StringComparison.Ordinal)
+        && state.LastProgressAt != default
+        && DateTimeOffset.UtcNow - state.LastProgressAt > ConfirmationExpiry;
+
+    // The new files stay in place (the version on disk is already the release);
+    // only the recovery copy, staging and the startup recovery entry are removed.
+    private static void CloseAwaitingConfirmation(OperationState state, string errorCode, string message)
+    {
+        state.Status = "failed";
+        state.ErrorCode = errorCode;
+        state.ErrorMessage = message;
+        state.CleanupPending = true;
+        state.LastProgressAt = DateTimeOffset.UtcNow;
+        WriteJsonAtomic(StatePath, state);
+        RetryCleanup(state);
+        RemoveRecoveryRunOnce(state.OperationId);
+    }
+
+    private static void ExpireStaleConfirmationIfPossible()
+    {
+        var state = ReadJson<OperationState>(StatePath);
+        if (state is null || !IsExpiredConfirmation(state)) return;
+        using var operationMutex = new Mutex(false, UserApplyMutexName);
+        if (!TryAcquireOperationMutex(operationMutex)) return;
+        try
+        {
+            var current = ReadJson<OperationState>(StatePath);
+            if (current is not null && IsExpiredConfirmation(current))
+                CloseAwaitingConfirmation(current, "CONFIRMATION_EXPIRED", "The installed version was never confirmed by the browser.");
+        }
+        finally
+        {
+            operationMutex.ReleaseMutex();
+        }
+    }
+
+    // Inputs of earlier operations hold release metadata only; cleanup used to
+    // remove the current input alone, so older ones accumulated indefinitely.
+    private static void PruneOrphanOperationInputs(string? currentOperationId)
+    {
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(DataRoot, "operation-*.json"))
+            {
+                var name = Path.GetFileNameWithoutExtension(file)["operation-".Length..];
+                if (!Guid.TryParseExact(name, "D", out _)) continue;
+                if (string.Equals(name, currentOperationId, StringComparison.OrdinalIgnoreCase)) continue;
+                TryDeleteFile(file);
+            }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            // Pruning is housekeeping; the next status call retries it.
+        }
+    }
+
+    private static string ReadOwnVersion()
+    {
+        var version = typeof(Program).Assembly.GetName().Version ?? new Version(0, 0, 0);
+        return $"{version.Major}.{version.Minor}.{Math.Max(0, version.Build)}";
     }
 
     private static void ExecuteOperation(string operationId)
@@ -1221,7 +1339,11 @@ xwIDAQAB
             var install = new Button { Text = "Подключить", AutoSize = true };
             install.Click += (_, _) => Install();
             var chrome = new Button { Text = "Открыть chrome://extensions", AutoSize = true };
-            chrome.Click += (_, _) => Process.Start(new ProcessStartInfo("chrome://extensions") { UseShellExecute = true });
+            chrome.Click += (_, _) =>
+            {
+                if (!OpenChromeExtensionsPage())
+                    MessageBox.Show(this, "Не удалось найти Chrome. Откройте chrome://extensions вручную.", "MovieList Hub");
+            };
             var buttons = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(0, 16, 0, 0) };
             buttons.Controls.Add(install);
             buttons.Controls.Add(chrome);
@@ -1259,60 +1381,7 @@ xwIDAQAB
             try
             {
                 var extensionPath = Path.GetFullPath(pathBox.Text.Trim());
-                var manifestPath = Path.Combine(extensionPath, "manifest.json");
-                if (!File.Exists(manifestPath)) throw new InvalidDataException("В выбранной папке нет manifest.json.");
-                using var document = JsonDocument.Parse(File.ReadAllText(manifestPath));
-                var key = document.RootElement.GetProperty("key").GetString();
-                if (string.IsNullOrWhiteSpace(key)) throw new InvalidDataException("В manifest.json нет стабильного key.");
-                var extensionId = ComputeExtensionId(key);
-                var existingOperation = ReadJson<OperationState>(StatePath);
-                if (existingOperation is not null
-                    && IsActiveOperation(existingOperation)
-                    && !string.Equals(
-                        Path.GetFullPath(existingOperation.InstallPath),
-                        extensionPath,
-                        StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!string.Equals(existingOperation.Status, "awaiting_confirmation", StringComparison.Ordinal))
-                        throw new InvalidOperationException("Нельзя сменить папку во время активного обновления.");
-                    // Files were already written to the old folder, but Chrome runs another one.
-                    // Close the stuck operation so the extension stops waiting for that version.
-                    existingOperation.Status = "failed";
-                    existingOperation.ErrorCode = "SETUP_PATH_CHANGED";
-                    existingOperation.ErrorMessage = "Setup switched to another extension folder.";
-                    WriteJsonAtomic(StatePath, existingOperation);
-                }
-                var config = new InstallConfig { ExtensionPath = extensionPath, ExtensionId = extensionId, SetupVersion = UpdaterVersion, HostVersion = UpdaterVersion };
-                var permanentExecutable = Path.Combine(DataRoot, "MovieListUpdater.exe");
-                var runningExecutable = Environment.ProcessPath
-                    ?? throw new InvalidOperationException("The setup executable path is unavailable.");
-                var runningVersion = ReadUpdaterVersion(runningExecutable) ?? Version.Parse(UpdaterVersion);
-                var installedVersion = ReadUpdaterVersion(permanentExecutable);
-                if (installedVersion is not null && installedVersion.CompareTo(runningVersion) > 0)
-                {
-                    throw new InvalidOperationException($"Уже установлена более новая версия обновлятора ({installedVersion}). Запустите новый MovieListSetup.exe.");
-                }
-                if (!string.Equals(Path.GetFullPath(runningExecutable), Path.GetFullPath(permanentExecutable), StringComparison.OrdinalIgnoreCase))
-                {
-                    if (ShouldReplaceSetupUpdater(runningVersion, installedVersion,
-                        runningCapable: true, installedCapable: installedVersion is not null && ProbeUpdater(permanentExecutable, UpdaterVersion)))
-                    {
-                        ReplaceUpdaterFile(runningExecutable, permanentExecutable, Path.Combine(DataRoot, "setup-previous.exe"),
-                            path => ProbeUpdater(path, UpdaterVersion));
-                    }
-                }
-                WriteJsonAtomic(ConfigPath, config);
-                var hostManifestPath = Path.Combine(DataRoot, HostName + ".json");
-                WriteJsonAtomic(hostManifestPath, new
-                {
-                    name = HostName,
-                    description = "MovieList Extension updater",
-                    path = permanentExecutable,
-                    type = "stdio",
-                    allowed_origins = new[] { $"chrome-extension://{extensionId}/" }
-                });
-                RegisterNativeMessagingHost("Google\\Chrome", hostManifestPath);
-                RegisterNativeMessagingHost("Microsoft\\Edge", hostManifestPath);
+                var extensionId = RegisterExtensionFolder(extensionPath);
 
                 try
                 {
@@ -1344,6 +1413,115 @@ xwIDAQAB
             }
         }
 
+    }
+
+    // Validates the unpacked folder, installs the permanent hub executable and
+    // registers the Native Messaging host for Chrome and Edge. Callers must hold
+    // the per-user apply mutex. Returns the extension ID derived from manifest key.
+    internal static string RegisterExtensionFolder(string extensionPath)
+    {
+        extensionPath = Path.GetFullPath(extensionPath);
+        var manifestPath = Path.Combine(extensionPath, "manifest.json");
+        if (!File.Exists(manifestPath)) throw new InvalidDataException("В выбранной папке нет manifest.json.");
+        using var document = JsonDocument.Parse(File.ReadAllText(manifestPath));
+        var key = document.RootElement.TryGetProperty("key", out var keyElement) ? keyElement.GetString() : null;
+        if (string.IsNullOrWhiteSpace(key)) throw new InvalidDataException("В manifest.json нет стабильного key.");
+        var extensionId = ComputeExtensionId(key);
+        var existingOperation = ReadJson<OperationState>(StatePath);
+        if (existingOperation is not null
+            && IsActiveOperation(existingOperation)
+            && !string.Equals(
+                Path.GetFullPath(existingOperation.InstallPath),
+                extensionPath,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            if (!string.Equals(existingOperation.Status, "awaiting_confirmation", StringComparison.Ordinal))
+                throw new InvalidOperationException("Нельзя сменить папку во время активного обновления.");
+            // Files were already written to the old folder, but Chrome runs another one.
+            // Close the stuck operation so the extension stops waiting for that version.
+            CloseAwaitingConfirmation(existingOperation, "SETUP_PATH_CHANGED", "Setup switched to another extension folder.");
+        }
+        var config = new InstallConfig { ExtensionPath = extensionPath, ExtensionId = extensionId, SetupVersion = UpdaterVersion, HostVersion = UpdaterVersion };
+        var runningExecutable = Environment.ProcessPath
+            ?? throw new InvalidOperationException("The setup executable path is unavailable.");
+        InstallPermanentHub(runningExecutable);
+        WriteJsonAtomic(ConfigPath, config);
+        var hostManifestPath = Path.Combine(DataRoot, HostName + ".json");
+        WriteJsonAtomic(hostManifestPath, new
+        {
+            name = HostName,
+            description = "MovieList Hub",
+            path = PermanentUpdater,
+            type = "stdio",
+            allowed_origins = new[] { $"chrome-extension://{extensionId}/" }
+        });
+        RegisterNativeMessagingHost("Google\\Chrome", hostManifestPath);
+        RegisterNativeMessagingHost("Microsoft\\Edge", hostManifestPath);
+        return extensionId;
+    }
+
+    // Copies a downloaded hub over the permanent one when it is newer, or when
+    // an equal-version permanent copy lacks the component probe. Never downgrades.
+    private static void InstallPermanentHub(string runningExecutable)
+    {
+        var runningVersion = ReadUpdaterVersion(runningExecutable) ?? Version.Parse(UpdaterVersion);
+        var installedVersion = ReadUpdaterVersion(PermanentUpdater);
+        if (installedVersion is not null && installedVersion.CompareTo(runningVersion) > 0)
+        {
+            throw new InvalidOperationException($"Уже установлена более новая версия MovieList Hub ({installedVersion}). Запустите её из меню «Пуск» или скачайте новый MovieListSetup.exe.");
+        }
+        if (string.Equals(Path.GetFullPath(runningExecutable), Path.GetFullPath(PermanentUpdater), StringComparison.OrdinalIgnoreCase)) return;
+        if (ShouldReplaceSetupUpdater(runningVersion, installedVersion,
+            runningCapable: true, installedCapable: installedVersion is not null && ProbeUpdater(PermanentUpdater, UpdaterVersion)))
+        {
+            ReplaceUpdaterFile(runningExecutable, PermanentUpdater, Path.Combine(DataRoot, "setup-previous.exe"),
+                path => ProbeUpdater(path, UpdaterVersion));
+        }
+        CreateStartMenuShortcut();
+    }
+
+    // A Start-menu entry lets the user reopen the hub later (for example to
+    // install the media player) without keeping the downloaded setup file.
+    private static void CreateStartMenuShortcut()
+    {
+        try
+        {
+            var programs = Environment.GetFolderPath(Environment.SpecialFolder.Programs);
+            var shortcut = Path.Combine(programs, "MovieList Hub.lnk");
+            var shellType = Type.GetTypeFromProgID("WScript.Shell");
+            if (shellType is null) return;
+            dynamic shell = Activator.CreateInstance(shellType)!;
+            dynamic link = shell.CreateShortcut(shortcut);
+            link.TargetPath = PermanentUpdater;
+            link.Arguments = "--setup";
+            link.WorkingDirectory = DataRoot;
+            link.Description = "MovieList Hub";
+            link.IconLocation = PermanentUpdater + ",0";
+            link.Save();
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        {
+            // The shortcut is a convenience; the hub still works through the extension.
+        }
+    }
+
+    // ShellExecute has no handler for chrome:// URLs, so Chrome itself is
+    // started with the page as its command-line argument.
+    internal static bool OpenChromeExtensionsPage()
+    {
+        foreach (var hive in new[] { Registry.CurrentUser, Registry.LocalMachine })
+        {
+            try
+            {
+                using var key = hive.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe");
+                var chrome = key?.GetValue(null) as string;
+                if (string.IsNullOrWhiteSpace(chrome) || !File.Exists(chrome)) continue;
+                Process.Start(new ProcessStartInfo(chrome) { UseShellExecute = false, ArgumentList = { "chrome://extensions/" } })?.Dispose();
+                return true;
+            }
+            catch (Exception error) when (error is System.ComponentModel.Win32Exception or IOException or UnauthorizedAccessException) { }
+        }
+        return false;
     }
 
     private static void RegisterNativeMessagingHost(string browserRegistryPath, string manifestPath)

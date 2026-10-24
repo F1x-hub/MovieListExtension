@@ -101,7 +101,9 @@ async function main() {
     const root = path.join(__dirname, '..');
     const source = fs.readFileSync(path.join(root, 'native-host/Updater/Program.cs'), 'utf8');
     const key = source.match(/private const string ReleasePublicKey = """([\s\S]*?)""";/)?.[1].trim();
-    const updaterVersion = source.match(/private const string UpdaterVersion = "(\d+(?:\.\d+){2,3})";/)?.[1];
+    // MovieListUpdater.csproj <Version> is the single updater version source.
+    const project = fs.readFileSync(path.join(root, 'native-host/Updater/MovieListUpdater.csproj'), 'utf8');
+    const updaterVersion = project.match(/<Version>(\d+(?:\.\d+){2,3})<\/Version>/)?.[1];
     const privateKey = process.env.UPDATE_SIGNING_PRIVATE_KEY;
     if (!key || !updaterVersion || !privateKey) throw new Error('Embedded key/version and UPDATE_SIGNING_PRIVATE_KEY are required.');
     if (!publicDer(privateKey).equals(publicDer(key))) throw new Error('Signing key does not match embedded release key.');

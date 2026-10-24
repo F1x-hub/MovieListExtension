@@ -9,10 +9,32 @@
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <InvariantGlobalization>false</InvariantGlobalization>
-    <Version>1.1.4</Version>
-    <AssemblyVersion>1.1.4.0</AssemblyVersion>
-    <FileVersion>1.1.4.0</FileVersion>
-    <InformationalVersion>1.1.4</InformationalVersion>
+    <AssemblyTitle>MovieList Hub</AssemblyTitle>
+    <Product>MovieList Hub</Product>
+    <!-- The only updater version source: the host reads it from its assembly and
+         release scripts parse this element. -->
+    <Version>1.2.0</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3351.48" />
+  </ItemGroup>
+  <!-- The WebView2 package always references its WPF control; this WinForms
+       host never loads it, and the reference conflicts with WindowsBase. -->
+  <Target Name="DropWebView2WpfReference" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference Remove="@(Reference)" Condition="'%(Filename)' == 'Microsoft.Web.WebView2.Wpf'" />
+    </ItemGroup>
+  </Target>
+  <ItemGroup>
+    <EmbeddedResource Include="Hub\index.html" LogicalName="hub/index.html" />
+    <EmbeddedResource Include="Hub\hub.css" LogicalName="hub/hub.css" />
+    <EmbeddedResource Include="Hub\hub.js" LogicalName="hub/hub.js" />
+    <EmbeddedResource Include="..\..\src\shared\styles\theme.css" LogicalName="hub/theme.css" />
+    <EmbeddedResource Include="..\..\src\shared\styles\tokens.css" LogicalName="hub/tokens.css" />
+    <EmbeddedResource Include="..\..\src\shared\assets\icons\app\icon128-black.png" LogicalName="hub/icon-black.png" />
+    <EmbeddedResource Include="..\..\src\shared\assets\icons\app\icon128-white.png" LogicalName="hub/icon-white.png" />
+  </ItemGroup>
 </Project>

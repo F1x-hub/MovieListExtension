@@ -110,6 +110,8 @@ async function mount(browser, { legacy = false, enabled = true, deferredGet = fa
         window.UpdateService = {
             checkComponentUpdates: options => componentAction('check', null, options),
             applyComponent: (id, options) => componentAction('apply', id, options),
+            installComponent: id => componentAction('install', id, {}),
+            dismissComponentOperation: id => componentAction('dismiss', id, {}),
             setComponentAutoUpdateEnabled: (id, enabled) => {
                 fixture.componentSettings = { ...fixture.componentSettings, [id]: enabled };
                 fixture.listeners.forEach(listener => listener({ extension_update_settings_v1: { newValue: { componentAutoUpdateEnabled: fixture.componentSettings } } }, 'local'));

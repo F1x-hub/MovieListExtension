@@ -123,7 +123,7 @@ async function verifyConcurrentPreferences() {
             assert.match(await updater.locator('[data-component-setup]').getAttribute('href'), /MovieListSetup\.exe$/);
             assert.equal(await updater.locator('[data-component-apply]').isDisabled(), true);
             assert.equal(await card(page, 'mediaPlayerSuite').locator('[data-component-auto]').isDisabled(), true);
-            assert.match(await page.locator('#componentUpdatesStatus').textContent(), /MovieList Setup/);
+            assert.match(await page.locator('#componentUpdatesStatus').textContent(), /MovieListSetup\.exe/);
             assert.deepEqual(errors, []);
             await page.close();
         }
@@ -136,7 +136,22 @@ async function verifyConcurrentPreferences() {
             assert.equal(await suite.locator('[data-component-apply]').isHidden(), true);
             assert.equal(await suite.locator('[data-component-auto]').isDisabled(), true);
             assert.equal(await suite.locator('[data-component-setup]').isHidden(), true);
+            assert.equal(await suite.locator('[data-component-install]').isHidden(), true, 'an older hub cannot install the Suite');
             assert.deepEqual(await actionCalls(page), [], 'an absent Suite never triggers installation');
+            assert.deepEqual(errors, []);
+            await page.close();
+        }
+        {
+            const installable = state();
+            installable.componentCapabilities = { ...installable.componentCapabilities, mediaPlayerInstall: true };
+            installable.componentCatalog = { verified: true, metadata: { components: { mediaPlayerSuite: { version: '2.2.0' } } } };
+            Object.assign(installable.components.mediaPlayerSuite, { installed: false, status: 'absent', currentVersion: null, availableVersion: '2.2.0' });
+            const { page, errors } = await mount(browser, { componentState: installable, activePane: 'updates' });
+            const suite = card(page, 'mediaPlayerSuite');
+            assert.equal(await suite.locator('[data-component-install]').textContent(), 'Установить');
+            assert.deepEqual(await actionCalls(page), [], 'rendering never installs by itself');
+            await suite.locator('[data-component-install]').click();
+            assert.deepEqual((await actionCalls(page))[0], { method: 'install', id: 'mediaPlayerSuite', options: {} }, 'the user installs the Suite through the hub');
             assert.deepEqual(errors, []);
             await page.close();
         }
