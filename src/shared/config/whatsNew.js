@@ -1,6 +1,6 @@
 export const whatsNew = [
     {
-        id: '1.4.3', version: '1.4.3', date: '2026-10-25',
+        id: '1.4.4', version: '1.4.4', date: '2026-10-25',
         highlights: [
             { id: 'hub-restart', title: { ru: 'Хаб предлагает перезапуск', en: 'The hub offers a restart' }, text: { ru: 'После самообновления MovieList Hub показывает новую версию и кнопку «Перезапустить хаб», а не возвращается к старой карточке.', en: 'After updating itself, MovieList Hub shows the new version and a “Restart hub” button instead of returning to the old card.' } },
             { id: 'service-upgrade', title: { ru: 'Исправления служб доходят до всех', en: 'Service fixes reach every install' }, text: { ru: 'Обновление медиаплеера теперь применяет новые настройки служб и к уже установленным копиям, поэтому исправление ночного падения работает и у вас.', en: 'MediaPlayer updates now apply new service settings to existing installs too, so the midnight crash fix reaches you as well.' } },

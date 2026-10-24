@@ -7,7 +7,7 @@ series, cartoons, and anime.
 
 <p>
   <img src="https://img.shields.io/badge/MANIFEST-V3-1687c9?style=flat-square&logo=googlechrome&logoColor=white" alt="Manifest V3">
-  <img src="https://img.shields.io/badge/VERSION-1.4.3-69b500?style=flat-square" alt="Version 1.4.3">
+  <img src="https://img.shields.io/badge/VERSION-1.4.4-69b500?style=flat-square" alt="Version 1.4.4">
   <img src="https://img.shields.io/badge/JAVASCRIPT-ES6%2B-f0d000?style=flat-square&logo=javascript&logoColor=111827" alt="JavaScript ES6+">
   <img src="https://img.shields.io/badge/VANILLA-ES6%2B-e2c400?style=flat-square" alt="Vanilla ES6+">
   <img src="https://img.shields.io/badge/AUTHOR-FIX-f47721?style=flat-square" alt="Author Fix">
@@ -444,22 +444,14 @@ keeps npm-compatible three-component semver metadata.
 
 </details>
 
-<details open>
-<summary><strong>Unreleased</strong></summary>
-
-### Fixes
-
-- Release: the update-mirror check retries for about a minute while Firebase Hosting still serves the previous release right after a deploy, instead of failing the release with «Published metadata differs» (it stopped the first v1.4.3 run after the mirror was already deployed).
-
-</details>
-
 <details>
-<summary><strong>1.4.3</strong> — service definitions on upgrade, hub restart after self-update</summary>
+<summary><strong>1.4.4</strong> — service definitions on upgrade, hub restart after self-update, release mirror check</summary>
 
 ### Fixes
 
 - MediaPlayer Suite 0.1.3 applies service wrapper changes on upgrades: an existing installation now gets the MediaPlayer service XML rewritten from the release template when it differs, and FlareSolverr's definition refreshed (and the service restarted when running). Before, upgrades kept the original XML, so the 0.1.2 midnight log-rotation fix reached only clean installs and migrations.
 - MovieList Hub offers «Перезапустить хаб» after it updates itself: the running window keeps the previous version in memory, so it now shows «Обновлён до …» and restarts into the installed copy, which waits briefly for the old window to release the single-window lock.
+- Release: the update-mirror check retries for about a minute while Firebase Hosting still serves the previous release right after a deploy, instead of failing the release with «Published metadata differs»; the unpublished 1.4.3 build stopped at that check.
 
 </details>
 
