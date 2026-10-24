@@ -139,8 +139,20 @@
         }
         box.hidden = false;
         if (RUNNING.has(operation.status)) {
-            box.innerHTML = '<div class="progress__bar"></div><span class="operation__text"></span>';
-            box.querySelector('.operation__text').textContent = PHASES[operation.status] || 'Выполняется…';
+            const total = Number(operation.totalBytes), done = Number(operation.downloadedBytes);
+            const measured = operation.status === 'downloading' && total > 0 && done >= 0;
+            box.innerHTML = '<div class="progress__bar"><div class="progress__fill"></div></div><span class="operation__text"></span>';
+            const bar = box.querySelector('.progress__bar');
+            if (measured) {
+                const percent = Math.min(100, Math.floor(done / total * 100));
+                bar.classList.add('progress__bar--measured');
+                bar.querySelector('.progress__fill').style.width = `${percent}%`;
+                bar.setAttribute('role', 'progressbar');
+                bar.setAttribute('aria-valuenow', String(percent));
+                bar.setAttribute('aria-valuemin', '0');
+                bar.setAttribute('aria-valuemax', '100');
+            }
+            box.querySelector('.operation__text').textContent = phaseText(operation, measured ? { done, total } : null);
             return true;
         }
         const row = document.createElement('div');
@@ -155,6 +167,26 @@
         }));
         box.replaceChildren(row);
         return false;
+    }
+
+    const megabytes = bytes => (bytes / 1024 / 1024).toFixed(0);
+
+    // The maintenance broker never shows a Windows prompt; only the fallback
+    // installer path can, so the prompt is mentioned only there.
+    function phaseText(operation, progress) {
+        if (progress) {
+            return `Загрузка: ${megabytes(progress.done)} из ${megabytes(progress.total)} МБ (${Math.floor(progress.done / progress.total * 100)}%)`;
+        }
+        if (operation.broker) {
+            if (operation.brokerPhase === 'draining') return 'Ждём окончания просмотра, затем установим обновление…';
+            return {
+                queued: 'Служба обслуживания готовит обновление…',
+                downloading: 'Служба обслуживания скачивает обновление…',
+                installing: 'Установка в фоне…',
+                verifying: 'Проверка установки…'
+            }[operation.status] || 'Выполняется в фоне…';
+        }
+        return PHASES[operation.status] || 'Выполняется…';
     }
 
     function renderExtension() {

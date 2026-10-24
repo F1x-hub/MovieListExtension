@@ -949,7 +949,10 @@
             availableVersion: operation.status === 'succeeded' ? null : operation.version,
             currentVersion: inventory?.version || previous?.currentVersion || null,
             installed: inventory?.installed,
-            errorCode: operation.errorCode || null
+            errorCode: operation.errorCode || null,
+            // Download progress mirrored from the Suite maintenance broker.
+            downloadedBytes: Number.isSafeInteger(operation.downloadedBytes) ? operation.downloadedBytes : null,
+            totalBytes: Number.isSafeInteger(operation.totalBytes) ? operation.totalBytes : null
         });
         if (['queued', 'downloading', 'replacing', 'installing', 'verifying'].includes(operation.status)) createOperationAlarm();
         if (deferred) chrome.alarms.create(SAFE_RETRY_ALARM, { delayInMinutes: 10 });

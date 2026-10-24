@@ -1,5 +1,13 @@
 export const whatsNew = [
     {
+        id: '1.4.2', version: '1.4.2', date: '2026-10-25',
+        highlights: [
+            { id: 'progress', title: { ru: 'Видно, как обновляется медиаплеер', en: 'See MediaPlayer updates progress' }, text: { ru: 'Хаб и настройки показывают настоящий этап обновления и сколько уже скачано, а не одно «Установка…».', en: 'The hub and Settings show the real update phase and how much is downloaded instead of a bare “Installing…”.' } },
+            { id: 'slow-links', title: { ru: 'Обновления на медленном интернете', en: 'Updates on slow connections' }, text: { ru: 'Большие обновления больше не обрываются через 30 минут: время загрузки зависит от размера, а прерванная загрузка продолжается с того же места.', en: 'Large updates no longer stop after 30 minutes: the time limit follows the size, and an interrupted download resumes where it stopped.' } },
+            { id: 'midnight', title: { ru: 'Медиаплеер не падает в полночь', en: 'MediaPlayer no longer stops at midnight' }, text: { ru: 'Служба медиаплеера больше не останавливается при ночной смене журналов и сама восстанавливается после сбоя.', en: 'The MediaPlayer service no longer stops when logs rotate at night and recovers on its own after a failure.' } }
+        ]
+    },
+    {
         id: '1.4.1', version: '1.4.1', date: '2026-10-24',
         highlights: [
             { id: 'hub', title: { ru: 'MovieList Hub', en: 'MovieList Hub' }, text: { ru: 'Один установщик для всего: ставит расширение, подключает автообновления и показывает версии компонентов. Если хаб не установлен или устарел, расширение предложит его скачать.', en: 'One installer for everything: it installs the extension, connects automatic updates and shows component versions. If the hub is missing or outdated, the extension offers to download it.' } },

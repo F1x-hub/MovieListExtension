@@ -7,7 +7,7 @@ series, cartoons, and anime.
 
 <p>
   <img src="https://img.shields.io/badge/MANIFEST-V3-1687c9?style=flat-square&logo=googlechrome&logoColor=white" alt="Manifest V3">
-  <img src="https://img.shields.io/badge/VERSION-1.4.1-69b500?style=flat-square" alt="Version 1.4.1">
+  <img src="https://img.shields.io/badge/VERSION-1.4.2-69b500?style=flat-square" alt="Version 1.4.2">
   <img src="https://img.shields.io/badge/JAVASCRIPT-ES6%2B-f0d000?style=flat-square&logo=javascript&logoColor=111827" alt="JavaScript ES6+">
   <img src="https://img.shields.io/badge/VANILLA-ES6%2B-e2c400?style=flat-square" alt="Vanilla ES6+">
   <img src="https://img.shields.io/badge/AUTHOR-FIX-f47721?style=flat-square" alt="Author Fix">
@@ -441,6 +441,18 @@ keeps npm-compatible three-component semver metadata.
 ### Fixes
 
 - Telegram announcements: the bot uploads supported posters from trusted image hosts and falls back to text when a poster is unavailable or rejected. Escape movie text and bound message/caption lengths to prevent formatting and length errors. Both local and Vercel handlers share the sender. This backend change requires a separate bot deployment.
+
+</details>
+
+<details>
+<summary><strong>1.4.2</strong> — MediaPlayer update progress, slow-link downloads, midnight service fix</summary>
+
+### Fixes
+
+- MediaPlayer updates finish on slow connections: the maintenance broker's download deadline follows the installer size (about 48 KB/s, 30 minutes to 6 hours) instead of a fixed 30 minutes, a 60-second idle timeout catches stalls and retries resume with HTTP Range. The hub applies the same policy to its own downloads and waits for the broker as long as it keeps reporting progress (it stops after 20 silent minutes) instead of a fixed 45 minutes. This takes effect with MediaPlayer Suite 0.1.2; a 0.1.0/0.1.1 broker still has the old limit for the download of 0.1.2.
+- MovieList Hub and Settings show the real MediaPlayer update phase and download progress («Загрузка: 192 из 463 МБ (41%)», «Установка в фоне…», «Ждём окончания просмотра…») instead of «Установка… Подтвердите запрос Windows», which the background maintenance service never shows.
+- MediaPlayer Suite 0.1.2 no longer stops at midnight: WinSW 2.12 crashed in its time-based log rotation and left an orphaned server holding port 3000, so every restart failed. The services rotate logs by size only, and the server exits when its service wrapper is gone so Windows can restart it.
+- Browser regression tests pin the Chromium UI language, so the English CI runner sees the same Russian interface as local runs.
 
 </details>
 
