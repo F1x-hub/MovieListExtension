@@ -64,6 +64,8 @@ class Navigation {
         if (this.currentPage !== 'admin') {
             void import('./WhatsNewDialog.js').then(module => module.showWhatsNew())
                 .catch(error => console.warn('Navigation: release notes unavailable', error));
+            void import('./HubPrompt.js').then(module => module.showHubPrompt())
+                .catch(error => console.warn('Navigation: MovieList Hub prompt unavailable', error));
         }
     }
 

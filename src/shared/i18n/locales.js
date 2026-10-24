@@ -23,6 +23,14 @@ export const locales = {
             player_settings: 'Player settings', toggle_subtitles: 'Toggle subtitles', skip_opening: 'Skip opening', forward: 'Next: {title}', quality_unavailable: 'Auto (not detected)'
         },
         filter_controls: { more: 'More ({count})', less: 'Show less', any: 'Any', included_count: 'Included: {count}', excluded_count: 'Excluded: {count}', increase: 'Increase', decrease: 'Decrease' },
+        hub_prompt: {
+            missing_title: 'Install MovieList Hub',
+            missing_text: 'MovieList Hub is not connected. It installs extension updates in the background and installs MediaPlayer. Download it once and run it.',
+            outdated_title: 'Update MovieList Hub',
+            outdated_text: 'Your MovieList Hub is outdated: it cannot install MediaPlayer or update itself. Download the new version and run it once.',
+            download: 'Download MovieList Hub', later: 'Later', close: 'Close',
+            after_download: 'Run the downloaded MovieListSetup.exe. If Chrome was open while it connected, restart Chrome.'
+        },
         whats_new: {
             title: 'What’s new', draft: 'Next version draft', version: 'Version {version}', new: 'New', more: 'Show more',
             done: 'Got it', close: 'Close release notes', open: 'What’s new',
@@ -1791,6 +1799,14 @@ export const locales = {
             player_settings: 'Настройки плеера', toggle_subtitles: 'Включить или выключить субтитры', skip_opening: 'Пропустить опенинг', forward: 'Вперёд: {title}', quality_unavailable: 'Авто (не определено)'
         },
         filter_controls: { more: 'Ещё ({count})', less: 'Свернуть', any: 'Любые', included_count: 'Включено: {count}', excluded_count: 'Исключено: {count}', increase: 'Увеличить', decrease: 'Уменьшить' },
+        hub_prompt: {
+            missing_title: 'Установите MovieList Hub',
+            missing_text: 'MovieList Hub не подключён. Он ставит обновления расширения в фоне и устанавливает медиаплеер. Скачайте его один раз и запустите.',
+            outdated_title: 'Обновите MovieList Hub',
+            outdated_text: 'У вас старая версия MovieList Hub: она не умеет устанавливать медиаплеер и обновляться сама. Скачайте новую версию и запустите её один раз.',
+            download: 'Скачать MovieList Hub', later: 'Позже', close: 'Закрыть',
+            after_download: 'Запустите скачанный MovieListSetup.exe. Если Chrome был открыт во время подключения, перезапустите его.'
+        },
         whats_new: {
             title: 'Что нового', draft: 'Черновик следующей версии', version: 'Версия {version}', new: 'Новое', more: 'Показать ещё',
             done: 'Понятно', close: 'Закрыть новости', open: 'Что нового',

@@ -93,7 +93,7 @@ assert.throws(() => gate.validate([entry('1.3.6', 2)], '1.3.6'), /3–6/);
 const missingEn = entry('1.3.6'); missingEn.highlights[0].text.en = '';
 assert.throws(() => gate.validate([missingEn], '1.3.6'), /localized/);
 
-function environment(storage, url = 'https://extension.test/src/popup/popup.html') {
+function environment(storage, url = 'https://extension.test/src/pages/home/home.html') {
     const dom = new JSDOM('<button id="trigger">Open</button>', { url, pretendToBeVisual: true });
     const localeListeners = new Set();
     const locale = { currentLocale: 'ru', locales, onLocaleChange(fn) { localeListeners.add(fn); return () => localeListeners.delete(fn); } };
@@ -276,7 +276,10 @@ assert(css.includes('var(--ui-color-surface)') && css.includes('var(--ui-color-c
 assert(css.includes('grid-template-rows: 0fr') && css.includes('grid-template-rows: 1fr'));
 assert(/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.whats-new-version-panel, \.whats-new-version-chevron \{ transition: none;/s.test(css));
 const popup = fs.readFileSync('src/popup/popup.js', 'utf8');
-assert(popup.indexOf('await this.initI18n()') < popup.indexOf("import('../shared/components/WhatsNewDialog.js')"));
+assert(!popup.includes('WhatsNewDialog'), 'release notes must not open automatically in the popup');
+const popupDom = new JSDOM('', { url: 'https://extension.test/src/popup/popup.html' });
+assert.equal(canShowWhatsNew(popupDom.window.document, popupDom.window.location.pathname), false,
+    'the popup is excluded even if a future script imports the dialog');
 const settings = fs.readFileSync('src/pages/settings/settings.js', 'utf8');
 assert(settings.includes("get('whatsNewPreview') === 'draft'"));
 const settingsDom = new JSDOM(fs.readFileSync('src/pages/settings/settings.html', 'utf8'));

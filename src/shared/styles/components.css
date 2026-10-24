@@ -523,6 +523,34 @@
     to { opacity: 1; transform: translateY(0); }
 }
 
+/* MovieList Hub prompt: a non-modal neutral notice that never blocks the page. */
+.hub-prompt {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: var(--z-popover, 1050);
+    display: grid;
+    gap: 10px;
+    width: min(380px, calc(100vw - 32px));
+    padding: 16px 18px;
+    border: 1px solid var(--ui-color-border);
+    border-radius: 12px;
+    background: var(--ui-color-surface);
+    color: var(--ui-color-content);
+    box-shadow: var(--elevation-2, 0 8px 24px rgba(0, 0, 0, 0.35));
+    font-family: var(--font-family);
+    animation: hub-prompt-enter var(--motion-duration-slow, 240ms) var(--motion-ease-out, ease-out);
+}
+.hub-prompt__title { margin: 0; font-size: 15px; font-weight: 600; }
+.hub-prompt__text { margin: 0; color: var(--ui-color-content-muted); font-size: 13px; line-height: 1.5; }
+.hub-prompt__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.hub-prompt__actions .btn { text-decoration: none; }
+@keyframes hub-prompt-enter {
+    from { opacity: 0; transform: translateY(var(--motion-distance-enter, 6px)); }
+}
+@media (prefers-reduced-motion: reduce) { .hub-prompt { animation: none; } }
+@media (max-width: 480px) { .hub-prompt { right: 16px; bottom: 16px; } }
+
 .whats-new-overlay {
     padding: 12px;
     box-sizing: border-box;
