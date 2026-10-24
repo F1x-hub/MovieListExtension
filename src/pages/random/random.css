@@ -2133,3 +2133,8 @@
     font-size: 13px;
     padding: 6px 12px;
 }
+
+/* Class display rules would otherwise override the hidden attribute. */
+.random-relax-options[hidden] {
+    display: none;
+}

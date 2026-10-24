@@ -116,6 +116,8 @@ class HomePage {
             ++this.personalGeneration;
             ++this.dashboardGeneration;
             globalThis.chrome?.storage?.onChanged?.removeListener(this.personalStorageListener);
+            this.ratedObserver?.disconnect();
+            clearTimeout(this.ratedMarkTimer);
         });
     }
 
@@ -271,9 +273,21 @@ class HomePage {
             grid.innerHTML = '';
             return;
         }
+        // updatePersonalTier runs on auth, list and language events; one request per
+        // user and language serves them all for this page view.
+        const locale = window.i18n?.currentLocale || 'ru';
+        const requestKey = `${uid}|${locale}`;
+        if (this.becauseRequest?.key !== requestKey) {
+            this.becauseRequest = { key: requestKey, promise: this.dataController.getBecauseYouRated(uid, locale) };
+            // A failed request may be retried by the next event.
+            const request = this.becauseRequest;
+            request.promise.catch(() => {
+                if (this.becauseRequest === request) this.becauseRequest = null;
+            });
+        }
         let result = null;
         try {
-            result = await this.dataController.getBecauseYouRated(uid, window.i18n?.currentLocale || 'ru');
+            result = await this.becauseRequest.promise;
         } catch (error) {
             console.warn('HomePage: Because-you-rated load failed:', error);
         }
@@ -294,41 +308,88 @@ class HomePage {
     }
 
     /**
-     * Mark discovery cards the signed-in user has already rated. Only cards with a
-     * resolved Kinopoisk ID can be matched; one batched read covers every grid.
+     * Mark discovery cards the signed-in user has already rated.
+     * Discovery cards are TMDB-only at render time; MovieRatingsEnrichmentService
+     * writes `data-movie-id` later, as cards become visible. A MutationObserver
+     * therefore re-runs the pass for newly identified cards, and scores are kept
+     * per user so each Kinopoisk ID is queried once (in batches) per page view.
      * @param {string|null|undefined} uid
+     * @returns {Promise<void>}
      */
-    async markRatedCards(uid) {
-        const grids = Object.values(this.categoryElements || {}).filter(Boolean);
-        const cards = grids.flatMap(grid => [...grid.querySelectorAll('.movie-card-component[data-movie-id]')]);
-        const markGeneration = this.ratedMarkGeneration = (this.ratedMarkGeneration || 0) + 1;
-        const clear = () => cards.forEach(card => {
-            card.classList.remove('home-rated');
-            card.querySelector('.home-rated-badge')?.remove();
+    markRatedCards(uid) {
+        if (this.ratedUid !== uid) {
+            this.ratedUid = uid;
+            this.ratedScores = new Map();
+        }
+        this.observeRatedCardIds();
+        return this.applyRatedMarks();
+    }
+
+    getRatedMarkGrids() {
+        return Object.entries(this.categoryElements || {})
+            .filter(([key, element]) => key.endsWith('Grid') && element)
+            .map(([, element]) => element);
+    }
+
+    getRatedMarkCards() {
+        return this.getRatedMarkGrids().flatMap(grid => [...grid.querySelectorAll('.movie-card-component')]);
+    }
+
+    observeRatedCardIds() {
+        if (this.ratedObserver || typeof MutationObserver === 'undefined') return;
+        const grids = new Set(this.getRatedMarkGrids());
+        this.ratedObserver = new MutationObserver(mutations => {
+            // Only re-rendered grids and newly identified cards matter; badge
+            // writes inside cards must not schedule another pass.
+            const relevant = mutations.some(mutation => (mutation.type === 'childList' && grids.has(mutation.target))
+                || (mutation.attributeName === 'data-movie-id' && mutation.target.classList?.contains('movie-card-component')));
+            if (!relevant) return;
+            clearTimeout(this.ratedMarkTimer);
+            this.ratedMarkTimer = setTimeout(() => this.applyRatedMarks(), 250);
         });
+        grids.forEach(grid => {
+            this.ratedObserver.observe(grid, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-movie-id'] });
+        });
+    }
+
+    async applyRatedMarks() {
+        const uid = this.ratedUid;
+        const scores = this.ratedScores;
+        const cards = this.getRatedMarkCards();
         const ratingService = this.dataController.firebaseManager?.getRatingService?.();
-        if (!uid || !cards.length || !ratingService?.getUserRatingsForMovies) {
-            clear();
-            return;
+        if (uid && scores && ratingService?.getUserRatingsForMovies) {
+            const unknown = [...new Set(cards
+                .map(card => Number(card.dataset.movieId))
+                .filter(id => id > 0 && !scores.has(String(id))))];
+            if (unknown.length) {
+                try {
+                    const ratings = await ratingService.getUserRatingsForMovies(uid, unknown);
+                    unknown.forEach(id => scores.set(String(id), Number(ratings?.get?.(String(id))?.rating) || 0));
+                } catch {
+                    // Unknown IDs stay unmarked and are retried on the next pass.
+                }
+            }
         }
-        let ratings;
-        try {
-            ratings = await ratingService.getUserRatingsForMovies(uid, cards.map(card => card.dataset.movieId));
-        } catch {
-            return;
-        }
-        if (markGeneration !== this.ratedMarkGeneration || uid !== this.personalUid) return;
-        clear();
+        // A newer user (or sign-out) owns the marks now.
+        if (uid !== this.ratedUid) return;
         const label = window.i18n?.get?.('home.rated_badge');
-        cards.forEach(card => {
-            const score = Number(ratings?.get?.(String(Number(card.dataset.movieId)))?.rating) || 0;
-            if (score <= 0) return;
-            const badge = document.createElement('span');
-            badge.className = 'home-rated-badge';
-            badge.textContent = `★ ${score}`;
-            badge.title = label && label !== 'home.rated_badge' ? label : 'Вы оценили';
-            card.classList.add('home-rated');
-            card.append(badge);
+        const title = label && label !== 'home.rated_badge' ? label : 'Вы оценили';
+        this.getRatedMarkCards().forEach(card => {
+            const score = uid ? Number(scores?.get?.(String(Number(card.dataset.movieId)))) || 0 : 0;
+            let badge = card.querySelector(':scope > .home-rated-badge');
+            card.classList.toggle('home-rated', score > 0);
+            if (score <= 0) {
+                badge?.remove();
+                return;
+            }
+            if (!badge) {
+                badge = document.createElement('span');
+                badge.className = 'home-rated-badge';
+                card.append(badge);
+            }
+            const text = `★ ${score}`;
+            if (badge.textContent !== text) badge.textContent = text;
+            if (badge.title !== title) badge.title = title;
         });
     }
 
