@@ -8,6 +8,7 @@
 (function exposeMediaPlayerService(global) {
     const DEFAULT_BASE_URL = 'http://127.0.0.1:3000';
     const NATIVE_HOST_NAME = 'com.movielist.mediaplayer';
+    const SERVICE_PORT_KEY = 'mediaPlayerServicePort';
     const DEVICE_TOKEN_KEY = 'mediaplayer_device_token_v1';
     const SETUP_STORAGE_KEY = 'mediaplayer_setup_v1';
     const SETUP_STATUSES = new Set(['disabled', 'path_required', 'verifying', 'ready', 'error']);
@@ -46,6 +47,7 @@
     class MediaPlayerService {
         constructor(options = {}) {
             this.baseUrl = String(options.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
+            this.baseUrlResolved = Boolean(options.baseUrl);
             this.nativeHostName = options.nativeHostName || NATIVE_HOST_NAME;
             this.deviceTokenKey = options.deviceTokenKey || DEVICE_TOKEN_KEY;
             this.timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : DEFAULT_TIMEOUT_MS;
@@ -714,6 +716,21 @@
             return true;
         }
 
+        // The hub reports the Suite's configured PORT; without it the default
+        // loopback port remains the contract. An explicit baseUrl always wins.
+        async resolveBaseUrl() {
+            if (this.baseUrlResolved) return this.baseUrl;
+            this.baseUrlResolved = true;
+            try {
+                const stored = await this.chromeApi?.storage?.local?.get?.([SERVICE_PORT_KEY]);
+                const port = Number(stored?.[SERVICE_PORT_KEY]);
+                if (Number.isInteger(port) && port >= 1 && port <= 65535) this.baseUrl = `http://127.0.0.1:${port}`;
+            } catch {
+                // Storage is unavailable in some test pages; keep the default.
+            }
+            return this.baseUrl;
+        }
+
         async requestJson(path, options = {}) {
             const {
                 method = 'GET',
@@ -728,6 +745,7 @@
             if (!this.fetchImpl) {
                 throw new MediaPlayerServiceError('fetch_unavailable', 'В этой странице недоступен сетевой клиент.');
             }
+            await this.resolveBaseUrl();
 
             let token = authenticated ? await this.getDeviceToken() : null;
             const headers = { Accept: 'application/json' };

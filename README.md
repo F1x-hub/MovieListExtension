@@ -125,30 +125,31 @@ seeking to prepared media; this is not full TorrServer/Lampa parity.
 
 ## End-user installation on Windows
 
-The released extension uses a signed ZIP and a small Windows Native Messaging host.
-Install the extension once; after that, enabled automatic updates download and
-install future releases in the background.
+The released extension is installed and serviced by MovieList Hub
+(`MovieListSetup.exe`), the only file a user downloads. The hub installs the
+extension once, registers automatic updates and can install the optional
+MediaPlayer Suite. After that it has no window or startup entry: the extension
+starts it in the background only when it needs to update something.
 
 ### First installation
 
-1. Open the [latest GitHub release](https://github.com/F1x-hub/MovieListExtension/releases/latest)
-   and download both files:
-   [`MovieList-extension-1.3.3.zip`](https://github.com/F1x-hub/MovieListExtension/releases/latest/download/MovieList-extension-1.3.3.zip)
-   and [`MovieListSetup.exe`](https://github.com/F1x-hub/MovieListExtension/releases/latest/download/MovieListSetup.exe).
-2. Extract the ZIP to a permanent folder, for example
-   `C:\Programs\MovieListExtension`. Keep this folder in place after setup.
-3. Open `chrome://extensions` (or `edge://extensions`), enable **Developer mode**,
-   choose **Load unpacked**, and select the extracted folder containing `manifest.json`.
-4. Start `MovieListSetup.exe`. In the installer, select exactly the same folder that
-   was loaded in the browser, then click **Connect automatic updates**.
-5. If the browser was open while Setup registered the host, completely restart the
-   browser and open the extension settings once.
-6. Open **Settings → Extras**, enable **Automatic updates**, and click **Save Settings**.
+1. Download [`MovieListSetup.exe`](https://github.com/F1x-hub/MovieListExtension/releases/latest/download/MovieListSetup.exe)
+   from the [latest GitHub release](https://github.com/F1x-hub/MovieListExtension/releases/latest) and run it.
+2. Click **Скачать и установить**. The hub downloads the latest signed extension,
+   checks its signature, size and SHA-256 hash, installs it (by default into
+   `%LOCALAPPDATA%\MovieList\Extension`) and registers automatic updates.
+   **У меня уже есть папка расширения** connects an existing unpacked folder instead.
+3. Chrome does not let programs add unpacked extensions, so one manual step remains:
+   click **Открыть chrome://extensions**, enable **Developer mode**, choose
+   **Load unpacked** and paste the folder path (the hub has already copied it).
+4. If the browser was open while the hub registered the host, completely restart the
+   browser and open the extension once.
 
-`MovieListSetup.exe` is required only for the first connection or when the extension
-asks you to upgrade an old updater. It registers the Native Messaging host for the
-current Windows user; it does not need to run after every reboot or release, and no
-permanent updater window is kept open.
+The hub needs the Microsoft Edge WebView2 runtime (part of Windows 11); without it
+the plain connection form opens instead. It registers the Native Messaging host for
+the current Windows user and adds **MovieList Hub** to the Start menu, so it can be
+reopened later, for example to install MediaPlayer. Running a newer
+`MovieListSetup.exe` once upgrades the installed hub.
 
 ### How updates work
 
@@ -169,12 +170,12 @@ latest version**. You do not need to download a new ZIP or run Setup for each re
 4. If the settings page reports a connection or update error, click
    **Скачать журнал обновлений / Export diagnostics** and send the downloaded JSON
    file with the problem description.
-5. If the message asks for Setup, download the latest `MovieListSetup.exe`, select
-   the same extension folder, click **Connect automatic updates**, and restart the
-   browser.
+5. If the message asks for Setup or reports that Chrome loads another folder, run
+   the latest `MovieListSetup.exe`, use **Сменить папку** to select the folder
+   loaded in the browser, and restart the browser.
 
 Do not select the ZIP file itself, the repository source archive, or a parent folder
-that does not contain `manifest.json`. Do not keep several old Setup windows open.
+that does not contain `manifest.json`. Only one hub window can be open at a time.
 
 ## Local setup
 
@@ -216,7 +217,10 @@ that does not contain `manifest.json`. Do not keep several old Setup windows ope
 
 ## Jackett indexer selection
 
-1. Install the current `MediaPlayerSuiteSetup.exe` from the MediaPlayer project.
+1. Install MediaPlayer Suite: **Установить медиаплеер** in MovieList Hub, or
+   **Settings → Updates → Компоненты Windows → Установить**. The hub downloads the
+   signed `MediaPlayerSuiteSetup.exe` from the component catalog and starts its
+   wizard, which asks for Windows administrator permission once.
 2. Reload the extension, open Settings, and enable MediaPlayer. The registered Suite
    is detected and checked automatically; use **Выбрать папку** for an older or
    custom installation, then **Подключить MediaPlayer** to retry.
@@ -242,10 +246,14 @@ restarts and upgrades. If Windows denies write access, the explicit access butto
 can grant LocalService access to a safe folder owned by the current user. Missing
 disks and invalid paths are reported without silently changing the destination.
 
-**Settings → Updates → Компоненты Windows** shows separate updater and installed
-MediaPlayer versions, actions and automatic-update opt-ins. An absent Suite is
-skipped. Older installations need the current Setup once to enable the signed
-component protocol and protected Suite maintenance service. See the
+**Settings → Updates → Компоненты Windows** shows separate hub and installed
+MediaPlayer versions, actions and automatic-update switches (on by default). The
+extension decides when to update; the hub applies the update. Automatic Suite
+updates run only through its protected maintenance service and never raise a
+Windows prompt. An installation without a version marker or maintenance service
+(for example one below a user-owned folder such as `D:\programs`) shows
+**Восстановить установку**, which runs the full Suite Setup and keeps films,
+settings and pairing. See the
 [release procedure](docs/UPDATER_RELEASE.md#component-updates) before publishing.
 
 ## Development commands
@@ -438,7 +446,8 @@ keeps npm-compatible three-component semver metadata.
 - Save torrent-series progress through the canonical playback controller using the full media duration, so the end of a growing HLS buffer cannot falsely complete an episode. Preserve original video dimensions during fallback conversion instead of silently reducing large sources to 1080p.
 - Detect the installed MediaPlayer Suite automatically when the integration is enabled. Keep manual folder selection as a fallback and discard late connection results after the integration is disabled.
 - Select, preview, save or cancel the MediaPlayer film/episode download folder in Settings. Persist it in the local service, retain existing download locations, validate service access and disk space, and offer an explicit original-user permission grant after a Windows access denial.
-- Add independent signed updates for the Windows updater and an already installed MediaPlayer Suite, with separate automatic-update opt-ins and version/status controls. Suite maintenance waits for playback, preserves configuration and database state, and rolls back failed activation; older installations require one manual Setup migration.
+- Add independent signed updates for the Windows updater and an already installed MediaPlayer Suite, with separate automatic-update switches (on by default) and version/status controls. Suite maintenance waits for playback, preserves configuration and database state, and rolls back failed activation; older installations require one manual Setup migration.
+- Turn `MovieListSetup.exe` into MovieList Hub, the single Windows entry point. Its WebView2 window uses the extension's own `theme.css`/`tokens.css` and follows the Windows light/dark setting. On a clean machine it downloads the latest signed extension (signature, size and SHA-256 checked) into a chosen folder, registers automatic updates and walks through the one-time Chrome «Load unpacked» step. It shows installed and latest versions of the extension, MediaPlayer Suite and itself, installs or repairs the Suite from the signed component catalog through the Suite's interactive Setup (legacy installs below user-owned folders get the migration path), and updates itself. Running a newer hub upgrades the permanent copy and adds a Start-menu shortcut; afterwards it only runs in the background when the extension calls it. The extension still decides when the extension updates. Settings gain «Установить» / «Восстановить установку» for the Suite and «Сбросить ошибку» for a failed component operation.
 
 - Home: signed-in users get a «Потому что вы оценили «X»» row built by `RecommendationService` from their most recently added rating of 8 or higher (read newest first through the indexed `userId` + `createdAt` query; recommendations they already rated are removed with one batched lookup; one request per user and language per page view; up to 12 picks, trimmed to complete rows for the current 6/4/3/2-column width so the last row is never half empty; the row stays hidden when nothing resolves). Discovery cards they have already rated carry a «★ N» badge in the top-right corner, clear of the Kinopoisk/IMDb badges; it also appears on cards whose Kinopoisk ID is resolved after render, and each ID is looked up once per page view.
 - Rated page: a «Моя оценка» filter (9–10, 7–8, 5–6, 1–4, not rated by me) that loads every page before filtering and never replaces the default first-screen cache, and the filters are mirrored into the address (`q`, `genre`, `year`, `user`, `my`, `sort`, `avg`), so a filtered view can be shared or reloaded; address values override the saved ones.
@@ -453,6 +462,7 @@ keeps npm-compatible three-component semver metadata.
 - Random movie: the result poster no longer falls back to the blurry app icon when the API poster URL is missing or fails the `PosterUrl` host check; the card tries the API URL, then the Kinopoisk poster by ID (as the marathon does), and only then the icon. A rejected host is reported once in the console.
 - Home: a discovery section that comes back empty now offers «Повторить» next to «Нет данных». The seasonal banner takes its link from the season definition in `SeasonalThemeService`, so a future season no longer inherits the Halloween horror catalog link.
 - Random and Rated pages: the tab title is translated, and `I18n.translatePage` sets the document `lang` to the interface language on every page; the random page's «Повторить» button is localized.
+- Correct misleading Suite recovery errors for legacy installations below user-owned folders. Full manual Setup can migrate the registered Suite into Program Files, preserve settings and film locations, and retain a protected recovery journal for a safe retry after failure.
 - The profile banner no longer tiles on the light theme: the light-theme cover rule used the `background` shorthand, which reset the banner's `cover` size and position.
 - Load torrent text subtitles through bounded session-validated requests and local Blob tracks so Chromium can display them. Retain subtitle choice during audio replacement, release obsolete subtitle resources, and ignore late saved-playback failures after the source changes.
 - Keep component progress polling active after an earlier extension operation ends, and retry deferred Suite maintenance after playback instead of treating it as a permanent failure. Replace the updater atomically with bounded locked-executable retries and rollback.
@@ -460,6 +470,11 @@ keeps npm-compatible three-component semver metadata.
 - Stop and dispose torrent playback when changing episodes or providers. Keep the current audio playing while a replacement prepares, and preserve playback intent across overlapping audio changes.
 - Recover component updates across an expected maintenance-service restart and a healthy manual repair. Respect the installed service port, bound retained update files, and repair clean-install log permissions, original-user provisioning and failed-install service cleanup.
 - Patch MediaPlayer's Zod validation dependency to reject oversized bounded request collections before excessive per-element processing.
+- Updater deadlocks: a MediaPlayer operation waiting for repair (`recovery_required`) no longer blocks extension updates, and the extension no longer adopts a finished host journal, which used to show «installing» then «succeeded» although nothing was installed. When Chrome reloads into another folder, the extension now closes the host journal (`abandon`) instead of leaving it «awaiting confirmation» forever; an unconfirmed swap also expires after 24 hours and is still confirmed if the browser starts later.
+- The host `status` request no longer fails for a Suite whose configuration is user-writable (legacy installs below user-owned folders); readiness then uses the default port. A configured Suite port now reaches `MediaPlayerService` instead of the fixed `127.0.0.1:3000`.
+- Update state writes from the service worker and Settings pages are serialized, so one context no longer overwrites another's changes. Inputs of earlier update operations are deleted instead of accumulating, and «Открыть chrome://extensions» starts Chrome instead of failing silently.
+- The Suite installer is started without a hidden pre-elevated `runas`, so Setup elevates itself and keeps the original user; a declined Windows prompt and a cancelled installer are reported separately.
+- The updater version now has one source (`MovieListUpdater.csproj`), and `update.json` carries the 1.1.4 protocol floor instead of the current updater version, so a new updater release no longer forces every user to rerun Setup. `MovieListSetup.exe` is compressed: about 52 MB instead of 116 MB.
 
 ### Refactor
 
@@ -469,6 +484,7 @@ keeps npm-compatible three-component semver metadata.
 
 - Review torrent playback completeness and MediaPlayer dependency advisories; distinguish patched packages, remaining advisory applicability, fixture verification and outstanding live installation/playback checks in the [integration record](docs/aegis/plans/2026-10-23-torrent-playback.md).
 - Document component catalog publication, one-time Setup migration, storage ownership and the distinction between local fixture checks and installed Windows upgrade verification in the [integration record](docs/aegis/plans/2026-10-23-torrent-playback.md).
+- Describe MovieList Hub, the single updater version source and the `minUpdaterVersion` protocol floor in [the updater release guide](docs/UPDATER_RELEASE.md).
 
 </details>
 

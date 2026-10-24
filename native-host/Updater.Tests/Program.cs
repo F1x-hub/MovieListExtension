@@ -189,6 +189,47 @@ try
         || ShouldCopy("1.1.4.0", "1.1.4.0", false, true)
         || ShouldCopy("1.1.3.0", "1.1.4.0", true, false)) throw new Exception("Same-version capability migration/downgrade gate invalid.");
     Console.WriteLine("Legacy 1.1.4 same-version Setup migration requires missing installed capability; capable/equal and older candidates cannot replace it.");
+    var flags = BindingFlags.Static | BindingFlags.NonPublic;
+    var ownVersion = (string)updater.GetField("UpdaterVersion", flags)!.GetValue(null)!;
+    var projectDirectory = new DirectoryInfo(AppContext.BaseDirectory);
+    while (projectDirectory is not null && !File.Exists(Path.Combine(projectDirectory.FullName, "Updater", "MovieListUpdater.csproj")))
+        projectDirectory = projectDirectory.Parent;
+    var projectVersion = System.Text.RegularExpressions.Regex.Match(File.ReadAllText(Path.Combine(
+        projectDirectory?.FullName ?? throw new Exception("Updater project not found."), "Updater", "MovieListUpdater.csproj")),
+        "<Version>(.*?)</Version>").Groups[1].Value;
+    if (ownVersion != projectVersion) throw new Exception($"Host version {ownVersion} drifted from csproj {projectVersion}.");
+    var stateType = updater.GetNestedType("OperationState", BindingFlags.NonPublic)!;
+    var expired = updater.GetMethod("IsExpiredConfirmation", flags)!;
+    object Journal(string status, TimeSpan age)
+    {
+        var journal = Activator.CreateInstance(stateType)!;
+        stateType.GetProperty("Status")!.SetValue(journal, status);
+        stateType.GetProperty("LastProgressAt")!.SetValue(journal, DateTimeOffset.UtcNow - age);
+        return journal;
+    }
+    if ((bool)expired.Invoke(null, new[] { Journal("awaiting_confirmation", TimeSpan.FromHours(1)) })!
+        || !(bool)expired.Invoke(null, new[] { Journal("awaiting_confirmation", TimeSpan.FromHours(25)) })!
+        || (bool)expired.Invoke(null, new[] { Journal("replacing", TimeSpan.FromHours(25)) })!)
+        throw new Exception("Only a day-old unconfirmed swap may expire.");
+    var componentType = updater.GetNestedType("ComponentOperation", BindingFlags.NonPublic)!;
+    var running = updater.GetMethod("IsComponentOperationRunning", flags)!;
+    foreach (var (status, blocks) in new[] { ("queued", true), ("installing", true), ("verifying", true),
+        ("recovery_required", false), ("failed", false), ("dismissed", false), ("succeeded", false) })
+    {
+        var operation = Activator.CreateInstance(componentType)!;
+        componentType.GetProperty("Status")!.SetValue(operation, status);
+        if ((bool)running.Invoke(null, new[] { operation })! != blocks)
+            throw new Exception($"Component status {status} has the wrong blocking behaviour.");
+    }
+    var exitCode = updater.GetMethod("InstallerExitCode", flags)!;
+    if ((string)exitCode.Invoke(null, new object[] { 2 })! != "SUITE_INSTALL_CANCELLED"
+        || (string)exitCode.Invoke(null, new object[] { 5 })! != "SUITE_INSTALL_CANCELLED"
+        || (string)exitCode.Invoke(null, new object[] { 3 })! != "SUITE_INSTALL_FAILED")
+        throw new Exception("Installer exit codes are misclassified.");
+    var hubResources = updater.Assembly.GetManifestResourceNames();
+    foreach (var resource in new[] { "hub/index.html", "hub/hub.css", "hub/hub.js", "hub/theme.css", "hub/tokens.css", "hub/icon-black.png", "hub/icon-white.png" })
+        if (!hubResources.Contains(resource)) throw new Exception($"Hub resource {resource} is not embedded.");
+    Console.WriteLine("Assembly version source, day-old confirmation expiry, non-blocking component recovery, installer exit codes and embedded hub UI passed.");
     var download = updater.GetMethod("DownloadFile", BindingFlags.Static | BindingFlags.NonPublic)!;
     var portProbe = new TcpListener(IPAddress.Loopback, 0);
     portProbe.Start();

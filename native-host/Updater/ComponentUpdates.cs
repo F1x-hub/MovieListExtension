@@ -20,6 +20,9 @@ internal static partial class Program
         public string ComponentId { get; set; } = "";
         public string MetadataText { get; set; } = "";
         public string Signature { get; set; } = "";
+        // True only for an explicit user install/repair: a full interactive Setup
+        // may then run for an absent or unversioned Suite.
+        public bool Install { get; set; }
     }
 
     private sealed class ComponentOperation
@@ -33,15 +36,20 @@ internal static partial class Program
         public bool? WasRunning { get; set; }
         public string? RepairTransactionId { get; set; }
         public string? RecoveryErrorCode { get; set; }
+        public bool Install { get; set; }
     }
 
     private sealed record SuiteInventory(bool Installed, bool LayoutValid, string? InstallPath,
         string? Version, int? ApiMajor, string? BuildId, string Status, bool BrokerAvailable,
-        bool? Running = null, bool Ready = false, string ServiceStatus = "unknown");
+        bool? Running = null, bool Ready = false, string ServiceStatus = "unknown", int? Port = null);
 
     private static ComponentOperation? ReadComponentOperation() => ReadJson<ComponentOperation>(ComponentStatePath);
     private static bool IsComponentOperationPending(ComponentOperation? operation) => operation?.Status is
         "queued" or "downloading" or "replacing" or "installing" or "verifying" or "recovery_required";
+    // Running states hold the per-user apply mutex in a live worker; recovery
+    // waits for a user decision and must not block unrelated updates.
+    private static bool IsComponentOperationRunning(ComponentOperation? operation) => operation?.Status is
+        "queued" or "downloading" or "replacing" or "installing" or "verifying";
 
     private static object ValidateComponentCatalogRequest(JsonElement request)
     {
@@ -124,19 +132,25 @@ internal static partial class Program
         }
         var service = WindowsServiceInspector.GetTorrentService();
         bool? running = service.Status == "running" ? true : service.Status == "stopped" ? false : null;
+        // Legacy installations keep a user-writable configuration that is never
+        // trusted; status must still answer, so readiness falls back to the
+        // default port that MovieList itself uses when no trusted port exists.
+        int? port = null;
+        try { port = SuiteRuntimeConfiguration.ReadPort(root); }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException) { }
         var ready = false;
         if (running == true)
         {
             try
             {
                 using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-                using var response = client.GetAsync(SuiteRuntimeConfiguration.ReadyUri(SuiteRuntimeConfiguration.ReadPort(root))).GetAwaiter().GetResult();
+                using var response = client.GetAsync(SuiteRuntimeConfiguration.ReadyUri(port ?? 3000)).GetAwaiter().GetResult();
                 ready = response.IsSuccessStatusCode;
             }
             catch (Exception error) when (error is HttpRequestException or OperationCanceledException or IOException or UnauthorizedAccessException) { }
         }
         return new(true, layout, root, version, api, build,
-            !layout ? "installation_invalid" : version is null ? "migration_required" : "installed", broker, running, ready, service.Status);
+            !layout ? "installation_invalid" : version is null ? "migration_required" : "installed", broker, running, ready, service.Status, port);
     }
 
     private static object StartComponentApply(JsonElement request)
@@ -145,9 +159,16 @@ internal static partial class Program
         var operationId = request.TryGetProperty("operationId", out var op) ? op.GetString() : null;
         var text = request.TryGetProperty("metadataText", out var metadata) ? metadata.GetString() : null;
         var signature = request.TryGetProperty("signature", out var sig) ? sig.GetString() : null;
+        var install = request.TryGetProperty("install", out var installElement) && installElement.ValueKind == JsonValueKind.True;
+        return StartComponentApplyCore(id, operationId, text, signature, install);
+    }
+
+    internal static object StartComponentApplyCore(string? id, string? operationId, string? text, string? signature, bool install)
+    {
         if (id is not ("updater" or "mediaPlayerSuite") || !Guid.TryParse(operationId, out var parsed)
             || text is null || signature is null)
             return ErrorResponse("COMPONENT_REQUEST_INVALID", "Invalid component request.");
+        install = install && id == "mediaPlayerSuite";
         operationId = parsed.ToString("D");
         using var mutex = new Mutex(false, UserApplyMutexName);
         if (!TryAcquireOperationMutex(mutex)) return ErrorResponse("UPDATE_IN_PROGRESS", "Another update is running.");
@@ -157,24 +178,31 @@ internal static partial class Program
             if (!catalog.Components.TryGetValue(id, out var descriptor)) throw new InvalidDataException("Missing component.");
             var current = ReadComponentOperation();
             if (current is not null && ReconcileSuiteRepair(current)) current = ReadComponentOperation();
-            if (IsComponentOperationPending(current))
-                return current!.OperationId == operationId
-                    ? new { success = true, operationId, status = current.Status }
-                    : ErrorResponse("UPDATE_IN_PROGRESS", "Another component is running.");
+            if (current?.OperationId == operationId && IsComponentOperationPending(current))
+                return new { success = true, operationId, status = current.Status };
+            // A recovery_required journal is replaced by an explicit new attempt:
+            // re-running the signed Setup is the documented Suite recovery path.
+            if (IsComponentOperationRunning(current))
+                return ErrorResponse("UPDATE_IN_PROGRESS", "Another component is running.");
             var extensionOperation = ReadJson<OperationState>(StatePath);
+            if (extensionOperation is not null && IsExpiredConfirmation(extensionOperation))
+            {
+                CloseAwaitingConfirmation(extensionOperation, "CONFIRMATION_EXPIRED", "The installed version was never confirmed by the browser.");
+                extensionOperation = ReadJson<OperationState>(StatePath);
+            }
             if (extensionOperation?.Status is "queued" or "downloading" or "replacing" or "awaiting_confirmation"
                 || extensionOperation?.CleanupPending == true)
                 return ErrorResponse("UPDATE_IN_PROGRESS", "An extension update needs completion.");
-            ValidateComponentActivation(id, descriptor);
+            ValidateComponentActivation(id, descriptor, install);
             ProtectUserComponentDirectory(ComponentRoot);
             ComponentWorkCache.Prune(ComponentRoot, current is null ? [] : [current.OperationId], DateTimeOffset.UtcNow);
             var work = ComponentWork(operationId);
             if (Directory.Exists(work)) return ErrorResponse("OPERATION_ID_REUSED", "Use a new operation identity.");
             ProtectUserComponentDirectory(work);
-            WriteJsonAtomic(Path.Combine(work, "input.json"), new ComponentInput { ComponentId = id, MetadataText = text, Signature = signature });
+            WriteJsonAtomic(Path.Combine(work, "input.json"), new ComponentInput { ComponentId = id, MetadataText = text, Signature = signature, Install = install });
             var worker = Path.Combine(work, "worker.exe");
             File.Copy(Environment.ProcessPath ?? throw new IOException("Missing host executable."), worker);
-            var state = new ComponentOperation { OperationId = operationId, ComponentId = id, Version = descriptor.Version };
+            var state = new ComponentOperation { OperationId = operationId, ComponentId = id, Version = descriptor.Version, Install = install };
             WriteJsonAtomic(ComponentStatePath, state);
             using var runOnce = Registry.CurrentUser.CreateSubKey(RecoveryRunOncePath);
             runOnce.SetValue(ComponentRecoveryRunOnceName, $"\"{worker}\" --component-worker {operationId}");
@@ -193,7 +221,7 @@ internal static partial class Program
 
     private sealed class ComponentFailure(string code) : IOException(code) { public string Code { get; } = code; }
 
-    private static void ValidateComponentActivation(string id, ComponentDescriptor descriptor)
+    private static void ValidateComponentActivation(string id, ComponentDescriptor descriptor, bool install = false)
     {
         if (descriptor.MinUpdaterVersion is not null
             && ComponentCatalogValidator.CompareVersions(UpdaterVersion, descriptor.MinUpdaterVersion) < 0)
@@ -206,13 +234,19 @@ internal static partial class Program
             return;
         }
         var suite = ReadSuiteInventory();
+        if (descriptor.ApiMajor is not null && descriptor.ApiMajor != 1) throw new ComponentFailure("SUITE_API_UNSUPPORTED");
+        if (install && RequiresFullSuiteSetup(suite)) return;
         if (!suite.Installed) throw new ComponentFailure("SUITE_NOT_INSTALLED");
         if (!suite.LayoutValid) throw new ComponentFailure("SUITE_INSTALLATION_INVALID");
         if (suite.Version is null) throw new ComponentFailure("SUITE_MIGRATION_REQUIRED");
-        if (descriptor.ApiMajor is not null && descriptor.ApiMajor != 1) throw new ComponentFailure("SUITE_API_UNSUPPORTED");
         if (ComponentCatalogValidator.CompareVersions(descriptor.Version, suite.Version) <= 0)
             throw new ComponentFailure("COMPONENT_NOT_NEWER");
     }
+
+    // Absent, damaged or legacy (no committed version marker) Suites cannot use
+    // the silent UPGRADEONLY path; only the interactive full Setup repairs them.
+    private static bool RequiresFullSuiteSetup(SuiteInventory suite) =>
+        !suite.Installed || !suite.LayoutValid || suite.Version is null;
 
     private static bool TryRunComponentMode(string[] args, out int exitCode)
     {
@@ -264,7 +298,18 @@ internal static partial class Program
             {
                 FinishComponent(state, "succeeded"); return 0;
             }
-            ValidateComponentActivation(input.ComponentId, descriptor);
+            ValidateComponentActivation(input.ComponentId, descriptor, input.Install);
+            if (input.ComponentId == "mediaPlayerSuite" && input.Install && RequiresFullSuiteSetup(ReadSuiteInventory()))
+            {
+                SetComponentPhase(state, "downloading");
+                DownloadComponentFile(descriptor, candidate);
+                SetComponentPhase(state, "installing");
+                RunFullSuiteSetup(candidate);
+                SetComponentPhase(state, "verifying");
+                if (!WaitForSuiteActivation(descriptor, TimeSpan.FromMinutes(3))) throw new ComponentFailure("SUITE_VERSION_MISMATCH");
+                FinishComponent(state, "succeeded");
+                return 0;
+            }
             if (input.ComponentId == "mediaPlayerSuite")
             {
                 var suite = ReadSuiteInventory();
@@ -294,7 +339,7 @@ internal static partial class Program
             SetComponentPhase(state, "downloading");
             // Component downloads are allowed up to 1 GiB and never use a mirror.
             DownloadComponentFile(descriptor, candidate);
-            ValidateComponentActivation(input.ComponentId, descriptor);
+            ValidateComponentActivation(input.ComponentId, descriptor, input.Install);
             if (input.ComponentId == "updater")
             {
                 if (!ProbeUpdater(candidate, descriptor.Version)) throw new ComponentFailure("UPDATER_PROBE_FAILED");
@@ -307,10 +352,13 @@ internal static partial class Program
                 var suite = ReadSuiteInventory();
                 state.WasRunning = suite.Running;
                 SetComponentPhase(state, "installing");
-                var start = new ProcessStartInfo(candidate) { UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden };
+                // Setup elevates itself (PrivilegesRequired=admin), so it keeps the
+                // original user identity; a pre-elevated hidden "runas" did not.
+                var start = new ProcessStartInfo(candidate) { UseShellExecute = true };
                 foreach (var argument in new[] { "/UPGRADEONLY=1", "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/DIR=" + suite.InstallPath }) start.ArgumentList.Add(argument);
-                using var process = Process.Start(start) ?? throw new IOException("Installer failed to start.");
-                if (!process.WaitForExit(10 * 60 * 1000) || process.ExitCode != 0) throw new ComponentFailure("SUITE_INSTALL_FAILED");
+                using var process = StartInstaller(start);
+                if (!process.WaitForExit(10 * 60 * 1000)) throw new ComponentFailure("SUITE_INSTALL_TIMEOUT");
+                if (process.ExitCode != 0) throw new ComponentFailure(InstallerExitCode(process.ExitCode));
                 SetComponentPhase(state, "verifying");
                 if (!VerifySuiteActivation(descriptor, state.WasRunning == false)) throw new ComponentFailure("SUITE_VERSION_MISMATCH");
             }
@@ -327,6 +375,78 @@ internal static partial class Program
             return 1;
         }
         finally { if (acquired) mutex.ReleaseMutex(); }
+    }
+
+    private static Process StartInstaller(ProcessStartInfo start)
+    {
+        try { return Process.Start(start) ?? throw new ComponentFailure("SUITE_INSTALLER_START_FAILED"); }
+        catch (System.ComponentModel.Win32Exception error) when (error.NativeErrorCode == 1223)
+        {
+            throw new ComponentFailure("ELEVATION_DECLINED");
+        }
+    }
+
+    // Inno Setup exit codes: 1/2 = cancelled before or during the wizard, 5 = user abort.
+    private static string InstallerExitCode(int exitCode) => exitCode switch
+    {
+        1 or 2 or 5 => "SUITE_INSTALL_CANCELLED",
+        _ => "SUITE_INSTALL_FAILED"
+    };
+
+    // The full wizard is interactive: it chooses the folder, pairs the
+    // original user and proposes legacy migration out of user-owned folders.
+    private static void RunFullSuiteSetup(string installer)
+    {
+        using var process = StartInstaller(new ProcessStartInfo(installer) { UseShellExecute = true });
+        if (!process.WaitForExit(60 * 60 * 1000)) throw new ComponentFailure("SUITE_INSTALL_TIMEOUT");
+        if (process.ExitCode != 0) throw new ComponentFailure(InstallerExitCode(process.ExitCode));
+    }
+
+    private static bool WaitForSuiteActivation(ComponentDescriptor descriptor, TimeSpan timeout)
+    {
+        var deadline = DateTimeOffset.UtcNow + timeout;
+        while (true)
+        {
+            if (VerifySuiteActivation(descriptor)) return true;
+            if (DateTimeOffset.UtcNow >= deadline) return false;
+            Thread.Sleep(2000);
+        }
+    }
+
+    // Lets the user leave a component journal that waits for repair or failed.
+    // It never interrupts a worker: running workers hold the apply mutex.
+    private static object DismissComponentOperation(JsonElement request)
+    {
+        var operationId = request.TryGetProperty("operationId", out var op) ? op.GetString() : null;
+        return DismissComponentOperationCore(operationId);
+    }
+
+    internal static object DismissComponentOperationCore(string? operationId)
+    {
+        using var mutex = new Mutex(false, UserApplyMutexName);
+        if (!TryAcquireOperationMutex(mutex)) return ErrorResponse("UPDATE_IN_PROGRESS", "A component worker is running.");
+        try
+        {
+            var state = ReadComponentOperation();
+            if (state is null || state.OperationId != operationId || state.Status is not ("recovery_required" or "failed"))
+                return ErrorResponse("DISMISS_INVALID", "No matching component operation can be dismissed.");
+            if (state.ComponentId == "mediaPlayerSuite" && state.Status == "recovery_required")
+            {
+                try
+                {
+                    var broker = BrokerRequest(new { action = "status" });
+                    if (broker.TryGetProperty("operation", out var brokerOperation) && brokerOperation.ValueKind == JsonValueKind.Object
+                        && brokerOperation.GetProperty("operationId").GetString() == state.OperationId
+                        && brokerOperation.GetProperty("status").GetString() is not ("succeeded" or "failed" or "deferred"))
+                        return ErrorResponse("UPDATE_IN_PROGRESS", "The Suite maintenance service is still working.");
+                }
+                catch (Exception error) when (error is IOException or TimeoutException or OperationCanceledException or JsonException or KeyNotFoundException or InvalidOperationException) { }
+            }
+            state.RecoveryErrorCode ??= state.ErrorCode;
+            FinishComponent(state, "dismissed", state.ErrorCode);
+            return new { success = true, operationId = state.OperationId, status = "dismissed" };
+        }
+        finally { mutex.ReleaseMutex(); }
     }
 
     private static void SetComponentPhase(ComponentOperation state, string status)

@@ -24,7 +24,9 @@ function lockManager() {
 function harness(options = {}) {
     const catalog = { schemaVersion: 1, productId: 'movielist', channel: 'stable', publishedAt: '2026-10-23T00:00:00Z',
         components: { updater: descriptor('updater', '1.1.5'), mediaPlayerSuite: descriptor('mediaPlayerSuite', '0.2.0') } };
-    const storage = options.storage || { extension_update_settings_v1: { autoUpdateEnabled: false, componentAutoUpdateEnabled: options.auto || {} } };
+    // Scenarios opt in explicitly; `defaults: true` exercises the shipped defaults.
+    const storage = options.storage || { extension_update_settings_v1: { autoUpdateEnabled: false,
+        ...(options.defaults ? {} : { componentAutoUpdateEnabled: options.auto || { updater: false, mediaPlayerSuite: false } }) } };
     const host = { success: true, configured: true, updaterVersion: '1.1.4', operation: null,
         componentCapabilities: { protocolVersion: 1, signedCatalog: true, updaterSelfUpdate: true, mediaPlayerSuite: true },
         components: { updater: { installed: true, version: '1.1.4' }, mediaPlayerSuite: {
@@ -66,18 +68,29 @@ function harness(options = {}) {
 }
 
 (async () => {
-    const current = harness();
+    const current = harness({ defaults: true });
     const currentState = await current.service.checkForUpdates({ force: true, interactive: true });
     assert.equal(currentState.status, 'up_to_date');
     assert.equal(currentState.components.updater.availableVersion, '1.1.5');
-    assert.equal(currentState.components.mediaPlayerSuite.status, 'available_manual', 'not ready must still count as installed');
-    assert.equal(current.calls.filter(call => call.action === 'apply_component').length, 0, 'new automatic controls are opt-in');
-    assert.equal((await current.service.getState()).settings.componentAutoUpdateEnabled.updater, false);
+    assert.equal(currentState.components.mediaPlayerSuite.status, 'available', 'not ready must still count as installed');
+    assert.equal(current.calls.filter(call => call.action === 'apply_component').length, 0, 'interactive checks never start automatic updates');
+    assert.equal((await current.service.getState()).settings.componentAutoUpdateEnabled.updater, true, 'component auto-updates are on by default');
+    assert.equal((await current.service.getState()).settings.componentAutoUpdateEnabled.mediaPlayerSuite, true);
     assert.equal(await current.service.getComponentSetupUrl('mediaPlayerSuite'), current.catalog.components.mediaPlayerSuite.assetUrl);
     current.host.components.mediaPlayerSuite.installed = false;
     const absentBeforeActivation = await current.service.applyComponent('mediaPlayerSuite');
     assert.equal(absentBeforeActivation.components.mediaPlayerSuite.status, 'absent');
-    assert.equal(current.calls.filter(call => call.action === 'apply_component').length, 0, 'uninstalled Suite must never be reinstalled');
+    assert.equal(current.calls.filter(call => call.action === 'apply_component').length, 0, 'an update request must never install an absent Suite');
+    const legacyHub = await current.service.installComponent('mediaPlayerSuite');
+    assert.equal(legacyHub.components.mediaPlayerSuite.errorCode, 'UPDATER_UPGRADE_REQUIRED', 'install needs a hub that supports it');
+    current.host.componentCapabilities.mediaPlayerInstall = true;
+    const installing = await current.service.installComponent('mediaPlayerSuite');
+    const installCall = current.calls.filter(call => call.action === 'apply_component').at(-1);
+    assert.equal(installCall?.install, true, 'explicit install must ask the hub for the full Setup');
+    assert.equal(installing.components.mediaPlayerSuite.status, 'queued');
+    current.host.components.mediaPlayerSuite = { installed: true, layoutValid: true, version: null, status: 'migration_required', port: 43127 };
+    await current.service.getNativeStatus();
+    assert.equal(current.storage.mediaPlayerServicePort, 43127, 'the configured Suite port must reach MediaPlayerService');
 
     const legacy = harness({ missingCatalog: true });
     assert.equal((await legacy.service.checkForUpdates({ force: true })).status, 'up_to_date');
@@ -97,14 +110,15 @@ function harness(options = {}) {
     const unknown = harness(); unknown.host.components.mediaPlayerSuite.version = null;
     assert.equal((await unknown.service.checkComponentUpdates({ force: true })).components.mediaPlayerSuite.status, 'migration_required');
 
-    const noBroker = harness({ auto: { mediaPlayerSuite: true } }); noBroker.host.components.mediaPlayerSuite.brokerAvailable = false;
+    const noBroker = harness({ auto: { mediaPlayerSuite: true, updater: false } }); noBroker.host.components.mediaPlayerSuite.brokerAvailable = false;
     const unattended = await noBroker.service.checkComponentUpdates({ force: true });
     assert.equal(unattended.components.mediaPlayerSuite.status, 'setup_required');
     assert.equal(unattended.components.mediaPlayerSuite.errorCode, 'SUITE_MAINTENANCE_SETUP_REQUIRED');
-    assert.equal(noBroker.calls.filter(call => call.action === 'apply_component').length, 0, 'automatic checks cannot raise UAC');
+    const suiteApplies = () => noBroker.calls.filter(call => call.action === 'apply_component' && call.componentId === 'mediaPlayerSuite');
+    assert.equal(suiteApplies().length, 0, 'automatic checks cannot raise UAC');
     await noBroker.service.applyComponent('mediaPlayerSuite', { automatic: false });
-    assert.equal(noBroker.calls.filter(call => call.action === 'apply_component').length, 1, 'manual marked-Suite migration may request UAC');
-    const request = noBroker.calls.find(call => call.action === 'apply_component');
+    assert.equal(suiteApplies().length, 1, 'manual marked-Suite migration may request UAC');
+    const request = suiteApplies()[0];
     assert.deepEqual(Object.keys(request).sort(), ['action', 'componentId', 'extensionId', 'metadataText', 'operationId', 'protocolVersion', 'signature'].sort());
 
     const playing = harness({ playing: true }); await playing.service.checkComponentUpdates({ force: true });

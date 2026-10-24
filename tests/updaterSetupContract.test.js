@@ -39,7 +39,14 @@ assert.match(
 assert.match(source, /private static string GetRecoveryPath\(/);
 assert.match(source, /CleanupOperationArtifacts\(state\);/);
 assert.match(source, /private const string ApplyMutexName/);
-assert.match(source, /private const string UpdaterVersion = "1\.1\.4";/);
+assert.match(source, /private static readonly string UpdaterVersion = ReadOwnVersion\(\);/,
+    'the host version must come from the compiled assembly, never a second constant');
+assert.match(projectSource, /<Version>\d+\.\d+\.\d+<\/Version>/, 'MovieListUpdater.csproj owns the updater version');
+assert.match(source, /if \(HubWindow\.IsRuntimeAvailable\(\)\) Application\.Run\(new HubWindow\(\)\);/,
+    'setup opens the styled hub and keeps the plain form as the WebView2 fallback');
+assert.match(source, /"abandon" => Abandon\(request\)/, 'a reload into another folder must be able to close its journal');
+assert.match(source, /IsComponentOperationRunning\(ReadComponentOperation\(\)\)/,
+    'only a running component worker may block extension updates');
 assert.match(projectSource, /<InvariantGlobalization>false<\/InvariantGlobalization>/);
 assert.match(source, /private const string SetupMutexName/);
 assert.match(source, /private const string RecoveryRunOnceName/);
@@ -59,8 +66,9 @@ assert.match(source, /VerifySignature\(Encoding\.UTF8\.GetBytes\(input\.Metadata
 assert.match(source, /RegisterNativeMessagingHost\("Microsoft\\\\Edge"/);
 assert.doesNotMatch(source, /\.backup-/i, 'the updater must not create persistent versioned backup directories');
 assert.doesNotMatch(source, /Восстановить предыдущую версию/, 'setup must not expose unavailable rollback');
-assert.match(metadataScript, /updaterVersionMatch/);
-assert.match(metadataScript, /minUpdaterVersion: updaterVersionMatch\[1\]/);
+assert.match(metadataScript, /const MIN_UPDATER_VERSION = '1\.1\.4';/,
+    'legacy metadata must carry the protocol floor, not the current updater release');
+assert.match(metadataScript, /minUpdaterVersion: MIN_UPDATER_VERSION/);
 assert.match(metadataScript, /firebaseAssetUrl/);
 assert.match(metadataScript, /assetUrls:/);
 assert.match(source, /AssetUrls/);

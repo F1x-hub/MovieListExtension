@@ -39,6 +39,7 @@
     let activeCheckDidFetch = false;
     let reloadScheduled = false;
     const DIAGNOSTIC_PREFIX = 'update_diagnostic_';
+    const MEDIA_PLAYER_PORT_KEY = 'mediaPlayerServicePort';
     const RELOAD_MISMATCH_CODE = 'RELOAD_VERSION_MISMATCH';
 
     function diagnostic(event, details = {}) {
@@ -160,7 +161,10 @@
     }
 
     function defaultSettings() {
-        return { autoUpdateEnabled: true, componentAutoUpdateEnabled: { updater: false, mediaPlayerSuite: false } };
+        // The extension decides when components update; the hub applies them.
+        // Suite updates still run only through the maintenance broker, never
+        // through a surprise Windows elevation prompt.
+        return { autoUpdateEnabled: true, componentAutoUpdateEnabled: { updater: true, mediaPlayerSuite: true } };
     }
 
     async function updateSettings(change) {
@@ -263,9 +267,17 @@
             operationId: patch.operationId, availableVersion: patch.availableVersion,
             requiresConfirmation: patch.requiresConfirmation,
             playbackReasons: Array.isArray(patch.playbackReasons) ? patch.playbackReasons : undefined });
-        const { state } = await readState();
-        const next = { ...state, ...patch };
-        await chrome.storage.local.set({ [STATE_KEY]: next });
+        // The service worker and settings pages run separate UpdateService
+        // instances; an unlocked read-merge-write lost concurrent patches.
+        const merge = async () => {
+            const { state } = await readState();
+            const merged = { ...state, ...patch };
+            await chrome.storage.local.set({ [STATE_KEY]: merged });
+            return merged;
+        };
+        const next = typeof global.navigator?.locks?.request === 'function'
+            ? await global.navigator.locks.request(STATE_KEY, merge)
+            : await merge();
         try {
             const notification = chrome.runtime.sendMessage({ type: 'UPDATE_STATE_CHANGED', state: next });
             notification?.catch?.(() => {});
@@ -312,6 +324,16 @@
                 resolve(response);
             });
         });
+    }
+
+    // Tells the host to close a journal waiting for a reload that loaded another
+    // folder; otherwise the host keeps it active and rejects every later update.
+    async function abandonOperation(operationId) {
+        try {
+            await nativeMessage({ action: 'abandon', operationId, reason: RELOAD_MISMATCH_CODE });
+        } catch (error) {
+            diagnostic('abandon_failed', { errorCode: error?.message });
+        }
     }
 
     function isExpectedMetadata(metadata) {
@@ -511,11 +533,20 @@
                 componentCapabilities: response.componentCapabilities || null,
                 componentInventory: response.components || null
             });
+            await syncMediaPlayerPort(response.components?.mediaPlayerSuite?.port);
             return response;
         } catch (error) {
             await writeState({ configured: false, updaterVersion: null });
             throw error;
         }
+    }
+
+    // MediaPlayerService reads this when it was not given an explicit URL, so a
+    // Suite configured with another PORT is still reached.
+    async function syncMediaPlayerPort(port) {
+        if (!Number.isInteger(port) || port < 1 || port > 65535) return;
+        const stored = await chrome.storage.local.get([MEDIA_PLAYER_PORT_KEY]);
+        if (stored[MEDIA_PLAYER_PORT_KEY] !== port) await chrome.storage.local.set({ [MEDIA_PLAYER_PORT_KEY]: port });
     }
 
     async function inspectPlaybackSafety() {
@@ -640,11 +671,12 @@
                 // the old version: the host replaced a different folder than the
                 // one Chrome loaded. Reloading again would loop forever.
                 clearOperationAlarm();
+                await abandonOperation(operation.operationId);
                 await writeState({
                     status: 'failed',
                     operationId: operation.operationId,
                     errorCode: RELOAD_MISMATCH_CODE,
-                    errorMessage: 'Chrome still runs the old version after reload. Run MovieListSetup.exe and select the folder loaded in Chrome.'
+                    errorMessage: 'Chrome still runs the old version after reload. Open MovieList Hub and select the folder loaded in Chrome.'
                 });
             } else {
                 await writeState({ reloadOperationId: operation.operationId });
@@ -691,11 +723,12 @@
             if (hostStatus.operation?.status === 'awaiting_confirmation'
                 && state.reloadOperationId === hostStatus.operation.operationId
                 && hostStatus.operation.version !== chrome.runtime.getManifest().version) {
+                await abandonOperation(hostStatus.operation.operationId);
                 return writeState({
                     status: 'failed',
                     operationId: hostStatus.operation.operationId,
                     errorCode: RELOAD_MISMATCH_CODE,
-                    errorMessage: 'Chrome still runs the old version after reload. Run MovieListSetup.exe and select the folder loaded in Chrome.'
+                    errorMessage: 'Chrome still runs the old version after reload. Open MovieList Hub and select the folder loaded in Chrome.'
                 });
             }
             if (isOperationPending(hostStatus.operation)) {
@@ -757,10 +790,15 @@
             clearOperationAlarm();
             if (error?.message === 'UPDATE_IN_PROGRESS') {
                 const response = await syncNativeOperation().catch(() => null);
-                if (response?.operation?.operationId) {
+                // Adopt only a host operation that is really in flight. A finished
+                // journal from an earlier update would otherwise be reported as
+                // "installing" and then "succeeded" although nothing was installed.
+                const hostOperation = response?.operation;
+                if (hostOperation?.operationId
+                    && (isOperationPending(hostOperation) || hostOperation.status === 'awaiting_confirmation')) {
                     return writeState({
                         status: 'installing',
-                        operationId: response.operation.operationId,
+                        operationId: hostOperation.operationId,
                         errorCode: null,
                         errorMessage: null
                     });
@@ -768,7 +806,7 @@
             }
             return writeState({
                 status: 'failed',
-                errorCode: 'APPLY_FAILED',
+                errorCode: error?.message === 'UPDATE_IN_PROGRESS' ? 'UPDATE_BLOCKED' : 'APPLY_FAILED',
                 errorMessage: error.message || 'UPDATE_APPLY_FAILED'
             });
         }
@@ -883,6 +921,8 @@
     async function syncComponentOperation(response) {
         const operation = response.componentOperation;
         if (!COMPONENT_IDS.includes(operation?.componentId) || !operation.operationId) return;
+        // A dismissed journal leaves the status to the next inventory check.
+        if (operation.status === 'dismissed') return;
         const { state } = await readState();
         const previous = state.components?.[operation.componentId];
         if (previous?.operationId && previous.operationId !== operation.operationId
@@ -955,6 +995,7 @@
                 await writeComponent(id, { currentVersion: current, installed: inventory?.installed,
                     availableVersion: descriptor && current && compareVersions(descriptor.version, current) > 0 ? descriptor.version : null,
                     status, errorCode, brokerAvailable: inventory?.brokerAvailable === true,
+                    layoutValid: inventory?.layoutValid !== false,
                     apiMajor: inventory?.apiMajor ?? null, buildId: inventory?.buildId || null });
             }
             if (!interactive) {
@@ -972,7 +1013,7 @@
         }
     }
 
-    async function applyComponent(componentId, { automatic = false } = {}) {
+    async function applyComponent(componentId, { automatic = false, install = false } = {}) {
         if (!COMPONENT_IDS.includes(componentId)) throw new Error('COMPONENT_ID_INVALID');
         const snapshot = await readState();
         const envelope = snapshot.state.componentCatalog;
@@ -986,6 +1027,19 @@
             if (host.componentCapabilities?.protocolVersion !== 1) return writeComponent(componentId,
                 { status: 'setup_required', errorCode: 'UPDATER_COMPONENT_SETUP_REQUIRED' });
             const inventory = host.components?.[componentId];
+            // An explicit install also repairs damaged or legacy (unversioned)
+            // Suites through the full interactive Setup started by the hub.
+            const needsFullSetup = componentId === 'mediaPlayerSuite' && (inventory?.installed === false
+                || inventory?.layoutValid === false || (inventory?.installed === true && !normalizeVersion(inventory.version)));
+            if (install && needsFullSetup && !automatic) {
+                if (host.componentCapabilities?.mediaPlayerInstall !== true)
+                    return writeComponent(componentId, { status: 'setup_required', errorCode: 'UPDATER_UPGRADE_REQUIRED' });
+                const operationId = crypto.randomUUID();
+                const response = await nativeMessage({ action: 'apply_component', componentId, operationId, install: true,
+                    metadataText: envelope.metadataText, signature: envelope.signature });
+                createOperationAlarm();
+                return writeComponent(componentId, { status: response.status || 'queued', operationId: response.operationId || operationId, errorCode: null });
+            }
             if (componentId === 'mediaPlayerSuite' && inventory?.installed === false)
                 return writeComponent(componentId, { status: 'absent', installed: false, errorCode: 'SUITE_NOT_INSTALLED' });
             if (inventory?.installed !== true || !normalizeVersion(inventory.version))
@@ -1015,6 +1069,19 @@
         } catch (error) {
             return writeComponent(componentId, { status: 'failed', errorCode: error.message || 'COMPONENT_APPLY_FAILED' });
         }
+    }
+
+    async function dismissComponentOperation(componentId) {
+        if (!COMPONENT_IDS.includes(componentId)) throw new Error('COMPONENT_ID_INVALID');
+        const { state } = await readState();
+        const operationId = state.components?.[componentId]?.operationId;
+        if (!operationId) return state;
+        try {
+            await nativeMessage({ action: 'dismiss_component', operationId });
+        } catch (error) {
+            return writeComponent(componentId, { errorCode: error.message || 'DISMISS_FAILED' });
+        }
+        return checkComponentUpdates({ force: true, interactive: true });
     }
 
     async function setComponentAutoUpdateEnabled(componentId, enabled) {
@@ -1058,6 +1125,8 @@
     global.UpdateService = {
         checkComponentUpdates,
         applyComponent,
+        installComponent: (componentId) => applyComponent(componentId, { automatic: false, install: true }),
+        dismissComponentOperation,
         setComponentAutoUpdateEnabled,
         inspectPlaybackSafety,
         exportDiagnostics,

@@ -1,8 +1,14 @@
 # Windows updater release
 
-The extension is distributed as an unpacked Chrome installation. The first setup
-requires `MovieListSetup.exe` and one manual Chrome **Load unpacked** action. Later
-versions are downloaded and installed by the updater after a safe playback check.
+The extension is distributed as an unpacked Chrome installation. Users download only
+`MovieListSetup.exe` (MovieList Hub). On first run the hub downloads the latest signed
+extension release, validates its signature, size, SHA-256, archive paths and manifest
+key, installs it and registers the Native Messaging host; Chrome still needs one manual
+**Load unpacked** action because it does not let programs add unpacked extensions.
+Later versions are found by the extension and installed by the hub after a safe
+playback check. The hub window (`--setup`, Start-menu shortcut) uses WebView2 and the
+extension's `src/shared/styles/theme.css` and `tokens.css`, embedded at build time;
+without the WebView2 runtime the plain WinForms connection form opens.
 Settings also expose a manual action that uses the same signed production path as
 automatic updates. It never accepts a path from the UI and never installs a release
 that is equal to or older than the installed version.
@@ -21,6 +27,14 @@ rollback and is not a permanent startup process. If Windows or the browser stops
 mid-replacement, the next user logon can restore the previous extension folder;
 when restoration is impossible, the updater reports `RECOVERY_REQUIRED` and blocks
 another replacement until the journal is repaired.
+
+`native-host/Updater/MovieListUpdater.csproj` `<Version>` is the only updater version
+source: the host reads it from its assembly, and `generate-component-metadata.js`
+parses it to validate the built probe. Running a newer hub replaces the permanent
+`%LOCALAPPDATA%\MovieListExtensionUpdater\MovieListUpdater.exe` once (never a
+downgrade). Signed `update.json` and the component catalog carry the protocol floor
+`minUpdaterVersion` 1.1.4, not the current updater version; raising it forces every
+user through a manual Setup run, so change it only for a real protocol break.
 
 The hardened updater requires MovieListSetup.exe version 1.1.4 or newer. A user
 who already connected an older Setup must run the current Setup once, select the same
@@ -137,7 +151,15 @@ disable that feed. Component checks run even when the extension is current.
 The API-v1 compatibility floor remains 1.1.4 independently of newer updater
 patch versions; change that floor only for a real protocol compatibility change.
 
-Settings expose independent updater and Suite auto-update opt-ins, initially off.
+Settings expose independent updater and Suite automatic-update switches, on by default.
+The extension decides when to update; the hub applies the signed component. An absent,
+damaged or unversioned Suite is installed or repaired only on an explicit user action
+(hub **Установить медиаплеер** / **Восстановить установку**, or Settings
+**Установить**): the hub downloads the signed Setup and starts its interactive wizard,
+which elevates itself and keeps the original user. A component journal in
+`recovery_required` never blocks extension updates; a new explicit attempt or
+**Сбросить ошибку** (`dismiss_component`) replaces it. An extension swap that Chrome
+does not activate is closed by the extension (`abandon`) or expires after 24 hours.
 The native updater inventories the exact HKLM-registered Suite and committed
 `current/suite-version.json`; missing Suites are skipped and unknown legacy
 versions require a one-time full manual Setup. Current MovieListSetup upgrades a

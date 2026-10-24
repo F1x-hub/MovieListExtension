@@ -1692,9 +1692,26 @@ document.addEventListener('DOMContentLoaded', async () => {
                 auto.checked = !absent && componentUpdateSettings[id] === true;
                 auto.disabled = absent || !supported || (!autoAllowed && !auto.checked) || busy;
             }
+            // The hub installs or repairs the Suite from the signed catalog; a
+            // legacy installation without a version marker needs the full Setup.
+            const needsFullSetup = id === 'mediaPlayerSuite' && (absent || component.layoutValid === false
+                || (installed && !version) || status === 'migration_required');
+            const canInstall = needsFullSetup && capabilities?.mediaPlayerInstall === true
+                && Boolean(snapshot.componentCatalog?.metadata?.components?.mediaPlayerSuite);
+            const install = card.querySelector('[data-component-install]');
+            if (install) {
+                install.hidden = !canInstall;
+                install.disabled = busy;
+                install.textContent = componentUpdateMessage(absent ? 'install' : 'repair');
+            }
+            const dismiss = card.querySelector('[data-component-dismiss]');
+            if (dismiss) {
+                dismiss.hidden = status !== 'failed' || !component.operationId || capabilities?.dismissComponent !== true;
+                dismiss.disabled = busy;
+            }
             const setup = card.querySelector('[data-component-setup]');
             if (setup) {
-                setup.hidden = !setupRequired || !componentSetupUrls[id] || busy || absent;
+                setup.hidden = !setupRequired || !componentSetupUrls[id] || busy || absent || canInstall;
                 if (!setup.hidden) setup.href = componentSetupUrls[id];
                 else setup.removeAttribute('href');
             }
@@ -1761,6 +1778,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         card.querySelector('[data-component-apply]')?.addEventListener('click', (event) => {
             if (event.currentTarget.disabled) return;
             void runComponentUpdateAction(() => globalThis.UpdateService.applyComponent(id, { automatic: false }));
+        });
+        card.querySelector('[data-component-install]')?.addEventListener('click', (event) => {
+            if (event.currentTarget.disabled) return;
+            void runComponentUpdateAction(() => globalThis.UpdateService.installComponent(id));
+        });
+        card.querySelector('[data-component-dismiss]')?.addEventListener('click', (event) => {
+            if (event.currentTarget.disabled) return;
+            void runComponentUpdateAction(() => globalThis.UpdateService.dismissComponentOperation(id));
         });
         card.querySelector('[data-component-auto]')?.addEventListener('change', (event) => {
             const enabled = event.currentTarget.checked;

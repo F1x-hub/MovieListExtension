@@ -12,9 +12,10 @@ const updaterSource = fs.readFileSync(
     path.join(root, 'native-host', 'Updater', 'Program.cs'),
     'utf8'
 );
-const updaterVersionMatch = updaterSource.match(
-    /private const string UpdaterVersion = "(\d+\.\d+\.\d+)";/
-);
+// Native protocol compatibility floor, not the current updater release: raising
+// it forces every installation through a manual Setup run. Change it only for a
+// real protocol break (the component catalog uses the same floor).
+const MIN_UPDATER_VERSION = '1.1.4';
 
 if (!privateKey) {
     throw new Error('UPDATE_SIGNING_PRIVATE_KEY is required to create a signed release.');
@@ -25,7 +26,6 @@ const embeddedPublicKeyMatch = updaterSource.match(
     /private const string ReleasePublicKey = """([\s\S]*?)""";/
 );
 if (!embeddedPublicKeyMatch) throw new Error('Embedded updater public key is missing.');
-if (!updaterVersionMatch) throw new Error('Updater version is missing.');
 
 const normalizePem = (value) => value.replace(/\s+/g, '');
 const embeddedPublicKey = embeddedPublicKeyMatch[1].trim();
@@ -56,7 +56,7 @@ const metadata = {
     ],
     sha256: crypto.createHash('sha256').update(asset).digest('hex'),
     size: asset.length,
-    minUpdaterVersion: updaterVersionMatch[1],
+    minUpdaterVersion: MIN_UPDATER_VERSION,
     publishedAt: new Date().toISOString()
 };
 const metadataText = `${JSON.stringify(metadata, null, 2)}\n`;

@@ -82,8 +82,18 @@ movie-rating-extension/
   and a ten-minute total deadline. Failed checks are displayed in settings.
   every state reconciliation triggers activation and polling ends after confirmation.
   Component checks use the independently signed `components.json` catalog even
-  when the extension is current. Updater/Suite auto-updates are separate opt-ins;
-  Suite inventory must prove an existing installation. A one-time full Suite Setup
+  when the extension is current. Updater/Suite automatic updates are separate
+  switches, on by default; the extension decides when, the host applies. Silent
+  Suite upgrades require proof of an existing installation; an absent or
+  unversioned Suite is installed only on an explicit request (`install: true`)
+  through its interactive Setup. Component `recovery_required` never blocks
+  extension updates; `abandon` and a 24-hour expiry close unactivated swaps.
+- **MovieList Hub**: `MovieListSetup.exe` (`native-host/Updater`) is the single
+  user download. `HubWindow` hosts embedded `Hub/` HTML in WebView2 on a private
+  origin and reuses the extension's `theme.css`/`tokens.css` as resources; it
+  installs the first signed extension release, connects folders and starts
+  component installs. `MovieListUpdater.csproj` `<Version>` is the only updater
+  version source; signed feeds keep the 1.1.4 `minUpdaterVersion` protocol floor. A one-time full Suite Setup
   provisions the original-owner named-pipe broker as SYSTEM; it accepts signed
   fixed-component descriptors, never caller paths/commands. LocalService only
   writes a pre-created maintenance readiness file. Runtime activation checks the
