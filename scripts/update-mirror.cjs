@@ -22,6 +22,18 @@ async function request(url, options = {}) {
     return response;
 }
 
+async function verifyPublished(metadata) {
+    const fresh = { cache: 'no-store' };
+    const deployed = await (await request(origin + 'update.json', fresh)).text();
+    if (deployed !== fs.readFileSync('update.json', 'utf8')) throw new Error('Published metadata differs');
+    const zip = Buffer.from(await (await request(origin + 'MovieList-extension-latest.zip', fresh)).arrayBuffer());
+    if (crypto.createHash('sha256').update(zip).digest('hex') !== metadata.sha256) throw new Error('Published ZIP differs');
+    for (const file of ['update.json.sig']) {
+        const bytes = Buffer.from(await (await request(origin + file, fresh)).arrayBuffer());
+        if (!bytes.equals(fs.readFileSync(file))) throw new Error(`Published ${file} differs`);
+    }
+}
+
 async function main(mode) {
     const metadata = JSON.parse(fs.readFileSync('update.json', 'utf8'));
     if (mode === 'prepare') {
@@ -42,13 +54,18 @@ async function main(mode) {
             fs.copyFileSync(source, path.join(output, target));
         }
     } else if (mode === 'verify-cleanup') {
-        const deployed = await (await request(origin + 'update.json')).text();
-        if (deployed !== fs.readFileSync('update.json', 'utf8')) throw new Error('Published metadata differs');
-        const zip = Buffer.from(await (await request(origin + 'MovieList-extension-latest.zip')).arrayBuffer());
-        if (crypto.createHash('sha256').update(zip).digest('hex') !== metadata.sha256) throw new Error('Published ZIP differs');
-        for (const file of ['update.json.sig']) {
-            const bytes = Buffer.from(await (await request(origin + file)).arrayBuffer());
-            if (!bytes.equals(fs.readFileSync(file))) throw new Error(`Published ${file} differs`);
+        // The CDN can serve the previous release for a few seconds after a
+        // finalized deploy; retry for about a minute before declaring a mismatch.
+        const attempts = Number(process.env.MIRROR_VERIFY_ATTEMPTS) || 12;
+        const delayMs = process.env.MIRROR_VERIFY_DELAY_MS === undefined ? 5000 : Number(process.env.MIRROR_VERIFY_DELAY_MS);
+        for (let attempt = 1; ; attempt += 1) {
+            try {
+                await verifyPublished(metadata);
+                break;
+            } catch (error) {
+                if (attempt >= attempts || !/differs/.test(error.message)) throw error;
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+            }
         }
         if (!process.env.GOOGLE_ACCESS_TOKEN) throw new Error('Missing Hosting access token');
         const headers = { Authorization: `Bearer ${process.env.GOOGLE_ACCESS_TOKEN}`, 'Content-Type': 'application/json' };

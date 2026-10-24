@@ -33,6 +33,8 @@ const originalTag = process.env.GITHUB_REF_NAME;
     const active = 'sites/movielistdb-13208-updates/versions/active';
     const previous = 'sites/movielistdb-13208-updates/versions/previous';
     const deleted = [];
+    let staleReads = 0;
+    process.env.MIRROR_VERIFY_DELAY_MS = '0';
     const originalToken = process.env.GOOGLE_ACCESS_TOKEN;
     process.env.GOOGLE_ACCESS_TOKEN = 'test-only';
     global.fetch = async (url, options = {}) => {
@@ -44,12 +46,16 @@ const originalTag = process.env.GITHUB_REF_NAME;
             { name: 'sites/movielistdb-13208-updates/versions/pending', status: 'CREATED' }
         ] }) };
         const file = url.split('/').pop();
+        // The first two reads of update.json return the previous release, as a
+        // CDN does right after a deploy.
+        if (file === 'update.json' && (staleReads += 1) <= 2) return { ok: true, text: async () => '{"version":"1.3.2"}' };
         const content = file.endsWith('.zip') ? bytes : fs.readFileSync(file);
         return { ok: true, text: async () => content.toString(), arrayBuffer: async () => content };
     };
     try {
         await main('verify-cleanup');
         assert.deepEqual(deleted, ['https://firebasehosting.googleapis.com/v1beta1/' + previous]);
+        assert.equal(staleReads, 3, 'verification must retry while the CDN still serves the previous release');
     } finally {
         if (originalToken === undefined) delete process.env.GOOGLE_ACCESS_TOKEN;
         else process.env.GOOGLE_ACCESS_TOKEN = originalToken;

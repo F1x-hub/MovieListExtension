@@ -444,6 +444,15 @@ keeps npm-compatible three-component semver metadata.
 
 </details>
 
+<details open>
+<summary><strong>Unreleased</strong></summary>
+
+### Fixes
+
+- Release: the update-mirror check retries for about a minute while Firebase Hosting still serves the previous release right after a deploy, instead of failing the release with «Published metadata differs» (it stopped the first v1.4.3 run after the mirror was already deployed).
+
+</details>
+
 <details>
 <summary><strong>1.4.3</strong> — service definitions on upgrade, hub restart after self-update</summary>
 
