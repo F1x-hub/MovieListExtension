@@ -1309,7 +1309,7 @@ export const locales = {
             states: {
                 ready_title: "Ready to roll?",
                 ready_subtitle: "Configure filters to your mood",
-                roll_again: "Roll again",
+                roll_again_title: "Find another movie",
                 roll_btn: "Find Movie",
                 searching: "Searching specifically for you...",
                 no_movie: "No movie found with these criteria.",
@@ -3076,7 +3076,7 @@ export const locales = {
             states: {
                 ready_title: "Готовы к броску?",
                 ready_subtitle: "Настройте фильтры под настроение",
-                roll_again: "Ещё раз",
+                roll_again_title: "Найти другой фильм",
                 roll_btn: "Найти фильм",
                 searching: "Ищем специально для вас...",
                 no_movie: "Фильм по таким критериям не найден.",

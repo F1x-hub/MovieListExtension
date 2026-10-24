@@ -734,7 +734,8 @@ class RandomManager {
             
             // Inject Add-to-Pool FAB over poster
             this._injectPoolFab(card, movie);
-            this._appendRollAgainButton();
+            this._applyResultPoster(card, movie);
+            this._labelReloadShortcut(card);
 
             // Setup delegation for any interactive elements
             this.setupCardDelegation();
@@ -746,7 +747,7 @@ class RandomManager {
                 this._stopPosterSpinning();
                 
                 // 2. Focus on actual movie poster
-                skeletonPoster.src = getSafePosterUrl(movie.posterUrl) || DEFAULT_SPINNER_POSTER;
+                skeletonPoster.src = getMarathonPosterUrls(movie.posterUrl, movie.id ?? movie.kinopoiskId)[0] || DEFAULT_SPINNER_POSTER;
                 skeletonPoster.classList.remove('spinning');
                 
                 // 3. Wait for blur-out transition (350ms in CSS)
@@ -799,20 +800,48 @@ class RandomManager {
         this._syncPoolFab();
     }
     
-    /** Visible "roll again" under the result; it reuses the card's `reload` action. */
-    _appendRollAgainButton() {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'btn random-again-btn';
-        button.dataset.action = 'reload';
-        const label = document.createElement('span');
-        label.textContent = this._stateText('roll_again');
-        const hint = document.createElement('kbd');
-        hint.className = 'random-again-key';
-        hint.textContent = 'R';
-        button.setAttribute('aria-keyshortcuts', 'R');
-        button.append(label, hint);
-        this.elements.movieResult.append(button);
+    /**
+     * The card's poster falls back to its small app icon when the API URL is
+     * missing or fails PosterUrl's host check. Try the Kinopoisk poster by ID next
+     * (as the marathon does) and report a rejected host once so it can be reviewed.
+     */
+    _applyResultPoster(card, movie) {
+        const image = card.querySelector('.cmc-poster');
+        if (!image) return;
+        const movieId = movie?.id ?? movie?.kinopoiskId;
+        const urls = getMarathonPosterUrls(movie?.posterUrl, movieId);
+        const raw = typeof movie?.posterUrl === 'string' ? movie.posterUrl.trim() : '';
+        if (raw && !getSafePosterUrl(raw)) {
+            let host = raw;
+            try { host = new URL(raw.startsWith('//') ? `https:${raw}` : raw).hostname; } catch { /* keep raw */ }
+            if (!this._reportedPosterHosts?.has(host)) {
+                (this._reportedPosterHosts ||= new Set()).add(host);
+                console.warn('[Random] Poster host not allowed by PosterUrl, using the Kinopoisk fallback:', host);
+            }
+        }
+        if (!urls.length) return;
+        // MovieCard's own placeholder when no URL is usable.
+        const fallback = '/src/shared/assets/icons/app/icon48.png';
+        let index = 0;
+        image.addEventListener('error', function next() {
+            index += 1;
+            if (index < urls.length) image.src = urls[index];
+            else {
+                image.removeEventListener('error', next);
+                if (fallback) image.src = fallback;
+            }
+        });
+        image.src = urls[0];
+    }
+
+    /** The card's own reload button is the roll-again control; it announces the R shortcut. */
+    _labelReloadShortcut(card) {
+        const reload = card.querySelector('.cmc-reload-btn');
+        if (!reload) return;
+        const label = `${this._stateText('roll_again_title')} (R)`;
+        reload.title = label;
+        reload.setAttribute('aria-label', label);
+        reload.setAttribute('aria-keyshortcuts', 'R');
     }
 
     /** "R" rolls again (any layout: matched by physical key) unless typing or a dialog is open. */
