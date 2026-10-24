@@ -74,7 +74,10 @@ xwIDAQAB
         if (setupRequested)
         {
             using var setupMutex = new Mutex(false, SetupMutexName);
-            if (!TryAcquireOperationMutex(setupMutex))
+            // A restart after self-update starts before the previous window has
+            // closed; give it a moment to release the single-window lock.
+            var afterUpdate = args.Any(arg => string.Equals(arg, "--after-update", StringComparison.OrdinalIgnoreCase));
+            if (!(afterUpdate ? WaitForOperationMutex(setupMutex, TimeSpan.FromSeconds(15)) : TryAcquireOperationMutex(setupMutex)))
             {
                 MessageBox.Show(
                     "MovieList Hub уже открыт.",
@@ -1073,6 +1076,18 @@ xwIDAQAB
         catch
         {
             // A stale one-shot entry is harmless; the next host status retries cleanup.
+        }
+    }
+
+    private static bool WaitForOperationMutex(Mutex mutex, TimeSpan timeout)
+    {
+        try
+        {
+            return mutex.WaitOne(timeout);
+        }
+        catch (AbandonedMutexException)
+        {
+            return true;
         }
     }
 

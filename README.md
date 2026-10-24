@@ -7,7 +7,7 @@ series, cartoons, and anime.
 
 <p>
   <img src="https://img.shields.io/badge/MANIFEST-V3-1687c9?style=flat-square&logo=googlechrome&logoColor=white" alt="Manifest V3">
-  <img src="https://img.shields.io/badge/VERSION-1.4.2-69b500?style=flat-square" alt="Version 1.4.2">
+  <img src="https://img.shields.io/badge/VERSION-1.4.3-69b500?style=flat-square" alt="Version 1.4.3">
   <img src="https://img.shields.io/badge/JAVASCRIPT-ES6%2B-f0d000?style=flat-square&logo=javascript&logoColor=111827" alt="JavaScript ES6+">
   <img src="https://img.shields.io/badge/VANILLA-ES6%2B-e2c400?style=flat-square" alt="Vanilla ES6+">
   <img src="https://img.shields.io/badge/AUTHOR-FIX-f47721?style=flat-square" alt="Author Fix">
@@ -441,6 +441,16 @@ keeps npm-compatible three-component semver metadata.
 ### Fixes
 
 - Telegram announcements: the bot uploads supported posters from trusted image hosts and falls back to text when a poster is unavailable or rejected. Escape movie text and bound message/caption lengths to prevent formatting and length errors. Both local and Vercel handlers share the sender. This backend change requires a separate bot deployment.
+
+</details>
+
+<details>
+<summary><strong>1.4.3</strong> — service definitions on upgrade, hub restart after self-update</summary>
+
+### Fixes
+
+- MediaPlayer Suite 0.1.3 applies service wrapper changes on upgrades: an existing installation now gets the MediaPlayer service XML rewritten from the release template when it differs, and FlareSolverr's definition refreshed (and the service restarted when running). Before, upgrades kept the original XML, so the 0.1.2 midnight log-rotation fix reached only clean installs and migrations.
+- MovieList Hub offers «Перезапустить хаб» after it updates itself: the running window keeps the previous version in memory, so it now shows «Обновлён до …» and restarts into the installed copy, which waits briefly for the old window to release the single-window lock.
 
 </details>
 

@@ -15,7 +15,7 @@
     <Product>MovieList Hub</Product>
     <!-- The only updater version source: the host reads it from its assembly and
          release scripts parse this element. -->
-    <Version>1.2.1</Version>
+    <Version>1.2.2</Version>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
   <ItemGroup>
