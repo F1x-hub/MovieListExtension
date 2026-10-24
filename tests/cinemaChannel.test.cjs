@@ -124,3 +124,81 @@ test('schedule rules: anyone reads planned shows, only admins plan them', () => 
     const rules = fs.readFileSync(path.join(__dirname, '../rules/firestore.rules'), 'utf8');
     assert.match(rules, /match \/cinemaSchedule\/\{itemId\} \{\s*allow read: if true;\s*allow create, update: if isAdmin\(\)/);
 });
+
+test('CinemaChannelService.control updates pause, seek, and resume for YouTube VOD and rejects live streams', async () => {
+    const { CinemaChannelService } = require('../src/shared/services/CinemaChannelService.js');
+    const prevFirebase = global.firebase;
+    global.firebase = {
+        firestore: {
+            FieldValue: { serverTimestamp: () => 'SERVER_TS' }
+        }
+    };
+    try {
+        const writes = [];
+        let docState = {
+            mode: 'youtube',
+            title: 'Клип',
+            startedAt: new Date(Date.now() - 30_000),
+            youtube: { videoId: 'dQw4w9WgXcQ', live: false, durationSec: 200, pausedAtSec: null }
+        };
+        const makeRef = docPath => ({
+            async set(patch, opts) {
+                writes.push({ docPath, patch, opts });
+                docState = { ...docState, ...patch };
+            }
+        });
+        const manager = {
+            getCurrentUser: () => ({ uid: 'admin-1' }),
+            db: {
+                collection(name) {
+                    return {
+                        doc(id) {
+                            return makeRef(`${name}/${id}`);
+                        }
+                    };
+                }
+            }
+        };
+        const service = new CinemaChannelService(manager);
+
+        // 1. Pause clamps to durationSec - 5 when durationSec is known.
+        await service.control(normalizeChannel(docState), 'pause', { offsetSec: 199 });
+        assert.equal(docState.youtube.pausedAtSec, 195);
+        assert.equal(writes.at(-1).docPath, 'settings/cinemaChannel');
+
+        // 2. Seek while paused moves pausedAtSec without unpausing.
+        const prevStartedAt = docState.startedAt;
+        await service.control(normalizeChannel(docState), 'seek', { offsetSec: 84 });
+        assert.equal(docState.youtube.pausedAtSec, 84);
+        assert.equal(docState.startedAt, prevStartedAt);
+
+        // 3. Resume clears pausedAtSec and anchors startedAt to offsetSec.
+        await service.control(normalizeChannel(docState), 'resume', { offsetSec: 84 });
+        assert.equal(docState.youtube.pausedAtSec, null);
+        const resumedPos = computePosition(normalizeChannel(docState));
+        assert.equal(resumedPos.state, 'live');
+        assert.ok(Math.abs(resumedPos.offsetSec - 84) <= 2);
+
+        // 4. Seek while live keeps pausedAtSec: null and shifts startedAt.
+        await service.control(normalizeChannel(docState), 'seek', { offsetSec: 140 });
+        assert.equal(docState.youtube.pausedAtSec, null);
+        const seekedPos = computePosition(normalizeChannel(docState));
+        assert.equal(seekedPos.state, 'live');
+        assert.ok(Math.abs(seekedPos.offsetSec - 140) <= 2);
+
+        // 5. Scheduled YouTube item writes to cinemaSchedule/{id}.
+        const scheduled = normalizeChannel(docState, { id: 'slot-1', docPath: 'cinemaSchedule/slot-1', scheduled: true });
+        await service.control(scheduled, 'pause', { offsetSec: 50 });
+        assert.equal(writes.at(-1).docPath, 'cinemaSchedule/slot-1');
+
+        // 6. Live YouTube streams cannot be paused or seeked.
+        const liveStream = normalizeChannel({
+            mode: 'youtube',
+            startedAt: new Date(),
+            youtube: { videoId: 'dQw4w9WgXcQ', live: true, durationSec: 0, pausedAtSec: null }
+        });
+        await assert.rejects(() => service.control(liveStream, 'seek', { offsetSec: 10 }), /Прямую трансляцию/);
+    } finally {
+        global.firebase = prevFirebase;
+    }
+});

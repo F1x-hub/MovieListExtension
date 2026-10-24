@@ -91,7 +91,7 @@
             ui.nowTitle.textContent = channel.title || (channel.mode === 'youtube' ? 'Видео YouTube' : `Фильм #${channel.movie.kinopoiskId}`);
             ui.nowState.textContent = position.state === 'ended' ? 'Показ завершён' : position.state === 'paused' ? 'Пауза' : 'В эфире';
             const source = channel.mode === 'youtube' ? (live ? 'YouTube · прямая трансляция' : 'YouTube') : 'Фильм';
-            const total = channel.movie?.durationSec;
+            const total = channel[channel.mode]?.durationSec;
             const clock = live || position.state === 'ended' ? ''
                 : position.state === 'paused'
                     ? ` · пауза на ${formatClock(position.offsetSec)}`
@@ -220,6 +220,7 @@
         ui.title.addEventListener('input', () => { titleTouched = ui.title.value.trim().length > 0; });
 
         // ---- YouTube: instant preview + title from oEmbed --------------------------
+        let lastYoutubeId = '';
         const updateYoutube = debounce(async () => {
             const raw = ui.ytInput.value.trim();
             const info = raw && typeof Utils !== 'undefined' ? Utils.extractYouTubeVideoInfo(raw) : null;
@@ -228,12 +229,18 @@
             ui.ytInput.setAttribute('aria-invalid', String(Boolean(raw) && !info));
             refreshStart();
             if (!info) {
+                lastYoutubeId = '';
                 if (raw) setStatus('Это не похоже на ссылку YouTube.', 'error');
                 return;
             }
             setStatus('');
             ui.ytThumb.src = `https://i.ytimg.com/vi/${encodeURIComponent(info.id)}/hqdefault.jpg`;
-            if (/youtube\.com\/live\//i.test(raw)) ui.ytLive.checked = true;
+            if (info.id !== lastYoutubeId) {
+                lastYoutubeId = info.id;
+                ui.ytLive.checked = /youtube\.com\/live\//i.test(raw);
+            } else if (/youtube\.com\/live\//i.test(raw)) {
+                ui.ytLive.checked = true;
+            }
             ui.ytName.textContent = 'Видео YouTube';
             try {
                 const response = await fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(`https://www.youtube.com/watch?v=${info.id}`)}`);

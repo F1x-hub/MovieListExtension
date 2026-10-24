@@ -275,6 +275,8 @@
 
             let ytPlayer = null;
             let timeUpdateInterval = null;
+            let lastReportedTime = startSec;
+            let lastPlayReportAt = 0;
 
             // Set direct YouTube watch link
             if (videoId) {
@@ -312,6 +314,7 @@
                         break;
                     case 'SEEK':
                         if (payload && typeof payload.seconds === 'number') {
+                            lastReportedTime = payload.seconds;
                             try { ytPlayer.seekTo(payload.seconds, true); } catch (_) {}
                         }
                         break;
@@ -364,6 +367,15 @@
 
             // Load YouTube IFrame API
             window.onYouTubeIframeAPIReady = function() {
+                const stateMap = {
+                    [-1]: 'UNSTARTED',
+                    [YT.PlayerState.ENDED]: 'ENDED',
+                    [YT.PlayerState.PLAYING]: 'PLAYING',
+                    [YT.PlayerState.PAUSED]: 'PAUSED',
+                    [YT.PlayerState.BUFFERING]: 'BUFFERING',
+                    [YT.PlayerState.CUED]: 'CUED'
+                };
+
                 ytPlayer = new YT.Player('player', {
                     videoId: videoId,
                     host: 'https://www.youtube-nocookie.com',
@@ -385,34 +397,46 @@
                                 duration: e.target.getDuration ? e.target.getDuration() : 0
                             });
 
-                            // Setup periodic progress telemetry
+                            // Setup periodic progress telemetry (including paused scrub detection)
                             timeUpdateInterval = setInterval(function() {
-                                if (ytPlayer && typeof ytPlayer.getCurrentTime === 'function') {
-                                    const state = ytPlayer.getPlayerState();
-                                    if (state === YT.PlayerState.PLAYING) {
-                                        emitToParent('TIME_UPDATE', {
-                                            currentTime: ytPlayer.getCurrentTime(),
-                                            duration: ytPlayer.getDuration()
-                                        });
-                                    }
+                                if (!ytPlayer || typeof ytPlayer.getCurrentTime !== 'function') return;
+                                const state = ytPlayer.getPlayerState();
+                                const currentTime = ytPlayer.getCurrentTime();
+                                const duration = ytPlayer.getDuration ? ytPlayer.getDuration() : 0;
+                                const now = Date.now();
+                                if (state === YT.PlayerState.PLAYING && now - lastPlayReportAt >= 950) {
+                                    lastPlayReportAt = now;
+                                    lastReportedTime = currentTime;
+                                    emitToParent('TIME_UPDATE', {
+                                        currentTime: currentTime,
+                                        duration: duration,
+                                        state: 'PLAYING'
+                                    });
+                                } else if (
+                                    (state === YT.PlayerState.PAUSED || state === YT.PlayerState.CUED)
+                                    && Number.isFinite(currentTime)
+                                    && Math.abs(currentTime - lastReportedTime) > 0.5
+                                ) {
+                                    lastReportedTime = currentTime;
+                                    emitToParent('TIME_UPDATE', {
+                                        currentTime: currentTime,
+                                        duration: duration,
+                                        state: stateMap[state] || 'PAUSED'
+                                    });
                                 }
-                            }, 1000);
+                            }, 500);
                         },
                         onStateChange: function(e) {
-                            const stateMap = {
-                                [-1]: 'UNSTARTED',
-                                [YT.PlayerState.ENDED]: 'ENDED',
-                                [YT.PlayerState.PLAYING]: 'PLAYING',
-                                [YT.PlayerState.PAUSED]: 'PAUSED',
-                                [YT.PlayerState.BUFFERING]: 'BUFFERING',
-                                [YT.PlayerState.CUED]: 'CUED'
-                            };
-
                             const stateName = stateMap[e.data] || 'UNKNOWN';
+                            const currentTime = ytPlayer && ytPlayer.getCurrentTime ? ytPlayer.getCurrentTime() : 0;
+                            if (Number.isFinite(currentTime)) {
+                                lastReportedTime = currentTime;
+                            }
                             emitToParent('STATE_CHANGE', {
                                 state: stateName,
                                 stateCode: e.data,
-                                currentTime: ytPlayer && ytPlayer.getCurrentTime ? ytPlayer.getCurrentTime() : 0
+                                currentTime: currentTime,
+                                duration: ytPlayer && ytPlayer.getDuration ? ytPlayer.getDuration() : 0
                             });
                         },
                         onError: function(e) {

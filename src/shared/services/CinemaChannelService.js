@@ -336,8 +336,8 @@
         }
 
         /**
-         * Admin timeline control for a running broadcast (movie: pause/resume/seek,
-         * YouTube video: seek). Moves `startedAt` so every viewer follows.
+         * Admin timeline control for a running broadcast (movie and non-live YouTube
+         * video: pause/resume/seek). Updates `pausedAtSec` / `startedAt` so every viewer follows.
          * @param {'pause'|'resume'|'seek'} action
          */
         async control(channel, action, { offsetSec = null } = {}) {
@@ -346,8 +346,8 @@
             const key = channel.mode;
             const media = channel[key];
             const position = computePosition(channel);
-            const duration = channel.movie?.durationSec || 0;
-            const clamp = sec => Math.max(0, duration > 0 ? Math.min(sec, duration - 5) : sec);
+            const duration = media?.durationSec || 0;
+            const clamp = sec => Math.max(0, duration > 0 ? Math.min(sec, Math.max(0, duration - 5)) : sec);
             const FieldValue = firebase.firestore.FieldValue;
             const user = this.firebaseManager.getCurrentUser?.();
             const data = { updatedAt: FieldValue.serverTimestamp(), updatedBy: user?.uid || '' };
@@ -364,6 +364,7 @@
                 if (Number.isFinite(media.pausedAtSec)) {
                     data[key] = { ...media, pausedAtSec: next };
                 } else {
+                    data[key] = { ...media, pausedAtSec: null };
                     data.startedAt = new Date(now() - next * 1000);
                 }
             } else {

@@ -441,6 +441,7 @@ keeps npm-compatible three-component semver metadata.
 ### Fixes
 
 - Telegram announcements: the bot uploads supported posters from trusted image hosts and falls back to text when a poster is unavailable or rejected. Escape movie text and bound message/caption lengths to prevent formatting and length errors. Both local and Vercel handlers share the sender. This backend change requires a separate bot deployment.
+- «Эфир» YouTube broadcast sync: admin pause, resume (across YouTube's `PAUSED` -> `BUFFERING` -> `PLAYING` transition), progress-bar clicks and drags, and paused seeks publish reliably to the shared channel timeline without dropping actions queued during an in-flight Firestore write, while viewers and passive secondary admin tabs pause, seek, and resume in place without seek loops or unmuted-autoplay deadlocks. The deployed `public/player/embed.html` wrapper also emits paused scrub updates so viewers align even while staying paused.
 
 </details>
 
