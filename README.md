@@ -252,7 +252,7 @@ component protocol and protected Suite maintenance service. See the
 
 | Command | Purpose |
 | --- | --- |
-| `npm run build` | Clean, copy, and minify the production bundle into `dist/` |
+| `npm run build` | Clean, copy, bundle Home's deferred scripts (`scripts/bundle-pages.js`), and minify the production build into `dist/` |
 | `npm run dev` | Build once and rebuild when source files change |
 | `npm run lint` | Run ESLint for source and content-script JavaScript |
 | `npm test` | Run the complete regression suite |
@@ -444,6 +444,8 @@ keeps npm-compatible three-component semver metadata.
 - Rated page: a «Моя оценка» filter (9–10, 7–8, 5–6, 1–4, not rated by me) that loads every page before filtering and never replaces the default first-screen cache, and the filters are mirrored into the address (`q`, `genre`, `year`, `user`, `my`, `sort`, `avg`), so a filtered view can be shared or reloaded; address values override the saved ones.
 - Random movie: the collapsed configuration header shows a one-line summary of the active filters, and an empty result offers one-click fixes (votes from 1 000, rating from 6.0, any year, clear genres and countries) that save the change and roll again.
 - Random movie: «Не предлагать оценённые и недавно выпавшие» (on by default, remembered per browser) uses at most three Kinopoisk draws per roll to skip movies the signed-in user has rated (one batched lookup per new title, remembered for the page view) and the last 30 results, falling back to the last draw when nothing new turns up; a failing later draw keeps the movie already found.
+- Random movie: a visible «Ещё раз» button under the result and the `R` key (matched by physical key, so it works on the Russian layout too) roll again; the key is ignored while typing, with modifiers or auto-repeat, during a roll and while the pool or marathon dialog is open.
+- Rated page: the rating dialog names each score on the scale («Ужасно» … «Шедевр») and announces it with the slider value; a summary above the results shows how many shown films I rated, my average and a 1–10 distribution; a grid / list switch (remembered per browser) shows one film per row with the poster on the left. Series get «Оценить серии на странице сериала», a link to Movie Details, which keeps episode scores limited to released episodes from the TMDB catalog; the title dialog still never reads or writes episode ratings.
 - The profile rank frame can be turned off with «Показывать рамку вокруг фото» in the rank card; the choice is stored as `showRankFrame` on the user document (validated in `rules/firestore.rules`, deployed) and hides the frame for every viewer. The navbar avatar shows the signed-in user's frame too: the profile publishes `navRankFrame` ({uid, level}) to `chrome.storage.local`, so other pages draw it without reading Firestore; it appears after the profile has been opened once. Arrows beside the frame in the rank card let the owner pick any reached rank's frame; the choice is stored as `rankFrameLevel` (1–7, validated in the rules) and used on the profile avatar, for other viewers and in the navbar, while picking the current rank clears it so the frame follows future ranks.
 
 ### Fixes
@@ -457,6 +459,10 @@ keeps npm-compatible three-component semver metadata.
 - Stop and dispose torrent playback when changing episodes or providers. Keep the current audio playing while a replacement prepares, and preserve playback intent across overlapping audio changes.
 - Recover component updates across an expected maintenance-service restart and a healthy manual repair. Respect the installed service port, bound retained update files, and repair clean-install log permissions, original-user provisioning and failed-install service cleanup.
 - Patch MediaPlayer's Zod validation dependency to reject oversized bounded request collections before excessive per-element processing.
+
+### Refactor
+
+- Build: `npm run build` now runs `scripts/bundle-pages.js` between copying and minifying. In `dist/` it merges Home's adjacent classic `defer` scripts into `home.bundle-1.js` (40 files) and `home.bundle-2.js` (6 files), so the page requests 6 deferred scripts instead of 50; document order is kept, module scripts and `Navigation.js` (its relative `import()` calls resolve against its own URL) stay separate tags, preloads of bundled files are removed, and a file starting with `'use strict'` or reading `document.currentScript` fails the build. Sources and other pages are unchanged; the load-time gain has not been measured in the browser.
 
 ### Docs
 

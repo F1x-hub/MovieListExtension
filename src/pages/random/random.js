@@ -320,6 +320,7 @@ class RandomManager {
         }
 
         this.setupPoolListeners();
+        this._setupRollShortcut();
     }
 
     toggleConfig(forceState = null) {
@@ -706,6 +707,7 @@ class RandomManager {
         this._stopRollAnimation();
         this._marathonUnsubscribe?.();
         for (const handler of this._modalKeyHandlers) document.removeEventListener('keydown', handler);
+        if (this._rollShortcutHandler) document.removeEventListener('keydown', this._rollShortcutHandler);
         if (this._poolStorageHandler) chrome.storage.onChanged?.removeListener(this._poolStorageHandler);
         if (this._marathonAuthHandler) window.removeEventListener('authStateChanged', this._marathonAuthHandler);
         if (this._settingsMessageHandler) chrome.runtime.onMessage.removeListener(this._settingsMessageHandler);
@@ -732,6 +734,7 @@ class RandomManager {
             
             // Inject Add-to-Pool FAB over poster
             this._injectPoolFab(card, movie);
+            this._appendRollAgainButton();
 
             // Setup delegation for any interactive elements
             this.setupCardDelegation();
@@ -796,6 +799,36 @@ class RandomManager {
         this._syncPoolFab();
     }
     
+    /** Visible "roll again" under the result; it reuses the card's `reload` action. */
+    _appendRollAgainButton() {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'btn random-again-btn';
+        button.dataset.action = 'reload';
+        const label = document.createElement('span');
+        label.textContent = this._stateText('roll_again');
+        const hint = document.createElement('kbd');
+        hint.className = 'random-again-key';
+        hint.textContent = 'R';
+        button.setAttribute('aria-keyshortcuts', 'R');
+        button.append(label, hint);
+        this.elements.movieResult.append(button);
+    }
+
+    /** "R" rolls again (any layout: matched by physical key) unless typing or a dialog is open. */
+    _setupRollShortcut() {
+        if (this._rollShortcutHandler) return;
+        this._rollShortcutHandler = (event) => {
+            if (event.code !== 'KeyR' || event.repeat || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+            const target = event.target;
+            if (target?.closest?.('input, textarea, select, [contenteditable=""], [contenteditable="true"]')) return;
+            if (this._activeModalId || this._hasForegroundDialog() || this._findBusy || this._disposed) return;
+            event.preventDefault();
+            this.findRandomMovie();
+        };
+        document.addEventListener('keydown', this._rollShortcutHandler);
+    }
+
     setupCardDelegation() {
         // Simple delegation for the result container
         if (this.delegationSetup) return;

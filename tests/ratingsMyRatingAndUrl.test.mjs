@@ -135,4 +135,66 @@ const film = (id, myRating) => ({ movieId: id, myRating, movie: { name: `Film ${
     assert.equal(ranged.filters.avgRatingTo, 9);
 }
 
-console.log('Ratings my-rating filter and URL filters passed.');
+// Every score has a word on the scale, and the slider announces it.
+{
+    const { i18n } = await import('../src/shared/i18n/I18n.js');
+    i18n.currentLocale = 'ru';
+    const page = createPage();
+    assert.equal(page.getRatingWord(10), 'Шедевр');
+    assert.equal(page.getRatingWord('3'), 'Плохо');
+    assert.equal(page.getRatingWord(0), '');
+    assert.equal(page.getRatingWord(11), '');
+    const words = new Set(Array.from({ length: 10 }, (_, index) => page.getRatingWord(index + 1)));
+    assert.equal(words.size, 10, 'Each of the ten scores has its own word');
+    const attributes = {};
+    page.elements = { ratingWord: { textContent: '' }, ratingSlider: { setAttribute: (name, value) => { attributes[name] = value; } } };
+    page.updateRatingWord(8);
+    assert.equal(page.elements.ratingWord.textContent, 'Очень хорошо');
+    assert.equal(attributes['aria-valuetext'], '8 — Очень хорошо');
+    i18n.currentLocale = 'en';
+    assert.equal(page.getRatingWord(10), 'Masterpiece');
+}
+
+// Stats cover only my own scores among the films shown.
+{
+    const page = createPage();
+    const stats = page.getMyRatingStats([film(1, 10), film(2, 8), film(3, 0), film(4, 8)]);
+    assert.equal(stats.count, 3);
+    assert.equal(stats.average.toFixed(2), '8.67');
+    assert.deepEqual(stats.distribution, [0, 0, 0, 0, 0, 0, 0, 2, 0, 1]);
+    assert.deepEqual(page.getMyRatingStats([film(5, 0)]), { count: 0, average: 0, distribution: Array(10).fill(0) });
+}
+
+// The view switch toggles the list class and pressed state.
+{
+    const page = createPage();
+    const classes = new Set();
+    page.elements = { moviesGrid: { classList: { toggle: (name, on) => (on ? classes.add(name) : classes.delete(name)) } } };
+    const buttons = ['grid', 'list'].map(view => ({ dataset: { view }, attrs: {}, setAttribute(name, value) { this.attrs[name] = value; } }));
+    const previousQuery = document.querySelectorAll;
+    document.querySelectorAll = selector => (selector === '.results-view-btn' ? buttons : []);
+    page.applyViewMode('list');
+    assert.equal(page.viewMode, 'list');
+    assert.equal(classes.has('movies-grid--list'), true);
+    assert.deepEqual(buttons.map(button => button.attrs['aria-pressed']), ['false', 'true']);
+    page.applyViewMode('anything');
+    assert.equal(page.viewMode, 'grid', 'Unknown values fall back to the grid');
+    assert.equal(classes.has('movies-grid--list'), false);
+    document.querySelectorAll = previousQuery;
+}
+
+// Series link to Movie Details for episode scores; the title dialog itself never
+// touches episode ratings (see ratingsPageContract.test.js).
+{
+    const page = createPage();
+    const link = { hidden: true, href: '', removeAttribute(name) { if (name === 'href') this.href = ''; } };
+    page.elements = { episodeRatingLink: link };
+    page.updateEpisodeRatingLink({ movieId: 77, movie: { type: 'tv-series' } });
+    assert.equal(link.hidden, false);
+    assert.equal(link.href, 'src/pages/movie-details/movie-details.html?movieId=77');
+    page.updateEpisodeRatingLink({ movieId: 78, movie: { type: 'movie' } });
+    assert.equal(link.hidden, true, 'Films get no episode link');
+    assert.equal(link.href, '');
+}
+
+console.log('Ratings my-rating filter, URL filters, scale words, stats, view switch and episode link passed.');
