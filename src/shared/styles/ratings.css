@@ -1352,88 +1352,118 @@
     outline-offset: 2px;
 }
 
-/* My score summary: count, average and a 1–10 distribution */
-.ratings-stats[hidden] {
-    display: none;
-}
-
-.ratings-stats {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 16px;
-    margin: 0 2px 20px;
-    padding: 14px 16px;
-    border: 1px solid var(--theme-border);
-    border-radius: var(--radius-lg, 12px);
-}
-
-.ratings-stats__summary {
-    margin: 0;
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--theme-text-primary);
-}
-
-.ratings-stats__bars {
-    display: flex;
-    align-items: flex-end;
-    gap: 6px;
-    height: 56px;
-}
-
-.ratings-stats__column {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 4px;
-    width: 16px;
-    height: 100%;
-}
-
-.ratings-stats__bar {
-    display: block;
-    width: 100%;
-    max-height: calc(100% - 16px);
-    border-radius: 3px 3px 0 0;
-    background: var(--theme-text-primary);
-    opacity: 0.75;
-}
-
-.ratings-stats__label {
-    font-size: 10px;
-    line-height: 12px;
-    color: var(--theme-text-muted);
-}
-
-/* List view: one film per row, poster on the left */
+/* List view: compact rows for fast scanning. Title, genres and a one-line
+   description on the left, ratings and the rater on the right; the right
+   padding keeps everything clear of the card menu button. */
 .movies-grid.movies-grid--list {
     grid-template-columns: 1fr !important;
-    gap: 12px !important;
+    gap: 8px !important;
 }
 
 .movies-grid--list .movie-card-component {
     flex-direction: row;
+    min-height: 0;
 }
 
 .movies-grid--list .mc-poster-container {
-    width: 120px;
+    width: 76px;
     height: auto;
-    min-height: 180px;
+    min-height: 114px;
+    flex: 0 0 76px;
+    border-bottom: 0;
     border-radius: var(--radius-xl) 0 0 var(--radius-xl);
 }
 
 .movies-grid--list .mc-content {
-    flex: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+        "title   ratings"
+        "genres  user"
+        "desc    user";
+    align-items: center;
+    column-gap: 20px;
+    row-gap: 4px;
+    min-width: 0;
+    padding: 10px 56px 10px 14px;
+}
+
+.movies-grid--list .mc-title-row {
+    grid-area: title;
+    justify-content: flex-start;
+    align-items: baseline;
+    gap: 10px;
     min-width: 0;
 }
 
-@media (max-width: 480px) {
-    .movies-grid--list .mc-poster-container {
-        width: 90px;
-        min-height: 135px;
+.movies-grid--list .mc-title {
+    flex: 0 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.movies-grid--list .mc-year {
+    flex-shrink: 0;
+}
+
+.movies-grid--list .mc-genres {
+    grid-area: genres;
+    flex-wrap: nowrap;
+    overflow: hidden;
+}
+
+.movies-grid--list .mc-description {
+    grid-area: desc;
+    -webkit-line-clamp: 1;
+    line-height: 1.5;
+}
+
+.movies-grid--list .mc-ratings-row {
+    grid-area: ratings;
+    justify-self: end;
+    gap: 18px;
+    margin: 0;
+    padding: 0;
+    border-top: 0;
+}
+
+.movies-grid--list .mc-rating-item {
+    flex: 0 0 auto;
+    min-width: 0;
+}
+
+.movies-grid--list .mc-user-info {
+    grid-area: user;
+    justify-self: end;
+    align-self: end;
+    margin: 0;
+    padding: 6px 10px;
+}
+
+@media (max-width: 640px) {
+    .movies-grid--list .mc-content {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas:
+            "title"
+            "ratings"
+            "user";
+        padding-right: 48px;
+    }
+
+    .movies-grid--list .mc-genres,
+    .movies-grid--list .mc-description {
+        display: none;
+    }
+
+    .movies-grid--list .mc-ratings-row {
+        flex-wrap: nowrap;
+        gap: 14px;
+    }
+
+    .movies-grid--list .mc-ratings-row,
+    .movies-grid--list .mc-user-info {
+        justify-self: start;
     }
 }
 
