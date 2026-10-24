@@ -77,6 +77,16 @@
                 <!-- Injected dynamically for logged in users -->
             </section>
             
+            <!-- Because you rated: shown for signed-in users once recommendations resolve -->
+            <section id="because-section" class="category-section" hidden>
+                <div class="section-header">
+                    <div class="section-header-title">
+                        <h2 id="because-title"></h2>
+                    </div>
+                </div>
+                <div class="grid-container" id="because-grid"></div>
+            </section>
+
             <!-- Films Section -->
             <section id="films-section" class="category-section">
                 <div class="section-header">
@@ -157,6 +167,7 @@
     <script defer src="../../shared/services/KinopoiskService.js"></script>
     <script defer src="../../shared/services/IdMappingService.js"></script>
     <script defer src="../../shared/services/HomeCacheService.js"></script>
+    <script defer src="../../shared/services/RecommendationService.js"></script>
     <script defer src="../../shared/services/KinopoiskPersonHtmlService.js"></script>
     <script defer src="../../shared/services/KinopoiskRatingParsingService.js"></script>
     <script defer src="../../shared/services/ImdbParsingService.js"></script>

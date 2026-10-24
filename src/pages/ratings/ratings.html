@@ -94,6 +94,18 @@
                         </select>
                     </div>
 
+                    <!-- My Rating Filter -->
+                    <div class="filter-group" id="myRatingFilterGroup">
+                        <label class="filter-label" for="myRatingFilter" data-i18n="ratings.filters.my_rating">Моя оценка</label>
+                        <select id="myRatingFilter" data-filter-control>
+                            <option value="" data-i18n="ratings.filters.any_my_rating">Любая</option>
+                            <option value="9-10">9–10</option>
+                            <option value="7-8">7–8</option>
+                            <option value="5-6">5–6</option>
+                            <option value="1-4">1–4</option>
+                            <option value="none" data-i18n="ratings.filters.my_rating_none">Не оценено мной</option>
+                        </select>
+                    </div>
                     <!-- Sort Options -->
                     <div class="filter-group filter-group--sort">
                         <label class="filter-label" for="sortFilter" data-i18n="ratings.filters.sort">Sort By</label>

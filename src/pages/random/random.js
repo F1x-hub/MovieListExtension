@@ -117,7 +117,8 @@ class RandomManager {
         this.populateFilterData();
         this.renderTags();
         this.setupSliders();
-        this.loadPreferences(); 
+        this.loadPreferences();
+        this._renderConfigSummary();
         this.setupEventListeners();
         await this.loadPool();
         if (this._disposed) return;
@@ -143,6 +144,7 @@ class RandomManager {
                 this.populateFilterData();
                 this.renderTags();
                 this._restoreTagFilters(filters);
+                this._renderConfigSummary();
                 // Marathon and pool text is rendered from the locale, not data-i18n.
                 this._renderMarathon();
                 this._refreshPoolModalIfOpen();
@@ -406,6 +408,28 @@ class RandomManager {
             excludeCountries: filters.excludeCountries
         };
         localStorage.setItem('random_filter_preferences', JSON.stringify(prefs));
+        this._renderConfigSummary();
+    }
+
+    /** One-line digest of the active filters, readable while the panel is collapsed. */
+    _renderConfigSummary() {
+        const summary = document.getElementById('configSummary');
+        if (!summary) return;
+        const filters = this.getFilters();
+        const parts = [
+            `${filters.yearFrom}–${filters.yearTo}`,
+            `★ ${Number(filters.ratingFrom).toFixed(1)}–${Number(filters.ratingTo).toFixed(1)}`
+        ];
+        const tags = [...document.querySelectorAll('.tag-btn')]
+            .filter(button => button.dataset.state === 'include' || button.dataset.state === 'exclude')
+            .map(button => {
+                const text = button.querySelector('.tag-text')?.textContent || button.dataset.value;
+                return button.dataset.state === 'exclude' ? `−${text}` : text;
+            });
+        const visibleTags = tags.slice(0, 4);
+        if (tags.length > visibleTags.length) visibleTags.push(`+${tags.length - visibleTags.length}`);
+        if (visibleTags.length) parts.push(visibleTags.join(', '));
+        summary.textContent = parts.join(' · ');
     }
 
     loadPreferences() {
@@ -550,7 +574,77 @@ class RandomManager {
         document.getElementById('randomFailureText').textContent = i18n.get(`random.states.${kind === 'empty' ? 'no_movie' : 'load_error'}`);
         document.getElementById('randomFailureHint').textContent = i18n.get(`random.states.${kind === 'empty' ? 'relax_filters' : 'load_error_hint'}`);
         this.elements.tryAgainBtn.textContent = i18n.get(`random.states.${kind === 'empty' ? 'relax_action' : 'retry_load'}`);
+        this._renderRelaxSuggestions(kind === 'empty' ? this._lastRandomFilters : null);
         this.showState('error');
+    }
+
+    _stateText(key, params = {}) {
+        let text = i18n.get(`random.states.${key}`);
+        Object.entries(params).forEach(([name, value]) => { text = text.replaceAll(`{${name}}`, String(value)); });
+        return text;
+    }
+
+    /** Each suggestion loosens one filter, saves it and rolls again. */
+    _getRelaxSuggestions(filters) {
+        if (!filters) return [];
+        const setRange = (prefix, from, to) => {
+            const minInput = document.getElementById(`${prefix}From`);
+            const maxInput = document.getElementById(`${prefix}To`);
+            if (from !== null && minInput) minInput.value = from;
+            if (to !== null && maxInput) maxInput.value = to;
+            minInput?.dispatchEvent(new Event('input'));
+        };
+        const suggestions = [];
+        if (Number(filters.votesFrom) > 1000) {
+            suggestions.push({ label: this._stateText('relax_votes', { count: (1000).toLocaleString(i18n.currentLocale) }), apply: () => setRange('votes', 1000, null) });
+        }
+        if (Number(filters.ratingFrom) > 6) {
+            suggestions.push({ label: this._stateText('relax_rating', { value: '6.0' }), apply: () => setRange('rating', 6, null) });
+        }
+        if (Number(filters.yearFrom) > 1900 || Number(filters.yearTo) < 2030) {
+            suggestions.push({ label: this._stateText('relax_years'), apply: () => setRange('year', 1900, 2030) });
+        }
+        const tagCount = ['genres', 'excludeGenres', 'countries', 'excludeCountries']
+            .reduce((count, key) => count + (filters[key]?.length || 0), 0);
+        if (tagCount > 0) {
+            suggestions.push({
+                label: this._stateText('relax_tags'),
+                apply: () => document.querySelectorAll('.tag-btn[data-type="genre"], .tag-btn[data-type="country"]')
+                    .forEach(button => this._setTagState(button, 'neutral'))
+            });
+        }
+        return suggestions;
+    }
+
+    _renderRelaxSuggestions(filters) {
+        let container = document.getElementById('randomRelaxOptions');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'randomRelaxOptions';
+            container.className = 'random-relax-options';
+            this.elements.tryAgainBtn.before(container);
+        }
+        const suggestions = this._getRelaxSuggestions(filters);
+        container.replaceChildren();
+        container.hidden = suggestions.length === 0;
+        if (!suggestions.length) return;
+        const title = document.createElement('p');
+        title.className = 'random-relax-title';
+        title.textContent = this._stateText('relax_suggestions');
+        container.append(title);
+        for (const suggestion of suggestions) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'btn random-relax-btn';
+            button.textContent = suggestion.label;
+            button.addEventListener('click', () => {
+                suggestion.apply();
+                this.rangeControls?.forEach(control => control.syncFromNative());
+                this.savePreferences();
+                this.findRandomMovie();
+            });
+            container.append(button);
+        }
     }
 
     _cancelResultTransition() {

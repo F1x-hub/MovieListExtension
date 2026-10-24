@@ -929,6 +929,11 @@ export const locales = {
         home: {
             page_title: "Home | MovieList Extension",
             page_heading: "Home",
+            rated_badge: "You rated this",
+            because: {
+                title: "Because you rated «{title}»",
+                title_generic: "Similar to what you rated highly"
+            },
             season: {
                 halloween: {
                     title: "Halloween season",
@@ -1023,6 +1028,9 @@ export const locales = {
                 any_average: "Any Average",
                 user: "User",
                 all_users: "All Users",
+                my_rating: "My Rating",
+                any_my_rating: "Any",
+                my_rating_none: "Not rated by me",
                 sort: "Sort By",
                 toggle: "Show or hide filters",
                 avg_from: "Minimum average rating",
@@ -1061,6 +1069,7 @@ export const locales = {
                 year: "Year: {value}",
                 rating: "Rating: {from} – {to}",
                 user: "User: {value}",
+                my_rating: "My rating: {value}",
                 remove: "Remove filter"
             },
             errors: {
@@ -1298,7 +1307,12 @@ export const locales = {
                 load_error: "Could not load a movie.",
                 load_error_hint: "Check your connection or account access and try again.",
                 retry_load: "Retry",
-                relax_action: "Relax filters"
+                relax_action: "Relax filters",
+                relax_suggestions: "Or loosen one filter:",
+                relax_votes: "Votes from {count}",
+                relax_rating: "Rating from {value}",
+                relax_years: "Any year",
+                relax_tags: "Clear genres and countries"
             },
             tag_states: {
                 neutral: "No preference. Activate to include.",
@@ -2669,6 +2683,11 @@ export const locales = {
         home: {
             page_title: "Главная | MovieList Extension",
             page_heading: "Главная",
+            rated_badge: "Вы оценили",
+            because: {
+                title: "Потому что вы оценили «{title}»",
+                title_generic: "Похоже на то, что вы высоко оценили"
+            },
             season: {
                 halloween: {
                     title: "Сезон Хэллоуина",
@@ -2765,6 +2784,9 @@ export const locales = {
                 any_average: "Любой рейтинг",
                 user: "Пользователь",
                 all_users: "Все пользователи",
+                my_rating: "Моя оценка",
+                any_my_rating: "Любая",
+                my_rating_none: "Не оценено мной",
                 sort: "Сортировка",
                 toggle: "Показать или скрыть фильтры",
                 avg_from: "Минимальный средний рейтинг",
@@ -2803,6 +2825,7 @@ export const locales = {
                 year: "Год: {value}",
                 rating: "Рейтинг: {from} – {to}",
                 user: "Пользователь: {value}",
+                my_rating: "Моя оценка: {value}",
                 remove: "Убрать фильтр"
             },
             errors: {
@@ -3040,7 +3063,12 @@ export const locales = {
                 load_error: "Не удалось загрузить фильм.",
                 load_error_hint: "Проверьте соединение или доступ к аккаунту и повторите попытку.",
                 retry_load: "Повторить загрузку",
-                relax_action: "Смягчить фильтры"
+                relax_action: "Смягчить фильтры",
+                relax_suggestions: "Или ослабьте один фильтр:",
+                relax_votes: "Голосов от {count}",
+                relax_rating: "Рейтинг от {value}",
+                relax_years: "Любой год",
+                relax_tags: "Снять жанры и страны"
             },
             tag_states: {
                 neutral: "Без предпочтений. Нажмите, чтобы включить.",

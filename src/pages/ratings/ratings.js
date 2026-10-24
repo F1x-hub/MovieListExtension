@@ -17,6 +17,7 @@ class RatingsPageManager {
             avgRatingFrom: 1.0,
             avgRatingTo: 10.0,
             user: '',
+            myRating: '',
             sort: 'date-desc'
         };
         this.movies = [];
@@ -175,6 +176,7 @@ class RatingsPageManager {
             avgRatingMaxDisplay: document.getElementById('avgRatingMaxDisplay'),
             avgRatingRange: document.getElementById('avgRatingRange'),
             userFilter: document.getElementById('userFilter'),
+            myRatingFilter: document.getElementById('myRatingFilter'),
             sortFilter: document.getElementById('sortFilter'),
             clearFiltersBtn: document.getElementById('clearFiltersBtn'),
             
@@ -228,7 +230,7 @@ class RatingsPageManager {
     /** Native filter selects are enhanced by the shared SortControl component. */
     initializeCustomDropdowns() {
         this.dropdowns = {};
-        for (const id of ['genreFilter', 'yearFilter', 'userFilter', 'sortFilter']) {
+        for (const id of ['genreFilter', 'yearFilter', 'userFilter', 'myRatingFilter', 'sortFilter']) {
             this.dropdowns[id] = window.SortControl?.enhance(this.elements[id]);
         }
         this.sortControl = this.dropdowns.sortFilter;
@@ -304,6 +306,11 @@ class RatingsPageManager {
         
         this.elements.userFilter?.addEventListener('change', (e) => {
             this.filters.user = e.target.value;
+            this.applyFilters();
+        });
+
+        this.elements.myRatingFilter?.addEventListener('change', (e) => {
+            this.filters.myRating = e.target.value;
             this.applyFilters();
         });
         
@@ -1792,6 +1799,15 @@ class RatingsPageManager {
             });
         }
         
+        // My rating filter ("9-10", "7-8", ...); "none" keeps films I have not rated
+        const myRange = this.parseMyRatingRange(this.filters.myRating);
+        if (myRange) {
+            filtered = filtered.filter(movie => {
+                const mine = Number(this.getMyRating(movie).rating) || 0;
+                return myRange.none ? mine === 0 : mine >= myRange.from && mine <= myRange.to;
+            });
+        }
+
         // Sort
         this.sortMovies(filtered);
         
@@ -1800,6 +1816,12 @@ class RatingsPageManager {
         this.updateResultsInfo();
         this.renderActiveTags();
         this.saveFiltersToStorage();
+    }
+
+    parseMyRatingRange(value) {
+        if (value === 'none') return { none: true };
+        const match = /^(\d+)-(\d+)$/.exec(String(value || ''));
+        return match ? { from: Number(match[1]), to: Number(match[2]) } : null;
     }
 
     renderActiveTags() {
@@ -1829,6 +1851,11 @@ class RatingsPageManager {
         if (this.filters.user) {
             const user = this.allUsers.find(u => u.id === this.filters.user);
             tags.push({ type: 'user', label: this.text('active_filters.user', { value: user ? user.displayName : this.filters.user }) });
+        }
+
+        if (this.parseMyRatingRange(this.filters.myRating)) {
+            const option = [...(this.elements.myRatingFilter?.options || [])].find(item => item.value === this.filters.myRating);
+            tags.push({ type: 'myRating', label: this.text('active_filters.my_rating', { value: option?.textContent || this.filters.myRating }) });
         }
         
         // Render tags
@@ -1887,6 +1914,10 @@ class RatingsPageManager {
             case 'user':
                 this.filters.user = '';
                 this.updateDropdownValue('userFilter', '');
+                break;
+            case 'myRating':
+                this.filters.myRating = '';
+                this.updateDropdownValue('myRatingFilter', '');
                 break;
         }
         this.applyFilters();
@@ -2997,6 +3028,7 @@ class RatingsPageManager {
             avgRatingFrom: 1.0,
             avgRatingTo: 10.0,
             user: '',
+            myRating: '',
             sort: 'date-desc'
         };
         
@@ -3004,6 +3036,7 @@ class RatingsPageManager {
         this.updateDropdownValue('genreFilter', '');
         this.updateDropdownValue('yearFilter', '');
         this.updateDropdownValue('userFilter', '');
+        this.updateDropdownValue('myRatingFilter', '');
         this.updateDropdownValue('sortFilter', this.filters.sort);
 
         // Reset slider
@@ -3037,18 +3070,62 @@ class RatingsPageManager {
 
     saveFiltersToStorage() {
         localStorage.setItem('ratingsPageFilters', JSON.stringify(this.filters));
+        this.syncFiltersToUrl();
+    }
+
+    /** Short URL keys for the shareable filters; defaults are left out of the address. */
+    static URL_FILTER_KEYS = Object.freeze({ search: 'q', genre: 'genre', year: 'year', user: 'user', myRating: 'my', sort: 'sort' });
+
+    syncFiltersToUrl() {
+        try {
+            const url = new URL(window.location.href);
+            for (const [field, key] of Object.entries(RatingsPageManager.URL_FILTER_KEYS)) {
+                const value = String(this.filters[field] ?? '');
+                const isDefault = field === 'sort' ? value === 'date-desc' : value === '';
+                if (isDefault) url.searchParams.delete(key);
+                else url.searchParams.set(key, value);
+            }
+            const from = Number(this.filters.avgRatingFrom);
+            const to = Number(this.filters.avgRatingTo);
+            if (from > 1 || to < 10) url.searchParams.set('avg', `${from.toFixed(1)}-${to.toFixed(1)}`);
+            else url.searchParams.delete('avg');
+            if (url.href !== window.location.href) window.history.replaceState(window.history.state, '', url);
+        } catch {
+            // The address is a convenience; filters still apply without it.
+        }
+    }
+
+    /** Filters named in the address override the saved ones (shared links, reloads). */
+    readFiltersFromUrl() {
+        const params = new URLSearchParams(window.location.search);
+        const filters = {};
+        for (const [field, key] of Object.entries(RatingsPageManager.URL_FILTER_KEYS)) {
+            if (params.has(key)) filters[field] = params.get(key);
+        }
+        const sortOptions = [...(this.elements?.sortFilter?.options || [])].map(option => option.value);
+        if (filters.sort && sortOptions.length && !sortOptions.includes(filters.sort)) delete filters.sort;
+        const avg = /^(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)$/.exec(params.get('avg') || '');
+        if (avg) {
+            filters.avgRatingFrom = Number(avg[1]);
+            filters.avgRatingTo = Number(avg[2]);
+        }
+        return filters;
     }
 
     loadFiltersFromStorage() {
-        
+        let saved = {};
         const savedFilters = localStorage.getItem('ratingsPageFilters');
         if (savedFilters) {
             try {
-                this.filters = { ...this.filters, ...JSON.parse(savedFilters) };
-                this.restoreFilterUI();
+                saved = JSON.parse(savedFilters) || {};
             } catch (error) {
                 console.warn('Failed to load saved filters:', error);
             }
+        }
+        const fromUrl = this.readFiltersFromUrl();
+        if (Object.keys(saved).length || Object.keys(fromUrl).length) {
+            this.filters = { ...this.filters, ...saved, ...fromUrl };
+            this.restoreFilterUI();
         }
     }
 
@@ -3078,6 +3155,11 @@ class RatingsPageManager {
         if (this.elements.userFilter) {
             this.elements.userFilter.value = this.filters.user;
             this.updateDropdownValue('userFilter', this.filters.user);
+        }
+        if (this.elements.myRatingFilter) {
+            if (!this.parseMyRatingRange(this.filters.myRating)) this.filters.myRating = '';
+            this.elements.myRatingFilter.value = this.filters.myRating;
+            this.updateDropdownValue('myRatingFilter', this.filters.myRating);
         }
         if (this.elements.sortFilter) {
             this.elements.sortFilter.value = this.filters.sort;
