@@ -2,7 +2,7 @@ import { i18n } from '../i18n/I18n.js';
 import { whatsNew } from '../config/whatsNew.js';
 import '../services/WhatsNewService.js';
 
-const excluded = /\/(?:admin|options|update|offscreen)\/|update_instructions\.html/;
+const excluded = /\/(?:admin|options|update|offscreen|popup)\/|update_instructions\.html/;
 export function canShowWhatsNew(document, pathname) {
     if (excluded.test(pathname) || document.visibilityState === 'hidden' || document.fullscreenElement) return false;
     if (new URLSearchParams(document.location.search).get('whatsNewPreview') === 'draft') return false;

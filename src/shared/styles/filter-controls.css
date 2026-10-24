@@ -238,6 +238,11 @@
 .filter-panel .sort-control__trigger { border-radius: 12px; }
 .filters-section.filter-panel .filters-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: start; gap: 20px 16px; }
 .filters-section.filter-panel :is(.filter-group--sort, .filter-group--range) { grid-column: span 2; }
+/* Rated adds «Моя оценка»: on wide screens five columns keep the panel at two rows
+   (search and four filters, then sorting and the rating range). */
+@media (min-width: 1200px) {
+    .filters-section.filter-panel .filters-grid:has(> #myRatingFilterGroup:not([hidden])) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
 .filters-section.filter-panel .search-input { box-sizing: border-box; height: 44px; min-height: 44px; padding: 10px 14px 10px 38px; border-radius: 12px; font-size: 14px; }
 
 @media (max-width: 900px) {

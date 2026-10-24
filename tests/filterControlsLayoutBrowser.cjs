@@ -33,7 +33,10 @@ async function fixture(page, baseUrl, surface, theme) {
                 };
             });
         }, theme);
-        assert.equal(controls.length, 4);
+        // Every enhanced select in the Rated markup (genre, year, user, my rating, sort).
+        const expectedControls = (read('src/pages/ratings/ratings.html').match(/data-(?:filter|sort)-control/g) || []).length;
+        assert.ok(expectedControls >= 4);
+        assert.equal(controls.length, expectedControls);
         for (const control of controls) {
             assert.ok(control.visible, `${control.id}: native fallback stays usable before startup`);
             assert.ok(control.height >= 44, `${control.id}: initial control has full height`);
@@ -173,10 +176,15 @@ async function main() {
                         assert.ok(metrics.height < 420, 'Closed Search filters leave space for results at every viewport');
                     }
                     if (surface === 'ratings' && width > 900) {
-                        assert.ok(metrics.height < 330, 'Ratings filter panel stays compact');
-                        const rows = await page.locator('.filters-grid > .filter-group').evaluateAll(groups => groups.map(group => group.getBoundingClientRect().top));
-                        assert.ok(rows.slice(0, 4).every(top => Math.abs(top - rows[0]) < 1), 'Primary Ratings fields align in one row');
-                        assert.ok(Math.abs(rows[4] - rows[5]) < 1, 'Sort and average rating align in the second row');
+                        assert.ok(metrics.height < 330, `Ratings filter panel stays compact (${theme}/${width}: ${Math.round(metrics.width)} × ${Math.round(metrics.height)})`);
+                        const rows = await page.locator('.filters-grid > .filter-group').evaluateAll(groups => groups
+                            .filter(group => group.getClientRects().length)
+                            .map(group => ({ top: group.getBoundingClientRect().top,
+                                secondary: group.matches('.filter-group--sort, .filter-group--range') })));
+                        const primary = rows.filter(row => !row.secondary), secondary = rows.filter(row => row.secondary);
+                        assert.ok(primary.every(row => Math.abs(row.top - primary[0].top) < 1), `Primary Ratings fields align in one row (${width})`);
+                        assert.equal(secondary.length, 2);
+                        assert.ok(Math.abs(secondary[0].top - secondary[1].top) < 1, 'Sort and average rating align in the second row');
                         const trigger = await page.locator('.filter-group--sort .sort-control__trigger').boundingBox();
                         assert.equal(Math.round(trigger.height), 44, 'Sorting label fits a single control line');
                     }

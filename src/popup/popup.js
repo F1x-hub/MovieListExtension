@@ -509,8 +509,8 @@ class PopupManager {
         
         // Initialize i18n BEFORE loading UI
         await this.initI18n();
-        void import('../shared/components/WhatsNewDialog.js').then(module => module.showWhatsNew())
-            .catch(error => console.warn('[Popup] Release notes unavailable:', error));
+        // Release notes open on full extension pages only; the popup is too
+        // small for the dialog and closes as soon as focus leaves it.
         
         // Then initialize UI which might load ratings
         await this.initializeUI();

@@ -268,6 +268,26 @@ assert.match(source, /\\d\+\(\?:\\\.\\d\+\)\{2,3\}/);
         'a manual force check must not inherit a throttled background result');
     assert.strictEqual(raceFetchCount, 2,
         'the manual request must perform one fresh metadata/signature fetch pair');
+
+    // The hub prompt relies on this classification of Chrome's host errors.
+    const originalNative = chrome.runtime.sendNativeMessage;
+    for (const [message, expected] of [
+        ['Specified native messaging host not found.', 'missing'],
+        ['Access to the specified native messaging host is forbidden.', 'forbidden'],
+        ['Native host has exited.', 'not_configured'],
+        ['Error when communicating with the native messaging host.', 'unavailable']
+    ]) {
+        chrome.runtime.sendNativeMessage = (name, request, callback) => {
+            chrome.runtime.lastError = { message };
+            callback(undefined);
+            delete chrome.runtime.lastError;
+        };
+        await context.UpdateService.getNativeStatus().catch(() => {});
+        assert.strictEqual(storage.extension_update_state_v2.hostAvailability, expected, message);
+    }
+    chrome.runtime.sendNativeMessage = originalNative;
+    await context.UpdateService.getNativeStatus();
+    assert.strictEqual(storage.extension_update_state_v2.hostAvailability, 'available');
     console.log('updateService.test.js passed');
 })().catch((error) => {
     console.error(error);

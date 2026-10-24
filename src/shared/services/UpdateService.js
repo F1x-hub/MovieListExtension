@@ -531,14 +531,28 @@
                 configured: response.configured === true,
                 updaterVersion: response.updaterVersion || null,
                 componentCapabilities: response.componentCapabilities || null,
-                componentInventory: response.components || null
+                componentInventory: response.components || null,
+                hostAvailability: 'available',
+                hostCheckedAt: now()
             });
             await syncMediaPlayerPort(response.components?.mediaPlayerSuite?.port);
             return response;
         } catch (error) {
-            await writeState({ configured: false, updaterVersion: null });
+            await writeState({ configured: false, updaterVersion: null,
+                hostAvailability: classifyHostError(error), hostCheckedAt: now() });
             throw error;
         }
+    }
+
+    // Chrome's own error texts distinguish a host that was never registered
+    // (or registered for another extension ID) from a transient failure; only
+    // the former should ask the user to install MovieList Hub.
+    function classifyHostError(error) {
+        const message = String(error?.message || '');
+        if (/native messaging host not found/i.test(message)) return 'missing';
+        if (/access to the specified native messaging host is forbidden/i.test(message)) return 'forbidden';
+        if (/native host has exited/i.test(message)) return 'not_configured';
+        return 'unavailable';
     }
 
     // MediaPlayerService reads this when it was not given an explicit URL, so a
