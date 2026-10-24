@@ -1363,9 +1363,19 @@
 .movies-grid--list .movie-card-component {
     flex-direction: row;
     min-height: 0;
+    /* The raters popup must leave the row; the poster clips its own corners. */
+    overflow: visible;
+}
+
+/* Every row is its own layer: lift the one in use so its raters popup and menu
+   sit above the neighbouring rows (and their menu buttons). */
+.movies-grid--list .movie-card-component:hover,
+.movies-grid--list .movie-card-component:focus-within {
+    z-index: 30;
 }
 
 .movies-grid--list .mc-poster-container {
+    overflow: hidden;
     width: 76px;
     height: auto;
     min-height: 114px;
@@ -1376,7 +1386,8 @@
 
 .movies-grid--list .mc-content {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    /* Fixed right column: ratings and raters line up on every row. */
+    grid-template-columns: minmax(0, 1fr) 224px;
     grid-template-areas:
         "title   ratings"
         "genres  user"
@@ -1421,7 +1432,8 @@
 
 .movies-grid--list .mc-ratings-row {
     grid-area: ratings;
-    justify-self: end;
+    justify-self: stretch;
+    justify-content: space-between;
     gap: 18px;
     margin: 0;
     padding: 0;
@@ -1435,10 +1447,20 @@
 
 .movies-grid--list .mc-user-info {
     grid-area: user;
-    justify-self: end;
+    justify-self: stretch;
+    box-sizing: border-box;
     align-self: end;
     margin: 0;
     padding: 6px 10px;
+}
+
+/* Over other rows the translucent popup would show their text through it. */
+.movies-grid--list .mc-raters-popup {
+    background: #121214;
+}
+
+.light-theme .movies-grid--list .mc-raters-popup {
+    background: #ffffff;
 }
 
 @media (max-width: 640px) {
@@ -1461,9 +1483,8 @@
         gap: 14px;
     }
 
-    .movies-grid--list .mc-ratings-row,
-    .movies-grid--list .mc-user-info {
-        justify-self: start;
+    .movies-grid--list .mc-ratings-row {
+        justify-content: flex-start;
     }
 }
 
