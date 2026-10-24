@@ -312,6 +312,7 @@ class RatingsPageManager {
         this.elements.myRatingFilter?.addEventListener('change', (e) => {
             this.filters.myRating = e.target.value;
             this.applyFilters();
+            this.loadAllForClientSort();
         });
         
         this.elements.sortFilter?.addEventListener('change', (e) => {
@@ -806,7 +807,8 @@ class RatingsPageManager {
                 // Fill cards whose movie document has no title/poster (does not block the page)
                 this.hydrateMissingMetadata(enrichedMovies);
 
-                // Sorts the server cannot order (my rating, title, year) need every page.
+                // Sorts the server cannot order (my rating, title, year) and the
+                // "My rating" filter need every page.
                 this.loadAllForClientSort();
             } catch (error) {
                 if (this.currentRequestId !== requestId) {
@@ -873,15 +875,24 @@ class RatingsPageManager {
      * at the end (progress is shown in the results line), instead of re-rendering
      * and rebuilding every filter after each small page.
      */
+    /**
+     * Every page is needed when the server cannot order by the active sort, and
+     * for "My rating": a client-only filter over the first pages alone would report
+     * "nothing found" while matching films are still unloaded.
+     */
+    needsFullList() {
+        return this.getServerSortParams().clientOnly || Boolean(this.parseMyRatingRange(this.filters.myRating));
+    }
+
     async loadAllForClientSort() {
         if (this.loadAllPromise) return this.loadAllPromise;
-        if (!this.hasMore || !this.getServerSortParams().clientOnly) return;
+        if (!this.hasMore || !this.needsFullList()) return;
 
         this.loadAllPromise = (async () => {
             const requestId = this.currentRequestId;
             this.bulkLoading = true;
             try {
-                while (this.hasMore && this.getServerSortParams().clientOnly && this.currentRequestId === requestId) {
+                while (this.hasMore && this.needsFullList() && this.currentRequestId === requestId) {
                     const cursorBefore = this.lastMovieDoc;
                     await this.loadNextBatch({ limit: this.CLIENT_SORT_BATCH_SIZE, render: false });
                     // Stop if a batch failed or made no progress instead of retrying forever
@@ -1228,6 +1239,7 @@ class RatingsPageManager {
 
     hasClientFilters() {
         return Boolean(this.filters.search || this.filters.genre || this.filters.year || this.filters.user)
+            || Boolean(this.parseMyRatingRange(this.filters.myRating))
             || this.isAvgRatingFilterActive();
     }
 

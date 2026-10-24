@@ -12,8 +12,8 @@ const ROLL_VOLUME_STORAGE_KEY = 'random_wheel_volume_percent';
 const RECENT_RESULTS_STORAGE_KEY = 'random_recent_results';
 const SKIP_SEEN_STORAGE_KEY = 'random_skip_seen';
 const RECENT_RESULTS_LIMIT = 30;
-// Extra API draws spent looking for an unseen movie before showing a seen one.
-const SKIP_SEEN_MAX_ATTEMPTS = 5;
+// Kinopoisk draws per roll while looking for an unseen movie; each costs API quota.
+const SKIP_SEEN_MAX_ATTEMPTS = 3;
 const DEFAULT_ROLL_VOLUME_PERCENT = 100;
 function getSafePosterUrl(value) {
     return typeof PosterUrl !== 'undefined' ? PosterUrl.safe(value) : '';
@@ -545,13 +545,32 @@ class RandomManager {
         }
     }
 
+    /**
+     * Whether the signed-in user rated this movie. One batched query pair per
+     * candidate (it also matches legacy string IDs); answers are remembered per
+     * user for the page session, so repeated draws of a title cost nothing.
+     */
+    async _isRatedByUser(id, user) {
+        if (!user?.uid) return false;
+        const ratingService = typeof firebaseManager !== 'undefined' ? firebaseManager.getRatingService?.() : null;
+        if (!ratingService?.getUserRatingsForMovies) return false;
+        if (this._ratedCheckUid !== user.uid) {
+            this._ratedCheckUid = user.uid;
+            this._ratedCheckCache = new Map();
+        }
+        const key = String(Number(id));
+        if (!this._ratedCheckCache.has(key)) {
+            const ratings = await ratingService.getUserRatingsForMovies(user.uid, [Number(id)]);
+            this._ratedCheckCache.set(key, Number(ratings?.get?.(key)?.rating) > 0);
+        }
+        return this._ratedCheckCache.get(key);
+    }
+
     async _isSeenMovie(movie, recent, user) {
         const id = movie?.id ?? movie?.kinopoiskId;
         if (id === undefined || id === null) return false;
         if (recent.has(String(id))) return true;
-        if (!user) return false;
-        const rating = await firebaseManager.getRatingService?.()?.getRating(user.uid, id);
-        return Boolean(rating);
+        return this._isRatedByUser(id, user);
     }
 
     /** Draw until an unrated, not recently shown movie appears; fall back to the last draw. */
@@ -561,10 +580,23 @@ class RandomManager {
         const user = typeof firebaseManager !== 'undefined' ? firebaseManager.getCurrentUser?.() : null;
         let movie = null;
         for (let attempt = 0; attempt < SKIP_SEEN_MAX_ATTEMPTS; attempt++) {
-            const candidate = await this.kinopoiskService.getRandomMovie(filters);
+            let candidate;
+            try {
+                candidate = await this.kinopoiskService.getRandomMovie(filters);
+            } catch (error) {
+                // A later draw failing must not discard a movie already in hand.
+                if (movie) return movie;
+                throw error;
+            }
             if (requestId !== this._requestId || this._disposed || !candidate) return candidate || movie;
             movie = candidate;
-            if (!await this._isSeenMovie(candidate, recent, user)) return candidate;
+            let seen = false;
+            try {
+                seen = await this._isSeenMovie(candidate, recent, user);
+            } catch {
+                // An unavailable rating check shows the candidate rather than failing the roll.
+            }
+            if (!seen) return candidate;
         }
         return movie;
     }

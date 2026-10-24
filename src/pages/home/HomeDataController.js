@@ -24,6 +24,9 @@ const HOME_PROGRESS_STORAGE_PREFIX = 'watching_progress_';
 // (~49 documents) on every visit cost ten times the original 5 reads.
 const HOME_COMMUNITY_CACHE_KEY = 'home_community_top_v1';
 const HOME_COMMUNITY_TTL_MS = 30 * 60 * 1000;
+// "Because you rated": newest ratings scanned for a seed, and seeds tried in turn.
+const HOME_BECAUSE_RATINGS_WINDOW = 20;
+const HOME_BECAUSE_MAX_SEEDS = 3;
 
 function homeTimestampMs(value) {
     if (!value) return 0;
@@ -521,9 +524,12 @@ class HomeDataController {
     }
 
     /**
-     * Recommendations seeded by the user's most recent rating of 8 or higher.
+     * Recommendations seeded by the user's most recently added rating of 8 or higher.
+     * Ratings are read newest first (`userId` + `createdAt desc`, an indexed query).
      * Rating documents carry only the Kinopoisk ID, so the title comes from the
      * movie cache and the TMDB identity from IdMappingService (movie, then tv).
+     * Titles the user already rated are removed with one batched lookup of the
+     * recommended IDs, not by scanning the user's whole history.
      * RecommendationService caches results for days, so repeat visits stay cheap.
      * @param {string} uid
      * @param {string} [locale]
@@ -534,15 +540,16 @@ class HomeDataController {
         const fm = this.firebaseManager || window.firebaseManager;
         const ratingService = fm?.getRatingService?.();
         const idMapping = fm?.getIdMappingService?.();
-        if (!uid || !ratingService?.getUserRatings || !idMapping || typeof RecommendationService === 'undefined') return null;
+        if (!uid || !ratingService?.getAllRatings || !idMapping || typeof RecommendationService === 'undefined') return null;
         this.recommendationService ||= new RecommendationService({
             tmdbService: fm?.getTMDBService?.(),
             idMappingService: idMapping
         });
 
-        const ratings = await ratingService.getUserRatings(uid, 40);
-        const seeds = ratings.filter(rating => Number(rating?.rating) >= 8 && Number(rating?.movieId) > 0).slice(0, 3);
-        const ratedIds = new Set(ratings.map(rating => String(Number(rating?.movieId))));
+        const { ratings = [] } = await ratingService.getAllRatings(HOME_BECAUSE_RATINGS_WINDOW, null, uid) || {};
+        const seeds = ratings
+            .filter(rating => Number(rating?.rating) >= 8 && Number(rating?.movieId) > 0)
+            .slice(0, HOME_BECAUSE_MAX_SEEDS);
 
         for (const seed of seeds) {
             const kinopoiskId = Number(seed.movieId);
@@ -566,7 +573,11 @@ class HomeDataController {
                 targetCount: 10
             }).catch(() => []);
             // Already rated titles are not news; keep the row about discovery.
-            const fresh = (items || []).filter(item => !ratedIds.has(String(Number(item?.kinopoiskId))));
+            const candidates = (items || []).filter(item => Number(item?.kinopoiskId) > 0);
+            const rated = candidates.length && ratingService.getUserRatingsForMovies
+                ? await ratingService.getUserRatingsForMovies(uid, candidates.map(item => Number(item.kinopoiskId))).catch(() => new Map())
+                : new Map();
+            const fresh = candidates.filter(item => !(Number(rated.get?.(String(Number(item.kinopoiskId)))?.rating) > 0));
             if (fresh.length) {
                 return { source: { kinopoiskId, name: cached?.name || cached?.alternativeName || '' }, items: fresh };
             }
