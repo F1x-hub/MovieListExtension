@@ -1062,9 +1062,6 @@ export const locales = {
                 mode: "All ratings",
                 loading_all: "Loading all films for this sort: {count}..."
             },
-            stats: {
-                summary: "Rated by me: {count} · my average {average}"
-            },
             view: {
                 label: "List view",
                 grid: "Grid",
@@ -2831,9 +2828,6 @@ export const locales = {
                 count: "Показано: {count} из {total}",
                 mode: "Все оценки",
                 loading_all: "Загружаем все фильмы для этой сортировки: {count}..."
-            },
-            stats: {
-                summary: "Оценено мной: {count} · моя средняя {average}"
             },
             view: {
                 label: "Вид списка",

@@ -194,7 +194,6 @@ class RatingsPageManager {
             // Results info
             resultsCount: document.getElementById('resultsCount'),
             resultsMode: document.getElementById('resultsMode'),
-            ratingsStats: document.getElementById('ratingsStats'),
             
             // Rating modal (edit own rating)
             ratingModal: document.getElementById('ratingModal'),
@@ -3120,57 +3119,6 @@ class RatingsPageManager {
         
         this.elements.resultsCount.textContent = this.text('results.count', { count, total });
         this.elements.resultsMode.textContent = this.text('results.mode');
-        this.renderRatingsStats();
-    }
-
-    /**
-     * My scores among the films shown: count, average and a 1–10 distribution.
-     * @returns {{count: number, average: number, distribution: number[]}}
-     */
-    getMyRatingStats(movies = this.filteredMovies) {
-        const distribution = Array(10).fill(0);
-        let sum = 0;
-        let count = 0;
-        for (const movie of movies || []) {
-            const score = Math.round(Number(this.getMyRating(movie).rating) || 0);
-            if (score < 1 || score > 10) continue;
-            distribution[score - 1]++;
-            sum += score;
-            count++;
-        }
-        return { count, average: count ? sum / count : 0, distribution };
-    }
-
-    renderRatingsStats() {
-        const container = this.elements?.ratingsStats;
-        if (!container) return;
-        const stats = this.getMyRatingStats();
-        container.hidden = stats.count === 0;
-        container.replaceChildren();
-        if (!stats.count) return;
-        const summary = document.createElement('p');
-        summary.className = 'ratings-stats__summary';
-        summary.textContent = this.text('stats.summary', { count: stats.count, average: stats.average.toFixed(1) });
-        const bars = document.createElement('div');
-        bars.className = 'ratings-stats__bars';
-        bars.setAttribute('role', 'img');
-        const peak = Math.max(...stats.distribution);
-        bars.setAttribute('aria-label', stats.distribution
-            .map((value, index) => `${index + 1}: ${value}`).join(', '));
-        stats.distribution.forEach((value, index) => {
-            const column = document.createElement('div');
-            column.className = 'ratings-stats__column';
-            const bar = document.createElement('span');
-            bar.className = 'ratings-stats__bar';
-            bar.style.height = `${peak ? Math.max(value ? 8 : 2, Math.round((value / peak) * 100)) : 2}%`;
-            bar.title = `${index + 1}: ${value}`;
-            const label = document.createElement('span');
-            label.className = 'ratings-stats__label';
-            label.textContent = String(index + 1);
-            column.append(bar, label);
-            bars.append(column);
-        });
-        container.append(summary, bars);
     }
 
     setupViewToggle() {

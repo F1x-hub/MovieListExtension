@@ -155,16 +155,6 @@ const film = (id, myRating) => ({ movieId: id, myRating, movie: { name: `Film ${
     assert.equal(page.getRatingWord(10), 'Masterpiece');
 }
 
-// Stats cover only my own scores among the films shown.
-{
-    const page = createPage();
-    const stats = page.getMyRatingStats([film(1, 10), film(2, 8), film(3, 0), film(4, 8)]);
-    assert.equal(stats.count, 3);
-    assert.equal(stats.average.toFixed(2), '8.67');
-    assert.deepEqual(stats.distribution, [0, 0, 0, 0, 0, 0, 0, 2, 0, 1]);
-    assert.deepEqual(page.getMyRatingStats([film(5, 0)]), { count: 0, average: 0, distribution: Array(10).fill(0) });
-}
-
 // The view switch toggles the list class and pressed state.
 {
     const page = createPage();
@@ -197,4 +187,4 @@ const film = (id, myRating) => ({ movieId: id, myRating, movie: { name: `Film ${
     assert.equal(link.href, '');
 }
 
-console.log('Ratings my-rating filter, URL filters, scale words, stats, view switch and episode link passed.');
+console.log('Ratings my-rating filter, URL filters, scale words, view switch and episode link passed.');
