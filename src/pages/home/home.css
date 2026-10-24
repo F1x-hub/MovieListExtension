@@ -946,3 +946,8 @@
 .season-banner__cta[hidden] {
     display: none;
 }
+
+/* Cards trimmed to complete rows; the card's own display would override hidden. */
+#because-grid > .movie-card-component[hidden] {
+    display: none;
+}

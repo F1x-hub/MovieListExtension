@@ -303,8 +303,27 @@ class HomePage {
         title.textContent = result.source.name
             ? t('home.because.title', 'Потому что вы оценили «{title}»').replace('{title}', result.source.name)
             : t('home.because.title_generic', 'Похоже на то, что вы высоко оценили');
-        this.renderer.renderCategoryGrid(result.items.slice(0, 10), grid);
+        this.renderer.renderCategoryGrid(result.items.slice(0, 12), grid);
         section.hidden = false;
+        this.trimToFullRows(grid);
+        if (!this.becauseResizeHandler) {
+            this.becauseResizeHandler = () => this.trimToFullRows(grid);
+            window.addEventListener('resize', this.becauseResizeHandler, { passive: true });
+        }
+    }
+
+    /**
+     * Show only complete rows (6/4/3/2 columns by width) so the row never ends
+     * half empty; with less than one row every card stays visible.
+     * @param {HTMLElement} grid
+     */
+    trimToFullRows(grid) {
+        const cards = [...grid.children].filter(child => child.classList.contains('movie-card-component'));
+        if (!cards.length) return;
+        const template = window.getComputedStyle(grid).gridTemplateColumns || '';
+        const columns = Math.max(1, template.split(' ').filter(Boolean).length);
+        const visible = cards.length >= columns ? cards.length - (cards.length % columns) : cards.length;
+        cards.forEach((card, index) => { card.hidden = index >= visible; });
     }
 
     /**

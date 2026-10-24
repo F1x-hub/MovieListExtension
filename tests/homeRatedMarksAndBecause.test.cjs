@@ -159,6 +159,31 @@ function card(document, grid, movieId = null) {
         assert.deepEqual(result.items.map(item => item.kinopoiskId), [11]);
     }
 
+    // The row shows only complete rows for the current column count.
+    {
+        const { document, HomePage, window, dom } = homeContext();
+        const page = Object.create(HomePage.prototype);
+        const grid = document.getElementById('because-grid');
+        for (let i = 0; i < 10; i++) card(document, grid, i + 1);
+        let columns = 'a b c d e f';
+        window.getComputedStyle = () => ({ gridTemplateColumns: columns });
+        const visible = () => [...grid.children].filter(child => !child.hidden).length;
+        page.trimToFullRows(grid);
+        assert.equal(visible(), 6, '10 cards in 6 columns show one full row');
+        columns = 'a b c d';
+        page.trimToFullRows(grid);
+        assert.equal(visible(), 8, 'Narrower grids recompute: 2 rows of 4');
+        columns = 'a b c';
+        page.trimToFullRows(grid);
+        assert.equal(visible(), 9);
+        grid.innerHTML = '';
+        for (let i = 0; i < 4; i++) card(document, grid, i + 1);
+        columns = 'a b c d e f';
+        page.trimToFullRows(grid);
+        assert.equal(visible(), 4, 'Fewer than one row keeps every card');
+        dom.window.close();
+    }
+
     // Styles: the mark stays clear of the Kinopoisk/IMDb badges; hidden wins over .btn.
     const css = read('src/pages/home/home.css');
     const badgeRule = css.match(/\.home-rated-badge \{[^}]*\}/)[0];

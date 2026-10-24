@@ -570,7 +570,8 @@ class HomeDataController {
             };
             const items = await this.recommendationService.getRecommendationsForMovie(source, {
                 language: locale === 'en' ? 'en-US' : 'ru-RU',
-                targetCount: 10
+                // 12 fills whole rows at every Home grid width (6, 4, 3 or 2 columns).
+                targetCount: 12
             }).catch(() => []);
             // Already rated titles are not news; keep the row about discovery.
             const candidates = (items || []).filter(item => Number(item?.kinopoiskId) > 0);
