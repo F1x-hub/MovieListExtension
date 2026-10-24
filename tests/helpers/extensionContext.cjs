@@ -19,7 +19,10 @@ function proxyBypassForFixture(origin) {
     return `<-loopback>;127.0.0.1:${url.port}`;
 }
 
-async function launchExtensionContext({ extensionPath = path.resolve(__dirname, '../..'), fixtureOrigin, additionalFixtureOrigins = [] } = {}) {
+// The extension follows the browser language until the user picks one, so the
+// UI language is pinned: assertions are written against the Russian interface
+// and a CI runner's English Chromium must not change what the tests see.
+async function launchExtensionContext({ extensionPath = path.resolve(__dirname, '../..'), fixtureOrigin, additionalFixtureOrigins = [], uiLanguage = 'ru' } = {}) {
     const fixtures = [fixtureOrigin, ...additionalFixtureOrigins];
     const bypass = `<-loopback>;${[...new Set(fixtures.map(origin => proxyBypassForFixture(origin).split(';')[1]))].join(';')}`;
     const manifest = JSON.parse(fs.readFileSync(path.join(extensionPath, 'manifest.json'), 'utf8'));
@@ -66,8 +69,9 @@ async function launchExtensionContext({ extensionPath = path.resolve(__dirname, 
         const env = { ...process.env };
         for (const key of Object.keys(env)) if (/^(http_proxy|https_proxy|all_proxy|no_proxy)$/i.test(key)) delete env[key];
         context = await chromium.launchPersistentContext(userDataDir, {
-            executablePath, channel: 'chromium', headless: true, env,
+            executablePath, channel: 'chromium', headless: true, env, locale: uiLanguage,
             args: [
+                `--lang=${uiLanguage}`,
                 `--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`,
                 `--proxy-server=http://127.0.0.1:${denyProxy.address().port}`,
                 `--proxy-bypass-list=${bypass}`,
