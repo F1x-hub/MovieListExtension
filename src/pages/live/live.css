@@ -218,6 +218,10 @@
     transform: none;
 }
 
+.live-frame.is-locked {
+    pointer-events: none;
+}
+
 .live-stage,
 .live-empty {
     animation: live-enter 360ms var(--ease-out-soft, ease-out) both;

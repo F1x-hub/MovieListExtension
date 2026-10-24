@@ -19,7 +19,25 @@
     let unsubscribe = null;
 
     // YouTube wrapper telemetry for the mounted frame.
-    const yt = { origin: '', time: 0, at: 0, state: 'UNSTARTED', muted: false, lastCommandAt: 0, mountedAt: 0, forcedMute: false };
+    const yt = {
+        origin: '',
+        time: 0,
+        duration: 0,
+        committedTime: 0,
+        at: 0,
+        state: 'UNSTARTED',
+        ready: false,
+        hasStarted: false,
+        wasPaused: false,
+        mountedWithAutoplay: true,
+        playAttemptAt: 0,
+        muted: false,
+        lastCommandAt: 0,
+        mountedAt: 0,
+        mountedAsAdmin: false,
+        forcedMute: false,
+        suppressUntil: 0
+    };
 
     // Fallback relay (WebRTC from the admin's tab) for viewers whose sources fail.
     const AUTO_RELAY_AFTER_MS = 45000;
@@ -77,7 +95,21 @@
     // dynamic text because Navigation's translatePage() would overwrite it.
     let emptyKeys = null;
 
+    function destroyYoutubeFrame() {
+        const frame = frameEl();
+        if (!frame?.contentWindow || !yt.origin || !mountedKey.startsWith('youtube:')) return;
+        try { frame.contentWindow.postMessage({ action: 'DESTROY' }, yt.origin); } catch { /* frame navigating */ }
+    }
+
+    function syncFrameLock() {
+        const frame = frameEl();
+        if (!frame) return;
+        const lock = channel?.mode === 'youtube' && !isAdmin && playbackConfirmed && !relay.sourceFailed && !relay.watching;
+        frame.classList.toggle('is-locked', lock);
+    }
+
     function showEmpty(titleKey, textKey) {
+        destroyYoutubeFrame();
         els.screen.replaceChildren();
         els.stage.hidden = true;
         els.empty.hidden = false;
@@ -106,16 +138,16 @@
         return frame;
     }
 
-    function youtubeSrc(videoId, startSec) {
+    function youtubeSrc(videoId, startSec, { autoplay = true } = {}) {
         const config = window.PlayerConfig;
         if (config?.YOUTUBE_WRAPPER_URL) {
             yt.origin = new URL(config.YOUTUBE_WRAPPER_URL).origin;
             // Viewers get no pause/seek UI (sound and fullscreen live on this page);
             // the admin keeps YouTube's controls to drive the broadcast.
-            return `${config.buildYouTubeEmbedUrl(videoId, { autoplay: true, start: startSec })}&controls=${isAdmin ? 1 : 0}`;
+            return `${config.buildYouTubeEmbedUrl(videoId, { autoplay, start: startSec })}&controls=${isAdmin ? 1 : 0}`;
         }
         yt.origin = '';
-        return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=1&start=${startSec}&rel=0&controls=${isAdmin ? 1 : 0}&disablekb=${isAdmin ? 0 : 1}`;
+        return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=${autoplay ? 1 : 0}&start=${startSec}&rel=0&controls=${isAdmin ? 1 : 0}&disablekb=${isAdmin ? 0 : 1}`;
     }
 
     /** The movie title links to its details page, where it can be rated. */
@@ -167,8 +199,27 @@
 
         let src;
         if (channel.mode === 'youtube') {
-            Object.assign(yt, { time: position.offsetSec, at: Date.now(), state: 'UNSTARTED', muted: false, lastCommandAt: 0, mountedAt: Date.now(), forcedMute: false });
-            src = youtubeSrc(channel.youtube.videoId, position.offsetSec);
+            const shouldAutoplay = position.state !== 'paused';
+            const now = Date.now();
+            Object.assign(yt, {
+                time: position.offsetSec,
+                duration: 0,
+                committedTime: position.offsetSec,
+                at: now,
+                state: 'UNSTARTED',
+                ready: false,
+                hasStarted: false,
+                wasPaused: position.state === 'paused',
+                mountedWithAutoplay: shouldAutoplay,
+                playAttemptAt: 0,
+                muted: false,
+                lastCommandAt: 0,
+                mountedAt: now,
+                mountedAsAdmin: isAdmin,
+                forcedMute: false,
+                suppressUntil: 0
+            });
+            src = youtubeSrc(channel.youtube.videoId, position.offsetSec, { autoplay: shouldAutoplay });
         } else {
             const params = new URLSearchParams({
                 movieId: String(channel.movie.kinopoiskId),
@@ -179,9 +230,11 @@
             src = `../movie-details/movie-details.html?${params}`;
         }
 
+        destroyYoutubeFrame();
         els.screen.replaceChildren(createFrame(src, channel.title));
         els.screen.classList.toggle('live-screen--movie', channel.mode === 'movie');
         mountedKey = key;
+        syncFrameLock();
         renderClock();
     }
 
@@ -204,10 +257,28 @@
     }
 
     // ---- YouTube lock ----------------------------------------------------------
+    function isOwnRecentWrite() {
+        return Boolean(pendingAdminAction || adminBusy || (lastAdminWriteAt && Date.now() - lastAdminWriteAt < 2500));
+    }
+
     function ytCommand(action, payload) {
         const frame = frameEl();
         if (!frame?.contentWindow || !yt.origin) return;
-        yt.lastCommandAt = Date.now();
+        const now = Date.now();
+        if (action === 'PLAY' || action === 'PAUSE' || action === 'SEEK') {
+            yt.lastCommandAt = now;
+            yt.suppressUntil = Math.max(yt.suppressUntil, now + 2200);
+        }
+        if (action === 'PLAY') {
+            yt.wasPaused = false;
+        } else if (action === 'PAUSE') {
+            yt.wasPaused = true;
+            yt.playAttemptAt = 0;
+        } else if (action === 'SEEK' && payload && Number.isFinite(payload.seconds)) {
+            yt.time = payload.seconds;
+            yt.committedTime = payload.seconds;
+            yt.at = now;
+        }
         try { frame.contentWindow.postMessage({ action, payload }, yt.origin); } catch { /* frame navigating */ }
     }
 
@@ -215,33 +286,149 @@
         return yt.state === 'PLAYING' ? yt.time + (Date.now() - yt.at) / 1000 : yt.time;
     }
 
-    function enforceYoutube(position) {
-        if (channel?.mode !== 'youtube' || !yt.origin || !frameEl()) return;
-        // The admin drives YouTube themselves; their actions are published instead.
-        if (isAdmin) return;
-        // Give the wrapper a moment to load before steering it, and don't spam commands.
-        if (Date.now() - yt.mountedAt < 2500 || Date.now() - yt.lastCommandAt < 900) return;
+    function enforceYoutube(position, { force = false } = {}) {
+        if (channel?.mode !== 'youtube' || !yt.origin || !frameEl() || !yt.ready) return;
+        // The active admin drives YouTube directly; viewers (and any passive second
+        // admin tab receiving a remote timeline update) follow the channel.
+        if (isAdmin && (!force || isOwnRecentWrite())) return;
+        if (!force && Date.now() - yt.lastCommandAt < 900) return;
+
         const live = channel.youtube.live;
         if (position.state === 'paused') {
-            if (yt.state === 'PLAYING' || yt.state === 'BUFFERING') ytCommand('PAUSE');
-            else if (Math.abs(ytEstimatedTime() - position.offsetSec) > 1.5) ytCommand('SEEK', { seconds: position.offsetSec });
+            yt.playAttemptAt = 0;
+            if (yt.state === 'PLAYING' || yt.state === 'BUFFERING') {
+                ytCommand('PAUSE');
+            } else if (yt.state === 'PAUSED' && !live && Math.abs(ytEstimatedTime() - position.offsetSec) > 1.5) {
+                ytCommand('SEEK', { seconds: position.offsetSec });
+            }
             return;
         }
-        if (!live && Math.abs(ytEstimatedTime() - position.offsetSec) > DRIFT_SEC) {
-            ytCommand('SEEK', { seconds: position.offsetSec });
-            return;
-        }
-        if (['PAUSED', 'CUED', 'UNSTARTED'].includes(yt.state)) {
+
+        if (position.state !== 'live') return;
+        if (!live && yt.duration > 0 && position.offsetSec >= yt.duration - 1) return;
+
+        const inactive = ['PAUSED', 'CUED', 'UNSTARTED', 'ENDED'].includes(yt.state);
+        if (!yt.hasStarted && ['UNSTARTED', 'CUED', 'PAUSED'].includes(yt.state)) {
+            if (!yt.playAttemptAt) yt.playAttemptAt = Date.now();
             // A browser that blocks autoplay with sound still allows it muted.
-            if (!yt.forcedMute && Date.now() - yt.mountedAt > 6000 && yt.state !== 'PAUSED') {
+            if (!isAdmin && !yt.forcedMute && Date.now() - yt.playAttemptAt >= 1800) {
                 yt.forcedMute = true;
-                ytCommand('MUTE');
                 yt.muted = true;
+                ytCommand('MUTE');
+                if (!live && Math.abs(ytEstimatedTime() - position.offsetSec) > DRIFT_SEC) {
+                    ytCommand('SEEK', { seconds: position.offsetSec });
+                }
+                ytCommand('PLAY');
                 renderSound();
-                setTimeout(() => ytCommand('PLAY'), 150);
+                els.notice.hidden = false;
+                els.notice.textContent = t('relay_muted');
                 return;
             }
+        }
+
+        if (!live && Math.abs(ytEstimatedTime() - position.offsetSec) > DRIFT_SEC) {
+            ytCommand('SEEK', { seconds: position.offsetSec });
+            if (!inactive) return;
+        }
+        if (inactive) {
             ytCommand('PLAY');
+        }
+    }
+
+    function expectedAdminTimelineSec(pos) {
+        if (pendingAdminAction) {
+            return pendingAdminAction.atSec;
+        }
+        if (lastAdminSent.at && Date.now() - lastAdminSent.at < 2500) {
+            return lastAdminSent.action === 'pause'
+                ? lastAdminSent.atSec
+                : lastAdminSent.atSec + (Date.now() - lastAdminSent.at) / 1000;
+        }
+        return pos.offsetSec;
+    }
+
+    function handleAdminYoutubeTelemetry(eventName, nextState, hasTime, previousState, previousTime) {
+        if (!isAdmin || !channel || channel.mode !== 'youtube' || channel.youtube.live) return;
+
+        if (Date.now() < yt.suppressUntil) {
+            if (nextState === 'PLAYING') {
+                yt.hasStarted = true;
+                yt.wasPaused = false;
+                if (hasTime) yt.committedTime = yt.time;
+            } else if (nextState === 'PAUSED') {
+                yt.wasPaused = true;
+                if (hasTime) yt.committedTime = yt.time;
+            }
+            return;
+        }
+
+        const pos = window.CinemaChannel.computePosition(channel);
+        const refSec = expectedAdminTimelineSec(pos);
+
+        if (!yt.hasStarted) {
+            if (nextState === 'PLAYING') {
+                yt.hasStarted = true;
+                yt.wasPaused = false;
+                yt.committedTime = yt.time;
+                if (pos.state === 'paused' || pendingAdminAction?.action === 'pause') {
+                    publishAdminAction('resume', yt.time);
+                } else if (hasTime && Math.abs(yt.time - pos.offsetSec) > DRIFT_SEC) {
+                    ytCommand('SEEK', { seconds: pos.offsetSec });
+                }
+            } else if (
+                pos.state === 'paused'
+                && (nextState === 'PAUSED' || nextState === 'CUED')
+                && hasTime
+                && Math.abs(yt.time - refSec) > 1.5
+            ) {
+                yt.committedTime = yt.time;
+                publishAdminAction('seek', yt.time);
+            }
+            return;
+        }
+
+        if (eventName === 'STATE_CHANGE' && nextState === 'PAUSED') {
+            yt.wasPaused = true;
+            yt.committedTime = yt.time;
+            publishAdminAction('pause', yt.time);
+            return;
+        }
+
+        if (nextState === 'PAUSED' && hasTime) {
+            if (Math.abs(yt.time - previousTime) > 1.5 || Math.abs(yt.time - refSec) > 1.5) {
+                yt.wasPaused = true;
+                yt.committedTime = yt.time;
+                publishAdminAction(pos.state === 'paused' ? 'seek' : 'pause', yt.time);
+            }
+            return;
+        }
+
+        if (nextState === 'PLAYING') {
+            if (pos.state === 'paused' || pendingAdminAction?.action === 'pause' || yt.wasPaused) {
+                yt.wasPaused = false;
+                yt.committedTime = yt.time;
+                publishAdminAction('resume', yt.time);
+                return;
+            }
+            if (hasTime) {
+                const jumpedFromPrev = Math.abs(yt.time - previousTime) > DRIFT_SEC;
+                const jumpedFromCommitted = previousState !== 'PLAYING' && Math.abs(yt.time - yt.committedTime) > DRIFT_SEC;
+                const refinedPendingSeek = pendingAdminAction?.action === 'seek' && Math.abs(yt.time - pendingAdminAction.atSec) > 0.5;
+                if (jumpedFromPrev || jumpedFromCommitted || refinedPendingSeek) {
+                    yt.committedTime = yt.time;
+                    publishAdminAction('seek', yt.time);
+                    return;
+                }
+                yt.committedTime = yt.time;
+            }
+            return;
+        }
+
+        if (nextState === 'BUFFERING' && hasTime && !yt.wasPaused && pos.state !== 'paused') {
+            if (Math.abs(yt.time - previousTime) > DRIFT_SEC || Math.abs(yt.time - yt.committedTime) > DRIFT_SEC) {
+                yt.committedTime = yt.time;
+                publishAdminAction('seek', yt.time);
+            }
         }
     }
 
@@ -252,24 +439,78 @@
         if (!data || data.source !== 'STARTTAB_PLAYER_WRAPPER') return;
         const payload = data.payload || {};
         const previousState = yt.state;
-        const expected = ytEstimatedTime();
-        if (Number.isFinite(Number(payload.currentTime))) {
+        const previousTime = ytEstimatedTime();
+        const hasTime = payload.currentTime !== undefined && payload.currentTime !== null && Number.isFinite(Number(payload.currentTime));
+
+        if (Number.isFinite(Number(payload.duration)) && Number(payload.duration) > 0) {
+            yt.duration = Number(payload.duration);
+        }
+        if (hasTime) {
             yt.time = Number(payload.currentTime);
             yt.at = Date.now();
         }
-        if (data.event === 'STATE_CHANGE' && payload.state) yt.state = payload.state;
-        if (isAdmin && !channel?.youtube?.live && Date.now() - yt.lastCommandAt > 1500 && Date.now() - yt.mountedAt > 2500) {
-            if (data.event === 'STATE_CHANGE' && payload.state === 'PAUSED' && previousState !== 'PAUSED') publishAdminAction('pause', yt.time);
-            else if (data.event === 'STATE_CHANGE' && payload.state === 'PLAYING' && previousState === 'PAUSED') publishAdminAction('resume', yt.time);
-            else if (Math.abs(yt.time - expected) > DRIFT_SEC && previousState === 'PLAYING') publishAdminAction('seek', yt.time);
+
+        if (data.event === 'READY') {
+            yt.ready = true;
+            if (yt.state === 'UNSTARTED') yt.state = 'CUED';
+            if (channel?.mode === 'youtube') {
+                const pos = window.CinemaChannel.computePosition(channel);
+                if (yt.mountedWithAutoplay && pos.state === 'live' && !yt.playAttemptAt) {
+                    yt.playAttemptAt = Date.now();
+                }
+                if (!isAdmin) enforceYoutube(pos, { force: true });
+            }
+            return;
         }
-        if (data.event === 'TIME_UPDATE') { yt.state = 'PLAYING'; playbackConfirmed = true; }
-        if (data.event === 'READY') yt.state = yt.state === 'UNSTARTED' ? 'CUED' : yt.state;
+
         if (data.event === 'ERROR') {
             relay.sourceFailed = true;
+            syncFrameLock();
             if (!maybeAutoRelay()) {
                 els.notice.hidden = false;
                 els.notice.textContent = t('youtube_blocked');
+            }
+            return;
+        }
+
+        let nextState;
+        if (data.event === 'STATE_CHANGE' && payload.state) {
+            yt.ready = true;
+            nextState = payload.state;
+            yt.state = nextState;
+        } else if (data.event === 'TIME_UPDATE') {
+            yt.ready = true;
+            nextState = payload.state || 'PLAYING';
+            yt.state = nextState;
+        } else {
+            return;
+        }
+
+        if (nextState === 'PLAYING') {
+            yt.playAttemptAt = 0;
+            playbackConfirmed = true;
+        }
+        syncFrameLock();
+
+        if (isAdmin) {
+            handleAdminYoutubeTelemetry(data.event, nextState, hasTime, previousState, previousTime);
+        }
+        if (nextState === 'PLAYING') {
+            yt.hasStarted = true;
+        }
+
+        if (
+            data.event === 'STATE_CHANGE'
+            && nextState === 'PAUSED'
+            && channel?.mode === 'youtube'
+            && !channel.youtube.live
+            && (!isAdmin || !isOwnRecentWrite())
+        ) {
+            const pos = window.CinemaChannel.computePosition(channel);
+            if (pos.state === 'paused' && Math.abs(yt.time - pos.offsetSec) > 1.5) {
+                enforceYoutube(pos, { force: true });
+            } else if (!isAdmin && pos.state === 'live') {
+                enforceYoutube(pos, { force: true });
             }
         }
     }
@@ -319,6 +560,9 @@
         }
         yt.muted = !yt.muted;
         ytCommand(yt.muted ? 'MUTE' : 'UNMUTE');
+        if (!yt.muted && yt.forcedMute && els.notice.textContent === t('relay_muted')) {
+            els.notice.hidden = true;
+        }
         renderSound();
     }
 
@@ -419,6 +663,7 @@
 
     async function enterRelay({ auto = false } = {}) {
         if (relay.watching || !relay.status.active || !relay.service || isAdmin) return;
+        destroyYoutubeFrame();
         relay.watching = true;
         const video = document.createElement('video');
         video.className = 'live-relay-video';
@@ -501,12 +746,17 @@
         if (!manualChannel) return;
         const next = window.CinemaChannel.resolveChannel(manualChannel, scheduleItems);
         const signature = signatureOf(next);
-        if (!force && signature === channelSignature) return;
+        const changed = signature !== channelSignature;
+        if (!force && !changed) return;
+        const hadChannel = channelSignature !== '';
         channelSignature = signature;
         channel = next;
         yt.lastCommandAt = 0;
         mountMedia();
         postBroadcastState();
+        if (hadChannel && changed && channel?.mode === 'youtube') {
+            enforceYoutube(window.CinemaChannel.computePosition(channel), { force: true });
+        }
         renderClock();
     }
 
@@ -528,7 +778,7 @@
         } else if (position.state === 'upcoming') {
             setText(els.clock, t('clock_upcoming', { time: CinemaChannel.formatClock(position.offsetSec) }));
         } else if (position.state === 'live' && !isLiveStream) {
-            const total = channel.movie?.durationSec;
+            const total = channel[channel.mode]?.durationSec || (channel.mode === 'youtube' && yt.duration > 0 ? Math.round(yt.duration) : 0);
             setText(els.clock, total
                 ? `${CinemaChannel.formatClock(position.offsetSec)} / ${CinemaChannel.formatClock(total)}`
                 : t('clock_playing', { time: CinemaChannel.formatClock(position.offsetSec) }));
@@ -556,6 +806,8 @@
     let service = null;
     let isAdmin = false;
     let adminBusy = false;
+    let lastAdminWriteAt = 0;
+    const lastAdminSent = { action: '', atSec: 0, at: 0, baseSignature: '' };
 
     // The admin's own pause/play/seek in the player becomes the broadcast timeline.
     // Reports are coalesced so one drag on the progress bar is a single write.
@@ -571,18 +823,37 @@
     }
 
     async function flushAdminAction() {
+        if (adminBusy) return;
         const request = pendingAdminAction;
         pendingAdminAction = null;
-        if (!request || !channel || adminBusy) return;
+        if (!request || !channel || !service || !isAdmin) return;
         const position = window.CinemaChannel.computePosition(channel);
-        const paused = position.state === 'paused';
-        // Skip reports that only echo the current timeline.
-        if (request.action === 'pause' && paused && Math.abs(position.offsetSec - request.atSec) < 2) return;
-        if (request.action === 'resume' && !paused) return;
-        if (request.action === 'seek' && Math.abs(position.offsetSec - request.atSec) < 2) return;
+        const unconfirmed = Boolean(lastAdminSent.at && channelSignature === lastAdminSent.baseSignature);
+        const paused = unconfirmed
+            ? (lastAdminSent.action === 'pause' ? true : (lastAdminSent.action === 'resume' ? false : position.state === 'paused'))
+            : position.state === 'paused';
+        const currentOffsetSec = unconfirmed
+            ? (paused ? lastAdminSent.atSec : lastAdminSent.atSec + (Date.now() - lastAdminSent.at) / 1000)
+            : position.offsetSec;
+
+        let { action } = request;
+        // Skip reports that only echo the current timeline; turn a coalesced
+        // pause+seek+resume on an already-live channel into a seek.
+        if (action === 'pause' && paused && Math.abs(currentOffsetSec - request.atSec) < 2) return;
+        if (action === 'resume' && !paused) {
+            if (Math.abs(currentOffsetSec - request.atSec) < 2) return;
+            action = 'seek';
+        }
+        if (action === 'seek' && Math.abs(currentOffsetSec - request.atSec) < 2) return;
+
+        const baseSignature = channelSignature;
         adminBusy = true;
+        lastAdminWriteAt = Date.now();
         try {
-            await service.control(channel, request.action, { offsetSec: request.atSec });
+            await service.control(channel, action, { offsetSec: request.atSec });
+            const now = Date.now();
+            lastAdminWriteAt = now;
+            Object.assign(lastAdminSent, { action, atSec: request.atSec, at: now, baseSignature });
         } catch (error) {
             console.warn('[Live] Admin control failed:', error);
             if (typeof Utils !== 'undefined') {
@@ -590,28 +861,51 @@
             }
         } finally {
             adminBusy = false;
+            if (pendingAdminAction) {
+                clearTimeout(adminActionTimer);
+                adminActionTimer = setTimeout(flushAdminAction, 50);
+            }
         }
     }
 
+    function applyAdminRole(nextIsAdmin) {
+        const changed = isAdmin !== nextIsAdmin;
+        isAdmin = nextIsAdmin;
+        try { chrome.storage?.local?.set?.({ cached_is_admin: nextIsAdmin }); } catch { /* storage unavailable */ }
+        if (!channel) return;
+        if (channel.mode === 'youtube' && yt.mountedAsAdmin !== isAdmin && !els.stage.hidden && !relay.watching) {
+            mountMedia(true);
+        } else {
+            syncFrameLock();
+        }
+        if (changed) {
+            postBroadcastState();
+            renderClock();
+        }
+    }
+
+    async function verifyAdminForUser(manager, user) {
+        if (!user?.uid) {
+            applyAdminRole(false);
+            return;
+        }
+        try {
+            const profile = await manager.db.collection('users').doc(user.uid).get();
+            applyAdminRole(Boolean(profile.exists && profile.data()?.isAdmin === true));
+        } catch { /* keep the cached answer */ }
+    }
+
     async function detectAdmin(manager) {
-        const wasAdmin = isAdmin;
         // Fast path: the flag other pages cache; then confirm against the user profile.
         try {
             const stored = await chrome.storage.local.get('cached_is_admin');
-            isAdmin = stored?.cached_is_admin === true;
-        } catch { isAdmin = false; }
+            if (stored?.cached_is_admin === true) applyAdminRole(true);
+        } catch { /* ignore */ }
         if (!manager) return;
         try {
-            const user = await manager.waitForAuthReady?.(4000);
-            if (!user?.uid) { isAdmin = false; return; }
-            const profile = await manager.db.collection('users').doc(user.uid).get();
-            isAdmin = profile.exists && profile.data()?.isAdmin === true;
+            const user = await manager.waitForAuthReady?.(10000);
+            await verifyAdminForUser(manager, user);
         } catch { /* keep the cached answer */ }
-        // Role decides the player chrome (YouTube controls, movie lock): refresh it.
-        if (channel && wasAdmin !== isAdmin) {
-            if (channel.mode === 'youtube') mountMedia(true);
-            postBroadcastState();
-        }
     }
 
     async function start() {
@@ -676,6 +970,9 @@
             if (document.visibilityState !== 'visible' || !channel) return;
             yt.lastCommandAt = 0;
             postBroadcastState();
+            if (channel.mode === 'youtube' && !isAdmin) {
+                enforceYoutube(window.CinemaChannel.computePosition(channel), { force: true });
+            }
             renderClock();
         });
 
@@ -684,6 +981,9 @@
         CinemaChannel.syncClock().then(() => {
             if (!channel) return;
             postBroadcastState();
+            if (channel.mode === 'youtube') {
+                enforceYoutube(CinemaChannel.computePosition(channel), { force: true });
+            }
             renderClock();
         });
 
@@ -711,6 +1011,9 @@
                 });
             }
             detectAdmin(manager);
+            window.addEventListener('authStateChanged', event => {
+                verifyAdminForUser(manager, event.detail?.user || null);
+            });
             unsubscribeSchedule = service.subscribeSchedule(items => {
                 scheduleItems = items;
                 if (manualChannel) refreshChannel();
