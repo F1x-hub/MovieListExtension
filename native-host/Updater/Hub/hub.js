@@ -15,6 +15,7 @@
         FEED_UNAVAILABLE: 'Сервер обновлений недоступен.',
         CATALOG_NOT_PUBLISHED: 'Каталог компонентов ещё не опубликован в релизе.',
         HUB_BUSY: 'Подождите завершения текущего действия.',
+        HUB_NOT_UPDATED: 'Установлена та же версия хаба — перезапуск не нужен.',
         UPDATE_IN_PROGRESS: 'Сейчас уже идёт обновление. Повторите после его завершения.',
         ELEVATION_DECLINED: 'Установка отменена: запрос администратора Windows был отклонён.',
         SUITE_INSTALL_CANCELLED: 'Установка медиаплеера была отменена.',
@@ -272,6 +273,23 @@
         const hub = state.hub;
         const installed = hub.installedVersion || hub.runningVersion;
         const busy = renderOperation(card, 'updater');
+        // A self-update replaces the file on disk while this window keeps
+        // running the previous version until it is restarted.
+        const restartNeeded = !busy && isNewer(hub.installedVersion, hub.runningVersion);
+        if (restartNeeded) {
+            setBadge(card, `Обновлён до ${hub.installedVersion}`, 'update');
+            setFacts(card, [['Установлено', hub.installedVersion], ['Запущено', hub.runningVersion], ['Последняя', hub.latestVersion || '—']]);
+            const box = card.querySelector('[data-role="operation"]');
+            box.hidden = false;
+            box.innerHTML = '<span class="operation__text"></span>';
+            box.firstChild.textContent = 'Хаб обновлён. Перезапустите окно, чтобы открыть новую версию.';
+            setActions(card, [button('Перезапустить хаб', 'primary', async () => {
+                const result = await call('restartHub');
+                if (result.success !== true) showNotice(errorText(result), 'danger');
+            })]);
+            $('hubVersion').textContent = `Версия ${hub.runningVersion}`;
+            return false;
+        }
         if (busy) setBadge(card, 'Выполняется', 'busy');
         else if (isNewer(hub.latestVersion, installed)) setBadge(card, `Доступна ${hub.latestVersion}`, 'update');
         else setBadge(card, hub.installed ? 'Установлен' : 'Не установлен', hub.installed ? 'ok' : 'neutral');

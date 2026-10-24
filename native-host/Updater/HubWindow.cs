@@ -195,6 +195,8 @@ internal static partial class Program
                     });
                 case "dismissComponent":
                     return DismissComponentOperationCore(ReadString(args, "operationId"));
+                case "restartHub":
+                    return RestartIntoInstalledHub();
                 default:
                     return ErrorResponse("ACTION_UNSUPPORTED", "Unsupported hub action.");
             }
@@ -206,6 +208,19 @@ internal static partial class Program
             if (Interlocked.Exchange(ref busy, 1) == 1) return ErrorResponse("HUB_BUSY", "Another hub action is running.");
             try { return work(); }
             finally { Volatile.Write(ref busy, 0); }
+        }
+
+        // After a self-update the permanent executable is newer than this
+        // window's image; start it and close this window.
+        private object RestartIntoInstalledHub()
+        {
+            var installed = ReadUpdaterVersion(PermanentUpdater);
+            // Compare three components: FileVersion carries a fourth one.
+            if (installed is null || Version.Parse(installed.ToString(3)).CompareTo(Version.Parse(UpdaterVersion)) <= 0)
+                return ErrorResponse("HUB_NOT_UPDATED", "The installed hub is not newer than this window.");
+            Process.Start(new ProcessStartInfo(PermanentUpdater) { UseShellExecute = false, ArgumentList = { "--setup", "--after-update" } })?.Dispose();
+            BeginInvoke(Close);
+            return new { success = true };
         }
 
         private object OpenKnownFolder(string? target)
