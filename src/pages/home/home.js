@@ -252,6 +252,84 @@ class HomePage {
         this.renderer.renderFeaturedSlider(discovery.featured, this.featuredSlider);
         this.sliderController.init(discovery.featured);
         this.renderer.renderCategoryGrids(discovery, this.categoryElements, () => this.loadDiscovery());
+        this.markRatedCards(this.personalUid);
+    }
+
+    /**
+     * «Потому что вы оценили X»: one row of recommendations for signed-in users.
+     * Hidden for guests and whenever nothing usable comes back.
+     * @param {string|null|undefined} uid
+     */
+    async loadBecauseYouRated(uid) {
+        const section = document.getElementById('because-section');
+        const grid = document.getElementById('because-grid');
+        const title = document.getElementById('because-title');
+        if (!section || !grid || !title) return;
+        const generation = this.becauseGeneration = (this.becauseGeneration || 0) + 1;
+        if (!uid) {
+            section.hidden = true;
+            grid.innerHTML = '';
+            return;
+        }
+        let result = null;
+        try {
+            result = await this.dataController.getBecauseYouRated(uid, window.i18n?.currentLocale || 'ru');
+        } catch (error) {
+            console.warn('HomePage: Because-you-rated load failed:', error);
+        }
+        if (generation !== this.becauseGeneration || uid !== this.personalUid) return;
+        if (!result?.items?.length) {
+            section.hidden = true;
+            return;
+        }
+        const t = (key, fallback) => {
+            const value = window.i18n?.get?.(key);
+            return typeof value === 'string' && value !== key ? value : fallback;
+        };
+        title.textContent = result.source.name
+            ? t('home.because.title', 'Потому что вы оценили «{title}»').replace('{title}', result.source.name)
+            : t('home.because.title_generic', 'Похоже на то, что вы высоко оценили');
+        this.renderer.renderCategoryGrid(result.items.slice(0, 10), grid);
+        section.hidden = false;
+    }
+
+    /**
+     * Mark discovery cards the signed-in user has already rated. Only cards with a
+     * resolved Kinopoisk ID can be matched; one batched read covers every grid.
+     * @param {string|null|undefined} uid
+     */
+    async markRatedCards(uid) {
+        const grids = Object.values(this.categoryElements || {}).filter(Boolean);
+        const cards = grids.flatMap(grid => [...grid.querySelectorAll('.movie-card-component[data-movie-id]')]);
+        const markGeneration = this.ratedMarkGeneration = (this.ratedMarkGeneration || 0) + 1;
+        const clear = () => cards.forEach(card => {
+            card.classList.remove('home-rated');
+            card.querySelector('.home-rated-badge')?.remove();
+        });
+        const ratingService = this.dataController.firebaseManager?.getRatingService?.();
+        if (!uid || !cards.length || !ratingService?.getUserRatingsForMovies) {
+            clear();
+            return;
+        }
+        let ratings;
+        try {
+            ratings = await ratingService.getUserRatingsForMovies(uid, cards.map(card => card.dataset.movieId));
+        } catch {
+            return;
+        }
+        if (markGeneration !== this.ratedMarkGeneration || uid !== this.personalUid) return;
+        clear();
+        const label = window.i18n?.get?.('home.rated_badge');
+        cards.forEach(card => {
+            const score = Number(ratings?.get?.(String(Number(card.dataset.movieId)))?.rating) || 0;
+            if (score <= 0) return;
+            const badge = document.createElement('span');
+            badge.className = 'home-rated-badge';
+            badge.textContent = `★ ${score}`;
+            badge.title = label && label !== 'home.rated_badge' ? label : 'Вы оценили';
+            card.classList.add('home-rated');
+            card.append(badge);
+        });
     }
 
     async loadDiscovery() {
@@ -308,6 +386,8 @@ class HomePage {
     async updatePersonalTier(userParam = null) {
         const uid = this.dataController.resolveUid(userParam);
         this.selectPersonalUid(uid);
+        this.markRatedCards(uid);
+        this.loadBecauseYouRated(uid);
         if (!uid) {
             this.renderPersonalData({ isAuthenticated: false });
             return;

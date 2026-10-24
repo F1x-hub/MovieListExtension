@@ -2098,3 +2098,38 @@
     accent-color: var(--text-primary);
     cursor: pointer;
 }
+
+.config-summary {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--theme-text-secondary, var(--text-secondary));
+}
+
+.config-title-wrapper {
+    min-width: 0;
+}
+
+.random-relax-options {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin: 12px 0 4px;
+}
+
+.random-relax-title {
+    flex-basis: 100%;
+    margin: 0;
+    text-align: center;
+    font-size: 13px;
+    color: var(--theme-text-secondary, var(--text-secondary));
+}
+
+.random-relax-btn {
+    font-size: 13px;
+    padding: 6px 12px;
+}

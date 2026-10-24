@@ -519,6 +519,60 @@ class HomeDataController {
             communityTop: communityRes.status === 'fulfilled' ? communityRes.value : []
         };
     }
+
+    /**
+     * Recommendations seeded by the user's most recent rating of 8 or higher.
+     * Rating documents carry only the Kinopoisk ID, so the title comes from the
+     * movie cache and the TMDB identity from IdMappingService (movie, then tv).
+     * RecommendationService caches results for days, so repeat visits stay cheap.
+     * @param {string} uid
+     * @param {string} [locale]
+     * @returns {Promise<{source: {kinopoiskId: number, name: string}, items: Object[]}|null>}
+     */
+    async getBecauseYouRated(uid, locale = 'ru') {
+        this.initServices();
+        const fm = this.firebaseManager || window.firebaseManager;
+        const ratingService = fm?.getRatingService?.();
+        const idMapping = fm?.getIdMappingService?.();
+        if (!uid || !ratingService?.getUserRatings || !idMapping || typeof RecommendationService === 'undefined') return null;
+        this.recommendationService ||= new RecommendationService({
+            tmdbService: fm?.getTMDBService?.(),
+            idMappingService: idMapping
+        });
+
+        const ratings = await ratingService.getUserRatings(uid, 40);
+        const seeds = ratings.filter(rating => Number(rating?.rating) >= 8 && Number(rating?.movieId) > 0).slice(0, 3);
+        const ratedIds = new Set(ratings.map(rating => String(Number(rating?.movieId))));
+
+        for (const seed of seeds) {
+            const kinopoiskId = Number(seed.movieId);
+            const cached = await this.movieCacheService?.getCachedMovie?.(kinopoiskId, { localOnly: true }).catch(() => null);
+            const isSeries = Boolean(cached?.isSeries || ['tv-series', 'mini-series', 'animated-series', 'tv-show'].includes(cached?.type));
+            let mapping = null;
+            for (const mediaType of isSeries ? ['tv', 'movie'] : ['movie', 'tv']) {
+                mapping = await idMapping.resolveTmdbIdByKinopoiskId(kinopoiskId, mediaType).catch(() => null);
+                if (mapping?.tmdbId) break;
+            }
+            if (!mapping?.tmdbId) continue;
+
+            const source = {
+                ...(cached || {}),
+                kinopoiskId,
+                tmdbId: mapping.tmdbId,
+                mediaType: mapping.mediaType || (isSeries ? 'tv' : 'movie')
+            };
+            const items = await this.recommendationService.getRecommendationsForMovie(source, {
+                language: locale === 'en' ? 'en-US' : 'ru-RU',
+                targetCount: 10
+            }).catch(() => []);
+            // Already rated titles are not news; keep the row about discovery.
+            const fresh = (items || []).filter(item => !ratedIds.has(String(Number(item?.kinopoiskId))));
+            if (fresh.length) {
+                return { source: { kinopoiskId, name: cached?.name || cached?.alternativeName || '' }, items: fresh };
+            }
+        }
+        return null;
+    }
 }
 
 if (typeof window !== 'undefined') {
