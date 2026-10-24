@@ -60,6 +60,9 @@ MovieList-extension-*.zip
 MovieListSetup.exe
 update.json
 update.json.sig
+components.json
+components.json.sig
+MediaPlayerSuiteSetup.exe
 .update-mirror/
 gha-creds-*.json
 update-signing-private.pem

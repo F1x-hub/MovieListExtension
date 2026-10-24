@@ -93,7 +93,11 @@ movie-rating-extension/
   origin and reuses the extension's `theme.css`/`tokens.css` as resources; it
   installs the first signed extension release, connects folders and starts
   component installs. `MovieListUpdater.csproj` `<Version>` is the only updater
-  version source; signed feeds keep the 1.1.4 `minUpdaterVersion` protocol floor. A one-time full Suite Setup
+  version source; signed feeds keep the 1.1.4 `minUpdaterVersion` protocol floor.
+  `UpdateService` records `hostAvailability` from Chrome's Native Messaging
+  errors; `HubPrompt` (loaded by `Navigation`, never in the popup) reads it and
+  offers the latest `MovieListSetup.exe` on Windows. «Что нового» also opens
+  automatically on full pages only. A one-time full Suite Setup
   provisions the original-owner named-pipe broker as SYSTEM; it accepts signed
   fixed-component descriptors, never caller paths/commands. LocalService only
   writes a pre-created maintenance readiness file. Runtime activation checks the

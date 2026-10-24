@@ -1,5 +1,16 @@
 export const whatsNew = [
     {
+        id: '1.4.1', version: '1.4.1', date: '2026-10-24',
+        highlights: [
+            { id: 'hub', title: { ru: 'MovieList Hub', en: 'MovieList Hub' }, text: { ru: 'Один установщик для всего: ставит расширение, подключает автообновления и показывает версии компонентов. Если хаб не установлен или устарел, расширение предложит его скачать.', en: 'One installer for everything: it installs the extension, connects automatic updates and shows component versions. If the hub is missing or outdated, the extension offers to download it.' } },
+            { id: 'mediaplayer', title: { ru: 'Медиаплеер обновляется сам', en: 'MediaPlayer updates itself' }, text: { ru: 'Торрент-плеер MediaPlayer ставится и восстанавливается из хаба, а новые версии устанавливаются в фоне без запросов Windows.', en: 'The MediaPlayer torrent player installs and repairs from the hub, and new versions install in the background without Windows prompts.' } },
+            { id: 'torrent-series', title: { ru: 'Сериалы через торренты', en: 'Series over torrents' }, text: { ru: 'Выбор файла в раздаче, отдельные загрузки для каждой серии, дорожки озвучки и субтитры в общих настройках плеера.', en: 'Pick a file in the torrent, keep separate downloads per episode, and choose audio tracks and subtitles in the shared player settings.' } },
+            { id: 'achievements', title: { ru: 'Достижения и ранги', en: 'Achievements and ranks' }, text: { ru: 'Тридцать достижений за оценки, просмотры и марафоны, ранг профиля с рамкой вокруг фото и витрина лучших значков.', en: 'Thirty achievements for ratings, watching and marathons, a profile rank with a frame around the photo and a showcase of top badges.' } },
+            { id: 'recommendations', title: { ru: 'Потому что вы оценили', en: 'Because you rated' }, text: { ru: 'На Главной появилась подборка по вашей недавней высокой оценке, а уже оценённые фильмы отмечены на карточках.', en: 'Home now has picks based on your recent high rating, and films you already rated are marked on cards.' } },
+            { id: 'quiet-popup', title: { ru: 'Новости без лишних окон', en: 'Release notes without interruptions' }, text: { ru: '«Что нового» теперь открывается только на страницах расширения и больше не появляется в маленьком окне попапа.', en: 'What’s new now opens only on extension pages and no longer pops up in the small popup window.' } }
+        ]
+    },
+    {
         id: '1.4.0', version: '1.4.0', date: '2026-10-22',
         highlights: [
             { id: 'profile-favorites', title: { ru: 'Любимые фильмы в профиле', en: 'Favorite movies on your profile' }, text: { ru: 'Закрепите до пяти любимых фильмов вверху профиля: выберите их из своих оценок и расставьте по местам перетаскиванием.', en: 'Pin up to five favorite movies at the top of your profile: pick them from your ratings and drag them into order.' } },

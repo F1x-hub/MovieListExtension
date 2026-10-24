@@ -55,6 +55,9 @@ jobs:
       - name: Verify native directory replacement
         run: dotnet run --project native-host/Updater.Tests/Updater.Tests.csproj --configuration Release
 
+      - name: Stage pinned MediaPlayer Suite
+        run: node scripts/suite-release.cjs fetch
+
       - name: Create signed update metadata
         env:
           UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY }}

@@ -208,9 +208,28 @@ MEDIAPLAYER_SUITE_API_MAJOR=1
 MEDIAPLAYER_SUITE_BUILD_ID=<buildId from that bundle-version.json>
 ```
 
-The release workflow uploads both catalog files and an explicitly supplied Suite
-asset. It does not build the sibling MediaPlayer repository automatically; make
-that artifact available to the release job before using these variables. Never
+The release workflow does not build the sibling MediaPlayer repository. Deliver a
+Suite release through the pinned staging step instead of setting these variables:
+
+1. In MediaPlayer, raise the version in `package.json`, the root of
+   `package-lock.json` and `AppVersion` in `installer/MediaPlayerSuite.iss`, then run
+   `npm run build-windows-bundle` and compile the Inno script.
+2. In this repository run, with a GitHub token that may create releases:
+
+   ```text
+   node scripts/suite-release.cjs stage <MediaPlayer>/.artifacts/installer/MediaPlayerSuiteSetup.exe <MediaPlayer>/.artifacts/windows-suite/bundle-version.json
+   ```
+
+   It uploads the installer to the prerelease `suite-v<version>` (which never matches
+   the `v*.*.*` trigger and never becomes "latest") and writes `release/suite.json`
+   with the version, API major, build ID, size and SHA-256.
+3. Commit `release/suite.json` with the extension release and push the tag. The
+   "Stage pinned MediaPlayer Suite" step downloads the installer only when its version
+   is newer than the published catalog, rejects any size or SHA-256 mismatch, and
+   exports the `MEDIAPLAYER_SUITE_*` variables for signing and upload. Later
+   extension-only releases keep the signed Suite descriptor and its original URL.
+
+The release workflow uploads both catalog files and the verified Suite asset. Never
 reuse a published Suite version for different installer bytes. Verify both native
 public keys (`ReleasePublicKey` and MediaPlayer update-host `ReleaseKeys.PublicKey`)
 match before a Suite release. Key rotation requires an explicit migration of both

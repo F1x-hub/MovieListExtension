@@ -1,6 +1,6 @@
 {
   "name": "movie-rating-extension",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Rate and discover movies with community ratings and Kinopoisk integration",
   "main": "popup.js",
   "scripts": {
@@ -50,8 +50,8 @@
     "test:pro-player": "node tests/providerStartupLatency.test.cjs && node tests/proPlayerPreferences.test.cjs && node tests/watchSourceHealth.test.cjs && node tests/officialYouTubeParser.test.cjs && node tests/searchResultVerification.test.cjs && node tests/watchEntry.test.cjs && node tests/watchEntryPage.test.cjs && node tests/watchSourceWriteRace.test.cjs && node tests/playerHeaderRules.test.cjs && node tests/playerDiagnostics.test.cjs && node tests/providerCapabilities.test.cjs && node tests/sourceRefreshCoordinator.test.cjs && node tests/sourceRefreshIntegration.test.cjs && node tests/playerMetrics.test.cjs && node tests/playerDiagnosticsPanel.test.cjs && node tests/playerLocale.test.cjs && node tests/watchPreferences.test.cjs && node tests/titlePlaybackPreferences.test.cjs && node tests/playerSourceHealth.test.cjs && node tests/playerControlsAccessibility.test.cjs && node tests/playerVolumeSpeed.test.cjs && node tests/playerSettingsMenu.test.cjs && node tests/playerMediaControls.test.cjs && node tests/playerTrackStudy.test.cjs && node tests/playerSourceHealthLive.test.cjs",
     "test:player-health": "node tests/playerSourceHealth.test.cjs && node tests/playerSourceHealthLive.test.cjs && node scripts/player-source-health.cjs",
     "test:loading-performance": "node tests/movieDetailsIndependentHydration.test.cjs && node tests/movieDetailsIndependentHydrationBrowserSmoke.cjs && node tests/playbackSwitchPendingProgress.test.cjs && node tests/playerCleanerRendering.test.cjs",
-    "test:update-service": "node tests/updateService.test.js && node tests/updateServicePlayback.test.js",
-    "test:component-updates": "node tests/componentUpdates.test.cjs && node tests/componentUpdatesSettingsBrowser.test.cjs",
+    "test:update-service": "node tests/updateService.test.js && node tests/updateServicePlayback.test.js && node tests/hubPrompt.test.mjs",
+    "test:component-updates": "node tests/componentUpdates.test.cjs && node tests/suiteRelease.test.cjs && node tests/componentUpdatesSettingsBrowser.test.cjs",
     "generate-component-metadata": "node scripts/generate-component-metadata.js",
     "test:updater-setup": "node tests/updaterSetupContract.test.js",
     "test:package-release": "node tests/packageReleaseContract.test.js && node tests/googleAccessToken.test.cjs",
