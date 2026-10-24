@@ -1062,6 +1062,14 @@ export const locales = {
                 mode: "All ratings",
                 loading_all: "Loading all films for this sort: {count}..."
             },
+            stats: {
+                summary: "Rated by me: {count} · my average {average}"
+            },
+            view: {
+                label: "List view",
+                grid: "Grid",
+                list: "List"
+            },
             active_filters: {
                 label: "Active filters:",
                 search: "Search: {value}",
@@ -1092,6 +1100,11 @@ export const locales = {
             },
             modal: {
                 rate_movie: "Rate This Movie",
+                rate_episodes: "Rate episodes on the series page",
+                words: {
+                    1: "Awful", 2: "Very bad", 3: "Bad", 4: "Weak", 5: "So-so",
+                    6: "Decent", 7: "Good", 8: "Very good", 9: "Excellent", 10: "Masterpiece"
+                },
                 your_rating: "Your Rating",
                 share_thoughts: "Share Your Thoughts",
                 placeholder: "What did you think about this movie? (Optional)",
@@ -1299,6 +1312,7 @@ export const locales = {
             states: {
                 ready_title: "Ready to roll?",
                 ready_subtitle: "Configure filters to your mood",
+                roll_again: "Roll again",
                 roll_btn: "Find Movie",
                 searching: "Searching specifically for you...",
                 no_movie: "No movie found with these criteria.",
@@ -2818,6 +2832,14 @@ export const locales = {
                 mode: "Все оценки",
                 loading_all: "Загружаем все фильмы для этой сортировки: {count}..."
             },
+            stats: {
+                summary: "Оценено мной: {count} · моя средняя {average}"
+            },
+            view: {
+                label: "Вид списка",
+                grid: "Сетка",
+                list: "Список"
+            },
             active_filters: {
                 label: "Активные фильтры:",
                 search: "Поиск: {value}",
@@ -2848,6 +2870,11 @@ export const locales = {
             },
             modal: {
                 rate_movie: "Оценить",
+                rate_episodes: "Оценить серии на странице сериала",
+                words: {
+                    1: "Ужасно", 2: "Очень плохо", 3: "Плохо", 4: "Слабо", 5: "Так себе",
+                    6: "Неплохо", 7: "Хорошо", 8: "Очень хорошо", 9: "Отлично", 10: "Шедевр"
+                },
                 your_rating: "Ваша оценка",
                 share_thoughts: "Поделитесь мнением",
                 placeholder: "Что вы думаете об этом фильме? (Необязательно)",
@@ -3055,6 +3082,7 @@ export const locales = {
             states: {
                 ready_title: "Готовы к броску?",
                 ready_subtitle: "Настройте фильтры под настроение",
+                roll_again: "Ещё раз",
                 roll_btn: "Найти фильм",
                 searching: "Ищем специально для вас...",
                 no_movie: "Фильм по таким критериям не найден.",

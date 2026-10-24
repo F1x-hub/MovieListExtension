@@ -1312,3 +1312,142 @@
     from { opacity: 0; transform: translateY(-8px); }
     to { opacity: 1; transform: translateY(0); }
 }
+
+/* Word for the chosen score («Хорошо», «Шедевр») beside the number. */
+.rating-word {
+    min-width: 7em;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--theme-text-secondary);
+}
+
+/* Grid / list switch beside the results count */
+.results-view-toggle {
+    display: inline-flex;
+    gap: 4px;
+    margin-left: auto;
+}
+
+.results-view-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-md, 8px);
+    background: transparent;
+    color: var(--theme-text-secondary);
+    cursor: pointer;
+}
+
+.results-view-btn[aria-pressed="true"] {
+    background: var(--theme-text-primary);
+    border-color: var(--theme-text-primary);
+    color: var(--theme-bg-primary);
+}
+
+.results-view-btn:focus-visible {
+    outline: 2px solid var(--theme-text-primary);
+    outline-offset: 2px;
+}
+
+/* My score summary: count, average and a 1–10 distribution */
+.ratings-stats[hidden] {
+    display: none;
+}
+
+.ratings-stats {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 0 2px 20px;
+    padding: 14px 16px;
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-lg, 12px);
+}
+
+.ratings-stats__summary {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--theme-text-primary);
+}
+
+.ratings-stats__bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    height: 56px;
+}
+
+.ratings-stats__column {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    width: 16px;
+    height: 100%;
+}
+
+.ratings-stats__bar {
+    display: block;
+    width: 100%;
+    max-height: calc(100% - 16px);
+    border-radius: 3px 3px 0 0;
+    background: var(--theme-text-primary);
+    opacity: 0.75;
+}
+
+.ratings-stats__label {
+    font-size: 10px;
+    line-height: 12px;
+    color: var(--theme-text-muted);
+}
+
+/* List view: one film per row, poster on the left */
+.movies-grid.movies-grid--list {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+}
+
+.movies-grid--list .movie-card-component {
+    flex-direction: row;
+}
+
+.movies-grid--list .mc-poster-container {
+    width: 120px;
+    height: auto;
+    min-height: 180px;
+    border-radius: var(--radius-xl) 0 0 var(--radius-xl);
+}
+
+.movies-grid--list .mc-content {
+    flex: 1;
+    min-width: 0;
+}
+
+@media (max-width: 480px) {
+    .movies-grid--list .mc-poster-container {
+        width: 90px;
+        min-height: 135px;
+    }
+}
+
+/* Series: link to episode ratings on Movie Details */
+.episode-rating-link[hidden] {
+    display: none;
+}
+
+.episode-rating-link {
+    display: inline-block;
+    margin-top: 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--theme-text-primary);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}

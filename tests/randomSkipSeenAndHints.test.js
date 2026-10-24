@@ -52,6 +52,7 @@ function harness({ user = { uid: 'alice' }, ratedIds = [] } = {}) {
         'src/shared/config/discoveryFilters.js',
         'src/shared/components/FilterControls.js',
         'src/shared/utils/PosterUrl.js',
+        'src/shared/services/RandomPoolService.js',
         'src/shared/components/MovieCard.js'
     ]) {
         runInNewContext(read(file), context);
@@ -203,7 +204,50 @@ function drawsFrom(manager, movies) {
     h.dispose();
 }
 
+// A shown result gets a visible "roll again" that reuses the card's reload action.
+{
+    const h = harness();
+    await h.manager.displayMovie({ kinopoiskId: 9, name: 'Shown' }, { transition: false });
+    const again = h.element('movieResult').querySelector('.random-again-btn');
+    assert.ok(again, 'The result has a visible roll-again button');
+    assert.equal(again.dataset.action, 'reload');
+    assert.equal(again.getAttribute('aria-keyshortcuts'), 'R');
+    assert.ok(again.textContent.includes('Ещё раз'));
+    h.dispose();
+}
+
+// "R" rolls again by physical key, but not while typing, with modifiers or over dialogs.
+{
+    const h = harness();
+    let rolls = 0;
+    h.manager.findRandomMovie = () => { rolls++; };
+    h.manager._setupRollShortcut();
+    const press = (target, init = {}) => target.dispatchEvent(new h.dom.window.KeyboardEvent('keydown', {
+        code: 'KeyR', key: 'r', bubbles: true, cancelable: true, ...init
+    }));
+    press(h.document.body);
+    assert.equal(rolls, 1);
+    press(h.document.body, { key: 'к' });
+    assert.equal(rolls, 2, 'The Russian layout key on the same position also rolls');
+    press(h.element('poolSearchInput'));
+    press(h.document.body, { ctrlKey: true });
+    press(h.document.body, { repeat: true });
+    assert.equal(rolls, 2, 'Typing, modifiers and auto-repeat do not roll');
+    h.manager._activeModalId = 'poolModal';
+    press(h.document.body);
+    assert.equal(rolls, 2, 'An open pool or marathon dialog blocks the shortcut');
+    h.manager._activeModalId = null;
+    h.manager._findBusy = true;
+    press(h.document.body);
+    assert.equal(rolls, 2, 'A roll in progress is not restarted');
+    h.manager._findBusy = false;
+    h.manager._cleanup();
+    press(h.document.body);
+    assert.equal(rolls, 2, 'The shortcut is removed on page cleanup');
+    h.dispose();
+}
+
 // The hidden attribute wins over the block's flex display.
 assert.match(read('src/pages/random/random.css'), /\.random-relax-options\[hidden\]\s*\{\s*display:\s*none;/);
 
-console.log('Random skip-seen, filter summary and relax suggestions passed.');
+console.log('Random skip-seen, filter summary, relax suggestions, roll-again button and R shortcut passed.');

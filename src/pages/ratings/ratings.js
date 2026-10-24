@@ -138,6 +138,7 @@ class RatingsPageManager {
         this.initializeCustomDropdowns();
         this.loadFiltersFromStorage();
         this.loadFiltersCollapseState();
+        this.setupViewToggle();
 
         // Load cached ratings immediately
         await this.loadCachedRatings();
@@ -193,6 +194,7 @@ class RatingsPageManager {
             // Results info
             resultsCount: document.getElementById('resultsCount'),
             resultsMode: document.getElementById('resultsMode'),
+            ratingsStats: document.getElementById('ratingsStats'),
             
             // Rating modal (edit own rating)
             ratingModal: document.getElementById('ratingModal'),
@@ -200,6 +202,8 @@ class RatingsPageManager {
             ratingModalClose: document.getElementById('ratingModalClose'),
             ratingSlider: document.getElementById('ratingSlider'),
             ratingValue: document.getElementById('ratingValue'),
+            ratingWord: document.getElementById('ratingWord'),
+            episodeRatingLink: document.getElementById('episodeRatingLink'),
             ratingComment: document.getElementById('ratingComment'),
             charCount: document.getElementById('charCount'),
             saveRatingBtn: document.getElementById('saveRatingBtn'),
@@ -385,6 +389,7 @@ class RatingsPageManager {
         // Rating modal
         this.elements.ratingSlider?.addEventListener('input', (e) => {
             this.elements.ratingValue.textContent = e.target.value;
+            this.updateRatingWord(e.target.value);
         });
         
         this.elements.ratingComment?.addEventListener('input', (e) => {
@@ -1830,6 +1835,19 @@ class RatingsPageManager {
         this.saveFiltersToStorage();
     }
 
+    /** Word for a 1–10 score («Шедевр», «Плохо»...); also read out by the slider. */
+    getRatingWord(value) {
+        const score = Math.round(Number(value));
+        if (!(score >= 1 && score <= 10)) return '';
+        return this.text(`modal.words.${score}`);
+    }
+
+    updateRatingWord(value) {
+        const word = this.getRatingWord(value);
+        if (this.elements?.ratingWord) this.elements.ratingWord.textContent = word;
+        this.elements?.ratingSlider?.setAttribute('aria-valuetext', word ? `${value} — ${word}` : String(value));
+    }
+
     parseMyRatingRange(value) {
         if (value === 'none') return { none: true };
         const match = /^(\d+)-(\d+)$/.exec(String(value || ''));
@@ -2787,10 +2805,36 @@ class RatingsPageManager {
         // Set form values
         this.elements.ratingSlider.value = currentRating;
         this.elements.ratingValue.textContent = currentRating;
+        this.updateRatingWord(currentRating);
         this.elements.ratingComment.value = currentComment || '';
         this.elements.charCount.textContent = (currentComment || '').length;
         
         this.openRatingModal();
+        this.updateEpisodeRatingLink(movieData);
+    }
+
+    isSeriesMovie(movie) {
+        return Boolean(movie?.isSeries
+            || ['tv-series', 'mini-series', 'animated-series', 'tv-show', 'tv'].includes(movie?.type || movie?.mediaType));
+    }
+
+    /**
+     * Series get a link to Movie Details, which owns episode scores: only released
+     * episodes from the TMDB season catalog can be rated there, and title ratings
+     * here stay independent of episode scores.
+     */
+    updateEpisodeRatingLink(movieData) {
+        const link = this.elements?.episodeRatingLink;
+        if (!link) return;
+        const movieId = Number(movieData?.movieId || movieData?.movie?.kinopoiskId);
+        const show = movieId > 0 && this.isSeriesMovie(movieData?.movie);
+        link.hidden = !show;
+        if (!show) {
+            link.removeAttribute('href');
+            return;
+        }
+        const params = new URLSearchParams({ movieId: String(movieId) });
+        link.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?${params.toString()}`);
     }
 
     async saveRating() {
@@ -3076,6 +3120,85 @@ class RatingsPageManager {
         
         this.elements.resultsCount.textContent = this.text('results.count', { count, total });
         this.elements.resultsMode.textContent = this.text('results.mode');
+        this.renderRatingsStats();
+    }
+
+    /**
+     * My scores among the films shown: count, average and a 1–10 distribution.
+     * @returns {{count: number, average: number, distribution: number[]}}
+     */
+    getMyRatingStats(movies = this.filteredMovies) {
+        const distribution = Array(10).fill(0);
+        let sum = 0;
+        let count = 0;
+        for (const movie of movies || []) {
+            const score = Math.round(Number(this.getMyRating(movie).rating) || 0);
+            if (score < 1 || score > 10) continue;
+            distribution[score - 1]++;
+            sum += score;
+            count++;
+        }
+        return { count, average: count ? sum / count : 0, distribution };
+    }
+
+    renderRatingsStats() {
+        const container = this.elements?.ratingsStats;
+        if (!container) return;
+        const stats = this.getMyRatingStats();
+        container.hidden = stats.count === 0;
+        container.replaceChildren();
+        if (!stats.count) return;
+        const summary = document.createElement('p');
+        summary.className = 'ratings-stats__summary';
+        summary.textContent = this.text('stats.summary', { count: stats.count, average: stats.average.toFixed(1) });
+        const bars = document.createElement('div');
+        bars.className = 'ratings-stats__bars';
+        bars.setAttribute('role', 'img');
+        const peak = Math.max(...stats.distribution);
+        bars.setAttribute('aria-label', stats.distribution
+            .map((value, index) => `${index + 1}: ${value}`).join(', '));
+        stats.distribution.forEach((value, index) => {
+            const column = document.createElement('div');
+            column.className = 'ratings-stats__column';
+            const bar = document.createElement('span');
+            bar.className = 'ratings-stats__bar';
+            bar.style.height = `${peak ? Math.max(value ? 8 : 2, Math.round((value / peak) * 100)) : 2}%`;
+            bar.title = `${index + 1}: ${value}`;
+            const label = document.createElement('span');
+            label.className = 'ratings-stats__label';
+            label.textContent = String(index + 1);
+            column.append(bar, label);
+            bars.append(column);
+        });
+        container.append(summary, bars);
+    }
+
+    setupViewToggle() {
+        const buttons = [...document.querySelectorAll('.results-view-btn')];
+        if (!buttons.length) return;
+        let saved = 'grid';
+        try {
+            saved = localStorage.getItem('ratingsViewMode') === 'list' ? 'list' : 'grid';
+        } catch {
+            // Grid is the default view.
+        }
+        this.applyViewMode(saved);
+        buttons.forEach(button => button.addEventListener('click', () => {
+            this.applyViewMode(button.dataset.view);
+            try {
+                localStorage.setItem('ratingsViewMode', this.viewMode);
+            } catch {
+                // The choice still applies to this page view.
+            }
+        }));
+    }
+
+    applyViewMode(mode) {
+        this.viewMode = mode === 'list' ? 'list' : 'grid';
+        this.elements?.moviesGrid?.classList.toggle('movies-grid--list', this.viewMode === 'list');
+        document.querySelectorAll('.results-view-btn').forEach(button => {
+            button.setAttribute('aria-pressed', String(button.dataset.view === this.viewMode));
+        });
     }
 
     // Local showLoading/showError/hideError removed in favor of this.page (PageStateManager)

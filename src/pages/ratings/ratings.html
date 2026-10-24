@@ -162,7 +162,17 @@
             <div class="results-info" id="resultsInfo">
                 <span class="results-count" id="resultsCount" data-i18n="ratings.results.loading">Loading...</span>
                 <span class="results-mode" id="resultsMode"></span>
+                <div class="results-view-toggle" role="group" data-i18n="[aria-label]ratings.view.label" aria-label="Вид списка">
+                    <button type="button" class="results-view-btn" data-view="grid" aria-pressed="true" data-i18n="[title]ratings.view.grid" title="Сетка">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                    </button>
+                    <button type="button" class="results-view-btn" data-view="list" aria-pressed="false" data-i18n="[title]ratings.view.list" title="Список">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                    </button>
+                </div>
             </div>
+            <!-- My score summary for the films shown -->
+            <div class="ratings-stats" id="ratingsStats" hidden></div>
 
             <!-- Loading State -->
             <div class="loading-section app-loader app-loader--page" id="loadingSection" role="status" aria-live="polite">
@@ -248,6 +258,7 @@
                                         <span id="ratingValue" class="rating-value-large">5</span>
                                         <span class="rating-value-suffix">/10</span>
                                     </div>
+                                    <span id="ratingWord" class="rating-word" aria-hidden="true"></span>
                                 </div>
                             </div>
                         </div>
@@ -264,6 +275,8 @@
                             </div>
                         </div>
                     </form>
+                    <!-- Series: episode scores live on Movie Details, which knows the released episodes -->
+                    <a class="episode-rating-link" id="episodeRatingLink" hidden data-i18n="ratings.modal.rate_episodes">Оценить серии на странице сериала</a>
                 </div>
             </div>
             <div class="modal-footer rating-footer">
