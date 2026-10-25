@@ -121,3 +121,58 @@ Final local candidates (2026-10-24):
 - `MediaPlayer/.artifacts/installer/MediaPlayerSuiteSetup.exe`: 641,971,344 bytes; SHA-256 `511b8ecf0b0e4043a578e75b503000fb62724873888ed7800d18d23cfe770148`. Inno Setup 7 completed successfully with local `/DSuiteCompression=lzma2/fast`; the release default remains `lzma2/ultra64`. Compile log: `MediaPlayer/.artifacts/audit-fixes-inno.log`.
 
 These are rebuilt local candidates, not published releases or proof of installed Windows behavior. Versions were not bumped. A future published updater change still requires a greater native release version, and immutable published Suite versions must never be reused for different bytes.
+
+## Legacy installation relocation — 2026-10-24
+
+The reported Recover failure was reproduced through read-only path validation:
+the registered Suite is under `D:\programs\MediaPlayer Suite`, while its parent
+is owned by the ordinary user. There was no upgrade journal. Validation rejected
+that unsafe parent before checking for a journal, and Setup replaced the actual
+error with a misleading interrupted-transaction message. No installed services,
+registry values, databases or system ACLs were changed during diagnosis.
+
+The user selected migration into Program Files with settings and films retained.
+Full Setup now proposes the protected location and requires migration consent;
+silent migration and playback interruption have separate explicit flags.
+No-journal recovery is a read-only no-op, while actual journals still require
+protected ancestors and ownership. A bounded, create-new diagnostic gives the
+wizard the underlying failure instead of the generic Recover error.
+
+Relocation copies configuration and the closed database/WAL into the protected
+target, installs fresh pinned executables and rebinds only verified Suite services.
+Film paths stay unchanged. Its separate protected journal restores old service
+and uninstall registrations after failure, leaving the old services stopped with
+manual startup and retaining data for retry. The old uninstaller is retained;
+after success use Windows Apps or the new installation's uninstaller.
+
+Migration handoff checks the current profile's pairing digest against the copied
+configuration and preserves the previous maintenance owner SID when present.
+Legacy runtime/loader environment hooks are rejected before service mutation;
+the migrated service uses the fresh pinned runtime with production/loopback
+settings. A partial original-user registration failure also triggers metadata
+restoration. Declined consent returns a nonempty installer failure before
+extraction can start.
+
+Fresh backend lint, Windows PowerShell 5.1 parsing, upgrade/migration fixtures,
+installer provisioning and cold location-diagnostic checks passed. Fixtures
+cover no-consent/no-mutation, identity mismatch, runtime hooks, foreign services,
+occupied targets, reparse paths, database/WAL byte and film-path preservation,
+custom-port health and failed activation. Recovery also covers Inno having
+already changed InstallLocation to the target and a service removed during a
+failed reinstall. The real LocalService log ACL check runs only on fixture files;
+SCM/HKLM actions are mocked. Inno Setup 7 accepted the final script.
+
+This work changes installer sources in the sibling MediaPlayer project and these
+integration notes. It does not publish a release, bump versions, perform the
+live migration, or establish UAC/SCM/WinSW installation behavior.
+
+The replacement local Suite candidate compiled successfully with Inno Setup 7
+and `lzma2/fast`: `MediaPlayer/.artifacts/installer/MediaPlayerSuiteSetup.exe`,
+641,979,354 bytes, SHA-256
+`644055a84f07c9dad041564a179d802f548e5942e21a825e44e273bf1c5cc7f3`.
+The output copy has the same hash as the freshly compiled candidate. This
+supersedes the earlier Suite candidate above; the updater candidate is unchanged.
+The runtime build remains
+`a5fe5166fdfb69387636c72bafd1c4c72532cfea64c0caf9366c8999dade61d5`:
+this follow-up changes Setup scripts, not application runtime dependencies.
+Compile log: `MediaPlayer/.artifacts/legacy-migration-inno.log`.
