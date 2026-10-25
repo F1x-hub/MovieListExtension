@@ -24,7 +24,20 @@ and resolved playback position, preserves stale snapshots on errors, and never
 mounts players or writes data. Its clock uses the existing live-page timer.
 New blocks match source runtime; moves preserve existing slot duration. The
 editor uses the shared `CustomDatePicker` and `SortControl` without native popups.
+Its full-day overview pans the detailed track without schedule writes; the
+viewport follows scrolling and 24/12/6/3-hour zoom at the actual pane width.
 Run `npm run test:live-planner` for schedule, concurrency, editor and viewer tests.
+
+Series entries keep `mode: 'movie'` and add `movie.mediaType: 'tv-series'`,
+`seasonNumber` (including 0), `episodeNumber`, optional `episodeTitle` and
+`tmdbId`. `LiveSeriesEditor` uses the existing ID mapping and TMDB season DTOs;
+personal watch progress never chooses an episode for the broadcast. Each click
+creates one fixed-runtime slot and prepares, but does not publish, the next.
+The player locks the canonical broadcast selection and disables episode navigation
+and auto-next; native sources require an applied selection acknowledgement.
+The episode rules were deployed separately to `movielistdb-13208` on 2026-10-26;
+the published source was read back and matched against the local file. The
+2026-10-25 deployment mentioned above covers the earlier planner schema only.
 
 ## Stack
 | Layer       | Technology                  | Notes                        |

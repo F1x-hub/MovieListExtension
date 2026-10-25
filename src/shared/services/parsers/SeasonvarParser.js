@@ -342,6 +342,12 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
         let translations = options.translations || sources?.translations || null;
         let seasons = options.seasons || null;
 
+        if (options.broadcastSelection && (!seasons?.some(season =>
+            Number(season.season_number) === Number(options.resolvedSeasonNumber ?? options.season)))) {
+            lifecycle?.setState(container, 'unavailable', { message: 'Сезон из программы эфира недоступен на источнике.' });
+            return false;
+        }
+
         // --- CANONICAL SEASON SELECTION ---
         let activeSeasonUrl = options.resolvedSeasonUrl || null;
         if (!activeSeasonUrl && (options.resolvedSeasonNumber != null || options.season != null) && seasons && seasons.length > 0) {
@@ -389,6 +395,7 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
 
         // If we determined a different active season than the default one and need to load its episodes
         const needSeasonFetch = Boolean(activeSeasonUrl && (
+            (options.broadcastSelection && !options.currentSourcesUrl && !options.sourcesSeasonUrl) ||
             !episodes || episodes.length === 0 ||
             (options.currentSourcesUrl && activeSeasonUrl !== options.currentSourcesUrl) ||
             (options.sourcesSeasonUrl && activeSeasonUrl !== options.sourcesSeasonUrl) ||
@@ -400,6 +407,10 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
             try {
                  const seriesInfo = await this.getSeriesInfo(activeSeasonUrl);
                  if (!isRenderCurrent()) return false;
+                 if (options.broadcastSelection && !seriesInfo?.episodes?.length) {
+                     lifecycle?.setState(container, 'unavailable', { message: 'Серия из программы эфира недоступна на источнике.' });
+                     return false;
+                 }
                  if (seriesInfo && seriesInfo.episodes) {
                      episodes = seriesInfo.episodes.map(ep => ({
                         name: ep.title,
@@ -411,6 +422,10 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
                  }
             } catch (err) {
                 console.error(`[${this.name}] Failed to load target season`, err);
+                if (options.broadcastSelection) {
+                    lifecycle?.setState(container, 'unavailable', { message: 'Сезон из программы эфира не удалось загрузить.' });
+                    return false;
+                }
             }
         } else if ((!translations || translations.length === 0) && activeSeasonUrl) {
             const cachedInfo = this.getCachedDiscoveryValue(this.seriesInfoCache, this.normalizePageUrl(activeSeasonUrl));
@@ -458,11 +473,16 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
         if (!targetEpisode && (options.resolvedEpisodeNumber != null || options.episode != null)) {
             const targetEpNum = Number(options.resolvedEpisodeNumber ?? options.episode);
             targetEpisode = episodes.find(e => this.extractEpisodeNumber(e) === targetEpNum);
-            if (!targetEpisode && targetEpNum > 0 && targetEpNum <= episodes.length) {
+            if (!options.broadcastSelection && !targetEpisode && targetEpNum > 0 && targetEpNum <= episodes.length) {
                 targetEpisode = episodes[targetEpNum - 1];
             }
         }
 
+        if (options.broadcastSelection && (!targetEpisode || this.extractEpisodeNumber(targetEpisode)
+            !== Number(options.resolvedEpisodeNumber ?? options.episode))) {
+            lifecycle?.setState(container, 'unavailable', { message: 'Серия из программы эфира недоступна на источнике.' });
+            return false;
+        }
         const firstEp = targetEpisode || episodes[0] || { name: '', url: '' };
 
         // Mark active season in seasons list (fallback to first if not determined)
@@ -546,7 +566,7 @@ class SeasonvarParser extends (typeof BaseParserService !== 'undefined' ? BasePa
 
         this._updateVideoSubtitles(videoElement, firstEp.subtitle);
 
-        if (options.movieId) {
+        if (options.movieId && !options.broadcastSelection) {
             this.handleProgressRestoration(videoElement, options.movieId, episodes, options);
         }
 

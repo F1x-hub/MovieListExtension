@@ -1220,6 +1220,8 @@ class MovieDetailsManager {
      */
     startBroadcastLock() {
         if (this.broadcastLock) return;
+        if (this.playbackController) this.playbackController.broadcastMode = true;
+        this.autoNextCoordinator?.cancel();
         document.documentElement.classList.add('broadcast-mode');
         // A broadcast is not personal viewing: keep it out of watch progress (and
         // Firestore writes per viewer), and don't let Esc close the only thing on screen.
@@ -1229,12 +1231,29 @@ class MovieDetailsManager {
         }, true);
 
         let lastState = null;
+        this.broadcastFrameLoads = new WeakMap();
         const toParent = message => {
             try { window.parent?.postMessage(message, window.location.origin); } catch { /* not embedded */ }
         };
         const forward = () => {
             if (!lastState) return;
+            lastState = { ...lastState, selection: this.broadcastEpisode || null,
+                selectionReady: this.broadcastNativeSelectionReady !== false };
+            window.postMessage(lastState, window.location.origin);
             document.querySelectorAll('iframe').forEach(frame => {
+                if (!this.broadcastFrameLoads.has(frame)) {
+                    this.broadcastFrameLoads.set(frame, 0);
+                    frame.addEventListener('load', () => {
+                        this.broadcastFrameLoads.set(frame, this.broadcastFrameLoads.get(frame) + 1);
+                        if (this.broadcastEpisode && this.elements.videoContainer?.contains(frame)
+                            && this.playbackController?.getAdapter(this.activePlayerId)?.getSelectionMode?.() === 'NATIVE_BRIDGE') {
+                            this.broadcastConfirmedSelection = null;
+                            this.broadcastNativeSelectionReady = false;
+                            void this.confirmBroadcastNativeSelection();
+                        }
+                        forward();
+                    });
+                }
                 let origin;
                 try { origin = new URL(frame.src, window.location.href).origin; } catch { return; }
                 if (!/^(https?|chrome-extension):/.test(origin)) return;
@@ -1245,7 +1264,8 @@ class MovieDetailsManager {
         window.addEventListener('message', (event) => {
             const type = event.data?.type;
             if (event.source === window.parent && event.origin === window.location.origin && type === 'BROADCAST_STATE') {
-                lastState = { type, startMs: event.data.startMs, pausedAtSec: event.data.pausedAtSec ?? null, admin: event.data.admin === true };
+                lastState = { type, startMs: event.data.startMs, pausedAtSec: event.data.pausedAtSec ?? null, admin: event.data.admin === true,
+                    selection: this.broadcastEpisode || null, selectionReady: this.broadcastNativeSelectionReady !== false };
                 forward();
                 return;
             }
@@ -1265,8 +1285,92 @@ class MovieDetailsManager {
         // Provider frames load late and can reload, so keep re-sending the clock.
         const timer = setInterval(forward, 2000);
         document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') forward(); });
-        this.broadcastLock = { timer };
+        const observer = new MutationObserver(forward);
+        observer.observe(this.elements.videoContainer, { childList: true, subtree: true });
+        this.broadcastLock = { timer, observer, forward };
         toParent({ type: 'BROADCAST_READY' });
+    }
+
+    configureBroadcastEpisode(params, movieId) {
+        if (params.get('mediaType') !== 'tv-series') return true;
+        const seasonNumber = Number(params.get('seasonNumber'));
+        const episodeNumber = Number(params.get('episodeNumber'));
+        if (!Number.isSafeInteger(Number(movieId)) || Number(movieId) <= 0
+            || !params.has('seasonNumber') || params.get('seasonNumber').trim() === ''
+            || !params.has('episodeNumber') || params.get('episodeNumber') === ''
+            || !Number.isSafeInteger(seasonNumber) || seasonNumber < 0
+            || !Number.isSafeInteger(episodeNumber) || episodeNumber < 1) return false;
+        this.broadcastEpisode = {
+            kinopoiskId: Number(movieId), tmdbId: params.get('tmdbId') || null,
+            mediaType: 'tv-series', seasonNumber, episodeNumber,
+            episodeTitle: params.get('episodeTitle') || null, source: 'BROADCAST', initialTimestamp: 0
+        };
+        this.playbackController?.setBroadcastSelection(this.broadcastEpisode);
+        // Broadcast time comes exclusively from the channel clock, never personal resume state.
+        if (this.progressService) this.progressService.getProgress = async () => null;
+        return true;
+    }
+
+    canUseBroadcastSource(providerId, { report = true } = {}) {
+        if (!this.broadcastEpisode) return true;
+        const adapter = this.playbackController?.getAdapter(providerId);
+        const available = this.playbackController?.canPlayBroadcastProvider(adapter) === true;
+        if (!available && report) this.setPlayerSourceState('unavailable', {
+            message: `Источник не может подтвердить серию S${this.broadcastEpisode.seasonNumber}E${this.broadcastEpisode.episodeNumber} из программы эфира.`
+        });
+        return available;
+    }
+
+    hydrateBroadcastSelection(movie) {
+        if (!this.broadcastEpisode || Number(movie?.kinopoiskId) !== this.broadcastEpisode.kinopoiskId) return;
+        const selection = this.playbackController?.getSelection();
+        this.playbackController?.setSelection({ ...selection, ...this.broadcastEpisode,
+            tmdbId: this.broadcastEpisode.tmdbId || movie.tmdbId || null,
+            title: movie.nameRu || movie.name || movie.alternativeName || '',
+            imdbId: movie.externalId?.imdb || movie.imdbId || null, initialTimestamp: 0 });
+    }
+
+    async confirmBroadcastNativeSelection() {
+        if (!this.broadcastEpisode) return true;
+        const providerId = this.activePlayerId || this.playbackController?.getActiveProvider();
+        const adapter = this.playbackController?.getAdapter(providerId);
+        if (adapter?.getSelectionMode?.() !== 'NATIVE_BRIDGE') return true;
+        const container = this.elements.videoContainer;
+        const iframe = container.querySelector('iframe');
+        const requestId = this.sourceSwitchRequestId;
+        const loadGeneration = this.broadcastFrameLoads?.get(iframe) || 0;
+        const selection = this.playbackController.getSelection();
+        const identity = [selection?.kinopoiskId, selection?.seasonNumber, selection?.episodeNumber].join(':');
+        const confirmed = this.broadcastConfirmedSelection;
+        if (confirmed?.iframe === iframe && confirmed.requestId === requestId
+            && confirmed.loadGeneration === loadGeneration
+            && confirmed.providerId === providerId && confirmed.identity === identity
+            && this.broadcastNativeSelectionReady === true) return true;
+        if (this.broadcastSelectionConfirmation?.iframe === iframe
+            && this.broadcastSelectionConfirmation?.loadGeneration === loadGeneration
+            && this.broadcastSelectionConfirmation?.requestId === requestId) return this.broadcastSelectionConfirmation.promise;
+        this.broadcastNativeSelectionReady = false;
+        this.broadcastLock?.forward();
+        adapter.activeContainer = container;
+        const confirmation = (async () => {
+            let applied = false;
+            try { applied = await adapter.applySelection(this.playbackController.getSelection()); }
+            catch { /* An unavailable bridge must never release the broadcast clock. */ }
+            if (container.querySelector('iframe') !== iframe || this.sourceSwitchRequestId !== requestId
+                || (this.broadcastFrameLoads?.get(iframe) || 0) !== loadGeneration) return false;
+            this.broadcastNativeSelectionReady = applied === true;
+            if (applied === true) this.broadcastConfirmedSelection = { iframe, requestId, providerId, identity, loadGeneration };
+            if (applied !== true) {
+                this.unmountActivePlayer();
+                this.setPlayerSourceState('unavailable', { message: 'Источник не подтвердил серию из программы эфира.' });
+            }
+            this.broadcastLock?.forward();
+            return applied === true;
+        })();
+        const pending = { iframe, requestId, loadGeneration, promise: confirmation };
+        this.broadcastSelectionConfirmation = pending;
+        try { return await confirmation; }
+        finally { if (this.broadcastSelectionConfirmation === pending) this.broadcastSelectionConfirmation = null; }
     }
 
     async initializeUI() {
@@ -1279,6 +1383,10 @@ class MovieDetailsManager {
         const broadcastStart = Number.parseInt(urlParams.get('broadcastStart') || '', 10);
         if (this.isEmbedded && Number.isSafeInteger(broadcastStart) && broadcastStart > 0) {
             this.startBroadcastLock();
+            if (!this.configureBroadcastEpisode(urlParams, movieId)) {
+                this.renderPlayerPlaceholder('В программе эфира указана некорректная серия.');
+                return;
+            }
         }
         const clearMovieCache = urlParams.get('clearMovieCache') === '1';
 
@@ -1795,6 +1903,7 @@ class MovieDetailsManager {
             if (!movie.frames || movie.frames.length === 0) {
                 this.loadFramesInBackground(movieId, movie, pageContext, kinopoiskService);
             }
+            if (this.broadcastEpisode) this.hydrateBroadcastSelection(movie);
             this.preloadSources(movie);
 
             if (skipRender) {
@@ -2715,6 +2824,7 @@ class MovieDetailsManager {
 
         this.selectedMovie = movie;
         this.updateDocumentMetadata(movie);
+        if (this.broadcastEpisode) this.hydrateBroadcastSelection(movie);
         this.initPlayerRegistry(movie.kinopoiskId);
         void this.refreshMediaPlayerReadiness().then(() => {
             if (this.selectedMovie === movie) this.populateSourceSelector();
@@ -7338,7 +7448,7 @@ class MovieDetailsManager {
         if (!navControls) return;
 
         const movie = this.selectedMovie;
-        if (!movie) {
+        if (!movie || this.broadcastLock) {
             navControls.style.display = 'none';
             hideEpisodePickerButton();
             return;
@@ -8075,6 +8185,7 @@ class MovieDetailsManager {
     }
 
     async handlePlayerNavigate(direction) {
+        if (this.broadcastLock) return false;
         if (direction !== 'previous' && direction !== 'next') return false;
         if (!this.selectedMovie) return false;
         const movie = this.selectedMovie;
@@ -8242,6 +8353,7 @@ class MovieDetailsManager {
     }
 
     async playSelection(selectionPayload) {
+        if (this.broadcastLock) return false;
         if (!this.selectedMovie) return;
 
         console.log('[SeasonPickerTrace] playSelection received', {
@@ -8690,6 +8802,7 @@ class MovieDetailsManager {
     }
 
     restoreProgressForReadyIframe(iframe) {
+        if (this.broadcastLock) return;
         const movieId = this.selectedMovie?.kinopoiskId;
         if (!iframe?.contentWindow || movieId == null || !this.progressService) return;
 
@@ -8757,6 +8870,7 @@ class MovieDetailsManager {
             }
 
             if (event.data.type === 'PLAYER_READY') {
+                 if (this.broadcastEpisode && !await this.confirmBroadcastNativeSelection()) return;
                  this.sourceLifecycleWatcher?.cancel?.();
                  this.sourceLifecycleWatcher = null;
                  this.setPlayerSourceState('ready');
@@ -8775,6 +8889,7 @@ class MovieDetailsManager {
                  }
             } else if (event.data.type === 'PLAYER_SOURCE_STATE') {
                 const { state, url } = event.data;
+                if (this.broadcastEpisode && state === 'ready' && !await this.confirmBroadcastNativeSelection()) return;
                 const parserId = this.activePlayerId;
                 const isActiveSource = url === this.currentVideoUrl || !!parserId;
                 if ((state === 'error' || state === 'unavailable') && isActiveSource) {
@@ -8806,6 +8921,7 @@ class MovieDetailsManager {
             } else if (event.data.type === 'PLAYER_EPISODE_NAVIGATE') {
                 await this.requestPlayerEpisodeNavigation(event.data.direction);
             } else if (event.data.type === 'UPDATE_WATCHING_PROGRESS') {
+                if (this.broadcastEpisode && this.broadcastNativeSelectionReady === false) return;
                 const {
                     season,
                     episode,
@@ -8830,6 +8946,13 @@ class MovieDetailsManager {
                 }
                 const incomingSeasonNumber = this.parsePlaybackNumber(seasonNumber ?? season);
                 const incomingEpisodeNumber = this.parsePlaybackNumber(episodeNumber ?? episode);
+                if (this.broadcastEpisode && ((incomingSeasonNumber != null
+                    && incomingSeasonNumber !== this.broadcastEpisode.seasonNumber)
+                    || (incomingEpisodeNumber != null && incomingEpisodeNumber !== this.broadcastEpisode.episodeNumber))) {
+                    this.unmountActivePlayer();
+                    this.setPlayerSourceState('unavailable', { message: 'Источник попытался переключить серию эфира.' });
+                    return;
+                }
                 if (this.isExplicitPlaybackSelection(currentSelection)
                     && origin !== 'USER_PROVIDER_SELECTION'
                     && ((incomingSeasonNumber != null
@@ -8854,6 +8977,17 @@ class MovieDetailsManager {
                     });
                 }
             } else if (event.data.type === 'EPISODE_CHANGED') {
+                if (this.broadcastLock) {
+                    if (this.broadcastNativeSelectionReady === false) return;
+                    const actualSeason = this.parsePlaybackNumber(event.data.seasonNumber ?? event.data.season);
+                    const actualEpisode = this.parsePlaybackNumber(event.data.episodeNumber ?? event.data.episode);
+                    if (this.broadcastEpisode && (actualSeason !== this.broadcastEpisode.seasonNumber
+                        || actualEpisode !== this.broadcastEpisode.episodeNumber)) {
+                        this.unmountActivePlayer();
+                        this.setPlayerSourceState('unavailable', { message: 'Источник попытался переключить серию эфира.' });
+                    }
+                    return;
+                }
                 const {
                     episode,
                     season,
@@ -8910,6 +9044,12 @@ class MovieDetailsManager {
                 const iframe = this.elements.videoContainer.querySelector('iframe');
                 this.sendAnimeSkipTimes(iframe);
             } else if (event.data.type === 'SEASONVAR_PLAYBACK_STATE') {
+                if (this.broadcastEpisode && (Number(event.data.activeSeasonNumber) !== this.broadcastEpisode.seasonNumber
+                    || Number(event.data.activeEpisodeNumber) !== this.broadcastEpisode.episodeNumber)) {
+                    this.unmountActivePlayer();
+                    this.setPlayerSourceState('unavailable', { message: 'Источник не подтвердил серию из программы эфира.' });
+                    return;
+                }
                 this.currentSeasonvarPlaybackState = event.data;
                 this.updatePlayerNavigationControls();
                 if (this.isEpisodePickerOpen) {
@@ -9400,6 +9540,7 @@ class MovieDetailsManager {
         const movieType = this.selectedMovie?.type;
         
         const preloadWork = Promise.allSettled(parsers.map(async (parser) => {
+            if (this.broadcastEpisode && !this.canUseBroadcastSource(parser.id, { report: false })) return;
             if (!(parser.supportsMedia?.(this.selectedMovie, movieType) ?? (!movieType || parser.supportsType(movieType)))) return;
 
             // Default iframe/video renderers are intentionally not preloaded: mounting them
@@ -9438,6 +9579,7 @@ class MovieDetailsManager {
                 
                 entry.container.innerHTML = '';
                 const renderOptions = {
+                    broadcastSelection: Boolean(this.broadcastEpisode),
                     translations: seriesInfo?.translations || null,
                     canonicalSeasons: this.getCanonicalSeasonLayout?.() || [],
                     seasons: seasons || [],
@@ -9558,6 +9700,11 @@ class MovieDetailsManager {
     }
 
     async mountPlayer(parserId, movieId = this.selectedMovie?.kinopoiskId, sourceRequestId = null) {
+        if (this.broadcastEpisode && !this.canUseBroadcastSource(parserId)) return false;
+        if (this.broadcastEpisode) {
+            this.broadcastConfirmedSelection = null;
+            this.broadcastNativeSelectionReady = this.playbackController?.getAdapter(parserId)?.getSelectionMode?.() !== 'NATIVE_BRIDGE';
+        }
         const entry = this.playerRegistry[parserId];
         if (!entry || entry.movieId !== String(movieId) || !entry.initialized) return false;
 
@@ -9580,6 +9727,8 @@ class MovieDetailsManager {
             // Pass the pre-resolved auto-select data to renderPlayer, ground-truthed against current selection
             const renderOptions = {
                 ...(entry.renderOptions || {}),
+                broadcastSelection: Boolean(this.broadcastEpisode),
+                ...(this.broadcastEpisode ? { resolvedTimestamp: 0 } : {}),
                 canonicalSeasons: this.getCanonicalSeasonLayout?.() || entry.renderOptions?.canonicalSeasons || [],
                 ...this.createSourceLifecycleOptions({
                     url: `parser:${parserId}`,
@@ -9630,7 +9779,7 @@ class MovieDetailsManager {
                         renderOptions.resolvedEpisodeUrl = null;
                     }
                 }
-                if (selection.initialTimestamp > 0) {
+                if (!this.broadcastEpisode && selection.initialTimestamp > 0) {
                     renderOptions.resolvedTimestamp = selection.initialTimestamp;
                 }
             }
@@ -10551,6 +10700,12 @@ class MovieDetailsManager {
 
     async changeVideoSource(url, { fromWatchRoom = false, providerSource = null, userInitiated = false, manualRetry = false } = {}) {
         if (!url) return false;
+        const broadcastProviderId = url.startsWith('parser:') ? url.slice(7) : (url.startsWith('vidsrc:') ? 'vidsrc' : null);
+        if (this.broadcastEpisode && !this.canUseBroadcastSource(broadcastProviderId)) return false;
+        if (this.broadcastEpisode) {
+            this.broadcastConfirmedSelection = null;
+            this.broadcastNativeSelectionReady = this.playbackController?.getAdapter(broadcastProviderId)?.getSelectionMode?.() !== 'NATIVE_BRIDGE';
+        }
         if (this.proPlayerEnabled && userInitiated && !fromWatchRoom && this.watchRoomController?.room
             && !['owner', 'controller'].includes(this.watchRoomController.role)) return false;
         if (url === MEDIA_PLAYER_TORRENT_SOURCE) {
@@ -10672,6 +10827,11 @@ class MovieDetailsManager {
      * @param {string} parserId - ID of the parser to use
      */
     async loadParserSource(parserId, sourceRequestId = null, { forceRefresh = false, providerSource = null } = {}) {
+        if (this.broadcastEpisode && !this.canUseBroadcastSource(parserId)) return false;
+        if (this.broadcastEpisode) {
+            this.broadcastConfirmedSelection = null;
+            this.broadcastNativeSelectionReady = this.playbackController?.getAdapter(parserId)?.getSelectionMode?.() !== 'NATIVE_BRIDGE';
+        }
         if (!this.selectedMovie) return false;
 
         this.unavailableProviderIds?.delete?.(parserId);
@@ -10919,6 +11079,7 @@ class MovieDetailsManager {
 
             // Delegate rendering to the parser
             const renderOptions = {
+                broadcastSelection: Boolean(this.broadcastEpisode),
                 translations: seriesInfo?.translations || null,
                 canonicalSeasons: this.getCanonicalSeasonLayout?.() || [],
                 seasons: seasons || [],
@@ -10929,7 +11090,7 @@ class MovieDetailsManager {
                 resolvedEpisodeNumber: resolvedEpisodeNumber,
                 resolvedSeasonUrl: effectiveSeasonUrl,
                 resolvedEpisodeUrl: resolvedEpisodeUrl,
-                resolvedTimestamp: selection?.initialTimestamp || 0,
+                resolvedTimestamp: this.broadcastEpisode ? 0 : (selection?.initialTimestamp || 0),
                 currentSourcesUrl: effectiveSeasonUrl,
                 onPlayerReady: () => {
                      this.populateSourceSelector();
@@ -11066,7 +11227,7 @@ class MovieDetailsManager {
      */
     buildVidSrcUrl(imdbId, opts = {}) {
         const base = 'https://vidsrc-embed.ru/embed';
-        const isSeries = (typeof isSeriesMedia === 'function'
+        const isSeries = Boolean(this.broadcastEpisode) || (typeof isSeriesMedia === 'function'
             ? isSeriesMedia(this.selectedMovie)
             : Boolean(this.selectedMovie?.isSeries || (this.selectedMovie?.type && ['tv-series', 'mini-series', 'animated-series', 'anime', 'tv', 'tv-show', 'series', 'tv_series'].includes(String(this.selectedMovie.type).toLowerCase().replace(/_/g, '-')))));
 
@@ -11084,6 +11245,7 @@ class MovieDetailsManager {
      * @param {string} imdbId
      */
     loadVidSrcSource(imdbId, lifecycleContext = {}) {
+        if (this.broadcastEpisode && !this.canUseBroadcastSource('vidsrc')) return false;
         if (!imdbId) {
             this.renderPlayerPlaceholder('IMDb ID не найден для этого фильма');
             return;

@@ -13,6 +13,11 @@ class SeasonvarAdapter extends (typeof BasePlaybackAdapter !== 'undefined' ? Bas
         return false;
     }
 
+    supportsBroadcastSelection(selection) {
+        // Seasonvar's provider numbering does not establish a canonical Specials mapping.
+        return selection.seasonNumber > 0;
+    }
+
     supportsSeries() {
         return true;
     }
@@ -95,7 +100,7 @@ class SeasonvarAdapter extends (typeof BasePlaybackAdapter !== 'undefined' ? Bas
         const currentState = this.activeContainer.__seasonvarPlaybackState;
         if (!currentState) return false;
 
-        const targetSeason = selection.seasonNumber || 1;
+        const targetSeason = selection.seasonNumber ?? 1;
         const targetEpisode = selection.episodeNumber || 1;
 
         // If target season is already active in structured state, update video stream in-place
@@ -137,6 +142,8 @@ class SeasonvarAdapter extends (typeof BasePlaybackAdapter !== 'undefined' ? Bas
 
         this.activeContainer = container;
 
+        let broadcastSeasons = null;
+        let providerTargetUrl = selection.seasonUrl || selection.sourceUrl || null;
         let sources = context.sources || null;
         if (!sources || sources.length === 0) {
             let targetUrl = selection.seasonUrl || selection.sourceUrl || null;
@@ -165,6 +172,7 @@ class SeasonvarAdapter extends (typeof BasePlaybackAdapter !== 'undefined' ? Bas
             }
 
             if (targetUrl) {
+                providerTargetUrl = targetUrl;
                 try {
                     sources = await parser.getVideoSources(targetUrl);
                 } catch (err) {
@@ -179,21 +187,34 @@ class SeasonvarAdapter extends (typeof BasePlaybackAdapter !== 'undefined' ? Bas
             throw error;
         }
 
+        if (context.broadcastSelection) {
+            if (providerTargetUrl && typeof parser.getSeasons === 'function') {
+                broadcastSeasons = await parser.getSeasons(providerTargetUrl);
+            }
+        }
+
         const renderOptions = {
             movieId: selection.kinopoiskId,
             mediaType: selection.mediaType,
             season: selection.seasonNumber,
             episode: selection.episodeNumber,
             resolvedSeasonUrl: selection.seasonUrl || null,
-            resolvedSeasonNumber: selection.seasonNumber || null,
+            resolvedSeasonNumber: selection.seasonNumber ?? null,
             resolvedEpisodeNumber: selection.episodeNumber || null,
             initialTimestamp: selection.initialTimestamp || 0,
+            broadcastSelection: context.broadcastSelection === true,
+            seasons: broadcastSeasons,
             translations: context.translations || sources?.translations || null,
             onReady: context.onReady,
             onError: context.onError
         };
 
         const renderResult = await parser.renderPlayer(container, sources, renderOptions);
+        if (renderResult === false && context.broadcastSelection) {
+            const error = new Error('Scheduled episode is unavailable on Seasonvar');
+            error.code = 'BROADCAST_EPISODE_UNAVAILABLE';
+            throw error;
+        }
 
         return {
             element: renderResult || container.querySelector('video'),

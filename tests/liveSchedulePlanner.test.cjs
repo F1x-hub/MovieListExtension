@@ -19,7 +19,9 @@ const markup = `<!doctype html><html><body>
     <button id="livePlannerPrev">Назад</button><input id="livePlannerDate" type="hidden"><div id="livePlannerDatePicker"></div>
     <button id="livePlannerNext">Вперёд</button><button id="livePlannerToday">Сегодня</button>
     <button id="livePlannerNow">Сейчас</button><span id="livePlannerTimezone"></span>
-    <select id="livePlannerZoom"><option value="24" selected>24 часа</option><option value="12">12 часов</option></select>
+    <select id="livePlannerZoom"><option value="24" selected>24 часа</option><option value="12">12 часов</option><option value="6">6 часов</option><option value="3">3 часа</option></select>
+    <div id="livePlannerOverviewHours"></div><span id="livePlannerViewRange"></span>
+    <div id="livePlannerOverviewTrack"><div id="livePlannerOverviewBlocks"></div><div id="livePlannerViewport" role="slider" tabindex="0"></div></div>
     <div id="livePlannerScroll"><div id="livePlannerCanvas"><div id="livePlannerRuler"></div>
       <div id="livePlannerTrack"></div><div id="livePlannerLine"><span></span></div>
     </div></div>
@@ -56,8 +58,10 @@ function mount(options = {}) {
         disconnect() { this.disconnected = true; }
     };
     const byId = id => window.document.getElementById(id);
-    Object.defineProperty(byId('livePlannerCanvas'), 'clientWidth', { configurable: true, get: () => 2400 });
-    Object.defineProperty(byId('livePlannerScroll'), 'clientWidth', { configurable: true, get: () => 2400 });
+    Object.defineProperty(byId('livePlannerCanvas'), 'clientWidth', { configurable: true,
+        get: () => options.dynamicWidth ? Number.parseFloat(byId('livePlannerCanvas').style.width) || 2352 : 2400 });
+    Object.defineProperty(byId('livePlannerScroll'), 'clientWidth', { configurable: true, get: () => options.viewportWidth || 2400 });
+    byId('livePlannerOverviewTrack').getBoundingClientRect = () => ({ left: 100, right: 1100, width: 1000 });
     byId('livePlannerScroll').getBoundingClientRect = () => ({ left: 0, right: 2400, width: 2400, top: 0, bottom: 100, height: 100 });
     window.eval(sortCode);
     window.eval(pickerCode);
@@ -339,5 +343,67 @@ test('real custom date picker and zoom controls synchronize the day grid', async
         assert.equal(enhanced.valueLabel.textContent, '12 часов');
         assert.equal(app.byId('livePlannerCanvas').style.width, '4704px');
         await settle();
+    } finally { app.close(); }
+});
+
+test('three-hour zoom and the full-day overview synchronize scrolling, keyboard and schedule thumbnails without writes', () => {
+    const app = mount({ dynamicWidth: true });
+    try {
+        const select = app.byId('livePlannerZoom'), viewport = app.byId('livePlannerViewport');
+        const scroll = app.byId('livePlannerScroll'), canvas = app.byId('livePlannerCanvas');
+        app.planner.setItems([slot('one', 18, 19), slot('two', 21, 23)], null);
+        assert.equal(app.byId('livePlannerOverviewBlocks').children.length, 2);
+        assert.equal(app.byId('livePlannerOverviewHours').children.length, 13);
+        assert.equal(viewport.style.width, '100%');
+        select.value = '3'; select.dispatchEvent(new app.window.Event('change'));
+        assert.equal(canvas.style.width, '18816px');
+        assert.equal(viewport.style.width, '12.5%');
+        scroll.scrollLeft = canvas.clientWidth / 4;
+        scroll.dispatchEvent(new app.window.Event('scroll'));
+        assert.equal(app.byId('livePlannerViewRange').textContent, 'На дорожке: 06:00–09:00');
+        const key = name => viewport.dispatchEvent(new app.window.KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }));
+        key('End'); assert.equal(viewport.getAttribute('aria-valuetext'), '21:00–24:00');
+        assert.equal(viewport.getAttribute('aria-valuenow'), '1260');
+        key('ArrowLeft'); assert.equal(viewport.getAttribute('aria-valuetext'), '20:45–23:45');
+        key('Home'); assert.equal(viewport.getAttribute('aria-valuetext'), '00:00–03:00');
+        app.planner.setBusy(true); key('End');
+        assert.equal(viewport.getAttribute('aria-disabled'), 'true');
+        assert.equal(viewport.getAttribute('aria-valuenow'), '0');
+        assert.equal(app.changes.length, 0);
+    } finally { app.close(); }
+});
+
+test('overview click and drag pan across the day, clamp edges and cancel without changing the selected screening', async () => {
+    const app = mount({ dynamicWidth: true });
+    try {
+        const item = slot('one', 18, 19); app.planner.setItems([item], null); app.planner.select(item);
+        const select = app.byId('livePlannerZoom'), track = app.byId('livePlannerOverviewTrack'), viewport = app.byId('livePlannerViewport');
+        select.value = '3'; select.dispatchEvent(new app.window.Event('change'));
+        const down = (target, x) => target.dispatchEvent(new app.window.MouseEvent('pointerdown', { button: 0, clientX: x, bubbles: true, cancelable: true }));
+        down(track, 600); await app.drop(600);
+        assert.equal(viewport.getAttribute('aria-valuetext'), '10:30–13:30');
+        const original = app.byId('livePlannerScroll').scrollLeft;
+        down(viewport, 600); app.move(50);
+        assert.equal(viewport.getAttribute('aria-valuetext'), '00:00–03:00');
+        await app.drop(50, 'pointercancel');
+        assert.equal(app.byId('livePlannerScroll').scrollLeft, original);
+        down(viewport, 600); app.move(1500); await app.drop(1500);
+        assert.equal(viewport.getAttribute('aria-valuetext'), '21:00–24:00');
+        assert.equal(app.planner.selected, item);
+        assert.equal(app.planner.range.start.getTime(), item.startedAtMs);
+        assert.equal(app.changes.length, 0, 'overview navigation never writes or retimes shows');
+    } finally { app.close(); }
+});
+
+test('zoom uses the actual narrow viewport and keeps an exact three-hour window instead of stretching it', () => {
+    const app = mount({ dynamicWidth: true, viewportWidth: 360 });
+    try {
+        assert.equal(app.byId('livePlannerCanvas').style.width, '312px');
+        assert.equal(app.byId('livePlannerViewport').style.width, '100%');
+        const select = app.byId('livePlannerZoom'); select.value = '3'; select.dispatchEvent(new app.window.Event('change'));
+        assert.equal(app.byId('livePlannerCanvas').style.width, '2496px');
+        assert.equal(app.byId('livePlannerViewport').style.width, '12.5%');
+        assert.equal(app.byId('livePlannerViewport').getAttribute('aria-valuetext'), '10:30–13:30');
+        assert.equal(app.changes.length, 0);
     } finally { app.close(); }
 });

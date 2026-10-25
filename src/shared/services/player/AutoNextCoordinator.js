@@ -114,6 +114,7 @@ class AutoNextCoordinator {
      * @returns {boolean} Whether prompt was started
      */
     handlePlaybackEnded(params = {}) {
+        if (this.playbackController?.broadcastMode) { this.cancel(); return false; }
         const { movie, selection, runtime, adapter, mountToken, options } = params;
         if (!movie || !selection || !runtime) return false;
 
@@ -195,6 +196,7 @@ class AutoNextCoordinator {
      * Immediately plays target next episode and closes prompt.
      */
     playNow() {
+        if (this.playbackController?.broadcastMode) { this.cancel(); return; }
         if (!this.state.active) return;
 
         const target = this.state.targetSelection;

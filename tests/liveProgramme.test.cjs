@@ -46,6 +46,21 @@ test('programme includes overlapping local-day slots and identifies actual resol
     assert.equal(earlyEnd.rows.find(row => row.item.id === 'current').endMs, at(20, 35));
 });
 
+test('public next strip and programme identify exact episodes even with a custom screening title', () => {
+    const app = mount();
+    try {
+        const next = app.items[2];
+        next.title = 'Вечерний сериал';
+        Object.assign(next.movie, { mediaType: 'tv-series', seasonNumber: 0, episodeNumber: 2, episodeTitle: '<Спецвыпуск>' });
+        app.render();
+        assert.match(app.byId('Meta').textContent, /S00E02 · <Спецвыпуск>/);
+        app.byId('Toggle').click();
+        const row = app.byId('List').querySelector('[data-programme-show="cinemaSchedule/next"]');
+        assert.match(row.textContent, /S00E02 · <Спецвыпуск>/);
+        assert.equal(row.querySelector('спецвыпуск'), null);
+    } finally { app.dom.window.close(); }
+});
+
 test('manual on-air show is included, while schedule IDs cannot impersonate it', () => {
     const items = fixtures();
     const manual = cinema.normalizeChannel({ mode: 'youtube', title: 'Live', startedAt: new Date(at(19)),

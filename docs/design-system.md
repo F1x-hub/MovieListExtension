@@ -162,6 +162,20 @@ popups sit outside the clipped grid, fit the viewport and support keyboard use.
 The calendar uses neutral page-scoped styling. Overlap feedback includes text
 as well as a border.
 
+A full-day overview above the detailed track shows scheduled slots and its
+visible window. Drag the window, click the overview or use its slider keyboard
+controls to pan without changing the programme. Its window and time labels
+follow scrolling and 24/12/6/3-hour zoom, including narrow panes. The overview
+always keeps the entire day visible.
+
+Series use season buttons and episode cards within the existing source library.
+One action adds one episode, with its runtime fixed; an unknown runtime requires
+an explicit value. The next episode is prepared at the saved end, then added only
+by an explicit button. Conflicts show the occupied screening and offer a free
+start without moving neighbours. Added and unreleased episodes have text labels,
+and saved slots keep their season and episode when moved. Catalogue loading,
+retry and missing-runtime feedback remain inside the editor in either theme.
+
 The viewer's common next-show strip sits outside both the player and standby
 containers. It expands into today's public programme with all-day/current-and-next
 filters, labelled playback states and explicit dates across midnight. The strip

@@ -223,6 +223,16 @@ class PlaybackController {
      * @param {Object} selection
      */
     setSelection(selection) {
+        const normalized = selection ? normalizeSelection(selection) : null;
+        if (this.broadcastSelection && (!normalized
+            || normalized.kinopoiskId !== this.broadcastSelection.kinopoiskId
+            || normalized.mediaType !== this.broadcastSelection.mediaType
+            || normalized.seasonNumber !== this.broadcastSelection.seasonNumber
+            || normalized.episodeNumber !== this.broadcastSelection.episodeNumber)) {
+            const error = new Error('Broadcast episode is set by the programme');
+            error.code = 'BROADCAST_SELECTION_LOCKED';
+            throw error;
+        }
         if (!selection) {
             this.clearSelection();
             return;
@@ -238,7 +248,6 @@ class PlaybackController {
             this._notifyCancelAutoNext();
         }
 
-        const normalized = normalizeSelection(selection);
         this.selectionVersion += 1;
         this.currentSelection = normalized;
         if (normalized.initialTimestamp) {
@@ -257,6 +266,27 @@ class PlaybackController {
         if (typeof this.onSelectionChange === 'function') {
             this.onSelectionChange(this.getSelection());
         }
+    }
+
+    /** The programme owns episode identity; play/pause/seek remain local clock commands. */
+    setBroadcastSelection(selection) {
+        this.broadcastMode = true;
+        this.setSelection({ ...selection, source: 'BROADCAST', initialTimestamp: 0 });
+        this.broadcastSelection = this.getSelection();
+        this.currentTimestamp = 0;
+        this._notifyCancelAutoNext();
+    }
+
+    canPlayBroadcastProvider(adapter) {
+        if (!this.broadcastSelection) return true;
+        const mode = adapter?.getSelectionMode?.();
+        return Boolean(adapter && adapter.canHandle(this.currentSelection || this.broadcastSelection)
+            && ['DIRECT', 'NATIVE_BRIDGE'].includes(mode)
+            && (mode !== 'NATIVE_BRIDGE' || this.broadcastSelection.seasonNumber > 0)
+            && (this.broadcastSelection.seasonNumber > 0
+                || adapter.supportsBroadcastSelection?.(this.broadcastSelection) === true)
+            && (typeof adapter.supportsBroadcastSelection !== 'function'
+                || adapter.supportsBroadcastSelection(this.broadcastSelection)));
     }
 
     /**
@@ -279,6 +309,7 @@ class PlaybackController {
      * Clears active canonical selection.
      */
     clearSelection() {
+        if (this.broadcastSelection) return;
         this.selectionVersion += 1;
         this.currentSelection = null;
         this.currentTimestamp = 0;
@@ -960,6 +991,12 @@ class PlaybackController {
         const normalizedProviderId = (providerId || '').replace(/^parser:/, '').toLowerCase();
         const adapter = this.getAdapter(normalizedProviderId);
 
+        if (!this.canPlayBroadcastProvider(adapter)) {
+            const error = new Error('Provider cannot confirm the scheduled episode');
+            error.code = 'BROADCAST_EPISODE_UNAVAILABLE';
+            throw error;
+        }
+
         if (!adapter) {
             const error = new Error(`Provider '${providerId}' is not registered`);
             error.code = 'PROVIDER_UNAVAILABLE';
@@ -1030,13 +1067,15 @@ class PlaybackController {
         }
 
         try {
+            const broadcastNative = Boolean(this.broadcastSelection && adapter.getSelectionMode?.() === 'NATIVE_BRIDGE');
             const mountContext = {
+                broadcastSelection: Boolean(this.broadcastSelection),
                 sources: options.sources || null,
                 parser: options.parser || null,
                 lifecycle: this.lifecycle,
                 token: currentToken,
                 onReady: () => {
-                    if (this.mountRequestId === currentToken) {
+                    if (this.mountRequestId === currentToken && !broadcastNative) {
                         if (typeof this.onStateChange === 'function') {
                             this.onStateChange('ready', { providerId: adapter.id, selection: this.getSelection() });
                         }
@@ -1059,6 +1098,13 @@ class PlaybackController {
             }
 
             const mountResult = await adapter.mount(container, this.currentSelection, mountContext);
+
+            if (broadcastNative && await adapter.applySelection(this.currentSelection, mountContext) !== true) {
+                adapter.unmount?.(mountContext);
+                const error = new Error('Provider did not confirm the scheduled episode');
+                error.code = 'BROADCAST_EPISODE_UNAVAILABLE';
+                throw error;
+            }
 
             // Verify generation token has not been superseded by a newer request
             if (this.mountRequestId !== currentToken) {
@@ -1311,7 +1357,7 @@ class PlaybackController {
             || currentSelection?.providerId
             || (currentSelection?.source && currentSelection.source !== 'HERO_WATCH')
         );
-        if (hasExplicitEpisode && hasCanonicalSelectionContext && !isProviderSelection) {
+        if (hasExplicitEpisode && hasCanonicalSelectionContext && (!isProviderSelection || this.broadcastSelection)) {
             if (seasonNum != null && currentSelection.seasonNumber != null
                 && Number(seasonNum) !== Number(currentSelection.seasonNumber)) {
                 return;

@@ -58,7 +58,9 @@
     function channelKey(c) {
         if (!c || c.mode === 'off') return 'off';
         // Different schedule entries of the same title are still different shows.
-        return c.mode === 'movie' ? `movie:${c.docPath}:${c.movie.kinopoiskId}` : `youtube:${c.docPath}:${c.youtube.videoId}`;
+        const episodeKey = c.movie?.mediaType === 'tv-series'
+            ? `:S${c.movie.seasonNumber}E${c.movie.episodeNumber}` : '';
+        return c.mode === 'movie' ? `movie:${c.docPath}:${c.movie.kinopoiskId}${episodeKey}` : `youtube:${c.docPath}:${c.youtube.videoId}`;
     }
 
     function frameEl() {
@@ -261,6 +263,13 @@
                 autoplay: 'true',
                 broadcastStart: String(localStartMs())
             });
+            if (channel.movie.mediaType === 'tv-series') {
+                params.set('mediaType', 'tv-series');
+                params.set('seasonNumber', String(channel.movie.seasonNumber));
+                params.set('episodeNumber', String(channel.movie.episodeNumber));
+                if (channel.movie.episodeTitle) params.set('episodeTitle', channel.movie.episodeTitle);
+                if (channel.movie.tmdbId) params.set('tmdbId', String(channel.movie.tmdbId));
+            }
             src = `../movie-details/movie-details.html?${params}`;
         }
 
@@ -505,7 +514,7 @@
 
     function signatureOf(c) {
         const media = c?.[c?.mode];
-        return [c?.docPath, c?.mode, c?.startedAtMs, c?.endsAtMs, c?.playbackStartedAtMs, media?.pausedAtSec, media?.videoId || media?.kinopoiskId, media?.durationSec, c?.title].join('|');
+        return [c?.docPath, c?.mode, c?.startedAtMs, c?.endsAtMs, c?.playbackStartedAtMs, media?.pausedAtSec, media?.videoId || media?.kinopoiskId, media?.mediaType, media?.seasonNumber, media?.episodeNumber, media?.episodeTitle, media?.durationSec, c?.title].join('|');
     }
 
     function refreshChannel({ force = false } = {}) {

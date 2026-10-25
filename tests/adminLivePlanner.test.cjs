@@ -24,6 +24,7 @@ async function mount({ unknownDuration = false } = {}) {
     w.eval(read('src/shared/components/SortControl.js'));
     w.eval(read('src/shared/components/CustomDateTimePicker.js').replace(/^export /gm, '') + '\nwindow.CustomDatePicker = CustomDatePicker;');
     w.eval(read('src/pages/admin/LiveSchedulePlanner.js'));
+    w.eval(read('src/pages/admin/LiveSeriesEditor.js'));
     w.eval(read('src/pages/admin/admin-live.js'));
     await settle();
     return { dom, w, errors, $: id => w.document.getElementById(id) };
@@ -43,6 +44,9 @@ test('actual admin markup wires the 24-hour grid and keeps upcoming shows out of
     assert.ok(f.$('livePlannerDatePicker').querySelector('.custom-picker-trigger'));
     assert.ok(f.w.document.querySelector('script[src$="/SortControl.js"]'), 'real admin markup includes SortControl before planner');
     assert.equal(f.$('livePlannerZoom').hidden, true);
+    assert.equal(f.$('livePlannerZoom').querySelector('option[value="3"]').textContent, '3 часа');
+    assert.equal(f.$('livePlannerViewport').getAttribute('role'), 'slider');
+    assert.equal(f.$('livePlannerOverviewBlocks').children.length, 2);
     assert.ok(f.w.SortControl.instances.get(f.$('livePlannerZoom')));
     assert.equal(f.$('liveSlotEnd').readOnly, true);
 });
