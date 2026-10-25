@@ -23,7 +23,7 @@
     "generate-update-signing-key": "node scripts/generate-update-signing-key.js",
     "lint": "eslint \"src/**/*.js\" \"content-scripts/**/*.js\"",
     "test:whats-new": "node tests/whatsNew.test.mjs",
-    "test:live-planner": "node tests/cinemaChannel.test.cjs && node tests/cinemaScheduleTransactions.test.cjs && node tests/liveSchedulePlanner.test.cjs && node tests/adminLivePlanner.test.cjs && node tests/liveYoutubeSync.test.cjs && node tests/liveStandby.test.cjs && node tests/youtubeMediaElement.test.cjs",
+    "test:live-planner": "node tests/cinemaChannel.test.cjs && node tests/cinemaScheduleTransactions.test.cjs && node tests/liveSchedulePlanner.test.cjs && node tests/adminLivePlanner.test.cjs && node tests/liveYoutubeSync.test.cjs && node tests/liveStandby.test.cjs && node tests/liveProgramme.test.cjs && node tests/youtubeMediaElement.test.cjs",
     "test:admin": "node tests/adminAccessibilityContract.test.js && node tests/adminFirestoreUsageContract.test.js && node tests/adminApprovals.test.js && node tests/adminIdentityWorkspace.test.js && node tests/commentReactionConfig.test.js",
     "test:random-marathon": "node tests/randomMarathonFunction.test.cjs && node tests/randomMarathonClient.test.cjs && node tests/randomMarathonContract.test.js",
     "test:random-wheel": "node tests/randomWheelAudio.test.js && node tests/randomPageHardening.test.js && node tests/randomSkipSeenAndHints.test.js && node tests/randomMarathonContract.test.js",

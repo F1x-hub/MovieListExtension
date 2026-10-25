@@ -8,8 +8,7 @@
             this.els = Object.fromEntries(['liveStandbyScreen', 'liveStandbyLabel', 'liveStandbyClock', 'liveStandbyZone',
                 'liveStandbyCountdown', 'liveStandbyCountdownWrap', 'liveStandbyNoTime', 'liveStandbyNext',
                 'liveStandbyPoster', 'liveStandbyNextName', 'liveStandbyNextTime', 'liveStandbyFullscreen',
-                'liveEmptyTitle', 'liveEmptyText', 'liveStandbySchedule', 'liveStandbyScheduleTitle',
-                'liveStandbyScheduleTime', 'liveStandbyScheduleName', 'liveStandbyScheduleMeta']
+                'liveEmptyTitle', 'liveEmptyText']
                 .map(id => [id.replace(/^live/, ''), $(id)]));
             this.els.StandbyFullscreen.innerHTML = window.Icons?.FULLSCREEN || '';
             this.els.StandbyFullscreen.addEventListener('click', async () => {
@@ -32,7 +31,7 @@
             this.text(e.EmptyText, error ? t(errorKeys[1]) : upcoming ? t(ended ? 'standby_ended_text' : 'standby_gap_text') : t('standby_empty_text'));
             this.text(e.StandbyLabel, t(error ? 'standby_unavailable_label' : upcoming ? ended ? 'standby_ended_label' : 'standby_gap_label' : 'standby_empty_label'));
             e.StandbyCountdownWrap.hidden = !upcoming; e.StandbyNoTime.hidden = Boolean(upcoming);
-            e.StandbyNext.hidden = !upcoming; e.StandbySchedule.hidden = !upcoming;
+            e.StandbyNext.hidden = !upcoming;
             this.text(e.StandbyNoTime, t(error ? 'standby_connection_hint' : 'standby_no_shows'));
             e.StandbyFullscreen.setAttribute('aria-label', t('fullscreen'));
             this.root.querySelectorAll('[data-standby-i18n]').forEach(el => this.text(el, t(el.dataset.standbyI18n)));
@@ -46,11 +45,6 @@
             const label = [date, clock].filter(Boolean).join(' · ');
             this.text(e.StandbyNextTime, `${t('standby_next')} · ${label}`);
             this.text(e.StandbyNextName, next.title || t('movie_on_air'));
-            this.text(e.StandbyScheduleTitle, t('standby_next_show'));
-            this.text(e.StandbyScheduleTime, label);
-            this.text(e.StandbyScheduleName, next.title || t('movie_on_air'));
-            const duration = next[next.mode]?.durationSec;
-            this.text(e.StandbyScheduleMeta, `${next.mode === 'youtube' ? 'YouTube' : t('standby_movie')}${duration ? ` · ${window.CinemaChannel.formatClock(duration)}` : ''}`);
             const cover = window.CinemaChannel.coverUrl(next);
             if (cover !== this.cover) {
                 this.cover = cover; e.StandbyPoster.hidden = !cover;

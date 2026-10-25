@@ -37,12 +37,10 @@ test('standby shows next snapshot metadata and a ceil-rounded countdown, updatin
         assert.equal(app.byId('liveStandbyCountdown').textContent, '0:31');
         assert.equal(app.byId('liveStandbyCountdownWrap').hidden, false);
         assert.equal(app.byId('liveStandbyNextName').textContent, next.title);
-        assert.equal(app.byId('liveStandbyScheduleName').textContent, next.title);
         assert.equal(app.byId('liveStandbyPoster').src, next.movie.posterUrl);
         assert.equal(app.byId('liveEmptyTitle').textContent, 't:standby_gap_title');
         app.render({ next, nowMs: NOW + 10_100 });
         assert.equal(app.byId('liveStandbyCountdown').textContent, '0:20');
-        assert.equal(app.byId('liveStandbyScheduleMeta').textContent, 't:standby_movie · 30:00');
         assert.equal(app.window.firebase, undefined, 'component requires no Firebase access');
     } finally { app.dom.window.close(); }
 });
@@ -67,7 +65,7 @@ test('empty/ended schedule hides previous next-show and countdown UI', () => {
         app.render({ next: scheduled('next', NOW + 60_000) });
         app.render({});
         assert.equal(app.byId('liveEmptyTitle').textContent, 't:standby_empty_title');
-        for (const id of ['liveStandbyCountdownWrap', 'liveStandbyNext', 'liveStandbySchedule']) assert.equal(app.byId(id).hidden, true);
+        for (const id of ['liveStandbyCountdownWrap', 'liveStandbyNext']) assert.equal(app.byId(id).hidden, true);
         assert.equal(app.byId('liveStandbyNoTime').hidden, false);
         assert.equal(app.byId('liveStandbyNoTime').textContent, 't:standby_no_shows');
         app.render({ channel: scheduled('ended', NOW - 3600_000), position: { state: 'ended', offsetSec: 1800 } });
