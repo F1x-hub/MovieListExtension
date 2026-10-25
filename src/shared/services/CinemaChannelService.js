@@ -373,6 +373,23 @@
             await this.refFor(channel).set(data, { merge: true });
         }
 
+        /**
+         * Admin only: stores the real length of a YouTube video that was published
+         * without one, so the broadcast ends by itself like a movie does.
+         */
+        async setYoutubeDuration(channel, durationSec) {
+            const sec = readDuration(durationSec);
+            if (channel?.mode !== 'youtube' || channel.youtube.live || channel.youtube.durationSec || !sec) return false;
+            const FieldValue = firebase.firestore.FieldValue;
+            const user = this.firebaseManager.getCurrentUser?.();
+            await this.refFor(channel).set({
+                youtube: { ...channel.youtube, durationSec: sec },
+                updatedAt: FieldValue.serverTimestamp(),
+                updatedBy: user?.uid || ''
+            }, { merge: true });
+            return true;
+        }
+
         /** Admin only (enforced by Firestore rules). `restart` resets the broadcast clock to now. */
         async save(input, { restart = true } = {}) {
             const payload = buildChannelPayload(input);

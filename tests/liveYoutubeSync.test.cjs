@@ -172,20 +172,15 @@ async function mountLiveClient(bus, { uid = null, isAdmin = false, cachedAdmin =
         commands,
         frame: () => window.document.querySelector('.live-frame'),
         clearCommands() { commands.length = 0; },
-        emitWrapper(event, payload = {}) {
+        /** A message from the embedded player page (same extension origin). */
+        emitFrame(data) {
             const frame = window.document.querySelector('.live-frame');
             assert.ok(frame, 'expected mounted .live-frame');
-            const msg = new window.MessageEvent('message', {
-                origin: WRAPPER_ORIGIN,
+            window.dispatchEvent(new window.MessageEvent('message', {
+                origin: window.location.origin,
                 source: frame.contentWindow,
-                data: {
-                    source: 'STARTTAB_PLAYER_WRAPPER',
-                    event,
-                    videoId: 'dQw4w9WgXcQ',
-                    payload
-                }
-            });
-            window.dispatchEvent(msg);
+                data
+            }));
         },
         close() {
             window.dispatchEvent(new window.Event('pagehide'));
@@ -194,211 +189,177 @@ async function mountLiveClient(bus, { uid = null, isAdmin = false, cachedAdmin =
     };
 }
 
-test('YouTube broadcast syncs admin pause, PAUSED->BUFFERING->PLAYING resume, seeks, and passive second admin tab', async () => {
-    const startMs = Date.now() - 30_000;
+const YT = { mode: 'youtube', title: 'Эфир YouTube' };
+const stateMessages = client => client.commands.map(c => c.message).filter(m => m.type === 'BROADCAST_STATE');
+
+test('YouTube on air mounts the movie-player page and hands it the broadcast clock like a movie', async () => {
     const bus = createChannelBus({
-        mode: 'youtube',
-        title: 'Вечерний клип',
-        startedAt: new Date(startMs),
-        youtube: { videoId: 'dQw4w9WgXcQ', live: false, durationSec: 0, pausedAtSec: null }
+        ...YT,
+        startedAt: new Date(Date.now() - 30_000),
+        youtube: { videoId: 'dQw4w9WgXcQ', live: false, durationSec: 300, pausedAtSec: null }
     });
-
-    const admin1 = await mountLiveClient(bus, { uid: 'admin-1', isAdmin: true, cachedAdmin: true });
-    const admin2 = await mountLiveClient(bus, { uid: 'admin-2', isAdmin: true, cachedAdmin: true });
-    const viewer = await mountLiveClient(bus, { uid: 'viewer-1', isAdmin: false, cachedAdmin: false });
-
+    const admin = await mountLiveClient(bus, { uid: 'admin-1', isAdmin: true, cachedAdmin: true });
+    const viewer = await mountLiveClient(bus, { uid: 'viewer-1', isAdmin: false });
     try {
-        assert.match(admin1.frame().src, /controls=1/);
-        assert.match(viewer.frame().src, /controls=0/);
-        assert.equal(viewer.frame().classList.contains('is-locked'), false, 'unlocked before playbackConfirmed');
+        assert.match(viewer.frame().src, /youtube-player\.html\?v=dQw4w9WgXcQ&start=(29|30|31)&live=0$/);
+        assert.equal(viewer.window.document.getElementById('liveControls').hidden, true, 'no page overlay: the movie player draws the controls');
 
-        // Bring all three players into normal playing state around t=30s.
-        for (const client of [admin1, admin2, viewer]) {
-            client.emitWrapper('READY', { duration: 300 });
-            client.emitWrapper('STATE_CHANGE', { state: 'PLAYING', currentTime: 30, duration: 300 });
-            client.emitWrapper('TIME_UPDATE', { state: 'PLAYING', currentTime: 30.2, duration: 300 });
-            client.clearCommands();
-        }
-        assert.equal(viewer.frame().classList.contains('is-locked'), true, 'viewer frame locks once playing');
-        assert.equal(admin1.frame().classList.contains('is-locked'), false, 'admin frame stays interactive');
+        viewer.emitFrame({ type: 'BROADCAST_READY' });
+        admin.emitFrame({ type: 'BROADCAST_READY' });
+        const viewerState = stateMessages(viewer).at(-1);
+        assert.equal(viewerState.admin, false);
+        assert.equal(viewerState.pausedAtSec, null);
+        assert.ok(Math.abs(Date.now() - viewerState.startMs - 30_000) < 1500);
+        assert.equal(stateMessages(admin).at(-1).admin, true);
 
-        // 1. Admin 1 pauses at 42s -> Firestore updates -> viewer and passive admin2 both pause and align.
-        admin1.emitWrapper('STATE_CHANGE', { state: 'PAUSED', currentTime: 42 });
-        await wait(420);
-
-        assert.equal(bus.getDoc().youtube.pausedAtSec, 42);
-        assert.equal(viewer.commands.some(c => c.message.action === 'PAUSE'), true, 'viewer received PAUSE');
-        assert.equal(admin2.commands.some(c => c.message.action === 'PAUSE'), true, 'passive admin2 received PAUSE');
-        assert.equal(admin1.commands.some(c => c.message.action === 'PAUSE'), false, 'originating admin1 is not echoed');
-
-        // Simulate YT.Player firing STATE_CHANGE: PAUSED with pre-align time (30.5s) on viewer & admin2.
-        const writesBeforeEcho = bus.writes.length;
         viewer.clearCommands();
-        admin2.clearCommands();
-        viewer.emitWrapper('STATE_CHANGE', { state: 'PAUSED', currentTime: 30.5 });
-        admin2.emitWrapper('STATE_CHANGE', { state: 'PAUSED', currentTime: 30.5 });
-        await wait(420);
-
-        assert.equal(bus.writes.length, writesBeforeEcho, 'passive admin2 must not echo a Firestore write');
-        assert.deepEqual(viewer.commands.map(c => c.message), [{ action: 'SEEK', payload: { seconds: 42 } }]);
-        assert.deepEqual(admin2.commands.map(c => c.message), [{ action: 'SEEK', payload: { seconds: 42 } }]);
-
-        // Verify viewer does NOT loop SEEK while staying paused on subsequent clock ticks.
-        viewer.clearCommands();
-        admin2.clearCommands();
-        await wait(1150);
-        assert.deepEqual(viewer.commands, [], 'paused viewer must not spam SEEK once aligned');
-
-        // 2. Admin 1 scrubs to 95s while paused and clicks Play -> real YT emits BUFFERING(95) -> PLAYING(95).
-        admin1.emitWrapper('STATE_CHANGE', { state: 'BUFFERING', currentTime: 95 });
-        admin1.emitWrapper('STATE_CHANGE', { state: 'PLAYING', currentTime: 95.1 });
-        await wait(420);
-
-        assert.equal(bus.getDoc().youtube.pausedAtSec, null, 'broadcast resumed');
-        const viewerActions = viewer.commands.map(c => c.message.action);
-        assert.deepEqual(viewerActions, ['SEEK', 'PLAY'], 'paused viewer seeks to new spot AND plays in one pass');
-        assert.ok(Math.abs(viewer.commands[0].message.payload.seconds - 95) <= 2);
-
-        const admin2Actions = admin2.commands.map(c => c.message.action);
-        assert.deepEqual(admin2Actions, ['SEEK', 'PLAY'], 'passive admin2 also seeks and resumes');
-
-        viewer.emitWrapper('STATE_CHANGE', { state: 'PLAYING', currentTime: 95.2 });
-        admin2.emitWrapper('STATE_CHANGE', { state: 'PLAYING', currentTime: 95.2 });
-        viewer.clearCommands();
-        admin2.clearCommands();
-
-        // 3. Admin 1 clicks progress bar while playing (BUFFERING -> PLAYING at 160s).
-        admin1.emitWrapper('STATE_CHANGE', { state: 'BUFFERING', currentTime: 160 });
-        admin1.emitWrapper('STATE_CHANGE', { state: 'PLAYING', currentTime: 160.1 });
-        await wait(420);
-
-        assert.equal(viewer.commands.some(c => c.message.action === 'SEEK' && Math.abs(c.message.payload.seconds - 160) <= 2), true);
-        assert.equal(admin2.commands.some(c => c.message.action === 'SEEK' && Math.abs(c.message.payload.seconds - 160) <= 2), true);
-        viewer.emitWrapper('TIME_UPDATE', { state: 'PLAYING', currentTime: 160.2, duration: 300 });
-        viewer.clearCommands();
-
-        // 4. Admin 1 drags progress bar (YouTube briefly emits PAUSED -> BUFFERING -> PLAYING within <350ms).
-        admin1.emitWrapper('STATE_CHANGE', { state: 'PAUSED', currentTime: 160.5 });
-        await wait(80);
-        admin1.emitWrapper('STATE_CHANGE', { state: 'BUFFERING', currentTime: 220 });
-        admin1.emitWrapper('STATE_CHANGE', { state: 'PLAYING', currentTime: 220.2 });
-        await wait(450);
-
-        assert.equal(bus.getDoc().youtube.pausedAtSec, null, 'coalesced drag stays live');
-        assert.equal(viewer.commands.some(c => c.message.action === 'SEEK' && Math.abs(c.message.payload.seconds - 220) <= 2), true);
+        bus.setServerChannel({ ...bus.getDoc(), youtube: { ...bus.getDoc().youtube, pausedAtSec: 50 } });
+        await wait(30);
+        assert.equal(stateMessages(viewer).at(-1).pausedAtSec, 50, 'an admin pause reaches the viewer\'s player');
+        assert.equal(viewer.frame().src.includes('youtube-player.html'), true, 'the player is moved in place, not remounted');
     } finally {
-        admin1.close();
-        admin2.close();
+        admin.close();
         viewer.close();
     }
 });
 
-test('paused scrub TIME_UPDATE syncs viewers in place, and late viewers joining paused channel do not auto-start', async () => {
+test('admin pause/seek/resume reported by the player become the shared timeline; viewers cannot write', async () => {
     const bus = createChannelBus({
-        mode: 'youtube',
-        title: 'Пауза',
-        startedAt: new Date(Date.now() - 100_000),
-        youtube: { videoId: 'dQw4w9WgXcQ', live: false, durationSec: 300, pausedAtSec: 50 }
-    });
-
-    const admin = await mountLiveClient(bus, { uid: 'admin-1', isAdmin: true, cachedAdmin: true });
-    const lateViewer = await mountLiveClient(bus, { uid: 'viewer-late', isAdmin: false, cachedAdmin: false });
-
-    try {
-        assert.match(admin.frame().src, /autoplay=0/);
-        assert.match(lateViewer.frame().src, /autoplay=0/);
-        assert.match(lateViewer.frame().src, /t=50/);
-
-        // Late viewer wrapper loads CUED with currentTime=0 (standard YouTube pre-play state).
-        lateViewer.emitWrapper('READY', { duration: 300 });
-        lateViewer.emitWrapper('STATE_CHANGE', { state: 'CUED', currentTime: 0, duration: 300 });
-        await wait(1100);
-        assert.deepEqual(lateViewer.commands, [], 'CUED viewer on paused broadcast must not call SEEK (which starts playback in YT)');
-
-        // Active viewer already in PAUSED state at 50s:
-        lateViewer.emitWrapper('STATE_CHANGE', { state: 'PAUSED', currentTime: 50, duration: 300 });
-        lateViewer.clearCommands();
-
-        // Admin scrubs while paused from 50s to 135s -> wrapper emits TIME_UPDATE with state='PAUSED'.
-        admin.emitWrapper('READY', { duration: 300 });
-        admin.emitWrapper('TIME_UPDATE', { state: 'PAUSED', currentTime: 135, duration: 300 });
-        await wait(420);
-
-        assert.equal(bus.getDoc().youtube.pausedAtSec, 135);
-        assert.deepEqual(lateViewer.commands.map(c => c.message), [{ action: 'SEEK', payload: { seconds: 135 } }]);
-    } finally {
-        admin.close();
-        lateViewer.close();
-    }
-});
-
-test('viewer blocked unmuted autoplay falls back to MUTE + SEEK + PLAY and clears notice on unmute', async () => {
-    const bus = createChannelBus({
-        mode: 'youtube',
-        title: 'Автоплей тест',
-        startedAt: new Date(Date.now() - 60_000),
+        ...YT,
+        startedAt: new Date(Date.now() - 40_000),
         youtube: { videoId: 'dQw4w9WgXcQ', live: false, durationSec: 300, pausedAtSec: null }
     });
-
+    const admin = await mountLiveClient(bus, { uid: 'admin-1', isAdmin: true, cachedAdmin: true });
     const viewer = await mountLiveClient(bus, { uid: 'viewer-1', isAdmin: false });
     try {
-        // Wrapper loads at t=60, but Chrome blocks unmuted autoplay so player stays UNSTARTED.
-        viewer.emitWrapper('READY', { duration: 300 });
-        viewer.emitWrapper('STATE_CHANGE', { state: 'UNSTARTED', currentTime: 0, duration: 300 });
-        viewer.clearCommands();
+        viewer.emitFrame({ type: 'BROADCAST_ADMIN_ACTION', action: 'pause', atSec: 41 });
+        await wait(450);
+        assert.equal(bus.writes.length, 0, 'a viewer\'s player never moves the channel');
 
-        // Wait past the 1800ms blocked-autoplay threshold + 1s clock tick.
-        await wait(2950);
+        admin.emitFrame({ type: 'BROADCAST_ADMIN_ACTION', action: 'pause', atSec: 44 });
+        await wait(450);
+        assert.equal(bus.getDoc().youtube.pausedAtSec, 44);
 
-        const actions = viewer.commands.map(c => c.message.action);
-        assert.equal(actions.includes('MUTE'), true, 'viewer muted to unblock autoplay');
-        assert.equal(actions.includes('SEEK'), true, 'viewer seeked to current broadcast offset');
-        assert.equal(actions.includes('PLAY'), true, 'viewer commanded to play after muting');
+        admin.emitFrame({ type: 'BROADCAST_ADMIN_ACTION', action: 'seek', atSec: 120 });
+        await wait(450);
+        assert.equal(bus.getDoc().youtube.pausedAtSec, 120, 'a paused seek keeps the pause');
 
-        const notice = viewer.window.document.getElementById('liveNotice');
-        const muteBtn = viewer.window.document.getElementById('liveMuteBtn');
-        assert.equal(notice.hidden, false, 'muted autoplay notice is shown');
-        assert.equal(muteBtn.classList.contains('is-muted'), true);
-
-        viewer.clearCommands();
-        muteBtn.click();
-        assert.deepEqual(viewer.commands.map(c => c.message), [{ action: 'UNMUTE', payload: undefined }]);
-        assert.equal(notice.hidden, true, 'notice hides once viewer unmutes');
+        admin.emitFrame({ type: 'BROADCAST_ADMIN_ACTION', action: 'resume', atSec: 120 });
+        await wait(450);
+        const doc = bus.getDoc();
+        assert.equal(doc.youtube.pausedAtSec, null);
+        assert.ok(Math.abs((Date.now() - doc.startedAt.getTime()) / 1000 - 120) < 2, 'resumed from 120 s');
+        assert.equal(doc.youtube.videoId, 'dQw4w9WgXcQ');
     } finally {
+        admin.close();
         viewer.close();
     }
 });
 
 test('in-flight Firestore write (adminBusy) preserves follow-up resume instead of dropping it', async () => {
     const bus = createChannelBus({
-        mode: 'youtube',
-        title: 'Гонка записи',
+        ...YT,
         startedAt: new Date(Date.now() - 40_000),
         youtube: { videoId: 'dQw4w9WgXcQ', live: false, durationSec: 300, pausedAtSec: null }
     });
-
     const admin = await mountLiveClient(bus, { uid: 'admin-1', isAdmin: true, cachedAdmin: true });
     try {
-        admin.emitWrapper('READY', { duration: 300 });
-        admin.emitWrapper('STATE_CHANGE', { state: 'PLAYING', currentTime: 40, duration: 300 });
-
         const releaseWrite = bus.holdNextWrite();
-        admin.emitWrapper('STATE_CHANGE', { state: 'PAUSED', currentTime: 44 });
-        await wait(400); // flushAdminAction is now awaiting the held pause write (adminBusy === true)
+        admin.emitFrame({ type: 'BROADCAST_ADMIN_ACTION', action: 'pause', atSec: 44 });
+        await wait(400); // flushAdminAction awaits the held pause write (adminBusy === true)
         assert.equal(bus.writes.length, 1);
 
-        // While the pause write is still in flight, admin clicks Play to resume!
-        admin.emitWrapper('STATE_CHANGE', { state: 'BUFFERING', currentTime: 44 });
-        admin.emitWrapper('STATE_CHANGE', { state: 'PLAYING', currentTime: 44.1 });
-        await wait(400); // timer fires while adminBusy === true -> must NOT drop pendingAdminAction!
+        admin.emitFrame({ type: 'BROADCAST_ADMIN_ACTION', action: 'resume', atSec: 44 });
+        await wait(400); // the timer fires while adminBusy === true and must not drop the resume
 
         releaseWrite();
         await wait(150);
-
         assert.equal(bus.writes.length, 2, 'follow-up resume flushed after in-flight pause finished');
         assert.equal(bus.getDoc().youtube.pausedAtSec, null, 'final channel state is resumed');
     } finally {
         admin.close();
+    }
+});
+
+test('YouTube video without a stored length ends by itself: admin stores the player length, viewers switch to «ended»', async () => {
+    const bus = createChannelBus({
+        ...YT,
+        startedAt: new Date(Date.now() - 150_000),
+        youtube: { videoId: 'dQw4w9WgXcQ', live: false, durationSec: 0, pausedAtSec: null }
+    });
+    const admin = await mountLiveClient(bus, { uid: 'admin-1', isAdmin: true, cachedAdmin: true });
+    const viewer = await mountLiveClient(bus, { uid: 'viewer-1', isAdmin: false });
+    try {
+        await wait(30);
+        admin.emitFrame({ type: 'BROADCAST_MEDIA_INFO', isLive: false, durationSec: 120.4 });
+        await wait(30);
+        const lengthWrites = bus.writes.filter(w => w.patch.youtube?.durationSec);
+        assert.equal(lengthWrites.length, 1, 'stored once');
+        assert.equal(lengthWrites[0].patch.youtube.durationSec, 121);
+        assert.equal(lengthWrites[0].patch.youtube.videoId, 'dQw4w9WgXcQ');
+
+        await wait(1100);
+        assert.equal(viewer.window.document.getElementById('liveEmpty').hidden, false, 'viewer sees the ended screen');
+        assert.equal(viewer.window.document.getElementById('liveEmptyTitle').textContent, 'live_page.ended_title');
+    } finally {
+        admin.close();
+        viewer.close();
+    }
+});
+
+test('ENDED from the player ends a length-less video locally; live streams never end on their own', async () => {
+    const bus = createChannelBus({
+        ...YT,
+        startedAt: new Date(Date.now() - 95_000),
+        youtube: { videoId: 'dQw4w9WgXcQ', live: false, durationSec: 0, pausedAtSec: null }
+    });
+    const viewer = await mountLiveClient(bus, { uid: 'viewer-1', isAdmin: false });
+    try {
+        viewer.emitFrame({ type: 'BROADCAST_ENDED', atSec: 90 });
+        await wait(30);
+        assert.equal(viewer.window.document.getElementById('liveEmpty').hidden, false, 'ended screen after the video ended');
+        await wait(1100);
+        assert.equal(viewer.window.document.getElementById('liveEmpty').hidden, false, 'clock tick does not remount the video');
+        assert.equal(bus.writes.length, 0, 'viewers never write');
+    } finally {
+        viewer.close();
+    }
+
+    const streamBus = createChannelBus({
+        ...YT,
+        startedAt: new Date(Date.now() - 600_000),
+        youtube: { videoId: 'dQw4w9WgXcQ', live: true, durationSec: 0, pausedAtSec: null }
+    });
+    const host = await mountLiveClient(streamBus, { uid: 'admin-1', isAdmin: true, cachedAdmin: true });
+    const watcher = await mountLiveClient(streamBus, { uid: 'viewer-2', isAdmin: false });
+    try {
+        assert.match(watcher.frame().src, /live=1$/);
+        host.emitFrame({ type: 'BROADCAST_MEDIA_INFO', isLive: true, durationSec: 0 });
+        host.emitFrame({ type: 'BROADCAST_MEDIA_INFO', isLive: false, durationSec: 75_037_431 });
+        host.emitFrame({ type: 'BROADCAST_ADMIN_ACTION', action: 'pause', atSec: 600 });
+        await wait(1100);
+        assert.equal(streamBus.writes.length, 0, 'no length and no pause are stored for a live stream');
+        assert.equal(watcher.window.document.getElementById('liveStage').hidden, false, 'stream keeps playing');
+    } finally {
+        host.close();
+        watcher.close();
+    }
+});
+
+test('a YouTube video that cannot play shows the notice', async () => {
+    const bus = createChannelBus({
+        ...YT,
+        startedAt: new Date(Date.now() - 10_000),
+        youtube: { videoId: 'dQw4w9WgXcQ', live: false, durationSec: 300, pausedAtSec: null }
+    });
+    const viewer = await mountLiveClient(bus, { uid: 'viewer-1', isAdmin: false });
+    try {
+        viewer.emitFrame({ type: 'BROADCAST_SOURCE_ERROR', errorCode: 150 });
+        const notice = viewer.window.document.getElementById('liveNotice');
+        assert.equal(notice.hidden, false);
+        assert.equal(notice.textContent, 'live_page.youtube_blocked');
+    } finally {
+        viewer.close();
     }
 });
 
@@ -468,5 +429,122 @@ test('public/player/embed.html emits paused TIME_UPDATE on scrub and suppresses 
     } finally {
         window.dispatchEvent(new window.Event('beforeunload'));
         dom.window.close();
+    }
+});
+
+function mountEmbed(query) {
+    const dom = new JSDOM(embedHtml, {
+        url: `${WRAPPER_ORIGIN}/player/embed.html?${query}`,
+        runScripts: 'dangerously',
+        pretendToBeVisual: true
+    });
+    const { window } = dom;
+    const emitted = [];
+    Object.defineProperty(window, 'parent', { configurable: true, value: { postMessage: data => emitted.push(data) } });
+    const calls = [];
+    let config = null;
+    window.YT = {
+        PlayerState: { ENDED: 0, PLAYING: 1, PAUSED: 2, BUFFERING: 3, CUED: 5 },
+        Player: function FakePlayer(_id, playerConfig) {
+            config = playerConfig;
+            const player = {
+                getCurrentTime: () => 0,
+                getDuration: () => 240,
+                getPlayerState: () => 5,
+                getVideoData: () => ({ isLive: false }),
+                getVideoLoadedFraction: () => 0.5,
+                getOption: (module, name) => (name === 'tracklist' ? [{ languageCode: 'en', displayName: 'English' }] : {}),
+                setOption: (module, name, value) => calls.push(`option:${name}:${value?.languageCode || ''}`),
+                loadModule: name => calls.push(`load:${name}`),
+                unloadModule: name => calls.push(`unload:${name}`),
+                playVideo: () => calls.push('play'),
+                pauseVideo: () => calls.push('pause'),
+                seekTo: sec => calls.push(`seek:${sec}`),
+                setVolume: value => calls.push(`volume:${value}`),
+                setPlaybackRate: rate => calls.push(`rate:${rate}`),
+                mute: () => calls.push('mute'),
+                unMute: () => calls.push('unmute'),
+                destroy: () => {}
+            };
+            setTimeout(() => playerConfig.events.onReady({ target: player }), 0);
+            return player;
+        }
+    };
+    window.onYouTubeIframeAPIReady();
+    return { dom, window, emitted, calls, config: () => config };
+}
+
+test('embed.html with controls=0 hides YouTube chrome, covers its pause UI and takes per-viewer sound commands', async () => {
+    const embed = mountEmbed('v=dQw4w9WgXcQ&autoplay=0&t=20&controls=0&volume=40');
+    const { window } = embed;
+    try {
+        await wait(30);
+        const vars = embed.config().playerVars;
+        assert.equal(vars.controls, 0);
+        assert.equal(vars.disablekb, 1);
+        assert.equal(vars.iv_load_policy, 3);
+        assert.equal(vars.fs, 0);
+        assert.equal(window.document.body.classList.contains('chromeless'), true, 'player box cropped past YouTube bars');
+        assert.equal(window.document.getElementById('player-shield').hidden, false);
+        const cover = window.document.getElementById('pause-cover');
+        assert.equal(cover.classList.contains('visible'), true, 'cover hides YouTube until playback');
+        assert.ok(embed.calls.includes('volume:40'), 'initial volume applied');
+
+        const send = data => window.dispatchEvent(new window.MessageEvent('message', { data }));
+        send({ action: 'SET_VOLUME', payload: { volume: 30 } });
+        send({ action: 'SET_RATE', payload: { rate: 1.5 } });
+        send({ action: 'MUTE' });
+        assert.deepEqual(embed.calls.slice(-3), ['volume:30', 'rate:1.5', 'mute']);
+
+        embed.config().events.onStateChange({ data: 1 });
+        await wait(700);
+        assert.equal(cover.classList.contains('visible'), false, 'picture shows while playing');
+        embed.config().events.onStateChange({ data: 2 });
+        assert.equal(cover.classList.contains('visible'), true, 'pause hides YouTube\'s pause UI');
+    } finally {
+        embed.dom.window.close();
+    }
+});
+
+test('embed.html probe mode reports the length and errors', async () => {
+    const probe = mountEmbed('v=dQw4w9WgXcQ&autoplay=0&mute=1&controls=0&probe=1');
+    try {
+        await wait(300);
+        const reply = probe.emitted.find(e => e.event === 'PROBE');
+        assert.equal(reply.payload.duration, 240);
+        assert.equal(reply.payload.isLive, false);
+        assert.equal(probe.config().playerVars.autoplay, 0);
+        probe.config().events.onError({ data: 150 });
+        assert.equal(probe.emitted.at(-1).event, 'ERROR');
+        assert.equal(probe.emitted.at(-1).payload.errorCode, 150);
+    } finally {
+        probe.dom.window.close();
+    }
+});
+
+test('embed.html offers YouTube captions and turns them on and off on request', async () => {
+    const embed = mountEmbed('v=dQw4w9WgXcQ&autoplay=1&controls=0');
+    const { window } = embed;
+    try {
+        await wait(30);
+        embed.config().events.onStateChange({ data: 1 });
+        assert.ok(embed.calls.includes('load:captions'), 'the track list is loaded once playback starts');
+        await wait(1600);
+        const offer = embed.emitted.find(e => e.event === 'CAPTIONS');
+        assert.equal(offer.payload.tracks[0].languageCode, 'en');
+        assert.equal(embed.calls.at(-1), 'unload:captions', 'offered, but off until chosen');
+
+        embed.calls.length = 0;
+        window.dispatchEvent(new window.MessageEvent('message', { data: { action: 'SET_CAPTIONS', payload: { languageCode: 'en' } } }));
+        assert.deepEqual(embed.calls, ['load:captions', 'option:track:en']);
+        assert.equal(window.document.body.classList.contains('chromeless'), true, 'box is resized only after the module is back');
+        await wait(1600);
+        assert.equal(window.document.body.classList.contains('chromeless'), false, 'captions sit in the bottom strip: no crop while on');
+
+        window.dispatchEvent(new window.MessageEvent('message', { data: { action: 'SET_CAPTIONS', payload: { languageCode: null } } }));
+        assert.equal(embed.calls.at(-1), 'unload:captions');
+        assert.equal(window.document.body.classList.contains('chromeless'), true);
+    } finally {
+        embed.dom.window.close();
     }
 });

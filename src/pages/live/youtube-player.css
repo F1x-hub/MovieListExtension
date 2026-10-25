@@ -1,0 +1,51 @@
+/* «Эфир» YouTube player: the YouTube frame underneath, the movie player on top. */
+html,
+body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: #000000;
+}
+
+.yt-layer,
+.yt-player-host {
+    position: fixed;
+    inset: 0;
+}
+
+.yt-layer {
+    z-index: 0;
+}
+
+.yt-layer iframe {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+}
+
+.yt-player-host {
+    z-index: 1;
+    display: flex;
+}
+
+/* The movie player paints a black stage and the <video> picture; here the picture
+   is the YouTube frame below, so both stay see-through. */
+.yt-player-host,
+.yt-player-host .native-player-wrapper,
+.yt-player-host video {
+    background: transparent !important;
+    background-color: transparent !important;
+}
+
+/* No YouTube source for these: picture-in-picture needs a real media stream. */
+.yt-player-host [data-player-action="pip"],
+.yt-player-host .player-pip-button {
+    display: none !important;
+}
+
+/* A failed embed shows the wrapper's «watch on YouTube» card: let it be clicked. */
+body.has-source-error .yt-player-host {
+    display: none;
+}

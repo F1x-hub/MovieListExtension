@@ -789,7 +789,10 @@
                 acknowledge('UNAVAILABLE', 'provider-native-selector-not-ready');
             };
             void tryDispatch();
-        } else if (event.source === window.parent && event.data?.type === 'BROADCAST_STATE'
+        } else if (event.data?.type === 'BROADCAST_STATE'
+            // An embedded extension page (the «Эфир» YouTube player) hands the
+            // live page's clock to its own player as a message to itself.
+            && (event.source === window.parent || (isExtensionPageContext() && event.source === window))
             && (isTrustedHostMessage(event) || event.data.relayed === true
                 || (isExtensionPageContext() && event.origin === window.location.origin))) {
             applyBroadcastState(event.data);
