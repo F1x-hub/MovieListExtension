@@ -2,7 +2,7 @@ import {
     PINNED_LIMIT,
     computeDecades,
     computeFavoritePeople,
-    computeMonthlyActivity,
+    computeDailyActivity,
     computeTasteMatch,
     computeWatchTime,
     normalizePinned,
@@ -183,7 +183,7 @@ export class ProfileInsightsView {
             </div>
             <div class="insight-block">
                 <h3 class="insight-block__title">${this.escape(this.t('activity_title'))}</h3>
-                ${this.renderActivity(computeMonthlyActivity(ratings))}
+                ${this.renderActivity(computeDailyActivity(ratings))}
             </div>
             <div class="insight-block">
                 <h3 class="insight-block__title">${this.escape(this.t('decades_title'))}</h3>
@@ -196,23 +196,37 @@ export class ProfileInsightsView {
         return section;
     }
 
-    renderActivity(buckets) {
-        const max = Math.max(...buckets.map(bucket => bucket.count), 0);
-        if (max === 0) return `<span class="taste-empty">${this.escape(this.t('activity_empty'))}</span>`;
+    renderActivity({ weeks, max, total }) {
+        if (total === 0) return `<span class="taste-empty">${this.escape(this.t('activity_empty'))}</span>`;
         const monthName = new Intl.DateTimeFormat(this.locale, { month: 'short' });
-        const fullName = new Intl.DateTimeFormat(this.locale, { month: 'long', year: 'numeric' });
-        const bars = buckets.map(bucket => {
-            const date = new Date(bucket.year, bucket.month, 1);
-            const height = bucket.count ? Math.max(6, Math.round((bucket.count / max) * 100)) : 0;
-            const label = this.t('activity_bar', { month: fullName.format(date), n: bucket.count });
-            return `
-                <div class="insight-activity__col" title="${this.escape(label)}">
-                    <span class="insight-activity__count">${bucket.count || ''}</span>
-                    <div class="insight-activity__track"><span style="height: ${height}%"></span></div>
-                    <span class="insight-activity__month">${this.escape(monthName.format(date).replace('.', ''))}</span>
-                </div>`;
+        const dayName = new Intl.DateTimeFormat(this.locale, { weekday: 'short' });
+        const fullDate = new Intl.DateTimeFormat(this.locale, { day: 'numeric', month: 'long', year: 'numeric' });
+        const level = count => (count ? Math.min(4, Math.ceil((count / max) * 4)) : 0);
+        // A month label sits above the first week that starts in that month.
+        const months = weeks.map((days, index) => {
+            const first = days.find(Boolean);
+            const previous = index ? weeks[index - 1].find(Boolean) : null;
+            const label = first && (!previous || previous.date.getMonth() !== first.date.getMonth())
+                ? monthName.format(first.date).replace('.', '') : '';
+            return `<span>${this.escape(label)}</span>`;
         }).join('');
-        return `<div class="insight-activity" role="img" aria-label="${this.escape(this.t('activity_title'))}">${bars}</div>`;
+        const dayLabels = [0, 1, 2, 3, 4, 5, 6].map(day => {
+            const date = new Date(2024, 0, 1 + day);
+            return `<span>${day % 2 === 0 ? this.escape(dayName.format(date)) : ''}</span>`;
+        }).join('');
+        const cells = weeks.map(days => days.map(entry => entry
+            ? `<span class="insight-calendar__cell" data-level="${level(entry.count)}" title="${this.escape(this.t('activity_bar', { month: fullDate.format(entry.date), n: entry.count }))}"></span>`
+            : '<span class="insight-calendar__cell insight-calendar__cell--empty"></span>').join('')).join('');
+        const legend = [0, 1, 2, 3, 4].map(value => `<span class="insight-calendar__cell" data-level="${value}"></span>`).join('');
+        return `
+            <div class="insight-calendar" role="img" aria-label="${this.escape(this.t('activity_title'))}" style="--weeks: ${weeks.length}">
+                <div class="insight-calendar__months">${months}</div>
+                <div class="insight-calendar__days">${dayLabels}</div>
+                <div class="insight-calendar__grid">${cells}</div>
+            </div>
+            <div class="insight-calendar__legend">
+                <span>${this.escape(this.t('activity_less'))}</span>${legend}<span>${this.escape(this.t('activity_more'))}</span>
+            </div>`;
     }
 
     renderDecades(decades) {
