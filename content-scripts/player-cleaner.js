@@ -161,6 +161,11 @@
 
         const key = selectionKey(selection);
         const expectedKey = selectionKey(canonicalSelectionContext);
+        if (broadcastState?.selection && broadcastState.selectionReady !== false && key !== selectionKey(broadcastState.selection)) {
+            getRoomSyncVideo()?.pause();
+            postToHost({ type: 'EPISODE_CHANGED', ...selection, episode: selection.episodeNumber });
+            return;
+        }
         if (canonicalPickerRequested && canonicalSelectionContext && !canonicalSelectionReady) {
             if (key === expectedKey) {
                 canonicalSelectionReady = true;
@@ -366,6 +371,11 @@
     // admin listeners ignore the events they cause.
     function enforceBroadcast(video = getRoomSyncVideo(), { force = false } = {}) {
         if (!broadcastState || !video || !video.isConnected) return;
+        if (broadcastState.selectionReady === false) {
+            broadcastSuppressUntil = Date.now() + 1500;
+            if (!video.paused) video.pause();
+            return;
+        }
         const duration = Number(video.duration);
         if (!Number.isFinite(duration) || duration <= 0) return;
         const target = broadcastTargetSec();
@@ -385,6 +395,7 @@
     }
 
     function reportAdminAction(action, video) {
+        if (broadcastState?.selectionReady === false) { enforceBroadcast(video); return; }
         if (!broadcastState?.admin || Date.now() < broadcastSuppressUntil) return;
         postToHost({ type: 'BROADCAST_ADMIN_ACTION', action, atSec: Math.max(0, Number(video.currentTime) || 0) });
     }
@@ -396,6 +407,8 @@
             startMs: state.startMs,
             pausedAtSec: Number.isFinite(state.pausedAtSec) ? state.pausedAtSec : null,
             admin: state.admin,
+            selection: state.selection,
+            selectionReady: state.selectionReady,
             relayed: true
         };
         document.querySelectorAll('iframe').forEach(frame => {
@@ -409,9 +422,10 @@
     function watchBroadcastVideo(video) {
         if (!video || broadcastVideos.has(video)) return;
         broadcastVideos.add(video);
+        if (broadcastState?.selectionReady === false) enforceBroadcast(video);
         const settle = () => setTimeout(() => {
             // Viewers are pulled back; the admin is only aligned on join.
-            if (!broadcastState?.admin) enforceBroadcast(video);
+            if (!broadcastState?.admin || broadcastState?.selectionReady === false) enforceBroadcast(video);
         }, 120);
         video.addEventListener('loadedmetadata', () => setTimeout(() => enforceBroadcast(video, { force: true }), 120));
         video.addEventListener('canplay', settle);
@@ -422,7 +436,7 @@
             }
         });
         video.addEventListener('ended', () => {
-            if (!broadcastState || !video.isConnected || video !== getRoomSyncVideo()) return;
+            if (!broadcastState || broadcastState.selectionReady === false || !video.isConnected || video !== getRoomSyncVideo()) return;
             postToHost({ type: 'BROADCAST_ENDED', atSec: Math.max(0, Number(video.currentTime) || 0), startMs: broadcastState.startMs });
         });
         video.addEventListener('pause', () => {
@@ -451,7 +465,7 @@
         if (!broadcastState) return;
         const viewer = !broadcastState.admin;
         document.documentElement.classList.toggle('mre-broadcast-viewer', viewer);
-        // A broadcast is always one movie: episode arrows never apply.
+        // The programme owns the episode for viewers and administrators alike.
         document.querySelectorAll('[data-player-episode-action], .provider-native-episode-nav').forEach(button => {
             button.style.setProperty('display', 'none', 'important');
         });
@@ -468,10 +482,13 @@
         const next = {
             startMs,
             pausedAtSec: Number.isFinite(pausedAtSec) && pausedAtSec >= 0 ? pausedAtSec : NaN,
-            admin: data.admin === true
+            admin: data.admin === true,
+            selection: data.selection || broadcastState?.selection || null,
+            selectionReady: data.selectionReady ?? broadcastState?.selectionReady ?? true
         };
         const first = !broadcastState;
         const changed = first || next.admin !== broadcastState.admin
+            || next.selectionReady !== broadcastState.selectionReady
             || Math.abs(next.startMs - broadcastState.startMs) > 1500
             || (Number.isFinite(next.pausedAtSec) !== Number.isFinite(broadcastState.pausedAtSec))
             || (Number.isFinite(next.pausedAtSec) && Math.abs(next.pausedAtSec - broadcastState.pausedAtSec) > 1);
@@ -481,13 +498,24 @@
             style.textContent = '.mre-broadcast-viewer .player-progress-track { pointer-events: none !important; }';
             (document.head || document.documentElement).appendChild(style);
             window.addEventListener('keydown', blockBroadcastKeys, true);
+            document.addEventListener('click', event => {
+                if (!broadcastState || nativeSelectionOperation) return;
+                const target = event.target?.closest?.('[data-player-episode-action], .provider-native-episode-nav, [data-select="seasonType1"], [data-select="episodeType1"], div[class*="item_"]');
+                if (!target) return;
+                const label = String(target.textContent || '').toLowerCase();
+                if (target.matches('[data-player-episode-action], .provider-native-episode-nav, [data-select]')
+                    || label.includes('сезон') || label.includes('серия')) {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                }
+            }, true);
             document.addEventListener('visibilitychange', () => {
                 if (document.visibilityState === 'visible') enforceBroadcast(undefined, { force: !broadcastState?.admin });
             });
             setInterval(() => {
                 document.querySelectorAll('video:not(.ghost-video)').forEach(watchBroadcastVideo);
                 applyBroadcastChrome();
-                if (!broadcastState.admin) enforceBroadcast();
+                if (!broadcastState.admin || broadcastState.selectionReady === false) enforceBroadcast();
             }, 1000);
         }
         document.querySelectorAll('video:not(.ghost-video)').forEach(watchBroadcastVideo);
@@ -2874,6 +2902,7 @@
             };
             
             const saveProgress = () => {
+                if (broadcastState) return;
                 if (!isProgressScopeCurrent()) return;
                 if (video.currentTime > 5 && video.duration > 0) {
                     const key = getProgressKey();
@@ -2887,6 +2916,7 @@
             };
 
             const restoreProgress = () => {
+                if (broadcastState) return;
                 if (!isProgressScopeCurrent()) return;
                 const key = getProgressKey();
                 const savedTime = parseFloat(localStorage.getItem(key));
@@ -3241,6 +3271,7 @@
                         };
                     },
                     navigate: (direction) => {
+                        if (broadcastState) return false;
                         if (canonicalPickerRequested && window.parent && window.parent !== window) {
                             postToHost({
                                 type: 'PLAYER_EPISODE_NAVIGATE',
@@ -3382,6 +3413,7 @@
                 updateVisibility();
             });
             video.addEventListener('ended', () => {
+                if (broadcastState) return;
                 // Clear saved progress for this video
                 const key = getSavedKey(); // Assuming getSavedKey() is defined elsewhere
                 localStorage.removeItem(key);
@@ -3520,6 +3552,7 @@
                 // Actions
                 prevEpisodeBtn.onclick = (e) => {
                     e.stopPropagation();
+                    if (broadcastState) return;
                     if (usesHostEpisodeNavigation()) {
                         postToHost({
                             type: 'PLAYER_EPISODE_NAVIGATE',
@@ -3535,6 +3568,7 @@
                 };
                 nextEpisodeBtn.onclick = (e) => {
                     e.stopPropagation();
+                    if (broadcastState) return;
                     if (usesHostEpisodeNavigation()) {
                         postToHost({
                             type: 'PLAYER_EPISODE_NAVIGATE',
@@ -4078,6 +4112,7 @@
                 });
                 
                 videoEl.addEventListener('ended', () => {
+                    if (broadcastState) return;
                     const key = getSavedKey(); 
                     localStorage.removeItem(key);
                     localStorage.setItem('movieExtension_autoplay_next', 'true');

@@ -440,8 +440,14 @@ keeps npm-compatible three-component semver metadata.
 
 ### Features
 
+- Live programme series are scheduled one episode at a time: choose a season and episode from the existing TMDB catalogue, use that episode's fixed runtime, then explicitly add the next episode at the previous show's end. Unknown runtimes must be supplied, unreleased episodes are unavailable, and occupied slots offer the next free time without shifting other shows. The public programme identifies each episode. Playback receives the scheduled season and episode independently of personal watch progress; unsupported or unconfirmed source selections show an unavailable state instead of choosing another episode. Existing movie and YouTube entries remain compatible.
 - The live page keeps the next screening below the player during playback and intermissions. Every viewer, including guests, can expand today's programme, see finished/current/upcoming screenings and filter to “Now and next”. The list uses the existing public schedule subscription, follows the viewer's local day and time zone, handles screenings across midnight, and distinguishes loading, empty and unavailable schedules without interrupting playback.
 - YouTube broadcast titles open the current video on YouTube in a separate tab, keeping the shared screening playing. Catalogue movie titles continue to open their movie details page.
+
+### Fixes
+
+- The live planner now includes the prototype's full-day overview with scheduled-show thumbnails and a draggable, keyboard-accessible viewport, synchronized with timeline scrolling. The custom zoom menu also offers three hours; zoom scales to the actual pane width on narrow screens.
+- Episode schedule writes were rejected by the previously published Firestore allowlist. The updated episode rules were deployed to `movielistdb-13208` on 2026-10-26 and their published source was read back and matched against the local rules. Publication was limited to Firestore rules; no schedule documents were created or changed for verification.
 
 </details>
 

@@ -264,6 +264,31 @@ async function mountLiveClient(bus, { uid = null, isAdmin = false, cachedAdmin =
 const YT = { mode: 'youtube', title: 'Эфир YouTube' };
 const stateMessages = client => client.commands.map(c => c.message).filter(m => m.type === 'BROADCAST_STATE');
 
+test('episode broadcasts launch the scheduled selection for guests and replace the player only when that selection changes', async () => {
+    const clock = { now: new Date(2026, 9, 26, 19, 12).getTime() };
+    const episode = { mode: 'movie', title: 'Вечерний сериал', startedAt: new Date(clock.now - 30_000),
+        movie: { kinopoiskId: 301, durationSec: 2700, mediaType: 'tv-series', seasonNumber: 0, episodeNumber: 2,
+            episodeTitle: 'Спецвыпуск & финал', tmdbId: 123 } };
+    const bus = createChannelBus(episode);
+    const guest = await mountLiveClient(bus, { clock });
+    try {
+        const frame = guest.frame();
+        const params = new URL(frame.src).searchParams;
+        assert.equal(params.get('movieId'), '301');
+        assert.equal(params.get('mediaType'), 'tv-series');
+        assert.equal(params.get('seasonNumber'), '0');
+        assert.equal(params.get('episodeNumber'), '2');
+        assert.equal(params.get('episodeTitle'), 'Спецвыпуск & финал');
+        assert.equal(params.get('tmdbId'), '123');
+        bus.setServerChannel({ ...episode, movie: { ...episode.movie, pausedAtSec: 60 } });
+        assert.equal(guest.frame(), frame, 'pause changes the shared clock in place');
+        bus.setServerChannel({ ...episode, movie: { ...episode.movie, episodeNumber: 3 } });
+        assert.notEqual(guest.frame(), frame, 'same series with another episode must remount');
+        assert.equal(new URL(guest.frame().src).searchParams.get('episodeNumber'), '3');
+        assert.equal(bus.writes.length, 0, 'guest launch reads public state without writes');
+    } finally { guest.close(); }
+});
+
 test('broadcast heading links to the current YouTube video, preserves movie links and clears inactive links', async () => {
     const clock = { now: new Date(2026, 9, 25, 19, 12).getTime() };
     const youtube = { ...YT, title: '<img src=x onerror=alert(1)>', startedAt: new Date(clock.now - 30_000),

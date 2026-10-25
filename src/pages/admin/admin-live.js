@@ -45,7 +45,8 @@
             movieSearch: $('liveMovieSearch'), movieResults: $('liveMovieResults'), moviePreview: $('liveMoviePreview'),
             moviePoster: $('liveMoviePoster'), movieName: $('liveMovieName'), movieMeta: $('liveMovieMeta'),
             duration: $('liveMovieDurationInput'),
-            ytDuration: $('liveYoutubeDurationInput')
+            ytDuration: $('liveYoutubeDurationInput'), durationLabel: $('liveMovieDurationLabel'),
+            seriesTiming: $('liveSeriesTiming'), findFree: $('liveFindFreeSlotBtn')
         };
         const groups = form.querySelectorAll('[data-live-mode]');
         const draft = { youtube: null, movie: null };
@@ -55,6 +56,12 @@
         let busy = false;
         let searchSeq = 0;
         let planner = null;
+        let series = null;
+        let continuationStartMs = null;
+        const isSeries = movie => movie?.isSeries === true || movie?.mediaType === 'tv-series'
+            || ['tv-series', 'mini-series', 'animated-series', 'tv', 'series'].includes(String(movie?.type || '').toLowerCase().replace(/_/g, '-'));
+        const episodeCode = episode => `S${String(episode.seasonNumber).padStart(2, '0')}E${String(episode.episodeNumber).padStart(2, '0')}`;
+        const seriesActive = () => mode() === 'movie' && isSeries(draft.movie);
 
         const mode = () => form.querySelector('input[name="liveMode"]:checked')?.value || 'movie';
         let manual = null;
@@ -63,18 +70,58 @@
         const setStatus = (text, tone = '') => { ui.status.textContent = text; ui.status.dataset.tone = tone; };
         const ready = () => {
             if (!planner || (!planner.selected && !(mode() === 'youtube' ? draft.youtube : draft.movie))) return false;
+            if (!planner.selected && seriesActive() && (!series?.ready || series.existing)) return false;
             if (!planner.selected && !(planner.source?.durationSec > 0)) return false;
-            try { const range = planner.range; return range.end > range.start; } catch { return false; }
+            try {
+                const range = planner.range;
+                return range.end > range.start && (!seriesActive() || planner.selected || !slotConflict(range));
+            } catch { return false; }
         };
+        function slotConflict(range) {
+            return planner.items.find(item => {
+                const bounds = window.CinemaChannel.getScheduleBounds(item);
+                return range.start.getTime() < bounds.endMs && range.end.getTime() > bounds.startMs;
+            });
+        }
+        function refreshSeriesTiming(saving) {
+            if (!ui.seriesTiming || !ui.findFree) return;
+            ui.seriesTiming.hidden = true; ui.findFree.hidden = true;
+            if (!seriesActive() || planner?.selected || !series?.ready) return;
+            if (series.existing) {
+                ui.seriesTiming.hidden = false;
+                ui.seriesTiming.textContent = `${episodeCode(series.selection)} уже в программе на этот день. Выберите существующий показ ниже.`;
+                return;
+            }
+            if (!(planner.source?.durationSec > 0)) return;
+            try {
+                const range = planner.range;
+                const conflict = slotConflict(range);
+                if (!conflict) return;
+                ui.seriesTiming.hidden = false;
+                ui.seriesTiming.textContent = `Место занято: «${conflict.title}». Выберите другое начало или свободное время; другие показы не переместятся.`;
+                const next = planner.nearestFreeStart(range.start.getTime(), planner.source.durationSec);
+                if (!Number.isFinite(next)) return;
+                const date = new Date(next);
+                ui.findFree.hidden = false; ui.findFree.disabled = Boolean(saving);
+                ui.findFree.textContent = `Свободное время: ${date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}, ${date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
+            } catch { /* The standard timing note already describes invalid input. */ }
+        }
         const refreshStart = () => {
             const saving = busy || planner?.busy;
             for (const input of form.querySelectorAll('input, button')) input.disabled = Boolean(saving);
-            ui.duration.readOnly = Boolean(planner?.selected || draft.movie?.duration > 0);
+            ui.duration.readOnly = Boolean(planner?.selected || (seriesActive() ? series?.selection?.durationSec > 0 : draft.movie?.duration > 0));
             ui.ytDuration.readOnly = Boolean(planner?.selected || draft.youtube?.durationSec > 0 && !ui.ytLive.checked);
             ui.stop.disabled = Boolean(saving);
             ui.start.disabled = saving || !service || !ready();
-            ui.start.textContent = planner?.selected ? 'Применить время' : 'Добавить на дорожку';
+            ui.start.textContent = planner?.selected ? 'Применить время'
+                : seriesActive() ? series?.continuation && series.selection
+                    ? `Добавить следующую · ${episodeCode(series.selection)}` : 'Добавить серию в эфир'
+                    : 'Добавить на дорожку';
             ui.title.readOnly = Boolean(planner?.selected);
+            if (ui.durationLabel) ui.durationLabel.textContent = seriesActive() ? 'Длительность этой серии, мин' : 'Длительность фильма, мин';
+            // The generic form loop must not enable unreleased episodes or loading controls.
+            series?.setBusy(saving);
+            refreshSeriesTiming(saving);
         };
         const suggestTitle = value => { if (!titleTouched && value) ui.title.value = value; };
 
@@ -103,7 +150,8 @@
             const live = channel.mode === 'youtube' && channel.youtube.live;
             ui.nowTitle.textContent = channel.title || (channel.mode === 'youtube' ? 'Видео YouTube' : `Фильм #${channel.movie.kinopoiskId}`);
             ui.nowState.textContent = position.state === 'upcoming' ? 'Следующий показ' : position.state === 'ended' ? 'Показ завершён' : position.state === 'paused' ? 'Пауза' : 'В эфире';
-            const source = channel.mode === 'youtube' ? (live ? 'YouTube · прямая трансляция' : 'YouTube') : 'Фильм';
+            const source = channel.mode === 'youtube' ? (live ? 'YouTube · прямая трансляция' : 'YouTube')
+                : channel.movie.mediaType === 'tv-series' ? `Сериал · ${episodeCode(channel.movie)}` : 'Фильм';
             const total = channel[channel.mode]?.durationSec;
             const clock = live || position.state === 'ended' ? ''
                 : position.state === 'upcoming' ? ` · начало через ${formatClock(position.offsetSec)}`
@@ -119,10 +167,18 @@
             refreshStart();
         };
         form.addEventListener('change', event => {
-            if (event.target.name === 'liveMode') { syncGroups(); syncPlannerSource(); }
+            if (event.target.name === 'liveMode') {
+                searchSeq++; continuationStartMs = null;
+                if (mode() !== 'movie') series?.hide();
+                else if (isSeries(draft.movie)) series?.open(draft.movie);
+                syncGroups(); syncPlannerSource();
+            }
         });
 
-        function renderSchedule() { planner?.setItems(scheduleItems, current); }
+        function renderSchedule() {
+            planner?.setItems(scheduleItems, current);
+            series?.render(); refreshStart();
+        }
 
         function resolveCurrent() {
             if (!manual) return;
@@ -270,6 +326,7 @@
 
         // ---- Movie: search by title or id ------------------------------------------
         function selectMovie(movie) {
+            searchSeq++; continuationStartMs = null;
             draft.movie = movie;
             ui.movieResults.replaceChildren();
             ui.moviePreview.hidden = false;
@@ -277,8 +334,12 @@
             ui.moviePoster.hidden = !movie.posterUrl;
             ui.movieName.textContent = movie.name;
             ui.movieMeta.textContent = [movie.year || '', `KP ${movie.kinopoiskId}`].filter(Boolean).join(' · ');
-            ui.duration.value = movie.duration > 0 ? String(movie.duration) : '';
+            ui.duration.value = !isSeries(movie) && movie.duration > 0 ? String(movie.duration) : '';
             suggestTitle(movie.name);
+            if (isSeries(movie)) {
+                if (series) series.open(movie);
+                else setStatus('Редактор серий недоступен. Обновите страницу.', 'error');
+            } else series?.hide();
             syncPlannerSource();
             refreshStart();
         }
@@ -297,7 +358,7 @@
                 const name = document.createElement('strong');
                 name.textContent = movie.name;
                 const meta = document.createElement('small');
-                meta.textContent = [movie.year || '', movie.duration ? `${movie.duration} мин` : ''].filter(Boolean).join(' · ');
+                meta.textContent = [movie.year || '', isSeries(movie) ? 'Сериал · выбор серии' : movie.duration ? `${movie.duration} мин` : ''].filter(Boolean).join(' · ');
                 text.append(name, meta);
                 item.append(img, text);
                 item.addEventListener('click', () => selectMovie(movie));
@@ -307,7 +368,8 @@
 
         const searchMovies = debounce(async () => {
             const query = ui.movieSearch.value.trim();
-            const seq = ++searchSeq;
+            const seq = searchSeq;
+            if (mode() !== 'movie') return;
             draft.movie = null;
             ui.moviePreview.hidden = true;
             syncPlannerSource();
@@ -319,9 +381,10 @@
             try {
                 const asId = /^\d{1,9}$/.test(query) ? await kp.getMovieById(Number(query)) : null;
                 const found = asId ? [asId] : (await kp.searchMovies(query, 1, 8))?.docs || [];
-                if (seq !== searchSeq) return;
+                if (seq !== searchSeq || mode() !== 'movie' || query !== ui.movieSearch.value.trim()) return;
                 const movies = found
                     .map(m => ({
+                        ...m,
                         kinopoiskId: Number(m.kinopoiskId || m.id),
                         name: m.name || m.title || m.nameRu || 'Без названия',
                         year: m.year || '',
@@ -333,7 +396,7 @@
                 renderResults(movies);
             } catch (error) {
                 console.warn('[AdminLive] Movie search failed:', error);
-                if (seq !== searchSeq) return;
+                if (seq !== searchSeq || mode() !== 'movie' || query !== ui.movieSearch.value.trim()) return;
                 if (/^\d{1,9}$/.test(query)) {
                     // Lookup is only a convenience: a bare Kinopoisk ID is enough to broadcast.
                     selectMovie({ kinopoiskId: Number(query), name: `Фильм #${query}`, year: '', posterUrl: '', duration: 0 });
@@ -343,22 +406,36 @@
                 }
             }
         }, 350);
-        ui.movieSearch.addEventListener('input', searchMovies);
+        ui.movieSearch.addEventListener('input', () => {
+            searchSeq++; continuationStartMs = null; draft.movie = null; series?.hide();
+            ui.moviePreview.hidden = true; ui.movieResults.replaceChildren();
+            syncPlannerSource(); refreshStart(); searchMovies();
+        });
 
         // ---- Publish -------------------------------------------------------------
         function syncPlannerSource() {
             if (!planner || busy || planner.busy) return;
             const youtube = mode() === 'youtube';
             const item = youtube ? draft.youtube : draft.movie;
+            const episode = !youtube && isSeries(item) ? series?.selection : null;
+            const selectable = item && (!isSeries(item) || youtube || series?.ready);
             const rawLength = Number(String(youtube ? ui.ytDuration.value : ui.duration.value).replace(',', '.'));
-            planner.setDraft(item ? {
-                key: `${mode()}:${youtube ? item.id : item.kinopoiskId}`,
+            const options = {};
+            if (!youtube && isSeries(item)) {
+                options.preserveStart = true;
+                if (episode && Number.isFinite(continuationStartMs)) options.startMs = continuationStartMs;
+            }
+            planner.setDraft(selectable ? {
+                key: `${mode()}:${youtube ? item.id : item.kinopoiskId}${episode ? `:${episodeCode(episode)}` : ''}`,
                 mode: mode(), title: youtube ? ui.ytName.textContent : item.name,
+                ...(episode || {}),
                 cover: youtube ? ui.ytThumb.src : item.posterUrl,
                 durationSec: youtube && item.durationSec > 0 && !ui.ytLive.checked ? item.durationSec
-                    : !youtube && item.duration > 0 ? Math.round(item.duration * 60)
+                    : episode?.durationSec > 0 ? episode.durationSec
+                    : !youtube && !isSeries(item) && item.duration > 0 ? Math.round(item.duration * 60)
                     : Number.isFinite(rawLength) && rawLength > 0 ? Math.round(rawLength * 60) : 0
-            } : null);
+            } : null, options);
+            if (episode) continuationStartMs = null;
         }
         async function confirmTiming(item, start, end) {
             const nowMs = window.CinemaChannel.now();
@@ -373,7 +450,12 @@
         planner = new window.LiveSchedulePlanner({
             DatePicker,
             onStatus: setStatus,
-            onRange: refreshStart,
+            onRange: () => {
+                if (series?.recorded && planner?.selected?.movie?.mediaType === 'tv-series' && series.recorded !== planner.selected) {
+                    series.setRecorded(draft.movie, planner.selected);
+                } else series?.render();
+                refreshStart();
+            },
             onAdd: () => {
                 ui.movieSearch.scrollIntoView({ block: 'nearest', behavior: 'auto' });
                 (mode() === 'movie' ? ui.movieSearch : ui.ytInput).focus({ preventScroll: true });
@@ -381,6 +463,7 @@
             onSelect: item => {
                 titleTouched = false;
                 if (!item) {
+                    if (series?.recorded) { series.recorded = null; series.render(); }
                     ui.title.readOnly = false;
                     ui.title.value = mode() === 'youtube' ? (draft.youtube ? ui.ytName.textContent : '') : (draft.movie?.name || '');
                     refreshStart(); return;
@@ -388,6 +471,7 @@
                 form.querySelector(`input[name="liveMode"][value="${item.mode}"]`).checked = true;
                 ui.title.value = item.title || ''; ui.title.readOnly = true;
                 if (item.mode === 'youtube') {
+                    series?.hide();
                     draft.youtube = { id: item.youtube.videoId, durationSec: item.youtube.live ? 0 : item.youtube.durationSec };
                     ui.ytInput.value = `https://www.youtube.com/watch?v=${item.youtube.videoId}`;
                     ui.ytName.textContent = item.title || 'Видео YouTube';
@@ -395,11 +479,15 @@
                     ui.ytDuration.value = item.youtube.durationSec ? String(item.youtube.durationSec / 60) : '';
                     ui.ytLive.checked = item.youtube.live;
                 } else {
-                    draft.movie = { kinopoiskId: item.movie.kinopoiskId, name: item.title, posterUrl: item.movie.posterUrl, duration: item.movie.durationSec / 60 };
+                    const prior = draft.movie?.kinopoiskId === item.movie.kinopoiskId ? draft.movie : {};
+                    draft.movie = { ...prior, kinopoiskId: item.movie.kinopoiskId, name: item.title, posterUrl: item.movie.posterUrl,
+                        duration: item.movie.durationSec / 60, isSeries: item.movie.mediaType === 'tv-series', type: item.movie.mediaType || 'movie' };
                     ui.movieName.textContent = item.title; ui.moviePoster.src = item.movie.posterUrl || '';
                     ui.moviePoster.hidden = !item.movie.posterUrl; ui.moviePreview.hidden = false;
                     ui.movieMeta.textContent = `KP ${item.movie.kinopoiskId}`;
                     ui.duration.value = item.movie.durationSec ? String(item.movie.durationSec / 60) : '';
+                    if (isSeries(draft.movie)) series?.setRecorded(draft.movie, item);
+                    else series?.hide();
                 }
                 syncGroups();
             },
@@ -419,10 +507,56 @@
                 await service.unschedule(item.id); setStatus('Показ убран из программы.', 'success'); return true;
             }
         });
+        async function prepareNext(item) {
+            if (!series || busy || planner.busy) return;
+            continuationStartMs = window.CinemaChannel.getScheduleBounds(item).endMs;
+            planner.selected = null; planner.dirty = false;
+            await series.prepareNext(item);
+            if (!series.selection) continuationStartMs = null;
+            refreshStart();
+        }
+        if (window.LiveSeriesEditor && $('liveSeriesEditor')) {
+            series = new window.LiveSeriesEditor({
+                root: $('liveSeriesEditor'),
+                loadCatalogue: async movie => {
+                    const manager = window.firebaseManager;
+                    const tmdb = manager?.getTMDBService?.() || (window.TMDBService ? new window.TMDBService() : null);
+                    const mapping = manager?.getIdMappingService?.()
+                        || (window.IdMappingService ? new window.IdMappingService(null, tmdb, manager) : null);
+                    if (!tmdb || !mapping) throw new Error('Каталог серий недоступен. Обновите страницу.');
+                    const identity = await mapping.resolveTmdbIdByKinopoiskId(movie.kinopoiskId, 'tv', { kinopoiskMovie: movie });
+                    const tmdbId = Number(identity?.tmdbId);
+                    if (!Number.isSafeInteger(tmdbId) || tmdbId <= 0 || identity.identityStatus && identity.identityStatus !== 'VERIFIED') {
+                        throw new Error('Не удалось подтвердить соответствие сериала в TMDB. Выберите другой сериал или повторите позже.');
+                    }
+                    const details = await tmdb.getTvDetails(tmdbId);
+                    if (!details) throw new Error('Не удалось получить список сезонов. Попробуйте снова.');
+                    return { tmdb, tmdbId, seasons: details.seasons };
+                },
+                getItems: () => planner.items,
+                getDay: () => planner.date,
+                onChange: selection => {
+                    if (!seriesActive()) return;
+                    if (planner.selected) planner.setDraft(null, { startMs: planner.range.start.getTime() });
+                    ui.duration.value = selection?.durationSec > 0 ? String(selection.durationSec / 60) : '';
+                    syncPlannerSource(); refreshStart();
+                },
+                onExisting: item => planner.select(item),
+                onContinue: prepareNext,
+                onState: refreshStart
+            });
+        }
+        ui.findFree?.addEventListener('click', () => {
+            if (busy || planner.busy || !series?.ready || planner.selected) return;
+            try {
+                const startMs = planner.nearestFreeStart(planner.range.start.getTime(), planner.source?.durationSec);
+                if (Number.isFinite(startMs)) planner.setDraft(planner.source, { startMs });
+            } catch { /* Keep the input validation message. */ }
+        });
         for (const input of [ui.duration, ui.ytDuration]) input.addEventListener('input', syncPlannerSource);
         ui.ytLive.addEventListener('change', syncPlannerSource);
 
-        async function publish(input, doneText, startDate = null, endDate = null) {
+        async function publish(input, doneText, startDate = null, endDate = null, { selectSaved = true } = {}) {
             if (!service || busy) return;
             busy = true; planner.setBusy(true); refreshStart(); setStatus('Сохраняем…'); let saved;
             try {
@@ -431,22 +565,29 @@
             } catch (error) {
                 setStatus(error?.code === 'permission-denied' ? 'Нет прав или правила Firestore ещё не обновлены для нового расписания.' : error.message || 'Не удалось сохранить эфир.', 'error');
             } finally { busy = false; planner.setBusy(false); refreshStart(); }
-            if (saved?.id) { planner.items = [...scheduleItems.filter(item => item.id !== saved.id), saved]; planner.select(saved); }
+            if (saved?.id) {
+                scheduleItems = [...scheduleItems.filter(item => item.id !== saved.id), saved];
+                planner.setItems(scheduleItems, current);
+                if (selectSaved) planner.select(saved);
+            }
+            return saved;
         }
 
-        form.addEventListener('submit', event => {
+        form.addEventListener('submit', async event => {
             event.preventDefault(); if (!ready() || busy || planner.busy) return;
             const range = planner.range;
             if (planner.selected) { planner.saveRange(planner.selected, range.start); return; }
             const youtube = mode() === 'youtube';
-            publish(youtube ? {
+            const episode = seriesActive() ? { ...series.selection } : null;
+            const saved = await publish(youtube ? {
                 mode: 'youtube', title: ui.title.value || ui.ytName.textContent,
                 youtubeUrl: `https://www.youtube.com/watch?v=${draft.youtube.id}`,
                 youtubeLive: ui.ytLive.checked, durationMin: ui.ytDuration.value
             } : {
                 mode: 'movie', title: ui.title.value || draft.movie.name, kinopoiskId: draft.movie.kinopoiskId,
-                durationMin: ui.duration.value, posterUrl: draft.movie.posterUrl
-            }, 'Передача добавлена в программу.', range.start, range.end);
+                ...(episode || {}), durationMin: ui.duration.value, posterUrl: draft.movie.posterUrl
+            }, 'Передача добавлена в программу.', range.start, range.end, { selectSaved: !episode });
+            if (saved?.id && episode) await prepareNext(saved);
         });
 
         ui.stop.addEventListener('click', async () => {

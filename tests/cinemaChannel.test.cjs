@@ -40,6 +40,59 @@ test('admin payloads accept YouTube links and Kinopoisk IDs and reject junk', ()
     assert.equal(buildChannelPayload({ mode: 'off' }).mode, 'off');
 });
 
+test('episode payloads keep a complete canonical selection and the selected episode runtime', () => {
+    const payload = buildChannelPayload({
+        mode: 'movie', kinopoiskId: '301', mediaType: 'tv-series', seasonNumber: '0', episodeNumber: '2',
+        episodeTitle: ' Спецвыпуск ', tmdbId: '1399', durationMin: '42.5'
+    });
+    assert.deepEqual(payload.movie, {
+        kinopoiskId: 301, durationSec: 2550, posterUrl: '', pausedAtSec: null,
+        tmdbId: 1399, mediaType: 'tv-series', seasonNumber: 0, episodeNumber: 2, episodeTitle: 'Спецвыпуск'
+    });
+    const normalized = normalizeChannel({ ...payload, startedAt: new Date(START) });
+    assert.deepEqual(normalized.movie, payload.movie);
+    assert.equal(computePosition(normalized, START + 2550_000).state, 'ended');
+    const legacy = buildChannelPayload({ mode: 'movie', kinopoiskId: 301 });
+    assert.equal('mediaType' in legacy.movie, false);
+    assert.equal('seasonNumber' in legacy.movie, false);
+    assert.equal('tmdbId' in legacy.movie, false);
+    assert.equal(buildChannelPayload({ mode: 'movie', kinopoiskId: 301, tmdbId: 12 }).movie.tmdbId, 12);
+});
+
+test('invalid or half-specified episode fields are rejected instead of becoming a different episode', () => {
+    const base = { mode: 'movie', kinopoiskId: 301 };
+    const episode = { mediaType: 'tv-series', seasonNumber: 1, episodeNumber: 2 };
+    const invalid = [
+        { seasonNumber: 1 }, { episodeNumber: 2 }, { episodeTitle: 'Series' }, { mediaType: 'movie' },
+        { mediaType: 'tv-series' }, { mediaType: 'tv-series', seasonNumber: 1 },
+        { ...episode, seasonNumber: -1 }, { ...episode, seasonNumber: 1.5 }, { ...episode, seasonNumber: true },
+        { ...episode, episodeNumber: 0 }, { ...episode, episodeNumber: '' }, { ...episode, episodeNumber: null },
+        { ...episode, episodeNumber: '1e3' }, { ...episode, episodeNumber: Number.MAX_SAFE_INTEGER + 1 },
+        { ...episode, episodeTitle: 123 }, { ...episode, episodeTitle: 'x'.repeat(201) },
+        { ...episode, tmdbId: 0 }, { ...episode, tmdbId: true }, { tmdbId: -2 }
+    ];
+    for (const fields of invalid) assert.throws(() => buildChannelPayload({ ...base, ...fields }), { code: 'cinema/episode' }, JSON.stringify(fields));
+    for (const fields of invalid) {
+        assert.equal(normalizeChannel({ mode: 'movie', movie: { kinopoiskId: 301, ...fields } }).mode, 'off', JSON.stringify(fields));
+    }
+    assert.equal(normalizeChannel({ mode: 'movie', movie: { kinopoiskId: 301, ...episode, seasonNumber: '1' } }).mode, 'off', 'stored fields require integer types');
+});
+
+test('manual and scheduled rules share strict movie/episode validation with bounded titles', () => {
+    const rules = fs.readFileSync(path.join(__dirname, '../rules/firestore.rules'), 'utf8');
+    assert.match(rules, /settingId == 'cinemaChannel'\s*&& isAdmin\(\)\s*&& validCinemaChannel\(request\.resource\.data\)/);
+    assert.match(rules, /function validCinemaChannel\(data\)[\s\S]*?&& validCinemaMedia\(data\);/);
+    assert.match(rules, /function validCinemaSchedule\(data\)[\s\S]*?&& validCinemaMedia\(data\);/);
+    assert.match(rules, /validCinemaDuration\(data\.movie\) && validCinemaEpisode\(data\.movie\)/);
+    assert.match(rules, /media\.seasonNumber is int && media\.seasonNumber >= 0/);
+    assert.match(rules, /media\.episodeNumber is int && media\.episodeNumber >= 1/);
+    assert.match(rules, /media\.episodeTitle is string && media\.episodeTitle\.size\(\) <= 200/);
+    assert.match(rules, /media\.tmdbId is int && media\.tmdbId > 0/);
+    for (const field of ['mediaType', 'seasonNumber', 'episodeNumber']) {
+        assert.ok(rules.includes(`before.movie.get('${field}', null) == after.movie.get('${field}', null)`), `${field} changes require occupancy revision`);
+    }
+});
+
 test('an admin pause freezes every viewer at the same second', () => {
     const paused = normalizeChannel({ mode: 'movie', movie: { kinopoiskId: 301, durationSec: 8160, pausedAtSec: 397 }, startedAt: new Date(START) });
     assert.deepEqual(computePosition(paused, START + 3_600_000), { state: 'paused', offsetSec: 397 });

@@ -427,12 +427,7 @@ service cloud.firestore {
         && cinemaScheduleRevisionAdvanced();
       allow create, update: if settingId == 'cinemaChannel'
         && isAdmin()
-        && request.resource.data.mode in ['off', 'youtube', 'movie']
-        && request.resource.data.title is string
-        && request.resource.data.title.size() <= 120
-        && request.resource.data.updatedAt == request.time
-        && request.resource.data.startedAt is timestamp
-        && request.resource.data.keys().hasOnly(['mode', 'title', 'youtube', 'movie', 'startedAt', 'updatedAt', 'updatedBy']);
+        && validCinemaChannel(request.resource.data);
       allow create, update: if settingId == 'commentReactions'
         && isAdmin()
         && request.resource.data.reactions is list
@@ -461,6 +456,41 @@ service cloud.firestore {
           || (media.pausedAtSec is number && media.pausedAtSec >= 0 && media.pausedAtSec <= 2147483647));
     }
 
+    // Optional episode model: mediaType='tv-series' requires integer season>=0
+    // and episode>=1. Title is display-only (max 200); KP remains the root ID.
+    function validCinemaEpisode(media) {
+      return (!('tmdbId' in media) || (media.tmdbId is int && media.tmdbId > 0 && media.tmdbId <= 9007199254740991))
+        && ((!('mediaType' in media) && !media.keys().hasAny(['seasonNumber', 'episodeNumber', 'episodeTitle']))
+          || (media.get('mediaType', null) == 'tv-series'
+            && media.seasonNumber is int && media.seasonNumber >= 0 && media.seasonNumber <= 9007199254740991
+            && media.episodeNumber is int && media.episodeNumber >= 1 && media.episodeNumber <= 9007199254740991
+            && (!('episodeTitle' in media) || (media.episodeTitle is string && media.episodeTitle.size() <= 200))));
+    }
+
+    function validCinemaMedia(data) {
+      return (data.mode == 'off' && data.get('youtube', null) == null && data.get('movie', null) == null)
+        || (data.mode == 'youtube' && data.youtube is map && data.get('movie', null) == null
+          && data.youtube.keys().hasOnly(['videoId', 'live', 'durationSec', 'pausedAtSec'])
+          && data.youtube.videoId is string && data.youtube.videoId.matches('^[A-Za-z0-9_-]{11}$')
+          && data.youtube.live is bool && validCinemaDuration(data.youtube)
+          && (!data.youtube.live || data.youtube.get('pausedAtSec', null) == null))
+        || (data.mode == 'movie' && data.movie is map && data.get('youtube', null) == null
+          && data.movie.keys().hasOnly(['kinopoiskId', 'durationSec', 'posterUrl', 'pausedAtSec', 'mediaType', 'seasonNumber', 'episodeNumber', 'episodeTitle', 'tmdbId'])
+          && data.movie.kinopoiskId is int && data.movie.kinopoiskId > 0 && data.movie.kinopoiskId <= 9007199254740991
+          && validCinemaDuration(data.movie) && validCinemaEpisode(data.movie)
+          && (!('posterUrl' in data.movie) || (data.movie.posterUrl is string
+            && (data.movie.posterUrl == '' || (data.movie.posterUrl.size() <= 508 && data.movie.posterUrl.matches('^https://[^\\s"\'<>]+$'))))));
+    }
+
+    function validCinemaChannel(data) {
+      return data.mode in ['off', 'youtube', 'movie']
+        && data.title is string && data.title.size() <= 120
+        && data.startedAt is timestamp
+        && data.updatedAt == request.time && data.updatedBy == request.auth.uid
+        && data.keys().hasOnly(['mode', 'title', 'youtube', 'movie', 'startedAt', 'updatedAt', 'updatedBy'])
+        && validCinemaMedia(data);
+    }
+
     function validCinemaSchedule(data) {
       return data.mode in ['youtube', 'movie']
         && data.title is string && data.title.size() <= 120
@@ -469,17 +499,7 @@ service cloud.firestore {
         && (!('playbackStartedAt' in data) || data.playbackStartedAt is timestamp)
         && data.updatedAt == request.time && data.updatedBy == request.auth.uid
         && data.keys().hasOnly(['mode', 'title', 'youtube', 'movie', 'startedAt', 'endsAt', 'playbackStartedAt', 'updatedAt', 'updatedBy'])
-        && ((data.mode == 'youtube' && data.youtube is map && data.get('movie', null) == null
-            && data.youtube.keys().hasOnly(['videoId', 'live', 'durationSec', 'pausedAtSec'])
-            && data.youtube.videoId is string && data.youtube.videoId.matches('^[A-Za-z0-9_-]{11}$')
-            && data.youtube.live is bool && validCinemaDuration(data.youtube)
-            && (!data.youtube.live || data.youtube.get('pausedAtSec', null) == null))
-          || (data.mode == 'movie' && data.movie is map && data.get('youtube', null) == null
-            && data.movie.keys().hasOnly(['kinopoiskId', 'durationSec', 'posterUrl', 'pausedAtSec'])
-            && data.movie.kinopoiskId is int && data.movie.kinopoiskId > 0 && data.movie.kinopoiskId <= 9007199254740991
-            && validCinemaDuration(data.movie)
-            && (!('posterUrl' in data.movie) || (data.movie.posterUrl is string
-              && (data.movie.posterUrl == '' || (data.movie.posterUrl.size() <= 508 && data.movie.posterUrl.matches('^https://[^\\s"\'<>]+$')))))));
+        && validCinemaMedia(data);
     }
 
     function cinemaScheduleOccupancyUnchanged() {
@@ -492,6 +512,9 @@ service cloud.firestore {
             && before.youtube.live == after.youtube.live
             && (('endsAt' in after) || before.youtube.get('durationSec', 0) == after.youtube.get('durationSec', 0)))
           || (after.mode == 'movie' && before.movie.kinopoiskId == after.movie.kinopoiskId
+            && before.movie.get('mediaType', null) == after.movie.get('mediaType', null)
+            && before.movie.get('seasonNumber', null) == after.movie.get('seasonNumber', null)
+            && before.movie.get('episodeNumber', null) == after.movie.get('episodeNumber', null)
             && (('endsAt' in after) || before.movie.get('durationSec', 0) == after.movie.get('durationSec', 0))));
     }
 

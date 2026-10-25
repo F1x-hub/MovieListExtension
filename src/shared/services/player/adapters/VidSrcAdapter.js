@@ -20,6 +20,12 @@ class VidSrcAdapter extends (typeof BasePlaybackAdapter !== 'undefined' ? BasePl
         return true;
     }
 
+    supportsBroadcastSelection(selection) {
+        // The embed URL carries canonical season=0 without coercing it to season 1.
+        return Number.isInteger(selection.seasonNumber) && selection.seasonNumber >= 0
+            && Number.isInteger(selection.episodeNumber) && selection.episodeNumber >= 1;
+    }
+
     getSelectionMode() {
         return 'DIRECT';
     }

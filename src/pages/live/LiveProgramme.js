@@ -71,7 +71,10 @@
         }
         meta(item) {
             const media = item[item.mode];
-            return [item.mode === 'youtube' ? 'YouTube' : this.t('standby_movie'),
+            const episode = media?.mediaType === 'tv-series';
+            return [episode ? `S${String(media.seasonNumber).padStart(2, '0')}E${String(media.episodeNumber).padStart(2, '0')}`
+                : item.mode === 'youtube' ? 'YouTube' : this.t('standby_movie'),
+                episode ? media.episodeTitle : '',
                 media?.live ? this.t('programme_stream') : media?.durationSec ? window.CinemaChannel.formatClock(media.durationSec) : '']
                 .filter(Boolean).join(' · ');
         }

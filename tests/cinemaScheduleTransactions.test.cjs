@@ -36,7 +36,15 @@ function database(initial = {}) {
         remove(key) { documents.delete(key); versions.set(key, (versions.get(key) || 0) + 1); }
     };
     const snapshot = key => ({ id: key.split('/')[1], exists: documents.has(key), data: () => store.read(key) });
-    const ref = key => ({ id: key.split('/')[1], path: key });
+    const ref = key => ({
+        id: key.split('/')[1], path: key,
+        async set(data, options) {
+            assert.deepEqual(options.mergeFields, Object.keys(data), 'manual save replaces complete top-level media maps');
+            const next = store.read(key) || {};
+            for (const field of options.mergeFields) next[field] = resolveStamps(data[field]);
+            store.put(key, next); commits.push([key]);
+        }
+    });
     const resolveStamps = value => {
         if (value?.serverTimestamp === true) return new Date(++tick);
         if (value instanceof Date || value === null || typeof value !== 'object') return clone(value);
@@ -302,4 +310,71 @@ test('rules require guard for occupancy and legacy duration changes while preser
     assert.match(rules, /allow update: if isAdmin\(\) && validCinemaSchedule\(request\.resource\.data\)/);
     assert.match(rules, /before\.get\('endsAt', null\) == after\.get\('endsAt', null\)/);
     assert.match(rules, /\('endsAt' in after\) \|\| before\.youtube\.get\('durationSec', 0\) == after\.youtube\.get\('durationSec', 0\)/);
+});
+
+test('a scheduled episode survives retiming and rejects stale commands for another episode of the same title', async () => {
+    const episode = { kinopoiskId: 301, durationSec: 2550, posterUrl: '', pausedAtSec: null, mediaType: 'tv-series', seasonNumber: 0, episodeNumber: 2, episodeTitle: 'Special', tmdbId: 1399 };
+    const store = database({ 'cinemaSchedule/one': movie(0, 1, { movie: episode }) });
+    const original = store.item('one');
+    const moved = await store.service.updateSchedule(original, at(1), at(2));
+    assert.deepEqual(moved.movie, episode);
+    assert.deepEqual(store.item('one').movie, episode);
+    const stale = store.item('one');
+    store.put('cinemaSchedule/one', { ...store.read('cinemaSchedule/one'), movie: { ...episode, episodeNumber: 3 } });
+    await assert.rejects(store.service.updateSchedule(stale, at(2), at(3)), { code: 'cinema/stale' });
+    await assert.rejects(store.service.control(stale, 'pause', { offsetSec: 20 }), { code: 'cinema/stale' });
+    assert.equal(store.item('one').movie.episodeNumber, 3);
+    assert.equal(store.item('one').movie.pausedAtSec, null);
+    assert.equal(store.read(STATE).revision, 1);
+    const forged = { ...store.item('one'), movie: { ...episode, seasonNumber: 1, episodeNumber: 3 } };
+    await assert.rejects(store.service.updateSchedule(forged, at(2), at(3)), { code: 'cinema/stale' });
+});
+
+test('schedule creates independent consecutive episode entries with their exact source lengths', async () => {
+    const store = database();
+    const base = { ...input, mediaType: 'tv-series', seasonNumber: 1, durationMin: '42.5', tmdbId: 1399 };
+    const first = await store.service.schedule({ ...base, episodeNumber: 1, episodeTitle: 'Pilot' }, at(0));
+    const second = await store.service.schedule({ ...base, episodeNumber: 2 }, new Date(first.endsAtMs));
+    assert.notEqual(first.id, second.id);
+    assert.equal(first.movie.episodeNumber, 1);
+    assert.equal(second.movie.episodeNumber, 2);
+    assert.equal(first.endsAtMs - first.startedAtMs, 2550_000);
+    assert.equal(second.startedAtMs, first.endsAtMs);
+    assert.equal(store.read(STATE).revision, 2);
+});
+
+test('manual save replaces old episodic maps when publishing another episode or an ordinary movie', async () => {
+    const store = database();
+    await store.service.save({ ...input, mediaType: 'tv-series', seasonNumber: 1, episodeNumber: 2, episodeTitle: 'Two', tmdbId: 1399 });
+    assert.equal(store.read('settings/cinemaChannel').movie.episodeNumber, 2);
+    const start = store.read('settings/cinemaChannel').startedAt;
+    await store.service.save({ ...input, mediaType: 'tv-series', seasonNumber: 1, episodeNumber: 3 }, { restart: false });
+    const nextEpisode = store.read('settings/cinemaChannel');
+    assert.equal(nextEpisode.movie.episodeNumber, 3);
+    assert.equal('episodeTitle' in nextEpisode.movie, false);
+    assert.equal('tmdbId' in nextEpisode.movie, false);
+    assert.deepEqual(nextEpisode.startedAt, start, 'restart:false still preserves the clock');
+    await store.service.save(input);
+    const ordinary = store.read('settings/cinemaChannel');
+    assert.equal('mediaType' in ordinary.movie, false);
+    assert.equal('seasonNumber' in ordinary.movie, false);
+    assert.equal('episodeNumber' in ordinary.movie, false);
+    assert.equal('episodeTitle' in ordinary.movie, false);
+    assert.equal(normalizeChannel(ordinary).mode, 'movie');
+});
+
+test('manual controls cannot rewind a newly selected episode through a stale channel object', async () => {
+    const episode = { kinopoiskId: 301, durationSec: 2550, posterUrl: '', pausedAtSec: null, mediaType: 'tv-series', seasonNumber: 1, episodeNumber: 2 };
+    const raw = movie(0, 1, { movie: episode });
+    delete raw.endsAt;
+    const store = database({ 'settings/cinemaChannel': raw });
+    const first = normalizeChannel(raw);
+    await store.service.control(first, 'pause', { offsetSec: 20 });
+    assert.equal(store.read('settings/cinemaChannel').movie.pausedAtSec, 20);
+    assert.equal(store.read('settings/cinemaChannel').movie.episodeNumber, 2);
+    store.put('settings/cinemaChannel', { ...store.read('settings/cinemaChannel'), movie: { ...episode, episodeNumber: 3 } });
+    await assert.rejects(store.service.control(first, 'seek', { offsetSec: 100 }), { code: 'cinema/stale' });
+    assert.equal(store.read('settings/cinemaChannel').movie.episodeNumber, 3);
+    assert.equal(store.read('settings/cinemaChannel').movie.pausedAtSec, null);
+    assert.equal(store.read(STATE), undefined);
 });

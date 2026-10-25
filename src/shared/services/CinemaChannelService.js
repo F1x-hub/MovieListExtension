@@ -12,7 +12,9 @@
  *     title: string,
  *     youtube: { videoId: string, live: boolean } | null,
  *     movie: { kinopoiskId: number, durationSec: number, posterUrl?: string,
- *              pausedAtSec?: number | null } | null,   // set while the admin holds a pause
+ *              pausedAtSec?: number | null, mediaType?: 'tv-series',
+ *              seasonNumber?: number, episodeNumber?: number, episodeTitle?: string,
+ *              tmdbId?: number } | null,
  *     startedAt: Timestamp,          // broadcast start (server time)
  *     updatedAt: Timestamp,
  *     updatedBy: string              // admin uid
@@ -31,6 +33,7 @@
     const SCHEDULE_FALLBACK_SEC = 4 * 3600;
     const MODES = ['off', 'youtube', 'movie'];
     const MAX_TITLE = 120;
+    const MAX_EPISODE_TITLE = 200;
 
     function readPause(value) {
         const sec = Number(value);
@@ -100,6 +103,37 @@
         return Number.isFinite(sec) && sec > 0 ? Math.round(sec) : 0;
     }
 
+    /** Episode metadata is optional, but a declared episode is always complete. */
+    function readEpisodeFields(source, { input = false } = {}) {
+        const fields = {};
+        const integer = (value, minimum) => {
+            if (input && typeof value === 'string' && /^\d+$/.test(value.trim())) value = Number(value.trim());
+            return Number.isSafeInteger(value) && value >= minimum ? value : null;
+        };
+        if (source.tmdbId !== undefined) {
+            const tmdbId = integer(source.tmdbId, 1);
+            if (tmdbId === null) throw cinemaError('episode', 'Укажите корректный TMDB ID');
+            fields.tmdbId = tmdbId;
+        }
+        const hasEpisode = ['seasonNumber', 'episodeNumber', 'episodeTitle'].some(key => source[key] !== undefined);
+        if (source.mediaType === undefined) {
+            if (hasEpisode) throw cinemaError('episode', 'Для серии укажите тип сериала, сезон и номер серии');
+            return fields;
+        }
+        if (source.mediaType !== 'tv-series') throw cinemaError('episode', 'Неизвестный тип передачи');
+        const seasonNumber = integer(source.seasonNumber, 0);
+        const episodeNumber = integer(source.episodeNumber, 1);
+        if (seasonNumber === null || episodeNumber === null) throw cinemaError('episode', 'Укажите корректные сезон и номер серии');
+        Object.assign(fields, { mediaType: 'tv-series', seasonNumber, episodeNumber });
+        if (source.episodeTitle !== undefined) {
+            if (typeof source.episodeTitle !== 'string' || source.episodeTitle.length > MAX_EPISODE_TITLE) {
+                throw cinemaError('episode', 'Название серии должно содержать не больше 200 символов');
+            }
+            fields.episodeTitle = source.episodeTitle.trim();
+        }
+        return fields;
+    }
+
     /**
      * Normalizes a raw document into a safe channel object (or an «off» channel).
      * `meta.docPath` says where the item lives: the manual channel or a schedule entry.
@@ -140,6 +174,8 @@
             const kinopoiskId = Number(raw.movie?.kinopoiskId);
             if (!Number.isSafeInteger(kinopoiskId) || kinopoiskId <= 0) return off;
             const durationSec = Number(raw.movie?.durationSec);
+            let episodeFields;
+            try { episodeFields = readEpisodeFields(raw.movie); } catch { return off; }
             return {
                 ...base,
                 mode: 'movie',
@@ -149,7 +185,8 @@
                     kinopoiskId,
                     durationSec: Number.isFinite(durationSec) && durationSec > 0 ? Math.round(durationSec) : 0,
                     posterUrl: safeImageUrl(raw.movie?.posterUrl),
-                    pausedAtSec: readPause(raw.movie?.pausedAtSec)
+                    pausedAtSec: readPause(raw.movie?.pausedAtSec),
+                    ...episodeFields
                 },
                 startedAtMs
             };
@@ -195,7 +232,8 @@
     }
 
     /** Builds the Firestore payload an admin writes. Throws a readable error on bad input. */
-    function buildChannelPayload({ mode, title = '', youtubeUrl = '', youtubeLive = false, kinopoiskId = '', durationMin = '', posterUrl = '' } = {}) {
+    function buildChannelPayload({ mode, title = '', youtubeUrl = '', youtubeLive = false, kinopoiskId = '', durationMin = '', posterUrl = '',
+        mediaType, seasonNumber, episodeNumber, episodeTitle, tmdbId } = {}) {
         if (!MODES.includes(mode)) throw new Error('Неизвестный режим эфира');
         const cleanTitle = String(title || '').trim().slice(0, MAX_TITLE);
         if (mode === 'off') return { mode: 'off', title: cleanTitle, youtube: null, movie: null };
@@ -224,6 +262,7 @@
         if (!Number.isSafeInteger(id) || id <= 0) throw new Error('Укажите Kinopoisk ID фильма');
         const minutes = Number(String(durationMin || '').replace(',', '.'));
         if (minutes * 60 > 2147483647) throw cinemaError('bounds', 'Укажите допустимую длительность фильма');
+        const episodeFields = readEpisodeFields({ mediaType, seasonNumber, episodeNumber, episodeTitle, tmdbId }, { input: true });
         return {
             mode: 'movie',
             title: cleanTitle,
@@ -233,7 +272,8 @@
                 durationSec: Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes * 60) : 0,
                 posterUrl: safeImageUrl(posterUrl),
                 // A new broadcast must not inherit the previous one's pause (writes merge).
-                pausedAtSec: null
+                pausedAtSec: null,
+                ...episodeFields
             }
         };
     }
@@ -279,7 +319,11 @@
 
     function sameMedia(a, b) {
         return a.mode === b.mode && (a.mode === 'movie'
-            ? a.movie?.kinopoiskId === b.movie?.kinopoiskId : a.youtube?.videoId === b.youtube?.videoId && a.youtube?.live === b.youtube?.live);
+            ? a.movie?.kinopoiskId === b.movie?.kinopoiskId
+                && a.movie?.mediaType === b.movie?.mediaType
+                && a.movie?.seasonNumber === b.movie?.seasonNumber
+                && a.movie?.episodeNumber === b.movie?.episodeNumber
+            : a.youtube?.videoId === b.youtube?.videoId && a.youtube?.live === b.youtube?.live);
     }
 
     function checkOverlap(candidate, items, excludeId) {
@@ -492,8 +536,7 @@
                 const clamp = sec => Math.max(0, duration > 0 ? Math.min(sec, Math.max(0, duration - 5)) : sec);
                 const data = this.writeStamp();
                 const setPause = value => {
-                    if (current.scheduled) data[`${key}.pausedAtSec`] = value;
-                    else data[key] = { ...media, pausedAtSec: value };
+                    data[`${key}.pausedAtSec`] = value;
                 };
                 const anchorKey = current.scheduled ? 'playbackStartedAt' : 'startedAt';
                 const hasAt = Number.isFinite(offsetSec);
@@ -516,16 +559,13 @@
                 return data;
             };
             const ref = this.refFor(channel);
-            if (channel.scheduled) {
-                await this.firebaseManager.db.runTransaction(async transaction => {
-                    const snapshot = await transaction.get(ref);
-                    const current = snapshot.exists ? this.normalizeSchedule(snapshot) : null;
-                    if (!current || !sameMedia(current, channel) || current.startedAtMs !== channel.startedAtMs) throw cinemaError('stale', 'Показ уже изменён. Обновите расписание.');
-                    transaction.update(ref, patchFor(current));
-                });
-                return;
-            }
-            await ref.set(patchFor(channel), { merge: true });
+            await this.firebaseManager.db.runTransaction(async transaction => {
+                const snapshot = await transaction.get(ref);
+                const current = snapshot.exists ? (channel.scheduled ? this.normalizeSchedule(snapshot) : normalizeChannel(snapshot.data())) : null;
+                if (!current || !sameMedia(current, channel)
+                    || (channel.scheduled && current.startedAtMs !== channel.startedAtMs)) throw cinemaError('stale', 'Показ уже изменён. Обновите расписание.');
+                transaction.update(ref, patchFor(current));
+            });
         }
 
         /**
@@ -583,7 +623,9 @@
                 updatedBy: user?.uid || ''
             };
             if (restart || payload.mode === 'off') data.startedAt = FieldValue.serverTimestamp();
-            await this.ref.set(data, { merge: true });
+            // Replace complete media maps, rather than recursively retaining an
+            // old episode selection when another film or episode is published.
+            await this.ref.set(data, { mergeFields: Object.keys(data) });
             return payload;
         }
     }

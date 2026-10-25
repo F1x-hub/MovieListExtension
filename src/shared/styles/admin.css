@@ -4188,7 +4188,20 @@
 .live-planner-calendar .custom-calendar-day.selected:hover { color: var(--ui-color-page); background: var(--ui-color-content); }
 .live-planner-calendar button:focus-visible { outline: 2px solid var(--ui-color-content); outline-offset: 1px; }
 .live-planner__scroll { overflow-x: auto; padding: 0 24px; scrollbar-width: thin; scrollbar-color: var(--ui-color-border-hover) transparent; }
-.live-planner__canvas { position: relative; width: 100%; min-width: 880px; height: 265px; }
+.live-planner__canvas { position: relative; width: 100%; min-width: 0; height: 265px; }
+.live-planner__overview { padding: 16px 24px 0; }
+.live-planner__overview-label { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px 16px; font-size: 11px; color: var(--ui-color-content-muted); }
+.live-planner__overview-hours { position: relative; height: 32px; margin: 0 3px; }
+.live-planner__overview-hours > span { position: absolute; bottom: 8px; transform: translateX(-50%); font-size: 10px; color: var(--ui-color-content-muted); font-variant-numeric: tabular-nums; }
+.live-planner__overview-hours > span:first-child { transform: none; }
+.live-planner__overview-hours > span:last-child { transform: translateX(-100%); }
+.live-planner__overview-track { position: relative; height: 28px; margin: 6px 0; border: 1px solid var(--ui-color-border-hover); border-radius: 6px; background: var(--ui-color-page); touch-action: none; cursor: pointer; }
+.live-planner__overview-blocks { position: absolute; inset: 5px 0; overflow: hidden; border-radius: 3px; pointer-events: none; }
+.live-planner__overview-blocks > span { position: absolute; height: 100%; min-width: 1px; border-radius: 2px; background: var(--ui-color-content-muted); opacity: .6; }
+.live-planner__viewport { position: absolute; top: -5px; bottom: -5px; min-width: 4px; border: 1px solid var(--ui-color-content); border-radius: 7px; background: var(--ui-color-surface); box-shadow: inset 0 0 0 2px var(--ui-color-page); opacity: .85; cursor: grab; }
+.live-planner__viewport:active { cursor: grabbing; }
+.live-planner__viewport:focus-visible { outline: 2px solid var(--ui-color-content); outline-offset: 3px; }
+.live-planner__viewport[aria-disabled="true"] { cursor: default; opacity: .5; }
 .live-planner__ruler { position: relative; height: 65px; border-bottom: 1px solid var(--ui-color-border); }
 .live-planner__tick { position: absolute; bottom: 0; height: 8px; border-left: 1px solid var(--ui-color-border); pointer-events: none; }
 .live-planner__tick.is-hour { height: 15px; border-color: var(--ui-color-border-hover); }
@@ -4227,7 +4240,7 @@
 .live-inspector__selection img { width: 42px; height: 61px; object-fit: cover; border-radius: 5px; }
 .live-inspector__selection strong { display: block; font-size: 14px; }
 .live-inspector__selection small { display: block; font-size: 11px; margin-top: 4px; color: var(--ui-color-content-muted); }
-.live-slot-range { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+.live-slot-range { display: grid; grid-template-columns: 1fr 1fr; align-items: end; gap: 12px; margin-top: 16px; }
 .live-slot-range .admin-input { font-size: 20px; font-variant-numeric: tabular-nums; }
 .live-slot-range .admin-input[readonly] { color: var(--ui-color-content-muted); cursor: default; }
 .live-slot-meta { margin: 10px 0 0; font-size: 10px; color: var(--ui-color-content-subtle); }
@@ -4237,10 +4250,39 @@
 .live-inspector .live-editor__footer { flex-wrap: wrap; gap: 10px; margin-top: 16px; }
 .live-inspector .live-channel-status { flex-basis: 100%; }
 .live-inspector .live-editor__footer .btn { font-size: 12px; }
+.live-series { margin-top: 20px; min-width: 0; padding-top: 20px; border-top: 1px solid var(--ui-color-border); }
+.live-series__heading { display: grid; gap: 5px; margin-bottom: 14px; }
+.live-series__heading strong { font-size: 14px; font-weight: 600; }
+.live-series__heading > span, .live-series__caption { font-size: 11px; color: var(--ui-color-content-muted); }
+.live-series__seasons { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 17px; }
+.live-series__season { border: 1px solid var(--ui-color-border); border-radius: 7px; padding: 8px 11px; background: var(--ui-color-surface); color: var(--ui-color-content-muted); font: inherit; font-size: 11px; cursor: pointer; }
+.live-series__season[aria-pressed="true"] { border-color: var(--ui-color-content); color: var(--ui-color-content); background: var(--ui-color-surface-muted); }
+.live-series__caption { display: flex; flex-wrap: wrap; gap: 7px 14px; justify-content: space-between; margin-bottom: 9px; }
+.live-series__episodes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; max-height: 340px; overflow-y: auto; padding: 2px; margin: -2px; }
+.live-series__episode { display: grid; grid-template-rows: auto 1fr auto; align-content: start; gap: 6px; min-width: 0; min-height: 99px; border: 1px solid var(--ui-color-border); border-radius: 8px; padding: 11px; text-align: left; color: var(--ui-color-content); background: var(--ui-color-surface); cursor: pointer; font: inherit; }
+.live-series__episode strong { font-size: 11px; font-weight: 600; }
+.live-series__episode > span { font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.live-series__episode small { font-size: 10px; line-height: 1.45; color: var(--ui-color-content-muted); }
+.live-series__episode[aria-pressed="true"] { border-color: var(--ui-color-content); box-shadow: inset 0 0 0 1px var(--ui-color-content); }
+.live-series__episode.is-added small::before { content: '● '; }
+.live-series__episode[data-future="true"] { border-style: dashed; }
+.live-series button:disabled { cursor: default; opacity: .5; }
+.live-series button:focus-visible { outline: 2px solid var(--ui-color-content); outline-offset: 2px; }
+.live-series__state, .live-series__last { font-size: 11px; line-height: 1.65; color: var(--ui-color-content-muted); margin: 12px 0; }
+.live-series__state:empty { display: none; }
+.live-series__detail { display: grid; gap: 7px; padding: 13px 0; margin-top: 14px; border-top: 1px solid var(--ui-color-border); }
+.live-series__detail > strong { font-size: 11px; letter-spacing: .05em; font-variant-numeric: tabular-nums; }
+.live-series__detail > span { font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.live-series__detail small { color: var(--ui-color-content-muted); font-size: 11px; line-height: 1.6; }
+.live-series .btn { font-size: 11px; white-space: normal; text-align: left; }
+.live-series__timing { padding: 12px 13px; border: 1px dashed var(--ui-color-content-muted); border-radius: 8px; font-size: 11px; line-height: 1.65; color: var(--ui-color-content); }
+.live-series__find { width: 100%; white-space: normal; text-align: left; font-size: 11px; }
 @container (max-width: 120px) { .live-planner__block > strong { font-size: 11px; }.live-planner__kind { display: none; } }
 @container (max-width: 46px) { .live-planner__block > strong, .live-planner__time { display: none; }.live-planner__mini { display: grid; place-items: center; height: 100%; }.live-planner__mini svg { width: 12px; height: 12px; } }
 @media (max-width: 1100px) { .live-editor.live-workspace { grid-template-columns: 1fr; }.live-library .live-results { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 640px) {
+    .live-planner__overview { padding: 13px 24px 0; }.live-planner__overview-label { font-size: 10px; }
+    .live-planner__overview-hours > span:nth-child(even) { visibility: hidden; }
     .live-planner__toolbar { padding: 12px; }.live-planner__date, .live-planner__tools { width: 100%; justify-content: space-between; }
     .live-planner__zoom { gap: 0; }.live-planner__zoom > span { display: none; }.live-planner__zoom .sort-control { width: 100px; }
     .live-planner__heading h3 { font-size: 16px; }.live-planner__heading p { max-width: 180px; font-size: 11px; }
