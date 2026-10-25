@@ -27,6 +27,7 @@ const migrationGuardFiles = {
     movieDetails: 'src/pages/movie-details/movie-details.css',
     personDetails: 'src/pages/person-details/person-details.css',
     live: 'src/pages/live/live.css',
+    liveYoutubePlayer: 'src/pages/live/youtube-player.css',
     hdrezkaProbe: 'src/pages/hdrezka-probe/hdrezka-probe.css',
 };
 

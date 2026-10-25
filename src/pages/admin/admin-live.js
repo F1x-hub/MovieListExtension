@@ -72,7 +72,8 @@
             const position = computePosition(channel);
             const on = channel && channel.mode !== 'off' && position.state !== 'ended';
             ui.nowCard.dataset.state = !channel || channel.mode === 'off' ? 'off' : position.state;
-            ui.stop.hidden = !channel || channel.mode === 'off';
+            // A finished show has nothing left to stop.
+            ui.stop.hidden = !on;
 
             const cover = on ? coverUrl(channel) : '';
             if (ui.nowMedia.dataset.src !== cover) {
@@ -216,8 +217,102 @@
             current = resolveChannel(manual, scheduleItems);
             renderNow();
             renderSchedule();
+            fillMissingLengths();
         }
         ui.title.addEventListener('input', () => { titleTouched = ui.title.value.trim().length > 0; });
+
+        // ---- YouTube: length / live / availability from a hidden player --------------
+        // The wrapper loads the video cued and muted and reports getDuration() and
+        // whether it is a live stream; the length fills the field so the broadcast
+        // ends by itself, like a movie. The live page still learns it as a fallback.
+        let autoDuration = '';
+        let probeSeq = 0;
+
+        /** Loads the video in a hidden wrapper; resolves { duration, isLive } or { error }. */
+        function probeLength(videoId) {
+            const wrapper = window.PlayerConfig?.YOUTUBE_WRAPPER_URL;
+            if (!wrapper) return Promise.resolve({});
+            const origin = new URL(wrapper).origin;
+            return new Promise(resolve => {
+                const frame = document.createElement('iframe');
+                frame.hidden = true;
+                frame.setAttribute('aria-hidden', 'true');
+                frame.tabIndex = -1;
+                frame.allow = 'autoplay; encrypted-media';
+                frame.src = `${wrapper}?v=${encodeURIComponent(videoId)}&autoplay=0&mute=1&controls=0&probe=1`;
+                let timer = null;
+                const finish = result => {
+                    window.removeEventListener('message', onMessage);
+                    clearTimeout(timer);
+                    frame.remove();
+                    resolve(result);
+                };
+                const onMessage = event => {
+                    if (event.origin !== origin || event.source !== frame.contentWindow) return;
+                    const data = event.data;
+                    if (!data || data.source !== 'STARTTAB_PLAYER_WRAPPER') return;
+                    const payload = data.payload || {};
+                    if (data.event === 'PROBE') finish({ duration: Number(payload.duration) || 0, isLive: payload.isLive === true });
+                    else if (data.event === 'ERROR') finish({ error: payload.errorCode || 5 });
+                };
+                timer = setTimeout(() => finish({}), 15000);
+                window.addEventListener('message', onMessage);
+                document.body.append(frame);
+            });
+        }
+
+        function stopProbe() {
+            probeSeq += 1;
+        }
+
+        async function probeYoutube(videoId) {
+            const seq = ++probeSeq;
+            const result = await probeLength(videoId);
+            if (seq !== probeSeq || draft.youtube?.id !== videoId) return;
+            if (result.error) {
+                const code = Number(result.error);
+                setStatus(code === 101 || code === 150
+                    ? 'YouTube не показывает это видео на сторонних сайтах: ограничение по возрасту, региону или от автора, либо видео недоступно. Зрители увидят ссылку на YouTube.'
+                    : code === 100 || code === 2
+                        ? 'Видео не найдено: оно удалено, скрыто или ссылка неверна.'
+                        : 'Не удалось проверить видео. Эфир можно запустить, длительность определится при показе.', 'error');
+                return;
+            }
+            if (result.isLive) {
+                ui.ytLive.checked = true;
+                if (ui.ytDuration.value === autoDuration) ui.ytDuration.value = autoDuration = '';
+                setStatus('Это прямая трансляция: эфир не завершится сам, остановите его вручную или укажите длительность.');
+                return;
+            }
+            if (result.duration > 0) {
+                ui.ytLive.checked = false;
+                const minutes = String(Math.round(result.duration / 60 * 100) / 100);
+                // Keep a length the admin typed themselves.
+                if (!ui.ytDuration.value || ui.ytDuration.value === autoDuration) {
+                    ui.ytDuration.value = autoDuration = minutes;
+                }
+                setStatus(`Длительность видео: ${formatClock(result.duration)} — эфир завершится сам.`, 'success');
+                return;
+            }
+            setStatus('Длительность не определилась (возможно, это запланированная трансляция). Эфир завершится по окончании видео или вручную.');
+        }
+
+        // A YouTube show published without a length (older shows, a failed probe)
+        // would stay «В эфире» here after the video ended: learn and store it.
+        const lengthChecked = new Set();
+        function fillMissingLengths() {
+            if (!service) return;
+            [manual, ...scheduleItems].forEach(item => {
+                if (item?.mode !== 'youtube' || item.youtube.live || item.youtube.durationSec) return;
+                const key = `${item.docPath}:${item.youtube.videoId}`;
+                if (lengthChecked.has(key)) return;
+                lengthChecked.add(key);
+                probeLength(item.youtube.videoId).then(result => {
+                    if (result.isLive || !(result.duration > 0) || result.duration > 12 * 3600) return;
+                    return service.setYoutubeDuration(item, Math.ceil(result.duration));
+                }).catch(error => console.warn('[AdminLive] Could not store the video length:', error));
+            });
+        }
 
         // ---- YouTube: instant preview + title from oEmbed --------------------------
         let lastYoutubeId = '';
@@ -230,6 +325,7 @@
             refreshStart();
             if (!info) {
                 lastYoutubeId = '';
+                stopProbe();
                 if (raw) setStatus('Это не похоже на ссылку YouTube.', 'error');
                 return;
             }
@@ -237,6 +333,9 @@
             ui.ytThumb.src = `https://i.ytimg.com/vi/${encodeURIComponent(info.id)}/hqdefault.jpg`;
             if (info.id !== lastYoutubeId) {
                 lastYoutubeId = info.id;
+                if (ui.ytDuration.value === autoDuration) ui.ytDuration.value = autoDuration = '';
+                setStatus('Определяем длительность видео…');
+                probeYoutube(info.id);
                 ui.ytLive.checked = /youtube\.com\/live\//i.test(raw);
             } else if (/youtube\.com\/live\//i.test(raw)) {
                 ui.ytLive.checked = true;

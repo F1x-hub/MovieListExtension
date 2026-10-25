@@ -66,6 +66,51 @@
             border: none;
         }
 
+        /* controls=0: the host page draws its own player; YouTube's hover chrome
+           (title, share, end screen links) must never receive the pointer. */
+        .player-shield {
+            position: absolute;
+            inset: 0;
+            z-index: 2;
+            background: transparent;
+        }
+
+        /* controls=0 still paints a title bar on top and «More videos», the share
+           link and the logo at the bottom of the player box. The player is made
+           taller than the visible frame: the picture stays centred and fills it,
+           while those bars land in the cropped-off strips. */
+        .chromeless #player-container {
+            --crop: clamp(72px, 14vh, 140px);
+            top: calc(-1 * var(--crop));
+            height: calc(100% + 2 * var(--crop));
+        }
+
+        /* While not playing, YouTube paints its own pause UI over the frame (title,
+           play button, «More videos») and the API cannot turn it off: the video's
+           cover image hides it, like a movie poster. */
+        .pause-cover {
+            position: absolute;
+            inset: 0;
+            z-index: 2;
+            background-color: #000;
+            background-position: center;
+            background-size: cover;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.12s ease;
+        }
+
+        .pause-cover::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.28);
+        }
+
+        .pause-cover.visible {
+            opacity: 1;
+        }
+
         /* Loading Skeleton */
         .loader-overlay {
             position: absolute;
@@ -230,6 +275,8 @@
         <div id="player-container">
             <div id="player"></div>
         </div>
+        <div id="pause-cover" class="pause-cover"></div>
+        <div id="player-shield" class="player-shield" hidden></div>
 
         <!-- Error / Blocked Embed Fallback -->
         <div id="error-card" class="error-card">
@@ -266,6 +313,23 @@
             const mute = urlParams.get('mute') === '1' ? 1 : 0;
             const startSec = parseInt(urlParams.get('t') || urlParams.get('start') || '0', 10) || 0;
             const controls = urlParams.get('controls') !== '0' ? 1 : 0;
+            // probe=1: load without playing, report duration / live / errors, nothing else.
+            const probe = urlParams.get('probe') === '1';
+            const initialVolume = Number(urlParams.get('volume'));
+            const pauseCoverEl = document.getElementById('pause-cover');
+            let coverTimer = null;
+            if (!controls) {
+                document.getElementById('player-shield').hidden = false;
+                document.body.classList.add('chromeless');
+                // Not playing yet: show the cover from the start. maxresdefault is
+                // missing for some videos (YouTube answers 404), so fall back.
+                pauseCoverEl.classList.add('visible');
+                const cover = new Image();
+                const base = 'https://i.ytimg.com/vi/' + encodeURIComponent(videoId) + '/';
+                cover.onload = function() { pauseCoverEl.style.backgroundImage = 'url("' + cover.src + '")'; };
+                cover.onerror = function() { pauseCoverEl.style.backgroundImage = 'url("' + base + 'hqdefault.jpg")'; };
+                cover.src = base + 'maxresdefault.jpg';
+            }
 
             const loaderEl = document.getElementById('loader');
             const errorCardEl = document.getElementById('error-card');
@@ -277,6 +341,59 @@
             let timeUpdateInterval = null;
             let lastReportedTime = startSec;
             let lastPlayReportAt = 0;
+            // Captions (IFrame API «captions» module): the host lists YouTube's
+            // tracks in its own menu and picks one; null keeps them off.
+            let captionChoice = null;
+            let captionsProbed = false;
+            let lastCaptionsKey = '';
+
+            function reportCaptions() {
+                if (!ytPlayer || typeof ytPlayer.getOption !== 'function') return;
+                let list = [];
+                try { list = ytPlayer.getOption('captions', 'tracklist') || []; } catch (_) { return; }
+                if (!list.length) return;
+                const tracks = list.map(function(track) {
+                    return {
+                        languageCode: String(track.languageCode || ''),
+                        displayName: String(track.displayName || track.languageName || track.languageCode || ''),
+                        kind: String(track.kind || '')
+                    };
+                }).filter(function(track) { return track.languageCode; });
+                const key = JSON.stringify(tracks);
+                if (key !== lastCaptionsKey) {
+                    lastCaptionsKey = key;
+                    emitToParent('CAPTIONS', { tracks: tracks, active: captionChoice });
+                }
+                if (!captionChoice) {
+                    // The list was only loaded to be offered: keep captions off.
+                    try { ytPlayer.unloadModule('captions'); } catch (_) {}
+                    return;
+                }
+                let current = null;
+                try { current = (ytPlayer.getOption('captions', 'track') || {}).languageCode || null; } catch (_) {}
+                if (current !== captionChoice) {
+                    try { ytPlayer.setOption('captions', 'track', { languageCode: captionChoice }); } catch (_) {}
+                }
+            }
+
+            // YouTube pins captions to the bottom of its box, inside the cropped
+            // strip: show the whole box while they are on. Off is unloadModule
+            // (an empty track leaves YouTube unable to draw them again), and the
+            // box is resized only after the module is back, or nothing is drawn.
+            let captionLayoutTimer = null;
+            function applyCaptions() {
+                clearTimeout(captionLayoutTimer);
+                if (!captionChoice) {
+                    try { ytPlayer.unloadModule('captions'); } catch (_) {}
+                    if (!controls) document.body.classList.add('chromeless');
+                    return;
+                }
+                try { ytPlayer.loadModule('captions'); } catch (_) {}
+                try { ytPlayer.setOption('captions', 'track', { languageCode: captionChoice }); } catch (_) {}
+                if (!controls) {
+                    captionLayoutTimer = setTimeout(function() { document.body.classList.remove('chromeless'); }, 1500);
+                }
+            }
 
             // Set direct YouTube watch link
             if (videoId) {
@@ -324,6 +441,21 @@
                     case 'UNMUTE':
                         try { ytPlayer.unMute(); } catch (_) {}
                         break;
+                    case 'SET_RATE':
+                        if (payload && typeof payload.rate === 'number') {
+                            try { ytPlayer.setPlaybackRate(payload.rate); } catch (_) {}
+                        }
+                        break;
+                    case 'SET_VOLUME':
+                        if (payload && typeof payload.volume === 'number') {
+                            try { ytPlayer.setVolume(Math.max(0, Math.min(100, Math.round(payload.volume)))); } catch (_) {}
+                        }
+                        break;
+                    case 'SET_CAPTIONS':
+                        captionChoice = payload && typeof payload.languageCode === 'string' && payload.languageCode
+                            ? payload.languageCode : null;
+                        applyCaptions();
+                        break;
                     case 'DESTROY':
                         cleanup();
                         break;
@@ -365,6 +497,17 @@
                 return;
             }
 
+            // getVideoData().isLive is undocumented and stays false while a stream is
+            // only cued; such a stream then reports a huge getDuration() instead.
+            // Regular uploads are capped at 12 hours.
+            const MAX_UPLOAD_SEC = 12 * 3600;
+            function isLiveVideo(player) {
+                try {
+                    if (player.getVideoData && player.getVideoData().isLive) return true;
+                    return Boolean(player.getDuration && player.getDuration() > MAX_UPLOAD_SEC);
+                } catch (_) { return false; }
+            }
+
             // Load YouTube IFrame API
             window.onYouTubeIframeAPIReady = function() {
                 const stateMap = {
@@ -380,10 +523,13 @@
                     videoId: videoId,
                     host: 'https://www.youtube-nocookie.com',
                     playerVars: {
-                        autoplay: autoplay,
-                        mute: mute,
+                        autoplay: probe ? 0 : autoplay,
+                        mute: probe ? 1 : mute,
                         start: startSec,
                         controls: controls,
+                        disablekb: controls ? 0 : 1,
+                        fs: controls,
+                        iv_load_policy: 3,
                         rel: 0,
                         modestbranding: 1,
                         playsinline: 1,
@@ -393,9 +539,27 @@
                     events: {
                         onReady: function(e) {
                             loaderEl.classList.add('hidden');
+                            if (!probe && Number.isFinite(initialVolume) && initialVolume >= 0 && initialVolume <= 100) {
+                                try { e.target.setVolume(Math.round(initialVolume)); } catch (_) {}
+                            }
                             emitToParent('READY', {
-                                duration: e.target.getDuration ? e.target.getDuration() : 0
+                                duration: e.target.getDuration ? e.target.getDuration() : 0,
+                                isLive: isLiveVideo(e.target)
                             });
+                            // A cued video often reports duration 0 until metadata arrives.
+                            if (probe) {
+                                let tries = 0;
+                                const probeTimer = setInterval(function() {
+                                    tries += 1;
+                                    const duration = ytPlayer && ytPlayer.getDuration ? ytPlayer.getDuration() : 0;
+                                    const live = ytPlayer ? isLiveVideo(ytPlayer) : false;
+                                    if (duration > 0 || live || tries >= 20) {
+                                        clearInterval(probeTimer);
+                                        emitToParent('PROBE', { duration: duration, isLive: live });
+                                    }
+                                }, 250);
+                                return;
+                            }
 
                             // Setup periodic progress telemetry (including paused scrub detection)
                             timeUpdateInterval = setInterval(function() {
@@ -410,6 +574,7 @@
                                     emitToParent('TIME_UPDATE', {
                                         currentTime: currentTime,
                                         duration: duration,
+                                        loaded: ytPlayer.getVideoLoadedFraction ? ytPlayer.getVideoLoadedFraction() : 0,
                                         state: 'PLAYING'
                                     });
                                 } else if (
@@ -426,8 +591,26 @@
                                 }
                             }, 500);
                         },
+                        onApiChange: function() {
+                            reportCaptions();
+                        },
                         onStateChange: function(e) {
+                            // The track list exists only once playback has begun.
+                            if (e.data === YT.PlayerState.PLAYING && !captionsProbed && !probe) {
+                                captionsProbed = true;
+                                try { ytPlayer.loadModule('captions'); } catch (_) {}
+                                setTimeout(reportCaptions, 1500);
+                            }
                             const stateName = stateMap[e.data] || 'UNKNOWN';
+                            if (!controls && stateName !== 'BUFFERING') {
+                                clearTimeout(coverTimer);
+                                if (stateName === 'PLAYING') {
+                                    // Outlast YouTube's play/pause flash in the centre.
+                                    coverTimer = setTimeout(function() { pauseCoverEl.classList.remove('visible'); }, 600);
+                                } else {
+                                    pauseCoverEl.classList.add('visible');
+                                }
+                            }
                             const currentTime = ytPlayer && ytPlayer.getCurrentTime ? ytPlayer.getCurrentTime() : 0;
                             if (Number.isFinite(currentTime)) {
                                 lastReportedTime = currentTime;
@@ -436,7 +619,8 @@
                                 state: stateName,
                                 stateCode: e.data,
                                 currentTime: currentTime,
-                                duration: ytPlayer && ytPlayer.getDuration ? ytPlayer.getDuration() : 0
+                                duration: ytPlayer && ytPlayer.getDuration ? ytPlayer.getDuration() : 0,
+                                isLive: ytPlayer ? isLiveVideo(ytPlayer) : false
                             });
                         },
                         onError: function(e) {

@@ -3,41 +3,25 @@
  *
  * The page subscribes to the channel document, works out where the broadcast is
  * right now (against server time, so viewers with wrong clocks still agree) and
- * loads the media itself. Viewers cannot pause or seek: YouTube is driven through
- * our wrapper's command bridge, movies through the broadcast lock inside the
- * player. The admin uses the player's own controls; their pause/play/seek becomes
- * the timeline for everyone. Nothing is restreamed by our servers.
+ * loads the media itself. Movies play in the movie page, YouTube videos in
+ * youtube-player.html; both use the shared movie player with its broadcast lock,
+ * fed by BROADCAST_STATE from here. Viewers cannot pause or seek; sound,
+ * fullscreen, speed and the rest stay personal. The admin uses the player's own
+ * controls; their pause/play/seek becomes the timeline for everyone. Nothing is
+ * restreamed by our servers.
  */
 (function () {
     'use strict';
 
-    const DRIFT_SEC = 3;
     const els = {};
     let channel = null;
     let mountedKey = '';
     let clockTimer = null;
     let unsubscribe = null;
 
-    // YouTube wrapper telemetry for the mounted frame.
-    const yt = {
-        origin: '',
-        time: 0,
-        duration: 0,
-        committedTime: 0,
-        at: 0,
-        state: 'UNSTARTED',
-        ready: false,
-        hasStarted: false,
-        wasPaused: false,
-        mountedWithAutoplay: true,
-        playAttemptAt: 0,
-        muted: false,
-        lastCommandAt: 0,
-        mountedAt: 0,
-        mountedAsAdmin: false,
-        forcedMute: false,
-        suppressUntil: 0
-    };
+    // What the YouTube player reported about the mounted video. A video published
+    // without a length still ends on time: { key, sec } is the learned length.
+    const ytInfo = { key: '', duration: 0, isLive: false, endSec: 0, stored: '' };
 
     // Fallback relay (WebRTC from the admin's tab) for viewers whose sources fail.
     const AUTO_RELAY_AFTER_MS = 45000;
@@ -95,21 +79,7 @@
     // dynamic text because Navigation's translatePage() would overwrite it.
     let emptyKeys = null;
 
-    function destroyYoutubeFrame() {
-        const frame = frameEl();
-        if (!frame?.contentWindow || !yt.origin || !mountedKey.startsWith('youtube:')) return;
-        try { frame.contentWindow.postMessage({ action: 'DESTROY' }, yt.origin); } catch { /* frame navigating */ }
-    }
-
-    function syncFrameLock() {
-        const frame = frameEl();
-        if (!frame) return;
-        const lock = channel?.mode === 'youtube' && !isAdmin && playbackConfirmed && !relay.sourceFailed && !relay.watching;
-        frame.classList.toggle('is-locked', lock);
-    }
-
     function showEmpty(titleKey, textKey) {
-        destroyYoutubeFrame();
         els.screen.replaceChildren();
         els.stage.hidden = true;
         els.empty.hidden = false;
@@ -138,16 +108,59 @@
         return frame;
     }
 
-    function youtubeSrc(videoId, startSec, { autoplay = true } = {}) {
-        const config = window.PlayerConfig;
-        if (config?.YOUTUBE_WRAPPER_URL) {
-            yt.origin = new URL(config.YOUTUBE_WRAPPER_URL).origin;
-            // Viewers get no pause/seek UI (sound and fullscreen live on this page);
-            // the admin keeps YouTube's controls to drive the broadcast.
-            return `${config.buildYouTubeEmbedUrl(videoId, { autoplay, start: startSec })}&controls=${isAdmin ? 1 : 0}`;
+    /**
+     * computePosition plus the length the YouTube player reported, for videos
+     * published without one: such a broadcast ends when the video does.
+     */
+    function currentPosition() {
+        const position = window.CinemaChannel.computePosition(channel);
+        if (channel?.mode !== 'youtube' || channel.youtube.live || channel.youtube.durationSec || position.state !== 'live') return position;
+        const sec = ytInfo.key === channelKey(channel) ? ytInfo.endSec : 0;
+        return sec > 0 && position.offsetSec >= sec ? { state: 'ended', offsetSec: sec } : position;
+    }
+
+    function learnYoutubeLength(sec) {
+        // Longer than YouTube's 12-hour upload cap: a live stream, never a length.
+        if (channel?.mode !== 'youtube' || channel.youtube.live || ytInfo.isLive || !(sec > 0) || sec > 12 * 3600) return;
+        const key = channelKey(channel);
+        if (ytInfo.key !== key) Object.assign(ytInfo, { key, duration: 0, isLive: false, endSec: 0 });
+        ytInfo.endSec = ytInfo.endSec > 0 ? Math.min(ytInfo.endSec, sec) : sec;
+        // The admin's tab writes it down, so every viewer's page ends the show too.
+        if (isAdmin && service && !channel.youtube.durationSec && ytInfo.stored !== key) {
+            ytInfo.stored = key;
+            service.setYoutubeDuration(channel, Math.ceil(ytInfo.endSec)).catch(error => {
+                ytInfo.stored = '';
+                console.warn('[Live] Could not store the video length:', error);
+            });
         }
-        yt.origin = '';
-        return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=${autoplay ? 1 : 0}&start=${startSec}&rel=0&controls=${isAdmin ? 1 : 0}&disablekb=${isAdmin ? 0 : 1}`;
+    }
+
+    /** What the embedded YouTube player page reports about the video. */
+    function onYoutubeReport(data) {
+        if (channel?.mode !== 'youtube') return;
+        const key = channelKey(channel);
+        if (ytInfo.key !== key) Object.assign(ytInfo, { key, duration: 0, isLive: false, endSec: 0 });
+        if (data.type === 'BROADCAST_MEDIA_INFO') {
+            if (data.isLive === true) {
+                ytInfo.isLive = true;
+                return;
+            }
+            const duration = Number(data.durationSec);
+            if (Number.isFinite(duration) && duration > 0) {
+                ytInfo.duration = duration;
+                learnYoutubeLength(duration);
+            }
+        } else if (data.type === 'BROADCAST_ENDED') {
+            // Fallback end: the player itself says the video is over.
+            learnYoutubeLength(Number(data.atSec));
+            renderClock();
+        } else if (data.type === 'BROADCAST_SOURCE_ERROR') {
+            relay.sourceFailed = true;
+            if (!maybeAutoRelay()) {
+                els.notice.hidden = false;
+                els.notice.textContent = t('youtube_blocked');
+            }
+        }
     }
 
     /** The movie title links to its details page, where it can be rated. */
@@ -172,8 +185,7 @@
         mediaMountedAt = Date.now();
         playbackConfirmed = false;
         relay.sourceFailed = false;
-        const { CinemaChannel } = window;
-        const position = CinemaChannel.computePosition(channel);
+        const position = currentPosition();
 
         if (channel.mode === 'off') {
             showEmpty('off_title', 'off_text');
@@ -199,27 +211,12 @@
 
         let src;
         if (channel.mode === 'youtube') {
-            const shouldAutoplay = position.state !== 'paused';
-            const now = Date.now();
-            Object.assign(yt, {
-                time: position.offsetSec,
-                duration: 0,
-                committedTime: position.offsetSec,
-                at: now,
-                state: 'UNSTARTED',
-                ready: false,
-                hasStarted: false,
-                wasPaused: position.state === 'paused',
-                mountedWithAutoplay: shouldAutoplay,
-                playAttemptAt: 0,
-                muted: false,
-                lastCommandAt: 0,
-                mountedAt: now,
-                mountedAsAdmin: isAdmin,
-                forcedMute: false,
-                suppressUntil: 0
+            const params = new URLSearchParams({
+                v: channel.youtube.videoId,
+                start: String(position.offsetSec),
+                live: channel.youtube.live ? '1' : '0'
             });
-            src = youtubeSrc(channel.youtube.videoId, position.offsetSec, { autoplay: shouldAutoplay });
+            src = `youtube-player.html?${params}`;
         } else {
             const params = new URLSearchParams({
                 movieId: String(channel.movie.kinopoiskId),
@@ -230,11 +227,9 @@
             src = `../movie-details/movie-details.html?${params}`;
         }
 
-        destroyYoutubeFrame();
         els.screen.replaceChildren(createFrame(src, channel.title));
         els.screen.classList.toggle('live-screen--movie', channel.mode === 'movie');
         mountedKey = key;
-        syncFrameLock();
         renderClock();
     }
 
@@ -246,322 +241,52 @@
         return CinemaChannel.toLocalMs(serverStart);
     }
 
-    /** Hands the channel clock to the embedded movie player (it enforces it on the media). */
+    /** Hands the channel clock to the embedded player (it enforces it on the media). */
     function postBroadcastState() {
-        if (channel?.mode !== 'movie') return;
+        if (channel?.mode !== 'movie' && channel?.mode !== 'youtube') return;
         const frame = frameEl();
         if (!frame?.contentWindow) return;
+        const pausedAtSec = channel[channel.mode].pausedAtSec;
         try {
-            frame.contentWindow.postMessage({ type: 'BROADCAST_STATE', startMs: localStartMs(), pausedAtSec: channel.movie.pausedAtSec, admin: isAdmin }, window.location.origin);
+            frame.contentWindow.postMessage({ type: 'BROADCAST_STATE', startMs: localStartMs(), pausedAtSec: Number.isFinite(pausedAtSec) ? pausedAtSec : null, admin: isAdmin }, window.location.origin);
         } catch { /* frame navigating */ }
     }
 
-    // ---- YouTube lock ----------------------------------------------------------
-    function isOwnRecentWrite() {
-        return Boolean(pendingAdminAction || adminBusy || (lastAdminWriteAt && Date.now() - lastAdminWriteAt < 2500));
-    }
-
-    function ytCommand(action, payload) {
-        const frame = frameEl();
-        if (!frame?.contentWindow || !yt.origin) return;
-        const now = Date.now();
-        if (action === 'PLAY' || action === 'PAUSE' || action === 'SEEK') {
-            yt.lastCommandAt = now;
-            yt.suppressUntil = Math.max(yt.suppressUntil, now + 2200);
-        }
-        if (action === 'PLAY') {
-            yt.wasPaused = false;
-        } else if (action === 'PAUSE') {
-            yt.wasPaused = true;
-            yt.playAttemptAt = 0;
-        } else if (action === 'SEEK' && payload && Number.isFinite(payload.seconds)) {
-            yt.time = payload.seconds;
-            yt.committedTime = payload.seconds;
-            yt.at = now;
-        }
-        try { frame.contentWindow.postMessage({ action, payload }, yt.origin); } catch { /* frame navigating */ }
-    }
-
-    function ytEstimatedTime() {
-        return yt.state === 'PLAYING' ? yt.time + (Date.now() - yt.at) / 1000 : yt.time;
-    }
-
-    function enforceYoutube(position, { force = false } = {}) {
-        if (channel?.mode !== 'youtube' || !yt.origin || !frameEl() || !yt.ready) return;
-        // The active admin drives YouTube directly; viewers (and any passive second
-        // admin tab receiving a remote timeline update) follow the channel.
-        if (isAdmin && (!force || isOwnRecentWrite())) return;
-        if (!force && Date.now() - yt.lastCommandAt < 900) return;
-
-        const live = channel.youtube.live;
-        if (position.state === 'paused') {
-            yt.playAttemptAt = 0;
-            if (yt.state === 'PLAYING' || yt.state === 'BUFFERING') {
-                ytCommand('PAUSE');
-            } else if (yt.state === 'PAUSED' && !live && Math.abs(ytEstimatedTime() - position.offsetSec) > 1.5) {
-                ytCommand('SEEK', { seconds: position.offsetSec });
-            }
-            return;
-        }
-
-        if (position.state !== 'live') return;
-        if (!live && yt.duration > 0 && position.offsetSec >= yt.duration - 1) return;
-
-        const inactive = ['PAUSED', 'CUED', 'UNSTARTED', 'ENDED'].includes(yt.state);
-        if (!yt.hasStarted && ['UNSTARTED', 'CUED', 'PAUSED'].includes(yt.state)) {
-            if (!yt.playAttemptAt) yt.playAttemptAt = Date.now();
-            // A browser that blocks autoplay with sound still allows it muted.
-            if (!isAdmin && !yt.forcedMute && Date.now() - yt.playAttemptAt >= 1800) {
-                yt.forcedMute = true;
-                yt.muted = true;
-                ytCommand('MUTE');
-                if (!live && Math.abs(ytEstimatedTime() - position.offsetSec) > DRIFT_SEC) {
-                    ytCommand('SEEK', { seconds: position.offsetSec });
-                }
-                ytCommand('PLAY');
-                renderSound();
-                els.notice.hidden = false;
-                els.notice.textContent = t('relay_muted');
-                return;
-            }
-        }
-
-        if (!live && Math.abs(ytEstimatedTime() - position.offsetSec) > DRIFT_SEC) {
-            ytCommand('SEEK', { seconds: position.offsetSec });
-            if (!inactive) return;
-        }
-        if (inactive) {
-            ytCommand('PLAY');
-        }
-    }
-
-    function expectedAdminTimelineSec(pos) {
-        if (pendingAdminAction) {
-            return pendingAdminAction.atSec;
-        }
-        if (lastAdminSent.at && Date.now() - lastAdminSent.at < 2500) {
-            return lastAdminSent.action === 'pause'
-                ? lastAdminSent.atSec
-                : lastAdminSent.atSec + (Date.now() - lastAdminSent.at) / 1000;
-        }
-        return pos.offsetSec;
-    }
-
-    function handleAdminYoutubeTelemetry(eventName, nextState, hasTime, previousState, previousTime) {
-        if (!isAdmin || !channel || channel.mode !== 'youtube' || channel.youtube.live) return;
-
-        if (Date.now() < yt.suppressUntil) {
-            if (nextState === 'PLAYING') {
-                yt.hasStarted = true;
-                yt.wasPaused = false;
-                if (hasTime) yt.committedTime = yt.time;
-            } else if (nextState === 'PAUSED') {
-                yt.wasPaused = true;
-                if (hasTime) yt.committedTime = yt.time;
-            }
-            return;
-        }
-
-        const pos = window.CinemaChannel.computePosition(channel);
-        const refSec = expectedAdminTimelineSec(pos);
-
-        if (!yt.hasStarted) {
-            if (nextState === 'PLAYING') {
-                yt.hasStarted = true;
-                yt.wasPaused = false;
-                yt.committedTime = yt.time;
-                if (pos.state === 'paused' || pendingAdminAction?.action === 'pause') {
-                    publishAdminAction('resume', yt.time);
-                } else if (hasTime && Math.abs(yt.time - pos.offsetSec) > DRIFT_SEC) {
-                    ytCommand('SEEK', { seconds: pos.offsetSec });
-                }
-            } else if (
-                pos.state === 'paused'
-                && (nextState === 'PAUSED' || nextState === 'CUED')
-                && hasTime
-                && Math.abs(yt.time - refSec) > 1.5
-            ) {
-                yt.committedTime = yt.time;
-                publishAdminAction('seek', yt.time);
-            }
-            return;
-        }
-
-        if (eventName === 'STATE_CHANGE' && nextState === 'PAUSED') {
-            yt.wasPaused = true;
-            yt.committedTime = yt.time;
-            publishAdminAction('pause', yt.time);
-            return;
-        }
-
-        if (nextState === 'PAUSED' && hasTime) {
-            if (Math.abs(yt.time - previousTime) > 1.5 || Math.abs(yt.time - refSec) > 1.5) {
-                yt.wasPaused = true;
-                yt.committedTime = yt.time;
-                publishAdminAction(pos.state === 'paused' ? 'seek' : 'pause', yt.time);
-            }
-            return;
-        }
-
-        if (nextState === 'PLAYING') {
-            if (pos.state === 'paused' || pendingAdminAction?.action === 'pause' || yt.wasPaused) {
-                yt.wasPaused = false;
-                yt.committedTime = yt.time;
-                publishAdminAction('resume', yt.time);
-                return;
-            }
-            if (hasTime) {
-                const jumpedFromPrev = Math.abs(yt.time - previousTime) > DRIFT_SEC;
-                const jumpedFromCommitted = previousState !== 'PLAYING' && Math.abs(yt.time - yt.committedTime) > DRIFT_SEC;
-                const refinedPendingSeek = pendingAdminAction?.action === 'seek' && Math.abs(yt.time - pendingAdminAction.atSec) > 0.5;
-                if (jumpedFromPrev || jumpedFromCommitted || refinedPendingSeek) {
-                    yt.committedTime = yt.time;
-                    publishAdminAction('seek', yt.time);
-                    return;
-                }
-                yt.committedTime = yt.time;
-            }
-            return;
-        }
-
-        if (nextState === 'BUFFERING' && hasTime && !yt.wasPaused && pos.state !== 'paused') {
-            if (Math.abs(yt.time - previousTime) > DRIFT_SEC || Math.abs(yt.time - yt.committedTime) > DRIFT_SEC) {
-                yt.committedTime = yt.time;
-                publishAdminAction('seek', yt.time);
-            }
-        }
-    }
-
-    function onWrapperMessage(event) {
-        const frame = frameEl();
-        if (!yt.origin || event.origin !== yt.origin || !frame || event.source !== frame.contentWindow) return;
-        const data = event.data;
-        if (!data || data.source !== 'STARTTAB_PLAYER_WRAPPER') return;
-        const payload = data.payload || {};
-        const previousState = yt.state;
-        const previousTime = ytEstimatedTime();
-        const hasTime = payload.currentTime !== undefined && payload.currentTime !== null && Number.isFinite(Number(payload.currentTime));
-
-        if (Number.isFinite(Number(payload.duration)) && Number(payload.duration) > 0) {
-            yt.duration = Number(payload.duration);
-        }
-        if (hasTime) {
-            yt.time = Number(payload.currentTime);
-            yt.at = Date.now();
-        }
-
-        if (data.event === 'READY') {
-            yt.ready = true;
-            if (yt.state === 'UNSTARTED') yt.state = 'CUED';
-            if (channel?.mode === 'youtube') {
-                const pos = window.CinemaChannel.computePosition(channel);
-                if (yt.mountedWithAutoplay && pos.state === 'live' && !yt.playAttemptAt) {
-                    yt.playAttemptAt = Date.now();
-                }
-                if (!isAdmin) enforceYoutube(pos, { force: true });
-            }
-            return;
-        }
-
-        if (data.event === 'ERROR') {
-            relay.sourceFailed = true;
-            syncFrameLock();
-            if (!maybeAutoRelay()) {
-                els.notice.hidden = false;
-                els.notice.textContent = t('youtube_blocked');
-            }
-            return;
-        }
-
-        let nextState;
-        if (data.event === 'STATE_CHANGE' && payload.state) {
-            yt.ready = true;
-            nextState = payload.state;
-            yt.state = nextState;
-        } else if (data.event === 'TIME_UPDATE') {
-            yt.ready = true;
-            nextState = payload.state || 'PLAYING';
-            yt.state = nextState;
-        } else {
-            return;
-        }
-
-        if (nextState === 'PLAYING') {
-            yt.playAttemptAt = 0;
-            playbackConfirmed = true;
-        }
-        syncFrameLock();
-
-        if (isAdmin) {
-            handleAdminYoutubeTelemetry(data.event, nextState, hasTime, previousState, previousTime);
-        }
-        if (nextState === 'PLAYING') {
-            yt.hasStarted = true;
-        }
-
-        if (
-            data.event === 'STATE_CHANGE'
-            && nextState === 'PAUSED'
-            && channel?.mode === 'youtube'
-            && !channel.youtube.live
-            && (!isAdmin || !isOwnRecentWrite())
-        ) {
-            const pos = window.CinemaChannel.computePosition(channel);
-            if (pos.state === 'paused' && Math.abs(yt.time - pos.offsetSec) > 1.5) {
-                enforceYoutube(pos, { force: true });
-            } else if (!isAdmin && pos.state === 'live') {
-                enforceYoutube(pos, { force: true });
-            }
-        }
-    }
-
     // ---- Sound / fullscreen ----------------------------------------------------
-    // Movies keep their own player controls; the relay video and a viewer's
-    // control-less YouTube embed get this small overlay instead.
-    const VOLUME_KEY = 'movieExtension.liveRelayVolume';
+    // Movies and YouTube keep the movie player's own controls; only the relay
+    // video gets this small overlay.
+    const VOLUME_KEY = 'movieExtension_videoVolume';
 
     function savedVolume() {
         try {
-            const value = Number(localStorage.getItem(VOLUME_KEY));
+            const raw = localStorage.getItem(VOLUME_KEY);
+            const value = raw === null ? NaN : Number(raw);
             return Number.isFinite(value) && value >= 0 && value <= 1 ? value : 1;
         } catch { return 1; }
     }
 
     function renderSound() {
         const relayOn = relay.watching && relay.video;
-        const youtubeViewer = !relay.watching && channel?.mode === 'youtube' && !isAdmin;
-        els.controls.hidden = els.stage.hidden || !(relayOn || youtubeViewer);
+        els.controls.hidden = els.stage.hidden || !relayOn;
         if (els.controls.hidden) return;
-        const muted = relayOn ? relay.video.muted || relay.video.volume === 0 : yt.muted;
+        const muted = relay.video.muted || relay.video.volume === 0;
         els.mute.classList.toggle('is-muted', muted);
         // Keep the controls visible while sound is off, so viewers find the button.
         els.controls.classList.toggle('is-attention', muted);
         els.mute.setAttribute('aria-label', muted ? t('unmute') : t('mute'));
-        // The wrapper bridge only knows mute/unmute, so volume is relay-only.
-        els.volume.hidden = !relayOn;
-        if (relayOn) {
-            const volume = String(muted ? 0 : relay.video.volume);
-            if (els.volume.value !== volume) els.volume.value = volume;
-        }
+        const volume = String(muted ? 0 : relay.video.volume);
+        if (els.volume.value !== volume) els.volume.value = volume;
     }
 
     function toggleSound() {
-        if (relay.watching && relay.video) {
-            const video = relay.video;
-            if (video.muted || video.volume === 0) {
-                video.muted = false;
-                if (video.volume === 0) video.volume = 0.5;
-                video.play().catch(() => {});
-            } else {
-                video.muted = true;
-            }
-            renderSound();
-            return;
-        }
-        yt.muted = !yt.muted;
-        ytCommand(yt.muted ? 'MUTE' : 'UNMUTE');
-        if (!yt.muted && yt.forcedMute && els.notice.textContent === t('relay_muted')) {
-            els.notice.hidden = true;
+        const video = relay.video;
+        if (!relay.watching || !video) return;
+        if (video.muted || video.volume === 0) {
+            video.muted = false;
+            if (video.volume === 0) video.volume = 0.5;
+            video.play().catch(() => {});
+        } else {
+            video.muted = true;
         }
         renderSound();
     }
@@ -663,7 +388,6 @@
 
     async function enterRelay({ auto = false } = {}) {
         if (relay.watching || !relay.status.active || !relay.service || isAdmin) return;
-        destroyYoutubeFrame();
         relay.watching = true;
         const video = document.createElement('video');
         video.className = 'live-relay-video';
@@ -739,7 +463,7 @@
 
     function signatureOf(c) {
         const media = c?.[c?.mode];
-        return [c?.docPath, c?.mode, c?.startedAtMs, media?.pausedAtSec, media?.videoId || media?.kinopoiskId, c?.title].join('|');
+        return [c?.docPath, c?.mode, c?.startedAtMs, media?.pausedAtSec, media?.videoId || media?.kinopoiskId, media?.durationSec, c?.title].join('|');
     }
 
     function refreshChannel({ force = false } = {}) {
@@ -748,22 +472,17 @@
         const signature = signatureOf(next);
         const changed = signature !== channelSignature;
         if (!force && !changed) return;
-        const hadChannel = channelSignature !== '';
         channelSignature = signature;
         channel = next;
-        yt.lastCommandAt = 0;
         mountMedia();
         postBroadcastState();
-        if (hadChannel && changed && channel?.mode === 'youtube') {
-            enforceYoutube(window.CinemaChannel.computePosition(channel), { force: true });
-        }
         renderClock();
     }
 
     function renderClock() {
         if (!channel || channel.mode === 'off') return;
         const { CinemaChannel } = window;
-        const position = CinemaChannel.computePosition(channel);
+        const position = currentPosition();
         const isLiveStream = channel.mode === 'youtube' && channel.youtube.live;
         const playing = !els.stage.hidden;
 
@@ -778,13 +497,12 @@
         } else if (position.state === 'upcoming') {
             setText(els.clock, t('clock_upcoming', { time: CinemaChannel.formatClock(position.offsetSec) }));
         } else if (position.state === 'live' && !isLiveStream) {
-            const total = channel[channel.mode]?.durationSec || (channel.mode === 'youtube' && yt.duration > 0 ? Math.round(yt.duration) : 0);
+            const total = channel[channel.mode]?.durationSec || (channel.mode === 'youtube' && ytInfo.key === channelKey(channel) && ytInfo.duration > 0 ? Math.round(ytInfo.duration) : 0);
             setText(els.clock, total
                 ? `${CinemaChannel.formatClock(position.offsetSec)} / ${CinemaChannel.formatClock(total)}`
                 : t('clock_playing', { time: CinemaChannel.formatClock(position.offsetSec) }));
         }
 
-        enforceYoutube(position);
         renderRelayButtons();
         if (position.state === 'live' || position.state === 'paused') maybeAutoRelay();
 
@@ -806,7 +524,6 @@
     let service = null;
     let isAdmin = false;
     let adminBusy = false;
-    let lastAdminWriteAt = 0;
     const lastAdminSent = { action: '', atSec: 0, at: 0, baseSignature: '' };
 
     // The admin's own pause/play/seek in the player becomes the broadcast timeline.
@@ -848,11 +565,9 @@
 
         const baseSignature = channelSignature;
         adminBusy = true;
-        lastAdminWriteAt = Date.now();
         try {
             await service.control(channel, action, { offsetSec: request.atSec });
             const now = Date.now();
-            lastAdminWriteAt = now;
             Object.assign(lastAdminSent, { action, atSec: request.atSec, at: now, baseSignature });
         } catch (error) {
             console.warn('[Live] Admin control failed:', error);
@@ -873,11 +588,6 @@
         isAdmin = nextIsAdmin;
         try { chrome.storage?.local?.set?.({ cached_is_admin: nextIsAdmin }); } catch { /* storage unavailable */ }
         if (!channel) return;
-        if (channel.mode === 'youtube' && yt.mountedAsAdmin !== isAdmin && !els.stage.hidden && !relay.watching) {
-            mountMedia(true);
-        } else {
-            syncFrameLock();
-        }
         if (changed) {
             postBroadcastState();
             renderClock();
@@ -961,18 +671,15 @@
                     els.notice.hidden = false;
                     els.notice.textContent = t('movie_muted');
                 }
-                return;
+                if (['BROADCAST_MEDIA_INFO', 'BROADCAST_ENDED', 'BROADCAST_SOURCE_ERROR'].includes(event.data?.type)) {
+                    onYoutubeReport(event.data);
+                }
             }
-            onWrapperMessage(event);
         });
         // Background tabs get throttled timers: resync the moment the viewer comes back.
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState !== 'visible' || !channel) return;
-            yt.lastCommandAt = 0;
             postBroadcastState();
-            if (channel.mode === 'youtube' && !isAdmin) {
-                enforceYoutube(window.CinemaChannel.computePosition(channel), { force: true });
-            }
             renderClock();
         });
 
@@ -981,9 +688,6 @@
         CinemaChannel.syncClock().then(() => {
             if (!channel) return;
             postBroadcastState();
-            if (channel.mode === 'youtube') {
-                enforceYoutube(CinemaChannel.computePosition(channel), { force: true });
-            }
             renderClock();
         });
 
