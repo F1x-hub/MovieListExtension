@@ -63,25 +63,39 @@ export function computeWatchTime(ratings = [], movies = {}) {
 }
 
 /**
- * Ratings per calendar month for the last `months` months, oldest first.
- * @returns {Array<{year: number, month: number, count: number}>}
+ * Ratings per day for a GitHub-style calendar: `weeks` columns (Monday first),
+ * the last one holding today. Days after today are null.
+ * @returns {{weeks: Array<Array<{date: Date, count: number}|null>>, max: number, total: number}}
  */
-export function computeMonthlyActivity(ratings = [], now = Date.now(), months = 12) {
-    const end = new Date(now);
-    const buckets = [];
-    for (let offset = months - 1; offset >= 0; offset--) {
-        const date = new Date(end.getFullYear(), end.getMonth() - offset, 1);
-        buckets.push({ year: date.getFullYear(), month: date.getMonth(), count: 0 });
-    }
-    const index = new Map(buckets.map((bucket, position) => [`${bucket.year}-${bucket.month}`, position]));
+export function computeDailyActivity(ratings = [], now = Date.now(), weeks = 53) {
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+    const weekday = (today.getDay() + 6) % 7;
+    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - weekday - (weeks - 1) * 7);
+    const counts = new Map();
     for (const rating of ratings) {
         const time = toMillis(rating.createdAt);
         if (!time) continue;
         const date = new Date(time);
-        const position = index.get(`${date.getFullYear()}-${date.getMonth()}`);
-        if (position !== undefined) buckets[position].count++;
+        const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+        counts.set(key, (counts.get(key) || 0) + 1);
     }
-    return buckets;
+    let max = 0;
+    let total = 0;
+    const columns = [];
+    for (let week = 0; week < weeks; week++) {
+        const days = [];
+        for (let day = 0; day < 7; day++) {
+            const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + week * 7 + day);
+            if (date > today) { days.push(null); continue; }
+            const count = counts.get(`${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`) || 0;
+            max = Math.max(max, count);
+            total += count;
+            days.push({ date, count });
+        }
+        columns.push(days);
+    }
+    return { weeks: columns, max, total };
 }
 
 /**

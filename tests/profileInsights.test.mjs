@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {
     computeDecades,
     computeFavoritePeople,
-    computeMonthlyActivity,
+    computeDailyActivity,
     computeTasteMatch,
     computeWatchTime,
     normalizePinned,
@@ -38,18 +38,22 @@ assert.deepEqual(
     [{ decade: 1990, count: 1 }, { decade: 2000, count: 3 }]
 );
 
-// Monthly activity: last 12 months, oldest first, only ratings inside the window.
-const now = new Date(2026, 9, 21).getTime();
-const activity = computeMonthlyActivity([
-    { createdAt: { seconds: new Date(2026, 9, 2).getTime() / 1000 } },
-    { createdAt: new Date(2026, 9, 15) },
-    { createdAt: new Date(2025, 10, 1).toISOString() },
+// Daily activity: 53 Monday-first weeks ending today, future days left empty.
+const now = new Date(2026, 9, 21, 15).getTime(); // Wednesday
+const daily = computeDailyActivity([
+    { createdAt: { seconds: new Date(2026, 9, 21, 9).getTime() / 1000 } },
+    { createdAt: new Date(2026, 9, 21, 20) },
+    { createdAt: new Date(2026, 9, 19).toISOString() },
     { createdAt: new Date(2024, 0, 1) }
 ], now);
-assert.equal(activity.length, 12);
-assert.deepEqual(activity[11], { year: 2026, month: 9, count: 2 });
-assert.deepEqual(activity[0], { year: 2025, month: 10, count: 1 });
-assert.equal(activity.reduce((sum, bucket) => sum + bucket.count, 0), 3);
+assert.equal(daily.weeks.length, 53);
+const lastWeek = daily.weeks[52];
+assert.equal(lastWeek[0].date.getDay(), 1);
+assert.equal(lastWeek[0].count, 1);
+assert.equal(lastWeek[2].count, 2);
+assert.equal(lastWeek[3], null);
+assert.equal(daily.max, 2);
+assert.equal(daily.total, 3);
 
 // Favorite people: only from titles rated 8+, at least two films.
 const people = computeFavoritePeople([
