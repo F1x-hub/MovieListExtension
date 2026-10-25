@@ -56,10 +56,14 @@
             </div>
         </section>
 
-        <div class="empty-state live-empty" id="liveEmpty" hidden>
-            <div class="empty-state-icon"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect><polyline points="17 2 12 7 7 2"></polyline></svg></div>
-            <h3 class="empty-state-title" id="liveEmptyTitle">Сейчас ничего не идёт</h3>
-            <p class="empty-state-text" id="liveEmptyText">Когда начнётся показ, он появится здесь автоматически — страницу обновлять не нужно.</p>
+        <div class="live-empty" id="liveEmpty" hidden>
+            <section class="live-standby" id="liveStandbyScreen" aria-labelledby="liveEmptyTitle">
+                <img class="live-standby__pattern" src="../../shared/assets/live/standby-pattern.png" alt="" aria-hidden="true">
+                <div class="live-standby__top"><div class="live-standby__brand"><img src="../../shared/assets/icons/app/icon48-white.png" alt=""><div><strong>MovieList</strong><small data-standby-i18n="standby_station">Кино на одной волне</small></div></div><div class="live-standby__clock"><time id="liveStandbyClock"></time><small id="liveStandbyZone"></small></div></div>
+                <div class="live-standby__content"><span class="live-standby__label" id="liveStandbyLabel">Канал ожидает программу</span><h2 id="liveEmptyTitle" aria-live="polite">Эфир пока не начался</h2><p id="liveEmptyText">Новые показы появятся здесь.</p><div id="liveStandbyCountdownWrap" hidden><small data-standby-i18n="standby_countdown">До следующего показа</small><div class="live-standby__countdown" id="liveStandbyCountdown" role="timer"></div></div><span class="live-standby__no-time" id="liveStandbyNoTime">Новых показов пока нет</span></div>
+                <div class="live-standby__bottom"><div class="live-standby__next" id="liveStandbyNext" hidden><img id="liveStandbyPoster" alt="" hidden><div><small id="liveStandbyNextTime"></small><strong id="liveStandbyNextName"></strong></div></div><button type="button" class="live-control" id="liveStandbyFullscreen" aria-label="Полный экран"></button></div>
+            </section>
+            <section class="live-standby-schedule" id="liveStandbySchedule" hidden><h2 id="liveStandbyScheduleTitle">Следующий показ</h2><div><time id="liveStandbyScheduleTime"></time><span><strong id="liveStandbyScheduleName"></strong><small id="liveStandbyScheduleMeta"></small></span><small data-standby-i18n="standby_automatic">Начнётся автоматически</small></div></section>
         </div>
     </main>
 
@@ -83,6 +87,7 @@
     <script defer src="../../shared/components/Navigation.js"></script>
     <script defer src="../../shared/services/CinemaChannelService.js"></script>
     <script defer src="../../shared/services/LiveRelayService.js"></script>
+    <script defer src="LiveStandby.js"></script>
     <script defer src="live.js"></script>
     <script defer src="../../shared/components/ReportWidget.js"></script>
 </body>

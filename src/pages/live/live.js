@@ -18,6 +18,8 @@
     let mountedKey = '';
     let clockTimer = null;
     let unsubscribe = null;
+    let standby = null;
+    let mediaEnded = null;
 
     // What the YouTube player reported about the mounted video. A video published
     // without a length still ends on time: { key, sec } is the learned length.
@@ -79,6 +81,19 @@
     // dynamic text because Navigation's translatePage() would overwrite it.
     let emptyKeys = null;
 
+    function playbackIdentity() {
+        return [channelKey(channel), channel?.playbackStartedAtMs ?? channel?.startedAtMs,
+            channel?.[channel?.mode]?.pausedAtSec].join('|');
+    }
+
+    function renderStandby() {
+        if (!standby || els.empty.hidden) return;
+        const at = window.CinemaChannel.now();
+        const next = window.CinemaChannel.nextScheduled(scheduleItems, at);
+        standby.render({ channel, position: channel ? currentPosition() : null, next, nowMs: at,
+            errorKeys: emptyKeys?.[0]?.startsWith('unavailable') ? emptyKeys : null });
+    }
+
     function showEmpty(titleKey, textKey) {
         els.screen.replaceChildren();
         els.stage.hidden = true;
@@ -92,6 +107,7 @@
         els.notice.hidden = true;
         setTitle(t('title'));
         mountedKey = '';
+        renderStandby();
     }
 
     function createFrame(src, title) {
@@ -114,6 +130,8 @@
      */
     function currentPosition() {
         const position = window.CinemaChannel.computePosition(channel);
+        if (mediaEnded && mediaEnded.identity !== playbackIdentity()) mediaEnded = null;
+        if (mediaEnded && ['live', 'paused'].includes(position.state)) return { state: 'ended', offsetSec: mediaEnded.atSec };
         if (channel?.mode !== 'youtube' || channel.youtube.live || channel.youtube.durationSec || position.state !== 'live') return position;
         const sec = ytInfo.key === channelKey(channel) ? ytInfo.endSec : 0;
         return sec > 0 && position.offsetSec >= sec ? { state: 'ended', offsetSec: sec } : position;
@@ -137,6 +155,14 @@
 
     /** What the embedded YouTube player page reports about the video. */
     function onYoutubeReport(data) {
+        if (data.type === 'BROADCAST_ENDED' && channel?.mode !== 'off'
+            && !(channel?.mode === 'youtube' && (channel.youtube.live || ytInfo.isLive))) {
+            if (Number.isFinite(Number(data.startMs)) && Math.abs(Number(data.startMs) - localStartMs()) > 2000) return;
+            const reported = Number(data.atSec);
+            mediaEnded = { identity: playbackIdentity(), atSec: Number.isFinite(reported) ? Math.max(0, reported) : window.CinemaChannel.computePosition(channel).offsetSec };
+            if (channel.mode === 'youtube') learnYoutubeLength(reported);
+            renderClock(); return;
+        }
         if (channel?.mode !== 'youtube') return;
         const key = channelKey(channel);
         if (ytInfo.key !== key) Object.assign(ytInfo, { key, duration: 0, isLive: false, endSec: 0 });
@@ -150,10 +176,6 @@
                 ytInfo.duration = duration;
                 learnYoutubeLength(duration);
             }
-        } else if (data.type === 'BROADCAST_ENDED') {
-            // Fallback end: the player itself says the video is over.
-            learnYoutubeLength(Number(data.atSec));
-            renderClock();
         } else if (data.type === 'BROADCAST_SOURCE_ERROR') {
             relay.sourceFailed = true;
             if (!maybeAutoRelay()) {
@@ -237,7 +259,8 @@
     function localStartMs() {
         const { CinemaChannel } = window;
         const position = CinemaChannel.computePosition(channel);
-        const serverStart = Number.isFinite(channel.startedAtMs) ? channel.startedAtMs : CinemaChannel.now() - position.offsetSec * 1000;
+        const anchor = channel.playbackStartedAtMs ?? channel.startedAtMs;
+        const serverStart = Number.isFinite(anchor) ? anchor : CinemaChannel.now() - position.offsetSec * 1000;
         return CinemaChannel.toLocalMs(serverStart);
     }
 
@@ -439,16 +462,18 @@
         const viewer = relay.viewer;
         relay.viewer = null;
         relay.video = null;
-        await viewer?.leave();
-        els.notice.hidden = true;
-        mountedKey = '';
-        if (channel) mountMedia(true);
-        renderRelayButtons();
+        try { await viewer?.leave(); } finally {
+            els.notice.hidden = true;
+            mountedKey = '';
+            if (channel) mountMedia(true);
+            renderRelayButtons();
+        }
     }
 
     /** Switch a stuck or failing viewer to the relay. Returns true when it did. */
     function maybeAutoRelay() {
         if (isAdmin || relay.watching || !relay.status.active || !channel || channel.mode === 'off') return false;
+        if (!['live', 'paused'].includes(currentPosition().state)) return false;
         const stuck = !playbackConfirmed && mediaMountedAt && Date.now() - mediaMountedAt > AUTO_RELAY_AFTER_MS;
         if (!relay.sourceFailed && !stuck) return false;
         enterRelay({ auto: true });
@@ -463,7 +488,7 @@
 
     function signatureOf(c) {
         const media = c?.[c?.mode];
-        return [c?.docPath, c?.mode, c?.startedAtMs, media?.pausedAtSec, media?.videoId || media?.kinopoiskId, media?.durationSec, c?.title].join('|');
+        return [c?.docPath, c?.mode, c?.startedAtMs, c?.endsAtMs, c?.playbackStartedAtMs, media?.pausedAtSec, media?.videoId || media?.kinopoiskId, media?.durationSec, c?.title].join('|');
     }
 
     function refreshChannel({ force = false } = {}) {
@@ -473,16 +498,26 @@
         const changed = signature !== channelSignature;
         if (!force && !changed) return;
         channelSignature = signature;
+        const previousKey = channelKey(channel);
         channel = next;
+        if (relay.watching && previousKey !== channelKey(channel)) {
+            leaveRelay().catch(error => console.warn('[Live] Relay transition failed:', error));
+            return;
+        }
         mountMedia();
         postBroadcastState();
         renderClock();
     }
 
     function renderClock() {
+        renderStandby();
         if (!channel || channel.mode === 'off') return;
         const { CinemaChannel } = window;
         const position = currentPosition();
+        if (relay.watching && !['live', 'paused'].includes(position.state)) {
+            leaveRelay().catch(error => console.warn('[Live] Relay slot ended:', error));
+            return;
+        }
         const isLiveStream = channel.mode === 'youtube' && channel.youtube.live;
         const playing = !els.stage.hidden;
 
@@ -626,6 +661,7 @@
         els.fullscreen = els.fullscreenBtn;
         els.relayHost = els.relayHostBtn;
         els.relayWatch = els.relayWatchBtn;
+        if (window.LiveStandby) standby = new window.LiveStandby(els.empty, t);
 
         try {
             const { i18n } = await import('../../shared/i18n/I18n.js');

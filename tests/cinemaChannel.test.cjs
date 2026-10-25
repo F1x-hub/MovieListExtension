@@ -122,7 +122,9 @@ test('schedule: planned shows start on their own and later starts supersede earl
 
 test('schedule rules: anyone reads planned shows, only admins plan them', () => {
     const rules = fs.readFileSync(path.join(__dirname, '../rules/firestore.rules'), 'utf8');
-    assert.match(rules, /match \/cinemaSchedule\/\{itemId\} \{\s*allow read: if true;\s*allow create, update: if isAdmin\(\)/);
+    assert.match(rules, /match \/cinemaSchedule\/\{itemId\} \{\s*allow read: if true;\s*allow create: if isAdmin\(\)/);
+    assert.match(rules, /allow delete: if isAdmin\(\) && cinemaScheduleRevisionAdvanced\(\)/);
+    assert.match(rules, /cinemaScheduleOccupancyUnchanged\(\) \|\| cinemaScheduleRevisionAdvanced\(\)/);
 });
 
 test('CinemaChannelService.control updates pause, seek, and resume for YouTube VOD and rejects live streams', async () => {
@@ -142,6 +144,8 @@ test('CinemaChannelService.control updates pause, seek, and resume for YouTube V
             youtube: { videoId: 'dQw4w9WgXcQ', live: false, durationSec: 200, pausedAtSec: null }
         };
         const makeRef = docPath => ({
+            id: docPath.split('/')[1],
+            docPath,
             async set(patch, opts) {
                 writes.push({ docPath, patch, opts });
                 docState = { ...docState, ...patch };
@@ -150,6 +154,20 @@ test('CinemaChannelService.control updates pause, seek, and resume for YouTube V
         const manager = {
             getCurrentUser: () => ({ uid: 'admin-1' }),
             db: {
+                async runTransaction(callback) {
+                    return callback({
+                        get: async ref => ({ id: ref.id, exists: true, data: () => docState }),
+                        update(ref, patch) {
+                            writes.push({ docPath: ref.docPath, patch });
+                            for (const [key, value] of Object.entries(patch)) {
+                                if (key.includes('.')) {
+                                    const [parent, field] = key.split('.');
+                                    docState[parent] = { ...docState[parent], [field]: value };
+                                } else docState[key] = value;
+                            }
+                        }
+                    });
+                },
                 collection(name) {
                     return {
                         doc(id) {

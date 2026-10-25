@@ -1250,6 +1250,13 @@ class MovieDetailsManager {
                 return;
             }
             // Reports from the player (this page or provider frames) go up to the live page.
+            if (type === 'BROADCAST_ENDED') {
+                const sourceFrame = [...(document.getElementById('videoContainer')?.querySelectorAll('iframe') || [])]
+                    .some(frame => frame.contentWindow === event.source);
+                const fromSelf = event.source === window && event.origin === window.location.origin;
+                if (lastState && (fromSelf || sourceFrame)) toParent({ type, atSec: Math.max(0, Number(event.data.atSec) || 0), startMs: Number(event.data.startMs) });
+                return;
+            }
             if (event.source !== window.parent && ['BROADCAST_MUTED', 'BROADCAST_PLAYING', 'BROADCAST_ADMIN_ACTION'].includes(type)) {
                 toParent(type === 'BROADCAST_ADMIN_ACTION' ? { type, action: event.data.action, atSec: Number(event.data.atSec) || 0 } : { type });
             }
@@ -12068,15 +12075,16 @@ class MovieDetailsManager {
             const start = Number.isSafeInteger(video.start) && video.start > 0
                 ? video.start
                 : (parsedYouTubeUrl?.startSeconds || 0);
-            embedUrl = typeof PlayerConfig !== 'undefined' && PlayerConfig.buildYouTubeEmbedUrl
-                ? PlayerConfig.buildYouTubeEmbedUrl(key, { autoplay: true, start })
+            // Our movie player over YouTube, not YouTube's own chrome.
+            embedUrl = typeof PlayerConfig !== 'undefined' && PlayerConfig.buildYouTubePlayerUrl
+                ? PlayerConfig.buildYouTubePlayerUrl(key, { start })
                 : `https://www.youtube-nocookie.com/embed/${encodeURIComponent(key)}?autoplay=1${start > 0 ? `&start=${start}` : ''}&rel=0`;
         } else if (video.videoUrl) {
             // If videoUrl is a YouTube URL, extract key for safe embed
             const ytMatch = video.videoUrl.match(/(?:youtube\.com\/(?:[^/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?/\s]+)/i);
             if (ytMatch && ytMatch[1]) {
-                embedUrl = typeof PlayerConfig !== 'undefined' && PlayerConfig.buildYouTubeEmbedUrl
-                    ? PlayerConfig.buildYouTubeEmbedUrl(ytMatch[1], { autoplay: true })
+                embedUrl = typeof PlayerConfig !== 'undefined' && PlayerConfig.buildYouTubePlayerUrl
+                    ? PlayerConfig.buildYouTubePlayerUrl(ytMatch[1])
                     : `https://www.youtube-nocookie.com/embed/${encodeURIComponent(ytMatch[1])}?autoplay=1&rel=0`;
             } else {
                 embedUrl = video.videoUrl;

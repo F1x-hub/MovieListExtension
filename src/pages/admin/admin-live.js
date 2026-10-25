@@ -38,12 +38,7 @@
             movieSearch: $('liveMovieSearch'), movieResults: $('liveMovieResults'), moviePreview: $('liveMoviePreview'),
             moviePoster: $('liveMoviePoster'), movieName: $('liveMovieName'), movieMeta: $('liveMovieMeta'),
             duration: $('liveMovieDurationInput'),
-            ytDuration: $('liveYoutubeDurationInput'),
-            startAt: $('liveStartAtInput'),
-            whenTime: form.querySelector('.live-when__time'),
-            tzHint: $('liveTimezoneHint'),
-            scheduleList: $('liveScheduleList'),
-            scheduleEmpty: $('liveScheduleEmpty')
+            ytDuration: $('liveYoutubeDurationInput')
         };
         const groups = form.querySelectorAll('[data-live-mode]');
         const draft = { youtube: null, movie: null };
@@ -52,18 +47,25 @@
         let current = null;
         let busy = false;
         let searchSeq = 0;
+        let planner = null;
 
-        const mode = () => form.querySelector('input[name="liveMode"]:checked')?.value || 'youtube';
-        const when = () => form.querySelector('input[name="liveWhen"]:checked')?.value || 'now';
-        // datetime-local is read in the admin's own time zone.
-        const plannedDate = () => (ui.startAt.value ? new Date(ui.startAt.value) : null);
+        const mode = () => form.querySelector('input[name="liveMode"]:checked')?.value || 'movie';
         let manual = null;
         let scheduleItems = [];
         let sweptOnce = false;
         const setStatus = (text, tone = '') => { ui.status.textContent = text; ui.status.dataset.tone = tone; };
-        const ready = () => (mode() === 'youtube' ? Boolean(draft.youtube) : Boolean(draft.movie))
-            && (when() === 'now' || Number.isFinite(plannedDate()?.getTime()));
-        const refreshStart = () => { ui.start.disabled = busy || !service || !ready(); };
+        const ready = () => {
+            if (!planner || (!planner.selected && !(mode() === 'youtube' ? draft.youtube : draft.movie))) return false;
+            try { const range = planner.range; return range.end - range.start >= 5 * 60_000; } catch { return false; }
+        };
+        const refreshStart = () => {
+            const saving = busy || planner?.busy;
+            for (const input of form.querySelectorAll('input, button')) input.disabled = Boolean(saving);
+            ui.stop.disabled = Boolean(saving);
+            ui.start.disabled = saving || !service || !ready();
+            ui.start.textContent = planner?.selected ? 'Применить время' : 'Добавить на дорожку';
+            ui.title.readOnly = Boolean(planner?.selected);
+        };
         const suggestTitle = value => { if (!titleTouched && value) ui.title.value = value; };
 
         // ---- «Сейчас в эфире» card -------------------------------------------------
@@ -85,7 +87,7 @@
             if (!channel || channel.mode === 'off') {
                 ui.nowState.textContent = 'Эфир выключен';
                 ui.nowTitle.textContent = 'Сейчас ничего не идёт';
-                ui.nowMeta.textContent = 'Выберите источник ниже и запустите показ.';
+                ui.nowMeta.textContent = 'Добавьте передачу в программу ниже.';
                 return;
             }
             const live = channel.mode === 'youtube' && channel.youtube.live;
@@ -106,111 +108,10 @@
             refreshStart();
         };
         form.addEventListener('change', event => {
-            if (event.target.name === 'liveMode') syncGroups();
-            if (event.target.name === 'liveWhen') syncWhen();
+            if (event.target.name === 'liveMode') { syncGroups(); syncPlannerSource(); }
         });
 
-        function toLocalInputValue(date) {
-            const pad = n => String(n).padStart(2, '0');
-            return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-        }
-
-        function syncWhen() {
-            const later = when() === 'later';
-            ui.whenTime.hidden = !later;
-            ui.start.textContent = later ? 'Добавить в расписание' : 'Запустить эфир';
-            if (later && !ui.startAt.value) {
-                // Default: the next full hour.
-                const next = new Date(Date.now() + 3600_000);
-                next.setMinutes(0, 0, 0);
-                ui.startAt.value = toLocalInputValue(next);
-            }
-            ui.startAt.min = toLocalInputValue(new Date());
-            refreshStart();
-        }
-        ui.startAt.addEventListener('input', refreshStart);
-        try {
-            const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-            const offsetMin = -new Date().getTimezoneOffset();
-            const sign = offsetMin >= 0 ? '+' : '−';
-            const hours = Math.floor(Math.abs(offsetMin) / 60);
-            const minutes = Math.abs(offsetMin) % 60;
-            ui.tzHint.textContent = `— по вашему времени (${zone}, UTC${sign}${hours}${minutes ? `:${String(minutes).padStart(2, '0')}` : ''})`;
-        } catch { ui.tzHint.textContent = '— по вашему времени'; }
-
-        // ---- Schedule list --------------------------------------------------------
-        const dayFormat = new Intl.DateTimeFormat('ru-RU', { weekday: 'short', day: 'numeric', month: 'short' });
-        const timeFormat = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' });
-
-        function scheduleStateText(item) {
-            const position = computePosition(item);
-            if (position.state === 'upcoming') {
-                const minutes = Math.ceil(position.offsetSec / 60);
-                return minutes < 60 ? `Через ${minutes} мин` : `Через ${Math.floor(minutes / 60)} ч ${minutes % 60 ? `${minutes % 60} мин` : ''}`.trim();
-            }
-            if (position.state === 'ended') return 'Завершён';
-            if (current && current.docPath === item.docPath) return position.state === 'paused' ? 'На паузе' : 'В эфире';
-            return 'Перекрыт более поздним показом';
-        }
-
-        function renderSchedule() {
-            ui.scheduleEmpty.hidden = scheduleItems.length > 0;
-            ui.scheduleList.replaceChildren(...scheduleItems.map(item => {
-                const position = computePosition(item);
-                const li = document.createElement('li');
-                li.className = 'live-schedule__item';
-                li.dataset.state = current?.docPath === item.docPath && position.state !== 'ended' ? 'live' : position.state;
-
-                const whenEl = document.createElement('span');
-                whenEl.className = 'live-schedule__when';
-                const time = document.createElement('strong');
-                const start = new Date(item.startedAtMs);
-                time.textContent = timeFormat.format(start);
-                const day = document.createElement('small');
-                day.textContent = dayFormat.format(start);
-                whenEl.append(time, day);
-
-                const cover = document.createElement('span');
-                cover.className = `live-schedule__cover${item.mode === 'movie' ? ' is-poster' : ''}`;
-                const url = coverUrl(item);
-                if (url) cover.style.backgroundImage = `url("${url.replace(/"/g, '%22')}")`;
-
-                const info = document.createElement('span');
-                info.className = 'live-schedule__info';
-                const name = document.createElement('strong');
-                name.textContent = item.title || (item.mode === 'youtube' ? 'Видео YouTube' : `Фильм #${item.movie.kinopoiskId}`);
-                const meta = document.createElement('small');
-                const length = item[item.mode]?.durationSec;
-                const kind = item.mode === 'youtube' ? (item.youtube.live ? 'YouTube · трансляция' : 'YouTube') : 'Фильм';
-                meta.textContent = [kind, length ? formatClock(length) : '', scheduleStateText(item)].filter(Boolean).join(' · ');
-                info.append(name, meta);
-
-                const remove = document.createElement('button');
-                remove.type = 'button';
-                remove.className = 'btn btn-secondary btn-sm';
-                remove.textContent = 'Удалить';
-                remove.addEventListener('click', async () => {
-                    const live = li.dataset.state === 'live';
-                    const confirmed = window.ConfirmDialog
-                        ? await window.ConfirmDialog.confirm({
-                            title: 'Удалить из расписания?',
-                            message: live ? 'Этот показ сейчас идёт — у зрителей он сразу прекратится.' : `«${name.textContent}» не начнётся.`,
-                            confirmLabel: 'Удалить',
-                            danger: true
-                        })
-                        : true;
-                    if (!confirmed) return;
-                    remove.disabled = true;
-                    try { await service.unschedule(item.id); } catch (error) {
-                        remove.disabled = false;
-                        setStatus(error?.code === 'permission-denied' ? 'Нет прав на изменение расписания.' : 'Не удалось удалить показ.', 'error');
-                    }
-                });
-
-                li.append(whenEl, cover, info, remove);
-                return li;
-            }));
-        }
+        function renderSchedule() { planner?.setItems(scheduleItems, current); }
 
         function resolveCurrent() {
             if (!manual) return;
@@ -282,6 +183,7 @@
                 ui.ytLive.checked = true;
                 if (ui.ytDuration.value === autoDuration) ui.ytDuration.value = autoDuration = '';
                 setStatus('Это прямая трансляция: эфир не завершится сам, остановите его вручную или укажите длительность.');
+                syncPlannerSource();
                 return;
             }
             if (result.duration > 0) {
@@ -291,7 +193,8 @@
                 if (!ui.ytDuration.value || ui.ytDuration.value === autoDuration) {
                     ui.ytDuration.value = autoDuration = minutes;
                 }
-                setStatus(`Длительность видео: ${formatClock(result.duration)} — эфир завершится сам.`, 'success');
+                setStatus(`Длительность видео: ${formatClock(result.duration)}. Время в программе задаётся отдельно.`, 'success');
+                syncPlannerSource();
                 return;
             }
             setStatus('Длительность не определилась (возможно, это запланированная трансляция). Эфир завершится по окончании видео или вручную.');
@@ -320,6 +223,7 @@
             const raw = ui.ytInput.value.trim();
             const info = raw && typeof Utils !== 'undefined' ? Utils.extractYouTubeVideoInfo(raw) : null;
             draft.youtube = info ? { id: info.id } : null;
+            syncPlannerSource();
             ui.ytPreview.hidden = !info;
             ui.ytInput.setAttribute('aria-invalid', String(Boolean(raw) && !info));
             refreshStart();
@@ -341,6 +245,7 @@
                 ui.ytLive.checked = true;
             }
             ui.ytName.textContent = 'Видео YouTube';
+            syncPlannerSource();
             try {
                 const response = await fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(`https://www.youtube.com/watch?v=${info.id}`)}`);
                 if (!response.ok || draft.youtube?.id !== info.id) return;
@@ -348,6 +253,7 @@
                 if (meta?.title) {
                     ui.ytName.textContent = meta.title;
                     suggestTitle(meta.title);
+                    syncPlannerSource();
                 }
             } catch { /* oEmbed is a nicety; the id alone is enough to broadcast */ }
         }, 250);
@@ -362,8 +268,9 @@
             ui.moviePoster.hidden = !movie.posterUrl;
             ui.movieName.textContent = movie.name;
             ui.movieMeta.textContent = [movie.year || '', `KP ${movie.kinopoiskId}`].filter(Boolean).join(' · ');
-            if (movie.duration > 0 && !ui.duration.value) ui.duration.value = String(movie.duration);
+            ui.duration.value = movie.duration > 0 ? String(movie.duration) : '';
             suggestTitle(movie.name);
+            syncPlannerSource();
             refreshStart();
         }
 
@@ -394,6 +301,7 @@
             const seq = ++searchSeq;
             draft.movie = null;
             ui.moviePreview.hidden = true;
+            syncPlannerSource();
             refreshStart();
             if (query.length < 2) { ui.movieResults.replaceChildren(); return; }
             const kp = typeof KinopoiskService !== 'undefined' ? new KinopoiskService() : null;
@@ -429,48 +337,104 @@
         ui.movieSearch.addEventListener('input', searchMovies);
 
         // ---- Publish -------------------------------------------------------------
-        async function publish(input, doneText, startDate = null) {
-            if (!service) return;
-            busy = true;
-            refreshStart();
-            ui.stop.disabled = true;
-            setStatus('Сохраняем…');
+        function syncPlannerSource() {
+            if (!planner || busy || planner.busy) return;
+            const youtube = mode() === 'youtube';
+            const item = youtube ? draft.youtube : draft.movie;
+            const rawLength = Number(youtube ? ui.ytDuration.value : ui.duration.value);
+            planner.setDraft(item ? {
+                key: `${mode()}:${youtube ? item.id : item.kinopoiskId}`,
+                mode: mode(), title: youtube ? ui.ytName.textContent : item.name,
+                cover: youtube ? ui.ytThumb.src : item.posterUrl,
+                durationSec: Number.isFinite(rawLength) && rawLength > 0 ? Math.round(rawLength * 60) : 0
+            } : null);
+        }
+        async function confirmTiming(item, start, end) {
+            const nowMs = window.CinemaChannel.now();
+            const running = item.docPath === current?.docPath && ['live', 'paused'].includes(computePosition(current).state);
+            if (!running && !(start.getTime() <= nowMs && end.getTime() > nowMs)) return true;
+            return window.ConfirmDialog ? window.ConfirmDialog.confirm({
+                title: 'Изменить текущую программу?',
+                message: 'Изменение времени может переключить показ у всех зрителей.',
+                confirmLabel: 'Изменить'
+            }) : true;
+        }
+        planner = new window.LiveSchedulePlanner({
+            onStatus: setStatus,
+            onRange: refreshStart,
+            onAdd: () => {
+                ui.movieSearch.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+                (mode() === 'movie' ? ui.movieSearch : ui.ytInput).focus({ preventScroll: true });
+            },
+            onSelect: item => {
+                titleTouched = false;
+                if (!item) {
+                    ui.title.readOnly = false;
+                    ui.title.value = mode() === 'youtube' ? (draft.youtube ? ui.ytName.textContent : '') : (draft.movie?.name || '');
+                    refreshStart(); return;
+                }
+                form.querySelector(`input[name="liveMode"][value="${item.mode}"]`).checked = true;
+                ui.title.value = item.title || ''; ui.title.readOnly = true;
+                if (item.mode === 'youtube') {
+                    draft.youtube = { id: item.youtube.videoId };
+                    ui.ytInput.value = `https://www.youtube.com/watch?v=${item.youtube.videoId}`;
+                    ui.ytName.textContent = item.title || 'Видео YouTube';
+                    ui.ytThumb.src = coverUrl(item); ui.ytPreview.hidden = false;
+                    ui.ytDuration.value = item.youtube.durationSec ? String(item.youtube.durationSec / 60) : '';
+                    ui.ytLive.checked = item.youtube.live;
+                } else {
+                    draft.movie = { kinopoiskId: item.movie.kinopoiskId, name: item.title, posterUrl: item.movie.posterUrl, duration: item.movie.durationSec / 60 };
+                    ui.movieName.textContent = item.title; ui.moviePoster.src = item.movie.posterUrl || '';
+                    ui.moviePoster.hidden = !item.movie.posterUrl; ui.moviePreview.hidden = false;
+                    ui.movieMeta.textContent = `KP ${item.movie.kinopoiskId}`;
+                    ui.duration.value = item.movie.durationSec ? String(item.movie.durationSec / 60) : '';
+                }
+                syncGroups();
+            },
+            onChange: async (item, start, end) => {
+                if (!service) throw new Error('Firebase недоступен — время нельзя сохранить.');
+                if (!await confirmTiming(item, start, end)) return null;
+                const saved = await service.updateSchedule(item, start, end);
+                setStatus('Время показа сохранено.', 'success'); return saved;
+            },
+            onRemove: async item => {
+                if (!service) throw new Error('Firebase недоступен — показ нельзя удалить.');
+                const confirmed = window.ConfirmDialog ? await window.ConfirmDialog.confirm({
+                    title: 'Убрать показ из программы?', message: item.docPath === current?.docPath ? 'Текущий показ у зрителей завершится.' : `«${item.title}» не начнётся.`,
+                    confirmLabel: 'Убрать', danger: true
+                }) : true;
+                if (!confirmed) return false;
+                await service.unschedule(item.id); setStatus('Показ убран из программы.', 'success'); return true;
+            }
+        });
+        for (const input of [ui.duration, ui.ytDuration]) input.addEventListener('input', syncPlannerSource);
+        ui.ytLive.addEventListener('change', syncPlannerSource);
+
+        async function publish(input, doneText, startDate = null, endDate = null) {
+            if (!service || busy) return;
+            busy = true; refreshStart(); setStatus('Сохраняем…'); let saved;
             try {
-                if (startDate) await service.schedule(input, startDate);
-                else await service.save(input, { restart: true });
+                saved = startDate ? await service.schedule(input, startDate, endDate) : await service.save(input, { restart: true });
                 setStatus(doneText, 'success');
             } catch (error) {
-                setStatus(error?.code === 'permission-denied'
-                    ? 'Нет прав: запускать эфир может только администратор.'
-                    : (error?.message || 'Не удалось сохранить эфир.'), 'error');
-            } finally {
-                busy = false;
-                ui.stop.disabled = false;
-                refreshStart();
-            }
+                setStatus(error?.code === 'permission-denied' ? 'Нет прав или правила Firestore ещё не обновлены для нового расписания.' : error.message || 'Не удалось сохранить эфир.', 'error');
+            } finally { busy = false; refreshStart(); }
+            if (saved?.id) { planner.items = [...scheduleItems.filter(item => item.id !== saved.id), saved]; planner.select(saved); }
         }
 
         form.addEventListener('submit', event => {
-            event.preventDefault();
-            if (!ready()) return;
-            const isYoutube = mode() === 'youtube';
-            const startDate = when() === 'later' ? plannedDate() : null;
-            const doneText = startDate
-                ? `Добавлено в расписание: ${dayFormat.format(startDate)}, ${timeFormat.format(startDate)}.`
-                : 'Эфир запущен — зрители уже видят его.';
-            publish(isYoutube ? {
-                mode: 'youtube',
-                title: ui.title.value || ui.ytName.textContent,
+            event.preventDefault(); if (!ready() || busy || planner.busy) return;
+            const range = planner.range;
+            if (planner.selected) { planner.saveRange(planner.selected, range.start, range.end); return; }
+            const youtube = mode() === 'youtube';
+            publish(youtube ? {
+                mode: 'youtube', title: ui.title.value || ui.ytName.textContent,
                 youtubeUrl: `https://www.youtube.com/watch?v=${draft.youtube.id}`,
-                youtubeLive: ui.ytLive.checked,
-                durationMin: ui.ytDuration.value
+                youtubeLive: ui.ytLive.checked, durationMin: ui.ytDuration.value
             } : {
-                mode: 'movie',
-                title: ui.title.value || draft.movie.name,
-                kinopoiskId: draft.movie.kinopoiskId,
-                durationMin: ui.duration.value,
-                posterUrl: draft.movie.posterUrl
-            }, doneText, startDate);
+                mode: 'movie', title: ui.title.value || draft.movie.name, kinopoiskId: draft.movie.kinopoiskId,
+                durationMin: ui.duration.value, posterUrl: draft.movie.posterUrl
+            }, 'Передача добавлена в программу.', range.start, range.end);
         });
 
         ui.stop.addEventListener('click', async () => {
@@ -481,7 +445,7 @@
         });
 
         syncGroups();
-        syncWhen();
+
         renderNow();
 
         waitForFirebase().then(manager => {
@@ -498,15 +462,16 @@
                     sweptOnce = true;
                     service.sweepFinished(items).catch(() => {});
                 }
-            }, error => console.warn('[AdminLive] Schedule read failed:', error));
+            }, error => { console.warn('[AdminLive] Schedule read failed:', error); setStatus('Не удалось загрузить программу эфира. Проверьте соединение.', 'error'); });
             // The «now» card ticks every second; the list only needs a periodic refresh
             // (rebuilding it each second would steal focus from its buttons).
             setInterval(() => {
                 if (!manual) return;
                 current = resolveChannel(manual, scheduleItems);
                 renderNow();
+                planner.tick();
             }, 1000);
-            setInterval(renderSchedule, 30000);
+
         }).catch(() => setStatus('Firebase недоступен — эфир сейчас нельзя изменить.', 'error'));
     }
 

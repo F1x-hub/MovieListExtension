@@ -631,16 +631,29 @@
                                 </div>
                             </section>
 
-                            <form class="live-editor" id="liveChannelForm" novalidate>
-                                <h3 class="live-editor__heading">Новый показ</h3>
+                            <section class="live-planner" aria-label="Программа эфира">
+                                <div class="live-planner__heading"><div><h3>Программа эфира</h3><p>Добавляйте передачи и расставляйте их по времени.</p></div><button type="button" class="btn btn-primary" id="livePlannerAdd">Добавить передачу</button></div>
+                                <div class="live-planner__surface">
+                                    <div class="live-planner__toolbar">
+                                        <div class="live-planner__date"><button type="button" class="btn btn-secondary" id="livePlannerPrev" aria-label="Предыдущий день">‹</button><input id="livePlannerDate" class="admin-input" type="date" aria-label="День программы"><button type="button" class="btn btn-secondary" id="livePlannerNext" aria-label="Следующий день">›</button></div>
+                                        <div class="live-planner__tools"><button type="button" class="btn btn-secondary" id="livePlannerToday">Сегодня</button><button type="button" class="btn btn-secondary" id="livePlannerNow">Сейчас</button><label class="live-planner__zoom">Масштаб<select id="livePlannerZoom" aria-label="Масштаб программы"><option value="24">24 часа</option><option value="12">12 часов</option><option value="6">6 часов</option></select></label></div>
+                                    </div>
+                                    <div class="live-planner__scroll" id="livePlannerScroll"><div class="live-planner__canvas" id="livePlannerCanvas"><div class="live-planner__ruler" id="livePlannerRuler"></div><div class="live-planner__track" id="livePlannerTrack" aria-label="Дорожка передач"></div><div class="live-planner__now" id="livePlannerLine" hidden><span></span></div></div></div>
+                                    <div class="live-planner__legend"><span>Переносите блоки через соседние передачи. Пустой промежуток — заставка.</span><span id="livePlannerStats"></span></div>
+                                </div>
+                            </section>
+
+                            <form class="live-editor live-workspace" id="liveChannelForm" novalidate>
+                              <section class="live-library">
+                                <h3 class="live-editor__heading">Что поставим в эфир?</h3>
                                 <div class="live-source-picker" role="radiogroup" aria-label="Источник показа">
                                     <label class="live-source">
-                                        <input type="radio" name="liveMode" value="youtube" checked>
+                                        <input type="radio" name="liveMode" value="youtube">
                                         <span class="live-source__icon"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"></path><polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon></svg></span>
                                         <span class="live-source__text"><strong>YouTube</strong><small>Видео или прямая трансляция по ссылке</small></span>
                                     </label>
                                     <label class="live-source">
-                                        <input type="radio" name="liveMode" value="movie">
+                                        <input type="radio" name="liveMode" value="movie" checked>
                                         <span class="live-source__icon"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line></svg></span>
                                         <span class="live-source__text"><strong>Фильм</strong><small>Из каталога, через наш плеер</small></span>
                                     </label>
@@ -657,7 +670,7 @@
                                             <strong id="liveYoutubeName">Видео YouTube</strong>
                                             <label class="live-switch"><input id="liveYoutubeLive" type="checkbox"><span class="live-switch__track" aria-hidden="true"></span>Прямая трансляция — без перемотки</label>
                                             <label class="admin-form-field live-duration" for="liveYoutubeDurationInput">
-                                                <span>Длительность, мин</span>
+                                                <span>Длительность видео, мин</span>
                                                 <input id="liveYoutubeDurationInput" class="admin-input" type="text" inputmode="decimal" autocomplete="off" placeholder="Необязательно">
                                             </label>
                                         </div>
@@ -676,41 +689,34 @@
                                             <strong id="liveMovieName"></strong>
                                             <span class="live-preview__meta" id="liveMovieMeta"></span>
                                             <label class="admin-form-field live-duration" for="liveMovieDurationInput">
-                                                <span>Длительность, мин</span>
+                                                <span>Длительность фильма, мин</span>
                                                 <input id="liveMovieDurationInput" class="admin-input" type="text" inputmode="decimal" autocomplete="off" placeholder="136">
                                             </label>
                                         </div>
                                     </div>
                                 </div>
 
+                              </section>
+                              <section class="live-inspector">
+                                <div class="live-inspector__heading"><h3 class="live-editor__heading">Время в эфире</h3><span id="liveSelectionBadge">Новый показ</span></div>
+                                <div class="live-inspector__selection"><img id="liveSelectedPoster" alt="" hidden><div><strong id="liveSelectedName">Выберите передачу слева</strong><small id="liveSelectedMeta">Фильм из каталога или видео YouTube</small></div></div>
                                 <label class="admin-form-field" for="liveTitleInput">
                                     <span>Название показа</span>
                                     <input id="liveTitleInput" class="admin-input" type="text" maxlength="120" autocomplete="off" placeholder="Подставится из видео или фильма">
                                 </label>
 
-                                <fieldset class="live-when">
-                                    <legend>Когда начать</legend>
-                                    <div class="live-when__options" role="radiogroup">
-                                        <label class="live-when__option"><input type="radio" name="liveWhen" value="now" checked> Сейчас</label>
-                                        <label class="live-when__option"><input type="radio" name="liveWhen" value="later"> По расписанию</label>
-                                    </div>
-                                    <label class="admin-form-field live-when__time" for="liveStartAtInput" hidden>
-                                        <span>Дата и время начала <small id="liveTimezoneHint"></small></span>
-                                        <input id="liveStartAtInput" class="admin-input" type="datetime-local" step="60">
-                                    </label>
-                                </fieldset>
+                                <div class="live-slot-range"><label class="admin-form-field" for="liveSlotStart"><span>Начало</span><input id="liveSlotStart" class="admin-input" type="time" step="60"></label><label class="admin-form-field" for="liveSlotEnd"><span>Конец</span><input id="liveSlotEnd" class="admin-input" type="time" step="60"></label></div>
+                                <p class="live-slot-meta"><span id="livePlannerTimezone"></span><strong id="liveSlotDuration"></strong></p>
+                                <p class="live-slot-help">Конец раньше начала или в 00:00 — следующие сутки.</p>
+                                <p class="live-slot-note" id="liveSlotNote"></p>
 
                                 <div class="live-editor__footer">
                                     <p class="live-channel-status" id="liveChannelStatus" role="status" aria-live="polite"></p>
-                                    <button type="submit" class="btn btn-primary" id="liveStartBtn" disabled>Запустить эфир</button>
+                                    <button type="button" class="btn btn-secondary" id="liveDeleteShowBtn" hidden>Убрать из программы</button>
+                                    <button type="submit" class="btn btn-primary" id="liveStartBtn" disabled>Добавить на дорожку</button>
                                 </div>
+                              </section>
                             </form>
-
-                            <section class="live-schedule" aria-labelledby="liveScheduleHeading">
-                                <h3 class="live-editor__heading" id="liveScheduleHeading">Расписание</h3>
-                                <p class="live-schedule__empty" id="liveScheduleEmpty">Запланированных показов нет. Выберите «По расписанию» выше, чтобы добавить.</p>
-                                <ol class="live-schedule__list" id="liveScheduleList"></ol>
-                            </section>
                         </div>
 
                         <!-- Comment Reactions Pane -->
@@ -1008,6 +1014,8 @@
     <script src="../../shared/services/player/ProPlayerPreferences.js"></script>
     <script src="../../shared/config/player.config.js"></script>
     <script src="../../shared/services/CinemaChannelService.js"></script>
+    <script src="../../shared/utils/Icons.js"></script>
+    <script src="LiveSchedulePlanner.js"></script>
     <script src="admin.js"></script>
     <script src="admin-live.js"></script>
     <script defer src="../../shared/components/ReportWidget.js"></script>

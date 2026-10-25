@@ -9,7 +9,10 @@
  * This page also reports what only YouTube knows: the video length (so a show
  * published without one still ends), live streams, the end and load errors.
  *
- * URL: youtube-player.html?v=<id>&start=<sec>&live=0|1
+ * With standalone=1 (trailers, the official YouTube source on the movie page)
+ * there is no broadcast: the page plays on its own and reports nothing.
+ *
+ * URL: youtube-player.html?v=<id>&start=<sec>&live=0|1[&standalone=1]
  */
 (function () {
     'use strict';
@@ -18,9 +21,10 @@
     const videoId = params.get('v') || '';
     const startSec = Math.max(0, Math.floor(Number(params.get('start')) || 0));
     const liveStream = params.get('live') === '1';
+    const standalone = params.get('standalone') === '1';
 
     function toParent(message) {
-        if (window.parent === window) return;
+        if (standalone || window.parent === window) return;
         try { window.parent.postMessage(message, window.location.origin); } catch { /* not embedded */ }
     }
 
@@ -66,8 +70,9 @@
         video.className = 'player-surface__media';
         video.playsInline = true;
         // The broadcast lock only moves media with a known length; a stream is
-        // always «now», so it simply plays (muted if the browser insists).
-        if (liveStream) {
+        // always «now», so it simply plays (muted if the browser insists). Without
+        // a broadcast (standalone) any video just starts.
+        if (liveStream || standalone) {
             video.addEventListener('canplay', () => {
                 if (!video.paused) return;
                 video.play().catch(() => {
@@ -105,10 +110,12 @@
             }
         });
         window.addEventListener('pagehide', () => media.destroy(), { once: true });
-        // Esc must not close the only thing on screen.
-        window.addEventListener('keydown', event => {
-            if (event.key === 'Escape') { event.stopImmediatePropagation(); event.preventDefault(); }
-        }, true);
+        // Esc must not close the only thing on screen (on the movie page it closes the trailer).
+        if (!standalone) {
+            window.addEventListener('keydown', event => {
+                if (event.key === 'Escape') { event.stopImmediatePropagation(); event.preventDefault(); }
+            }, true);
+        }
 
         // The movie player puts its own wrapper in fullscreen, but the picture is
         // the YouTube layer beside it: take the whole page instead.

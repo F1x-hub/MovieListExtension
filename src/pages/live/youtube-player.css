@@ -49,3 +49,9 @@ body {
 body.has-source-error .yt-player-host {
     display: none;
 }
+
+/* One video, never a series: the movie player's episode arrows do not apply. */
+.yt-player-host .player-control-dock .player-control-button[data-player-episode-action],
+.yt-player-host .player-control-dock .player-control-button.provider-native-episode-nav {
+    display: none !important;
+}
