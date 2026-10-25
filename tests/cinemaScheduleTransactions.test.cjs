@@ -249,23 +249,22 @@ test('delayed duration probe preserves pause; legacy bound changes participate i
     assert.equal(legacy.read(STATE).revision, 1);
 });
 
-test('a stale manual duration probe only merges the learned field and cannot restore its old pause', async () => {
-    const patches = [];
+test('manual duration probes preserve a fresh pause and reject another video or playback generation', async () => {
     const raw = { mode: 'youtube', startedAt: at(0), youtube: { videoId: 'dQw4w9WgXcQ', live: false, durationSec: 0, pausedAtSec: null } };
     const beforePause = normalizeChannel(raw);
-    raw.youtube.pausedAtSec = 15;
-    const service = new CinemaChannelService({
-        getCurrentUser: () => ({ uid: 'admin' }),
-        db: { collection: () => ({ doc: () => ({ async set(patch, options) {
-            assert.equal(options.merge, true);
-            patches.push(patch);
-            raw.youtube = { ...raw.youtube, ...patch.youtube };
-        } }) }) }
-    });
-    assert.equal(await service.setYoutubeDuration(beforePause, 120), true);
-    assert.deepEqual(patches[0].youtube, { durationSec: 120 });
-    assert.equal(raw.youtube.pausedAtSec, 15);
-    assert.equal(raw.youtube.videoId, 'dQw4w9WgXcQ');
+    const store = database({ 'settings/cinemaChannel': { ...raw, youtube: { ...raw.youtube, pausedAtSec: 15 } } });
+    assert.equal(await store.service.setYoutubeDuration(beforePause, 120), true);
+    assert.equal(store.read('settings/cinemaChannel').youtube.pausedAtSec, 15);
+    assert.equal(store.read('settings/cinemaChannel').youtube.videoId, 'dQw4w9WgXcQ');
+    assert.equal(store.read('settings/cinemaChannel').youtube.durationSec, 120);
+    store.put('settings/cinemaChannel', { ...raw, youtube: { ...raw.youtube, videoId: 'abcdefghijk' } });
+    const otherVideo = store.read('settings/cinemaChannel');
+    assert.equal(await store.service.setYoutubeDuration(beforePause, 99), false);
+    assert.deepEqual(store.read('settings/cinemaChannel'), otherVideo);
+    store.put('settings/cinemaChannel', { ...raw, startedAt: at(1) });
+    assert.equal(await store.service.setYoutubeDuration(beforePause, 99), false);
+    assert.equal(store.read('settings/cinemaChannel').youtube.durationSec, 0);
+    assert.equal(store.read(STATE), undefined);
 });
 
 test('bounded queries reject >500 entries without partial writes and still allow cleanup', async () => {

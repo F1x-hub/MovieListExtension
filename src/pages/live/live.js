@@ -82,7 +82,8 @@
     let emptyKeys = null;
 
     function playbackIdentity() {
-        return [channelKey(channel), channel?.playbackStartedAtMs ?? channel?.startedAtMs,
+        const anchor = Number.isFinite(channel?.playbackStartedAtMs) ? channel.playbackStartedAtMs : channel?.startedAtMs;
+        return [channelKey(channel), anchor,
             channel?.[channel?.mode]?.pausedAtSec].join('|');
     }
 
@@ -221,7 +222,7 @@
         if (position.state === 'upcoming') {
             showEmpty('upcoming_title', 'upcoming_text');
             mountedKey = `upcoming:${key}`;
-            els.clock.hidden = false;
+            els.clock.hidden = Boolean(standby);
             return;
         }
 
@@ -259,7 +260,7 @@
     function localStartMs() {
         const { CinemaChannel } = window;
         const position = CinemaChannel.computePosition(channel);
-        const anchor = channel.playbackStartedAtMs ?? channel.startedAtMs;
+        const anchor = Number.isFinite(channel.playbackStartedAtMs) ? channel.playbackStartedAtMs : channel.startedAtMs;
         const serverStart = Number.isFinite(anchor) ? anchor : CinemaChannel.now() - position.offsetSec * 1000;
         return CinemaChannel.toLocalMs(serverStart);
     }
@@ -524,7 +525,7 @@
         els.badge.hidden = position.state !== 'live' && position.state !== 'paused';
         setText(els.badgeText, position.state === 'paused' ? t('badge_paused') : t('badge_live'));
         els.badge.classList.toggle('is-paused', position.state === 'paused');
-        els.clock.hidden = isLiveStream || (!playing && position.state !== 'upcoming');
+        els.clock.hidden = isLiveStream || (!playing && (Boolean(standby) || position.state !== 'upcoming'));
         renderSound();
 
         if (position.state === 'paused') {

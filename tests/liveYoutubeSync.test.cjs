@@ -57,6 +57,8 @@ function createChannelBus(initialChannel, initialSchedule = {}) {
         },
         makeManager({ uid = null, isAdmin = false } = {}) {
             const channelRef = {
+                id: 'cinemaChannel',
+                get: async () => ({ id: 'cinemaChannel', exists: Boolean(currentDoc), data: () => structuredClone(currentDoc) }),
                 onSnapshot(onNext) {
                     channelSubs.add(onNext);
                     queueMicrotask(() => onNext({ exists: Boolean(currentDoc), data: () => structuredClone(currentDoc) }));
@@ -73,6 +75,17 @@ function createChannelBus(initialChannel, initialSchedule = {}) {
                         merged.youtube = { ...(currentDoc?.youtube || {}), ...patch.youtube };
                     }
                     currentDoc = merged;
+                    notify();
+                },
+                async update(patch) {
+                    writes.push({ uid, patch: structuredClone(patch) });
+                    if (writeGate) await writeGate;
+                    for (const [key, value] of Object.entries(patch)) {
+                        if (key.includes('.')) {
+                            const [parent, field] = key.split('.');
+                            currentDoc[parent] = { ...currentDoc[parent], [field]: structuredClone(value) };
+                        } else currentDoc[key] = structuredClone(value);
+                    }
                     notify();
                 }
             };
@@ -347,9 +360,9 @@ test('YouTube video without a stored length ends by itself: admin stores the pla
         await wait(30);
         admin.emitFrame({ type: 'BROADCAST_MEDIA_INFO', isLive: false, durationSec: 120.4 });
         await wait(30);
-        const lengthWrites = bus.writes.filter(w => w.patch.youtube?.durationSec);
+        const lengthWrites = bus.writes.filter(w => w.patch['youtube.durationSec']);
         assert.equal(lengthWrites.length, 1, 'stored once');
-        assert.equal(lengthWrites[0].patch.youtube.durationSec, 121);
+        assert.equal(lengthWrites[0].patch['youtube.durationSec'], 121);
         assert.equal(bus.getDoc().youtube.videoId, 'dQw4w9WgXcQ');
 
         await wait(1100);
@@ -415,6 +428,104 @@ test('a YouTube video that cannot play shows the notice', async () => {
     } finally {
         viewer.close();
     }
+});
+
+const FIXED_NOW = Math.floor(Date.now() / 1000) * 1000;
+const scheduleDoc = (mode, start, end, extra = {}) => ({
+    mode, title: mode === 'movie' ? 'Фильм в программе' : 'YouTube в программе',
+    startedAt: new Date(start), endsAt: new Date(end),
+    movie: mode === 'movie' ? { kinopoiskId: 301, durationSec: 1800, posterUrl: '', pausedAtSec: null } : null,
+    youtube: mode === 'youtube' ? { videoId: 'dQw4w9WgXcQ', live: false, durationSec: 1800, pausedAtSec: null } : null,
+    ...extra
+});
+const manualOff = () => ({ mode: 'off', startedAt: new Date(FIXED_NOW - 7200_000) });
+
+test('scheduled anchor moves playback in place while startedAt/endsAt remain fixed, including a paused end cutoff', async () => {
+    const clock = { now: FIXED_NOW };
+    const slot = scheduleDoc('movie', FIXED_NOW - 600_000, FIXED_NOW + 600_000, { playbackStartedAt: new Date(FIXED_NOW - 120_000) });
+    const bus = createChannelBus(manualOff(), { current: slot });
+    const viewer = await mountLiveClient(bus, { clock });
+    try {
+        const frame = viewer.frame();
+        assert.ok(frame);
+        assert.equal(new URL(frame.src).searchParams.get('broadcastStart'), String(FIXED_NOW - 120_000));
+        viewer.emitFrame({ type: 'BROADCAST_READY' });
+        assert.equal(stateMessages(viewer).at(-1).startMs, FIXED_NOW - 120_000);
+        const moved = { ...slot, playbackStartedAt: new Date(FIXED_NOW - 40_000) };
+        bus.setServerSchedule({ current: moved });
+        assert.equal(viewer.frame(), frame, 'anchor changes never remount a playing source');
+        assert.equal(stateMessages(viewer).at(-1).startMs, FIXED_NOW - 40_000);
+        bus.setServerSchedule({ current: { ...moved, movie: { ...slot.movie, pausedAtSec: 40 } } });
+        assert.equal(stateMessages(viewer).at(-1).pausedAtSec, 40);
+        viewer.tick(FIXED_NOW + 600_000);
+        assert.equal(viewer.frame(), null, 'fixed end stops even a paused source');
+        assert.equal(viewer.window.document.getElementById('liveEmpty').hidden, false);
+        assert.equal(bus.getScheduled('current').startedAt.getTime(), slot.startedAt.getTime());
+        assert.equal(bus.writes.length, 0);
+    } finally { viewer.close(); }
+});
+
+for (const mode of ['movie', 'youtube']) test(`early ${mode} EOF reserves the slot on standby until the exact next scheduled start`, async () => {
+    const clock = { now: FIXED_NOW };
+    const current = scheduleDoc(mode, FIXED_NOW - 60_000, FIXED_NOW + 600_000);
+    const next = scheduleDoc('movie', FIXED_NOW + 600_000, FIXED_NOW + 1200_000, { title: 'Следующий фильм', movie: { kinopoiskId: 302, durationSec: 600, posterUrl: '' } });
+    const bus = createChannelBus(manualOff(), { current, next });
+    const viewer = await mountLiveClient(bus, { clock });
+    try {
+        assert.ok(viewer.frame());
+        viewer.emitFrame({ type: 'BROADCAST_ENDED', atSec: 45, startMs: FIXED_NOW - 60_000 });
+        assert.equal(viewer.frame(), null, 'known source runtime must not suppress an actual EOF');
+        assert.equal(viewer.window.document.getElementById('liveEmptyTitle').textContent, 'live_page.standby_ended_title');
+        assert.equal(viewer.window.document.getElementById('liveStandbyNextName').textContent, next.title);
+        assert.equal(viewer.window.document.getElementById('liveStandbyCountdown').textContent, '10:00');
+        viewer.tick(FIXED_NOW + 599_999);
+        assert.equal(viewer.frame(), null, 'no early next-program launch');
+        assert.equal(viewer.window.document.getElementById('liveStandbyCountdown').textContent, '0:01');
+        viewer.tick(FIXED_NOW + 600_000);
+        assert.ok(viewer.frame());
+        assert.equal(new URL(viewer.frame().src).searchParams.get('movieId'), '302');
+        assert.equal(viewer.window.document.getElementById('liveEmpty').hidden, true);
+        assert.equal(bus.writes.length, 0, 'viewer EOF and clock ticks never write Firestore');
+        assert.equal(bus.getScheduled('current').endsAt.getTime(), current.endsAt.getTime());
+    } finally { viewer.close(); }
+});
+
+test('restarting the same manual video clears local EOF identity and remounts playback', async () => {
+    const clock = { now: FIXED_NOW };
+    const doc = { ...YT, startedAt: new Date(FIXED_NOW - 60_000), youtube: { videoId: 'dQw4w9WgXcQ', live: false, durationSec: 300, pausedAtSec: null } };
+    const bus = createChannelBus(doc);
+    const viewer = await mountLiveClient(bus, { clock });
+    try {
+        viewer.emitFrame({ type: 'BROADCAST_ENDED', atSec: 45, startMs: FIXED_NOW - 60_000 });
+        assert.equal(viewer.frame(), null);
+        bus.setServerChannel({ ...doc, startedAt: new Date(FIXED_NOW) });
+        assert.ok(viewer.frame(), 'same source restarted as a new playback must leave standby');
+        assert.equal(viewer.window.document.getElementById('liveEmpty').hidden, true);
+        assert.equal(bus.writes.length, 0);
+    } finally { viewer.close(); }
+});
+
+test('standby reacts to actual future/deleted schedule snapshots without a channel rewrite', async () => {
+    const clock = { now: FIXED_NOW };
+    const bus = createChannelBus(manualOff());
+    const viewer = await mountLiveClient(bus, { clock });
+    try {
+        const byId = id => viewer.window.document.getElementById(id);
+        assert.equal(byId('liveEmptyTitle').textContent, 'live_page.standby_empty_title');
+        assert.equal(byId('liveStandbyCountdownWrap').hidden, true);
+        const next = scheduleDoc('movie', FIXED_NOW + 30_000, FIXED_NOW + 600_000);
+        bus.setServerSchedule({ next });
+        assert.equal(byId('liveStandbyNextName').textContent, next.title);
+        assert.equal(byId('liveStandbyCountdown').textContent, '0:30');
+        assert.equal(byId('liveStandbyCountdownWrap').hidden, false);
+        viewer.tick(FIXED_NOW + 10_000);
+        assert.equal(byId('liveStandbyCountdown').textContent, '0:20');
+        bus.setServerSchedule({});
+        assert.equal(byId('liveStandbyCountdownWrap').hidden, true);
+        assert.equal(byId('liveStandbyNext').hidden, true);
+        assert.equal(byId('liveEmptyTitle').textContent, 'live_page.standby_empty_title');
+        assert.equal(bus.writes.length, 0);
+    } finally { viewer.close(); }
 });
 
 test('public/player/embed.html emits paused TIME_UPDATE on scrub and suppresses echo on parent SEEK', async () => {

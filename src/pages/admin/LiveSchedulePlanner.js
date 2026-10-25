@@ -34,13 +34,100 @@
         });
     }
     const signature = item => item ? [item.id, item.startedAtMs, item.endsAtMs, item.updatedAtMs, item.updatedAtVersion].join('|') : '';
+    const exactTime = date => `${timeInput(date)}${date.getSeconds() ? `:${pad(date.getSeconds())}` : ''}`;
+
+    /** Keep the shared calendar's presentation while placing this popup outside the clipped grid. */
+    function createDatePicker(Base, options) {
+        class PlannerDatePicker extends Base {
+            open() {
+                if (this.triggerBtn.disabled) return;
+                window.SortControl?.current?.close();
+                super.open(); this.position(); this.focusDate(this.selectedDate);
+            }
+            close() {
+                const restore = this.dropdown?.contains(document.activeElement);
+                super.close();
+                if (restore && !this.triggerBtn.disabled) this.triggerBtn.focus({ preventScroll: true });
+            }
+            handleDocumentClick(event) {
+                if (!this.container.contains(event.target) && !this.dropdown.contains(event.target)) this.close();
+            }
+            renderCalendarGrid() {
+                super.renderCalendarGrid();
+                // Day shortcuts already live in the programme toolbar. Keeping
+                // one calendar grid leaves room for every week on narrow screens.
+                this.dropdown.querySelector('.custom-calendar-presets')?.remove();
+                this.dropdown.querySelectorAll('.custom-calendar-day').forEach(button => {
+                    const date = new Date(Number(button.dataset.year), Number(button.dataset.month), Number(button.dataset.day));
+                    button.dataset.date = dateKey(date);
+                    button.disabled = button.classList.contains('disabled');
+                    button.tabIndex = button.classList.contains('selected') ? 0 : -1;
+                    button.setAttribute('aria-label', date.toLocaleDateString('ru-RU', { dateStyle: 'full' }));
+                    button.setAttribute('aria-pressed', String(button.classList.contains('selected')));
+                });
+                this.position();
+            }
+            focusDate(date) {
+                if (this.viewMonth !== date.getMonth() || this.viewYear !== date.getFullYear()) {
+                    this.viewMonth = date.getMonth(); this.viewYear = date.getFullYear(); this.renderCalendarGrid();
+                }
+                const target = [...this.dropdown.querySelectorAll('[data-date]')].find(button => button.dataset.date === dateKey(date));
+                if (target && !target.disabled) {
+                    this.dropdown.querySelectorAll('[data-date]').forEach(button => { button.tabIndex = button === target ? 0 : -1; });
+                    target.focus({ preventScroll: true });
+                    if (target.offsetTop < this.dropdown.scrollTop) this.dropdown.scrollTop = target.offsetTop;
+                    else if (target.offsetTop + target.offsetHeight > this.dropdown.scrollTop + this.dropdown.clientHeight) {
+                        this.dropdown.scrollTop = target.offsetTop + target.offsetHeight - this.dropdown.clientHeight;
+                    }
+                }
+            }
+            handleKeyDown(event) {
+                if (!this.isOpen) return;
+                if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); this.close(); this.triggerBtn.focus(); return; }
+                if (event.key === 'Tab') { this.close(); return; }
+                const focused = event.target.closest?.('[data-date]');
+                if (!focused || !this.dropdown.contains(focused)) return;
+                const date = new Date(`${focused.dataset.date}T12:00:00`);
+                const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[event.key];
+                if (step) date.setDate(date.getDate() + step);
+                else if (event.key === 'Home') date.setDate(date.getDate() - (date.getDay() + 6) % 7);
+                else if (event.key === 'End') date.setDate(date.getDate() + 6 - (date.getDay() + 6) % 7);
+                else if (['PageUp', 'PageDown'].includes(event.key)) {
+                    const day = date.getDate(), delta = event.key === 'PageUp' ? -1 : 1;
+                    date.setDate(1); date.setMonth(date.getMonth() + delta);
+                    date.setDate(Math.min(day, new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()));
+                } else return;
+                event.preventDefault(); this.focusDate(date);
+            }
+            position() {
+                if (!this.isOpen) return;
+                const rect = this.triggerBtn.getBoundingClientRect(), margin = 8;
+                if (rect.bottom <= 0 || rect.top >= window.innerHeight || rect.right <= 0 || rect.left >= window.innerWidth) { this.close(); return; }
+                const width = Math.min(320, window.innerWidth - margin * 2);
+                this.dropdown.style.width = `${width}px`;
+                this.dropdown.style.left = `${Math.max(margin, Math.min(rect.left, window.innerWidth - width - margin))}px`;
+                const below = window.innerHeight - rect.bottom - margin * 2, above = rect.top - margin * 2;
+                const desired = this.dropdown.scrollHeight || 370, openAbove = below < desired && above > below;
+                const height = Math.max(0, Math.min(desired, openAbove ? above : below));
+                this.dropdown.style.maxHeight = `${height}px`;
+                this.dropdown.style.top = `${openAbove ? Math.max(margin, rect.top - height - margin) : rect.bottom + margin}px`;
+            }
+        }
+        const picker = new PlannerDatePicker(options);
+        picker.dropdown.classList.add('live-planner-calendar');
+        picker.dropdown.setAttribute('role', 'dialog'); picker.dropdown.setAttribute('aria-label', 'Выбрать день программы');
+        picker.dropdown.id = 'livePlannerCalendar'; picker.triggerBtn.setAttribute('aria-controls', picker.dropdown.id);
+        picker.triggerBtn.setAttribute('aria-label', 'День программы');
+        document.body.append(picker.dropdown);
+        return picker;
+    }
 
     class LiveSchedulePlanner {
-        constructor({ onSelect, onAdd, onChange, onRemove, onRange, onStatus }) {
+        constructor({ onSelect, onAdd, onChange, onRemove, onRange, onStatus, DatePicker }) {
             this.onSelect = onSelect; this.onAdd = onAdd; this.onChange = onChange;
             this.onRemove = onRemove; this.onRange = onRange; this.onStatus = onStatus;
             this.items = []; this.selected = null; this.source = null; this.busy = false;
-            this.date = new Date(window.CinemaChannel.now()); this.endTouched = false;
+            this.date = new Date(window.CinemaChannel.now());
             this.drag = null; this.frame = null; this.dirty = false;
             const $ = id => document.getElementById(id);
             this.ui = Object.fromEntries(['livePlannerDate', 'livePlannerPrev', 'livePlannerNext', 'livePlannerToday',
@@ -50,6 +137,12 @@
                 'liveSelectedMeta', 'liveDeleteShowBtn', 'liveSelectionBadge', 'livePlannerTimezone']
                 .map(id => [id.replace(/^live/, ''), $(id)]));
             this.ui.PlannerDate.value = dateKey(this.date);
+            if (DatePicker && $('livePlannerDatePicker')) this.datePicker = createDatePicker(DatePicker, {
+                container: $('livePlannerDatePicker'), initialValue: dateKey(this.date), minDate: new Date(1970, 0, 1),
+                onChange: value => { if (!this.syncingDate) this.setDay(new Date(`${value}T12:00:00`)); }
+            });
+            this.zoomControl = window.SortControl?.enhance(this.ui.PlannerZoom, { onBeforeOpen: () => this.datePicker?.close() });
+            this.ui.SlotEnd.readOnly = true;
             if (window.Icons) {
                 this.ui.PlannerPrev.innerHTML = window.Icons.CHEVRON_LEFT;
                 this.ui.PlannerNext.innerHTML = window.Icons.CHEVRON_RIGHT;
@@ -71,9 +164,8 @@
             });
             this.ui.PlannerZoom.addEventListener('change', () => this.zoom(true));
             this.ui.PlannerAdd.addEventListener('click', () => { this.beginDraft(); this.onAdd?.(); });
-            for (const input of [this.ui.SlotStart, this.ui.SlotEnd]) input.addEventListener('input', () => {
+            this.ui.SlotStart.addEventListener('input', () => {
                 this.dirty = true;
-                if (input === this.ui.SlotEnd) this.endTouched = true;
                 this.renderNote(); this.onRange?.();
             });
             this.ui.DeleteShowBtn.addEventListener('click', () => this.remove());
@@ -84,25 +176,47 @@
             document.addEventListener('pointermove', this.moveListener);
             document.addEventListener('pointerup', this.finishListener);
             document.addEventListener('pointercancel', this.finishListener);
-            this.resizeListener = () => this.zoom(false);
+            this.resizeListener = () => { this.zoom(false); this.datePicker?.position(); };
+            this.calendarScrollListener = () => this.datePicker?.position();
+            document.addEventListener('scroll', this.calendarScrollListener, true);
             window.addEventListener('resize', this.resizeListener);
+            // The admin pane starts hidden. Its final width arrives when the
+            // user opens it, even if the browser window itself never resized.
+            if (typeof ResizeObserver === 'function') {
+                this.resizeObserver = new ResizeObserver(this.resizeListener);
+                this.resizeObserver.observe(this.ui.PlannerScroll);
+            }
             window.addEventListener('pagehide', () => this.destroy(), { once: true });
             this.beginDraft(); this.render(); this.zoom(false);
         }
         get range() {
-            const result = rangeFromInputs(this.date, this.ui.SlotStart.value, this.ui.SlotEnd.value);
+            if (this.drag) return { start: new Date(this.drag.start), end: new Date(this.drag.end) };
             // Preserve seconds and an ambiguous DST occurrence on untouched legacy entries.
             if (this.selected && !this.dirty) {
                 const bounds = boundsFor(this.selected);
                 return { start: new Date(bounds.startMs), end: new Date(bounds.endMs) };
             }
-            return result;
+            const start = !this.selected && !this.dirty && Number.isFinite(this.draftStartMs)
+                ? new Date(this.draftStartMs) : localTime(this.date, this.ui.SlotStart.value);
+            const bounds = this.selected && boundsFor(this.selected);
+            const length = bounds ? bounds.endMs - bounds.startMs : (this.source?.durationSec || 3600) * 1000;
+            return { start, end: new Date(start.getTime() + length) };
+        }
+        syncDate() {
+            const value = dateKey(this.date); this.ui.PlannerDate.value = value;
+            if (this.datePicker && this.datePicker.getValue() !== value) {
+                this.syncingDate = true;
+                try { this.datePicker.setValue(value); } finally { this.syncingDate = false; }
+            }
         }
         setBusy(value) {
             this.busy = value;
             this.ui.PlannerCanvas.setAttribute('aria-busy', String(value));
             this.ui.DeleteShowBtn.disabled = value;
             for (const key of ['PlannerDate', 'PlannerPrev', 'PlannerNext', 'PlannerToday', 'PlannerNow', 'PlannerAdd', 'SlotStart', 'SlotEnd']) this.ui[key].disabled = value;
+            this.ui.PlannerZoom.disabled = value; this.zoomControl?.setDisabled(value);
+            if (this.datePicker) { this.datePicker.triggerBtn.disabled = value; if (value) this.datePicker.close(); }
+            this.onRange?.();
         }
         setItems(items, current) {
             this.current = current;
@@ -121,16 +235,16 @@
         setDay(date) {
             if (this.busy) return;
             this.cancelDrag(); this.date = date;
-            this.ui.PlannerDate.value = dateKey(date);
+            this.syncDate();
             this.beginDraft(); this.render(); this.zoom(false);
         }
         changeDay(delta) { this.setDay(new Date(this.date.getFullYear(), this.date.getMonth(), this.date.getDate() + delta)); }
         beginDraft(atMs) {
-            this.selected = null; this.dirty = false; this.endTouched = false;
+            this.selected = null; this.dirty = false;
             const day = dayBounds(this.date);
             let start = Number.isFinite(atMs) ? atMs : Math.max(day.startMs, Math.ceil(window.CinemaChannel.now() / STEP_MS) * STEP_MS);
             if (start >= day.endMs) start = day.startMs;
-            const length = Math.ceil((this.source?.durationSec || 3600) / 60) * 60_000;
+            const length = (this.source?.durationSec || 3600) * 1000;
             if (!Number.isFinite(atMs)) {
                 for (const item of [...this.items].sort((a, b) => a.startedAtMs - b.startedAtMs)) {
                     const bounds = boundsFor(item);
@@ -139,29 +253,27 @@
                 if (start >= day.endMs) start = day.startMs;
             }
             this.ui.SlotStart.value = timeInput(new Date(start));
-            this.ui.SlotEnd.value = timeInput(new Date(start + length));
+            this.draftStartMs = start;
+            this.ui.SlotEnd.value = exactTime(new Date(start + length));
             this.renderSelection(); this.renderTrack(); this.onSelect?.(null); this.onRange?.();
         }
         setDraft(source) {
             const same = this.source?.key === source?.key && !this.selected;
             this.source = source;
             if (!same) this.beginDraft();
-            else if (!this.endTouched && source?.durationSec) {
-                try { this.ui.SlotEnd.value = timeInput(new Date(this.range.start.getTime() + Math.ceil(source.durationSec / 60) * 60_000)); } catch { /* incomplete time input */ }
-            }
             this.renderSelection(); this.onRange?.();
         }
         fillRange(item) {
             const bounds = boundsFor(item);
             this.ui.SlotStart.value = timeInput(new Date(bounds.startMs));
-            this.ui.SlotEnd.value = timeInput(new Date(bounds.endMs));
+            this.ui.SlotEnd.value = exactTime(new Date(bounds.endMs));
         }
         select(item) {
             if (this.busy) return;
-            this.selected = item; this.dirty = false; this.endTouched = false;
+            this.selected = item; this.dirty = false;
             this.source = { key: `${item.mode}:${item.id}`, mode: item.mode, title: item.title,
                 cover: window.CinemaChannel.coverUrl(item), durationSec: item[item.mode]?.durationSec || 0 };
-            this.date = new Date(item.startedAtMs); this.ui.PlannerDate.value = dateKey(this.date);
+            this.date = new Date(item.startedAtMs); this.syncDate();
             this.fillRange(item); this.render(); this.onSelect?.(item); this.onRange?.();
         }
         renderSelection() {
@@ -179,14 +291,16 @@
         renderNote() {
             try {
                 const { start, end } = this.range;
-                const minutes = Math.round((end - start) / 60_000);
+                this.ui.SlotEnd.value = exactTime(end);
+                const minutes = Math.floor((end - start) / 60_000), seconds = Math.round((end - start) / 1000) % 60;
                 const length = this.selected?.[this.selected.mode]?.durationSec || this.source?.durationSec || 0;
-                this.ui.SlotDuration.textContent = `${Math.floor(minutes / 60) ? `${Math.floor(minutes / 60)} ч ` : ''}${minutes % 60} мин`;
+                this.ui.SlotDuration.textContent = `${Math.floor(minutes / 60) ? `${Math.floor(minutes / 60)} ч ` : ''}${minutes % 60} мин${seconds ? ` ${seconds} с` : ''}`;
                 this.ui.SlotNote.textContent = length > 0 && end - start < length * 1000
                     ? 'Показ прервётся в конце диапазона. Скорость видео не меняется.'
                     : length > 0 && end - start > length * 1000 + 59_000
                         ? 'После окончания видео будет заставка до следующего показа. Скорость видео не меняется.'
-                        : 'Передачи начинаются по программе. В свободных промежутках — заставка канала.';
+                        : this.source && !length ? 'Укажите длительность источника перед добавлением.'
+                        : 'Длительность фиксирована. Перенесите блок по шкале или измените время начала.';
             } catch (error) { this.ui.SlotDuration.textContent = '—'; this.ui.SlotNote.textContent = error.message; }
         }
         zoom(focus) {
@@ -238,20 +352,16 @@
                 const block = document.createElement('div'); block.className = 'live-planner__block'; block.dataset.id = item.id;
                 block.tabIndex = 0; block.setAttribute('role', 'button'); block.setAttribute('aria-pressed', String(this.selected?.id === item.id));
                 block.classList.toggle('is-selected', this.selected?.id === item.id);
-                block.classList.toggle('is-live', this.current?.id === item.id && window.CinemaChannel.computePosition(this.current).state !== 'ended');
+                block.classList.toggle('is-live', this.current?.id === item.id && ['live', 'paused'].includes(window.CinemaChannel.computePosition(this.current).state));
                 block.style.left = `${(start - day.startMs) / span * 100}%`; block.style.width = `${(end - start) / span * 100}%`;
                 const times = `${timeInput(new Date(b.startMs))} — ${b.endMs === day.endMs ? '24:00' : timeInput(new Date(b.endMs))}`;
-                block.title = `${item.title} · ${times}`; block.setAttribute('aria-label', `${item.title}, ${times}. Стрелки — перенос, Shift и стрелки — конец показа.`);
+                block.title = `${item.title} · ${times}`; block.setAttribute('aria-label', `${item.title}, ${times}. Стрелки — перенос на 5 минут, Shift и стрелки — на 15 минут.`);
                 const time = document.createElement('small'); time.className = 'live-planner__time'; time.textContent = times;
                 const name = document.createElement('strong'); name.textContent = item.title || 'Без названия';
                 const meta = document.createElement('span'); meta.className = 'live-planner__kind'; meta.textContent = item.mode === 'movie' ? 'Фильм' : 'YouTube';
                 block.append(time, name, meta);
                 const mini = document.createElement('span'); mini.className = 'live-planner__mini';
                 mini.innerHTML = window.Icons?.PLAY || ''; mini.setAttribute('aria-hidden', 'true'); block.append(mini);
-                if (this.selected?.id === item.id) for (const side of ['start', 'end']) {
-                    const handle = document.createElement('span'); handle.className = `live-planner__handle is-${side}`;
-                    handle.dataset.handle = side; handle.setAttribute('aria-hidden', 'true'); block.append(handle);
-                }
                 const occupied = this.drag?.item.id === item.id && overlaps(this.drag.start, this.drag.end, this.items, item.id);
                 block.classList.toggle('is-overlap', Boolean(occupied));
                 if (occupied) block.title = 'Место занято — перетащите дальше';
@@ -272,7 +382,7 @@
             const item = this.items.find(entry => entry.id === block.dataset.id); if (!item) return;
             event.preventDefault(); this.select(item);
             const bounds = boundsFor(item), day = dayBounds(this.date);
-            this.drag = { item, side: event.target.closest('[data-handle]')?.dataset.handle || 'move',
+            this.drag = { item,
                 x: event.clientX, scroll: this.ui.PlannerScroll.scrollLeft, day,
                 scale: (day.endMs - day.startMs) / this.ui.PlannerCanvas.clientWidth,
                 originalStart: bounds.startMs, originalEnd: bounds.endMs, start: bounds.startMs, end: bounds.endMs };
@@ -289,12 +399,9 @@
             if (x < box.left + 25) this.ui.PlannerScroll.scrollLeft -= 20;
             else if (x > box.right - 25) this.ui.PlannerScroll.scrollLeft += 20;
             const delta = Math.round(((x - d.x + this.ui.PlannerScroll.scrollLeft - d.scroll) * d.scale) / STEP_MS) * STEP_MS;
-            if (d.side === 'move') {
-                const length = d.originalEnd - d.originalStart;
-                d.start = Math.max(d.day.startMs, Math.min(d.day.endMs - Math.min(length, d.day.endMs - d.day.startMs), d.originalStart + delta));
-                d.end = d.start + length;
-            } else if (d.side === 'start') d.start = Math.max(d.day.startMs, Math.min(d.originalEnd - STEP_MS, d.originalStart + delta));
-            else d.end = Math.max(d.originalStart + STEP_MS, Math.min(d.day.endMs, d.originalEnd + delta));
+            const length = d.originalEnd - d.originalStart;
+            d.start = Math.max(d.day.startMs, Math.min(d.day.endMs - Math.min(length, d.day.endMs - d.day.startMs), d.originalStart + delta));
+            d.end = d.start + length;
             this.ui.SlotStart.value = timeInput(new Date(d.start)); this.ui.SlotEnd.value = timeInput(new Date(d.end));
             this.dirty = true; this.renderTrack(); this.renderNote();
         }
@@ -304,7 +411,7 @@
             const drag = this.drag; this.drag = null;
             if (event.type === 'pointercancel') { this.select(drag.item); return; }
             if (drag.start === drag.originalStart && drag.end === drag.originalEnd) { this.dirty = false; return; }
-            await this.saveRange(drag.item, new Date(drag.start), new Date(drag.end));
+            await this.saveRange(drag.item, new Date(drag.start));
         }
         cancelDrag(message) {
             if (!this.drag) return;
@@ -313,8 +420,9 @@
             this.dirty = false; this.fillRange(item); this.renderTrack();
             if (message) this.onStatus?.(message, 'error');
         }
-        async saveRange(item, start, end) {
+        async saveRange(item, start) {
             if (this.busy) return;
+            const bounds = boundsFor(item), end = new Date(start.getTime() + bounds.endMs - bounds.startMs);
             if (overlaps(start.getTime(), end.getTime(), this.items, item.id)) {
                 this.dirty = false; this.fillRange(item); this.render();
                 this.onStatus?.('Место занято. Показ возвращён на прежнее время.', 'error'); return;
@@ -342,8 +450,10 @@
             const item = this.items.find(entry => entry.id === block.dataset.id); if (!item) return;
             if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.select(item); return; }
             if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
-            event.preventDefault(); const bounds = boundsFor(item), delta = event.key === 'ArrowRight' ? STEP_MS : -STEP_MS;
-            this.select(item); this.saveRange(item, new Date(bounds.startMs + (event.shiftKey ? 0 : delta)), new Date(bounds.endMs + delta));
+            event.preventDefault(); const bounds = boundsFor(item), delta = (event.key === 'ArrowRight' ? STEP_MS : -STEP_MS) * (event.shiftKey ? 3 : 1);
+            this.select(item);
+            this.saveRange(item, new Date(bounds.startMs + delta))
+                .then(() => [...this.ui.PlannerTrack.querySelectorAll('[data-id]')].find(entry => entry.dataset.id === item.id)?.focus({ preventScroll: true }));
         }
         destroy() {
             if (this.frame) cancelAnimationFrame(this.frame);
@@ -351,6 +461,10 @@
             document.removeEventListener('pointerup', this.finishListener);
             document.removeEventListener('pointercancel', this.finishListener);
             window.removeEventListener('resize', this.resizeListener);
+            document.removeEventListener('scroll', this.calendarScrollListener, true);
+            this.resizeObserver?.disconnect();
+            this.zoomControl?.destroy();
+            this.datePicker?.close(); this.datePicker?.dropdown.remove();
         }
     }
     const api = { LiveSchedulePlanner, dayBounds, dateKey, timeInput, rangeFromInputs, overlaps };

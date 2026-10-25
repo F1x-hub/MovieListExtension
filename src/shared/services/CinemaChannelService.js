@@ -559,16 +559,17 @@
                     return true;
                 });
             }
-            const FieldValue = firebase.firestore.FieldValue;
-            const user = this.firebaseManager.getCurrentUser?.();
-            await this.refFor(channel).set({
-                // Merge only the learned field; an older probe must not restore an
-                // old pause or media identity over a newer manual timeline.
-                youtube: { durationSec: sec },
-                updatedAt: FieldValue.serverTimestamp(),
-                updatedBy: user?.uid || ''
-            }, { merge: true });
-            return true;
+            return this.firebaseManager.db.runTransaction(async transaction => {
+                const ref = this.refFor(channel);
+                const snapshot = await transaction.get(ref);
+                const current = snapshot.exists ? normalizeChannel(snapshot.data()) : null;
+                // A delayed probe must belong to this exact manual playback, not
+                // another video or a restarted broadcast of the same video.
+                if (!current || !sameMedia(current, channel) || current.startedAtMs !== channel.startedAtMs
+                    || current.youtube.durationSec) return false;
+                transaction.update(ref, { 'youtube.durationSec': sec, ...this.writeStamp() });
+                return true;
+            });
         }
 
         /** Admin only (enforced by Firestore rules). `restart` resets the broadcast clock to now. */
