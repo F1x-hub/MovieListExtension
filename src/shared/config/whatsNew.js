@@ -1,5 +1,13 @@
 export const whatsNew = [
     {
+        id: '1.4.5', version: '1.4.5', date: '2026-10-25',
+        highlights: [
+            { id: 'live-planner', title: { ru: 'Программа эфира на весь день', en: 'A full-day Live programme' }, text: { ru: 'Ведущий собирает сетку показов на сутки из каталога и YouTube, а в паузах зрители видят заставку MovieList TV с отсчётом до следующего показа.', en: 'The host builds a day of shows from the catalogue and YouTube, and between shows viewers see the MovieList TV standby screen with a countdown.' } },
+            { id: 'youtube-player', title: { ru: 'YouTube в нашем плеере', en: 'YouTube in our player' }, text: { ru: 'Трейлеры, официальные фильмы на YouTube и показы в «Эфире» открываются в плеере расширения, а ролики сами завершаются вовремя.', en: 'Trailers, official YouTube films and Live shows open in the extension player, and videos end on time by themselves.' } },
+            { id: 'activity-calendar', title: { ru: 'Календарь оценок', en: 'Ratings calendar' }, text: { ru: 'В статистике профиля оценки за год показаны календарём по дням.', en: 'Profile statistics show a year of ratings as a daily calendar.' } },
+            { id: 'volume-keys', title: { ru: 'Громкость со стрелок', en: 'Arrow-key volume' }, text: { ru: 'Стрелки ↑/↓ снова меняют громкость с каждым нажатием.', en: 'The ↑/↓ keys change the volume on every press again.' } }
+        ]
+    },    {
         id: '1.4.4', version: '1.4.4', date: '2026-10-25',
         highlights: [
             { id: 'hub-restart', title: { ru: 'Хаб предлагает перезапуск', en: 'The hub offers a restart' }, text: { ru: 'После самообновления MovieList Hub показывает новую версию и кнопку «Перезапустить хаб», а не возвращается к старой карточке.', en: 'After updating itself, MovieList Hub shows the new version and a “Restart hub” button instead of returning to the old card.' } },
