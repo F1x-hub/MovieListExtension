@@ -47,6 +47,12 @@
     --ui-color-interactive: var(--theme-accent, var(--accent-color, #fafafa));
     --ui-color-interactive-hover: var(--theme-accent-hover, var(--accent-hover, #e4e4e7));
 
+    /* Fixed dark broadcast content, like the movie image, independent of shell theme. */
+    --ui-broadcast-bg: #09090b;
+    --ui-broadcast-content: #f4f4f5;
+    --ui-broadcast-muted: #a1a1aa;
+    --ui-broadcast-border: rgba(255, 255, 255, 0.16);
+
     /* Semantic exceptions: reserve chromatic color for meaning, not decoration. */
     --ui-color-status-success: var(--success, #28a745);
     --ui-color-status-warning: var(--warning, #ffc107);

@@ -40,6 +40,26 @@ const PlayerConfig = {
         }
 
         return `${this.YOUTUBE_DIRECT_EMBED_BASE}${encodeURIComponent(cleanKey)}?autoplay=${autoplay}&mute=${mute}&start=${start}&rel=0`;
+    },
+
+    /**
+     * Our own player for a YouTube video: the shared movie player over the
+     * chrome-less wrapper (src/pages/live/youtube-player.html, standalone mode).
+     * Outside the extension it falls back to the plain wrapper embed.
+     *
+     * @param {string} key - YouTube video ID
+     * @param {Object} [options]
+     * @param {number} [options.start=0]
+     * @returns {string}
+     */
+    buildYouTubePlayerUrl(key, options = {}) {
+        const cleanKey = typeof key === 'string' ? key.trim() : '';
+        if (!/^[A-Za-z0-9_-]{11}$/.test(cleanKey)) return this.buildYouTubeEmbedUrl(key, { autoplay: true, start: options.start });
+        let pageUrl = '';
+        try { pageUrl = globalThis.chrome?.runtime?.getURL?.('src/pages/live/youtube-player.html') || ''; } catch { /* not an extension page */ }
+        if (!pageUrl || !this.YOUTUBE_WRAPPER_URL) return this.buildYouTubeEmbedUrl(cleanKey, { autoplay: true, start: options.start });
+        const start = parseInt(options.start || 0, 10) || 0;
+        return `${pageUrl}?v=${encodeURIComponent(cleanKey)}&start=${start}&live=0&standalone=1`;
     }
 };
 

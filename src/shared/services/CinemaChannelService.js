@@ -17,11 +17,18 @@
  *     updatedAt: Timestamp,
  *     updatedBy: string              // admin uid
  *   }
+ *
+ * Scheduled documents additionally store a fixed `endsAt`; their `startedAt`
+ * remains the grid start while optional `playbackStartedAt` carries seeks/resumes.
+ * Occupancy changes commit with `settings/cinemaScheduleState.revision`.
  */
 (function () {
     const COLLECTION = 'settings';
     const SCHEDULE_COLLECTION = 'cinemaSchedule';
     const DOC_ID = 'cinemaChannel';
+    const SCHEDULE_STATE_ID = 'cinemaScheduleState';
+    const SCHEDULE_LIMIT = 500;
+    const SCHEDULE_FALLBACK_SEC = 4 * 3600;
     const MODES = ['off', 'youtube', 'movie'];
     const MAX_TITLE = 120;
 
@@ -99,12 +106,22 @@
      */
     function normalizeChannel(raw, meta = {}) {
         const docPath = meta.docPath || `${COLLECTION}/${DOC_ID}`;
-        const base = { id: meta.id || DOC_ID, docPath, scheduled: meta.scheduled === true };
+        const startedAtMs = toMillis(raw?.startedAt);
+        const endsAtMs = toMillis(raw?.endsAt);
+        const scheduled = meta.scheduled === true;
+        const base = {
+            id: meta.id || DOC_ID, docPath, scheduled,
+            endsAtMs: scheduled ? endsAtMs : NaN,
+            playbackStartedAtMs: scheduled ? toMillis(raw?.playbackStartedAt) : NaN,
+            explicitEnd: scheduled && Number.isFinite(endsAtMs) && endsAtMs > startedAtMs,
+            updatedAtMs: toMillis(raw?.updatedAt),
+            // Keep nanoseconds for optimistic edits made within the same millisecond.
+            updatedAtVersion: timestampVersion(raw?.updatedAt)
+        };
         // «Off» keeps its timestamp: stopping is itself an event on the timeline.
         const off = { ...base, mode: 'off', title: '', youtube: null, movie: null, startedAtMs: raw?.mode === 'off' ? toMillis(raw.startedAt) : NaN };
         if (!raw || typeof raw !== 'object' || !MODES.includes(raw.mode)) return off;
         const title = typeof raw.title === 'string' ? raw.title.trim().slice(0, MAX_TITLE) : '';
-        const startedAtMs = toMillis(raw.startedAt);
 
         if (raw.mode === 'youtube') {
             const videoId = String(raw.youtube?.videoId || '');
@@ -146,8 +163,14 @@
      */
     function computePosition(channel, nowMs = now()) {
         if (!channel || channel.mode === 'off') return { state: 'off', offsetSec: 0 };
-        // A live YouTube stream is always «now»: there is nothing to seek to.
         const media = channel[channel.mode];
+        if (channel.scheduled && channel.explicitEnd) {
+            if (nowMs < channel.startedAtMs) return { state: 'upcoming', offsetSec: Math.ceil((channel.startedAtMs - nowMs) / 1000) };
+            if (nowMs >= channel.endsAtMs) return { state: 'ended', offsetSec: media?.durationSec || 0 };
+        }
+        const anchorMs = channel.scheduled && Number.isFinite(channel.playbackStartedAtMs)
+            ? channel.playbackStartedAtMs : channel.startedAtMs;
+        // A live YouTube stream is always «now»: there is nothing to seek to.
         if (channel.mode === 'youtube' && channel.youtube?.live) {
             // A scheduled stream still has a start (and an optional end) on the timeline.
             if (Number.isFinite(channel.startedAtMs) && nowMs < channel.startedAtMs) {
@@ -162,9 +185,9 @@
         if (Number.isFinite(media?.pausedAtSec)) {
             return { state: 'paused', offsetSec: Math.floor(media.pausedAtSec) };
         }
-        if (!Number.isFinite(channel.startedAtMs)) return { state: 'live', offsetSec: 0 };
+        if (!Number.isFinite(anchorMs)) return { state: 'live', offsetSec: 0 };
 
-        const elapsed = Math.floor((nowMs - channel.startedAtMs) / 1000);
+        const elapsed = Math.floor((nowMs - anchorMs) / 1000);
         if (elapsed < 0) return { state: 'upcoming', offsetSec: -elapsed };
         const duration = media?.durationSec || 0;
         if (duration > 0 && elapsed >= duration) return { state: 'ended', offsetSec: duration };
@@ -183,6 +206,7 @@
                 : null;
             if (!info?.id) throw new Error('Укажите ссылку на видео или трансляцию YouTube');
             const ytMinutes = Number(String(durationMin || '').replace(',', '.'));
+            if (ytMinutes * 60 > 2147483647) throw cinemaError('bounds', 'Укажите допустимую длительность видео');
             return {
                 mode: 'youtube',
                 title: cleanTitle,
@@ -199,6 +223,7 @@
         const id = Number(String(kinopoiskId || '').trim());
         if (!Number.isSafeInteger(id) || id <= 0) throw new Error('Укажите Kinopoisk ID фильма');
         const minutes = Number(String(durationMin || '').replace(',', '.'));
+        if (minutes * 60 > 2147483647) throw cinemaError('bounds', 'Укажите допустимую длительность фильма');
         return {
             mode: 'movie',
             title: cleanTitle,
@@ -220,8 +245,51 @@
         return '';
     }
 
-    /** Scheduled items without a known length stop being «on air» after this long. */
-    const SCHEDULE_FALLBACK_SEC = 4 * 3600;
+    function timestampVersion(value) {
+        if (value && typeof value.seconds === 'number') return `${value.seconds}:${value.nanoseconds || 0}`;
+        const ms = toMillis(value);
+        return Number.isFinite(ms) ? String(ms) : '';
+    }
+
+    /** Fixed slot bounds. Legacy lengths are display/overlap estimates, not new playback limits. */
+    function getScheduleBounds(item) {
+        const startMs = item?.startedAtMs;
+        const explicitEnd = item?.scheduled === true && item.explicitEnd === true
+            && Number.isFinite(item.endsAtMs) && item.endsAtMs > startMs;
+        const duration = item?.[item?.mode]?.durationSec || (item?.scheduled ? SCHEDULE_FALLBACK_SEC : 0);
+        return { startMs, endMs: explicitEnd ? item.endsAtMs : (duration ? startMs + duration * 1000 : Infinity), explicitEnd };
+    }
+
+    function nextScheduled(items = [], nowMs = now()) {
+        return items.filter(item => item && item.mode !== 'off' && Number.isFinite(item.startedAtMs) && item.startedAtMs > nowMs)
+            .sort((a, b) => a.startedAtMs - b.startedAtMs || String(a.id).localeCompare(String(b.id)))[0] || null;
+    }
+
+    function cinemaError(code, message) {
+        return Object.assign(new Error(message), { code: `cinema/${code}` });
+    }
+
+    function validateBounds(startDate, endDate) {
+        const startMs = startDate instanceof Date ? startDate.getTime() : NaN;
+        const endMs = endDate instanceof Date ? endDate.getTime() : NaN;
+        if (!Number.isFinite(startMs)) throw cinemaError('bounds', 'Укажите дату и время начала');
+        if (!Number.isFinite(endMs) || endMs <= startMs) throw cinemaError('bounds', 'Время окончания должно быть позже начала');
+        return { startMs, endMs };
+    }
+
+    function sameMedia(a, b) {
+        return a.mode === b.mode && (a.mode === 'movie'
+            ? a.movie?.kinopoiskId === b.movie?.kinopoiskId : a.youtube?.videoId === b.youtube?.videoId && a.youtube?.live === b.youtube?.live);
+    }
+
+    function checkOverlap(candidate, items, excludeId) {
+        const { startMs, endMs } = getScheduleBounds(candidate);
+        if (items.some(item => {
+            if (item.id === excludeId || item.mode === 'off') return false;
+            const other = getScheduleBounds(item);
+            return startMs < other.endMs && endMs > other.startMs;
+        })) throw cinemaError('overlap', 'Это время пересекается с другим показом. Выберите свободный промежуток.');
+    }
 
     /**
      * Picks what the live page shows from the manual channel plus the schedule.
@@ -234,15 +302,16 @@
         const started = items.filter(item => item.startedAtMs <= nowMs).sort((a, b) => b.startedAtMs - a.startedAtMs);
         const latest = started[0];
         if (latest && latest.mode !== 'off') {
+            // Media may finish before the allotted slot. Keep its reservation until
+            // the fixed end; the live page shows standby instead of advancing early.
+            if (latest.scheduled && latest.explicitEnd && nowMs < latest.endsAtMs) return latest;
             const position = computePosition(latest, nowMs);
             const media = latest[latest.mode];
             const capped = latest.scheduled && !media?.durationSec && !Number.isFinite(media?.pausedAtSec)
                 && nowMs - latest.startedAtMs > SCHEDULE_FALLBACK_SEC * 1000;
             if (position.state !== 'ended' && !capped) return latest;
         }
-        const upcoming = scheduleItems
-            .filter(item => item && item.mode !== 'off' && Number.isFinite(item.startedAtMs) && item.startedAtMs > nowMs)
-            .sort((a, b) => a.startedAtMs - b.startedAtMs)[0];
+        const upcoming = nextScheduled(scheduleItems, nowMs);
         if (upcoming) return upcoming;
         if (latest && latest.mode !== 'off') return latest; // shows «Показ завершился»
         return normalizeChannel(null);
@@ -270,6 +339,48 @@
             return this.firebaseManager.db.collection(SCHEDULE_COLLECTION);
         }
 
+        get scheduleStateRef() {
+            return this.firebaseManager.db.collection(COLLECTION).doc(SCHEDULE_STATE_ID);
+        }
+
+        writeStamp() {
+            return { updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: this.firebaseManager.getCurrentUser?.()?.uid || '' };
+        }
+
+        normalizeSchedule(snapshot) {
+            return normalizeChannel(snapshot.data(), { id: snapshot.id, docPath: `${SCHEDULE_COLLECTION}/${snapshot.id}`, scheduled: true });
+        }
+
+        /**
+         * Every occupancy writer reads and advances the same revision. The bounded
+         * server query is deliberately outside the transaction read set (web SDK
+         * transactions read document references only). A changed guard retries the
+         * whole callback, including this fresh query, before either write commits.
+         */
+        async mutateSchedule(ref, prepare, { scan = true } = {}) {
+            return this.firebaseManager.db.runTransaction(async transaction => {
+                const state = await transaction.get(this.scheduleStateRef);
+                const revision = state.exists ? state.data().revision : 0;
+                if (!Number.isSafeInteger(revision) || revision < 0 || revision >= Number.MAX_SAFE_INTEGER) {
+                    throw cinemaError('state', 'Не удалось проверить версию расписания. Обновите страницу.');
+                }
+                let items = [];
+                if (scan) {
+                    const snapshot = await this.scheduleRef.limit(SCHEDULE_LIMIT + 1).get({ source: 'server' });
+                    if (snapshot.docs.length > SCHEDULE_LIMIT) throw cinemaError('limit', 'В расписании больше 500 показов. Удалите старые записи перед изменением.');
+                    items = snapshot.docs.map(doc => this.normalizeSchedule(doc));
+                }
+                const snapshot = await transaction.get(ref);
+                const mutation = prepare(snapshot, items);
+                if (!mutation) return false;
+                if (mutation.type === 'delete') transaction.delete(ref);
+                else if (mutation.type === 'create') transaction.set(ref, mutation.data);
+                else transaction.update(ref, mutation.data);
+                transaction.set(this.scheduleStateRef, { revision: revision + 1, ...this.writeStamp() });
+                return mutation.result;
+            });
+        }
+
         refFor(channel) {
             const path = channel?.docPath || `${COLLECTION}/${DOC_ID}`;
             const [collection, id] = path.split('/');
@@ -288,38 +399,67 @@
         }
 
         /** Admin only: plans a show for `startDate` (a Date in the admin's local time). */
-        async schedule(input, startDate) {
+        async schedule(input, startDate, endDate) {
             const payload = buildChannelPayload(input);
             if (payload.mode === 'off') throw new Error('Выберите, что показывать');
             const startMs = startDate instanceof Date ? startDate.getTime() : NaN;
             if (!Number.isFinite(startMs)) throw new Error('Укажите дату и время начала');
             if (startMs < now() - 60_000) throw new Error('Это время уже прошло');
-            const FieldValue = firebase.firestore.FieldValue;
-            const user = this.firebaseManager.getCurrentUser?.();
-            await this.scheduleRef.add({
-                ...payload,
-                startedAt: startDate,
-                updatedAt: FieldValue.serverTimestamp(),
-                updatedBy: user?.uid || ''
+            const end = endDate === undefined ? new Date(startMs + (payload[payload.mode].durationSec || SCHEDULE_FALLBACK_SEC) * 1000) : endDate;
+            const { endMs } = validateBounds(startDate, end);
+            const ref = this.scheduleRef.doc();
+            return this.mutateSchedule(ref, (snapshot, items) => {
+                if (snapshot.exists) throw cinemaError('stale', 'Этот показ уже изменён. Обновите расписание.');
+                if (items.length >= SCHEDULE_LIMIT) throw cinemaError('limit', 'В расписании уже 500 показов. Удалите старые записи перед добавлением.');
+                const data = { ...payload, startedAt: new Date(startMs), endsAt: new Date(endMs), ...this.writeStamp() };
+                const result = normalizeChannel(data, { id: ref.id, docPath: `${SCHEDULE_COLLECTION}/${ref.id}`, scheduled: true });
+                checkOverlap(result, items);
+                return { type: 'create', data, result };
             });
-            return payload;
+        }
+
+        async updateSchedule(item, startDate, endDate) {
+            const { startMs, endMs } = validateBounds(startDate, endDate);
+            if (!item?.scheduled || !/^[A-Za-z0-9_-]{1,64}$/.test(String(item.id || ''))) throw cinemaError('stale', 'Показ больше не найден. Обновите расписание.');
+            const ref = this.scheduleRef.doc(item.id);
+            return this.mutateSchedule(ref, (snapshot, items) => {
+                const current = snapshot.exists ? this.normalizeSchedule(snapshot) : null;
+                const sameEnd = current && (current.endsAtMs === item.endsAtMs || (!Number.isFinite(current.endsAtMs) && !Number.isFinite(item.endsAtMs)));
+                if (!current || !sameEnd || current.startedAtMs !== item.startedAtMs || !sameMedia(current, item)
+                    || current.updatedAtVersion !== item.updatedAtVersion) {
+                    throw cinemaError('stale', 'Показ уже изменён в другом окне. Обновите расписание и повторите.');
+                }
+                const data = { startedAt: new Date(startMs), endsAt: new Date(endMs), ...this.writeStamp() };
+                const delta = startMs - current.startedAtMs;
+                if (delta !== 0) data.playbackStartedAt = new Date((Number.isFinite(current.playbackStartedAtMs) ? current.playbackStartedAtMs : current.startedAtMs) + delta);
+                const result = normalizeChannel({ ...snapshot.data(), ...data }, { id: item.id, docPath: `cinemaSchedule/${item.id}`, scheduled: true });
+                checkOverlap(result, items, item.id);
+                return { type: 'update', data, result };
+            });
         }
 
         async unschedule(itemId) {
             if (!/^[A-Za-z0-9_-]{1,64}$/.test(String(itemId || ''))) return;
-            await this.scheduleRef.doc(itemId).delete();
+            return this.mutateSchedule(this.scheduleRef.doc(itemId), snapshot => snapshot.exists
+                ? { type: 'delete', result: true } : null, { scan: false });
         }
 
         /** Admin housekeeping: drops shows that finished more than a day ago. */
         async sweepFinished(items, nowMs = now()) {
             const stale = items.filter(item => {
+                if (item.explicitEnd) return nowMs - item.endsAtMs > 24 * 3600 * 1000;
                 const position = computePosition(item, nowMs);
                 const ageMs = nowMs - item.startedAtMs;
                 return Number.isFinite(item.startedAtMs) && ageMs > 24 * 3600 * 1000
                     && (position.state === 'ended' || ageMs > (SCHEDULE_FALLBACK_SEC * 1000 + 24 * 3600 * 1000));
             });
-            await Promise.all(stale.map(item => this.unschedule(item.id).catch(() => {})));
-            return stale.length;
+            // All deletions advance the same guard; serial housekeeping avoids
+            // exhausting transaction retries by contending with itself.
+            let removed = 0;
+            for (const item of stale) {
+                if (await this.unschedule(item.id).catch(() => false)) removed += 1;
+            }
+            return removed;
         }
 
         /** Live subscription; returns an unsubscribe function. */
@@ -337,40 +477,55 @@
 
         /**
          * Admin timeline control for a running broadcast (movie and non-live YouTube
-         * video: pause/resume/seek). Updates `pausedAtSec` / `startedAt` so every viewer follows.
+         * video: pause/resume/seek). Scheduled slots keep their boundaries; only
+         * their `playbackStartedAt` clock moves. Manual broadcasts use `startedAt`.
          * @param {'pause'|'resume'|'seek'} action
          */
         async control(channel, action, { offsetSec = null } = {}) {
             if (!channel || channel.mode === 'off') throw new Error('Эфир не запущен');
             if (channel.mode === 'youtube' && channel.youtube.live) throw new Error('Прямую трансляцию нельзя перематывать');
-            const key = channel.mode;
-            const media = channel[key];
-            const position = computePosition(channel);
-            const duration = media?.durationSec || 0;
-            const clamp = sec => Math.max(0, duration > 0 ? Math.min(sec, Math.max(0, duration - 5)) : sec);
-            const FieldValue = firebase.firestore.FieldValue;
-            const user = this.firebaseManager.getCurrentUser?.();
-            const data = { updatedAt: FieldValue.serverTimestamp(), updatedBy: user?.uid || '' };
-
-            const hasAt = Number.isFinite(offsetSec);
-            if (action === 'pause') {
-                data[key] = { ...media, pausedAtSec: clamp(hasAt ? offsetSec : position.offsetSec) };
-            } else if (action === 'resume') {
-                const at = hasAt ? offsetSec : (Number.isFinite(media.pausedAtSec) ? media.pausedAtSec : position.offsetSec);
-                data[key] = { ...media, pausedAtSec: null };
-                data.startedAt = new Date(now() - clamp(at) * 1000);
-            } else if (action === 'seek') {
-                const next = clamp(hasAt ? offsetSec : 0);
-                if (Number.isFinite(media.pausedAtSec)) {
-                    data[key] = { ...media, pausedAtSec: next };
+            const patchFor = current => {
+                const key = current.mode;
+                const media = current[key];
+                const position = computePosition(current);
+                const duration = media?.durationSec || 0;
+                const clamp = sec => Math.max(0, duration > 0 ? Math.min(sec, Math.max(0, duration - 5)) : sec);
+                const data = this.writeStamp();
+                const setPause = value => {
+                    if (current.scheduled) data[`${key}.pausedAtSec`] = value;
+                    else data[key] = { ...media, pausedAtSec: value };
+                };
+                const anchorKey = current.scheduled ? 'playbackStartedAt' : 'startedAt';
+                const hasAt = Number.isFinite(offsetSec);
+                if (action === 'pause') {
+                    setPause(clamp(hasAt ? offsetSec : position.offsetSec));
+                } else if (action === 'resume') {
+                    const at = hasAt ? offsetSec : (Number.isFinite(media.pausedAtSec) ? media.pausedAtSec : position.offsetSec);
+                    setPause(null);
+                    data[anchorKey] = new Date(now() - clamp(at) * 1000);
+                } else if (action === 'seek') {
+                    const next = clamp(hasAt ? offsetSec : 0);
+                    if (Number.isFinite(media.pausedAtSec)) setPause(next);
+                    else {
+                        setPause(null);
+                        data[anchorKey] = new Date(now() - next * 1000);
+                    }
                 } else {
-                    data[key] = { ...media, pausedAtSec: null };
-                    data.startedAt = new Date(now() - next * 1000);
+                    throw new Error('Неизвестное действие');
                 }
-            } else {
-                throw new Error('Неизвестное действие');
+                return data;
+            };
+            const ref = this.refFor(channel);
+            if (channel.scheduled) {
+                await this.firebaseManager.db.runTransaction(async transaction => {
+                    const snapshot = await transaction.get(ref);
+                    const current = snapshot.exists ? this.normalizeSchedule(snapshot) : null;
+                    if (!current || !sameMedia(current, channel) || current.startedAtMs !== channel.startedAtMs) throw cinemaError('stale', 'Показ уже изменён. Обновите расписание.');
+                    transaction.update(ref, patchFor(current));
+                });
+                return;
             }
-            await this.refFor(channel).set(data, { merge: true });
+            await ref.set(patchFor(channel), { merge: true });
         }
 
         /**
@@ -380,10 +535,36 @@
         async setYoutubeDuration(channel, durationSec) {
             const sec = readDuration(durationSec);
             if (channel?.mode !== 'youtube' || channel.youtube.live || channel.youtube.durationSec || !sec) return false;
+            if (channel.scheduled) {
+                // A legacy inferred end changes with duration, so it participates in
+                // occupancy serialization. Explicit slots keep their fixed boundary.
+                if (!channel.explicitEnd) {
+                    return this.mutateSchedule(this.refFor(channel), (snapshot, items) => {
+                        const current = snapshot.exists ? this.normalizeSchedule(snapshot) : null;
+                        if (!current || !sameMedia(current, channel) || current.youtube.durationSec) return null;
+                        const candidate = { ...current, youtube: { ...current.youtube, durationSec: sec } };
+                        checkOverlap(candidate, items, current.id);
+                        return { type: 'update', data: { 'youtube.durationSec': sec, ...this.writeStamp() }, result: true };
+                    });
+                }
+                return this.firebaseManager.db.runTransaction(async transaction => {
+                    const ref = this.refFor(channel);
+                    const snapshot = await transaction.get(ref);
+                    const current = snapshot.exists ? this.normalizeSchedule(snapshot) : null;
+                    if (!current || !sameMedia(current, channel) || current.youtube.durationSec) return false;
+                    // If another admin removed the explicit end, a fresh guarded
+                    // duration mutation is needed instead of bypassing its revision.
+                    if (!current.explicitEnd) throw cinemaError('stale', 'Показ уже изменён. Обновите расписание.');
+                    transaction.update(ref, { 'youtube.durationSec': sec, ...this.writeStamp() });
+                    return true;
+                });
+            }
             const FieldValue = firebase.firestore.FieldValue;
             const user = this.firebaseManager.getCurrentUser?.();
             await this.refFor(channel).set({
-                youtube: { ...channel.youtube, durationSec: sec },
+                // Merge only the learned field; an older probe must not restore an
+                // old pause or media identity over a newer manual timeline.
+                youtube: { durationSec: sec },
                 updatedAt: FieldValue.serverTimestamp(),
                 updatedBy: user?.uid || ''
             }, { merge: true });
@@ -406,7 +587,7 @@
         }
     }
 
-    const api = { CinemaChannelService, normalizeChannel, computePosition, resolveChannel, buildChannelPayload, formatClock, coverUrl, now, syncClock, toLocalMs, DOC_ID };
+    const api = { CinemaChannelService, normalizeChannel, computePosition, resolveChannel, getScheduleBounds, nextScheduled, buildChannelPayload, formatClock, coverUrl, now, syncClock, toLocalMs, DOC_ID };
     if (typeof window !== 'undefined') Object.assign(window, { CinemaChannelService, CinemaChannel: api });
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();

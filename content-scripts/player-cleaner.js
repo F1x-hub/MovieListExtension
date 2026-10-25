@@ -421,6 +421,10 @@
                 postToHost({ type: 'BROADCAST_PLAYING' });
             }
         });
+        video.addEventListener('ended', () => {
+            if (!broadcastState || !video.isConnected || video !== getRoomSyncVideo()) return;
+            postToHost({ type: 'BROADCAST_ENDED', atSec: Math.max(0, Number(video.currentTime) || 0), startMs: broadcastState.startMs });
+        });
         video.addEventListener('pause', () => {
             if (broadcastState?.admin) { if (!video.ended) reportAdminAction('pause', video); } else settle();
         });
@@ -959,7 +963,7 @@
 
     const PLAYER_SHORTCUT_KEYS = new Set([' ', 'k', 'j', 'l', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'f', 'm', 'c', '<', '>', '?']);
 
-    function bindPlayerAccessibility({ container, getVideo, scope, slider, toggleFullscreen, toggleSubtitles, onSeek, onVolume }) {
+    function bindPlayerAccessibility({ container, getVideo, scope, slider, toggleFullscreen, toggleSubtitles, onSeek, onVolume, setVolume, toggleMute }) {
         // Text fields, menus and dialogs keep their own keys. Player buttons do not
         // swallow shortcuts: arrows and letters always reach the player, and only a
         // keyboard-focused (Tab) control keeps Space/Enter as its own activation.
@@ -985,9 +989,16 @@
             if (!media || !container.isConnected || !PLAYER_SHORTCUT_KEYS.has(key)) return false;
             if (key === ' ' || key === 'k') { if (media.paused) media.play().catch(() => {}); else media.pause(); }
             else if (['j', 'l', 'arrowleft', 'arrowright'].includes(key)) { seek(media.currentTime + ({ j: -10, l: 10, arrowleft: -5, arrowright: 5 }[key])); onSeek?.(key === 'j' || key === 'arrowleft' ? 'left' : 'right'); }
-            else if (key === 'arrowup' || key === 'arrowdown') { media.volume = Math.max(0, Math.min(1, media.volume + (key === 'arrowup' ? .05 : -.05))); onVolume?.(media.volume * 100); }
+            else if (key === 'arrowup' || key === 'arrowdown') {
+                // Through the volume controller: it re-applies its own intended volume
+                // on every volumechange, so a direct write would be reverted.
+                const base = media.muted ? 0 : media.volume;
+                const next = Math.round(Math.max(0, Math.min(1, base + (key === 'arrowup' ? .05 : -.05))) * 100) / 100;
+                if (setVolume) setVolume(next, next === 0); else media.volume = next;
+                onVolume?.(next * 100);
+            }
             else if (key === 'f') toggleFullscreen?.();
-            else if (key === 'm') media.muted = !media.muted;
+            else if (key === 'm') { if (toggleMute) toggleMute(); else media.muted = !media.muted; }
             else if (key === 'c') toggleSubtitles?.();
             else if (key === '<' || key === '>') window.PlayerMediaControls.PlaybackRate.step(media, key === '>' ? 1 : -1);
             else if (key === '?') help.hidden = !help.hidden;
@@ -5140,7 +5151,9 @@
             bindPlayerAccessibility({ container: newContainer, getVideo: () => permanentVideo || video,
                 scope: listenerScope, slider: progressContainer, toggleFullscreen, toggleSubtitles,
                 onSeek: direction => showSeekIndicator(direction === 'left' ? leftSeekIndicator : rightSeekIndicator, direction),
-                onVolume: showVolumeIndicator });
+                onVolume: showVolumeIndicator,
+                setVolume: (value, muted) => volumeController.set(value, muted),
+                toggleMute: () => volumeController.toggle() });
 
             // === Anime Opening Skip Button ===
             // === Anime Opening Skip Button ===

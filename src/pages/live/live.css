@@ -284,3 +284,34 @@ html:has(:fullscreen) *:not(:fullscreen, :fullscreen *)::after {
     text-decoration: underline;
     text-underline-offset: 4px;
 }
+
+/* The approved standby graphic is broadcast content; its shell keeps theme parity. */
+.live-empty { padding: 0; text-align: start; }
+.live-standby { position: relative; isolation: isolate; width: 100%; min-width: 0; aspect-ratio: 16 / 9; min-height: 430px; overflow: hidden; border: 1px solid var(--ui-color-border); border-radius: 16px; background: var(--ui-broadcast-bg); color: var(--ui-broadcast-content); }
+.live-standby__pattern { position: absolute; inset: 0; z-index: -1; width: 100%; height: 100%; object-fit: cover; opacity: .49; pointer-events: none; }
+.live-standby__top, .live-standby__bottom { position: absolute; left: 25px; right: 25px; display: flex; align-items: center; justify-content: space-between; gap: 15px; }
+.live-standby__top { top: 20px; }.live-standby__bottom { bottom: 20px; }
+.live-standby__brand { display: flex; align-items: center; gap: 10px; }.live-standby__brand img { width: 25px; height: 25px; }
+.live-standby__brand strong { font-size: 12px; }.live-standby__brand small { display: block; margin-top: 2px; font-size: 8px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ui-broadcast-muted); }
+.live-standby__clock { text-align: right; font-size: 12px; color: var(--ui-broadcast-muted); font-variant-numeric: tabular-nums; }.live-standby__clock small { display: block; font-size: 8px; margin-top: 2px; }
+.live-standby__content { position: absolute; inset: 65px 15% 85px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+.live-standby__label { font-size: 9px; letter-spacing: 2.4px; text-transform: uppercase; color: var(--ui-broadcast-muted); }
+.live-standby__content h2 { margin: 14px 0 0; font-size: clamp(27px, 3.2vw, 45px); line-height: 1.2; letter-spacing: -1px; font-weight: 550; text-wrap: balance; }
+.live-standby__content p { max-width: 390px; margin: 12px 0 0; color: var(--ui-broadcast-muted); font-size: 12px; line-height: 1.75; text-wrap: balance; }
+#liveStandbyCountdownWrap { margin-top: 22px; }#liveStandbyCountdownWrap > small { font-size: 8px; letter-spacing: 2px; text-transform: uppercase; color: var(--ui-broadcast-muted); }
+.live-standby__countdown { margin-top: 6px; font: 400 clamp(44px, 5.7vw, 79px)/1.12 ui-monospace, Consolas, monospace; letter-spacing: -4px; font-variant-numeric: tabular-nums; }
+.live-standby__no-time { margin-top: 24px; padding: 8px 12px; border: 1px solid var(--ui-broadcast-border); border-radius: 6px; font-size: 10px; color: var(--ui-broadcast-muted); }
+.live-standby__next { display: flex; align-items: center; gap: 11px; min-width: 0; }.live-standby__next img { width: 33px; height: 48px; object-fit: cover; border-radius: 4px; }.live-standby__next strong { display: block; font-size: 12px; font-weight: 550; }.live-standby__next small { display: block; font-size: 9px; color: var(--ui-broadcast-muted); margin-bottom: 3px; }
+.live-standby__bottom .live-control { flex: none; margin-left: auto; border: 1px solid var(--ui-broadcast-border); color: var(--ui-broadcast-content); }.live-standby__bottom svg { width: 17px; height: 17px; }
+.live-standby:fullscreen { width: 100vw; height: 100vh; min-height: 100vh; aspect-ratio: auto; border: 0; border-radius: 0; }
+.live-standby-schedule { margin-top: 22px; }.live-standby-schedule h2 { margin: 0 0 12px; font-size: 14px; font-weight: 550; }
+.live-standby-schedule > div { display: flex; align-items: center; gap: 18px; padding: 17px 19px; border: 1px solid var(--ui-color-border); border-radius: 12px; background: var(--ui-color-surface); }
+.live-standby-schedule time { font-size: 17px; font-variant-numeric: tabular-nums; }.live-standby-schedule strong { display: block; font-size: 13px; font-weight: 550; }.live-standby-schedule small { display: block; font-size: 10px; color: var(--ui-color-content-subtle); }.live-standby-schedule > div > small { margin-left: auto; }
+@media (max-width: 640px) {
+    .live-standby { min-height: 480px; aspect-ratio: auto; border-radius: 12px; }
+    .live-standby__pattern { opacity: .36; }.live-standby__top, .live-standby__bottom { left: 16px; right: 16px; }.live-standby__content { inset: 79px 18px 105px; }
+    .live-standby__content h2 { font-size: 31px; max-width: 280px; }.live-standby__content p { font-size: 11px; }.live-standby__countdown { font-size: 65px; letter-spacing: -3px; }
+    .live-standby__brand img { width: 21px; height: 21px; }.live-standby__brand small { font-size: 7px; letter-spacing: 1px; }.live-standby__clock { font-size: 10px; }
+    .live-standby__next strong { font-size: 11px; max-width: 200px; }.live-standby__next img { width: 29px; height: 43px; }.live-standby__next { gap: 8px; }
+    .live-standby-schedule > div { padding: 14px 12px; gap: 12px; }.live-standby-schedule > div > small { display: none; }
+}

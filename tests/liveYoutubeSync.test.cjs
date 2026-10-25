@@ -13,15 +13,18 @@ const utilsCode = read('src/shared/utils/Utils.js');
 const playerConfigCode = read('src/shared/config/player.config.js');
 const cinemaChannelCode = read('src/shared/services/CinemaChannelService.js');
 const livePageCode = read('src/pages/live/live.js');
+const standbyCode = read('src/pages/live/LiveStandby.js');
 const embedHtml = read('public/player/embed.html');
 
 const WRAPPER_ORIGIN = 'https://movielistdb-13208.web.app';
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-function createChannelBus(initialChannel) {
+function createChannelBus(initialChannel, initialSchedule = {}) {
     let currentDoc = structuredClone(initialChannel);
+    let scheduleDocs = structuredClone(initialSchedule);
     const channelSubs = new Set();
+    const scheduleSubs = new Set();
     const writes = [];
     let writeGate = null;
 
@@ -29,10 +32,16 @@ function createChannelBus(initialChannel) {
         const snap = { exists: Boolean(currentDoc), data: () => structuredClone(currentDoc) };
         for (const cb of [...channelSubs]) cb(snap);
     }
+    const scheduleSnapshot = () => ({ docs: Object.entries(scheduleDocs).map(([id, data]) => ({ id, data: () => structuredClone(data) })) });
 
     return {
         writes,
         getDoc: () => structuredClone(currentDoc),
+        getScheduled: id => structuredClone(scheduleDocs[id]),
+        setServerSchedule(next) {
+            scheduleDocs = structuredClone(next);
+            for (const callback of [...scheduleSubs]) callback(scheduleSnapshot());
+        },
         holdNextWrite() {
             let release;
             const gate = new Promise(resolve => { release = resolve; });
@@ -69,15 +78,42 @@ function createChannelBus(initialChannel) {
             };
             const scheduleCollection = {
                 onSnapshot(onNext) {
-                    queueMicrotask(() => onNext({ docs: [] }));
-                    return () => {};
+                    scheduleSubs.add(onNext);
+                    queueMicrotask(() => onNext(scheduleSnapshot()));
+                    return () => scheduleSubs.delete(onNext);
                 },
-                doc: () => channelRef
+                doc(id) {
+                    return {
+                        id,
+                        get: async () => ({ id, exists: Boolean(scheduleDocs[id]), data: () => structuredClone(scheduleDocs[id]) }),
+                        async update(patch) {
+                            writes.push({ uid, docPath: `cinemaSchedule/${id}`, patch: structuredClone(patch) });
+                            if (writeGate) await writeGate;
+                            assert.ok(scheduleDocs[id], 'cannot recreate a deleted schedule entry');
+                            for (const [key, value] of Object.entries(patch)) {
+                                if (key.includes('.')) {
+                                    const [parent, field] = key.split('.');
+                                    scheduleDocs[id][parent] = { ...scheduleDocs[id][parent], [field]: structuredClone(value) };
+                                } else scheduleDocs[id][key] = structuredClone(value);
+                            }
+                            for (const callback of [...scheduleSubs]) callback(scheduleSnapshot());
+                        }
+                    };
+                }
             };
             return {
                 getCurrentUser: () => (uid ? { uid } : null),
                 waitForAuthReady: async () => (uid ? { uid } : null),
                 db: {
+                    async runTransaction(callback) {
+                        const pending = [];
+                        const result = await callback({
+                            get: ref => ref.get(),
+                            update: (ref, patch) => pending.push(() => ref.update(patch))
+                        });
+                        for (const write of pending) await write();
+                        return result;
+                    },
                     collection(name) {
                         if (name === 'settings') {
                             return { doc: () => channelRef };
@@ -100,13 +136,25 @@ function createChannelBus(initialChannel) {
     };
 }
 
-async function mountLiveClient(bus, { uid = null, isAdmin = false, cachedAdmin = false } = {}) {
+async function mountLiveClient(bus, { uid = null, isAdmin = false, cachedAdmin = false, clock = null } = {}) {
     const dom = new JSDOM(`<!doctype html><html lang="ru"><body>${mainMarkup}</body></html>`, {
         url: 'https://extension.local/src/pages/live/live.html',
         runScripts: 'outside-only',
         pretendToBeVisual: true
     });
     const { window } = dom;
+    const clockTicks = new Map();
+    if (clock) {
+        window.Date.now = () => clock.now;
+        const originalInterval = window.setInterval.bind(window);
+        const originalClearInterval = window.clearInterval.bind(window);
+        let nextId = -1;
+        window.setInterval = (callback, delay, ...args) => {
+            if (delay !== 1000) return originalInterval(callback, delay, ...args);
+            const id = nextId--; clockTicks.set(id, callback); return id;
+        };
+        window.clearInterval = id => { if (!clockTicks.delete(id)) originalClearInterval(id); };
+    }
     const storage = { cached_is_admin: cachedAdmin };
     window.chrome = {
         storage: {
@@ -135,6 +183,7 @@ async function mountLiveClient(bus, { uid = null, isAdmin = false, cachedAdmin =
     window.eval(utilsCode);
     window.eval(playerConfigCode);
     window.eval(cinemaChannelCode);
+    window.eval(standbyCode);
     // Avoid network clock sync during unit tests.
     window.CinemaChannel.syncClock = async () => 0;
     window.firebaseManager = bus.makeManager({ uid, isAdmin });
@@ -171,6 +220,11 @@ async function mountLiveClient(bus, { uid = null, isAdmin = false, cachedAdmin =
         storage,
         commands,
         frame: () => window.document.querySelector('.live-frame'),
+        tick(at) {
+            assert.ok(clock, 'deterministic tick requires a controlled clock');
+            clock.now = at;
+            for (const callback of [...clockTicks.values()]) callback();
+        },
         clearCommands() { commands.length = 0; },
         /** A message from the embedded player page (same extension origin). */
         emitFrame(data) {
@@ -296,7 +350,7 @@ test('YouTube video without a stored length ends by itself: admin stores the pla
         const lengthWrites = bus.writes.filter(w => w.patch.youtube?.durationSec);
         assert.equal(lengthWrites.length, 1, 'stored once');
         assert.equal(lengthWrites[0].patch.youtube.durationSec, 121);
-        assert.equal(lengthWrites[0].patch.youtube.videoId, 'dQw4w9WgXcQ');
+        assert.equal(bus.getDoc().youtube.videoId, 'dQw4w9WgXcQ');
 
         await wait(1100);
         assert.equal(viewer.window.document.getElementById('liveEmpty').hidden, false, 'viewer sees the ended screen');
@@ -547,4 +601,19 @@ test('embed.html offers YouTube captions and turns them on and off on request', 
     } finally {
         embed.dom.window.close();
     }
+});
+
+test('PlayerConfig.buildYouTubePlayerUrl opens our player page standalone, with the wrapper as fallback', () => {
+    const load = chrome => {
+        const sandbox = { globalThis: null, window: undefined, module: { exports: {} }, chrome };
+        sandbox.globalThis = sandbox;
+        require('node:vm').runInNewContext(playerConfigCode, sandbox);
+        return sandbox.module.exports;
+    };
+    const inExtension = load({ runtime: { getURL: path => `chrome-extension://abc/${path}` } });
+    assert.equal(inExtension.buildYouTubePlayerUrl('dQw4w9WgXcQ', { start: 12 }),
+        'chrome-extension://abc/src/pages/live/youtube-player.html?v=dQw4w9WgXcQ&start=12&live=0&standalone=1');
+    const outside = load(undefined);
+    assert.match(outside.buildYouTubePlayerUrl('dQw4w9WgXcQ'), /^https:\/\/movielistdb-13208\.web\.app\/player\/embed\.html\?v=dQw4w9WgXcQ&autoplay=1/);
+    assert.match(inExtension.buildYouTubePlayerUrl('bad id'), /embed/, 'a malformed key never reaches our page');
 });

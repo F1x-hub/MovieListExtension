@@ -417,6 +417,14 @@ service cloud.firestore {
     // publish what is on air. It never holds media, only the item and start time.
     match /settings/{settingId} {
       allow read: if settingId == 'commentReactions' || settingId == 'cinemaChannel';
+      allow read: if settingId == 'cinemaScheduleState' && isAdmin();
+      allow create, update: if settingId == 'cinemaScheduleState' && isAdmin()
+        && request.resource.data.keys().hasOnly(['revision', 'updatedAt', 'updatedBy'])
+        && request.resource.data.revision is int
+        && request.resource.data.revision > 0 && request.resource.data.revision <= 9007199254740991
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid
+        && cinemaScheduleRevisionAdvanced();
       allow create, update: if settingId == 'cinemaChannel'
         && isAdmin()
         && request.resource.data.mode in ['off', 'youtube', 'movie']
@@ -436,18 +444,66 @@ service cloud.firestore {
       allow delete: if false;
     }
     
+    // Every occupancy mutation commits with the shared revision. The client reads
+    // it before its fresh overlap query, so concurrent writers must retry together.
+    function cinemaScheduleRevisionAdvanced() {
+      let statePath = /databases/$(database)/documents/settings/cinemaScheduleState;
+      let previous = exists(statePath) ? get(statePath).data.revision : 0;
+      let next = getAfter(statePath).data;
+      return next.revision is int && next.revision == previous + 1
+        && next.updatedAt == request.time && next.updatedBy == request.auth.uid;
+    }
+
+    function validCinemaDuration(media) {
+      return (!('durationSec' in media) || (media.durationSec is int
+          && media.durationSec >= 0 && media.durationSec <= 2147483647))
+        && (!('pausedAtSec' in media) || media.pausedAtSec == null
+          || (media.pausedAtSec is number && media.pausedAtSec >= 0 && media.pausedAtSec <= 2147483647));
+    }
+
+    function validCinemaSchedule(data) {
+      return data.mode in ['youtube', 'movie']
+        && data.title is string && data.title.size() <= 120
+        && data.startedAt is timestamp
+        && (!('endsAt' in data) || (data.endsAt is timestamp && data.endsAt > data.startedAt))
+        && (!('playbackStartedAt' in data) || data.playbackStartedAt is timestamp)
+        && data.updatedAt == request.time && data.updatedBy == request.auth.uid
+        && data.keys().hasOnly(['mode', 'title', 'youtube', 'movie', 'startedAt', 'endsAt', 'playbackStartedAt', 'updatedAt', 'updatedBy'])
+        && ((data.mode == 'youtube' && data.youtube is map && data.get('movie', null) == null
+            && data.youtube.keys().hasOnly(['videoId', 'live', 'durationSec', 'pausedAtSec'])
+            && data.youtube.videoId is string && data.youtube.videoId.matches('^[A-Za-z0-9_-]{11}$')
+            && data.youtube.live is bool && validCinemaDuration(data.youtube)
+            && (!data.youtube.live || data.youtube.get('pausedAtSec', null) == null))
+          || (data.mode == 'movie' && data.movie is map && data.get('youtube', null) == null
+            && data.movie.keys().hasOnly(['kinopoiskId', 'durationSec', 'posterUrl', 'pausedAtSec'])
+            && data.movie.kinopoiskId is int && data.movie.kinopoiskId > 0 && data.movie.kinopoiskId <= 9007199254740991
+            && validCinemaDuration(data.movie)
+            && (!('posterUrl' in data.movie) || (data.movie.posterUrl is string
+              && (data.movie.posterUrl == '' || (data.movie.posterUrl.size() <= 508 && data.movie.posterUrl.matches('^https://[^\\s"\'<>]+$')))))));
+    }
+
+    function cinemaScheduleOccupancyUnchanged() {
+      let before = resource.data;
+      let after = request.resource.data;
+      return before.startedAt == after.startedAt
+        && before.get('endsAt', null) == after.get('endsAt', null)
+        && before.mode == after.mode
+        && ((after.mode == 'youtube' && before.youtube.videoId == after.youtube.videoId
+            && before.youtube.live == after.youtube.live
+            && (('endsAt' in after) || before.youtube.get('durationSec', 0) == after.youtube.get('durationSec', 0)))
+          || (after.mode == 'movie' && before.movie.kinopoiskId == after.movie.kinopoiskId
+            && (('endsAt' in after) || before.movie.get('durationSec', 0) == after.movie.get('durationSec', 0))));
+    }
+
     // «Эфир» schedule: planned shows that start on their own at `startedAt`.
     // Everyone reads it (the live page resolves what is on air); only admins plan.
     match /cinemaSchedule/{itemId} {
       allow read: if true;
-      allow create, update: if isAdmin()
-        && request.resource.data.mode in ['youtube', 'movie']
-        && request.resource.data.title is string
-        && request.resource.data.title.size() <= 120
-        && request.resource.data.startedAt is timestamp
-        && request.resource.data.updatedAt == request.time
-        && request.resource.data.keys().hasOnly(['mode', 'title', 'youtube', 'movie', 'startedAt', 'updatedAt', 'updatedBy']);
-      allow delete: if isAdmin();
+      allow create: if isAdmin() && validCinemaSchedule(request.resource.data)
+        && ('endsAt' in request.resource.data) && cinemaScheduleRevisionAdvanced();
+      allow update: if isAdmin() && validCinemaSchedule(request.resource.data)
+        && (cinemaScheduleOccupancyUnchanged() || cinemaScheduleRevisionAdvanced());
+      allow delete: if isAdmin() && cinemaScheduleRevisionAdvanced();
     }
 
     // «Эфир» fallback relay (WebRTC from the admin's browser). Only signaling lives

@@ -78,3 +78,30 @@ test('Media Session addresses primary video and tears down owned handlers', () =
     for (const handler of Object.values(h.actions)) assert.equal(handler, null);
     h.dom.window.close();
 });
+test('arrow keys keep changing the volume through the volume controller, not just once', () => {
+    const h = harness();
+    h.scope.dispose();
+    const scope = h.window.MovieExtension_PlayerCleaner._test.createListenerScope();
+    const storage = new Map();
+    const controller = new h.window.PlayerMediaControls.PlayerVolumeController({
+        getVideo: () => h.video,
+        storage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) }
+    });
+    // The real player re-applies the intended volume on every volumechange.
+    h.video.addEventListener('volumechange', event => controller.enforce(h.video, event));
+    h.video.volume = 1; controller.set(1, false);
+    h.window.MovieExtension_PlayerCleaner._test.bindPlayerAccessibility({
+        container: h.window.document.getElementById('root'), getVideo: () => h.video, scope,
+        setVolume: (value, muted) => controller.set(value, muted), toggleMute: () => controller.toggle()
+    });
+    for (let i = 0; i < 6; i += 1) h.key('ArrowDown');
+    assert.equal(h.video.volume, 0.7, 'six presses down from 100 %');
+    for (let i = 0; i < 4; i += 1) h.key('ArrowUp');
+    assert.equal(h.video.volume, 0.9, 'four presses back up');
+    assert.equal(storage.get('movieExtension_videoVolume'), '0.9', 'remembered like the slider');
+    h.key('m'); assert.equal(h.video.muted, true);
+    h.key('m'); assert.equal(h.video.muted, false);
+    assert.equal(h.video.volume, 0.9, 'unmute restores the previous level');
+    scope.dispose();
+    h.dom.window.close();
+});

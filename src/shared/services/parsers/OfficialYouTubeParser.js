@@ -79,8 +79,9 @@ class OfficialYouTubeParser extends BaseParserService {
     async getVideoSources(searchResult) {
         const videoId = this._extractVideoId(typeof searchResult === 'string' ? searchResult : (searchResult?.videoId || searchResult?.url));
         if (!videoId) return [];
-        const embedUrl = typeof PlayerConfig !== 'undefined' && PlayerConfig.buildYouTubeEmbedUrl
-            ? PlayerConfig.buildYouTubeEmbedUrl(videoId, { autoplay: true })
+        // Our movie player over YouTube, not YouTube's own chrome.
+        const embedUrl = typeof PlayerConfig !== 'undefined' && PlayerConfig.buildYouTubePlayerUrl
+            ? PlayerConfig.buildYouTubePlayerUrl(videoId)
             : `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=1&rel=0`;
         return [{
             name: searchResult?.channelName ? `${this.name} — ${searchResult.channelName}` : this.name,
