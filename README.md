@@ -438,6 +438,11 @@ keeps npm-compatible three-component semver metadata.
 <details open>
 <summary><strong>Unreleased</strong></summary>
 
+### Features
+
+- The live page keeps the next screening below the player during playback and intermissions. Every viewer, including guests, can expand today's programme, see finished/current/upcoming screenings and filter to “Now and next”. The list uses the existing public schedule subscription, follows the viewer's local day and time zone, handles screenings across midnight, and distinguishes loading, empty and unavailable schedules without interrupting playback.
+- YouTube broadcast titles open the current video on YouTube in a separate tab, keeping the shared screening playing. Catalogue movie titles continue to open their movie details page.
+
 </details>
 
 <details>

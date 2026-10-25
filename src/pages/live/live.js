@@ -19,6 +19,7 @@
     let clockTimer = null;
     let unsubscribe = null;
     let standby = null;
+    let programme = null;
     let mediaEnded = null;
 
     // What the YouTube player reported about the mounted video. A video published
@@ -93,6 +94,11 @@
         const next = window.CinemaChannel.nextScheduled(scheduleItems, at);
         standby.render({ channel, position: channel ? currentPosition() : null, next, nowMs: at,
             errorKeys: emptyKeys?.[0]?.startsWith('unavailable') ? emptyKeys : null });
+    }
+
+    function renderProgramme() {
+        programme?.render({ items: scheduleItems, channel, position: channel ? currentPosition() : null,
+            nowMs: window.CinemaChannel.now(), ready: scheduleReady, error: scheduleError });
     }
 
     function showEmpty(titleKey, textKey) {
@@ -186,17 +192,24 @@
         }
     }
 
-    /** The movie title links to its details page, where it can be rated. */
-    function setTitle(text, movieId = NaN) {
-        if (!Number.isSafeInteger(movieId) || movieId <= 0) {
+    /** Titles open their source: catalogue details or the current YouTube video. */
+    function setTitle(text, movieId = NaN, youtubeVideoId = '') {
+        const movie = Number.isSafeInteger(movieId) && movieId > 0;
+        const youtube = /^[A-Za-z0-9_-]{11}$/.test(youtubeVideoId);
+        if (!movie && !youtube) {
             els.title.textContent = text;
             return;
         }
         const link = document.createElement('a');
         link.className = 'live-title__link';
-        link.href = `../movie-details/movie-details.html?movieId=${movieId}`;
+        link.href = movie ? `../movie-details/movie-details.html?movieId=${movieId}`
+            : `https://www.youtube.com/watch?v=${youtubeVideoId}`;
         link.textContent = text;
-        link.title = t('open_movie');
+        link.title = t(movie ? 'open_movie' : 'open_youtube');
+        if (!movie) {
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+        }
         els.title.replaceChildren(link);
     }
 
@@ -230,7 +243,8 @@
         els.stage.hidden = false;
         els.notice.hidden = true;
         const movieId = channel.mode === 'movie' ? Number(channel.movie?.kinopoiskId) : NaN;
-        setTitle(channel.title || (channel.mode === 'youtube' ? t('title') : t('movie_on_air')), movieId);
+        setTitle(channel.title || (channel.mode === 'youtube' ? t('title') : t('movie_on_air')), movieId,
+            channel.mode === 'youtube' ? channel.youtube.videoId : '');
 
         let src;
         if (channel.mode === 'youtube') {
@@ -485,6 +499,8 @@
     // The manual channel plus the schedule; `channel` is whatever is on air now.
     let manualChannel = null;
     let scheduleItems = [];
+    let scheduleReady = false;
+    let scheduleError = false;
     let channelSignature = '';
 
     function signatureOf(c) {
@@ -512,6 +528,7 @@
 
     function renderClock() {
         renderStandby();
+        renderProgramme();
         if (!channel || channel.mode === 'off') return;
         const { CinemaChannel } = window;
         const position = currentPosition();
@@ -663,6 +680,7 @@
         els.relayHost = els.relayHostBtn;
         els.relayWatch = els.relayWatchBtn;
         if (window.LiveStandby) standby = new window.LiveStandby(els.empty, t);
+        if (window.LiveProgramme) programme = new window.LiveProgramme(document.getElementById('liveProgramme'), t);
 
         try {
             const { i18n } = await import('../../shared/i18n/I18n.js');
@@ -681,6 +699,7 @@
                 }
                 if (!channel) {
                     els.subtitle.textContent = t('intro');
+                    renderProgramme();
                     return;
                 }
                 if (els.empty.hidden) mountMedia(true);
@@ -692,6 +711,7 @@
         }
 
         ensureNavigation();
+        renderProgramme();
         els.mute.addEventListener('click', toggleSound);
         els.volume.addEventListener('input', onVolumeInput);
         els.fullscreen.addEventListener('click', toggleFullscreen);
@@ -757,8 +777,15 @@
             });
             unsubscribeSchedule = service.subscribeSchedule(items => {
                 scheduleItems = items;
+                scheduleReady = true;
+                scheduleError = false;
                 if (manualChannel) refreshChannel();
-            }, error => console.warn('[Live] Schedule unavailable:', error));
+                renderProgramme();
+            }, error => {
+                console.warn('[Live] Schedule unavailable:', error);
+                scheduleError = true;
+                renderProgramme();
+            });
             unsubscribeManual = service.subscribe(next => {
                 clearTimeout(stallTimer);
                 manualChannel = next;
@@ -769,6 +796,8 @@
             });
         } catch (error) {
             console.warn('[Live] Firebase is not ready:', error);
+            scheduleError = true;
+            renderProgramme();
             detectAdmin(null);
             showEmpty('unavailable_title', 'unavailable_later');
         }
@@ -782,6 +811,7 @@
         window.addEventListener('pagehide', () => {
             clearInterval(clockTimer);
             unsubscribe?.();
+            programme?.destroy();
             relay.host?.stop();
             relay.viewer?.leave();
         }, { once: true });

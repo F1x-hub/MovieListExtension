@@ -18,6 +18,10 @@ rejected. Schedule writes require these Firestore rules, which deploy separately
 from extension builds (published to `movielistdb-13208` on 2026-10-25).
 `LiveSchedulePlanner` owns the admin day grid; `LiveStandby` renders viewer gaps
 and early media endings from existing snapshots without extra writes or timers.
+`LiveProgramme` owns the common next-show strip and expandable local-day programme
+for every viewer, including guests. It reuses the page's schedule subscription
+and resolved playback position, preserves stale snapshots on errors, and never
+mounts players or writes data. Its clock uses the existing live-page timer.
 New blocks match source runtime; moves preserve existing slot duration. The
 editor uses the shared `CustomDatePicker` and `SortControl` without native popups.
 Run `npm run test:live-planner` for schedule, concurrency, editor and viewer tests.

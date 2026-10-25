@@ -162,6 +162,13 @@ popups sit outside the clipped grid, fit the viewport and support keyboard use.
 The calendar uses neutral page-scoped styling. Overlap feedback includes text
 as well as a border.
 
+The viewer's common next-show strip sits outside both the player and standby
+containers. It expands into today's public programme with all-day/current-and-next
+filters, labelled playback states and explicit dates across midnight. The strip
+sticks below the actual navigation height while reading the programme. Expansion
+preserves playback, keyboard focus, theme parity and the selected filter. Loading,
+empty, unavailable and stale schedules have distinct text states.
+
 `common.css`, old `--theme-*` variables, `--accent-*` variables, Bootstrap
 status variables, and page-local palettes are migration compatibility layers.
 Do not add new consumers. A migration may temporarily preserve an alias, but

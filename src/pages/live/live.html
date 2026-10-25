@@ -21,7 +21,7 @@
     <link rel="icon" type="image/png" sizes="16x16" href="../../shared/assets/icons/app/favicon16.png">
     <link rel="icon" type="image/png" sizes="32x32" href="../../shared/assets/icons/app/favicon32.png">
 </head>
-<body>
+<body class="live-page">
     <!-- Navigation will be inserted here by Navigation.js -->
 
     <main class="live-root">
@@ -32,6 +32,7 @@
                 <p class="live-subtitle" id="liveSubtitle">Общий показ для всех: заходите — и смотрите с того же момента, что и остальные.</p>
             </div>
             <div class="live-meta">
+                <button type="button" class="btn btn-secondary live-programme-button" id="liveProgrammeButton" aria-controls="liveProgrammePanel" hidden><span>Вся программа</span></button>
                 <span class="live-clock" id="liveClock" hidden></span>
                 <button type="button" class="btn btn-secondary live-sync-btn" id="liveRelayWatchBtn" hidden>Смотреть трансляцию ведущего</button>
                 <button type="button" class="btn btn-secondary live-sync-btn" id="liveRelayHostBtn" hidden>Транслировать мою вкладку</button>
@@ -63,8 +64,23 @@
                 <div class="live-standby__content"><span class="live-standby__label" id="liveStandbyLabel">Канал ожидает программу</span><h2 id="liveEmptyTitle" aria-live="polite">Эфир пока не начался</h2><p id="liveEmptyText">Новые показы появятся здесь.</p><div id="liveStandbyCountdownWrap" hidden><small data-standby-i18n="standby_countdown">До следующего показа</small><div class="live-standby__countdown" id="liveStandbyCountdown" role="timer"></div></div><span class="live-standby__no-time" id="liveStandbyNoTime">Новых показов пока нет</span></div>
                 <div class="live-standby__bottom"><div class="live-standby__next" id="liveStandbyNext" hidden><img id="liveStandbyPoster" alt="" hidden><div><small id="liveStandbyNextTime"></small><strong id="liveStandbyNextName"></strong></div></div><button type="button" class="live-control" id="liveStandbyFullscreen" aria-label="Полный экран"></button></div>
             </section>
-            <section class="live-standby-schedule" id="liveStandbySchedule" hidden><h2 id="liveStandbyScheduleTitle">Следующий показ</h2><div><time id="liveStandbyScheduleTime"></time><span><strong id="liveStandbyScheduleName"></strong><small id="liveStandbyScheduleMeta"></small></span><small data-standby-i18n="standby_automatic">Начнётся автоматически</small></div></section>
         </div>
+        <section class="live-programme" id="liveProgramme" aria-label="Программа эфира" hidden>
+            <div class="live-programme__next" id="liveProgrammeNext">
+                <div class="live-programme__next-time"><small id="liveProgrammeEyebrow">Далее</small><strong id="liveProgrammeTime">—</strong></div>
+                <img class="live-programme__next-poster" id="liveProgrammePoster" alt="" hidden>
+                <div class="live-programme__next-copy"><h2 id="liveProgrammeName">Загружаем программу…</h2><p id="liveProgrammeMeta"></p></div>
+                <span class="live-programme__wait" id="liveProgrammeWait" hidden></span>
+                <button type="button" class="live-programme__toggle" id="liveProgrammeToggle" aria-expanded="false" aria-controls="liveProgrammePanel"><span id="liveProgrammeToggleText">Программа на сегодня</span><span data-programme-icon="CHEVRON_DOWN" aria-hidden="true"></span></button>
+            </div>
+            <div class="live-programme__panel" id="liveProgrammePanel" hidden>
+                <header class="live-programme__heading"><div><h2 id="liveProgrammeTitle">Программа на сегодня</h2><p id="liveProgrammeDate"></p></div><div class="live-programme__filters" id="liveProgrammeFilters" role="group" aria-label="Показы в программе"><button type="button" data-programme-filter="all" id="liveProgrammeAll" aria-pressed="true">Весь день</button><button type="button" data-programme-filter="upcoming" id="liveProgrammeUpcoming" aria-pressed="false">Сейчас и далее</button></div></header>
+                <p class="live-programme__notice" id="liveProgrammeNotice" role="status" hidden></p>
+                <ol class="live-programme__list" id="liveProgrammeList"></ol>
+                <div class="live-programme__empty" id="liveProgrammeEmpty"><h3 id="liveProgrammeEmptyTitle"></h3><p id="liveProgrammeEmptyText"></p></div>
+                <footer class="live-programme__footer"><span id="liveProgrammeFootnote"></span><button type="button" id="liveProgrammeCollapse"><span>Свернуть программу</span><span data-programme-icon="CHEVRON_UP" aria-hidden="true"></span></button></footer>
+            </div>
+        </section>
     </main>
 
     <script defer src="../../../libs/firebase-app-compat.js"></script>
@@ -88,6 +104,7 @@
     <script defer src="../../shared/services/CinemaChannelService.js"></script>
     <script defer src="../../shared/services/LiveRelayService.js"></script>
     <script defer src="LiveStandby.js"></script>
+    <script defer src="LiveProgramme.js"></script>
     <script defer src="live.js"></script>
     <script defer src="../../shared/components/ReportWidget.js"></script>
 </body>

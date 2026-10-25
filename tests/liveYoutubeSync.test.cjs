@@ -14,6 +14,7 @@ const playerConfigCode = read('src/shared/config/player.config.js');
 const cinemaChannelCode = read('src/shared/services/CinemaChannelService.js');
 const livePageCode = read('src/pages/live/live.js');
 const standbyCode = read('src/pages/live/LiveStandby.js');
+const programmeCode = read('src/pages/live/LiveProgramme.js');
 const embedHtml = read('public/player/embed.html');
 
 const WRAPPER_ORIGIN = 'https://movielistdb-13208.web.app';
@@ -25,6 +26,7 @@ function createChannelBus(initialChannel, initialSchedule = {}) {
     let scheduleDocs = structuredClone(initialSchedule);
     const channelSubs = new Set();
     const scheduleSubs = new Set();
+    const scheduleErrors = new Set();
     const writes = [];
     let writeGate = null;
 
@@ -38,6 +40,7 @@ function createChannelBus(initialChannel, initialSchedule = {}) {
         writes,
         getDoc: () => structuredClone(currentDoc),
         getScheduled: id => structuredClone(scheduleDocs[id]),
+        failSchedule() { for (const callback of scheduleErrors) callback(new Error('fixture: schedule offline')); },
         setServerSchedule(next) {
             scheduleDocs = structuredClone(next);
             for (const callback of [...scheduleSubs]) callback(scheduleSnapshot());
@@ -90,10 +93,11 @@ function createChannelBus(initialChannel, initialSchedule = {}) {
                 }
             };
             const scheduleCollection = {
-                onSnapshot(onNext) {
+                onSnapshot(onNext, onError) {
                     scheduleSubs.add(onNext);
+                    if (onError) scheduleErrors.add(onError);
                     queueMicrotask(() => onNext(scheduleSnapshot()));
-                    return () => scheduleSubs.delete(onNext);
+                    return () => { scheduleSubs.delete(onNext); scheduleErrors.delete(onError); };
                 },
                 doc(id) {
                     return {
@@ -197,6 +201,7 @@ async function mountLiveClient(bus, { uid = null, isAdmin = false, cachedAdmin =
     window.eval(playerConfigCode);
     window.eval(cinemaChannelCode);
     window.eval(standbyCode);
+    window.eval(programmeCode);
     // Avoid network clock sync during unit tests.
     window.CinemaChannel.syncClock = async () => 0;
     window.firebaseManager = bus.makeManager({ uid, isAdmin });
@@ -258,6 +263,38 @@ async function mountLiveClient(bus, { uid = null, isAdmin = false, cachedAdmin =
 
 const YT = { mode: 'youtube', title: 'Эфир YouTube' };
 const stateMessages = client => client.commands.map(c => c.message).filter(m => m.type === 'BROADCAST_STATE');
+
+test('broadcast heading links to the current YouTube video, preserves movie links and clears inactive links', async () => {
+    const clock = { now: new Date(2026, 9, 25, 19, 12).getTime() };
+    const youtube = { ...YT, title: '<img src=x onerror=alert(1)>', startedAt: new Date(clock.now - 30_000),
+        youtube: { videoId: 'dQw4w9WgXcQ', live: false, durationSec: 300 } };
+    const bus = createChannelBus(youtube);
+    const viewer = await mountLiveClient(bus, { clock });
+    try {
+        const title = viewer.window.document.getElementById('liveTitle');
+        let link = title.querySelector('a');
+        assert.equal(link.href, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+        assert.equal(link.target, '_blank');
+        assert.equal(link.rel, 'noopener noreferrer');
+        assert.equal(link.title, 'live_page.open_youtube');
+        assert.equal(link.textContent, youtube.title);
+        assert.equal(link.querySelector('img'), null);
+        bus.setServerChannel({ ...youtube, youtube: { videoId: 'aqz-KE-bpKQ', live: true, durationSec: 0 } });
+        assert.equal(title.querySelector('a').href, 'https://www.youtube.com/watch?v=aqz-KE-bpKQ');
+        bus.setServerChannel({ mode: 'movie', title: 'Movie', startedAt: new Date(clock.now - 30_000),
+            movie: { kinopoiskId: 301, durationSec: 600 } });
+        link = title.querySelector('a');
+        assert.equal(new URL(link.href).pathname, '/src/pages/movie-details/movie-details.html');
+        assert.equal(new URL(link.href).searchParams.get('movieId'), '301');
+        assert.equal(link.target, '');
+        assert.equal(link.title, 'live_page.open_movie');
+        bus.setServerChannel({ mode: 'off', startedAt: new Date(clock.now) });
+        assert.equal(title.querySelector('a'), null);
+        bus.setServerChannel({ ...youtube, startedAt: new Date(clock.now + 30_000) });
+        assert.equal(title.querySelector('a'), null, 'future videos have no active heading link');
+        assert.equal(bus.writes.length, 0);
+    } finally { viewer.close(); }
+});
 
 test('YouTube on air mounts the movie-player page and hands it the broadcast clock like a movie', async () => {
     const bus = createChannelBus({
@@ -478,6 +515,7 @@ for (const mode of ['movie', 'youtube']) test(`early ${mode} EOF reserves the sl
         assert.equal(viewer.window.document.getElementById('liveEmptyTitle').textContent, 'live_page.standby_ended_title');
         assert.equal(viewer.window.document.getElementById('liveStandbyNextName').textContent, next.title);
         assert.equal(viewer.window.document.getElementById('liveStandbyCountdown').textContent, '10:00');
+        assert.equal(viewer.window.document.querySelector('.live-programme__show[aria-current]'), null, 'early EOF is not labelled on air in the programme');
         viewer.tick(FIXED_NOW + 599_999);
         assert.equal(viewer.frame(), null, 'no early next-program launch');
         assert.equal(viewer.window.document.getElementById('liveStandbyCountdown').textContent, '0:01');
@@ -485,6 +523,7 @@ for (const mode of ['movie', 'youtube']) test(`early ${mode} EOF reserves the sl
         assert.ok(viewer.frame());
         assert.equal(new URL(viewer.frame().src).searchParams.get('movieId'), '302');
         assert.equal(viewer.window.document.getElementById('liveEmpty').hidden, true);
+        assert.equal(viewer.window.document.querySelector('.live-programme__show[aria-current] h3').textContent, next.title);
         assert.equal(bus.writes.length, 0, 'viewer EOF and clock ticks never write Firestore');
         assert.equal(bus.getScheduled('current').endsAt.getTime(), current.endsAt.getTime());
     } finally { viewer.close(); }
@@ -524,6 +563,36 @@ test('standby reacts to actual future/deleted schedule snapshots without a chann
         assert.equal(byId('liveStandbyCountdownWrap').hidden, true);
         assert.equal(byId('liveStandbyNext').hidden, true);
         assert.equal(byId('liveEmptyTitle').textContent, 'live_page.standby_empty_title');
+        assert.equal(bus.writes.length, 0);
+    } finally { viewer.close(); }
+});
+
+test('guest programme receives future edits while the playing channel signature stays unchanged', async () => {
+    const clock = { now: FIXED_NOW };
+    const current = scheduleDoc('movie', FIXED_NOW - 60_000, FIXED_NOW + 600_000);
+    const next = scheduleDoc('movie', FIXED_NOW + 600_000, FIXED_NOW + 1200_000, { title: 'Next show' });
+    const bus = createChannelBus(manualOff(), { current, next });
+    const viewer = await mountLiveClient(bus, { clock });
+    try {
+        const byId = id => viewer.window.document.getElementById(id);
+        const frame = viewer.frame();
+        assert.equal(byId('liveProgramme').hidden, false);
+        assert.equal(byId('liveProgrammeName').textContent, 'Next show');
+        byId('liveProgrammeToggle').click();
+        bus.setServerSchedule({ current, next: { ...next, title: 'Changed next show' } });
+        assert.equal(byId('liveProgrammeName').textContent, 'Changed next show');
+        assert.equal(byId('liveProgrammePanel').hidden, false, 'incoming snapshots preserve disclosure state');
+        assert.equal(viewer.frame(), frame, 'programme edits never remount the running player');
+        bus.failSchedule();
+        assert.equal(byId('liveProgrammeNotice').hidden, false);
+        assert.equal(byId('liveProgrammeName').textContent, 'Changed next show', 'last good snapshot is retained');
+        assert.equal(viewer.frame(), frame, 'programme failure does not stop playback');
+        bus.setServerSchedule({ current });
+        assert.equal(byId('liveProgrammeNotice').hidden, true);
+        assert.equal(byId('liveProgrammeName').textContent, 'live_page.programme_last');
+        assert.equal(byId('liveProgrammePoster').hidden, true);
+        viewer.tick(FIXED_NOW + 600_000);
+        assert.equal(byId('liveProgramme').hidden, false, 'programme remains available after the player ends');
         assert.equal(bus.writes.length, 0);
     } finally { viewer.close(); }
 });
