@@ -148,6 +148,20 @@ roles. Use roles such as page/surface/content/border/interactive/control and
 button roles instead of raw colors. `src/shared/styles/theme.css` provides the
 dark/light values for those roles and owns theme mode mapping.
 
+The broadcast standby screen is fixed dark media content in either shell theme.
+Its neutral `--ui-broadcast-*` roles live in `tokens.css`; the surrounding page,
+programme card and admin editor follow the selected theme. The original
+`src/shared/assets/live/standby-pattern.png` is the approved TV test-pattern art,
+not a copy of the stock reference images. Standby is silent and static, with no
+flashing noise. The admin programme uses one calendar day from 00:00 to 24:00,
+inline zoom controls and labelled draggable blocks with fixed duration. New
+blocks match source runtime; moving existing reservations preserves their exact
+length. The end is calculated automatically and there are no resize handles.
+`CustomDatePicker` supplies the calendar and `SortControl` supplies zoom; their
+popups sit outside the clipped grid, fit the viewport and support keyboard use.
+The calendar uses neutral page-scoped styling. Overlap feedback includes text
+as well as a border.
+
 `common.css`, old `--theme-*` variables, `--accent-*` variables, Bootstrap
 status variables, and page-local palettes are migration compatibility layers.
 Do not add new consumers. A migration may temporarily preserve an alias, but

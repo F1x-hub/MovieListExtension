@@ -6,6 +6,22 @@
 ## Project
 A powerful Chrome Extension (Manifest V3) that enhances the movie discovery and viewing experience. It provides movie rating syncing, Kinopoisk/IMDb integrations, automated player cleanups, custom HLS streaming injections, offscreen audio streaming, and seamless Firebase Firestore database synchronization.
 
+## Live channel programme
+
+`CinemaChannelService` resolves the manual `settings/cinemaChannel` event plus
+`cinemaSchedule` entries. New scheduled entries reserve `[startedAt, endsAt)`;
+`playbackStartedAt` is a separate seek/resume clock, never a grid boundary.
+Source `durationSec` is independent of the reserved slot. Legacy entries remain
+read-compatible. Occupancy mutations use a fresh bounded server query and the
+transactional `settings/cinemaScheduleState.revision` guard; a stale edit is
+rejected. Schedule writes require these Firestore rules, which deploy separately
+from extension builds (published to `movielistdb-13208` on 2026-10-25).
+`LiveSchedulePlanner` owns the admin day grid; `LiveStandby` renders viewer gaps
+and early media endings from existing snapshots without extra writes or timers.
+New blocks match source runtime; moves preserve existing slot duration. The
+editor uses the shared `CustomDatePicker` and `SortControl` without native popups.
+Run `npm run test:live-planner` for schedule, concurrency, editor and viewer tests.
+
 ## Stack
 | Layer       | Technology                  | Notes                        |
 |-------------|-----------------------------|------------------------------|

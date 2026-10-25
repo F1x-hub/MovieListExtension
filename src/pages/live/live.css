@@ -286,8 +286,10 @@ html:has(:fullscreen) *:not(:fullscreen, :fullscreen *)::after {
 }
 
 /* The approved standby graphic is broadcast content; its shell keeps theme parity. */
+.live-standby [hidden], .live-standby-schedule[hidden] { display: none !important; }
 .live-empty { padding: 0; text-align: start; }
 .live-standby { position: relative; isolation: isolate; width: 100%; min-width: 0; aspect-ratio: 16 / 9; min-height: 430px; overflow: hidden; border: 1px solid var(--ui-color-border); border-radius: 16px; background: var(--ui-broadcast-bg); color: var(--ui-broadcast-content); }
+.live-standby h2, .live-standby strong { color: var(--ui-broadcast-content); }
 .live-standby__pattern { position: absolute; inset: 0; z-index: -1; width: 100%; height: 100%; object-fit: cover; opacity: .49; pointer-events: none; }
 .live-standby__top, .live-standby__bottom { position: absolute; left: 25px; right: 25px; display: flex; align-items: center; justify-content: space-between; gap: 15px; }
 .live-standby__top { top: 20px; }.live-standby__bottom { bottom: 20px; }

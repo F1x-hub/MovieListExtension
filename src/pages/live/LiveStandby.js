@@ -11,7 +11,7 @@
                 'liveEmptyTitle', 'liveEmptyText', 'liveStandbySchedule', 'liveStandbyScheduleTitle',
                 'liveStandbyScheduleTime', 'liveStandbyScheduleName', 'liveStandbyScheduleMeta']
                 .map(id => [id.replace(/^live/, ''), $(id)]));
-            this.els.StandbyFullscreen.innerHTML = window.Icons?.MAXIMIZE || '';
+            this.els.StandbyFullscreen.innerHTML = window.Icons?.FULLSCREEN || '';
             this.els.StandbyFullscreen.addEventListener('click', async () => {
                 try {
                     if (document.fullscreenElement) await document.exitFullscreen();

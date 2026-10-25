@@ -24,9 +24,16 @@
         return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), ms); };
     }
 
-    function init() {
+    async function init() {
         const form = $('liveChannelForm');
         if (!form || !window.CinemaChannelService) return;
+        let DatePicker;
+        try { DatePicker = window.CustomDatePicker || (await import('../../shared/components/CustomDateTimePicker.js')).CustomDatePicker; }
+        catch (error) {
+            console.warn('[AdminLive] Calendar unavailable:', error);
+            $('liveChannelStatus').textContent = 'Не удалось загрузить календарь. Обновите страницу.';
+            return;
+        }
         const { computePosition, formatClock, coverUrl, resolveChannel } = window.CinemaChannel;
 
         const ui = {
@@ -56,11 +63,14 @@
         const setStatus = (text, tone = '') => { ui.status.textContent = text; ui.status.dataset.tone = tone; };
         const ready = () => {
             if (!planner || (!planner.selected && !(mode() === 'youtube' ? draft.youtube : draft.movie))) return false;
-            try { const range = planner.range; return range.end - range.start >= 5 * 60_000; } catch { return false; }
+            if (!planner.selected && !(planner.source?.durationSec > 0)) return false;
+            try { const range = planner.range; return range.end > range.start; } catch { return false; }
         };
         const refreshStart = () => {
             const saving = busy || planner?.busy;
             for (const input of form.querySelectorAll('input, button')) input.disabled = Boolean(saving);
+            ui.duration.readOnly = Boolean(planner?.selected || draft.movie?.duration > 0);
+            ui.ytDuration.readOnly = Boolean(planner?.selected || draft.youtube?.durationSec > 0 && !ui.ytLive.checked);
             ui.stop.disabled = Boolean(saving);
             ui.start.disabled = saving || !service || !ready();
             ui.start.textContent = planner?.selected ? 'Применить время' : 'Добавить на дорожку';
@@ -72,12 +82,12 @@
         function renderNow() {
             const channel = current;
             const position = computePosition(channel);
-            const on = channel && channel.mode !== 'off' && position.state !== 'ended';
+            const on = channel && ['live', 'paused'].includes(position.state);
             ui.nowCard.dataset.state = !channel || channel.mode === 'off' ? 'off' : position.state;
             // A finished show has nothing left to stop.
             ui.stop.hidden = !on;
 
-            const cover = on ? coverUrl(channel) : '';
+            const cover = channel?.mode !== 'off' ? coverUrl(channel) : '';
             if (ui.nowMedia.dataset.src !== cover) {
                 ui.nowMedia.dataset.src = cover;
                 ui.nowMedia.style.backgroundImage = cover ? `url("${cover.replace(/"/g, '%22')}")` : '';
@@ -92,10 +102,11 @@
             }
             const live = channel.mode === 'youtube' && channel.youtube.live;
             ui.nowTitle.textContent = channel.title || (channel.mode === 'youtube' ? 'Видео YouTube' : `Фильм #${channel.movie.kinopoiskId}`);
-            ui.nowState.textContent = position.state === 'ended' ? 'Показ завершён' : position.state === 'paused' ? 'Пауза' : 'В эфире';
+            ui.nowState.textContent = position.state === 'upcoming' ? 'Следующий показ' : position.state === 'ended' ? 'Показ завершён' : position.state === 'paused' ? 'Пауза' : 'В эфире';
             const source = channel.mode === 'youtube' ? (live ? 'YouTube · прямая трансляция' : 'YouTube') : 'Фильм';
             const total = channel[channel.mode]?.durationSec;
             const clock = live || position.state === 'ended' ? ''
+                : position.state === 'upcoming' ? ` · начало через ${formatClock(position.offsetSec)}`
                 : position.state === 'paused'
                     ? ` · пауза на ${formatClock(position.offsetSec)}`
                     : ` · идёт ${formatClock(position.offsetSec)}${total ? ` из ${formatClock(total)}` : ''}`;
@@ -176,28 +187,26 @@
                     ? 'YouTube не показывает это видео на сторонних сайтах: ограничение по возрасту, региону или от автора, либо видео недоступно. Зрители увидят ссылку на YouTube.'
                     : code === 100 || code === 2
                         ? 'Видео не найдено: оно удалено, скрыто или ссылка неверна.'
-                        : 'Не удалось проверить видео. Эфир можно запустить, длительность определится при показе.', 'error');
+                        : 'Не удалось проверить видео. Укажите длительность перед добавлением.', 'error');
                 return;
             }
             if (result.isLive) {
                 ui.ytLive.checked = true;
                 if (ui.ytDuration.value === autoDuration) ui.ytDuration.value = autoDuration = '';
-                setStatus('Это прямая трансляция: эфир не завершится сам, остановите его вручную или укажите длительность.');
+                draft.youtube.durationSec = 0;
+                setStatus('Прямая трансляция. Укажите длительность показа перед добавлением.');
                 syncPlannerSource();
                 return;
             }
             if (result.duration > 0) {
                 ui.ytLive.checked = false;
-                const minutes = String(Math.round(result.duration / 60 * 100) / 100);
-                // Keep a length the admin typed themselves.
-                if (!ui.ytDuration.value || ui.ytDuration.value === autoDuration) {
-                    ui.ytDuration.value = autoDuration = minutes;
-                }
-                setStatus(`Длительность видео: ${formatClock(result.duration)}. Время в программе задаётся отдельно.`, 'success');
+                draft.youtube.durationSec = Math.round(result.duration);
+                ui.ytDuration.value = autoDuration = String(draft.youtube.durationSec / 60);
+                setStatus(`Длительность видео: ${formatClock(result.duration)}. Блок можно только перемещать.`, 'success');
                 syncPlannerSource();
                 return;
             }
-            setStatus('Длительность не определилась (возможно, это запланированная трансляция). Эфир завершится по окончании видео или вручную.');
+            setStatus('Длительность не определилась. Укажите её перед добавлением показа.');
         }
 
         // A YouTube show published without a length (older shows, a failed probe)
@@ -222,7 +231,7 @@
         const updateYoutube = debounce(async () => {
             const raw = ui.ytInput.value.trim();
             const info = raw && typeof Utils !== 'undefined' ? Utils.extractYouTubeVideoInfo(raw) : null;
-            draft.youtube = info ? { id: info.id } : null;
+            draft.youtube = info ? { id: info.id, durationSec: draft.youtube?.id === info.id ? draft.youtube.durationSec : 0 } : null;
             syncPlannerSource();
             ui.ytPreview.hidden = !info;
             ui.ytInput.setAttribute('aria-invalid', String(Boolean(raw) && !info));
@@ -341,12 +350,14 @@
             if (!planner || busy || planner.busy) return;
             const youtube = mode() === 'youtube';
             const item = youtube ? draft.youtube : draft.movie;
-            const rawLength = Number(youtube ? ui.ytDuration.value : ui.duration.value);
+            const rawLength = Number(String(youtube ? ui.ytDuration.value : ui.duration.value).replace(',', '.'));
             planner.setDraft(item ? {
                 key: `${mode()}:${youtube ? item.id : item.kinopoiskId}`,
                 mode: mode(), title: youtube ? ui.ytName.textContent : item.name,
                 cover: youtube ? ui.ytThumb.src : item.posterUrl,
-                durationSec: Number.isFinite(rawLength) && rawLength > 0 ? Math.round(rawLength * 60) : 0
+                durationSec: youtube && item.durationSec > 0 && !ui.ytLive.checked ? item.durationSec
+                    : !youtube && item.duration > 0 ? Math.round(item.duration * 60)
+                    : Number.isFinite(rawLength) && rawLength > 0 ? Math.round(rawLength * 60) : 0
             } : null);
         }
         async function confirmTiming(item, start, end) {
@@ -360,6 +371,7 @@
             }) : true;
         }
         planner = new window.LiveSchedulePlanner({
+            DatePicker,
             onStatus: setStatus,
             onRange: refreshStart,
             onAdd: () => {
@@ -376,7 +388,7 @@
                 form.querySelector(`input[name="liveMode"][value="${item.mode}"]`).checked = true;
                 ui.title.value = item.title || ''; ui.title.readOnly = true;
                 if (item.mode === 'youtube') {
-                    draft.youtube = { id: item.youtube.videoId };
+                    draft.youtube = { id: item.youtube.videoId, durationSec: item.youtube.live ? 0 : item.youtube.durationSec };
                     ui.ytInput.value = `https://www.youtube.com/watch?v=${item.youtube.videoId}`;
                     ui.ytName.textContent = item.title || 'Видео YouTube';
                     ui.ytThumb.src = coverUrl(item); ui.ytPreview.hidden = false;
@@ -400,7 +412,7 @@
             onRemove: async item => {
                 if (!service) throw new Error('Firebase недоступен — показ нельзя удалить.');
                 const confirmed = window.ConfirmDialog ? await window.ConfirmDialog.confirm({
-                    title: 'Убрать показ из программы?', message: item.docPath === current?.docPath ? 'Текущий показ у зрителей завершится.' : `«${item.title}» не начнётся.`,
+                    title: 'Убрать показ из программы?', message: item.docPath === current?.docPath && ['live', 'paused'].includes(computePosition(current).state) ? 'Текущий показ у зрителей завершится.' : `«${item.title}» будет убран из программы.`,
                     confirmLabel: 'Убрать', danger: true
                 }) : true;
                 if (!confirmed) return false;
@@ -412,20 +424,20 @@
 
         async function publish(input, doneText, startDate = null, endDate = null) {
             if (!service || busy) return;
-            busy = true; refreshStart(); setStatus('Сохраняем…'); let saved;
+            busy = true; planner.setBusy(true); refreshStart(); setStatus('Сохраняем…'); let saved;
             try {
                 saved = startDate ? await service.schedule(input, startDate, endDate) : await service.save(input, { restart: true });
                 setStatus(doneText, 'success');
             } catch (error) {
                 setStatus(error?.code === 'permission-denied' ? 'Нет прав или правила Firestore ещё не обновлены для нового расписания.' : error.message || 'Не удалось сохранить эфир.', 'error');
-            } finally { busy = false; refreshStart(); }
+            } finally { busy = false; planner.setBusy(false); refreshStart(); }
             if (saved?.id) { planner.items = [...scheduleItems.filter(item => item.id !== saved.id), saved]; planner.select(saved); }
         }
 
         form.addEventListener('submit', event => {
             event.preventDefault(); if (!ready() || busy || planner.busy) return;
             const range = planner.range;
-            if (planner.selected) { planner.saveRange(planner.selected, range.start, range.end); return; }
+            if (planner.selected) { planner.saveRange(planner.selected, range.start); return; }
             const youtube = mode() === 'youtube';
             publish(youtube ? {
                 mode: 'youtube', title: ui.title.value || ui.ytName.textContent,
@@ -439,7 +451,7 @@
 
         ui.stop.addEventListener('click', async () => {
             const confirmed = window.ConfirmDialog
-                ? await window.ConfirmDialog.confirm({ title: 'Остановить эфир?', message: 'Страница «Эфир» у всех зрителей сразу станет пустой.', confirmLabel: 'Остановить', danger: true })
+                ? await window.ConfirmDialog.confirm({ title: 'Остановить эфир?', message: 'У зрителей появится заставка. Следующий показ начнётся по программе.', confirmLabel: 'Остановить', danger: true })
                 : true;
             if (confirmed) publish({ mode: 'off', title: '' }, 'Эфир остановлен.');
         });
@@ -463,8 +475,7 @@
                     service.sweepFinished(items).catch(() => {});
                 }
             }, error => { console.warn('[AdminLive] Schedule read failed:', error); setStatus('Не удалось загрузить программу эфира. Проверьте соединение.', 'error'); });
-            // The «now» card ticks every second; the list only needs a periodic refresh
-            // (rebuilding it each second would steal focus from its buttons).
+            // Update the clock without rebuilding the grid or stealing its focus.
             setInterval(() => {
                 if (!manual) return;
                 current = resolveChannel(manual, scheduleItems);

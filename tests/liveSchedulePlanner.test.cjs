@@ -8,13 +8,15 @@ const helpers = require('../src/pages/admin/LiveSchedulePlanner.js');
 const cinema = require('../src/shared/services/CinemaChannelService.js');
 const plannerPath = path.resolve(__dirname, '../src/pages/admin/LiveSchedulePlanner.js');
 const plannerCode = fs.readFileSync(plannerPath, 'utf8');
+const sortCode = fs.readFileSync(path.resolve(__dirname, '../src/shared/components/SortControl.js'), 'utf8');
+const pickerCode = fs.readFileSync(path.resolve(__dirname, '../src/shared/components/CustomDateTimePicker.js'), 'utf8').replace(/^export /gm, '') + '\nwindow.CustomDatePicker = CustomDatePicker;';
 const HOUR = 3600_000;
 const DAY = new Date(2026, 9, 25).getTime();
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
 const markup = `<!doctype html><html><body>
   <section aria-label="Программа передач">
-    <button id="livePlannerPrev">Назад</button><input id="livePlannerDate" type="date">
+    <button id="livePlannerPrev">Назад</button><input id="livePlannerDate" type="hidden"><div id="livePlannerDatePicker"></div>
     <button id="livePlannerNext">Вперёд</button><button id="livePlannerToday">Сегодня</button>
     <button id="livePlannerNow">Сейчас</button><span id="livePlannerTimezone"></span>
     <select id="livePlannerZoom"><option value="24" selected>24 часа</option><option value="12">12 часов</option></select>
@@ -23,7 +25,7 @@ const markup = `<!doctype html><html><body>
     </div></div>
     <span id="livePlannerStats"></span><button id="livePlannerAdd">Добавить</button>
     <aside><img id="liveSelectedPoster"><strong id="liveSelectedName"></strong><span id="liveSelectedMeta"></span>
-      <span id="liveSelectionBadge"></span><input id="liveSlotStart" type="time"><input id="liveSlotEnd" type="time">
+      <span id="liveSelectionBadge"></span><input id="liveSlotStart" type="time" step="1"><input id="liveSlotEnd" type="time" step="1" readonly>
       <span id="liveSlotDuration"></span><p id="liveSlotNote"></p><button id="liveDeleteShowBtn">Удалить</button>
     </aside>
   </section>
@@ -47,13 +49,22 @@ function mount(options = {}) {
     window.requestAnimationFrame = callback => { frames.set(++frameId, callback); return frameId; };
     window.cancelAnimationFrame = id => frames.delete(id);
     window.CinemaChannel = { ...cinema, now: () => DAY + 12 * HOUR };
+    const observers = [];
+    if (options.observeSize) window.ResizeObserver = class {
+        constructor(callback) { this.callback = callback; observers.push(this); }
+        observe(target) { this.target = target; }
+        disconnect() { this.disconnected = true; }
+    };
     const byId = id => window.document.getElementById(id);
     Object.defineProperty(byId('livePlannerCanvas'), 'clientWidth', { configurable: true, get: () => 2400 });
     Object.defineProperty(byId('livePlannerScroll'), 'clientWidth', { configurable: true, get: () => 2400 });
     byId('livePlannerScroll').getBoundingClientRect = () => ({ left: 0, right: 2400, width: 2400, top: 0, bottom: 100, height: 100 });
+    window.eval(sortCode);
+    window.eval(pickerCode);
     window.eval(plannerCode);
     const changes = [], statuses = [], selections = [], adds = [];
     const planner = new window.LiveSchedulePlanner({
+        DatePicker: window.CustomDatePicker,
         onSelect: item => selections.push(item), onAdd: () => adds.push(true),
         onRemove: options.onRemove || (async () => true), onRange: () => {},
         onStatus: (message, tone) => statuses.push({ message, tone }),
@@ -72,14 +83,13 @@ function mount(options = {}) {
         Object.defineProperty(event, 'pointerId', { value: 1 });
         target.dispatchEvent(event);
     };
-    const startDrag = (id, x, side) => {
-        if (side) planner.select(planner.items.find(item => item.id === id));
+    const startDrag = (id, x) => {
         const block = window.document.querySelector(`.live-planner__block[data-id="${id}"]`);
         assert.ok(block, `rendered block ${id}`);
-        pointer(side ? block.querySelector(`[data-handle="${side}"]`) : block, 'pointerdown', x);
+        pointer(block, 'pointerdown', x);
     };
     return {
-        dom, window, planner, byId, changes, statuses, selections, adds,
+        dom, window, planner, byId, changes, statuses, selections, adds, observers,
         startDrag, flushFrame,
         move(x, flush = true) { pointer(window.document, 'pointermove', x); if (flush) flushFrame(); },
         async drop(x, type = 'pointerup') { pointer(window.document, type, x); await settle(); },
@@ -217,7 +227,7 @@ test('same-millisecond server revision change also cancels a stale drag', async 
     } finally { app.close(); }
 });
 
-test('pointercancel restores selection and resize handles persist only one slot boundary', async () => {
+test('pointercancel restores selection and selected blocks offer no resize handles', async () => {
     const app = mount();
     try {
         const moving = slot('moving', 21, 22);
@@ -226,26 +236,108 @@ test('pointercancel restores selection and resize handles persist only one slot 
         await app.drop(1500, 'pointercancel');
         assert.equal(app.changes.length, 0);
         assert.equal(app.byId('liveSlotStart').value, '21:00');
-        app.startDrag('moving', 2200, 'end'); app.move(2300);
-        await app.drop(2300);
-        assert.equal(app.changes.length, 1);
-        assert.equal(app.changes[0].startMs, moving.startedAtMs);
-        assert.equal(app.changes[0].endMs, DAY + 23 * HOUR);
+        app.planner.select(moving);
+        assert.equal(app.window.document.querySelectorAll('[data-handle], .live-planner__handle').length, 0);
     } finally { app.close(); }
 });
 
-test('source duration arrival updates an untouched draft end but preserves an edited end', () => {
+test('a hidden pane opening fits the day grid without a window resize and disconnects its observer', () => {
+    const app = mount({ observeSize: true });
+    try {
+        const observer = app.observers[0], scroll = app.byId('livePlannerScroll');
+        assert.equal(observer.target, scroll);
+        Object.defineProperty(scroll, 'clientWidth', { configurable: true, value: 0 });
+        observer.callback();
+        assert.equal(app.byId('livePlannerCanvas').style.width, '880px');
+        Object.defineProperty(scroll, 'clientWidth', { configurable: true, value: 1700 });
+        observer.callback();
+        assert.equal(app.byId('livePlannerCanvas').style.width, '1652px');
+        app.byId('livePlannerZoom').value = '12'; observer.callback();
+        assert.equal(app.byId('livePlannerCanvas').style.width, '3304px');
+        app.planner.destroy(); assert.equal(observer.disconnected, true);
+    } finally { app.close(); }
+});
+
+test('new draft preserves source seconds, moves its end with the start, and ignores the readonly end input', () => {
+    const app = mount();
+    try {
+        app.planner.setDraft({ key: 'yt:one', mode: 'youtube', title: 'Video', durationSec: 3667 });
+        assert.equal(app.planner.range.end - app.planner.range.start, 3667_000, 'no upward minute rounding');
+        app.input('liveSlotStart', '15:00');
+        assert.equal(app.planner.range.start.getTime(), DAY + 15 * HOUR);
+        assert.equal(app.planner.range.end.getTime(), DAY + 15 * HOUR + 3667_000);
+        assert.equal(app.byId('liveSlotEnd').readOnly, true);
+        app.input('liveSlotEnd', '23:00');
+        assert.equal(app.planner.range.end.getTime(), DAY + 15 * HOUR + 3667_000, 'end input cannot resize the computed range');
+        assert.equal(app.changes.length, 0, 'metadata only fills the form; it does not save');
+    } finally { app.close(); }
+});
+
+test('late source length fills the draft end without resetting the chosen start', () => {
     const app = mount();
     try {
         app.planner.setDraft({ key: 'yt:one', mode: 'youtube', title: 'Video', durationSec: 0 });
-        const start = app.planner.range.start.getTime();
-        app.planner.setDraft({ key: 'yt:one', mode: 'youtube', title: 'Video', durationSec: 7200 });
-        assert.equal(app.planner.range.end.getTime(), start + 2 * HOUR);
-        app.input('liveSlotEnd', '16:00');
-        assert.equal(app.planner.endTouched, true);
-        app.planner.setDraft({ key: 'yt:one', mode: 'youtube', title: 'Video', durationSec: 10_800 });
-        assert.equal(app.byId('liveSlotEnd').value, '16:00');
-        assert.equal(app.planner.range.end.getTime(), DAY + 16 * HOUR);
-        assert.equal(app.changes.length, 0, 'metadata only fills the form; it does not save');
+        app.input('liveSlotStart', '15:00');
+        app.planner.setDraft({ key: 'yt:one', mode: 'youtube', title: 'Video', durationSec: 97 });
+        assert.equal(app.planner.range.start.getTime(), DAY + 15 * HOUR);
+        assert.equal(app.planner.range.end.getTime(), DAY + 15 * HOUR + 97_000);
+        app.input('liveSlotEnd', '23:00');
+        app.planner.setDraft({ key: 'yt:one', mode: 'youtube', title: 'Video', durationSec: 121 });
+        assert.equal(app.planner.range.start.getTime(), DAY + 15 * HOUR);
+        assert.equal(app.planner.range.end.getTime(), DAY + 15 * HOUR + 121_000);
+    } finally { app.close(); }
+});
+
+test('keyboard moves both boundaries by five minutes or fifteen with Shift and preserves legacy exact length', async () => {
+    const app = mount();
+    try {
+        const moving = slot('legacy', 21, 22, { endsAtMs: DAY + 22 * HOUR + 17_000, movie: { kinopoiskId: 301, durationSec: 7200 } });
+        app.planner.setItems([moving], null);
+        const key = (name, shiftKey) => app.window.document.querySelector('[data-id="legacy"]').dispatchEvent(new app.window.KeyboardEvent('keydown', { key: name, shiftKey, bubbles: true }));
+        key('ArrowLeft', false); await settle();
+        assert.equal(app.changes[0].startMs, moving.startedAtMs - 5 * 60_000);
+        assert.equal(app.changes[0].endMs, moving.endsAtMs - 5 * 60_000);
+        key('ArrowRight', true); await settle();
+        assert.equal(app.changes[1].startMs, moving.startedAtMs + 10 * 60_000);
+        assert.equal(app.changes[1].endMs, moving.endsAtMs + 10 * 60_000);
+        assert.equal(app.changes[1].endMs - app.changes[1].startMs, HOUR + 17_000, 'existing slot length differs from metadata and remains exact');
+    } finally { app.close(); }
+});
+
+test('saveRange preserves stored duration and ignores an obsolete third end argument', async () => {
+    const app = mount();
+    try {
+        const moving = slot('legacy', 21, 22, { endsAtMs: DAY + 22 * HOUR + 17_000 });
+        app.planner.setItems([moving], null); app.planner.select(moving);
+        await app.planner.saveRange(moving, new app.window.Date(DAY + 15 * HOUR), new app.window.Date(DAY + 19 * HOUR));
+        assert.equal(app.changes.length, 1);
+        assert.equal(app.changes[0].endMs - app.changes[0].startMs, HOUR + 17_000);
+        assert.equal(app.changes[0].endMs, DAY + 16 * HOUR + 17_000);
+    } finally { app.close(); }
+});
+
+test('real custom date picker and zoom controls synchronize the day grid', async () => {
+    const app = mount();
+    try {
+        const host = app.byId('livePlannerDatePicker');
+        const dateTrigger = host.querySelector('.custom-picker-trigger');
+        assert.ok(dateTrigger, 'planner instantiates the actual CustomDatePicker');
+        assert.equal(app.byId('livePlannerDate').type, 'hidden');
+        dateTrigger.getBoundingClientRect = () => ({ left: 100, top: 100, right: 300, bottom: 140, width: 200, height: 40 });
+        dateTrigger.click();
+        assert.equal(dateTrigger.getAttribute('aria-expanded'), 'true');
+        app.window.document.querySelector('#livePlannerCalendar [data-year="2026"][data-month="9"][data-day="26"]').click();
+        assert.equal(app.byId('livePlannerDate').value, '2026-10-26');
+        assert.equal(helpers.dateKey(app.planner.date), '2026-10-26');
+        const select = app.byId('livePlannerZoom');
+        assert.equal(select.hidden, true, 'native zoom is a hidden data source');
+        const enhanced = app.window.SortControl.instances.get(select);
+        assert.ok(enhanced);
+        enhanced.trigger.click();
+        enhanced.list.querySelector('[role="option"][data-index="1"]').click();
+        assert.equal(select.value, '12');
+        assert.equal(enhanced.valueLabel.textContent, '12 часов');
+        assert.equal(app.byId('livePlannerCanvas').style.width, '4704px');
+        await settle();
     } finally { app.close(); }
 });
