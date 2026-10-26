@@ -928,6 +928,7 @@ class KinogoParser extends BaseParserService {
             /https?:\/\/cinemar\.cc\/embed\/\d+\/[^\s"'<>]+/gi,
             /https?:\/\/[a-zA-Z0-9_-]+\.stravers\.live\/\?token_movie=[^\s"'<>]+/gi,
             /https?:\/\/[a-zA-Z0-9_-]+\.allarknow\.online\/\?token_movie=[^\s"'<>]+/gi,
+            /https?:\/\/[a-zA-Z0-9_-]+\.stloadi\.live\/\?token_movie=[^\s"'<>]+/gi,
             /https?:\/\/[a-zA-Z0-9._-]+\.lumex\.cloud\/[^\s"'<>]+/gi,
             /<iframe[^>]+src="([^">]+)"/gi
         ];
@@ -980,7 +981,7 @@ class KinogoParser extends BaseParserService {
         if (url.includes('videocdn') || url.includes('kodik') || url.includes('alloha')) return 80;
         // Tokenized / signed fallback domains (lower priority than primary balancers, but valid as fallback)
         if (url.includes('cinemar.cc')) return 30;
-        if (url.includes('stravers.live') || url.includes('allarknow.online')) return 30;
+        if (url.includes('stravers.live') || url.includes('allarknow.online') || url.includes('stloadi.live')) return 30;
         if (url.includes('youtube.com')) return 10;
         return 50;
     }

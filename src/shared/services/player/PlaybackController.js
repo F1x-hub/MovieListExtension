@@ -1099,7 +1099,9 @@ class PlaybackController {
 
             const mountResult = await adapter.mount(container, this.currentSelection, mountContext);
 
-            if (broadcastNative && await adapter.applySelection(this.currentSelection, mountContext) !== true) {
+            // The provider frame is still loading here, so wait for its bridge.
+            if (broadcastNative && await adapter.applySelection(this.currentSelection,
+                { ...mountContext, waitForBridge: true }) !== true) {
                 adapter.unmount?.(mountContext);
                 const error = new Error('Provider did not confirm the scheduled episode');
                 error.code = 'BROADCAST_EPISODE_UNAVAILABLE';

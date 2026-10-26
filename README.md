@@ -446,6 +446,10 @@ keeps npm-compatible three-component semver metadata.
 
 ### Fixes
 
+- Live series on KinoGo and other native-bridge sources no longer close as "unconfirmed" while the provider frame is still loading. The host now resends the scheduled season/episode request until the frame acknowledges it, retries while the provider selector is not ready, shares one request between concurrent confirmations, and gives up only after 20 seconds. A confirmed episode now also releases the paused broadcast clock when the provider frame reloaded during confirmation, so Play no longer snaps back to pause.
+- KinoGo and Ex-FS episodes start again inside the extension player. Their Allplay balancers now attach the stream only from the provider's own play control, so the extension's play button stayed on a one-second placeholder (0:01 / 0:01); our controls now start playback through that control. The new `stloadi.live` balancer is recognised for referer rules, content scripts and source priority, so its players no longer show "content not found".
+- Ex-FS and KinoGo voiceovers appear in the player's Audio menu again. Switching a voiceover resumes playback at the same position after the provider reloads the stream.
+- The player progress bar is visible again inside Allplay balancers, whose CSS reset collapsed the bar to zero height while it still reacted to the mouse.
 - The live planner now includes the prototype's full-day overview with scheduled-show thumbnails and a draggable, keyboard-accessible viewport, synchronized with timeline scrolling. The custom zoom menu also offers three hours; zoom scales to the actual pane width on narrow screens.
 - Episode schedule writes were rejected by the previously published Firestore allowlist. The updated episode rules were deployed to `movielistdb-13208` on 2026-10-26 and their published source was read back and matched against the local rules. Publication was limited to Firestore rules; no schedule documents were created or changed for verification.
 

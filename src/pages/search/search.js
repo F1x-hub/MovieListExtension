@@ -2674,7 +2674,7 @@ class SearchManager {
             const key = `movie_sources_${movieId}`;
             const hasShortLivedTokens = Array.isArray(sources) && sources.some(s => {
                 const u = s?.url || '';
-                return u.includes('cinemar.cc') || u.includes('stravers.live') || u.includes('allarknow.online');
+                return u.includes('cinemar.cc') || u.includes('stravers.live') || u.includes('allarknow.online') || u.includes('stloadi.live');
             });
             const ttl = hasShortLivedTokens ? (5 * 60 * 1000) : (15 * 60 * 1000);
             const data = {

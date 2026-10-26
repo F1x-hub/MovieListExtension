@@ -421,6 +421,7 @@
 
     function watchBroadcastVideo(video) {
         if (!video || broadcastVideos.has(video)) return;
+        bridgeProviderPlayStart(video);
         broadcastVideos.add(video);
         if (broadcastState?.selectionReady === false) enforceBroadcast(video);
         const settle = () => setTimeout(() => {
@@ -534,7 +535,28 @@
     // KinoGo can replace its media element while the iframe itself stays alive.
     // Keep the room subscription attached to the current media element instead
     // of silently observing the detached one.
+    // Allplay (KinoGo balancers) attaches the episode stream only from its own
+    // play control; before that the element holds a one-second placeholder and a
+    // direct play() never loads the episode. Our controls call play() from this
+    // isolated world, so redirect only those calls to the provider control.
+    function bridgeProviderPlayStart(video) {
+        if (!video?.classList?.contains('allplay__video') || video.mreProviderPlayBridge) return;
+        video.mreProviderPlayBridge = true;
+        video.play = function play() {
+            const notStarted = this.readyState < 2 || !(Number(this.duration) > 1);
+            const nativePlay = notStarted
+                ? document.querySelector('.allplay__controls__item.allplay__control')
+                : null;
+            if (nativePlay) {
+                nativePlay.click();
+                return Promise.resolve();
+            }
+            return HTMLMediaElement.prototype.play.call(this);
+        };
+    }
+
     function setPermanentVideo(video) {
+        bridgeProviderPlayStart(video);
         permanentVideo = video || null;
         if (!roomSyncSubscriptionId) return;
         if (!permanentVideo) {
@@ -788,6 +810,20 @@
                     reason
                 });
             };
+            // Tell the host the request arrived so it stops resending while the
+            // provider selector works; a resend would cancel this operation.
+            if (event.origin && event.origin !== 'null' && event.source?.postMessage) {
+                try {
+                    event.source.postMessage({
+                        type: 'PLAYBACK_SELECTION_RESULT',
+                        requestId: request.requestId,
+                        providerId: request.providerId || null,
+                        status: 'PENDING',
+                        seasonNumber: request.seasonNumber,
+                        episodeNumber: request.episodeNumber
+                    }, event.origin);
+                } catch { /* host gone */ }
+            }
             let attemptsLeft = 8;
             const tryDispatch = async () => {
                 if (!isCurrentOperation()) {
@@ -2152,6 +2188,9 @@
                     left: 12px !important;
                     right: 12px !important;
                     height: 3px !important;
+                    /* Provider resets (Allplay) force border-box, which lets the
+                       transparent hit-area borders swallow the 3px bar. */
+                    box-sizing: content-box !important;
                     background-color: rgba(255, 255, 255, .2) !important;
                     border-radius: 999px !important;
                 }
@@ -4983,7 +5022,30 @@
                          }
 
                          if (targetEl && document.body.contains(targetEl)) {
+                             const resumeVideo = getRoomSyncVideo();
+                             const wasPlaying = Boolean(resumeVideo && !resumeVideo.paused);
                              targetEl.click();
+                             // Allplay reloads the stream for another voiceover and
+                             // stops; continue only what the viewer was watching.
+                             if (wasPlaying && resumeVideo.classList.contains('allplay__video')) {
+                                 let attempts = 0;
+                                 const resumeAt = resumeVideo.currentTime;
+                                 const resume = () => {
+                                     // The provider may replace the media element.
+                                     const current = document.querySelector('video.allplay__video');
+                                     if (!current || ++attempts > 8) return;
+                                     if (!current.paused) {
+                                         // The new voiceover starts from zero; keep the viewer's place.
+                                         if (resumeAt > 5 && current.duration > resumeAt
+                                             && Math.abs(current.currentTime - resumeAt) > 5) current.currentTime = resumeAt;
+                                         return;
+                                     }
+                                     bridgeProviderPlayStart(current);
+                                     current.play().catch(() => {});
+                                     setTimeout(resume, 1500);
+                                 };
+                                 setTimeout(resume, 1500);
+                             }
                              // Update active state locally
                              currentVoiceoverOptions.forEach(o => o.isActive = false);
                              opt.isActive = true;
@@ -5377,6 +5439,14 @@
         const bridgeContainer = document.querySelector('[data-player-voiceover-source], #seasonvar-voiceover-source');
         if (bridgeContainer) {
             extractAndRender(bridgeContainer.querySelectorAll('[data-voiceover-option], .seasonvar-voiceover-item'), container);
+            return;
+        }
+
+        // Strategy 0b: Allplay balancers (Ex-FS, KinoGo) keep a hidden
+        // data-select menu, the same contract as their season/episode selects.
+        const allplayTranslations = document.querySelectorAll('[data-select^="translationType"] .select__drop-item');
+        if (allplayTranslations.length > 0) {
+            extractAndRender(allplayTranslations);
             return;
         }
 
