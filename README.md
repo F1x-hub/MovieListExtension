@@ -269,6 +269,7 @@ settings and pairing. See the
 | `npm run test:rating-integrity` | Verify rating ingress and legacy-record deduplication |
 | `npm run test-word-guess` | Run WordGuess data, controller, and persistence tests |
 | `npm run test-games-modal` | Run mini-games launcher, Rubik's Cube, and games regression tests |
+| `npm run vendor:three` | Rebuild the three.js subset in `libs/three.rubiks.min.js` used by the Rubik's Cube (after upgrading `three`) |
 | `npm run test:visual-design` | Verify the monochrome palette and shared UI token contract |
 | `npm run test:seasonal-theme` | Check seasonal decor dates, opt-out, Settings preview and the Home season banner |
 | `npm run test:popup` | Verify popup interactions, request races, failure recovery, profile caches and shared surface contracts |
@@ -437,6 +438,16 @@ keeps npm-compatible three-component semver metadata.
 
 <details open>
 <summary><strong>Unreleased</strong></summary>
+
+### Features
+
+- Mini-games: the Rubik's Cube is now a real 3D puzzle rendered with WebGL (three.js): 27 rounded plastic cubies with lit stickers, solid layers that turn on a pivot, and free rotation of the whole cube. Drag a sticker to turn its layer (including the middle slices) — it follows the pointer and snaps to the nearest quarter turn; drag the background or use the arrow keys to look around, ⟲ resets the view. Without WebGL the game shows a flat unfolded cube and stays playable with buttons and keys.
+- Mini-games: the cube understands standard notation beyond the outer faces — slices M E S, wide turns (r or Rw) and cube rotations x y z (keys M E S X Y; rotations are free and do not start the timer) — and an algorithm field plays sequences such as R U R' U'. Quick key presses are queued and played in order instead of being dropped.
+- Mini-games: the Rubik's Cube starts with a size picker instead of Easy/Medium/Hard: 2×2 up to 7×7, the last size preselected and reachable again from the "Кубик N×N" button. Each size gets a competition-length scramble (11 moves on the 2×2, 20 on the 3×3, up to 100 with wide turns on the 7×7), inner layers can be dragged and typed in SiGN notation (2R, 3Rw), and slices are offered only on odd cubes. Scrambles no longer turn the same axis three times in a row, finished times show hundredths, and each size keeps its own record and last 50 solves with Ao5/Ao12; the 3×3 keeps the existing best time, while records of the former Easy and Medium modes are no longer shown.
+
+### Docs
+
+- `npm run vendor:three` rebuilds `libs/three.rubiks.min.js`, the committed three.js subset the cube loads only when it is opened.
 
 </details>
 

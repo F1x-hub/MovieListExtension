@@ -657,21 +657,12 @@
     margin-bottom: 10px;
 }
 
-.rubiks-difficulty,
 .rubiks-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
 }
 
-.rubiks-difficulty {
-    padding: 3px;
-    background: var(--games-surface-muted);
-    border: 1px solid var(--games-border);
-    border-radius: 8px;
-}
-
-.rubiks-difficulty-btn,
 .rubiks-action-btn {
     min-height: 28px;
     padding: 0 10px;
@@ -689,14 +680,7 @@
     border-color: var(--games-border);
 }
 
-.rubiks-difficulty-btn.is-active {
-    color: var(--games-content);
-    background: var(--games-surface);
-    border-color: var(--games-border-hover);
-}
-
 @media (hover: hover) and (pointer: fine) {
-    .rubiks-difficulty-btn:hover,
     .rubiks-action-btn:not(:disabled):hover {
         color: var(--games-content);
         background: var(--games-fill-hover);
@@ -704,7 +688,6 @@
     }
 }
 
-.rubiks-difficulty-btn:active,
 .rubiks-action-btn:not(:disabled):active {
     transform: scale(0.96);
 }
@@ -719,10 +702,8 @@
     display: grid;
     place-items: center;
     width: 100%;
-    min-height: 360px;
+    min-height: 400px;
     overflow: hidden;
-    perspective: 850px;
-    cursor: grab;
     outline: none;
     touch-action: none;
     background: radial-gradient(circle at 50% 42%, #182238 0%, #0d1422 58%, #080c15 100%);
@@ -733,179 +714,247 @@
     box-shadow: 0 0 0 2px var(--games-focus);
 }
 
-.rubiks-3d-viewport.is-dragging {
+.rubiks-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    cursor: grab;
+    touch-action: none;
+}
+
+.rubiks-canvas.is-dragging {
     cursor: grabbing;
 }
 
-.rubiks-3d-cube {
-    position: relative;
-    width: 236px;
-    height: 236px;
-    transform-style: preserve-3d;
-    transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
-    will-change: transform;
+.has-3d .rubiks-net {
+    display: none;
 }
 
-.rubiks-3d-viewport.is-dragging .rubiks-3d-cube {
-    transition: none;
-}
-
-.rubiks-3d-face {
-    position: absolute;
+/* Flat unfolded cube: shown while WebGL loads or when it is unavailable. */
+.rubiks-net {
+    --rubiks-n: 3;
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 3px;
-    width: 236px;
-    height: 236px;
-    padding: 4px;
-    background: #020617;
-    border: 2px solid #020617;
-    border-radius: 7px;
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06);
-    transform-style: preserve-3d;
-    backface-visibility: visible;
-    cursor: pointer;
-    transform: var(--rubiks-face-transform);
+    grid-template-columns: repeat(4, 72px);
+    grid-template-rows: repeat(3, 72px);
+    gap: 4px;
 }
 
-.rubiks-3d-face--F { --rubiks-face-transform: translateZ(118px); }
-.rubiks-3d-face--B { --rubiks-face-transform: rotateY(180deg) translateZ(118px); }
-.rubiks-3d-face--R { --rubiks-face-transform: rotateY(90deg) translateZ(118px); }
-.rubiks-3d-face--L { --rubiks-face-transform: rotateY(-90deg) translateZ(118px); }
-.rubiks-3d-face--U { --rubiks-face-transform: rotateX(90deg) translateZ(118px); }
-.rubiks-3d-face--D { --rubiks-face-transform: rotateX(-90deg) translateZ(118px); }
-
-/* CSS rotateZ is clockwise on screen (y points down), so a clockwise face turn
-   seen from outside the cube is a positive angle. */
-@keyframes rubiks-face-turn-forward {
-    from { transform: var(--rubiks-face-transform); }
-    to { transform: var(--rubiks-face-transform) rotateZ(90deg); }
-}
-
-@keyframes rubiks-face-turn-reverse {
-    from { transform: var(--rubiks-face-transform); }
-    to { transform: var(--rubiks-face-transform) rotateZ(-90deg); }
-}
-
-@keyframes rubiks-face-turn-forward-double {
-    from { transform: var(--rubiks-face-transform); }
-    to { transform: var(--rubiks-face-transform) rotateZ(180deg); }
-}
-
-@keyframes rubiks-face-turn-reverse-double {
-    from { transform: var(--rubiks-face-transform); }
-    to { transform: var(--rubiks-face-transform) rotateZ(-180deg); }
-}
-
-.rubiks-3d-face.is-turning-forward {
-    animation: rubiks-face-turn-forward 260ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-.rubiks-3d-face.is-turning-reverse {
-    animation: rubiks-face-turn-reverse 260ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-.rubiks-3d-face.is-turning-forward-double {
-    animation: rubiks-face-turn-forward-double 320ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-.rubiks-3d-face.is-turning-reverse-double {
-    animation: rubiks-face-turn-reverse-double 320ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-.rubiks-3d-face.is-selected {
-    border-color: #f8fafc;
-    box-shadow: 0 0 0 2px rgba(248, 250, 252, 0.45), 0 0 22px rgba(248, 250, 252, 0.18);
-    z-index: 4;
-}
-
-.rubiks-face-control-overlay {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    z-index: 20;
-    width: 236px;
-    height: 236px;
-    pointer-events: none;
-    transform: translate(-50%, -50%);
-}
-
-.rubiks-face-label {
-    position: absolute;
-    top: -22px;
-    left: 50%;
-    padding: 3px 8px;
-    color: #e2e8f0;
-    font-size: 0.66rem;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    background: rgba(8, 15, 28, 0.86);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 999px;
-    transform: translateX(-50%);
-    white-space: nowrap;
-}
-
-.rubiks-face-arrows {
-    position: absolute;
-    inset: 0;
-    z-index: 8;
-    pointer-events: none;
-}
-
-.rubiks-face-arrow {
-    position: absolute;
-    top: 50%;
+.rubiks-net-face {
     display: grid;
-    place-items: center;
-    width: 34px;
-    height: 34px;
-    padding: 0;
-    color: #f8fafc;
-    font-size: 1.2rem;
-    line-height: 1;
-    background: rgba(8, 15, 28, 0.94);
-    border: 1px solid rgba(255, 255, 255, 0.4);
-    border-radius: 50%;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.38);
-    pointer-events: auto;
-    cursor: pointer;
-    transition: filter 140ms ease-out, background 140ms ease-out, border-color 140ms ease-out;
-}
-
-.rubiks-face-arrow--left { left: -18px; transform: translate(-50%, -50%); }
-.rubiks-face-arrow--right { right: -18px; transform: translate(50%, -50%); }
-
-@media (hover: hover) and (pointer: fine) {
-    .rubiks-face-arrow:hover {
-        background: rgba(30, 41, 59, 0.96);
-        border-color: rgba(255, 255, 255, 0.85);
-    }
-}
-
-.rubiks-face-arrow:active {
-    filter: brightness(1.3);
-}
-
-.rubiks-face-arrow:focus-visible {
-    outline: 2px solid #f8fafc;
-    outline-offset: 2px;
+    grid-template-columns: repeat(var(--rubiks-n), 1fr);
+    gap: 2px;
+    padding: 2px;
+    background: #0c0d10;
+    border-radius: 5px;
 }
 
 .rubiks-sticker {
     min-width: 0;
-    border: 1px solid rgba(0, 0, 0, 0.3);
-    border-radius: 2px;
-    box-shadow: inset 0 1px rgba(255, 255, 255, 0.3), inset 0 -2px rgba(0, 0, 0, 0.12);
-    backface-visibility: visible;
+    border-radius: 3px;
 }
 
-.rubiks-sticker--white { background: #f8fafc; }
-.rubiks-sticker--yellow { background: #facc15; }
-.rubiks-sticker--red { background: #ef4444; }
-.rubiks-sticker--orange { background: #f97316; }
-.rubiks-sticker--green { background: #22c55e; }
-.rubiks-sticker--blue { background: #3b82f6; }
+.rubiks-sticker--white { background: #f4f6f8; }
+.rubiks-sticker--yellow { background: #ffd21f; }
+.rubiks-sticker--red { background: #d6202f; }
+.rubiks-sticker--orange { background: #ff6d10; }
+.rubiks-sticker--green { background: #00a651; }
+.rubiks-sticker--blue { background: #0b5fd7; }
+
+.rubiks-view-reset {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    color: #cbd5e1;
+    font-size: 1rem;
+    background: rgba(2, 6, 23, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.rubiks-view-reset:focus-visible {
+    outline: 2px solid var(--games-focus);
+    outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .rubiks-view-reset:hover {
+        color: #f8fafc;
+        border-color: rgba(255, 255, 255, 0.4);
+    }
+}
+
+/* Size picker shown over the cube before an attempt starts. */
+.rubiks-size-picker {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 16px;
+    overflow-y: auto;
+    text-align: center;
+    background: rgba(5, 9, 18, 0.82);
+    backdrop-filter: blur(6px);
+}
+
+.rubiks-size-picker[hidden] {
+    display: none;
+}
+
+.rubiks-size-picker h4 {
+    margin: 0;
+    color: #f8fafc;
+    font-size: 1.15rem;
+    letter-spacing: -0.02em;
+}
+
+.rubiks-size-picker p {
+    max-width: 380px;
+    margin: 0 0 6px;
+    color: #94a3b8;
+    font-size: 0.78rem;
+    line-height: 1.45;
+}
+
+.rubiks-size-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 120px));
+    gap: 8px;
+}
+
+.rubiks-size-card {
+    display: grid;
+    justify-items: center;
+    gap: 3px;
+    padding: 8px 8px 7px;
+    color: #e2e8f0;
+    font: inherit;
+    background: rgba(15, 23, 42, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: transform 140ms ease-out, border-color 140ms ease-out, background 140ms ease-out;
+}
+
+.rubiks-size-card b {
+    font-size: 0.95rem;
+}
+
+.rubiks-size-card small {
+    color: #94a3b8;
+    font-size: 0.66rem;
+}
+
+.rubiks-size-card.is-active {
+    border-color: rgba(255, 255, 255, 0.55);
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .rubiks-size-card:hover {
+        background: rgba(30, 41, 59, 0.95);
+        border-color: rgba(255, 255, 255, 0.4);
+    }
+}
+
+.rubiks-size-card:active {
+    transform: scale(0.97);
+}
+
+.rubiks-size-card:focus-visible {
+    outline: 2px solid var(--games-focus);
+    outline-offset: 2px;
+}
+
+/* A miniature face: the grid gets denser as the cube grows. */
+.rubiks-size-preview {
+    display: grid;
+    grid-template-columns: repeat(var(--rubiks-n), 1fr);
+    gap: 2px;
+    width: 34px;
+    height: 34px;
+    padding: 3px;
+    background: #0c0d10;
+    border-radius: 6px;
+}
+
+.rubiks-size-preview i {
+    background: #00a651;
+    border-radius: 1px;
+}
+
+.rubiks-size-card:nth-child(2n) .rubiks-size-preview i { background: #d6202f; }
+.rubiks-size-card:nth-child(3n) .rubiks-size-preview i { background: #0b5fd7; }
+
+.is-choosing .rubiks-drag-hint,
+.is-choosing .rubiks-view-reset {
+    visibility: hidden;
+}
+
+.rubiks-session {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.rubiks-session span {
+    display: grid;
+    gap: 2px;
+    padding: 6px 10px;
+    background: var(--games-fill);
+    border: 1px solid var(--games-border);
+    border-radius: 8px;
+}
+
+.rubiks-session small {
+    color: var(--games-content-subtle);
+    font-size: 0.62rem;
+    font-weight: 700;
+}
+
+.rubiks-session b {
+    color: var(--games-content);
+    font-size: 0.86rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.rubiks-controls--extra {
+    margin-top: 8px;
+}
+
+.rubiks-algorithm {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.rubiks-algorithm input {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 28px;
+    padding: 0 10px;
+    color: var(--games-content);
+    font: 600 0.72rem 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+    background: var(--games-surface);
+    border: 1px solid var(--games-border);
+    border-radius: 6px;
+}
+
+.rubiks-algorithm input:focus-visible {
+    outline: 2px solid var(--games-focus);
+    outline-offset: 1px;
+}
 
 .rubiks-drag-hint {
     position: absolute;
@@ -1208,7 +1257,6 @@
 .game-menu-card:focus-visible,
 .games-back-btn:focus-visible,
 .quiz-option:focus-visible,
-.rubiks-difficulty-btn:focus-visible,
 .rubiks-action-btn:focus-visible,
 .rubiks-move-group button:focus-visible,
 .rubiks-controls-drawer summary:focus-visible,
@@ -1418,16 +1466,9 @@
     .game-menu-card,
     .game-menu-arrow,
     .rubiks-move-group button,
-    .rubiks-difficulty-btn,
+    .rubiks-size-card,
     .rubiks-action-btn,
-    .rubiks-face-arrow,
     .games-confirm-btn,
     .games-back-btn { transition-duration: 1ms; }
 
-    .rubiks-3d-face.is-turning-forward,
-    .rubiks-3d-face.is-turning-reverse,
-    .rubiks-3d-face.is-turning-forward-double,
-    .rubiks-3d-face.is-turning-reverse-double {
-        animation-duration: 1ms;
-    }
 }

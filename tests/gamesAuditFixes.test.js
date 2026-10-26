@@ -369,6 +369,10 @@ const canvas = () => window.document.createElement('canvas');
         'Space still activates focused quiz buttons');
 
     modal.switchGame('rubiks');
+    assert.equal(modal.game.choosingSize, true, 'the cube opens on the size picker');
+    keydown({ key: 'u', code: 'KeyU' });
+    assert.deepEqual(modal.game.history, [], 'moves wait until a size is chosen');
+    doc.querySelector('[data-size="3"]').click();
     keydown({ key: '2', code: 'Digit2' });
     keydown({ key: 'u', code: 'KeyU' });
     assert.deepEqual(modal.game.history, ['U2'], '"2" then a face letter makes a double turn');
