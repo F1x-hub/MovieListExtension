@@ -1,5 +1,14 @@
 export const whatsNew = [
     {
+        id: '1.4.6', version: '1.4.6', date: '2026-10-26',
+        highlights: [
+            { id: 'live-series', title: { ru: 'Сериалы в эфире', en: 'Series on Live' }, text: { ru: 'В программу эфира можно ставить сериалы по сериям, а зрители видят, какая серия идёт сейчас и что будет дальше.', en: 'Live programmes can schedule series episode by episode, and viewers see which episode is on now and what comes next.' } },
+            { id: 'kinogo-exfs', title: { ru: 'KinoGo и Ex-FS снова играют', en: 'KinoGo and Ex-FS play again' }, text: { ru: 'Видео с этих источников снова запускается в плеере расширения, в том числе в эфире.', en: 'Videos from these sources start in the extension player again, including on Live.' } },
+            { id: 'voiceovers', title: { ru: 'Выбор озвучки', en: 'Voiceover choice' }, text: { ru: 'Озвучки Ex-FS и KinoGo снова есть в меню плеера, а после смены озвучки просмотр продолжается с того же места.', en: 'Ex-FS and KinoGo voiceovers are back in the player menu, and switching one continues from the same moment.' } },
+            { id: 'progress-bar', title: { ru: 'Полоса прогресса', en: 'Progress bar' }, text: { ru: 'Полоса прогресса снова видна в плеерах этих источников.', en: 'The progress bar is visible again in these players.' } }
+        ]
+    },
+    {
         id: '1.4.5', version: '1.4.5', date: '2026-10-25',
         highlights: [
             { id: 'live-planner', title: { ru: 'Программа эфира на весь день', en: 'A full-day Live programme' }, text: { ru: 'Ведущий собирает сетку показов на сутки из каталога и YouTube, а в паузах зрители видят заставку MovieList TV с отсчётом до следующего показа.', en: 'The host builds a day of shows from the catalogue and YouTube, and between shows viewers see the MovieList TV standby screen with a countdown.' } },
