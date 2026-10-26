@@ -610,6 +610,8 @@ export class GamesModal {
     }
 
     handleRubiksKey(e) {
+        // The algorithm field types notation; keys there must not turn the cube.
+        if (e.target?.closest?.('input, textarea')) return;
         if (e.ctrlKey && e.code !== 'KeyZ') return;
         if (e.code === 'KeyZ') {
             e.preventDefault();
@@ -621,8 +623,16 @@ export class GamesModal {
             this.doubleTurnPendingAt = Date.now();
             return;
         }
-        const face = e.code?.match(/^Key([URFDLB])$/)?.[1];
-        if (!face) return;
+        const views = { ArrowLeft: [-24, 0], ArrowRight: [24, 0], ArrowUp: [0, -24], ArrowDown: [0, 24] };
+        if (views[e.code]) {
+            e.preventDefault();
+            this.game.nudgeView?.(...views[e.code]);
+            return;
+        }
+        // Face letters (plus M E S slices and X Y cube rotations; Z stays undo).
+        const letter = e.code?.match(/^Key([URFDLBMESXY])$/)?.[1];
+        if (!letter) return;
+        const face = 'XY'.includes(letter) ? letter.toLowerCase() : letter;
         e.preventDefault();
         const isDouble = Date.now() - this.doubleTurnPendingAt < DOUBLE_TURN_PREFIX_MS;
         this.doubleTurnPendingAt = 0;

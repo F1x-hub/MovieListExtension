@@ -12,8 +12,8 @@ assert.equal((source.match(/^\s*\{ id: '[\w-]+', icon: SVG_ICONS\./gm) || []).le
 assert.match(source, /class="game-menu-card game-menu-card--\$\{game\.id\}"/);
 assert.match(source, /\{ id: 'rubiks'/);
 assert.match(styles, /rubiks-game-mode/);
-assert.match(styles, /rubiks-face-turn-forward/);
-assert.match(styles, /rubiks-face-turn-reverse/);
+assert.match(styles, /\.rubiks-canvas/);
+assert.match(styles, /.rubiks-net {/);
 assert.match(source, /id="gamesPlayView" hidden/);
 assert.match(source, /id="gamesBackBtn"/);
 assert.match(styles, /\.games-modal-container\.menu-mode \.games-tab-bar/);
