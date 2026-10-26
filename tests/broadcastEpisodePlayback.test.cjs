@@ -168,6 +168,25 @@ test('stale native confirmation cannot release a replacement source', async () =
     assert.equal(manager.broadcastNativeSelectionReady, false);
 });
 
+test('a confirmation outlived by a reload of the same frame confirms the new document instead of holding the clock', async () => {
+    const { manager } = managerHarness();
+    const iframe = {};
+    let applications = 0;
+    const adapter = { getSelectionMode: () => 'NATIVE_BRIDGE', applySelection: async () => {
+        applications++;
+        if (applications === 1) manager.broadcastFrameLoads.set(iframe, 1);
+        return true;
+    } };
+    Object.assign(manager, { broadcastEpisode: episode, activePlayerId: 'native', sourceSwitchRequestId: 1,
+        broadcastFrameLoads: new Map([[iframe, 0]]),
+        elements: { videoContainer: { querySelector: () => iframe } }, broadcastLock: { forward() {} },
+        playbackController: { getAdapter: () => adapter, getSelection: () => episode },
+        unmountActivePlayer: () => { throw new Error('must not unmount'); } });
+    assert.equal(await manager.confirmBroadcastNativeSelection(), true);
+    assert.equal(applications, 2);
+    assert.equal(manager.broadcastNativeSelectionReady, true);
+});
+
 test('successful native confirmation is reused only for the same frame, request and episode', async () => {
     const { manager } = managerHarness();
     let iframe = {};
@@ -228,6 +247,39 @@ test('native bridge accepts trusted APPLIED only, never DISPATCHED or another ep
             dom.window.dispatchEvent(new dom.window.MessageEvent('message', { data: response, source: frame.contentWindow, origin: 'https://provider.fixture' }));
             assert.equal(await pending, status === 'APPLIED');
         }
+    } finally { global.window = oldWindow; dom.window.close(); }
+});
+
+test('broadcast bridge resends until the loading frame answers and shares one request between callers', async () => {
+    const dom = new JSDOM('<iframe src="https://provider.fixture/player"></iframe>', { url: 'https://host.fixture/' });
+    const oldWindow = global.window;
+    global.window = dom.window;
+    try {
+        const frame = dom.window.document.querySelector('iframe');
+        const adapter = new BasePlaybackAdapter('fixture', 'Fixture');
+        adapter.getSelectionMode = () => 'NATIVE_BRIDGE';
+        adapter.activeContainer = dom.window.document.body;
+        const requests = [];
+        frame.contentWindow.postMessage = data => { requests.push(data); };
+        const reply = (request, status) => dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+            data: { type: 'PLAYBACK_SELECTION_RESULT', requestId: request.requestId, providerId: 'fixture', seasonNumber: 2, episodeNumber: 6, status },
+            source: frame.contentWindow, origin: 'https://provider.fixture' }));
+        const options = { waitForBridge: true, timeoutMs: 2000, resendMs: 20 };
+        const first = adapter.applySelection(episode, options);
+        const second = adapter.applySelection(episode, options);
+        await new Promise(done => setTimeout(done, 70));
+        assert.ok(requests.length >= 2, 'a request lost before the frame listened is sent again');
+        reply(requests.at(-1), 'UNAVAILABLE');
+        await new Promise(done => setTimeout(done, 40));
+        const latest = requests.at(-1);
+        reply(latest, 'PENDING');
+        const sentAfterPending = requests.length;
+        await new Promise(done => setTimeout(done, 60));
+        assert.equal(requests.length, sentAfterPending, 'no resend while the frame is applying');
+        reply(latest, 'APPLIED');
+        assert.equal(await first, true);
+        assert.equal(await second, true, 'a second caller joins the same request');
+        assert.equal(await adapter.applySelection(episode, { waitForBridge: true, timeoutMs: 60, resendMs: 20 }), false);
     } finally { global.window = oldWindow; dom.window.close(); }
 });
 
@@ -324,5 +376,37 @@ test('cleaner pauses newly attached already-playing admin media while selection 
         win.document.querySelector('.native-player-wrapper').append(video);
         await new Promise(resolve => setTimeout(resolve, 1100));
         assert.equal(paused, true, 'pending applies even if play/metadata events happened before listeners were attached');
+    } finally { dom.window.close(); }
+});
+
+test('allplay play() from our controls starts the provider control until the stream is attached', () => {
+    const dom = new JSDOM('<div class="allplay"><button class="allplay__controls__item allplay__control">Play</button><video class="allplay__video"></video></div>',
+        { url: 'chrome-extension://fixture/player', runScripts: 'outside-only' });
+    const win = dom.window;
+    Object.defineProperty(win, 'localStorage', { value: { getItem: () => null, setItem() {}, removeItem() {} } });
+    win.console = silentConsole;
+    win.PlayerLocale = { init: async () => true, t: () => '' };
+    const video = win.document.querySelector('video');
+    let readyState = 0;
+    let duration = 1;
+    let directPlays = 0;
+    let nativeClicks = 0;
+    Object.defineProperties(video, { readyState: { get: () => readyState }, duration: { get: () => duration } });
+    win.HTMLMediaElement.prototype.play = () => { directPlays++; return Promise.resolve(); };
+    win.HTMLMediaElement.prototype.pause = () => {};
+    win.document.querySelector('button').addEventListener('click', () => { nativeClicks++; });
+    try {
+        for (const name of ['PlayerSettingsMenu', 'PlayerMediaControls', 'PlayerGhostPreview']) {
+            win.eval(read(`src/shared/services/player/${name}.js`));
+        }
+        win.eval(read('content-scripts/player-cleaner.js'));
+        win.dispatchEvent(new win.MessageEvent('message', { data: { type: 'BROADCAST_STATE', startMs: win.Date.now() - 1000, admin: true }, source: win, origin: win.location.origin }));
+        video.play();
+        assert.equal(nativeClicks, 1, 'the placeholder never loads the episode, so the provider control is used');
+        assert.equal(directPlays, 0);
+        readyState = 4; duration = 3000;
+        video.play();
+        assert.equal(directPlays, 1, 'an attached stream is played directly');
+        assert.equal(nativeClicks, 1);
     } finally { dom.window.close(); }
 });

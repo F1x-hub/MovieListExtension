@@ -205,6 +205,9 @@ class MovieDetailsManager {
                     if (state === 'closed') {
                         this.updateActiveEpisodePlayingState(null);
                     }
+                    // A native mount reports ready only after the provider applied
+                    // the scheduled episode; release the frame's broadcast clock.
+                    if (state === 'ready' && this.broadcastEpisode) void this.confirmBroadcastNativeSelection();
                 }
             })
             : null;
@@ -1348,16 +1351,21 @@ class MovieDetailsManager {
             && this.broadcastNativeSelectionReady === true) return true;
         if (this.broadcastSelectionConfirmation?.iframe === iframe
             && this.broadcastSelectionConfirmation?.loadGeneration === loadGeneration
-            && this.broadcastSelectionConfirmation?.requestId === requestId) return this.broadcastSelectionConfirmation.promise;
+            && this.broadcastSelectionConfirmation?.requestId === requestId) {
+            const joined = await this.broadcastSelectionConfirmation.promise;
+            return joined === 'RECONFIRM' ? this.confirmBroadcastNativeSelection() : joined;
+        }
         this.broadcastNativeSelectionReady = false;
         this.broadcastLock?.forward();
         adapter.activeContainer = container;
         const confirmation = (async () => {
             let applied = false;
-            try { applied = await adapter.applySelection(this.playbackController.getSelection()); }
+            try { applied = await adapter.applySelection(this.playbackController.getSelection(), { waitForBridge: true }); }
             catch { /* An unavailable bridge must never release the broadcast clock. */ }
-            if (container.querySelector('iframe') !== iframe || this.sourceSwitchRequestId !== requestId
-                || (this.broadcastFrameLoads?.get(iframe) || 0) !== loadGeneration) return false;
+            if (container.querySelector('iframe') !== iframe || this.sourceSwitchRequestId !== requestId) return false;
+            // The same frame navigated meanwhile: its new document needs its own
+            // confirmation, otherwise the clock would stay held.
+            if ((this.broadcastFrameLoads?.get(iframe) || 0) !== loadGeneration) return 'RECONFIRM';
             this.broadcastNativeSelectionReady = applied === true;
             if (applied === true) this.broadcastConfirmedSelection = { iframe, requestId, providerId, identity, loadGeneration };
             if (applied !== true) {
@@ -1369,8 +1377,10 @@ class MovieDetailsManager {
         })();
         const pending = { iframe, requestId, loadGeneration, promise: confirmation };
         this.broadcastSelectionConfirmation = pending;
-        try { return await confirmation; }
+        let result;
+        try { result = await confirmation; }
         finally { if (this.broadcastSelectionConfirmation === pending) this.broadcastSelectionConfirmation = null; }
+        return result === 'RECONFIRM' ? this.confirmBroadcastNativeSelection() : result;
     }
 
     async initializeUI() {
@@ -7173,7 +7183,7 @@ class MovieDetailsManager {
         try {
             const hasShortLivedTokens = Array.isArray(sources) && sources.some(s => {
                 const u = s?.url || '';
-                return u.includes('cinemar.cc') || u.includes('stravers.live') || u.includes('allarknow.online');
+                return u.includes('cinemar.cc') || u.includes('stravers.live') || u.includes('allarknow.online') || u.includes('stloadi.live');
             });
             const ttl = hasShortLivedTokens ? (5 * 60 * 1000) : (15 * 60 * 1000);
             this.pruneSourceCache();

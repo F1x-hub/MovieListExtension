@@ -152,6 +152,7 @@ class BasePlaybackAdapter {
      */
     async applySelection(selection, context = {}) {
         if (this.getSelectionMode() !== 'NATIVE_BRIDGE') return false;
+        if (context.waitForBridge) return this._applySelectionWhenBridgeReady(selection, context);
         const iframe = this.activeContainer?.querySelector?.(
             'iframe[data-player-source-active="true"]'
         ) || this.activeContainer?.querySelector?.('iframe');
@@ -239,6 +240,7 @@ class BasePlaybackAdapter {
                     episodeNumber: data.episodeNumber,
                     messageOrigin: event.origin || null
                 });
+                if (data.status === 'PENDING') return;
                 finish(data.status === 'APPLIED');
             };
             const timeout = setTimeout(() => {
@@ -263,6 +265,107 @@ class BasePlaybackAdapter {
                 requestId
             });
         });
+    }
+
+    /**
+     * Broadcast variant of applySelection: the provider frame may still be
+     * loading, so a lost request or a not-yet-ready provider selector is
+     * retried until the deadline. Concurrent callers for the same frame and
+     * episode share one request so they never cancel each other in the frame.
+     * @param {Object} selection Canonical PlaybackSelection
+     * @param {Object} context
+     * @returns {Promise<boolean>} True only after a trusted APPLIED result
+     */
+    _applySelectionWhenBridgeReady(selection, context = {}) {
+        const iframe = this.activeContainer?.querySelector?.(
+            'iframe[data-player-source-active="true"]'
+        ) || this.activeContainer?.querySelector?.('iframe');
+        if (!iframe || !selection) return Promise.resolve(false);
+        const key = `${selection.seasonNumber}:${selection.episodeNumber}`;
+        const pending = this._bridgeReadyApply;
+        if (pending && pending.iframe === iframe && pending.key === key) return pending.promise;
+
+        const deadline = Date.now() + (context.timeoutMs || 20000);
+        const resendMs = context.resendMs || 1000;
+        const requestSequence = (this._selectionRequestSequence || 0) + 1;
+        this._selectionRequestSequence = requestSequence;
+        const promise = new Promise(resolve => {
+            const requestIds = new Set();
+            let received = false;
+            let settled = false;
+            let resendTimer = null;
+            const finish = value => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(resendTimer);
+                clearTimeout(deadlineTimer);
+                window.removeEventListener('message', onMessage);
+                if (this._bridgeReadyApply?.promise === promise) this._bridgeReadyApply = null;
+                resolve(value);
+            };
+            const frameOrigin = () => {
+                try {
+                    const origin = new URL(iframe.src || iframe.getAttribute?.('src') || '', window.location.href).origin;
+                    return origin && origin !== 'null' ? origin : null;
+                } catch {
+                    return null;
+                }
+            };
+            const send = () => {
+                if (settled) return;
+                if (requestSequence !== this._selectionRequestSequence || !iframe.isConnected) {
+                    finish(false);
+                    return;
+                }
+                const origin = frameOrigin();
+                if (origin && iframe.contentWindow) {
+                    const requestId = `selection-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+                    requestIds.add(requestId);
+                    try {
+                        iframe.contentWindow.postMessage({
+                            type: 'APPLY_PLAYBACK_SELECTION',
+                            requestId,
+                            providerId: this.id,
+                            seasonNumber: selection.seasonNumber,
+                            episodeNumber: selection.episodeNumber
+                        }, origin);
+                    } catch { /* the frame is navigating; retry below */ }
+                }
+                // Until the frame acknowledges, the request may have reached a
+                // document that had no listener yet.
+                resendTimer = setTimeout(() => { if (!received) send(); }, resendMs);
+            };
+            const onMessage = event => {
+                const data = event?.data;
+                if (!data || data.type !== 'PLAYBACK_SELECTION_RESULT' || !requestIds.has(data.requestId)) return;
+                if (event.source !== iframe.contentWindow || event.origin !== frameOrigin()) return;
+                if (data.providerId && data.providerId !== this.id
+                    || Number(data.seasonNumber) !== Number(selection.seasonNumber)
+                    || Number(data.episodeNumber) !== Number(selection.episodeNumber)) return;
+                if (data.status === 'APPLIED') {
+                    finish(true);
+                } else if (data.status === 'PENDING') {
+                    received = true;
+                } else {
+                    // The provider selector was not ready yet; ask again.
+                    received = false;
+                    clearTimeout(resendTimer);
+                    resendTimer = setTimeout(send, resendMs);
+                }
+            };
+            const deadlineTimer = setTimeout(() => {
+                console.warn('[ExFsBridgeTrace] adapter bridge did not confirm before the deadline', {
+                    adapterId: this.id,
+                    seasonNumber: selection.seasonNumber,
+                    episodeNumber: selection.episodeNumber
+                });
+                finish(false);
+            }, Math.max(0, deadline - Date.now()));
+            window.addEventListener('message', onMessage);
+            send();
+        });
+        this._bridgeReadyApply = { iframe, key, promise };
+        return promise;
     }
 
     /**

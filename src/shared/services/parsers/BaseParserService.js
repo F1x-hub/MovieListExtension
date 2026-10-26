@@ -842,7 +842,8 @@ const VENOM_AD_FREE_HOSTS = new Set([
     'lumex.cloud',
     'cinemar.cc',
     'stravers.live',
-    'allarknow.online'
+    'allarknow.online',
+    'stloadi.live'
 ]);
 
 // Provider URLs come from scraped pages. Only web/extension schemes may become

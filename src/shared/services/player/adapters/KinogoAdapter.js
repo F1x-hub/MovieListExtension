@@ -30,7 +30,7 @@ class KinogoAdapter extends (typeof BasePlaybackAdapter !== 'undefined' ? BasePl
         // No iframe yet means the provider is still mounting. Do not hide the
         // host controls during that short loading window.
         if (!value || value.startsWith('parser:')) return true;
-        return /(?:stravers\.live|allarknow\.online)/i.test(value);
+        return /(?:stravers\.live|allarknow\.online|stloadi\.live)/i.test(value);
     }
 
     supportsEpisodePicker() {
@@ -103,7 +103,7 @@ class KinogoAdapter extends (typeof BasePlaybackAdapter !== 'undefined' ? BasePl
             return Array.isArray(sources) ? sources : [];
         }
 
-        const isBridgeCompatible = source => /(?:stravers\.live|allarknow\.online)/i
+        const isBridgeCompatible = source => /(?:stravers\.live|allarknow\.online|stloadi\.live)/i
             .test(String(source?.url || ''));
         const preferred = sources.find(isBridgeCompatible);
         if (!preferred) return sources;

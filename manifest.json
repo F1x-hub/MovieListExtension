@@ -95,6 +95,7 @@
     "https://*.cinemar.cc/*",
     "https://*.stravers.live/*",
     "https://*.allarknow.online/*",
+    "https://*.stloadi.live/*",
     "https://anison.fm/*",
     "https://rutube.ru/*",
     "https://*.rutube.ru/*",
@@ -302,7 +303,8 @@
         "*://*.lumex.cloud/*",
         "*://*.cinemar.cc/*",
         "*://*.stravers.live/*",
-        "*://*.allarknow.online/*"
+        "*://*.allarknow.online/*",
+        "*://*.stloadi.live/*"
       ],
       "js": ["content-scripts/provider-preview-bridge.js", "content-scripts/provider-ad-guard.js"],
       "world": "MAIN",
@@ -330,6 +332,7 @@
         "*://*.cinemar.cc/*",
         "*://*.stravers.live/*",
         "*://*.allarknow.online/*",
+        "*://*.stloadi.live/*",
         "https://widgets.kinopoisk.ru/*",
         "https://rutube.ru/play/embed/*",
         "https://vidsrc-embed.ru/*",
