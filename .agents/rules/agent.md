@@ -11,6 +11,12 @@ A powerful Chrome Extension (Manifest V3) that enhances the movie discovery and 
 `CinemaChannelService` resolves the manual `settings/cinemaChannel` event plus
 `cinemaSchedule` entries. New scheduled entries reserve `[startedAt, endsAt)`;
 `playbackStartedAt` is a separate seek/resume clock, never a grid boundary.
+An on-air pause holds the current scheduled show across later planned starts.
+Resume/seek moves its end with playback without truncating the known source;
+overlapping later shows shift atomically with the same revision, preserving
+their durations and playback anchors. Gaps absorb the delay. The public programme
+projects paused timing locally until resume commits it; a later manual start/stop
+still overrides the paused show. Housekeeping retains the paused show and queue.
 Source `durationSec` is independent of the reserved slot. Legacy entries remain
 read-compatible. Occupancy mutations use a fresh bounded server query and the
 transactional `settings/cinemaScheduleState.revision` guard; a stale edit is

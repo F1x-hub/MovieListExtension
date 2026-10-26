@@ -66,6 +66,7 @@
         const mode = () => form.querySelector('input[name="liveMode"]:checked')?.value || 'movie';
         let manual = null;
         let scheduleItems = [];
+        let scheduleReady = false;
         let sweptOnce = false;
         const setStatus = (text, tone = '') => { ui.status.textContent = text; ui.status.dataset.tone = tone; };
         const ready = () => {
@@ -182,6 +183,10 @@
 
         function resolveCurrent() {
             if (!manual) return;
+            if (scheduleReady && !sweptOnce) {
+                sweptOnce = true;
+                service.sweepFinished(scheduleItems, window.CinemaChannel.now(), manual).catch(() => {});
+            }
             current = resolveChannel(manual, scheduleItems);
             renderNow();
             renderSchedule();
@@ -610,11 +615,8 @@
             });
             service.subscribeSchedule(items => {
                 scheduleItems = items;
+                scheduleReady = true;
                 resolveCurrent();
-                if (!sweptOnce) {
-                    sweptOnce = true;
-                    service.sweepFinished(items).catch(() => {});
-                }
             }, error => { console.warn('[AdminLive] Schedule read failed:', error); setStatus('Не удалось загрузить программу эфира. Проверьте соединение.', 'error'); });
             // Update the clock without rebuilding the grid or stealing its focus.
             setInterval(() => {

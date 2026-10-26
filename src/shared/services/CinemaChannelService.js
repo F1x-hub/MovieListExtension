@@ -303,18 +303,48 @@
 
     /**
      * New fixed end after a scheduled show's playback clock moves to `anchorMs`:
-     * the slot keeps the same margin after the media, never runs into the next
-     * show and never ends before it starts.
+     * the slot keeps the same margin after the media and never ends before it
+     * starts. Later shows move together when this end would overlap them.
      */
-    function shiftedEnd(item, anchorMs, items = []) {
+    function shiftedEnd(item, anchorMs) {
         const previousAnchor = Number.isFinite(item.playbackStartedAtMs) ? item.playbackStartedAtMs : item.startedAtMs;
-        let endMs = item.endsAtMs + (anchorMs - previousAnchor);
-        const nextStart = Math.min(...items
-            .filter(other => other && other.id !== item.id && other.mode !== 'off'
-                && Number.isFinite(other.startedAtMs) && other.startedAtMs > item.startedAtMs)
-            .map(other => other.startedAtMs));
-        if (endMs > item.endsAtMs && Number.isFinite(nextStart)) endMs = Math.min(endMs, Math.max(item.endsAtMs, nextStart));
-        return Math.round(Math.max(endMs, item.startedAtMs + 1000));
+        const previousEnd = item.explicitEnd ? item.endsAtMs
+            : previousAnchor + (item[item.mode]?.durationSec || SCHEDULE_FALLBACK_SEC) * 1000;
+        const endMs = previousEnd + (anchorMs - previousAnchor);
+        const duration = item[item.mode]?.durationSec || 0;
+        // Old capped reservations may already be shorter than the source.
+        return Math.round(Math.max(endMs, item.startedAtMs + 1000, duration > 0 ? anchorMs + duration * 1000 : 0));
+    }
+
+    function followingShifts(item, endMs, items) {
+        const shifts = [];
+        let occupiedUntil = endMs;
+        const following = items.filter(other => other.id !== item.id && other.mode !== 'off'
+            && other.startedAtMs > item.startedAtMs).sort((a, b) => a.startedAtMs - b.startedAtMs);
+        for (const other of following) {
+            const bounds = getScheduleBounds(other);
+            if (bounds.startMs >= occupiedUntil) break;
+            const delta = occupiedUntil - bounds.startMs;
+            shifts.push({ item: other, delta });
+            occupiedUntil = bounds.endMs + delta;
+        }
+        return shifts;
+    }
+
+    /** Read-only preview until resume commits the postponed programme. */
+    function projectPausedSchedule(items, channel, nowMs = now()) {
+        const pausedAt = channel?.[channel?.mode]?.pausedAtSec;
+        if (!channel?.scheduled || !Number.isFinite(pausedAt) || nowMs < channel.startedAtMs) return items;
+        const endMs = shiftedEnd(channel, nowMs - pausedAt * 1000);
+        const shifts = new Map(followingShifts(channel, endMs, items).map(shift => [shift.item.id, shift.delta]));
+        return items.map(item => {
+            if (item.docPath === channel.docPath) return { ...item, endsAtMs: endMs, explicitEnd: true };
+            const delta = shifts.get(item.id);
+            if (!delta) return item;
+            return { ...item, startedAtMs: item.startedAtMs + delta,
+                endsAtMs: item.endsAtMs + delta,
+                playbackStartedAtMs: (Number.isFinite(item.playbackStartedAtMs) ? item.playbackStartedAtMs : item.startedAtMs) + delta };
+        });
     }
 
     function nextScheduled(items = [], nowMs = now()) {
@@ -360,6 +390,13 @@
      */
     function resolveChannel(manual, scheduleItems = [], nowMs = now()) {
         const items = [manual, ...scheduleItems].filter(item => item && Number.isFinite(item.startedAtMs));
+        // A pause postpones the programme until resume can move its boundaries
+        // atomically. A later manual start/stop still deliberately overrides it.
+        const manualStart = Number.isFinite(manual?.startedAtMs) && manual.startedAtMs <= nowMs ? manual.startedAtMs : -Infinity;
+        const held = scheduleItems.filter(item => item.mode !== 'off' && item.startedAtMs <= nowMs
+            && item.startedAtMs > manualStart && Number.isFinite(item[item.mode]?.pausedAtSec))
+            .sort((a, b) => a.startedAtMs - b.startedAtMs)[0];
+        if (held) return held;
         const started = items.filter(item => item.startedAtMs <= nowMs).sort((a, b) => b.startedAtMs - a.startedAtMs);
         const latest = started[0];
         if (latest && latest.mode !== 'off') {
@@ -434,9 +471,26 @@
                 const snapshot = await transaction.get(ref);
                 const mutation = prepare(snapshot, items);
                 if (!mutation) return false;
+                const shiftedWrites = [];
+                for (const { item, delta } of mutation.shifts || []) {
+                    const shiftedRef = this.refFor(item);
+                    const shiftedSnapshot = await transaction.get(shiftedRef);
+                    const current = shiftedSnapshot.exists ? this.normalizeSchedule(shiftedSnapshot) : null;
+                    const sameEnd = current && (current.endsAtMs === item.endsAtMs
+                        || (!Number.isFinite(current.endsAtMs) && !Number.isFinite(item.endsAtMs)));
+                    if (!current || current.startedAtMs !== item.startedAtMs || !sameEnd || !sameMedia(current, item)) {
+                        throw cinemaError('stale', 'Расписание уже изменено. Повторите действие.');
+                    }
+                    const anchor = Number.isFinite(current.playbackStartedAtMs) ? current.playbackStartedAtMs : current.startedAtMs;
+                    const data = { startedAt: new Date(current.startedAtMs + delta),
+                        playbackStartedAt: new Date(anchor + delta), ...this.writeStamp() };
+                    if (current.explicitEnd) data.endsAt = new Date(current.endsAtMs + delta);
+                    shiftedWrites.push({ ref: shiftedRef, data });
+                }
                 if (mutation.type === 'delete') transaction.delete(ref);
                 else if (mutation.type === 'create') transaction.set(ref, mutation.data);
                 else transaction.update(ref, mutation.data);
+                for (const write of shiftedWrites) transaction.update(write.ref, write.data);
                 transaction.set(this.scheduleStateRef, { revision: revision + 1, ...this.writeStamp() });
                 return mutation.result;
             });
@@ -506,8 +560,12 @@
         }
 
         /** Admin housekeeping: drops shows that finished more than a day ago. */
-        async sweepFinished(items, nowMs = now()) {
+        async sweepFinished(items, nowMs = now(), manual = null) {
+            const manualStart = Number.isFinite(manual?.startedAtMs) && manual.startedAtMs <= nowMs ? manual.startedAtMs : -Infinity;
+            const heldStart = Math.min(...items.filter(item => item.startedAtMs <= nowMs && item.startedAtMs > manualStart
+                && Number.isFinite(item[item.mode]?.pausedAtSec)).map(item => item.startedAtMs));
             const stale = items.filter(item => {
+                if (item.startedAtMs >= heldStart) return false;
                 if (item.explicitEnd) return nowMs - item.endsAtMs > 24 * 3600 * 1000;
                 const position = computePosition(item, nowMs);
                 const ageMs = nowMs - item.startedAtMs;
@@ -540,8 +598,9 @@
          * Admin timeline control for a running broadcast (movie and non-live YouTube
          * video: pause/resume/seek). Scheduled slots move their `playbackStartedAt`
          * clock; once on air, the fixed end moves by the same amount (paused or
-         * rewound time is added back, skipped time is removed), capped at the next
-         * show's start. Manual broadcasts use `startedAt` and have no fixed end.
+         * rewound time is added back, skipped time is removed). Overlapping later
+         * shows shift atomically, preserving their lengths and playback clocks.
+         * Manual broadcasts use `startedAt` and have no fixed end.
          * @param {'pause'|'resume'|'seek'} action
          */
         async control(channel, action, { offsetSec = null } = {}) {
@@ -584,16 +643,19 @@
                     || (channel.scheduled && current.startedAtMs !== channel.startedAtMs)) throw cinemaError('stale', 'Показ уже изменён. Обновите расписание.');
                 return current;
             };
-            const movesClock = action === 'resume' || (action === 'seek' && !Number.isFinite(channel[channel.mode]?.pausedAtSec));
-            if (channel.scheduled && channel.explicitEnd && movesClock && now() >= channel.startedAtMs) {
+            // A seek's pause state must come from the transactional read, since
+            // another window may have resumed before this snapshot arrived.
+            const movesClock = action === 'resume' || action === 'seek';
+            if (channel.scheduled && movesClock && now() >= channel.startedAtMs) {
                 // The end is occupancy, so it commits with the schedule revision.
                 await this.mutateSchedule(ref, (snapshot, items) => {
                     const current = fresh(snapshot);
                     const data = patchFor(current);
                     const anchorMs = data.playbackStartedAt instanceof Date ? data.playbackStartedAt.getTime() : NaN;
-                    if (current.explicitEnd && Number.isFinite(anchorMs)) {
-                        const endMs = shiftedEnd(current, anchorMs, items);
-                        if (endMs !== current.endsAtMs) data.endsAt = new Date(endMs);
+                    if (Number.isFinite(anchorMs)) {
+                        const endMs = shiftedEnd(current, anchorMs);
+                        if (!current.explicitEnd || endMs !== current.endsAtMs) data.endsAt = new Date(endMs);
+                        return { type: 'update', data, result: true, shifts: followingShifts(current, endMs, items) };
                     }
                     return { type: 'update', data, result: true };
                 });
@@ -667,7 +729,7 @@
         }
     }
 
-    const api = { CinemaChannelService, normalizeChannel, computePosition, resolveChannel, getScheduleBounds, nextScheduled, buildChannelPayload, formatClock, coverUrl, now, syncClock, toLocalMs, DOC_ID };
+    const api = { CinemaChannelService, normalizeChannel, computePosition, resolveChannel, getScheduleBounds, nextScheduled, projectPausedSchedule, buildChannelPayload, formatClock, coverUrl, now, syncClock, toLocalMs, DOC_ID };
     if (typeof window !== 'undefined') Object.assign(window, { CinemaChannelService, CinemaChannel: api });
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();

@@ -99,8 +99,10 @@
     }
 
     function renderProgramme() {
-        programme?.render({ items: scheduleItems, channel, position: channel ? currentPosition() : null,
-            nowMs: window.CinemaChannel.now(), ready: scheduleReady, error: scheduleError });
+        const nowMs = window.CinemaChannel.now();
+        const items = window.CinemaChannel.projectPausedSchedule(scheduleItems, channel, nowMs);
+        programme?.render({ items, channel, position: channel ? currentPosition() : null,
+            nowMs, ready: scheduleReady, error: scheduleError });
     }
 
     function showEmpty(titleKey, textKey) {
@@ -168,7 +170,12 @@
             && !(channel?.mode === 'youtube' && (channel.youtube.live || ytInfo.isLive))) {
             if (Number.isFinite(Number(data.startMs)) && Math.abs(Number(data.startMs) - localStartMs()) > 2000) return;
             const reported = Number(data.atSec);
-            mediaEnded = { identity: playbackIdentity(), atSec: Number.isFinite(reported) ? Math.max(0, reported) : window.CinemaChannel.computePosition(channel).offsetSec };
+            const position = window.CinemaChannel.computePosition(channel);
+            // A queued EOF from before a rewind must not end the new timeline.
+            // Some wrappers omit startMs, so also validate its media position.
+            if (position.state === 'paused' || pendingAdminPause?.key === channelKey(channel)
+                || (Number.isFinite(reported) && reported > position.offsetSec + 2)) return;
+            mediaEnded = { identity: playbackIdentity(), atSec: Number.isFinite(reported) ? Math.max(0, reported) : position.offsetSec };
             if (channel.mode === 'youtube') learnYoutubeLength(reported);
             renderClock(); return;
         }
@@ -519,7 +526,16 @@
 
     function refreshChannel({ force = false } = {}) {
         if (!manualChannel) return;
-        const next = window.CinemaChannel.resolveChannel(manualChannel, scheduleItems);
+        let next = window.CinemaChannel.resolveChannel(manualChannel, scheduleItems);
+        if (pendingAdminPause) {
+            const source = [manualChannel, ...scheduleItems].find(item => channelKey(item) === pendingAdminPause.key);
+            const overridden = manualChannel.startedAtMs > pendingAdminPause.startedAtMs;
+            const confirmed = source && source[source.mode]?.pausedAtSec === pendingAdminPause.atSec;
+            const newer = pendingAdminPause.committed && source?.updatedAtVersion
+                && source.updatedAtVersion !== pendingAdminPause.baseVersion;
+            if (!source || overridden || source.startedAtMs !== pendingAdminPause.startedAtMs || confirmed || newer) pendingAdminPause = null;
+            else next = { ...source, [source.mode]: { ...source[source.mode], pausedAtSec: pendingAdminPause.atSec } };
+        }
         const signature = signatureOf(next);
         const changed = signature !== channelSignature;
         if (!force && !changed) return;
@@ -586,30 +602,49 @@
     let service = null;
     let isAdmin = false;
     let adminBusy = false;
-    const lastAdminSent = { action: '', atSec: 0, at: 0, baseSignature: '' };
+    const lastAdminSent = { action: '', paused: false, atSec: 0, at: 0, baseSignature: '' };
 
     // The admin's own pause/play/seek in the player becomes the broadcast timeline.
     // Reports are coalesced so one drag on the progress bar is a single write.
     let pendingAdminAction = null;
     let adminActionTimer = null;
+    let pendingAdminPause = null;
 
     function publishAdminAction(action, atSec) {
         if (!isAdmin || !service || !channel || channel.mode === 'off') return;
         if (channel.mode === 'youtube' && channel.youtube.live) return;
-        pendingAdminAction = { action, atSec: Math.max(0, Number(atSec) || 0) };
+        // Scrubbing changes the position, not an earlier queued pause/play.
+        // Coalescing only the final event loses that phase before the write.
+        const queued = pendingAdminAction;
+        const key = channelKey(channel);
+        if (action === 'seek' && queued?.key === key && ['pause', 'resume'].includes(queued.action)) action = queued.action;
+        pendingAdminAction = { action, atSec: Math.max(0, Number(atSec) || 0), key };
+        if (action === 'pause' || (action === 'seek' && pendingAdminPause?.key === key)) {
+            const duration = channel[channel.mode]?.durationSec || 0;
+            const source = [manualChannel, ...scheduleItems].find(item => channelKey(item) === key) || channel;
+            pendingAdminPause = { key, startedAtMs: channel.startedAtMs, baseVersion: source.updatedAtVersion, committed: false,
+                atSec: duration > 0 ? Math.min(pendingAdminAction.atSec, Math.max(0, duration - 5)) : pendingAdminAction.atSec };
+            pendingAdminAction.pauseIntent = pendingAdminPause;
+            refreshChannel();
+        } else if (action === 'resume') pendingAdminPause = null;
         clearTimeout(adminActionTimer);
-        adminActionTimer = setTimeout(flushAdminAction, 350);
+        // A phase change at the very end must reach the server before the next
+        // clock tick can replace the show; only progress-bar drags are debounced.
+        if (action === 'seek') adminActionTimer = setTimeout(flushAdminAction, 350);
+        else flushAdminAction();
     }
 
     async function flushAdminAction() {
         if (adminBusy) return;
         const request = pendingAdminAction;
         pendingAdminAction = null;
-        if (!request || !channel || !service || !isAdmin) return;
-        const position = window.CinemaChannel.computePosition(channel);
-        const unconfirmed = Boolean(lastAdminSent.at && channelSignature === lastAdminSent.baseSignature);
+        if (!request || !channel || !service || !isAdmin || request.key !== channelKey(channel)) return;
+        const source = [manualChannel, ...scheduleItems].find(item => channelKey(item) === request.key) || channel;
+        const sourceSignature = signatureOf(source);
+        const position = window.CinemaChannel.computePosition(source);
+        const unconfirmed = Boolean(lastAdminSent.at && sourceSignature === lastAdminSent.baseSignature);
         const paused = unconfirmed
-            ? (lastAdminSent.action === 'pause' ? true : (lastAdminSent.action === 'resume' ? false : position.state === 'paused'))
+            ? lastAdminSent.paused
             : position.state === 'paused';
         const currentOffsetSec = unconfirmed
             ? (paused ? lastAdminSent.atSec : lastAdminSent.atSec + (Date.now() - lastAdminSent.at) / 1000)
@@ -618,20 +653,34 @@
         let { action } = request;
         // Skip reports that only echo the current timeline; turn a coalesced
         // pause+seek+resume on an already-live channel into a seek.
-        if (action === 'pause' && paused && Math.abs(currentOffsetSec - request.atSec) < 2) return;
+        if (action === 'pause' && paused && !pendingAdminPause && Math.abs(currentOffsetSec - request.atSec) < 2) return;
         if (action === 'resume' && !paused) {
             if (Math.abs(currentOffsetSec - request.atSec) < 2) return;
             action = 'seek';
         }
         if (action === 'seek' && Math.abs(currentOffsetSec - request.atSec) < 2) return;
 
-        const baseSignature = channelSignature;
+        const baseSignature = sourceSignature;
         adminBusy = true;
         try {
-            await service.control(channel, action, { offsetSec: request.atSec });
+            await service.control(source, action, { offsetSec: request.atSec });
             const now = Date.now();
-            Object.assign(lastAdminSent, { action, atSec: request.atSec, at: now, baseSignature });
+            Object.assign(lastAdminSent, { action, paused: action === 'pause' || (action === 'seek' && paused),
+                atSec: request.atSec, at: now, baseSignature });
+            if (pendingAdminPause && pendingAdminPause === request.pauseIntent) {
+                pendingAdminPause.committed = true;
+                refreshChannel();
+                // Listener recovery must not leave a local pause permanently
+                // hiding a newer server state if its acknowledgement was missed.
+                setTimeout(() => {
+                    if (pendingAdminPause !== request.pauseIntent) return;
+                    pendingAdminPause = null;
+                    refreshChannel({ force: true });
+                }, 5000);
+            }
         } catch (error) {
+            if (pendingAdminPause?.key === request.key) pendingAdminPause = null;
+            refreshChannel({ force: true });
             console.warn('[Live] Admin control failed:', error);
             if (typeof Utils !== 'undefined') {
                 Utils.showToast(error?.code === 'permission-denied' ? t('control_admin_only') : (error?.message || t('control_failed')), 'error');

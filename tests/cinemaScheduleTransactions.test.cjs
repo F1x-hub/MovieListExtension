@@ -5,7 +5,7 @@ const { test } = require('node:test');
 
 global.Utils = require('../src/shared/utils/Utils.js');
 global.firebase = { firestore: { FieldValue: { serverTimestamp: () => ({ serverTimestamp: true }) } } };
-const { CinemaChannelService, normalizeChannel, computePosition, getScheduleBounds, nextScheduled, resolveChannel } = require('../src/shared/services/CinemaChannelService.js');
+const { CinemaChannelService, normalizeChannel, computePosition, getScheduleBounds, nextScheduled, resolveChannel, projectPausedSchedule } = require('../src/shared/services/CinemaChannelService.js');
 
 const HOUR = 3600_000;
 const START = Date.now() + 10 * HOUR;
@@ -237,7 +237,8 @@ test('scheduled pause/seek/resume before the slot starts updates dotted media fi
     assert.ok(store.commits.every(keys => keys.length === 1));
 });
 
-test('on-air pause, rewind and skip move the fixed end with playback, capped at the next show', async () => {
+test('on-air pause, rewind and skip move the fixed end with playback and postpone overlapping shows', async t => {
+    t.mock.method(Date, 'now', () => START - 10 * HOUR);
     const MIN = 60_000;
     const onAir = movie(-10.5, -9); // started 30 min ago, ends in 60 min
     const store = database({ 'cinemaSchedule/one': onAir, 'cinemaSchedule/two': movie(-8.5, -8) });
@@ -257,9 +258,136 @@ test('on-air pause, rewind and skip move the fixed end with playback, capped at 
     await store.service.control(store.item('one'), 'resume', { offsetSec: 300 }); // rewind 20 min more
     near(store.item('one').endsAtMs, end + 25 * MIN);
 
-    await store.service.control(store.item('one'), 'seek', { offsetSec: 0 }); // 5 more would cross the next show
+    await store.service.control(store.item('one'), 'seek', { offsetSec: 0 });
     assert.equal(store.item('one').endsAtMs, START - 8.5 * HOUR);
     assert.equal(store.item('one').movie.pausedAtSec, null);
+    await store.service.control(store.item('one'), 'seek', { offsetSec: 0 });
+    assert.equal(store.item('two').startedAtMs, store.item('one').endsAtMs);
+});
+
+for (const mode of ['movie', 'youtube']) {
+    const media = mode === 'movie' ? { kinopoiskId: 301, durationSec: 3600, pausedAtSec: null }
+        : { videoId: 'dQw4w9WgXcQ', live: false, durationSec: 3600, pausedAtSec: null };
+    const show = (start, end) => movie(start, end, { mode, movie: mode === 'movie' ? { ...media } : null,
+        youtube: mode === 'youtube' ? { ...media } : null });
+
+    test(`${mode}: a long pause holds past following starts, then resumes and shifts the entire colliding chain atomically`, async t => {
+        let clock = START - 10 * HOUR;
+        t.mock.method(Date, 'now', () => clock);
+        const store = database({ 'cinemaSchedule/one': show(-10.5, -9.5),
+            'cinemaSchedule/two': show(-9.5, -8.5), 'cinemaSchedule/three': show(-8.5, -7.5),
+            'cinemaSchedule/gap': show(-5, -4) });
+        const manual = normalizeChannel({ mode: 'off', startedAt: at(-11) });
+        await store.service.control(store.item('one'), 'pause', { offsetSec: 1800 });
+        clock += 2 * HOUR;
+        assert.equal(resolveChannel(manual, ['one', 'two', 'three'].map(id => store.item(id))).id, 'one');
+        assert.deepEqual(computePosition(store.item('one')), { state: 'paused', offsetSec: 1800 });
+        const queued = ['one', 'two', 'three'].map(id => store.item(id));
+        const preview = projectPausedSchedule(queued, store.item('one'));
+        assert.equal(preview[0].endsAtMs, clock + 1800_000);
+        assert.equal(preview[1].startedAtMs, preview[0].endsAtMs);
+        assert.equal(nextScheduled(preview).id, 'two');
+        assert.equal(queued[1].startedAtMs, START - 9.5 * HOUR, 'preview never mutates subscribed snapshots');
+        const stoppedWhilePaused = normalizeChannel({ mode: 'off', startedAt: new Date(clock) });
+        assert.notEqual(resolveChannel(stoppedWhilePaused, queued).docPath, store.item('one').docPath);
+        await store.service.control(store.item('one'), 'seek', { offsetSec: 600 });
+        assert.equal(store.item('one')[mode].pausedAtSec, 600);
+        const before = ['two', 'three', 'gap'].map(id => store.item(id));
+        await store.service.control(store.item('one'), 'resume');
+        const one = store.item('one'), two = store.item('two'), three = store.item('three');
+        assert.equal(one.endsAtMs, clock + 3000_000);
+        assert.equal(two.startedAtMs, one.endsAtMs);
+        assert.equal(three.startedAtMs, two.endsAtMs);
+        for (const [index, item] of [two, three].entries()) {
+            assert.equal(item.endsAtMs - item.startedAtMs, before[index].endsAtMs - before[index].startedAtMs);
+            assert.equal(item.playbackStartedAtMs, item.startedAtMs, 'a postponed show starts at zero');
+        }
+        assert.equal(store.item('gap').startedAtMs, before[2].startedAtMs, 'an unoccupied gap absorbs the delay');
+        assert.deepEqual(store.commits.at(-1), ['cinemaSchedule/one', 'cinemaSchedule/two', 'cinemaSchedule/three', STATE]);
+        assert.equal(resolveChannel(manual, [one, two, three], one.endsAtMs - 1).id, 'one');
+        assert.equal(computePosition(one, one.endsAtMs - 1).state, 'live');
+        assert.equal(resolveChannel(manual, [one, two, three], one.endsAtMs).id, 'two');
+        assert.equal(computePosition(two, one.endsAtMs).offsetSec, 0);
+        const stopped = normalizeChannel({ mode: 'off', startedAt: new Date(clock + 1) });
+        assert.notEqual(resolveChannel(stopped, [one, two, three], clock + 1).docPath, one.docPath);
+    });
+
+    test(`${mode}: a seek from a stale paused snapshot resizes the fresh running timeline`, async t => {
+        let clock = START - 10 * HOUR;
+        t.mock.method(Date, 'now', () => clock);
+        const store = database({ 'cinemaSchedule/one': show(-10.5, -9.5) });
+        await store.service.control(store.item('one'), 'pause', { offsetSec: 1800 });
+        const stale = store.item('one');
+        clock += 600_000;
+        await store.service.control(store.item('one'), 'resume', { offsetSec: 1800 });
+        await store.service.control(stale, 'seek', { offsetSec: 600 });
+        const current = store.item('one');
+        assert.equal(current.endsAtMs, clock + 3000_000);
+        assert.equal(current[mode].pausedAtSec, null);
+        assert.equal(computePosition(current, current.endsAtMs - 1).state, 'live');
+        assert.equal(computePosition(current, current.endsAtMs).state, 'ended');
+    });
+
+    test(`${mode}: repeated pauses, backward and forward seeks retain the complete media runtime`, async t => {
+        let clock = START - 10 * HOUR;
+        t.mock.method(Date, 'now', () => clock);
+        const store = database({ 'cinemaSchedule/one': show(-10.5, -9.5), 'cinemaSchedule/two': show(-9.5, -8.5) });
+        for (let i = 0; i < 12; i++) {
+            await store.service.control(store.item('one'), 'pause', { offsetSec: 100 + i * 10 });
+            clock += 45_000;
+            await store.service.control(store.item('one'), 'seek', { offsetSec: 0 });
+            await store.service.control(store.item('one'), 'resume');
+            await store.service.control(store.item('one'), 'seek', { offsetSec: i % 2 ? 3000 : 600 });
+            const current = store.item('one');
+            assert.equal(current.endsAtMs, current.playbackStartedAtMs + 3600_000);
+            assert.ok(store.item('two').startedAtMs >= current.endsAtMs);
+            assert.equal(store.item('two').endsAtMs - store.item('two').startedAtMs, HOUR);
+        }
+    });
+}
+
+test('a failed cascading schedule commit preserves every original show and revision', async t => {
+    t.mock.method(Date, 'now', () => START - 10 * HOUR);
+    const store = database({ 'cinemaSchedule/one': movie(-10.5, -9.5), 'cinemaSchedule/two': movie(-9.5, -8.5) });
+    const before = [...store.documents];
+    store.failCommit = true;
+    await assert.rejects(store.service.control(store.item('one'), 'seek', { offsetSec: 0 }), /COMMIT_FAILED/);
+    assert.deepEqual([...store.documents], before);
+    assert.equal(store.read(STATE), undefined);
+});
+
+test('a legacy paused entry gains a complete end and postpones the next show on resume', async t => {
+    let clock = START - 10 * HOUR;
+    t.mock.method(Date, 'now', () => clock);
+    const store = database({ 'cinemaSchedule/one': movie(-10.5, -9.5, { endsAt: undefined }),
+        'cinemaSchedule/two': movie(-9.5, -8.5) });
+    await store.service.control(store.item('one'), 'pause', { offsetSec: 1800 });
+    clock += HOUR;
+    await store.service.control(store.item('one'), 'resume');
+    assert.equal(store.item('one').endsAtMs, clock + 1800_000);
+    assert.equal(store.item('two').startedAtMs, store.item('one').endsAtMs);
+    assert.equal(store.read(STATE).revision, 1);
+});
+
+test('resuming an already truncated reservation restores enough time for the complete source', async t => {
+    const clock = START - 10 * HOUR;
+    t.mock.method(Date, 'now', () => clock);
+    const store = database({ 'cinemaSchedule/one': movie(-10.5, -10, { movie: { kinopoiskId: 301, durationSec: 3600, pausedAtSec: 600 } }),
+        'cinemaSchedule/two': movie(-10, -9) });
+    await store.service.control(store.item('one'), 'resume');
+    assert.equal(store.item('one').endsAtMs, clock + 3000_000);
+    assert.equal(store.item('two').startedAtMs, store.item('one').endsAtMs);
+});
+
+test('housekeeping retains a paused show and the queued programme even across more than a day', async () => {
+    const store = database({ 'cinemaSchedule/one': movie(-40, -39, { movie: { kinopoiskId: 301, durationSec: 3600, pausedAtSec: 100 } }),
+        'cinemaSchedule/two': movie(-39, -38), 'cinemaSchedule/old': movie(-42, -41) });
+    assert.equal(await store.service.sweepFinished(['old', 'one', 'two'].map(id => store.item(id)), START), 1);
+    assert.ok(store.read('cinemaSchedule/one'));
+    assert.ok(store.read('cinemaSchedule/two'));
+    const manualStop = normalizeChannel({ mode: 'off', startedAt: at(-30) });
+    assert.equal(await store.service.sweepFinished(['one', 'two'].map(id => store.item(id)), START, manualStop), 2,
+        'a deliberately superseded pause no longer retains the old queue');
 });
 
 test('delayed duration probe preserves pause; legacy bound changes participate in guard and overlap checks', async () => {
