@@ -385,6 +385,77 @@ test('admin pause/seek/resume reported by the player become the shared timeline;
     }
 });
 
+for (const mode of ['movie', 'youtube']) test(`${mode}: rapid pause/seek and resume/seek retain the requested playback phase for viewers`, async () => {
+    const media = mode === 'movie' ? { kinopoiskId: 301, durationSec: 300, pausedAtSec: null }
+        : { videoId: 'dQw4w9WgXcQ', live: false, durationSec: 300, pausedAtSec: null };
+    const bus = createChannelBus({ mode, startedAt: new Date(Date.now() - 100_000), [mode]: media });
+    const admin = await mountLiveClient(bus, { uid: 'admin-1', isAdmin: true });
+    const viewer = await mountLiveClient(bus, { uid: 'viewer-1', isAdmin: false });
+    try {
+        viewer.emitFrame({ type: 'BROADCAST_READY' });
+        admin.emitFrame({ type: 'BROADCAST_ADMIN_ACTION', action: 'pause', atSec: 100 });
+        admin.emitFrame({ type: 'BROADCAST_ADMIN_ACTION', action: 'seek', atSec: 40 });
+        await wait(450);
+        assert.equal(bus.getDoc()[mode].pausedAtSec, 40);
+        assert.equal(stateMessages(viewer).at(-1).pausedAtSec, 40);
+        assert.equal(bus.writes.length, 2, 'phase is published immediately; scrub position follows');
+        admin.emitFrame({ type: 'BROADCAST_ADMIN_ACTION', action: 'resume', atSec: 40 });
+        admin.emitFrame({ type: 'BROADCAST_ADMIN_ACTION', action: 'seek', atSec: 80 });
+        await wait(450);
+        assert.equal(bus.getDoc()[mode].pausedAtSec, null);
+        assert.equal(stateMessages(viewer).at(-1).pausedAtSec, null);
+        assert.ok(Math.abs((Date.now() - bus.getDoc().startedAt.getTime()) / 1000 - 80) < 2);
+        assert.equal(bus.writes.length, 4);
+        assert.ok(bus.writes.every(write => write.uid === 'admin-1'));
+    } finally { admin.close(); viewer.close(); }
+});
+
+test('a queued action is discarded when another show replaces its player before the debounce fires', async () => {
+    const bus = createChannelBus({ mode: 'movie', startedAt: new Date(Date.now() - 100_000), movie: { kinopoiskId: 301, durationSec: 300 } });
+    const admin = await mountLiveClient(bus, { uid: 'admin-1', isAdmin: true });
+    try {
+        admin.emitFrame({ type: 'BROADCAST_ADMIN_ACTION', action: 'seek', atSec: 40 });
+        bus.setServerChannel({ mode: 'movie', startedAt: new Date(), movie: { kinopoiskId: 302, durationSec: 600 } });
+        await wait(450);
+        assert.equal(bus.writes.length, 0);
+        assert.equal(bus.getDoc().movie.kinopoiskId, 302);
+    } finally { admin.close(); }
+});
+
+test('a newer server resume releases the optimistic pause even when its intermediate acknowledgement was skipped', async () => {
+    const bus = createChannelBus({ mode: 'movie', startedAt: new Date(Date.now() - 100_000), movie: { kinopoiskId: 301, durationSec: 300, pausedAtSec: null } });
+    const makeManager = bus.makeManager;
+    bus.makeManager = options => {
+        const manager = makeManager(options);
+        const collection = manager.db.collection.bind(manager.db);
+        manager.db.collection = name => {
+            const result = collection(name);
+            if (name !== 'settings') return result;
+            const doc = result.doc.bind(result);
+            result.doc = id => {
+                const ref = doc(id), subscribe = ref.onSnapshot;
+                ref.onSnapshot = callback => subscribe(snapshot => {
+                    if (snapshot.data()?.movie?.pausedAtSec !== 100) callback(snapshot);
+                });
+                return ref;
+            };
+            return result;
+        };
+        return manager;
+    };
+    const admin = await mountLiveClient(bus, { uid: 'admin-1', isAdmin: true });
+    try {
+        admin.emitFrame({ type: 'BROADCAST_READY' });
+        admin.emitFrame({ type: 'BROADCAST_ADMIN_ACTION', action: 'pause', atSec: 100 });
+        await wait(30);
+        assert.equal(bus.getDoc().movie.pausedAtSec, 100);
+        const doc = bus.getDoc();
+        bus.setServerChannel({ ...doc, updatedAt: new Date(Date.now() + 1000), movie: { ...doc.movie, pausedAtSec: null } });
+        assert.equal(stateMessages(admin).at(-1).pausedAtSec, null);
+        assert.equal(admin.window.document.getElementById('liveBadge').classList.contains('is-paused'), false);
+    } finally { admin.close(); }
+});
+
 test('in-flight Firestore write (adminBusy) preserves follow-up resume instead of dropping it', async () => {
     const bus = createChannelBus({
         ...YT,
@@ -527,6 +598,66 @@ test('scheduled anchor moves playback in place while startedAt stays fixed, and 
     } finally { viewer.close(); }
 });
 
+for (const mode of ['movie', 'youtube']) test(`${mode}: viewers keep a paused screening past the next start and see the postponed programme without writes`, async () => {
+    const clock = { now: FIXED_NOW };
+    const current = scheduleDoc(mode, FIXED_NOW - 60_000, FIXED_NOW + 600_000);
+    const next = scheduleDoc('movie', FIXED_NOW + 600_000, FIXED_NOW + 1200_000,
+        { title: 'Next show', movie: { kinopoiskId: 302, durationSec: 600, posterUrl: '' } });
+    const paused = { ...current, [mode]: { ...current[mode], pausedAtSec: 60 } };
+    const bus = createChannelBus(manualOff(), { current: paused, next });
+    const viewer = await mountLiveClient(bus, { clock });
+    try {
+        const frame = viewer.frame();
+        viewer.emitFrame({ type: 'BROADCAST_READY' });
+        viewer.tick(FIXED_NOW + 1800_000);
+        assert.equal(viewer.frame(), frame);
+        assert.equal(stateMessages(viewer).at(-1).pausedAtSec, 60);
+        assert.equal(viewer.window.document.getElementById('liveProgrammeName').textContent, 'Next show');
+        assert.equal(viewer.window.document.querySelector('.live-programme__show.is-next h3').textContent, 'Next show');
+        assert.equal(bus.writes.length, 0);
+        const resumed = { ...current, playbackStartedAt: new Date(clock.now - 60_000), endsAt: new Date(clock.now + 600_000) };
+        const shifted = { ...next, startedAt: resumed.endsAt, endsAt: new Date(clock.now + 1200_000), playbackStartedAt: resumed.endsAt };
+        bus.setServerSchedule({ current: resumed, next: shifted });
+        assert.equal(viewer.frame(), frame, 'resume updates the existing player');
+        viewer.tick(resumed.endsAt.getTime() - 1);
+        assert.equal(viewer.frame(), frame);
+        viewer.tick(resumed.endsAt.getTime());
+        assert.notEqual(viewer.frame(), frame);
+        assert.equal(new URL(viewer.frame().src).searchParams.get('movieId'), '302');
+        assert.equal(bus.writes.length, 0);
+    } finally { viewer.close(); }
+});
+
+test('a pause immediately before the next scheduled start keeps the admin player while its write is delayed', async () => {
+    const clock = { now: FIXED_NOW };
+    const current = scheduleDoc('movie', FIXED_NOW - 299_900, FIXED_NOW + 100,
+        { movie: { kinopoiskId: 301, durationSec: 300, pausedAtSec: null } });
+    const next = scheduleDoc('movie', FIXED_NOW + 100, FIXED_NOW + 600_100,
+        { movie: { kinopoiskId: 302, durationSec: 600 } });
+    // Preserve sub-second precision across the Node/jsdom Date realms.
+    for (const item of [current, next]) {
+        item.startedAt = item.startedAt.toISOString();
+        item.endsAt = item.endsAt.toISOString();
+    }
+    const bus = createChannelBus(manualOff(), { current, next });
+    const admin = await mountLiveClient(bus, { clock, uid: 'admin-1', isAdmin: true });
+    try {
+        const frame = admin.frame();
+        assert.equal(new URL(frame.src).searchParams.get('movieId'), '301');
+        const release = bus.holdNextWrite();
+        admin.emitFrame({ type: 'BROADCAST_ADMIN_ACTION', action: 'pause', atSec: 294 });
+        await wait(10);
+        admin.tick(FIXED_NOW + 101);
+        assert.equal(admin.frame(), frame, 'an in-flight pause must hold the original player at the boundary');
+        assert.equal(bus.getScheduled('current').movie.pausedAtSec, null, 'the server has not acknowledged yet');
+        release();
+        await wait(30);
+        assert.equal(bus.getScheduled('current').movie.pausedAtSec, 294);
+        assert.equal(admin.frame(), frame);
+        assert.equal(bus.writes.length, 1);
+    } finally { admin.close(); }
+});
+
 for (const mode of ['movie', 'youtube']) test(`early ${mode} EOF reserves the slot on standby until the exact next scheduled start`, async () => {
     const clock = { now: FIXED_NOW };
     const current = scheduleDoc(mode, FIXED_NOW - 60_000, FIXED_NOW + 600_000);
@@ -565,6 +696,26 @@ test('restarting the same manual video clears local EOF identity and remounts pl
         bus.setServerChannel({ ...doc, startedAt: new Date(FIXED_NOW) });
         assert.ok(viewer.frame(), 'same source restarted as a new playback must leave standby');
         assert.equal(viewer.window.document.getElementById('liveEmpty').hidden, true);
+        assert.equal(bus.writes.length, 0);
+    } finally { viewer.close(); }
+});
+
+for (const mode of ['movie', 'youtube']) test(`${mode}: delayed EOF after rewind or while paused cannot close the active timeline`, async () => {
+    const clock = { now: FIXED_NOW };
+    const media = mode === 'movie' ? { kinopoiskId: 301, durationSec: 300, pausedAtSec: null }
+        : { videoId: 'dQw4w9WgXcQ', live: false, durationSec: 300, pausedAtSec: null };
+    const doc = { mode, startedAt: new Date(FIXED_NOW - 295_000), [mode]: media };
+    const bus = createChannelBus(doc);
+    const viewer = await mountLiveClient(bus, { clock });
+    try {
+        const frame = viewer.frame();
+        bus.setServerChannel({ ...doc, startedAt: new Date(FIXED_NOW - 40_000) });
+        viewer.emitFrame({ type: 'BROADCAST_ENDED', atSec: 300, startMs: FIXED_NOW - 295_000 });
+        viewer.emitFrame({ type: 'BROADCAST_ENDED', atSec: 300 });
+        assert.equal(viewer.frame(), frame, 'EOF without an anchor still cannot jump ahead of the rewound clock');
+        bus.setServerChannel({ ...doc, startedAt: new Date(FIXED_NOW - 40_000), [mode]: { ...media, pausedAtSec: 40 } });
+        viewer.emitFrame({ type: 'BROADCAST_ENDED', atSec: 40 });
+        assert.equal(viewer.frame(), frame, 'a paused source cannot finish from an old EOF');
         assert.equal(bus.writes.length, 0);
     } finally { viewer.close(); }
 });

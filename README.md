@@ -447,7 +447,8 @@ keeps npm-compatible three-component semver metadata.
 
 ### Fixes
 
-- Live programme: pausing or rewinding a scheduled show no longer makes it end early. A paused show keeps its slot even past the planned end, and when the admin resumes or seeks, the slot's end moves with playback — paused and rewound time is added back, skipped time is removed — never running into the next scheduled show.
+- Live programme: a paused scheduled show stays on air across later planned starts. Resuming or rewinding preserves the remaining source runtime and atomically postpones overlapping shows, keeping their durations and playback positions; available gaps absorb the delay. Viewers see the postponed programme during the pause without database writes, and old shortened reservations recover enough time for the full source when playback resumes.
+- Live controls: fast pause/seek and resume/seek sequences retain the requested playback state for movies and YouTube, including delayed snapshots and writes. Pause is sent immediately and holds the admin's player at a scheduled boundary until acknowledged; stale end-of-video reports after rewind or during pause cannot close the active show.
 
 ### Docs
 
