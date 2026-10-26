@@ -344,6 +344,7 @@ test('cleaner holds native playback pending confirmation and retains seek/resume
         send({ admin: true, selectionReady: true, pausedAtSec: 42 });
         assert.equal(time, 42);
         assert.equal(paused, true);
+        video.dispatchEvent(new win.Event('seeked'));
         const later = win.Date.now() + 2000;
         win.Date.now = () => later;
         time = 84; video.dispatchEvent(new win.Event('seeked'));
@@ -355,6 +356,127 @@ test('cleaner holds native playback pending confirmation and retains seek/resume
         assert.ok(reports.some(report => report.type === 'BROADCAST_ENDED'));
         assert.equal(win.localStorage.getItem('movieExtension_autoplay_next'), null);
     } finally { dom.window.close(); }
+});
+
+function broadcastJoinHarness(admin) {
+    const dom = new JSDOM('<video></video>', { url: 'chrome-extension://fixture/player', runScripts: 'outside-only' });
+    const win = dom.window, video = win.document.querySelector('video');
+    const state = { clock: Date.now(), time: 0, duration: NaN, paused: true, seeking: false, target: null };
+    Object.defineProperty(win, 'localStorage', { value: { getItem: () => null, setItem() {}, removeItem() {} } });
+    win.console = silentConsole;
+    win.PlayerLocale = { init: async () => true, t: () => '' };
+    win.Date.now = () => state.clock;
+    Object.defineProperties(video, {
+        duration: { get: () => state.duration }, paused: { get: () => state.paused },
+        readyState: { get: () => Number.isFinite(state.duration) ? 3 : 0 }, seeking: { get: () => state.seeking },
+        currentTime: { get: () => state.time, set: value => {
+            if (state.rejectSeek) throw new Error('fixture: media is not seekable yet');
+            state.target = value; state.seeking = true;
+        } }
+    });
+    video.play = () => { state.paused = false; video.dispatchEvent(new win.Event('play')); return Promise.resolve(); };
+    video.pause = () => { state.paused = true; video.dispatchEvent(new win.Event('pause')); };
+    for (const name of ['PlayerSettingsMenu', 'PlayerMediaControls', 'PlayerGhostPreview']) win.eval(read(`src/shared/services/player/${name}.js`));
+    win.eval(read('content-scripts/player-cleaner.js'));
+    const reports = [];
+    win.postMessage = data => reports.push(data);
+    win.dispatchEvent(new win.MessageEvent('message', { source: win, origin: win.location.origin,
+        data: { type: 'BROADCAST_STATE', startMs: state.clock - 300_000, pausedAtSec: null, admin } }));
+    return { dom, win, video, state, reports,
+        actions: () => reports.filter(report => report.type === 'BROADCAST_ADMIN_ACTION'),
+        finishSeek() {
+            state.time = state.target; state.seeking = false;
+            video.dispatchEvent(new win.Event('seeked'));
+            if (!state.paused) video.dispatchEvent(new win.Event('playing'));
+        }
+    };
+}
+
+for (const admin of [false, true]) test(`late ${admin ? 'admin' : 'viewer'} autoplay with unknown metadata cannot publish a restart at zero`, async () => {
+    const h = broadcastJoinHarness(admin);
+    try {
+        h.state.clock += 2500;
+        h.video.play();
+        assert.deepEqual(h.actions(), [], 'startup play at zero is local even after the suppression window');
+        h.state.duration = 900;
+        h.video.dispatchEvent(new h.win.Event('loadedmetadata'));
+        await new Promise(resolve => setTimeout(resolve, 150));
+        assert.ok(h.state.target >= 302 && h.state.target <= 303);
+        h.state.clock += 3000;
+        h.finishSeek();
+        assert.deepEqual(h.actions(), [], 'a slow programmatic seek is not a global rewind');
+        assert.ok(h.state.time >= 300);
+        h.state.clock += 2000;
+        h.state.time = 120;
+        h.video.dispatchEvent(new h.win.Event('seeked'));
+        assert.equal(h.actions().length, admin ? 1 : 0);
+        if (admin) assert.equal(h.actions()[0].atSec, 120, 'genuine admin controls still publish after alignment');
+    } finally { h.dom.window.close(); }
+});
+
+test('an in-place source reload makes a previously aligned admin wait for the broadcast position again', async () => {
+    const h = broadcastJoinHarness(true);
+    try {
+        h.state.duration = 900;
+        h.video.dispatchEvent(new h.win.Event('loadedmetadata'));
+        await new Promise(resolve => setTimeout(resolve, 150));
+        h.finishSeek();
+        h.state.time = 0; h.state.duration = NaN; h.state.paused = true;
+        h.video.dispatchEvent(new h.win.Event('emptied'));
+        h.video.dispatchEvent(new h.win.Event('loadstart'));
+        h.state.clock += 3000;
+        h.video.play();
+        assert.deepEqual(h.actions(), []);
+        h.state.duration = 900;
+        h.video.dispatchEvent(new h.win.Event('loadedmetadata'));
+        await new Promise(resolve => setTimeout(resolve, 150));
+        h.state.clock += 3000;
+        h.finishSeek();
+        assert.deepEqual(h.actions(), []);
+        assert.ok(h.state.time >= 300);
+    } finally { h.dom.window.close(); }
+});
+
+test('a seek slower than the admin drift tolerance catches up automatically before the first manual pause', async () => {
+    const h = broadcastJoinHarness(true);
+    try {
+        h.state.duration = 900;
+        h.video.dispatchEvent(new h.win.Event('loadedmetadata'));
+        await new Promise(resolve => setTimeout(resolve, 150));
+        const firstTarget = h.state.target;
+        h.state.clock += 12000;
+        h.finishSeek();
+        assert.equal(h.state.target, firstTarget + 12, 'the late seek immediately requests the up-to-date broadcast position');
+        assert.equal(h.state.seeking, true);
+        h.finishSeek();
+        assert.deepEqual(h.actions(), []);
+        h.state.clock += 2000;
+        h.video.pause();
+        assert.equal(h.state.paused, true, 'the first real pause is not replaced by another startup play');
+        assert.equal(h.actions().length, 1);
+        assert.equal(h.actions()[0].action, 'pause');
+        assert.equal(h.actions()[0].atSec, firstTarget + 12);
+    } finally { h.dom.window.close(); }
+});
+
+test('a not-yet-seekable admin source retries alignment on canplay without publishing a restart', async () => {
+    const h = broadcastJoinHarness(true);
+    try {
+        h.state.duration = 900; h.state.rejectSeek = true;
+        h.video.dispatchEvent(new h.win.Event('loadedmetadata'));
+        await new Promise(resolve => setTimeout(resolve, 150));
+        assert.equal(h.state.target, null);
+        h.state.rejectSeek = false; h.state.clock += 3000;
+        h.video.dispatchEvent(new h.win.Event('canplay'));
+        await new Promise(resolve => setTimeout(resolve, 150));
+        assert.equal(h.state.target, 303);
+        h.finishSeek();
+        assert.deepEqual(h.actions(), []);
+        h.state.clock += 2000;
+        h.video.pause();
+        assert.equal(h.actions()[0].action, 'pause');
+        assert.equal(h.actions()[0].atSec, 303);
+    } finally { h.dom.window.close(); }
 });
 
 test('cleaner pauses newly attached already-playing admin media while selection is pending', async () => {
