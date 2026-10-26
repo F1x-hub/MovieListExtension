@@ -352,6 +352,44 @@ test('YouTube on air mounts the movie-player page and hands it the broadcast clo
     }
 });
 
+for (const mode of ['movie', 'youtube']) for (const scheduled of [false, true]) for (const paused of [false, true]) {
+    test(`${mode} ${scheduled ? 'scheduled' : 'manual'} ${paused ? 'paused' : 'playing'}: new viewers and admins join without restarting existing clients`, async () => {
+        const clock = { now: FIXED_NOW };
+        const media = mode === 'movie' ? { kinopoiskId: 301, durationSec: 900, pausedAtSec: paused ? 40 : null }
+            : { videoId: 'dQw4w9WgXcQ', live: false, durationSec: 900, pausedAtSec: paused ? 40 : null };
+        const doc = { mode, title: 'Already on air', startedAt: new Date(clock.now - 300_000), endsAt: new Date(clock.now + 600_000), [mode]: media };
+        const bus = createChannelBus(scheduled ? manualOff() : doc, scheduled ? { current: doc } : {});
+        const host = await mountLiveClient(bus, { clock, uid: 'admin-1', isAdmin: true });
+        try {
+            host.emitFrame({ type: 'BROADCAST_READY' });
+            const frame = host.frame(), originalState = stateMessages(host).at(-1);
+            const originalDoc = scheduled ? bus.getScheduled('current') : bus.getDoc();
+            for (const joiner of [{ uid: null }, { uid: 'viewer-1' }, { uid: 'admin-2', isAdmin: true }]) {
+                const client = await mountLiveClient(bus, { clock, ...joiner });
+                try {
+                    client.emitFrame({ type: 'BROADCAST_READY' });
+                    client.emitFrame({ type: 'BROADCAST_PLAYING' });
+                    const state = stateMessages(client).at(-1);
+                    assert.equal(state.startMs, originalState.startMs);
+                    assert.equal(state.pausedAtSec, paused ? 40 : null);
+                    assert.equal(state.admin, joiner.isAdmin === true);
+                    if (mode === 'youtube') assert.equal(new URL(client.frame().src).searchParams.get('start'), String(paused ? 40 : 300));
+                    if (!joiner.isAdmin) {
+                        client.emitFrame({ type: 'BROADCAST_ADMIN_ACTION', action: 'resume', atSec: 0 });
+                        client.emitFrame({ type: 'BROADCAST_ADMIN_ACTION', action: 'seek', atSec: 0 });
+                    }
+                    assert.equal(host.frame(), frame);
+                    assert.equal(stateMessages(host).at(-1).startMs, originalState.startMs);
+                    assert.equal(bus.writes.length, 0);
+                } finally { client.close(); }
+            }
+            assert.deepEqual(scheduled ? bus.getScheduled('current') : bus.getDoc(), originalDoc);
+            assert.equal(host.frame(), frame, 'other clients leaving cannot restart the host either');
+            assert.equal(bus.writes.length, 0);
+        } finally { host.close(); }
+    });
+}
+
 test('admin pause/seek/resume reported by the player become the shared timeline; viewers cannot write', async () => {
     const bus = createChannelBus({
         ...YT,

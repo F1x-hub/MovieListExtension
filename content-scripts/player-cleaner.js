@@ -346,6 +346,10 @@
     let broadcastPlayingReported = false;
     let broadcastSuppressUntil = 0;
     const broadcastVideos = new WeakSet();
+    const broadcastAlignedVideos = new WeakSet();
+    const broadcastPendingSeeks = new WeakMap();
+    const broadcastPlayingVideos = new WeakSet();
+    const broadcastPendingPhases = new WeakMap();
     const BROADCAST_DRIFT_SEC = 3;
     const BROADCAST_ADMIN_DRIFT_SEC = 8;
 
@@ -353,6 +357,16 @@
         if (!broadcastState) return null;
         if (Number.isFinite(broadcastState.pausedAtSec)) return broadcastState.pausedAtSec;
         return (Date.now() - broadcastState.startMs) / 1000;
+    }
+
+    function confirmBroadcastAlignment(video) {
+        if (!broadcastState || broadcastState.selectionReady === false || broadcastPendingSeeks.has(video)
+            || video.seeking || !Number.isFinite(video.duration) || video.duration <= 0) return;
+        const paused = Number.isFinite(broadcastState.pausedAtSec);
+        if (!(paused ? video.paused : broadcastPlayingVideos.has(video))) return;
+        const tolerance = paused ? 1 : (broadcastState.admin ? BROADCAST_ADMIN_DRIFT_SEC : BROADCAST_DRIFT_SEC);
+        if (Math.abs(video.currentTime - broadcastTargetSec()) <= tolerance) broadcastAlignedVideos.add(video);
+        else enforceBroadcast(video, { force: true }); // Catch up after a slow initial seek before accepting user controls.
     }
 
     function broadcastPlay(video) {
@@ -376,26 +390,40 @@
             if (!video.paused) video.pause();
             return;
         }
+        const pendingSeek = broadcastPendingSeeks.get(video);
+        const waitingForSeek = video.seeking && pendingSeek?.startMs === broadcastState.startMs
+            && Object.is(pendingSeek.pausedAtSec, broadcastState.pausedAtSec);
         const duration = Number(video.duration);
         if (!Number.isFinite(duration) || duration <= 0) return;
         const target = broadcastTargetSec();
         if (target >= duration - 1) return;
         const paused = Number.isFinite(broadcastState.pausedAtSec);
         const tolerance = paused ? 1 : (broadcastState.admin ? BROADCAST_ADMIN_DRIFT_SEC : BROADCAST_DRIFT_SEC);
-        const needsSeek = Math.abs(video.currentTime - target) > (force ? 1 : tolerance);
+        const needsSeek = !waitingForSeek && Math.abs(video.currentTime - target) > (force ? 1 : tolerance);
         const needsPause = paused && !video.paused;
         const needsPlay = !paused && video.paused && !video.ended;
+        if (!needsSeek) confirmBroadcastAlignment(video);
         if (!needsSeek && !needsPause && !needsPlay) return;
         broadcastSuppressUntil = Date.now() + 1500;
         if (needsSeek) {
-            try { video.currentTime = Math.max(0, target); } catch { /* not seekable yet */ }
+            broadcastAlignedVideos.delete(video);
+            broadcastPendingSeeks.set(video, { target: Math.max(0, target), startMs: broadcastState.startMs, pausedAtSec: broadcastState.pausedAtSec });
+            try { video.currentTime = Math.max(0, target); } catch { broadcastPendingSeeks.delete(video); /* not seekable yet */ }
         }
-        if (needsPause) video.pause();
-        else if (needsPlay) broadcastPlay(video);
+        if (needsPause) {
+            broadcastPendingPhases.set(video, 'pause');
+            video.pause();
+        } else if (needsPlay) {
+            broadcastPendingPhases.set(video, 'play');
+            broadcastPlay(video);
+        }
     }
 
     function reportAdminAction(action, video) {
         if (broadcastState?.selectionReady === false) { enforceBroadcast(video); return; }
+        // A second admin may join while metadata or the initial seek is still
+        // loading. Autoplay at zero is local startup, never a channel command.
+        if (broadcastState?.admin && !broadcastAlignedVideos.has(video)) { enforceBroadcast(video, { force: true }); return; }
         if (!broadcastState?.admin || Date.now() < broadcastSuppressUntil) return;
         postToHost({ type: 'BROADCAST_ADMIN_ACTION', action, atSec: Math.max(0, Number(video.currentTime) || 0) });
     }
@@ -423,14 +451,28 @@
         if (!video || broadcastVideos.has(video)) return;
         bridgeProviderPlayStart(video);
         broadcastVideos.add(video);
+        if (!video.paused && video.readyState >= 3) broadcastPlayingVideos.add(video);
         if (broadcastState?.selectionReady === false) enforceBroadcast(video);
         const settle = () => setTimeout(() => {
             // Viewers are pulled back; the admin is only aligned on join.
-            if (!broadcastState?.admin || broadcastState?.selectionReady === false) enforceBroadcast(video);
+            if (!broadcastState?.admin || broadcastState?.selectionReady === false || !broadcastAlignedVideos.has(video)) enforceBroadcast(video);
         }, 120);
-        video.addEventListener('loadedmetadata', () => setTimeout(() => enforceBroadcast(video, { force: true }), 120));
+        const resetAlignment = () => {
+            broadcastAlignedVideos.delete(video);
+            broadcastPendingSeeks.delete(video);
+            broadcastPlayingVideos.delete(video);
+            broadcastPendingPhases.delete(video);
+        };
+        video.addEventListener('emptied', resetAlignment);
+        video.addEventListener('loadstart', resetAlignment);
+        video.addEventListener('loadedmetadata', () => {
+            broadcastAlignedVideos.delete(video);
+            setTimeout(() => enforceBroadcast(video, { force: true }), 120);
+        });
         video.addEventListener('canplay', settle);
         video.addEventListener('playing', () => {
+            broadcastPlayingVideos.add(video);
+            confirmBroadcastAlignment(video);
             if (!broadcastPlayingReported) {
                 broadcastPlayingReported = true;
                 postToHost({ type: 'BROADCAST_PLAYING' });
@@ -441,12 +483,27 @@
             postToHost({ type: 'BROADCAST_ENDED', atSec: Math.max(0, Number(video.currentTime) || 0), startMs: broadcastState.startMs });
         });
         video.addEventListener('pause', () => {
+            if (broadcastPendingPhases.get(video) === 'pause') {
+                broadcastPendingPhases.delete(video);
+                confirmBroadcastAlignment(video);
+                return;
+            }
             if (broadcastState?.admin) { if (!video.ended) reportAdminAction('pause', video); } else settle();
         });
         video.addEventListener('play', () => {
+            if (broadcastPendingPhases.get(video) === 'play') {
+                broadcastPendingPhases.delete(video);
+                return;
+            }
             if (broadcastState?.admin) reportAdminAction('resume', video); else settle();
         });
         video.addEventListener('seeked', () => {
+            const commanded = broadcastPendingSeeks.get(video);
+            if (Number.isFinite(commanded?.target) && Math.abs(video.currentTime - commanded.target) <= 2) {
+                broadcastPendingSeeks.delete(video);
+                confirmBroadcastAlignment(video);
+                return; // A slow programmatic seek can finish after the time-based suppression window.
+            }
             if (broadcastState?.admin) reportAdminAction('seek', video); else settle();
         });
         enforceBroadcast(video, { force: true });
@@ -516,7 +573,7 @@
             setInterval(() => {
                 document.querySelectorAll('video:not(.ghost-video)').forEach(watchBroadcastVideo);
                 applyBroadcastChrome();
-                if (!broadcastState.admin || broadcastState.selectionReady === false) enforceBroadcast();
+                if (!broadcastState.admin || broadcastState.selectionReady === false || !broadcastAlignedVideos.has(getRoomSyncVideo())) enforceBroadcast();
             }, 1000);
         }
         document.querySelectorAll('video:not(.ghost-video)').forEach(watchBroadcastVideo);

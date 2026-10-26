@@ -17,6 +17,8 @@ overlapping later shows shift atomically with the same revision, preserving
 their durations and playback anchors. Gaps absorb the delay. The public programme
 projects paused timing locally until resume commits it; a later manual start/stop
 still overrides the paused show. Housekeeping retains the paused show and queue.
+An admin player must align with the shared position before publishing controls;
+startup and source-reload seek/phase acknowledgements never change the channel.
 Source `durationSec` is independent of the reserved slot. Legacy entries remain
 read-compatible. Occupancy mutations use a fresh bounded server query and the
 transactional `settings/cinemaScheduleState.revision` guard; a stale edit is

@@ -449,6 +449,8 @@ keeps npm-compatible three-component semver metadata.
 
 - Live programme: a paused scheduled show stays on air across later planned starts. Resuming or rewinding preserves the remaining source runtime and atomically postpones overlapping shows, keeping their durations and playback positions; available gaps absorb the delay. Viewers see the postponed programme during the pause without database writes, and old shortened reservations recover enough time for the full source when playback resumes.
 - Live controls: fast pause/seek and resume/seek sequences retain the requested playback state for movies and YouTube, including delayed snapshots and writes. Pause is sent immediately and holds the admin's player at a scheduled boundary until acknowledged; stale end-of-video reports after rewind or during pause cannot close the active show.
+- Live startup: joining or reloading an admin's player cannot restart the shared show from zero while metadata or the initial seek is loading. Timeline controls wait for local playback alignment, and delayed programmatic seek/play/pause events are consumed as acknowledgements. Guests, viewers and secondary admins join the existing movie or YouTube position without changing other clients.
+- Profile images: Storage rules published to `movielistdb-13208` on 2026-10-27 now restrict avatar and banner uploads to nonempty PNG/JPEG/WebP/GIF files up to 5 MB, with writes and deletion limited to the owner. The active server rules were read back and matched against `rules/storage.rules`.
 
 ### Docs
 
