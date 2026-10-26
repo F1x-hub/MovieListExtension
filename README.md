@@ -445,6 +445,10 @@ keeps npm-compatible three-component semver metadata.
 - Mini-games: the cube understands standard notation beyond the outer faces — slices M E S, wide turns (r or Rw) and cube rotations x y z (keys M E S X Y; rotations are free and do not start the timer) — and an algorithm field plays sequences such as R U R' U'. Quick key presses are queued and played in order instead of being dropped.
 - Mini-games: the Rubik's Cube starts with a size picker instead of Easy/Medium/Hard: 2×2 up to 7×7, the last size preselected and reachable again from the "Кубик N×N" button. Each size gets a competition-length scramble (11 moves on the 2×2, 20 on the 3×3, up to 100 with wide turns on the 7×7), inner layers can be dragged and typed in SiGN notation (2R, 3Rw), and slices are offered only on odd cubes. Scrambles no longer turn the same axis three times in a row, finished times show hundredths, and each size keeps its own record and last 50 solves with Ao5/Ao12; the 3×3 keeps the existing best time, while records of the former Easy and Medium modes are no longer shown.
 
+### Fixes
+
+- Live programme: pausing or rewinding a scheduled show no longer makes it end early. A paused show keeps its slot even past the planned end, and when the admin resumes or seeks, the slot's end moves with playback — paused and rewound time is added back, skipped time is removed — never running into the next scheduled show.
+
 ### Docs
 
 - `npm run vendor:three` rebuilds `libs/three.rubiks.min.js`, the committed three.js subset the cube loads only when it is opened.

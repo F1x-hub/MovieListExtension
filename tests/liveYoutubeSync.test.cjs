@@ -502,7 +502,7 @@ const scheduleDoc = (mode, start, end, extra = {}) => ({
 });
 const manualOff = () => ({ mode: 'off', startedAt: new Date(FIXED_NOW - 7200_000) });
 
-test('scheduled anchor moves playback in place while startedAt/endsAt remain fixed, including a paused end cutoff', async () => {
+test('scheduled anchor moves playback in place while startedAt stays fixed, and a pause holds the slot past its end', async () => {
     const clock = { now: FIXED_NOW };
     const slot = scheduleDoc('movie', FIXED_NOW - 600_000, FIXED_NOW + 600_000, { playbackStartedAt: new Date(FIXED_NOW - 120_000) });
     const bus = createChannelBus(manualOff(), { current: slot });
@@ -520,8 +520,8 @@ test('scheduled anchor moves playback in place while startedAt/endsAt remain fix
         bus.setServerSchedule({ current: { ...moved, movie: { ...slot.movie, pausedAtSec: 40 } } });
         assert.equal(stateMessages(viewer).at(-1).pausedAtSec, 40);
         viewer.tick(FIXED_NOW + 600_000);
-        assert.equal(viewer.frame(), null, 'fixed end stops even a paused source');
-        assert.equal(viewer.window.document.getElementById('liveEmpty').hidden, false);
+        assert.equal(viewer.frame(), frame, 'a paused source outlives the fixed end; resume extends the slot');
+        assert.equal(viewer.window.document.getElementById('liveEmpty').hidden, true);
         assert.equal(bus.getScheduled('current').startedAt.getTime(), slot.startedAt.getTime());
         assert.equal(bus.writes.length, 0);
     } finally { viewer.close(); }
