@@ -116,11 +116,11 @@ function database(initial = {}) {
     return store;
 }
 
-test('explicit fixed slots override paused clocks and live YouTube; media EOF reserves the slot', () => {
+test('explicit fixed slots override live YouTube, hold while paused; media EOF reserves the slot', () => {
     const current = normalizeChannel(movie(0, 2, { playbackStartedAt: at(0.25) }), { id: 'one', scheduled: true });
     const paused = { ...current, movie: { ...current.movie, pausedAtSec: 30 } };
     assert.equal(computePosition(paused, START - 1000).state, 'upcoming');
-    assert.equal(computePosition(paused, START + 2 * HOUR).state, 'ended');
+    assert.deepEqual(computePosition(paused, START + 2 * HOUR), { state: 'paused', offsetSec: 30 }, 'a pause holds the slot past its end');
     assert.equal(computePosition(current, START + 0.5 * HOUR).offsetSec, 900);
     assert.equal(computePosition(current, START + 1.5 * HOUR).state, 'ended', 'source is shorter than slot');
     const next = normalizeChannel(movie(2, 3), { id: 'next', scheduled: true });
@@ -222,7 +222,7 @@ test('failed commit rolls back both target and guard; deleting unknown entry is 
     assert.equal(store.read(STATE), undefined);
 });
 
-test('scheduled pause/seek/resume updates fresh dotted media fields and never moves slots', async () => {
+test('scheduled pause/seek/resume before the slot starts updates dotted media fields without moving slots', async () => {
     const store = database({ 'cinemaSchedule/one': movie() });
     await store.service.control(store.item('one'), 'pause', { offsetSec: 40 });
     await store.service.control(store.item('one'), 'seek', { offsetSec: 50 });
@@ -235,6 +235,31 @@ test('scheduled pause/seek/resume updates fresh dotted media fields and never mo
     assert.equal(current.movie.pausedAtSec, null);
     assert.equal(store.read(STATE), undefined, 'playback-only writes do not consume occupancy revisions');
     assert.ok(store.commits.every(keys => keys.length === 1));
+});
+
+test('on-air pause, rewind and skip move the fixed end with playback, capped at the next show', async () => {
+    const MIN = 60_000;
+    const onAir = movie(-10.5, -9); // started 30 min ago, ends in 60 min
+    const store = database({ 'cinemaSchedule/one': onAir, 'cinemaSchedule/two': movie(-8.5, -8) });
+    const end = START - 9 * HOUR;
+    const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 5000, `${actual} ≈ ${expected}`);
+
+    await store.service.control(store.item('one'), 'seek', { offsetSec: 600 }); // rewind 20 min
+    near(store.item('one').endsAtMs, end + 20 * MIN);
+    assert.equal(store.item('one').startedAtMs, START - 10.5 * HOUR);
+    assert.equal(store.read(STATE).revision, 1, 'moving the end consumes an occupancy revision');
+
+    await store.service.control(store.item('one'), 'seek', { offsetSec: 1500 }); // skip 15 min
+    near(store.item('one').endsAtMs, end + 5 * MIN);
+
+    await store.service.control(store.item('one'), 'pause', { offsetSec: 1500 });
+    assert.equal(store.read(STATE).revision, 2, 'pausing alone keeps the slot');
+    await store.service.control(store.item('one'), 'resume', { offsetSec: 300 }); // rewind 20 min more
+    near(store.item('one').endsAtMs, end + 25 * MIN);
+
+    await store.service.control(store.item('one'), 'seek', { offsetSec: 0 }); // 5 more would cross the next show
+    assert.equal(store.item('one').endsAtMs, START - 8.5 * HOUR);
+    assert.equal(store.item('one').movie.pausedAtSec, null);
 });
 
 test('delayed duration probe preserves pause; legacy bound changes participate in guard and overlap checks', async () => {

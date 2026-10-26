@@ -203,7 +203,8 @@
         const media = channel[channel.mode];
         if (channel.scheduled && channel.explicitEnd) {
             if (nowMs < channel.startedAtMs) return { state: 'upcoming', offsetSec: Math.ceil((channel.startedAtMs - nowMs) / 1000) };
-            if (nowMs >= channel.endsAtMs) return { state: 'ended', offsetSec: media?.durationSec || 0 };
+            // A paused show holds its slot: resuming extends the end by the pause.
+            if (nowMs >= channel.endsAtMs && !Number.isFinite(media?.pausedAtSec)) return { state: 'ended', offsetSec: media?.durationSec || 0 };
         }
         const anchorMs = channel.scheduled && Number.isFinite(channel.playbackStartedAtMs)
             ? channel.playbackStartedAtMs : channel.startedAtMs;
@@ -298,6 +299,22 @@
             && Number.isFinite(item.endsAtMs) && item.endsAtMs > startMs;
         const duration = item?.[item?.mode]?.durationSec || (item?.scheduled ? SCHEDULE_FALLBACK_SEC : 0);
         return { startMs, endMs: explicitEnd ? item.endsAtMs : (duration ? startMs + duration * 1000 : Infinity), explicitEnd };
+    }
+
+    /**
+     * New fixed end after a scheduled show's playback clock moves to `anchorMs`:
+     * the slot keeps the same margin after the media, never runs into the next
+     * show and never ends before it starts.
+     */
+    function shiftedEnd(item, anchorMs, items = []) {
+        const previousAnchor = Number.isFinite(item.playbackStartedAtMs) ? item.playbackStartedAtMs : item.startedAtMs;
+        let endMs = item.endsAtMs + (anchorMs - previousAnchor);
+        const nextStart = Math.min(...items
+            .filter(other => other && other.id !== item.id && other.mode !== 'off'
+                && Number.isFinite(other.startedAtMs) && other.startedAtMs > item.startedAtMs)
+            .map(other => other.startedAtMs));
+        if (endMs > item.endsAtMs && Number.isFinite(nextStart)) endMs = Math.min(endMs, Math.max(item.endsAtMs, nextStart));
+        return Math.round(Math.max(endMs, item.startedAtMs + 1000));
     }
 
     function nextScheduled(items = [], nowMs = now()) {
@@ -521,8 +538,10 @@
 
         /**
          * Admin timeline control for a running broadcast (movie and non-live YouTube
-         * video: pause/resume/seek). Scheduled slots keep their boundaries; only
-         * their `playbackStartedAt` clock moves. Manual broadcasts use `startedAt`.
+         * video: pause/resume/seek). Scheduled slots move their `playbackStartedAt`
+         * clock; once on air, the fixed end moves by the same amount (paused or
+         * rewound time is added back, skipped time is removed), capped at the next
+         * show's start. Manual broadcasts use `startedAt` and have no fixed end.
          * @param {'pause'|'resume'|'seek'} action
          */
         async control(channel, action, { offsetSec = null } = {}) {
@@ -559,12 +578,30 @@
                 return data;
             };
             const ref = this.refFor(channel);
-            await this.firebaseManager.db.runTransaction(async transaction => {
-                const snapshot = await transaction.get(ref);
+            const fresh = snapshot => {
                 const current = snapshot.exists ? (channel.scheduled ? this.normalizeSchedule(snapshot) : normalizeChannel(snapshot.data())) : null;
                 if (!current || !sameMedia(current, channel)
                     || (channel.scheduled && current.startedAtMs !== channel.startedAtMs)) throw cinemaError('stale', 'Показ уже изменён. Обновите расписание.');
-                transaction.update(ref, patchFor(current));
+                return current;
+            };
+            const movesClock = action === 'resume' || (action === 'seek' && !Number.isFinite(channel[channel.mode]?.pausedAtSec));
+            if (channel.scheduled && channel.explicitEnd && movesClock && now() >= channel.startedAtMs) {
+                // The end is occupancy, so it commits with the schedule revision.
+                await this.mutateSchedule(ref, (snapshot, items) => {
+                    const current = fresh(snapshot);
+                    const data = patchFor(current);
+                    const anchorMs = data.playbackStartedAt instanceof Date ? data.playbackStartedAt.getTime() : NaN;
+                    if (current.explicitEnd && Number.isFinite(anchorMs)) {
+                        const endMs = shiftedEnd(current, anchorMs, items);
+                        if (endMs !== current.endsAtMs) data.endsAt = new Date(endMs);
+                    }
+                    return { type: 'update', data, result: true };
+                });
+                return;
+            }
+            await this.firebaseManager.db.runTransaction(async transaction => {
+                const snapshot = await transaction.get(ref);
+                transaction.update(ref, patchFor(fresh(snapshot)));
             });
         }
 
