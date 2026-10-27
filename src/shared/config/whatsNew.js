@@ -1,5 +1,14 @@
 export const whatsNew = [
     {
+        id: '1.4.7', version: '1.4.7', date: '2026-10-27',
+        highlights: [
+            { id: 'achievement-scenes', title: { ru: 'Иллюстрированные ачивки', en: 'Illustrated achievements' }, text: { ru: 'Каждая ачивка теперь нарисована сценой, которая растёт с уровнем: от совёнка в гнезде до золотого филина, от свечи до вечного огня.', en: 'Every achievement is now an illustrated scene that grows with the tier: from an owlet in a nest to a golden owl, from a candle to an eternal flame.' } },
+            { id: 'rubiks-3d', title: { ru: 'Кубик Рубика в 3D', en: 'Rubik’s Cube in 3D' }, text: { ru: 'Кубик стал объёмным: вращайте грани мышкой, крутите весь кубик и вводите алгоритмы в стандартной нотации.', en: 'The cube is now 3D: turn layers with the mouse, rotate the whole cube and type algorithms in standard notation.' } },
+            { id: 'rubiks-sizes', title: { ru: 'Кубики от 2×2 до 7×7', en: 'Cubes from 2×2 to 7×7' }, text: { ru: 'Выберите размер кубика: у каждого своя честная разборка, рекорд и средние Ao5 и Ao12.', en: 'Pick a cube size: each has a proper scramble, its own record and Ao5/Ao12 averages.' } },
+            { id: 'live-stable', title: { ru: 'Стабильный эфир', en: 'Steadier Live' }, text: { ru: 'Пауза и перемотка больше не сбивают программу, а подключение зрителя не перезапускает показ с начала.', en: 'Pausing and seeking no longer break the programme, and a viewer joining no longer restarts the show.' } }
+        ]
+    },
+    {
         id: '1.4.6', version: '1.4.6', date: '2026-10-26',
         highlights: [
             { id: 'live-series', title: { ru: 'Сериалы в эфире', en: 'Series on Live' }, text: { ru: 'В программу эфира можно ставить сериалы по сериям, а зрители видят, какая серия идёт сейчас и что будет дальше.', en: 'Live programmes can schedule series episode by episode, and viewers see which episode is on now and what comes next.' } },
