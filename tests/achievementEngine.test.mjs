@@ -12,6 +12,7 @@ import {
     totalPoints
 } from '../src/shared/achievements/AchievementEngine.js';
 import { BADGE_ICONS, renderAvatarFrame, renderBadge } from '../src/shared/achievements/AchievementBadge.js';
+import { SCENE_ICONS } from '../src/shared/achievements/AchievementScenes.js';
 import { locales } from '../src/shared/i18n/locales.js';
 
 // Catalog: unique ids, ascending thresholds, at most seven tiers, one-offs have one tier.
@@ -125,6 +126,23 @@ for (const def of ACHIEVEMENTS) {
     }
 }
 assert.match(renderBadge(ACHIEVEMENTS_BY_ID.rater, 7, { title: 'A <b>' }), /aria-label="A b"/);
+
+// Illustrated scenes are clipped to the frame face and every tier from I to VII renders cleanly.
+for (const icon of SCENE_ICONS) {
+    for (let tier = 1; tier <= 7; tier++) {
+        const svg = renderBadge({ icon }, tier);
+        assert.match(svg, /<clipPath id="ach\d+-clip">/, `${icon} tier ${tier} scene is clipped`);
+        assert.ok(!svg.includes('NaN') && !svg.includes('undefined') && !svg.includes('${'), `${icon} tier ${tier} scene renders cleanly`);
+    }
+}
+// Two copies of a badge on one page must not share gradient or clip ids.
+const sceneIds = svg => [...svg.matchAll(/id="([^"]+)"/g)].map(m => m[1]);
+const firstIds = sceneIds(renderBadge(ACHIEVEMENTS_BY_ID.night_owl, 1));
+assert.ok(firstIds.length > 0 && !sceneIds(renderBadge(ACHIEVEMENTS_BY_ID.night_owl, 1)).some(id => firstIds.includes(id)));
+// An icon without a scene keeps its line glyph.
+assert.ok(!renderBadge({ icon: 'unknownIcon' }, 3).includes('clipPath'));
+// Every catalog achievement has an illustrated scene.
+for (const def of ACHIEVEMENTS) assert.ok(SCENE_ICONS.includes(def.icon), `${def.id} has a scene`);
 
 // Higher tiers are worth more points than lower ones.
 for (let tier = 2; tier <= 7; tier++) assert.ok(pointsFor(rater, tier) - pointsFor(rater, tier - 1) > pointsFor(rater, tier - 1) - pointsFor(rater, tier - 2));
