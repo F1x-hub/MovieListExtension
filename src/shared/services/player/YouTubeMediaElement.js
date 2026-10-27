@@ -22,6 +22,7 @@
     const MAX_UPLOAD_SEC = 12 * 3600;
     const TICK_MS = 250;
     const PLAY_TIMEOUT_MS = 2500;
+    const BLOCKED_PAUSE_MS = 1000;
 
     function makeRanges(end) {
         const ranges = end > 0 ? [[0, end]] : [];
@@ -90,6 +91,20 @@
         function setTime(seconds) {
             state.time = Math.max(0, Number(seconds) || 0);
             state.at = Date.now();
+        }
+
+        // YouTube tried to start (or had time to) and stopped again: Chrome blocked
+        // unmuted playback. Reject now, so the broadcast lock retries muted at once
+        // instead of a timeout that a buffering report would have resolved.
+        // A late confirmation of an earlier pause leaves a fresh play() alone.
+        function rejectBlockedPlays() {
+            const blocked = state.playWaiters.filter(waiter => waiter.started || Date.now() - waiter.at >= BLOCKED_PAUSE_MS);
+            if (!blocked.length) return;
+            state.playWaiters = state.playWaiters.filter(waiter => !blocked.includes(waiter));
+            blocked.forEach(waiter => {
+                clearTimeout(waiter.timer);
+                waiter.reject(Object.assign(new Error('play() was blocked'), { name: 'NotAllowedError' }));
+            });
         }
 
         function settlePlay(ok, error) {
@@ -195,7 +210,7 @@
         });
         video.play = () => new Promise((resolve, reject) => {
             if (!state.paused && state.ytState === 'PLAYING') { resolve(); return; }
-            const waiter = { resolve, reject, timer: null };
+            const waiter = { resolve, reject, timer: null, at: Date.now(), started: false };
             // Chrome blocks unmuted autoplay silently: YouTube just stays put.
             waiter.timer = setTimeout(() => {
                 state.playWaiters = state.playWaiters.filter(item => item !== waiter);
@@ -277,9 +292,11 @@
             } else if (next === 'PAUSED') {
                 stopTicker();
                 finishSeek();
+                rejectBlockedPlays();
                 if (!state.paused) { state.paused = true; fire('pause'); }
                 if (previous === 'BUFFERING') fire('canplay');
             } else if (next === 'BUFFERING') {
+                state.playWaiters.forEach(waiter => { waiter.started = true; });
                 // Like a <video>, only a playing element waits for data.
                 if (!state.paused) fire('waiting');
             } else if (next === 'ENDED') {

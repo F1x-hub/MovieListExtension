@@ -143,6 +143,33 @@ test('blocked autoplay rejects play() so the broadcast lock can retry muted', as
     } finally { t.close(); }
 });
 
+test('YouTube stopping right after it started to buffer rejects play() at once, so the lock can retry muted', async () => {
+    const t = setup();
+    try {
+        t.emit('READY', { duration: 300 });
+        const started = Date.now();
+        const played = t.video.play();
+        t.emit('STATE_CHANGE', { state: 'PAUSED', currentTime: 0, duration: 300 });
+        t.emit('STATE_CHANGE', { state: 'BUFFERING', currentTime: 0, duration: 300 });
+        t.emit('STATE_CHANGE', { state: 'PAUSED', currentTime: 0, duration: 300 });
+        await assert.rejects(played, error => error.name === 'NotAllowedError');
+        assert.ok(Date.now() - started < 1000, 'no need to wait for the play timeout');
+        assert.equal(t.video.paused, true);
+    } finally { t.close(); }
+});
+
+test('a late confirmation of an earlier pause does not reject a fresh play()', async () => {
+    const t = setup();
+    try {
+        t.emit('READY', { duration: 300 });
+        const played = t.video.play();
+        t.emit('STATE_CHANGE', { state: 'PAUSED', currentTime: 0, duration: 300 });
+        t.emit('STATE_CHANGE', { state: 'PLAYING', currentTime: 0, duration: 300 });
+        await played;
+        assert.equal(t.video.paused, false);
+    } finally { t.close(); }
+});
+
 test('a cued video does not report 0 as its position; streams are infinite and never a length', () => {
     const t = setup({ startSec: 50 });
     try {

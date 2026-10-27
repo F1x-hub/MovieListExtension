@@ -19,6 +19,14 @@ projects paused timing locally until resume commits it; a later manual start/sto
 still overrides the paused show. Housekeeping retains the paused show and queue.
 An admin player must align with the shared position before publishing controls;
 startup and source-reload seek/phase acknowledgements never change the channel.
+Admin pause/resume/seek is published only after a typed press (toggle vs seek, 2 s,
+one command) on the player's play/pause buttons, progress track, skip button,
+playback shortcuts (hooked in `runShortcut`) or media-session/PiP controls; every
+other media move (autoplay, provider scripts, reloads) is pulled back. Viewers have
+no play/pause control, click, key or media-session pause; their media resumes at
+once while visible. Blocked sound starts muted (BROADCAST_UNMUTED hides the hint);
+an idle source is started by the lock; a source shorter than its slot stops and
+reports BROADCAST_ENDED once.
 Source `durationSec` is independent of the reserved slot. Legacy entries remain
 read-compatible. Occupancy mutations use a fresh bounded server query and the
 transactional `settings/cinemaScheduleState.revision` guard; a stale edit is

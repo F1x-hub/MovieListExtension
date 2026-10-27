@@ -343,13 +343,18 @@
     // for everyone. Audio, quality and subtitles stay personal for each viewer.
     let broadcastState = null;
     let broadcastMutedReported = false;
+    let broadcastUnmutedReported = false;
     let broadcastPlayingReported = false;
-    let broadcastSuppressUntil = 0;
     const broadcastVideos = new WeakSet();
     const broadcastAlignedVideos = new WeakSet();
     const broadcastPendingSeeks = new WeakMap();
     const broadcastPlayingVideos = new WeakSet();
     const broadcastPendingPhases = new WeakMap();
+    const broadcastGestureSeeks = new WeakSet();
+    const broadcastIdleStarts = new WeakMap();
+    const broadcastShortEnds = new WeakMap();
+    const broadcastViewerResumes = new WeakMap();
+    let broadcastMediaSessionViewer = null;
     const BROADCAST_DRIFT_SEC = 3;
     const BROADCAST_ADMIN_DRIFT_SEC = 8;
 
@@ -369,11 +374,22 @@
         else enforceBroadcast(video, { force: true }); // Catch up after a slow initial seek before accepting user controls.
     }
 
+    function tryPlay(video) {
+        try { return Promise.resolve(video.play()); } catch (error) { return Promise.reject(error); }
+    }
+
     function broadcastPlay(video) {
-        video.play().catch(() => {
-            // Autoplay with sound is blocked: play muted and tell the live page.
+        tryPlay(video).catch(error => {
+            // A refused play() fires no «play»: don't let the marker swallow a later real one.
+            if (broadcastPendingPhases.get(video) === 'play') broadcastPendingPhases.delete(video);
+            // Interrupted (our pause, seek, a source reload) or an empty source:
+            // the lock retries. Only an autoplay block is answered with mute.
+            if (error?.name !== 'NotAllowedError' || video.muted) return;
+            broadcastPendingPhases.set(video, 'play');
+            // Autoplay with sound is blocked: play muted (the viewer turns the
+            // sound on with the player's volume button) and tell the live page.
             video.muted = true;
-            video.play().catch(() => {});
+            tryPlay(video).catch(() => {});
             if (!broadcastMutedReported) {
                 broadcastMutedReported = true;
                 postToHost({ type: 'BROADCAST_MUTED' });
@@ -381,12 +397,91 @@
         });
     }
 
+    // Admin commands come only from the player's own play/pause buttons, progress
+    // track, skip button, playback keys and the browser's media controls: one
+    // press, one command of its kind (play/pause or seek). Autoplay, idle starts,
+    // provider scripts (including their reply to the same click, such as a jump
+    // to a saved position) and source reloads also pause, play or move the media;
+    // those are pulled back to the channel instead of being published to everyone.
+    const BROADCAST_INTENT_MS = 2000;
+    const BROADCAST_SCRUB_MAX_MS = 15000;
+    const BROADCAST_CONTROLS = [
+        ['.player-control-button--primary, .player-center-action', 'toggle'],
+        ['.player-progress-track', 'scrub'],
+        ['#skipOpeningBtn', 'seek']
+    ];
+    // Player shortcuts that change play/pause or position: they belong to the admin.
+    const BROADCAST_PLAYBACK_SHORTCUTS = { ' ': 'toggle', k: 'toggle', j: 'seek', l: 'seek', arrowleft: 'seek', arrowright: 'seek' };
+    let broadcastIntent = null;
+    let broadcastScrubUntil = 0;
+
+    function markAdminIntent(kind) {
+        if (broadcastState?.admin) broadcastIntent = { kind, at: Date.now() };
+    }
+
+    function installAdminIntentListeners() {
+        const controlKind = event => {
+            const match = BROADCAST_CONTROLS.find(([selector]) => event.target?.closest?.(selector));
+            return match ? match[1] : null;
+        };
+        document.addEventListener('pointerdown', event => {
+            const kind = controlKind(event);
+            if (!kind || !broadcastState?.admin) return;
+            markAdminIntent(kind === 'scrub' ? 'seek' : kind);
+            if (kind === 'scrub') broadcastScrubUntil = Date.now() + BROADCAST_SCRUB_MAX_MS;
+        }, true);
+        // Keyboard activation of a focused button arrives as a click only.
+        document.addEventListener('click', event => {
+            const kind = controlKind(event);
+            if (kind) markAdminIntent(kind === 'scrub' ? 'seek' : kind);
+        }, true);
+        const endScrub = () => {
+            if (!broadcastScrubUntil) return;
+            broadcastScrubUntil = 0;
+            markAdminIntent('seek');
+        };
+        window.addEventListener('pointerup', endScrub, true);
+        window.addEventListener('pointercancel', endScrub, true);
+    }
+
+    /** Uses up the press for this kind of command; seeks during a drag share it. */
+    function takeAdminIntent(kind) {
+        if (kind === 'seek' && Date.now() < broadcastScrubUntil) return true;
+        const intent = broadcastIntent;
+        if (!intent || intent.kind !== kind) return false;
+        broadcastIntent = null;
+        return Date.now() - intent.at <= BROADCAST_INTENT_MS;
+    }
+
+    /**
+     * Player shortcut hook (keyboard and keys forwarded by the host page).
+     * Returns true when the key must do nothing: viewers cannot pause or seek.
+     */
+    function broadcastShortcutBlocked(key) {
+        const kind = BROADCAST_PLAYBACK_SHORTCUTS[key];
+        if (!kind || !broadcastState) return false;
+        if (!broadcastState.admin) return true;
+        markAdminIntent(kind);
+        return false;
+    }
+
+    // The source is shorter than its slot: stop it instead of replaying it from
+    // the start, and tell the live page once so it shows the standby screen.
+    function finishShortBroadcast(video, duration) {
+        if (!video.paused && video.currentTime < duration - 1) {
+            broadcastPendingPhases.set(video, 'pause');
+            video.pause();
+        }
+        if (broadcastShortEnds.get(video) === broadcastState.startMs || video !== getRoomSyncVideo()) return;
+        broadcastShortEnds.set(video, broadcastState.startMs);
+        postToHost({ type: 'BROADCAST_ENDED', atSec: duration, startMs: broadcastState.startMs });
+    }
+
     // Moves the media to the broadcast moment. Changes made here are ours, so the
     // admin listeners ignore the events they cause.
     function enforceBroadcast(video = getRoomSyncVideo(), { force = false } = {}) {
         if (!broadcastState || !video || !video.isConnected) return;
         if (broadcastState.selectionReady === false) {
-            broadcastSuppressUntil = Date.now() + 1500;
             if (!video.paused) video.pause();
             return;
         }
@@ -394,17 +489,37 @@
         const waitingForSeek = video.seeking && pendingSeek?.startMs === broadcastState.startMs
             && Object.is(pendingSeek.pausedAtSec, broadcastState.pausedAtSec);
         const duration = Number(video.duration);
-        if (!Number.isFinite(duration) || duration <= 0) return;
-        const target = broadcastTargetSec();
-        if (target >= duration - 1) return;
         const paused = Number.isFinite(broadcastState.pausedAtSec);
+        // A few seconds is a provider placeholder (allplay), not the show.
+        if (!Number.isFinite(duration) || duration <= 5) {
+            // An idle source (preload=none, a provider that loads on play) never
+            // reports a length until something plays it: start it here, the seek
+            // to the broadcast moment follows on loadedmetadata.
+            const lastStart = broadcastIdleStarts.get(video) || 0;
+            if (!paused && video.paused && !video.ended && !(video.readyState >= 1) && Date.now() - lastStart >= 3000) {
+                broadcastIdleStarts.set(video, Date.now());
+                // Ask to start at the broadcast moment rather than at zero (the
+                // default start position); loadedmetadata still aligns it exactly.
+                const startAt = Math.max(0, broadcastTargetSec());
+                if (startAt > 1) {
+                    try { video.currentTime = startAt; } catch { /* not seekable yet */ }
+                }
+                broadcastPendingPhases.set(video, 'play');
+                broadcastPlay(video);
+            }
+            return;
+        }
+        const target = broadcastTargetSec();
+        if (target >= duration - 1) {
+            if (!paused && !video.ended) finishShortBroadcast(video, duration);
+            return;
+        }
         const tolerance = paused ? 1 : (broadcastState.admin ? BROADCAST_ADMIN_DRIFT_SEC : BROADCAST_DRIFT_SEC);
         const needsSeek = !waitingForSeek && Math.abs(video.currentTime - target) > (force ? 1 : tolerance);
         const needsPause = paused && !video.paused;
         const needsPlay = !paused && video.paused && !video.ended;
         if (!needsSeek) confirmBroadcastAlignment(video);
         if (!needsSeek && !needsPause && !needsPlay) return;
-        broadcastSuppressUntil = Date.now() + 1500;
         if (needsSeek) {
             broadcastAlignedVideos.delete(video);
             broadcastPendingSeeks.set(video, { target: Math.max(0, target), startMs: broadcastState.startMs, pausedAtSec: broadcastState.pausedAtSec });
@@ -419,12 +534,17 @@
         }
     }
 
-    function reportAdminAction(action, video) {
+    function reportAdminAction(action, video, intent = null) {
         if (broadcastState?.selectionReady === false) { enforceBroadcast(video); return; }
         // A second admin may join while metadata or the initial seek is still
         // loading. Autoplay at zero is local startup, never a channel command.
-        if (broadcastState?.admin && !broadcastAlignedVideos.has(video)) { enforceBroadcast(video, { force: true }); return; }
-        if (!broadcastState?.admin || Date.now() < broadcastSuppressUntil) return;
+        if (broadcastState?.admin && !broadcastAlignedVideos.has(video)) {
+            broadcastIntent = null; // A press before alignment must not authorise a later event.
+            enforceBroadcast(video, { force: true });
+            return;
+        }
+        if (!broadcastState?.admin) return;
+        if (!(intent ?? takeAdminIntent(action === 'seek' ? 'seek' : 'toggle'))) { setTimeout(() => enforceBroadcast(video), 120); return; }
         postToHost({ type: 'BROADCAST_ADMIN_ACTION', action, atSec: Math.max(0, Number(video.currentTime) || 0) });
     }
 
@@ -488,7 +608,14 @@
                 confirmBroadcastAlignment(video);
                 return;
             }
-            if (broadcastState?.admin) { if (!video.ended) reportAdminAction('pause', video); } else settle();
+            // Only the admin pauses the channel; a viewer's media resumes at once.
+            // A hidden tab resumes on return (the browser may keep pausing muted
+            // background media), and repeated pauses fall back to the short delay.
+            if (broadcastState?.admin) { if (!video.ended) reportAdminAction('pause', video); return; }
+            if (document.hidden) return;
+            if (Date.now() - (broadcastViewerResumes.get(video) || 0) < 500) { settle(); return; }
+            broadcastViewerResumes.set(video, Date.now());
+            enforceBroadcast(video);
         });
         video.addEventListener('play', () => {
             if (broadcastPendingPhases.get(video) === 'play') {
@@ -497,21 +624,28 @@
             }
             if (broadcastState?.admin) reportAdminAction('resume', video); else settle();
         });
+        // A seek can finish long after the press that started it.
+        video.addEventListener('seeking', () => {
+            if (broadcastPendingSeeks.has(video) || !broadcastState?.admin) return;
+            if (takeAdminIntent('seek')) broadcastGestureSeeks.add(video);
+        });
         video.addEventListener('seeked', () => {
+            const gesture = broadcastGestureSeeks.has(video) || null;
+            broadcastGestureSeeks.delete(video);
             const commanded = broadcastPendingSeeks.get(video);
             if (Number.isFinite(commanded?.target) && Math.abs(video.currentTime - commanded.target) <= 2) {
                 broadcastPendingSeeks.delete(video);
                 confirmBroadcastAlignment(video);
                 return; // A slow programmatic seek can finish after the time-based suppression window.
             }
-            if (broadcastState?.admin) reportAdminAction('seek', video); else settle();
+            if (broadcastState?.admin) reportAdminAction('seek', video, gesture); else settle();
         });
         enforceBroadcast(video, { force: true });
     }
 
     function blockBroadcastKeys(event) {
         if (!broadcastState || broadcastState.admin) return;
-        const keys = [' ', 'k', 'K', 'j', 'J', 'l', 'L', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'MediaPlayPause'];
+        const keys = [' ', 'k', 'K', 'j', 'J', 'l', 'L', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'MediaPlayPause', 'MediaPause', 'MediaPlay', 'MediaStop'];
         if (keys.includes(event.key) || /^[0-9]$/.test(event.key)) {
             event.stopImmediatePropagation();
             event.preventDefault();
@@ -527,10 +661,23 @@
         document.querySelectorAll('[data-player-episode-action], .provider-native-episode-nav').forEach(button => {
             button.style.setProperty('display', 'none', 'important');
         });
-        document.querySelectorAll('.player-control-button--primary').forEach(button => {
+        // Play/pause belongs to the admin: viewers get neither the dock nor the centre button.
+        document.querySelectorAll('.player-control-button--primary, .player-center-action').forEach(button => {
             if (viewer) button.style.setProperty('display', 'none', 'important');
             else if (button.style.getPropertyValue('display') === 'none') button.style.removeProperty('display');
         });
+        // Hardware media keys and the browser's media controls pause without a key event.
+        // For the admin they (and the picture-in-picture buttons) are real commands.
+        if (broadcastMediaSessionViewer !== viewer && navigator.mediaSession?.setActionHandler) {
+            broadcastMediaSessionViewer = viewer;
+            const adminHandlers = {
+                play: () => { markAdminIntent('toggle'); const media = getRoomSyncVideo(); if (media) tryPlay(media).catch(() => {}); },
+                pause: () => { markAdminIntent('toggle'); getRoomSyncVideo()?.pause(); }
+            };
+            ['play', 'pause', 'stop', 'seekbackward', 'seekforward', 'seekto'].forEach(action => {
+                try { navigator.mediaSession.setActionHandler(action, viewer ? () => {} : (adminHandlers[action] || null)); } catch { /* unsupported action */ }
+            });
+        }
     }
 
     function applyBroadcastState(data) {
@@ -553,9 +700,29 @@
         broadcastState = next;
         if (first) {
             const style = document.createElement('style');
-            style.textContent = '.mre-broadcast-viewer .player-progress-track { pointer-events: none !important; }';
+            style.textContent = '.mre-broadcast-viewer .player-progress-track { pointer-events: none !important; }'
+                + ' .mre-broadcast-viewer .player-center-action, .mre-broadcast-viewer .player-control-button--primary { display: none !important; }';
             (document.head || document.documentElement).appendChild(style);
             window.addEventListener('keydown', blockBroadcastKeys, true);
+            installAdminIntentListeners();
+            // The live page hides its «started muted» notice once sound is on. The
+            // player's volume controller swallows volumechange on the media itself,
+            // so listen during capture.
+            document.addEventListener('volumechange', event => {
+                const media = event.target;
+                if (!broadcastMutedReported || broadcastUnmutedReported || !broadcastVideos.has(media)) return;
+                if (media.muted || !(media.volume > 0)) return;
+                broadcastUnmutedReported = true;
+                postToHost({ type: 'BROADCAST_UNMUTED' });
+            }, true);
+            // Providers pause on a click on the picture; a double click stays fullscreen.
+            document.addEventListener('click', event => {
+                if (!broadcastState || broadcastState.admin || event.detail === 2) return;
+                if (event.target?.closest?.('video')) {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                }
+            }, true);
             document.addEventListener('click', event => {
                 if (!broadcastState || nativeSelectionOperation) return;
                 const target = event.target?.closest?.('[data-player-episode-action], .provider-native-episode-nav, [data-select="seasonType1"], [data-select="episodeType1"], div[class*="item_"]');
@@ -1108,6 +1275,7 @@
             const media = getVideo();
             const key = String(rawKey || '').toLowerCase();
             if (!media || !container.isConnected || !PLAYER_SHORTCUT_KEYS.has(key)) return false;
+            if (broadcastShortcutBlocked(key)) return true;
             if (key === ' ' || key === 'k') { if (media.paused) media.play().catch(() => {}); else media.pause(); }
             else if (['j', 'l', 'arrowleft', 'arrowright'].includes(key)) { seek(media.currentTime + ({ j: -10, l: 10, arrowleft: -5, arrowright: 5 }[key])); onSeek?.(key === 'j' || key === 'arrowleft' ? 'left' : 'right'); }
             else if (key === 'arrowup' || key === 'arrowdown') {
@@ -1175,7 +1343,10 @@
                 if (!media || !Number.isFinite(media.duration)) return;
                 const targets = { Home: 0, End: media.duration, PageUp: media.currentTime + 60, PageDown: media.currentTime - 60, ArrowLeft: media.currentTime - 5, ArrowRight: media.currentTime + 5 };
                 if (!Object.hasOwn(targets, event.key)) return;
-                event.preventDefault(); event.stopPropagation(); seek(targets[event.key]); update();
+                event.preventDefault(); event.stopPropagation();
+                if (broadcastState && !broadcastState.admin) return; // The channel owns the position.
+                markAdminIntent('seek');
+                seek(targets[event.key]); update();
             });
             const media = getVideo();
             if (media) for (const event of ['timeupdate', 'durationchange', 'loadedmetadata']) scope.listen(media, event, update);

@@ -103,7 +103,7 @@
             }
             // The player reports to this page (its host); pass them to the live page.
             if (event.source === window && event.origin === window.location.origin
-                && ['BROADCAST_MUTED', 'BROADCAST_PLAYING', 'BROADCAST_ADMIN_ACTION'].includes(type)) {
+                && ['BROADCAST_MUTED', 'BROADCAST_UNMUTED', 'BROADCAST_PLAYING', 'BROADCAST_ADMIN_ACTION'].includes(type)) {
                 toParent(type === 'BROADCAST_ADMIN_ACTION'
                     ? { type, action: event.data.action, atSec: Number(event.data.atSec) || 0 }
                     : { type });

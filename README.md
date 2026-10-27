@@ -439,6 +439,11 @@ keeps npm-compatible three-component semver metadata.
 <details open>
 <summary><strong>Unreleased</strong></summary>
 
+### Fixes
+
+- Live: opening or reloading the broadcast starts playback at the current moment without a manual click, for the admin and for viewers. A source that has not loaded anything yet (it reports no length until played) is now started by the broadcast lock and moved to the broadcast moment once its length is known, and it is asked to start at the broadcast moment rather than at zero. A source shorter than its slot is no longer replayed from the beginning: it stops and the live page switches to the standby screen. When the browser blocks autoplay with sound, the broadcast starts muted and the existing notice points to the player's volume button, then disappears once the sound is turned on; a YouTube broadcast now detects that block at once instead of waiting on a buffering report.
+- Live: only the admin can pause. Viewers no longer get the centre or dock play/pause button; a click on the picture, Space/K/J/L, the arrows, the progress bar keys and the keyboard's media keys do nothing for them, and any other pause of a viewer's media resumes it immediately (after the tab is shown again when it was hidden). The admin's pause, resume and seek still apply to everyone, but only when they come from the player's own play/pause buttons, progress bar, "Skip opening" button, playback keys or the browser's media and picture-in-picture controls, one press per command of the same kind: a play press never publishes a seek and a seek press never a pause. Anything else that moves the admin's media — autoplay or an idle source starting from zero, a provider script answering the same click with play or a jump to its saved position, a source reload — is no longer published and is pulled back to the channel; this stops the show from restarting from the beginning for everyone when the admin opens Live and from resuming right after the admin pauses it. Keyboard shortcuts now work this way even when the player was built before the broadcast clock arrived.
+
 </details>
 
 <details>
