@@ -5,6 +5,8 @@
  * metal colors are fixed and do not follow the interface theme.
  */
 
+import { renderScene } from './AchievementScenes.js';
+
 const PALETTES = [
     ['#F2C091', '#C9824A', '#8E5428', '#4A2A12'],
     ['#F4F7FA', '#C6CED6', '#8B96A2', '#3E4650'],
@@ -19,6 +21,9 @@ const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
 const CX = 60;
 const CY = 60;
 const LIGHT = [-0.55, -0.83];
+const SHIELD = [[-30, -34], [0, -38], [30, -34], [33, -8], [27, 14], [15, 30], [0, 38], [-15, 30], [-27, 14], [-33, -8]];
+// Scene gradient and clip ids must be unique per badge on the page.
+let sceneSeq = 0;
 
 const f = n => n.toFixed(1);
 const P = list => list.map(q => `${f(q[0])},${f(q[1])}`).join(' ');
@@ -213,6 +218,19 @@ function accents(level, p, cy) {
     return s;
 }
 
+/** The achievement's illustrated scene, clipped to the frame face; '' when the icon has none. */
+function illustration(icon, level, p, outline, k) {
+    const uid = `ach${++sceneSeq}`;
+    const art = renderScene(icon, level, uid);
+    if (!art) return '';
+    const face = outline.map(q => [CX + (q[0] - CX) * k, CY + (q[1] - CY) * k]);
+    // Scenes are drawn around (60,54); round faces sit lower and are smaller than shields.
+    const fit = level <= 2 ? 'translate(60 61) scale(0.86) translate(-60 -54)' : 'translate(60 58) scale(0.9) translate(-60 -54)';
+    return `<clipPath id="${uid}-clip"><polygon points="${P(face)}"/></clipPath>`
+        + `<g clip-path="url(#${uid}-clip)"><g transform="${fit}">${art}</g></g>`
+        + poly(face, 'none', `stroke="${p[2]}" stroke-width="0.8"`);
+}
+
 /**
  * SVG markup of one badge.
  * @param {Object} def - catalog entry
@@ -228,10 +246,14 @@ export function renderBadge(def, tier, { title = '' } = {}) {
     if (level === 7) s += rays(p);
     if (level >= 5) s += wings(p, level >= 6);
     if (level === 4) s += laurel(p);
-    if (level <= 2) s += bevel(circlePts(36), 0.78, p, p[3]);
-    else s += bevel(offset([[-30, -34], [0, -38], [30, -34], [33, -8], [27, 14], [15, 30], [0, 38], [-15, 30], [-27, 14], [-33, -8]], 1, -2), 0.8, p, p[3]);
-    s += def?.icon === 'clapper' ? clapper(level, p, shieldTop) : glyph(def?.icon, level, p, shieldTop);
-    s += accents(level, p, shieldTop);
+    const outline = level <= 2 ? circlePts(36) : offset(SHIELD, 1, -2), k = level <= 2 ? 0.78 : 0.8;
+    s += bevel(outline, k, p, p[3]);
+    const scene = illustration(def?.icon, level, p, outline, k);
+    if (scene) s += scene;
+    else {
+        s += def?.icon === 'clapper' ? clapper(level, p, shieldTop) : glyph(def?.icon, level, p, shieldTop);
+        s += accents(level, p, shieldTop);
+    }
     if (level === 4 || level === 5) s += gem(CX, CY - 42, 6);
     if (level >= 6) s += crown(p, level === 7);
     if (level >= 2) s += ribbon(p, level, oneOff ? '★' : level === 7 ? '★ VII ★' : ROMAN[level - 1]);

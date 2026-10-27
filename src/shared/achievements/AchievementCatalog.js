@@ -3,7 +3,7 @@
  * counts and the thresholds of its tiers. Names and descriptions live in the
  * `achievements.items.<id>` locale keys; tier visuals come from the tier index
  * (AchievementBadge), so adding an achievement means one entry here, one icon
- * and its locale text.
+ * with its illustrated scene (AchievementScenes) and its locale text.
  */
 
 export const CATEGORIES = ['ratings', 'variety', 'watching', 'lists', 'community', 'marathon', 'profile', 'special'];
