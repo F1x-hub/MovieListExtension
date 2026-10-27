@@ -15,6 +15,17 @@ const episode = { kinopoiskId: 101, mediaType: 'tv-series', seasonNumber: 2,
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 const silentConsole = { log() {}, info() {}, warn() {}, error() {} };
 
+/** A press on the player's own play/pause button: the only source of admin commands. */
+function pressControl(win, selector = '.player-control-button--primary') {
+    let control = win.document.querySelector(selector);
+    if (!control) {
+        control = win.document.createElement('button');
+        control.className = selector.slice(1).replace(/\./g, ' ');
+        win.document.body.append(control);
+    }
+    control.dispatchEvent(new win.Event('pointerdown', { bubbles: true }));
+}
+
 function managerHarness(extra = {}) {
     const listeners = {};
     const window = { location: { search: '?movieId=101&embedded=true&broadcastStart=1000&mediaType=tv-series&seasonNumber=0&episodeNumber=2', origin: 'chrome-extension://test' },
@@ -347,6 +358,8 @@ test('cleaner holds native playback pending confirmation and retains seek/resume
         video.dispatchEvent(new win.Event('seeked'));
         const later = win.Date.now() + 2000;
         win.Date.now = () => later;
+        pressControl(win, '.player-progress-track');
+        win.dispatchEvent(new win.Event('pointerup'));
         time = 84; video.dispatchEvent(new win.Event('seeked'));
         assert.ok(reports.some(report => report.type === 'BROADCAST_ADMIN_ACTION' && report.action === 'seek' && report.atSec === 84));
         send({ admin: false, selectionReady: true });
@@ -358,7 +371,7 @@ test('cleaner holds native playback pending confirmation and retains seek/resume
     } finally { dom.window.close(); }
 });
 
-function broadcastJoinHarness(admin) {
+function broadcastJoinHarness(admin, before, afterLoad) {
     const dom = new JSDOM('<video></video>', { url: 'chrome-extension://fixture/player', runScripts: 'outside-only' });
     const win = dom.window, video = win.document.querySelector('video');
     const state = { clock: Date.now(), time: 0, duration: NaN, paused: true, seeking: false, target: null };
@@ -366,6 +379,8 @@ function broadcastJoinHarness(admin) {
     win.console = silentConsole;
     win.PlayerLocale = { init: async () => true, t: () => '' };
     win.Date.now = () => state.clock;
+    // jsdom documents count as hidden; the live page is on screen.
+    Object.defineProperty(win.document, 'hidden', { value: false, configurable: true });
     Object.defineProperties(video, {
         duration: { get: () => state.duration }, paused: { get: () => state.paused },
         readyState: { get: () => Number.isFinite(state.duration) ? 3 : 0 }, seeking: { get: () => state.seeking },
@@ -376,13 +391,22 @@ function broadcastJoinHarness(admin) {
     });
     video.play = () => { state.paused = false; video.dispatchEvent(new win.Event('play')); return Promise.resolve(); };
     video.pause = () => { state.paused = true; video.dispatchEvent(new win.Event('pause')); };
+    before?.(win, video, state);
     for (const name of ['PlayerSettingsMenu', 'PlayerMediaControls', 'PlayerGhostPreview']) win.eval(read(`src/shared/services/player/${name}.js`));
     win.eval(read('content-scripts/player-cleaner.js'));
+    // Provider frames build the player (and its keyboard) before the clock arrives.
+    afterLoad?.(win, video, state);
     const reports = [];
     win.postMessage = data => reports.push(data);
     win.dispatchEvent(new win.MessageEvent('message', { source: win, origin: win.location.origin,
         data: { type: 'BROADCAST_STATE', startMs: state.clock - 300_000, pausedAtSec: null, admin } }));
     return { dom, win, video, state, reports,
+        async join() {
+            state.duration = 900;
+            video.dispatchEvent(new win.Event('loadedmetadata'));
+            await new Promise(resolve => setTimeout(resolve, 150));
+            this.finishSeek();
+        },
         actions: () => reports.filter(report => report.type === 'BROADCAST_ADMIN_ACTION'),
         finishSeek() {
             state.time = state.target; state.seeking = false;
@@ -407,6 +431,8 @@ for (const admin of [false, true]) test(`late ${admin ? 'admin' : 'viewer'} auto
         assert.deepEqual(h.actions(), [], 'a slow programmatic seek is not a global rewind');
         assert.ok(h.state.time >= 300);
         h.state.clock += 2000;
+        pressControl(h.win, '.player-progress-track');
+        h.win.dispatchEvent(new h.win.Event('pointerup'));
         h.state.time = 120;
         h.video.dispatchEvent(new h.win.Event('seeked'));
         assert.equal(h.actions().length, admin ? 1 : 0);
@@ -451,6 +477,7 @@ test('a seek slower than the admin drift tolerance catches up automatically befo
         h.finishSeek();
         assert.deepEqual(h.actions(), []);
         h.state.clock += 2000;
+        pressControl(h.win);
         h.video.pause();
         assert.equal(h.state.paused, true, 'the first real pause is not replaced by another startup play');
         assert.equal(h.actions().length, 1);
@@ -460,7 +487,7 @@ test('a seek slower than the admin drift tolerance catches up automatically befo
 });
 
 test('a not-yet-seekable admin source retries alignment on canplay without publishing a restart', async () => {
-    const h = broadcastJoinHarness(true);
+    const h = broadcastJoinHarness(true, (win, video, state) => { state.rejectSeek = true; });
     try {
         h.state.duration = 900; h.state.rejectSeek = true;
         h.video.dispatchEvent(new h.win.Event('loadedmetadata'));
@@ -473,6 +500,7 @@ test('a not-yet-seekable admin source retries alignment on canplay without publi
         h.finishSeek();
         assert.deepEqual(h.actions(), []);
         h.state.clock += 2000;
+        pressControl(h.win);
         h.video.pause();
         assert.equal(h.actions()[0].action, 'pause');
         assert.equal(h.actions()[0].atSec, 303);
@@ -523,12 +551,287 @@ test('allplay play() from our controls starts the provider control until the str
         }
         win.eval(read('content-scripts/player-cleaner.js'));
         win.dispatchEvent(new win.MessageEvent('message', { data: { type: 'BROADCAST_STATE', startMs: win.Date.now() - 1000, admin: true }, source: win, origin: win.location.origin }));
-        video.play();
-        assert.equal(nativeClicks, 1, 'the placeholder never loads the episode, so the provider control is used');
+        assert.equal(nativeClicks, 1, 'the lock starts the idle placeholder, and through the provider control: a direct play() never loads the episode');
         assert.equal(directPlays, 0);
         readyState = 4; duration = 3000;
         video.play();
         assert.equal(directPlays, 1, 'an attached stream is played directly');
         assert.equal(nativeClicks, 1);
     } finally { dom.window.close(); }
+});
+
+
+function trackMuted(video, state) {
+    state.muted = false;
+    Object.defineProperty(video, 'muted', { get: () => state.muted, set: value => { state.muted = value; } });
+}
+
+test('a pause nobody made (autoplay policy, provider script) never pauses the channel; the admin player resumes', async () => {
+    const h = broadcastJoinHarness(true);
+    try {
+        await h.join();
+        assert.equal(h.state.paused, false, 'the admin joins playing, without a manual start');
+        h.state.clock += 2000;
+        h.win.document.body.dispatchEvent(new h.win.Event('pointerdown', { bubbles: true }));
+        h.video.pause();
+        await new Promise(resolve => setTimeout(resolve, 150));
+        assert.deepEqual(h.actions(), [], 'a pause without a press on a playback control is not published to everyone');
+        assert.equal(h.state.paused, false, 'the admin media is pulled back to the live channel');
+        h.state.clock += 2000;
+        pressControl(h.win);
+        h.video.pause();
+        assert.equal(h.actions().length, 1, 'a real admin pause still pauses the channel for everyone');
+        assert.equal(h.actions()[0].action, 'pause');
+        h.video.play();
+        await new Promise(resolve => setTimeout(resolve, 150));
+        assert.equal(h.actions().length, 1, 'a provider replying to the same press with play() is not a second command');
+        h.state.clock += 2500;
+        pressControl(h.win);
+        h.state.clock += 2500;
+        h.video.pause();
+        assert.equal(h.actions().length, 1, 'a press older than two seconds does not authorise a later pause');
+    } finally { h.dom.window.close(); }
+});
+
+test('an admin seek keeps the press that started it even when it finishes later', async () => {
+    const h = broadcastJoinHarness(true);
+    try {
+        await h.join();
+        h.state.clock += 2000;
+        pressControl(h.win, '.player-progress-track');
+        h.win.dispatchEvent(new h.win.Event('pointerup'));
+        h.video.dispatchEvent(new h.win.Event('seeking'));
+        h.state.clock += 5000;
+        h.state.time = 500;
+        h.video.dispatchEvent(new h.win.Event('seeked'));
+        assert.equal(h.actions().length, 1);
+        assert.equal(h.actions()[0].action, 'seek');
+        assert.equal(h.actions()[0].atSec, 500);
+    } finally { h.dom.window.close(); }
+});
+
+test('viewers have no pause: no play/pause buttons, clicks and keys do nothing, any pause resumes at once', async () => {
+    const handlers = {};
+    const h = broadcastJoinHarness(false, win => {
+        win.navigator.mediaSession = { setActionHandler: (action, handler) => { handlers[action] = handler; } };
+        win.document.body.insertAdjacentHTML('beforeend',
+            '<button class="player-center-action"></button><button class="player-control-button player-control-button--primary"></button>');
+    });
+    try {
+        await h.join();
+        assert.equal(h.state.paused, false, 'the viewer joins playing, without a manual start');
+        for (const selector of ['.player-center-action', '.player-control-button--primary']) {
+            assert.equal(h.win.document.querySelector(selector).style.getPropertyValue('display'), 'none', selector);
+        }
+        assert.equal(typeof handlers.pause, 'function', 'media keys get a no-op pause handler');
+        handlers.pause();
+        let clicked = false;
+        h.video.addEventListener('click', () => { clicked = true; });
+        h.video.dispatchEvent(new h.win.MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }));
+        assert.equal(clicked, false, 'a click on the picture never reaches provider play/pause handlers');
+        const key = new h.win.KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+        h.win.document.body.dispatchEvent(key);
+        assert.equal(key.defaultPrevented, true, 'space is not a pause key for viewers');
+        h.state.clock += 2000;
+        h.video.pause();
+        assert.equal(h.state.paused, false, 'whatever paused the viewer media, it plays again immediately');
+        assert.deepEqual(h.actions(), [], 'viewers never publish');
+    } finally { h.dom.window.close(); }
+});
+
+test('blocked sound starts the broadcast muted and tells the live page', async () => {
+    const h = broadcastJoinHarness(false, (win, video, state) => {
+        trackMuted(video, state);
+        video.play = () => {
+            if (!state.muted) return Promise.reject(Object.assign(new Error('blocked'), { name: 'NotAllowedError' }));
+            state.paused = false;
+            video.dispatchEvent(new win.Event('play'));
+            return Promise.resolve();
+        };
+    });
+    try {
+        await h.join();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        assert.equal(h.state.muted, true);
+        assert.equal(h.state.paused, false, 'muted playback starts without a click');
+        assert.equal(h.reports.filter(report => report.type === 'BROADCAST_MUTED').length, 1);
+    } finally { h.dom.window.close(); }
+});
+
+for (const admin of [false, true]) test(`an idle ${admin ? 'admin' : 'viewer'} source with no metadata is started by the lock, then sought to the broadcast`, async () => {
+    const h = broadcastJoinHarness(admin);
+    try {
+        assert.equal(h.state.paused, false, 'play() is called although the length is still unknown');
+        assert.deepEqual(h.actions(), [], 'starting the idle source is not an admin command');
+        await h.join();
+        assert.ok(h.state.time >= 300, 'metadata moves it to the broadcast moment');
+        assert.equal(h.state.paused, false);
+        assert.deepEqual(h.actions(), []);
+    } finally { h.dom.window.close(); }
+});
+
+test('a source shorter than the slot is never replayed from the start', async () => {
+    const h = broadcastJoinHarness(false);
+    try {
+        h.state.duration = 200;
+        h.video.dispatchEvent(new h.win.Event('loadedmetadata'));
+        await new Promise(resolve => setTimeout(resolve, 150));
+        assert.equal(h.state.paused, true);
+        assert.equal(h.state.time, 0);
+    } finally { h.dom.window.close(); }
+});
+
+test('an interrupted play() is retried by the lock and keeps the sound', async () => {
+    const h = broadcastJoinHarness(false, (win, video, state) => {
+        trackMuted(video, state);
+        video.play = () => Promise.reject(Object.assign(new Error('interrupted'), { name: 'AbortError' }));
+    });
+    try {
+        await h.join();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        assert.equal(h.state.muted, false);
+        assert.ok(!h.reports.some(report => report.type === 'BROADCAST_MUTED'));
+    } finally { h.dom.window.close(); }
+});
+
+function bindKeyboard(win, video) {
+    const hooks = win.MovieExtension_PlayerCleaner._test;
+    const container = win.document.createElement('div');
+    win.document.body.append(container);
+    hooks.bindPlayerAccessibility({ container, getVideo: () => video, scope: hooks.createListenerScope() });
+}
+
+const pressKey = (win, key) => win.document.body.dispatchEvent(new win.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+
+for (const admin of [false, true]) test(`${admin ? 'admin' : 'viewer'} keyboard works through the player's own shortcut handler bound before the clock`, async () => {
+    const h = broadcastJoinHarness(admin, null, bindKeyboard);
+    try {
+        await h.join();
+        h.state.clock += 2000;
+        pressKey(h.win, ' ');
+        if (admin) {
+            assert.equal(h.state.paused, true);
+            assert.equal(h.actions().length, 1, 'Space pauses the channel for everyone');
+            assert.equal(h.actions()[0].action, 'pause');
+        } else {
+            assert.equal(h.state.paused, false, 'Space does nothing for a viewer');
+            const before = h.state.time;
+            pressKey(h.win, 'l');
+            pressKey(h.win, 'ArrowLeft');
+            assert.equal(h.state.time, before, 'J/L and arrows do not move a viewer');
+            assert.deepEqual(h.actions(), []);
+        }
+    } finally { h.dom.window.close(); }
+});
+
+test('admin press kinds do not mix: a play press never publishes a provider seek, a seek press never a pause', async () => {
+    const h = broadcastJoinHarness(true);
+    try {
+        await h.join();
+        h.state.clock += 2000;
+        pressControl(h.win);
+        h.video.dispatchEvent(new h.win.Event('seeking'));
+        h.state.time = 50;
+        h.video.dispatchEvent(new h.win.Event('seeked'));
+        await new Promise(resolve => setTimeout(resolve, 150));
+        assert.deepEqual(h.actions(), [], 'a provider jump to a saved position after a play press is not published');
+        assert.ok(h.state.target >= 300, 'the admin player is pulled back to the broadcast');
+        h.finishSeek();
+        h.state.clock += 2500; // the unused play press has expired
+        pressControl(h.win, '#skipOpeningBtn');
+        h.video.pause();
+        await new Promise(resolve => setTimeout(resolve, 150));
+        assert.deepEqual(h.actions(), [], 'a seek press does not authorise a pause');
+        assert.equal(h.state.paused, false);
+    } finally { h.dom.window.close(); }
+});
+
+test('a press before alignment is dropped instead of authorising a later event', async () => {
+    const h = broadcastJoinHarness(true);
+    try {
+        pressControl(h.win);
+        h.video.pause();
+        h.state.clock += 500;
+        await h.join();
+        h.video.pause();
+        await new Promise(resolve => setTimeout(resolve, 150));
+        assert.deepEqual(h.actions(), []);
+    } finally { h.dom.window.close(); }
+});
+
+test('a lost pointerup ends the progress-bar drag after a bounded time', async () => {
+    const h = broadcastJoinHarness(true);
+    try {
+        await h.join();
+        pressControl(h.win, '.player-progress-track');
+        h.state.clock += 20000;
+        h.video.pause();
+        await new Promise(resolve => setTimeout(resolve, 150));
+        assert.deepEqual(h.actions(), []);
+    } finally { h.dom.window.close(); }
+});
+
+test('admin media keys and picture-in-picture buttons are real commands', async () => {
+    const handlers = {};
+    const h = broadcastJoinHarness(true, win => {
+        win.navigator.mediaSession = { setActionHandler: (action, handler) => { handlers[action] = handler; } };
+    });
+    try {
+        await h.join();
+        h.state.clock += 2000;
+        handlers.pause();
+        assert.equal(h.state.paused, true);
+        assert.equal(h.actions().length, 1);
+        assert.equal(h.actions()[0].action, 'pause');
+    } finally { h.dom.window.close(); }
+});
+
+test('a viewer in a hidden tab is not resumed in a loop; repeated pauses fall back to the short delay', async () => {
+    const h = broadcastJoinHarness(false);
+    try {
+        await h.join();
+        Object.defineProperty(h.win.document, 'hidden', { value: true, configurable: true });
+        h.video.pause();
+        assert.equal(h.state.paused, true, 'no play() while the tab is hidden');
+        Object.defineProperty(h.win.document, 'hidden', { value: false, configurable: true });
+        h.state.clock += 1000;
+        h.video.pause();
+        assert.equal(h.state.paused, false);
+        h.video.pause();
+        assert.equal(h.state.paused, true, 'a second pause within half a second waits');
+        await new Promise(resolve => setTimeout(resolve, 150));
+        assert.equal(h.state.paused, false);
+    } finally { h.dom.window.close(); }
+});
+
+test('a source shorter than the slot reports its end once so the live page shows standby', async () => {
+    const h = broadcastJoinHarness(false);
+    try {
+        h.state.duration = 200;
+        h.video.dispatchEvent(new h.win.Event('loadedmetadata'));
+        await new Promise(resolve => setTimeout(resolve, 1200));
+        const ended = h.reports.filter(report => report.type === 'BROADCAST_ENDED');
+        assert.equal(ended.length, 1);
+        assert.equal(ended[0].atSec, 200);
+    } finally { h.dom.window.close(); }
+});
+
+test('turning the sound on after a muted start tells the live page once', async () => {
+    const h = broadcastJoinHarness(false, (win, video, state) => {
+        trackMuted(video, state);
+        video.play = () => {
+            if (!state.muted) return Promise.reject(Object.assign(new Error('blocked'), { name: 'NotAllowedError' }));
+            state.paused = false;
+            video.dispatchEvent(new win.Event('play'));
+            return Promise.resolve();
+        };
+    });
+    try {
+        await h.join();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        h.state.muted = false;
+        h.video.dispatchEvent(new h.win.Event('volumechange'));
+        h.video.dispatchEvent(new h.win.Event('volumechange'));
+        assert.equal(h.reports.filter(report => report.type === 'BROADCAST_UNMUTED').length, 1);
+    } finally { h.dom.window.close(); }
 });

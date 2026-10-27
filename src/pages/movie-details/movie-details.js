@@ -1280,7 +1280,7 @@ class MovieDetailsManager {
                 if (lastState && (fromSelf || sourceFrame)) toParent({ type, atSec: Math.max(0, Number(event.data.atSec) || 0), startMs: Number(event.data.startMs) });
                 return;
             }
-            if (event.source !== window.parent && ['BROADCAST_MUTED', 'BROADCAST_PLAYING', 'BROADCAST_ADMIN_ACTION'].includes(type)) {
+            if (event.source !== window.parent && ['BROADCAST_MUTED', 'BROADCAST_UNMUTED', 'BROADCAST_PLAYING', 'BROADCAST_ADMIN_ACTION'].includes(type)) {
                 toParent(type === 'BROADCAST_ADMIN_ACTION' ? { type, action: event.data.action, atSec: Number(event.data.atSec) || 0 } : { type });
             }
         });

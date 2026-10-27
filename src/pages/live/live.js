@@ -786,6 +786,10 @@
                     els.notice.hidden = false;
                     els.notice.textContent = t('movie_muted');
                 }
+                // The viewer turned the sound on in the player: the hint is done.
+                if (event.data?.type === 'BROADCAST_UNMUTED' && els.notice.textContent === t('movie_muted')) {
+                    els.notice.hidden = true;
+                }
                 if (['BROADCAST_MEDIA_INFO', 'BROADCAST_ENDED', 'BROADCAST_SOURCE_ERROR'].includes(event.data?.type)) {
                     onYoutubeReport(event.data);
                 }
