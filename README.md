@@ -442,6 +442,7 @@ keeps npm-compatible three-component semver metadata.
 ### Fixes
 ### Features
 
+- Movie page: actor cards on the Actors tab show each actor's age at the film's release. `ActorAgeService` resolves birth dates cheaply: only when the tab is opened, one batched `/v1.4/person` request (`id` + `birthday` fields only) for all uncached cast members, and a permanent per-person cache in `chrome.storage.local` (`actorBirth:{kpId}`; unknown dates are retried after 30 days, failed or quota-limited requests are not cached). Age is exact when the world premiere date is known, otherwise the year difference. Actors without a Kinopoisk person ID show no age.
 - Halloween logo: the carved-pumpkin mark now wears a witch hat tilted to the left (deep violet cap with a logo-colored rim, ember band and star). The hat cuts a clear gap out of the clapper, and the whole mark is scaled to about 84% to make room for it. Each logo instance gets its own mask id; the new `--season-hat` token lives on the season root.
 
 

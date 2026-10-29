@@ -1788,6 +1788,14 @@
     overflow: hidden;
 }
 
+.actor-age {
+    font-family: var(--font-family);
+    font-size: 11px;
+    color: var(--theme-text-secondary, var(--theme-text-muted));
+    line-height: 1.35;
+    font-variant-numeric: tabular-nums;
+}
+
 .actor-card--link {
     text-decoration: none;
     color: inherit;
