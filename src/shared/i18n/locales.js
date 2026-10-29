@@ -1627,7 +1627,11 @@ export const locales = {
             },
             actors_tab: {
                 no_data: "Actor information missing",
-                unknown: "Unknown"
+                unknown: "Unknown",
+                age_title: "Age when the film was released",
+                age_one: "y/o",
+                age_few: "y/o",
+                age_many: "y/o"
             }
         },
         search: {
@@ -3476,7 +3480,11 @@ export const locales = {
             },
             actors_tab: {
                 no_data: "Информация об актерах отсутствует",
-                unknown: "Неизвестно"
+                unknown: "Неизвестно",
+                age_title: "Возраст на момент выхода фильма",
+                age_one: "год",
+                age_few: "года",
+                age_many: "лет"
             }
         },
         search: {

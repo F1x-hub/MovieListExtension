@@ -920,6 +920,9 @@ class MovieDetailsManager {
             if (e.target.closest('.tab-btn[data-tab="awards"]') && this.selectedMovie) {
                 void this.hydrateAwardCategoryWinners(this.selectedMovie);
             }
+            if (e.target.closest('.tab-btn[data-tab="actors"]') && this.selectedMovie) {
+                void this.hydrateActorAges(this.selectedMovie);
+            }
         });
 
         // Click handler for toggle-crew to support keyboard / touch / click interactions with localStorage persistence
@@ -4778,9 +4781,14 @@ class MovieDetailsManager {
         const cardTag = isClickable ? 'a' : 'div';
         const remainingClass = options?.remaining ? ' actor-card--remaining' : '';
         const hiddenAttr = options?.hidden ? ' hidden' : '';
+        // Hybrid casts are keyed by TMDB id but usually carry the matched KP person id.
+        const kpPersonId = Number(actor.kpPersonId) > 0
+            ? Number(actor.kpPersonId)
+            : Number(/^kp:(\d+)$/i.exec(personKey || '')?.[1]) || null;
+        const kpAttr = kpPersonId ? ` data-kp-person-id="${kpPersonId}"` : '';
         const linkAttrs = isClickable
-            ? `href="../person-details/person-details.html?personKey=${encodeURIComponent(personKey)}" class="actor-card actor-card--link${remainingClass}" aria-label="${this.escapeHtml(name)}"${hiddenAttr}`
-            : `class="actor-card${remainingClass}"${hiddenAttr}`;
+            ? `href="../person-details/person-details.html?personKey=${encodeURIComponent(personKey)}" class="actor-card actor-card--link${remainingClass}" aria-label="${this.escapeHtml(name)}"${hiddenAttr}${kpAttr}`
+            : `class="actor-card${remainingClass}"${hiddenAttr}${kpAttr}`;
 
         return `
             <${cardTag} ${linkAttrs}>
@@ -4802,6 +4810,52 @@ class MovieDetailsManager {
                 </div>
             </${cardTag}>
         `;
+    }
+
+    /**
+     * Show each actor's age at the film's release. Runs when the Actors tab is
+     * opened, not on page load, and costs at most one batched Kinopoisk request
+     * for people whose birth date is not cached yet (see ActorAgeService).
+     * @param {Object} movie
+     */
+    async hydrateActorAges(movie) {
+        if (typeof ActorAgeService === 'undefined') return;
+        const grid = document.getElementById('actorsGrid');
+        if (!grid) return;
+        const key = String(movie?.kinopoiskId || movie?.id || '');
+        if (grid.dataset.agesFor === key) return;
+        grid.dataset.agesFor = key;
+
+        const cards = Array.from(grid.querySelectorAll('.actor-card[data-kp-person-id]'));
+        if (cards.length === 0) return;
+
+        const releaseDate = typeof movie?.premiere?.world === 'string' ? movie.premiere.world : null;
+        const release = { date: releaseDate, year: movie?.year || null };
+        if (!releaseDate && !release.year) return;
+
+        try {
+            this.actorAgeService ||= new ActorAgeService({
+                kinopoiskService: window.kinopoiskService || (typeof KinopoiskService !== 'undefined' ? new KinopoiskService() : null)
+            });
+            const birthDates = await this.actorAgeService.getBirthDates(cards.map(card => card.dataset.kpPersonId));
+            if (!grid.isConnected || grid.dataset.agesFor !== key) return;
+            const units = [i18n.get('movie_details.actors_tab.age_one'), i18n.get('movie_details.actors_tab.age_few'), i18n.get('movie_details.actors_tab.age_many')];
+            const title = i18n.get('movie_details.actors_tab.age_title');
+            for (const card of cards) {
+                const age = ActorAgeService.computeAgeAtRelease(birthDates.get(Number(card.dataset.kpPersonId)), release);
+                const info = card.querySelector('.actor-info');
+                if (age === null || !info || info.querySelector('.actor-age')) continue;
+                const label = document.createElement('div');
+                label.className = 'actor-age';
+                label.title = title;
+                label.textContent = `${age} ${Utils.selectRussianPlural(age, units)}`;
+                info.appendChild(label);
+            }
+        } catch (error) {
+            // Ages are decoration: let the next tab open retry.
+            delete grid.dataset.agesFor;
+            console.warn('Actor ages unavailable:', error?.message);
+        }
     }
 
     /**
