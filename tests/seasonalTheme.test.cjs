@@ -92,7 +92,11 @@ const logo = service.getLogoMarkup('nav-logo-image');
 assert.match(logo, /class="season-logo nav-logo-image"/);
 assert.match(logo, /season-logo__ember/);
 assert.match(logo, /aria-hidden="true"/);
-assert.doesNotMatch(logo, /#[0-9a-f]{3,8}\b/i, 'logo color must come from seasonal CSS tokens');
+assert.match(logo, /season-logo__hat-rim/);
+assert.match(logo, /season-logo__hat-band/);
+assert.doesNotMatch(logo.replace(/url\(#\w+\)/g, ''), /#[0-9a-f]{3,8}\b/i, 'logo color must come from seasonal CSS tokens');
+const maskIds = id => [...id.matchAll(/<mask id="([^"]+)"/g)].map(match => match[1]);
+assert.notStrictEqual(maskIds(logo)[0], maskIds(service.getLogoMarkup())[0], 'each logo needs its own hat mask id');
 
 const scene = service.getSceneMarkup('season-banner__art');
 assert.match(scene, /class="season-scene season-banner__art"/);

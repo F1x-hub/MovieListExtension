@@ -59,7 +59,7 @@ seasonal rule consumes those tokens or neutral values. The set is intentionally
 small, so the season is obvious without crowding content:
 
 - the navigation's faint orange-violet tint, glowing lower edge and the carved
-  pumpkin logo (also in the popup);
+  pumpkin logo wearing a left-tilted witch hat (also in the popup);
 - in `#seasonalDecor` (above content, below navigation and dialogs,
   `pointer-events: none`): seven pumpkin lanterns hanging from the navigation,
   hidden once the page scrolls (every other one on narrow screens), and three

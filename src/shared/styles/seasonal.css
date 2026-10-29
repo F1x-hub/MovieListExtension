@@ -14,6 +14,7 @@
     --season-ember-deep: #c2560f;
     --season-ember-glow: rgba(255, 138, 42, 0.5);
     --season-carve: #1c0b02;
+    --season-hat: #2a1242;
     --season-stem: #5b6b2c;
     --season-window: #ffb04a;
     --season-candle: #ffe9a8;
@@ -115,6 +116,30 @@
 
 .season-halloween .season-logo {
     display: block;
+}
+
+/* Witch hat: deep violet cap, logo-ink rim, ember band and star. */
+.season-logo__hat-rim {
+    fill: var(--theme-text-primary, currentColor);
+    stroke: var(--theme-text-primary, currentColor);
+}
+
+.season-logo__hat {
+    fill: var(--season-hat);
+}
+
+.season-logo__hat-band,
+.season-logo__hat-star {
+    fill: var(--season-ember);
+}
+
+.season-logo__hat-buckle {
+    fill: var(--season-carve);
+}
+
+.season-banner__mark .season-logo__hat-rim {
+    fill: #fafafa;
+    stroke: #fafafa;
 }
 
 .season-halloween .nav-logo-image--default,

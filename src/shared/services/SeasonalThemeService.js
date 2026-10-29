@@ -40,7 +40,17 @@
         + 'M152 180L174 144L196 180Z'
         + 'M58 194L88 200L96 212L106 202L150 202L160 212L168 200L198 194Q186 226 128 226Q70 226 58 194Z';
 
-    const BAT_PATH = 'M32 13L29.6 7.5L28.6 11.2C25 6.5 15 3.5 4 7C9.5 8.5 12 12 12.5 16C15.5 13.8 19.5 14.2 21.5 17.5C23.5 15.5 27 15.8 28.5 19L32 24L35.5 19C37 15.8 40.5 15.5 42.5 17.5C44.5 14.2 48.5 13.8 51.5 16C52 12 54.5 8.5 60 7C49 3.5 39 6.5 35.4 11.2L34.4 7.5Z';
+    // Witch hat worn on the clapper, tilted left. Hat-local space: origin is the
+    // centre of the brim; the hat is placed on the clapper's top edge.
+    const LOGO_HAT_TRANSFORM = 'translate(100.8 56.7) rotate(-24) scale(1.1)';
+    const LOGO_HAT_BRIM_PATH = 'M-80 -3C-57.6 11 -25.6 13 0 13C25.6 13 57.6 11 80 -3C59.2 -13.6 27.2 -17 0 -17C-27.2 -17 -59.2 -13.6 -80 -3Z';
+    const LOGO_HAT_CONE_PATH = 'M-36 -4.3C-32.4 -25.9 -24 -51.8 -15 -71.3C-12 -79.9 -20 -90.7 -46 -99.4C-22 -105.8 6 -97.2 14 -73.4C22 -49.7 30 -25.9 36 -4.3Z';
+    const LOGO_HAT_BAND_PATH = 'M-38 2C-35 -13 -34 -17 -33 -19C-14.8 -13 14.8 -13 33 -19C34 -17 35 -13 38 2C14.8 8 -14.8 8 -38 2Z';
+    const LOGO_HAT_BUCKLE_PATH = 'M-9 -18H9V2H-9ZM-4.5 -13.5V-2.5H4.5V-13.5Z';
+    const LOGO_HAT_STAR_PATH = 'M-1 -53L1.2 -47.1L7.6 -46.8L2.6 -42.8L4.3 -36.7L-1 -40.2L-6.3 -36.7L-4.6 -42.8L-9.6 -46.8L-3.2 -47.1Z';
+    let logoMaskCount = 0;
+
+    const BAT_PATH ='M32 13L29.6 7.5L28.6 11.2C25 6.5 15 3.5 4 7C9.5 8.5 12 12 12.5 16C15.5 13.8 19.5 14.2 21.5 17.5C23.5 15.5 27 15.8 28.5 19L32 24L35.5 19C37 15.8 40.5 15.5 42.5 17.5C44.5 14.2 48.5 13.8 51.5 16C52 12 54.5 8.5 60 7C49 3.5 39 6.5 35.4 11.2L34.4 7.5Z';
 
     // Haunted hill: moon, graves, a dead tree and a house with lit windows.
     // The house is one body, a roof and a chimney seated on the right slope.
@@ -167,10 +177,26 @@
      * becomes visible only under an active `season-*` class.
      */
     function getLogoMarkup(className = '') {
+        // Each mounted logo needs its own mask id: ids are document-global.
+        logoMaskCount += 1;
+        const maskId = `seasonLogoHat${logoMaskCount}`;
+        const hatSilhouette = `<path d="${LOGO_HAT_BRIM_PATH}"/><path d="${LOGO_HAT_CONE_PATH}"/>`;
         return svg('0 0 256 256', `season-logo ${className}`.trim(),
-            '<rect class="season-logo__ember" x="54" y="140" width="148" height="90" rx="12"/>'
-            + `<g class="season-logo__ink"><g transform="translate(28 112) rotate(-14) translate(0 -42)"><path fill-rule="evenodd" d="${LOGO_CLAPPER_PATH}"/></g>`
-            + `<path fill-rule="evenodd" d="${LOGO_PUMPKIN_BODY_PATH}"/></g>`);
+            // The hat cuts a clear gap out of the clapper so it reads as sitting on top.
+            `<defs><mask id="${maskId}" maskUnits="userSpaceOnUse" x="-60" y="-160" width="380" height="460">`
+            + '<rect x="-60" y="-160" width="380" height="460" fill="white"/>'
+            + `<g transform="${LOGO_HAT_TRANSFORM}" fill="black" stroke="black" stroke-width="16.4" stroke-linejoin="round">${hatSilhouette}</g></mask></defs>`
+            + '<g transform="translate(30 52) scale(0.84)">'
+            + '<rect class="season-logo__ember" x="54" y="140" width="148" height="90" rx="12"/>'
+            + `<g class="season-logo__ink" mask="url(#${maskId})"><g transform="translate(28 112) rotate(-14) translate(0 -42)"><path fill-rule="evenodd" d="${LOGO_CLAPPER_PATH}"/></g>`
+            + `<path fill-rule="evenodd" d="${LOGO_PUMPKIN_BODY_PATH}"/></g>`
+            + `<g transform="${LOGO_HAT_TRANSFORM}">`
+            + `<g class="season-logo__hat-rim" stroke-width="11.8" stroke-linejoin="round">${hatSilhouette}</g>`
+            + `<g class="season-logo__hat">${hatSilhouette}</g>`
+            + `<path class="season-logo__hat-band" d="${LOGO_HAT_BAND_PATH}"/>`
+            + `<path class="season-logo__hat-buckle" fill-rule="evenodd" d="${LOGO_HAT_BUCKLE_PATH}"/>`
+            + `<path class="season-logo__hat-star" d="${LOGO_HAT_STAR_PATH}"/>`
+            + '</g></g>');
     }
 
     function getBatsMarkup() {
