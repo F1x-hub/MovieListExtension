@@ -1,5 +1,14 @@
 export const whatsNew = [
     {
+        id: '1.4.8', version: '1.4.8', date: '2026-10-30',
+        highlights: [
+            { id: 'actor-age', title: { ru: 'Возраст актёров', en: 'Actors’ age' }, text: { ru: 'На вкладке «Актёры» видно, сколько лет было каждому актёру на премьере фильма.', en: 'The Actors tab shows how old each actor was at the film’s release.' } },
+            { id: 'halloween-hat', title: { ru: 'Ведьмина шляпа', en: 'A witch hat' }, text: { ru: 'Хэллоуинская тыква в логотипе надела ведьмину шляпу.', en: 'The Halloween pumpkin in the logo now wears a witch hat.' } },
+            { id: 'live-autostart', title: { ru: 'Эфир стартует сам', en: 'Live starts by itself' }, text: { ru: 'Эфир сразу запускается с текущего момента, а ставить на паузу может только ведущий.', en: 'Live starts at the current moment right away, and only the host can pause it.' } },
+            { id: 'security', title: { ru: 'Безопасность', en: 'Security' }, text: { ru: 'Закрыт обход одобрения аккаунтов, а ключи Spotify больше не хранятся в расширении.', en: 'The account-approval bypass is closed, and Spotify keys are no longer stored in the extension.' } }
+        ]
+    },
+    {
         id: '1.4.7', version: '1.4.7', date: '2026-10-27',
         highlights: [
             { id: 'achievement-scenes', title: { ru: 'Иллюстрированные ачивки', en: 'Illustrated achievements' }, text: { ru: 'Каждая ачивка теперь нарисована сценой, которая растёт с уровнем: от совёнка в гнезде до золотого филина, от свечи до вечного огня.', en: 'Every achievement is now an illustrated scene that grows with the tier: from an owlet in a nest to a golden owl, from a candle to an eternal flame.' } },
