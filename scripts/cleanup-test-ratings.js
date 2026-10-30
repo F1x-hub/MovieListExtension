@@ -38,8 +38,11 @@ function del(url, token) {
 }
 
 async function getAuthToken() {
-    const email = 'backfill_runner_bot@movielist.com';
-    const password = 'BackfillPassword123!';
+    const email = process.env.BACKFILL_RUNNER_EMAIL;
+    const password = process.env.BACKFILL_RUNNER_PASSWORD;
+    if (!email || !password) {
+        throw new Error('Set BACKFILL_RUNNER_EMAIL and BACKFILL_RUNNER_PASSWORD to the runner account credentials.');
+    }
 
     const signInUrl = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${API_KEY}`;
     let res = await post(signInUrl, { email, password, returnSecureToken: true });

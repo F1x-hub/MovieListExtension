@@ -3679,16 +3679,6 @@
                 updatePlayBtnIcon();
                 updateVisibility();
             });
-            video.addEventListener('ended', () => {
-                if (broadcastState) return;
-                // Clear saved progress for this video
-                const key = getSavedKey(); // Assuming getSavedKey() is defined elsewhere
-                localStorage.removeItem(key);
-                
-                // Set flag for auto-playing the next video
-                localStorage.setItem('movieExtension_autoplay_next', 'true');
-                localStorage.setItem('movieExtension_autoplay_start_time', Date.now().toString());
-            });
             video.addEventListener('pause', () => {
                 updatePlayBtnIcon();
                 updateVisibility();
@@ -4380,10 +4370,6 @@
                 
                 videoEl.addEventListener('ended', () => {
                     if (broadcastState) return;
-                    const key = getSavedKey(); 
-                    localStorage.removeItem(key);
-                    localStorage.setItem('movieExtension_autoplay_next', 'true');
-                    localStorage.setItem('movieExtension_autoplay_start_time', Date.now().toString());
                     hideLoader();
                 });
                 

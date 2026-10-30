@@ -1662,10 +1662,11 @@ function updateExtensionAction(mode) {
 }
 
 // Listen for settings updates from settings page
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.type === 'SETTINGS_UPDATED' && message.settings.displayMode) {
-        updateExtensionAction(message.settings.displayMode);
-    }
+chrome.runtime.onMessage.addListener((message, sender) => {
+    if (message?.type !== 'SETTINGS_UPDATED' || !message.settings?.displayMode) return;
+    // Only extension pages change the display mode, never content scripts on sites.
+    if (sender.id !== chrome.runtime.id || (sender.tab?.url && !sender.tab.url.startsWith(chrome.runtime.getURL('')))) return;
+    updateExtensionAction(message.settings.displayMode);
 });
 
 // --- Spotify Integration ---
@@ -1683,24 +1684,21 @@ async function getSpotifyToken() {
     }
 
     try {
-        const response = await fetch(SPOTIFY_CONFIG.ENDPOINTS.TOKEN, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Authorization': 'Basic ' + btoa(SPOTIFY_CONFIG.CLIENT_ID + ':' + SPOTIFY_CONFIG.CLIENT_SECRET)
-            },
-            body: 'grant_type=client_credentials'
+        // The client secret stays server-side: the spotifyToken function needs a Firebase ID token.
+        const idToken = await getIdToken();
+        const response = await fetch(SPOTIFY_CONFIG.TOKEN_PROXY_URL, {
+            headers: { 'Authorization': `Bearer ${idToken}` }
         });
 
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error_description || 'Failed to get token');
+            const error = await response.json().catch(() => null);
+            throw new Error(error?.error?.message || `Failed to get token (HTTP ${response.status})`);
         }
 
         const data = await response.json();
-        spotifyAccessToken = data.access_token;
+        spotifyAccessToken = data.token;
         // Set expiration slightly before actual expiry (usually 3600s)
-        spotifyTokenExpiration = Date.now() + (data.expires_in * 1000) - 60000;
+        spotifyTokenExpiration = Date.now() + (data.expiresInSec * 1000) - 60000;
         
         return spotifyAccessToken;
     } catch (error) {

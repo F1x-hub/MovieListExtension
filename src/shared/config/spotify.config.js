@@ -1,12 +1,12 @@
 // Spotify API Configuration
+// No credentials live in the extension: the Soundtrack tab gets a short-lived catalogue
+// token from the authenticated `spotifyToken` Cloud Function, which keeps the client
+// secret in Firebase Secret Manager (SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET).
 const SPOTIFY_CONFIG = {
-    // Replace these with your actual Spotify credentials from developer.spotify.com
-    CLIENT_ID: '0d0884a66c3b40ba9461dfd8488cef74', 
-    CLIENT_SECRET: '4b03d0b7949e46d18afa278e6496da97',
-    
+    TOKEN_PROXY_URL: 'https://us-central1-movielistdb-13208.cloudfunctions.net/spotifyToken',
+
     // API Endpoints
     ENDPOINTS: {
-        TOKEN: 'https://accounts.spotify.com/api/token',
         SEARCH: 'https://api.spotify.com/v1/search'
     }
 };

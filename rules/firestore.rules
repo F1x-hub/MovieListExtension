@@ -57,14 +57,42 @@ service cloud.firestore {
 
     // Helper function to check if user is approved (or unmigrated legacy fallback)
     function isApprovedUser() {
-      return isAuthenticated() && 
+      return isAuthenticated() &&
              exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
                get(/databases/$(database)/documents/users/$(request.auth.uid)).data.approvalStatus == 'approved' ||
                // TODO-remove-after-migration-confirmed: Fallback for unmigrated legacy docs.
-               // Migration to 'approved' is already 100% verified on prod data (12/12 approved),
-               // but kept as safety net against race conditions. Candidate for removal in next cleanup.
+               // The users create rule now requires approvalStatus == 'pending', so only
+               // documents created before that rule can still lack the field. Remove this
+               // branch once no user document without approvalStatus remains.
                !('approvalStatus' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data)
              );
+    }
+
+    // New list entries must belong to the signed-in user, and an owner may not
+    // hand an existing entry to another user.
+    function isOwnListEntryCreate() {
+      return isApprovedUser() && request.resource.data.userId == request.auth.uid;
+    }
+
+    function isOwnListEntryChange() {
+      return isApprovedUser()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == resource.data.userId;
+    }
+
+    // Reports may be sent by guests, so the payload is bounded instead of open.
+    function isValidReportPayload(data) {
+      return data.keys().hasOnly([
+          'text', 'photoUrl', 'photoPath', 'status', 'createdAt', 'userId', 'pageUrl',
+          'targetType', 'targetRatingId', 'targetMovieId', 'targetAuthorId'
+        ])
+        && data.text is string && data.text.size() <= 5000
+        && data.status == 'pending'
+        && data.createdAt == request.time
+        && (data.userId == null || (isAuthenticated() && data.userId == request.auth.uid))
+        && (data.photoUrl == null || (data.photoUrl is string && data.photoUrl.size() <= 2048))
+        && (data.photoPath == null || (data.photoPath is string && data.photoPath.size() <= 512))
+        && data.pageUrl is string && data.pageUrl.size() <= 2048;
     }
 
     function isValidRatingData(data) {
@@ -554,36 +582,41 @@ service cloud.firestore {
     // Watchlist collection (Top-level)
     match /watchlist/{watchlistId} {
       allow read: if true; // Anyone can read watchlists
-      allow create: if isApprovedUser(); // Only approved users can create watchlist entries
-      allow update, delete: if (isApprovedUser() && resource.data.userId == request.auth.uid) || isAdmin(); // Owner or admin can update/delete
+      allow create: if isOwnListEntryCreate() || isAdmin(); // Approved users create only their own entries
+      allow update: if isOwnListEntryChange() || isAdmin(); // Owner (userId unchanged) or admin
+      allow delete: if (isApprovedUser() && resource.data.userId == request.auth.uid) || isAdmin();
     }
 
     // Watching collection (Top-level)
     match /watching/{watchingId} {
       allow read: if true; // Anyone can read watching list
-      allow create: if isApprovedUser(); // Only approved users can create watching entries
-      allow update, delete: if (isApprovedUser() && resource.data.userId == request.auth.uid) || isAdmin(); // Owner or admin can update/delete
+      allow create: if isOwnListEntryCreate() || isAdmin(); // Approved users create only their own entries
+      allow update: if isOwnListEntryChange() || isAdmin(); // Owner (userId unchanged) or admin
+      allow delete: if (isApprovedUser() && resource.data.userId == request.auth.uid) || isAdmin();
     }
 
     // Favorites collection (Top-level)
     match /favorites/{favoriteId} {
       allow read: if true; // Anyone can read favorites
-      allow create: if isApprovedUser(); // Only approved users can create favorite entries
-      allow update, delete: if (isApprovedUser() && resource.data.userId == request.auth.uid) || isAdmin(); // Owner or admin can update/delete
+      allow create: if isOwnListEntryCreate() || isAdmin(); // Approved users create only their own entries
+      allow update: if isOwnListEntryChange() || isAdmin(); // Owner (userId unchanged) or admin
+      allow delete: if (isApprovedUser() && resource.data.userId == request.auth.uid) || isAdmin();
     }
-    
+
     // Collections (Top-level)
     // REQUIRED: AdminService queries this top-level collection to count user collections
     match /collections/{collectionId} {
       allow read: if true;
-      allow create: if isApprovedUser();
-      allow update, delete: if (isApprovedUser() && resource.data.userId == request.auth.uid) || isAdmin();
+      allow create: if isOwnListEntryCreate() || isAdmin();
+      allow update: if isOwnListEntryChange() || isAdmin();
+      allow delete: if (isApprovedUser() && resource.data.userId == request.auth.uid) || isAdmin();
     }
-    
+
     // Reports collection
     match /reports/{reportId} {
-      allow create: if !hasReviewReportTarget(request.resource.data)
-        || isValidReviewReport(request.resource.data);
+      allow create: if isValidReportPayload(request.resource.data)
+        && (!hasReviewReportTarget(request.resource.data)
+          || isValidReviewReport(request.resource.data));
       allow read, update, delete: if isAdmin(); // Only admins can read, update, delete
     }
 
@@ -718,10 +751,11 @@ service cloud.firestore {
       // only by approved users and admins.
       allow read: if isOwner(userId) || isApprovedUser() || isAdmin();
       
-      // Allow users to create their own profile, but forbidden from granting themselves admin or approved status
+      // Allow users to create their own profile, but forbidden from granting themselves admin or approved status.
+      // approvalStatus must be present and 'pending': isApprovedUser() treats a missing field as legacy-approved.
       allow create: if isOwner(userId) &&
         (!('isAdmin' in request.resource.data) || request.resource.data.isAdmin == false) &&
-        (!('approvalStatus' in request.resource.data) || request.resource.data.approvalStatus == 'pending') &&
+        request.resource.data.get('approvalStatus', null) == 'pending' &&
         (!('photoURL' in request.resource.data) || isSafePhotoUrl(request.resource.data.photoURL)) &&
         (!('bannerURL' in request.resource.data) || isSafePhotoUrl(request.resource.data.bannerURL));
 
