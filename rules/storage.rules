@@ -41,13 +41,21 @@ service firebase.storage {
     // Allow anyone to read collection icons, but only owner can write
     match /collection_icons/{userId}/{allPaths=**} {
       allow read: if true;
-      allow write: if request.auth != null && request.auth.uid == userId;
+      allow create, update: if request.auth != null && request.auth.uid == userId && isValidProfileImage();
+      allow delete: if request.auth != null && request.auth.uid == userId;
     }
-    
-    // Reports images
-    match /reports/{allPaths=**} {
+
+    // Report screenshots. Guests may send reports, so creation stays open but is
+    // limited to one new image file per report (reports/{reportId}/photo.<ext>);
+    // objects are immutable for clients and only an admin may delete them.
+    match /reports/{reportId}/{fileName} {
       allow read: if true;
-      allow write: if true;
+      allow create: if fileName.matches('photo\\..{1,20}')
+        && request.resource.size > 0
+        && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/(png|jpe?g|webp|gif)');
+      allow update: if false;
+      allow delete: if isAdmin();
     }
   }
 }

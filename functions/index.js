@@ -13,6 +13,7 @@ const { createAdminAuthVerifier, setAdminCors } = require("./adminAuth");
 const { createProviderKeyVault } = require("./providerKeyVault");
 const { createProviderKeyPool } = require("./providerKeyPool");
 const { createTmdbProxyHandler } = require("./tmdbProxy");
+const { createSpotifyTokenHandler } = require("./spotifyToken");
 const { createImdbRatingsHandler } = require("./imdbRatingsProxy");
 const {
   createProviderKeyManagementHandler,
@@ -34,6 +35,8 @@ const app = initializeApp();
 const db = getFirestore(app);
 const TMDB_API_TOKEN = defineSecret("TMDB_API_TOKEN");
 const KINOPOISK_API_KEYS = defineSecret("KINOPOISK_API_KEYS");
+const SPOTIFY_CLIENT_ID = defineSecret("SPOTIFY_CLIENT_ID");
+const SPOTIFY_CLIENT_SECRET = defineSecret("SPOTIFY_CLIENT_SECRET");
 const WATCH_ROOM_STAGING_DATABASE_URL = defineString("WATCH_ROOM_STAGING_DATABASE_URL");
 const RATING_INTEGRITY_AUTO_REPAIR = defineString("RATING_INTEGRITY_AUTO_REPAIR", {
   default: "false",
@@ -201,6 +204,26 @@ exports.tmdbProxy = onRequest(
       getActiveKeys: () => getProviderKeyPool("tmdb").getActiveKeys(),
       reportOutcome: (outcome) => getProviderKeyPool("tmdb").reportOutcome(outcome),
     },
+  })
+);
+
+/**
+ * Short-lived Spotify catalogue token for signed-in extension users. The client
+ * secret lives in Secret Manager (SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET).
+ */
+exports.spotifyToken = onRequest(
+  {
+    region: "us-central1",
+    timeoutSeconds: 20,
+    memory: "256MiB",
+    secrets: [SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET],
+  },
+  createSpotifyTokenHandler({
+    getCredentials: () => ({
+      clientId: String(SPOTIFY_CLIENT_ID.value() || "").trim(),
+      clientSecret: String(SPOTIFY_CLIENT_SECRET.value() || "").trim(),
+    }),
+    verifyIdToken: (idToken) => getAuth().verifyIdToken(idToken),
   })
 );
 
