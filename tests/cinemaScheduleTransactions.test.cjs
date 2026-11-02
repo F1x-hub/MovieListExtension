@@ -5,7 +5,7 @@ const { test } = require('node:test');
 
 global.Utils = require('../src/shared/utils/Utils.js');
 global.firebase = { firestore: { FieldValue: { serverTimestamp: () => ({ serverTimestamp: true }) } } };
-const { CinemaChannelService, normalizeChannel, computePosition, getScheduleBounds, nextScheduled, resolveChannel, projectPausedSchedule } = require('../src/shared/services/CinemaChannelService.js');
+const { CinemaChannelService, normalizeChannel, computePosition, getScheduleBounds, nextScheduled, resolveChannel, projectPausedSchedule, measuredMovieDuration, playbackBounds, playableSec } = require('../src/shared/services/CinemaChannelService.js');
 
 const HOUR = 3600_000;
 const START = Date.now() + 10 * HOUR;
@@ -122,7 +122,11 @@ test('explicit fixed slots override live YouTube, hold while paused; media EOF r
     assert.equal(computePosition(paused, START - 1000).state, 'upcoming');
     assert.deepEqual(computePosition(paused, START + 2 * HOUR), { state: 'paused', offsetSec: 30 }, 'a pause holds the slot past its end');
     assert.equal(computePosition(current, START + 0.5 * HOUR).offsetSec, 900);
-    assert.equal(computePosition(current, START + 1.5 * HOUR).state, 'ended', 'source is shorter than slot');
+    assert.equal(computePosition(current, START + 1.5 * HOUR).state, 'live',
+        'a catalogue length never ends a fixed slot early: the slot end or the player EOF does');
+    const measured = { ...current, movie: { ...current.movie, durationMeasured: true } };
+    assert.equal(computePosition(measured, START + 1.5 * HOUR).state, 'ended', 'a measured source shorter than the slot ends');
+    assert.equal(computePosition(current, START + 2 * HOUR).state, 'ended', 'the slot end ends the show');
     const next = normalizeChannel(movie(2, 3), { id: 'next', scheduled: true });
     const older = normalizeChannel(movie(-1, 4), { id: 'old', scheduled: true });
     assert.equal(resolveChannel(null, [older, current, next], START + 1.5 * HOUR).id, 'one');
@@ -426,6 +430,110 @@ test('manual duration probes preserve a fresh pause and reject another video or 
     assert.equal(await store.service.setYoutubeDuration(beforePause, 99), false);
     assert.equal(store.read('settings/cinemaChannel').youtube.durationSec, 0);
     assert.equal(store.read(STATE), undefined);
+});
+
+test('a reported film length is trusted only near the catalogue length and never shortens it', () => {
+    const planned = { kinopoiskId: 301, durationSec: 6180 };
+    assert.equal(measuredMovieDuration(planned, 6487.2), 6487, 'a longer file extends the show');
+    assert.equal(measuredMovieDuration(planned, 6000), 6180, 'a shorter file keeps the catalogue length');
+    assert.equal(measuredMovieDuration(planned, 30), null, 'an advert is not the film');
+    assert.equal(measuredMovieDuration(planned, 6180 * 2), null, 'a wrong file is ignored');
+    assert.equal(measuredMovieDuration({ ...planned, durationMeasured: true }, 6487), null, 'checked once per show');
+    assert.equal(measuredMovieDuration({ kinopoiskId: 301, durationSec: 0 }, 6487), 6487, 'an unknown length is learned');
+    assert.equal(measuredMovieDuration(planned, NaN), null);
+});
+
+test('the first admin stores the real film length once and the slot grows, moving later shows', async () => {
+    const store = database({ 'cinemaSchedule/one': movie(0, 1), 'cinemaSchedule/two': movie(1, 2) });
+    const firstAdmin = store.item('one');
+    const secondAdmin = store.item('one');
+    assert.equal(await store.service.setMovieDuration(firstAdmin, 3900.4), true);
+    const one = store.item('one');
+    assert.equal(one.movie.durationSec, 3900);
+    assert.equal(one.movie.durationMeasured, true);
+    assert.equal(one.endsAtMs, START + 3900_000, 'the slot ends with the file');
+    assert.equal(store.item('two').startedAtMs, START + 3900_000, 'the overlapping next show moves');
+    assert.equal(store.item('two').endsAtMs, START + 2 * HOUR + 300_000, 'and keeps its length');
+    assert.equal(store.read(STATE).revision, 1);
+    assert.equal(computePosition(one, START + 3700_000).state, 'live', 'the show no longer ends at the catalogue length');
+
+    // Another admin's player reports a different source later: nothing changes.
+    assert.equal(await store.service.setMovieDuration(secondAdmin, 4200), false);
+    assert.equal(store.item('one').movie.durationSec, 3900);
+    assert.equal(store.read(STATE).revision, 1);
+});
+
+test('a slot with room keeps its end; a shorter file writes nothing and a longer source later still counts once', async () => {
+    const roomy = database({ 'cinemaSchedule/one': movie(0, 2) });
+    assert.equal(await roomy.service.setMovieDuration(roomy.item('one'), 3900), true);
+    assert.equal(roomy.item('one').movie.durationSec, 3900);
+    assert.equal(roomy.item('one').endsAtMs, START + 2 * HOUR);
+
+    const shorter = database({ 'cinemaSchedule/one': movie(0, 1), 'cinemaSchedule/two': movie(1, 2) });
+    assert.equal(await shorter.service.setMovieDuration(shorter.item('one'), 3500), false);
+    assert.equal(shorter.read(STATE), undefined, 'a shorter file writes nothing');
+    assert.equal(shorter.item('one').movie.durationMeasured, undefined);
+    assert.equal(await shorter.service.setMovieDuration(shorter.item('one'), 3900), true, 'switching to a longer source still extends');
+    assert.equal(shorter.item('one').movie.durationSec, 3900);
+    assert.equal(await shorter.service.setMovieDuration(shorter.item('one'), 4200), false, 'only once per show');
+    assert.equal(shorter.item('two').startedAtMs, START + 3900_000);
+
+    const advert = database({ 'cinemaSchedule/one': movie(0, 1) });
+    assert.equal(await advert.service.setMovieDuration(advert.item('one'), 30), false);
+    assert.equal(advert.read(STATE), undefined, 'an advert writes nothing');
+});
+
+test('manual film broadcasts store the real length only for the same playback', async () => {
+    const raw = { mode: 'movie', title: 'Movie', startedAt: at(0), youtube: null,
+        movie: { kinopoiskId: 301, durationSec: 3600, pausedAtSec: null, posterUrl: '' } };
+    const store = database({ 'settings/cinemaChannel': raw });
+    const channel = normalizeChannel(raw);
+    store.put('settings/cinemaChannel', { ...raw, startedAt: at(1) });
+    assert.equal(await store.service.setMovieDuration(channel, 3900), false, 'a restarted show is another playback');
+    store.put('settings/cinemaChannel', raw);
+    assert.equal(await store.service.setMovieDuration(channel, 3900), true);
+    assert.equal(store.read('settings/cinemaChannel').movie.durationSec, 3900);
+    assert.equal(store.read('settings/cinemaChannel').movie.durationMeasured, true);
+    assert.equal(await store.service.setMovieDuration(channel, 4000), false);
+});
+
+test('the show on air is placed by its playback clock: seeks move it, a pause slides it, other shows keep their slot', () => {
+    const current = normalizeChannel(movie(0, 2, { playbackStartedAt: at(-1) }), { id: 'one', docPath: 'cinemaSchedule/one', scheduled: true });
+    assert.deepEqual(playbackBounds(current, START + 0.5 * HOUR), { startMs: START - HOUR, endMs: START + 2 * HOUR, explicitEnd: true },
+        'a seek one hour ahead draws the show from one hour earlier');
+    const paused = { ...current, movie: { ...current.movie, pausedAtSec: 600 } };
+    const anchor = START + HOUR - 600_000;
+    assert.deepEqual(playbackBounds(paused, START + HOUR), { startMs: anchor, endMs: START + 2 * HOUR + (anchor - (START - HOUR)), explicitEnd: true },
+        'a paused show starts «pause position» before now and its end moves with it');
+    assert.deepEqual(playbackBounds(current, START - 1000), getScheduleBounds(current), 'an upcoming show keeps its slot');
+    const projected = projectPausedSchedule([paused], paused, START + HOUR)[0];
+    assert.deepEqual(playbackBounds(projected, START + HOUR), playbackBounds(paused, START + HOUR), 'the projected preview is not shifted twice');
+});
+
+test('a catalogue length neither ends a fixed slot nor limits a seek; a measured one does', async () => {
+    const unmeasured = normalizeChannel(movie(0, 2), { id: 'one', docPath: 'cinemaSchedule/one', scheduled: true });
+    assert.equal(playableSec(unmeasured), 7200, 'the slot is the limit while the file length is unknown');
+    assert.equal(playableSec({ ...unmeasured, movie: { ...unmeasured.movie, durationMeasured: true } }), 3600);
+    const store = database({ 'cinemaSchedule/one': movie(0, 2) });
+    await store.service.control(store.item('one'), 'seek', { offsetSec: 5000 });
+    const seeked = store.item('one');
+    assert.ok(Math.abs((Date.now() - seeked.playbackStartedAtMs) / 1000 - 5000) < 2, 'seek past the catalogue length is kept');
+    const exact = database({ 'cinemaSchedule/one': movie(0, 2, { movie: { kinopoiskId: 301, durationSec: 3600, durationMeasured: true, pausedAtSec: null, posterUrl: '' } }) });
+    await exact.service.control(exact.item('one'), 'seek', { offsetSec: 5000 });
+    assert.ok(Math.abs((Date.now() - exact.item('one').playbackStartedAtMs) / 1000 - 3595) < 2, 'a measured file still clamps');
+});
+
+test('aligning a running show grid to its playback start keeps the playback clock', async () => {
+    const store = database({ 'cinemaSchedule/one': movie(0, 2, { playbackStartedAt: at(-1) }) });
+    const item = store.item('one');
+    await store.service.updateSchedule(item, at(-1), at(0.5), { keepPlayback: true });
+    const kept = store.item('one');
+    assert.equal(kept.startedAtMs, START - HOUR);
+    assert.equal(kept.endsAtMs, START + 0.5 * HOUR);
+    assert.equal(kept.playbackStartedAtMs, START - HOUR, 'the film position is unchanged');
+    const moved = database({ 'cinemaSchedule/one': movie(0, 2, { playbackStartedAt: at(-1) }) });
+    await moved.service.updateSchedule(moved.item('one'), at(1), at(3));
+    assert.equal(moved.item('one').playbackStartedAtMs, START, 'a normal move still carries the playback clock');
 });
 
 test('bounded queries reject >500 entries without partial writes and still allow cleanup', async () => {

@@ -100,7 +100,7 @@
                 if (!conflict) return;
                 ui.seriesTiming.hidden = false;
                 ui.seriesTiming.textContent = `Место занято: «${conflict.title}». Выберите другое начало или свободное время; другие показы не переместятся.`;
-                const next = planner.nearestFreeStart(range.start.getTime(), planner.source.durationSec);
+                const next = planner.nearestFreeStart(range.start.getTime(), planner.draftSlotSec);
                 if (!Number.isFinite(next)) return;
                 const date = new Date(next);
                 ui.findFree.hidden = false; ui.findFree.disabled = Boolean(saving);
@@ -110,7 +110,8 @@
         const refreshStart = () => {
             const saving = busy || planner?.busy;
             for (const input of form.querySelectorAll('input, button')) input.disabled = Boolean(saving);
-            ui.duration.readOnly = Boolean(planner?.selected || (seriesActive() ? series?.selection?.durationSec > 0 : draft.movie?.duration > 0));
+            // The catalogue length only pre-fills the field: the admin can correct it.
+            ui.duration.readOnly = Boolean(planner?.selected);
             ui.ytDuration.readOnly = Boolean(planner?.selected || draft.youtube?.durationSec > 0 && !ui.ytLive.checked);
             ui.stop.disabled = Boolean(saving);
             ui.start.disabled = saving || !service || !ready();
@@ -338,7 +339,8 @@
             ui.moviePoster.src = movie.posterUrl || '';
             ui.moviePoster.hidden = !movie.posterUrl;
             ui.movieName.textContent = movie.name;
-            ui.movieMeta.textContent = [movie.year || '', `KP ${movie.kinopoiskId}`].filter(Boolean).join(' · ');
+            ui.movieMeta.textContent = [movie.year || '', `KP ${movie.kinopoiskId}`,
+                !isSeries(movie) && movie.duration > 0 ? `по каталогу ${movie.duration} мин` : ''].filter(Boolean).join(' · ');
             ui.duration.value = !isSeries(movie) && movie.duration > 0 ? String(movie.duration) : '';
             suggestTitle(movie.name);
             if (isSeries(movie)) {
@@ -430,15 +432,16 @@
                 options.preserveStart = true;
                 if (episode && Number.isFinite(continuationStartMs)) options.startMs = continuationStartMs;
             }
+            const typed = Number.isFinite(rawLength) && rawLength > 0 ? Math.round(rawLength * 60) : 0;
+            // A probed YouTube length is exact. A film or episode uses the field the
+            // catalogue pre-fills, so the block always matches what will be saved.
+            const durationSec = youtube && item?.durationSec > 0 && !ui.ytLive.checked ? item.durationSec : typed;
             planner.setDraft(selectable ? {
                 key: `${mode()}:${youtube ? item.id : item.kinopoiskId}${episode ? `:${episodeCode(episode)}` : ''}`,
                 mode: mode(), title: youtube ? ui.ytName.textContent : item.name,
                 ...(episode || {}),
                 cover: youtube ? ui.ytThumb.src : item.posterUrl,
-                durationSec: youtube && item.durationSec > 0 && !ui.ytLive.checked ? item.durationSec
-                    : episode?.durationSec > 0 ? episode.durationSec
-                    : !youtube && !isSeries(item) && item.duration > 0 ? Math.round(item.duration * 60)
-                    : Number.isFinite(rawLength) && rawLength > 0 ? Math.round(rawLength * 60) : 0
+                durationSec
             } : null, options);
             if (episode) continuationStartMs = null;
         }
@@ -496,10 +499,10 @@
                 }
                 syncGroups();
             },
-            onChange: async (item, start, end) => {
+            onChange: async (item, start, end, options) => {
                 if (!service) throw new Error('Firebase недоступен — время нельзя сохранить.');
                 if (!await confirmTiming(item, start, end)) return null;
-                const saved = await service.updateSchedule(item, start, end);
+                const saved = await service.updateSchedule(item, start, end, options);
                 setStatus('Время показа сохранено.', 'success'); return saved;
             },
             onRemove: async item => {
@@ -554,7 +557,7 @@
         ui.findFree?.addEventListener('click', () => {
             if (busy || planner.busy || !series?.ready || planner.selected) return;
             try {
-                const startMs = planner.nearestFreeStart(planner.range.start.getTime(), planner.source?.durationSec);
+                const startMs = planner.nearestFreeStart(planner.range.start.getTime(), planner.draftSlotSec);
                 if (Number.isFinite(startMs)) planner.setDraft(planner.source, { startMs });
             } catch { /* Keep the input validation message. */ }
         });
@@ -581,7 +584,9 @@
         form.addEventListener('submit', async event => {
             event.preventDefault(); if (!ready() || busy || planner.busy) return;
             const range = planner.range;
-            if (planner.selected) { planner.saveRange(planner.selected, range.start); return; }
+            // A saved show keeps its length unless the admin changed its end;
+            // a running one is edited on its playback clock.
+            if (planner.selected) { planner.saveSelection(); return; }
             const youtube = mode() === 'youtube';
             const episode = seriesActive() ? { ...series.selection } : null;
             const saved = await publish(youtube ? {

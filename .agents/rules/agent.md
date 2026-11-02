@@ -38,7 +38,17 @@ and early media endings from existing snapshots without extra writes or timers.
 for every viewer, including guests. It reuses the page's schedule subscription
 and resolved playback position, preserves stale snapshots on errors, and never
 mounts players or writes data. Its clock uses the existing live-page timer.
-New blocks match source runtime; moves preserve existing slot duration. The
+The catalogue only pre-fills an editable source length; a new block matches it.
+The slot length is changed only at its end: by dragging a block's right edge
+(5-minute snap, stops at the next show, 5-minute minimum), Alt+arrows, or the
+editable «Конец» field (also for a new draft). Moves preserve slot length.
+A show on air is drawn and edited on its playback clock (`playbackBounds`): its
+start is where playback began, it can be resized but not moved, and an end
+before the grid start re-aligns the grid with `keepPlayback`. A catalogue length
+(`durationMeasured` unset) never ends a fixed slot early (`lengthIsExact`). On air, the
+first admin player that loads a film stores its real file length once
+(`movie.durationMeasured`, transactional), extending the show and its slot only
+when the file is longer. The
 editor uses the shared `CustomDatePicker` and `SortControl` without native popups.
 Its full-day overview pans the detailed track without schedule writes; the
 viewport follows scrolling and 24/12/6/3-hour zoom at the actual pane width.

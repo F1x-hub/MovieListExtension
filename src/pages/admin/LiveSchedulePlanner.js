@@ -2,6 +2,8 @@
 (function () {
     'use strict';
     const STEP_MS = 5 * 60_000;
+    // The shortest slot the right-edge resize or the end field may leave.
+    const MIN_SLOT_MS = 5 * 60_000;
     const pad = value => String(value).padStart(2, '0');
     const dateKey = date => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
     const timeInput = date => `${pad(date.getHours())}:${pad(date.getMinutes())}`;
@@ -23,6 +25,12 @@
         const endDay = new Date(day.getFullYear(), day.getMonth(), day.getDate() + (endText <= startText ? 1 : 0));
         return { start, end: localTime(endDay, endText) };
     }
+    /** The first moment after `start` that reads `endText` on the clock (next day past midnight). */
+    function endAfter(start, endText) {
+        const sameDay = localTime(start, endText);
+        if (sameDay > start) return sameDay;
+        return localTime(new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1), endText);
+    }
     function boundsFor(item) {
         if (typeof window !== 'undefined' && window.CinemaChannel?.getScheduleBounds) return window.CinemaChannel.getScheduleBounds(item);
         return { startMs: item.startedAtMs, endMs: item.endsAtMs };
@@ -35,6 +43,10 @@
     }
     const signature = item => item ? [item.id, item.startedAtMs, item.endsAtMs, item.updatedAtMs, item.updatedAtVersion].join('|') : '';
     const exactTime = date => `${timeInput(date)}${date.getSeconds() ? `:${pad(date.getSeconds())}` : ''}`;
+    const formatGap = ms => {
+        const minutes = Math.round(ms / 60_000);
+        return minutes >= 60 ? `${Math.floor(minutes / 60)} ч ${minutes % 60} мин` : `${minutes} мин`;
+    };
     const mediaLabel = media => media?.mediaType === 'tv-series'
         ? `Сериал · S${pad(media.seasonNumber)}E${pad(media.episodeNumber)}`
         : media?.mode === 'movie' ? 'Фильм' : 'YouTube';
@@ -146,7 +158,7 @@
                 onChange: value => { if (!this.syncingDate) this.setDay(new Date(`${value}T12:00:00`)); }
             });
             this.zoomControl = window.SortControl?.enhance(this.ui.PlannerZoom, { onBeforeOpen: () => this.datePicker?.close() });
-            this.ui.SlotEnd.readOnly = true;
+            this.lengthMs = null; this.endError = '';
             if (window.Icons) {
                 this.ui.PlannerPrev.innerHTML = window.Icons.CHEVRON_LEFT;
                 this.ui.PlannerNext.innerHTML = window.Icons.CHEVRON_RIGHT;
@@ -182,6 +194,9 @@
                 this.dirty = true;
                 this.renderNote(); this.onRange?.();
             });
+            // Fallback for the right-edge drag: the admin types the end directly.
+            this.ui.SlotEnd.addEventListener('input', () => this.editEnd());
+            this.ui.SlotEnd.addEventListener('change', () => this.renderNote());
             this.ui.DeleteShowBtn.addEventListener('click', () => this.remove());
             this.ui.PlannerTrack.addEventListener('pointerdown', event => this.startDrag(event));
             this.ui.PlannerTrack.addEventListener('keydown', event => this.keyMove(event));
@@ -209,6 +224,14 @@
         }
         get range() {
             if (this.drag) return { start: new Date(this.drag.start), end: new Date(this.drag.end) };
+            if (this.endError) throw new Error(this.endError);
+            // A running show is edited on its playback clock, like its block: the
+            // start is where the film began (seeks move it), only the end is the admin's.
+            if (this.selected && this.onAir(this.selected)) {
+                const shown = this.displayBounds(this.selected);
+                const length = Number.isFinite(this.lengthMs) ? this.lengthMs : shown.endMs - shown.startMs;
+                return { start: new Date(shown.startMs), end: new Date(shown.startMs + length) };
+            }
             // Preserve seconds and an ambiguous DST occurrence on untouched legacy entries.
             if (this.selected && !this.dirty) {
                 const bounds = boundsFor(this.selected);
@@ -217,8 +240,30 @@
             const start = !this.selected && !this.dirty && Number.isFinite(this.draftStartMs)
                 ? new Date(this.draftStartMs) : localTime(this.date, this.ui.SlotStart.value);
             const bounds = this.selected && boundsFor(this.selected);
-            const length = bounds ? bounds.endMs - bounds.startMs : (this.source?.durationSec || 3600) * 1000;
+            // A typed end sets the length; a moved start keeps it.
+            const length = Number.isFinite(this.lengthMs) ? this.lengthMs
+                : bounds ? bounds.endMs - bounds.startMs : this.draftSlotSec * 1000;
             return { start, end: new Date(start.getTime() + length) };
+        }
+        /** Length of the block being edited: a typed end, else the source length. */
+        get draftSlotSec() {
+            return Number.isFinite(this.lengthMs) ? this.lengthMs / 1000 : this.source?.durationSec || 3600;
+        }
+        resetLength() { this.lengthMs = null; this.endError = ''; }
+        /** The admin typed an end: the block runs from its start to that moment. */
+        editEnd() {
+            this.resetLength();
+            let start;
+            try { start = this.range.start; } catch { this.renderNote(); this.onRange?.(); return; }
+            try {
+                const text = this.ui.SlotEnd.value.trim();
+                if (!/^\d{2}:\d{2}$/.test(text)) throw new Error('Укажите конец в формате ЧЧ:ММ.');
+                const end = endAfter(start, text);
+                if (end - start < MIN_SLOT_MS) throw new Error('Показ должен длиться хотя бы 5 минут.');
+                this.lengthMs = end - start;
+            } catch (error) { this.endError = error.message; }
+            if (this.selected) this.dirty = true;
+            this.renderNote(); this.onRange?.();
         }
         syncDate() {
             const value = dateKey(this.date); this.ui.PlannerDate.value = value;
@@ -245,7 +290,7 @@
                 if (signature(fresh) !== signature(this.drag.item)) this.cancelDrag('Расписание изменилось. Повторите перенос.');
             }
             this.items = items;
-            if (this.selected && !this.drag && !this.dirty && !this.busy) {
+            if (this.selected && !this.drag && !this.dirty && !this.endError && !this.busy) {
                 const fresh = items.find(item => item.id === this.selected.id);
                 if (fresh) { this.selected = fresh; this.fillRange(fresh); }
                 else this.beginDraft();
@@ -260,12 +305,12 @@
         }
         changeDay(delta) { this.setDay(new Date(this.date.getFullYear(), this.date.getMonth(), this.date.getDate() + delta)); }
         beginDraft(atMs) {
-            this.selected = null; this.dirty = false;
+            this.selected = null; this.dirty = false; this.resetLength(); this.ui.SlotStart.readOnly = false;
             if (Number.isFinite(atMs)) { this.date = new Date(atMs); this.syncDate(); }
             const day = dayBounds(this.date);
             let start = Number.isFinite(atMs) ? atMs : Math.max(day.startMs, Math.ceil(window.CinemaChannel.now() / STEP_MS) * STEP_MS);
             if (!Number.isFinite(atMs) && start >= day.endMs) start = day.startMs;
-            const length = (this.source?.durationSec || 3600) * 1000;
+            const length = this.draftSlotSec * 1000;
             if (!Number.isFinite(atMs)) {
                 for (const item of [...this.items].sort((a, b) => a.startedAtMs - b.startedAtMs)) {
                     const bounds = boundsFor(item);
@@ -284,6 +329,8 @@
                 try { startMs = this.range.start.getTime(); } catch { /* Keep the invalid input visible. */ }
             }
             this.source = source;
+            // A typed end belongs to the previous source.
+            if (!same) this.resetLength();
             if (Number.isFinite(startMs)) this.beginDraft(startMs);
             else if (!same && !preserveStart) this.beginDraft();
             this.renderSelection(); this.onRange?.();
@@ -299,13 +346,31 @@
             return Number.isFinite(start) ? start : null;
         }
         fillRange(item) {
-            const bounds = boundsFor(item);
+            const bounds = this.displayBounds(item);
             this.ui.SlotStart.value = timeInput(new Date(bounds.startMs));
             this.ui.SlotEnd.value = exactTime(new Date(bounds.endMs));
+            // The playback start of a running show moves only with the player.
+            this.ui.SlotStart.readOnly = Boolean(this.onAir(item));
+        }
+        /**
+         * Saves the selected show's form range. A running show keeps its grid
+         * start (its playback clock is the player's); only its end changes.
+         */
+        saveSelection() {
+            const item = this.selected;
+            if (!item) return Promise.resolve();
+            let range;
+            try { range = this.range; } catch (error) { this.onStatus?.(error.message, 'error'); return Promise.resolve(); }
+            if (!this.onAir(item)) return this.saveSlot(item, range.start, range.end);
+            // The grid start stays unless the new end falls before it (a far seek):
+            // then the grid starts where the film began, the playback clock untouched.
+            const gridStart = boundsFor(item).startMs;
+            const start = range.end - gridStart >= MIN_SLOT_MS ? new Date(gridStart) : range.start;
+            return this.saveSlot(item, start, range.end, { keepPlayback: true });
         }
         select(item) {
             if (this.busy) return;
-            this.selected = item; this.dirty = false;
+            this.selected = item; this.dirty = false; this.resetLength();
             this.source = { key: `${item.mode}:${item.id}`, mode: item.mode, title: item.title,
                 ...(item.movie?.mediaType === 'tv-series' ? item.movie : {}),
                 cover: window.CinemaChannel.coverUrl(item), durationSec: item[item.mode]?.durationSec || 0 };
@@ -328,16 +393,17 @@
         renderNote() {
             try {
                 const { start, end } = this.range;
-                this.ui.SlotEnd.value = exactTime(end);
+                // Never rewrite the end while the admin is typing it.
+                if (this.ui.SlotEnd.ownerDocument.activeElement !== this.ui.SlotEnd) this.ui.SlotEnd.value = exactTime(end);
                 const minutes = Math.floor((end - start) / 60_000), seconds = Math.round((end - start) / 1000) % 60;
                 const length = this.selected?.[this.selected.mode]?.durationSec || this.source?.durationSec || 0;
                 this.ui.SlotDuration.textContent = `${Math.floor(minutes / 60) ? `${Math.floor(minutes / 60)} ч ` : ''}${minutes % 60} мин${seconds ? ` ${seconds} с` : ''}`;
                 this.ui.SlotNote.textContent = length > 0 && end - start < length * 1000
                     ? 'Показ прервётся в конце диапазона. Скорость видео не меняется.'
                     : length > 0 && end - start > length * 1000 + 59_000
-                        ? 'После окончания видео будет заставка до следующего показа. Скорость видео не меняется.'
+                        ? `Запас ${formatGap(end - start - length * 1000)} после видео: если файл окажется длиннее, следующие показы не сдвинутся. Иначе до следующего показа будет заставка.`
                         : this.source && !length ? 'Укажите длительность источника перед добавлением.'
-                        : 'Длительность фиксирована. Перенесите блок по шкале или измените время начала.';
+                        : 'Длину меняйте правым краем блока на шкале или полем «Конец».';
             } catch (error) { this.ui.SlotDuration.textContent = '—'; this.ui.SlotNote.textContent = error.message; }
         }
         zoom(focus) {
@@ -381,7 +447,7 @@
             if (!this.ui.PlannerOverviewBlocks) return;
             const span = day.endMs - day.startMs;
             this.ui.PlannerOverviewBlocks.replaceChildren(...entries.map(item => {
-                const bounds = boundsFor(item), start = Math.max(day.startMs, bounds.startMs), end = Math.min(day.endMs, bounds.endMs);
+                const bounds = this.displayBounds(item), start = Math.max(day.startMs, bounds.startMs), end = Math.min(day.endMs, bounds.endMs);
                 const block = document.createElement('span'); block.style.left = `${(start - day.startMs) / span * 100}%`;
                 block.style.width = `${(end - start) / span * 100}%`; return block;
             }));
@@ -432,12 +498,23 @@
                 this.ui.PlannerRuler.append(tick);
             }
         }
+        /** 'live' or 'paused' for the show on air now, else null. */
+        onAir(item) {
+            if (!item || this.current?.id !== item.id) return null;
+            const state = window.CinemaChannel.computePosition(item, window.CinemaChannel.now()).state;
+            return ['live', 'paused'].includes(state) ? state : null;
+        }
+        /** The on-air block follows its playback clock (seeks, pauses); others keep their slot. */
+        displayBounds(item) {
+            return this.onAir(item) && window.CinemaChannel.playbackBounds
+                ? window.CinemaChannel.playbackBounds(item, window.CinemaChannel.now()) : boundsFor(item);
+        }
         renderTrack() {
             const day = dayBounds(this.date), span = day.endMs - day.startMs;
             const entries = this.items.map(item => this.drag?.item.id === item.id
                 ? { ...item, startedAtMs: this.drag.start, endsAtMs: this.drag.end } : item)
-                .filter(item => { const b = boundsFor(item); return b.startMs < day.endMs && b.endMs > day.startMs; })
-                .sort((a, b) => a.startedAtMs - b.startedAtMs);
+                .filter(item => { const b = this.displayBounds(item); return b.startMs < day.endMs && b.endMs > day.startMs; })
+                .sort((a, b) => this.displayBounds(a).startMs - this.displayBounds(b).startMs);
             const track = this.ui.PlannerTrack; track.replaceChildren(); let edge = day.startMs;
             const gap = (start, end) => {
                 if (end - start < 10 * 60_000) return;
@@ -449,23 +526,31 @@
                 button.addEventListener('click', () => { this.beginDraft(start); this.onAdd?.(); }); track.append(button);
             };
             for (const item of entries) {
-                const b = boundsFor(item), start = Math.max(day.startMs, b.startMs), end = Math.min(day.endMs, b.endMs);
+                const b = this.displayBounds(item), start = Math.max(day.startMs, b.startMs), end = Math.min(day.endMs, b.endMs);
                 gap(edge, start); edge = Math.max(edge, end);
                 const block = document.createElement('div'); block.className = 'live-planner__block'; block.dataset.id = item.id;
                 block.tabIndex = 0; block.setAttribute('role', 'button'); block.setAttribute('aria-pressed', String(this.selected?.id === item.id));
                 block.classList.toggle('is-selected', this.selected?.id === item.id);
-                block.classList.toggle('is-live', this.current?.id === item.id && ['live', 'paused'].includes(window.CinemaChannel.computePosition(this.current).state));
+                block.classList.toggle('is-live', Boolean(this.onAir(item)));
                 block.style.left = `${(start - day.startMs) / span * 100}%`; block.style.width = `${(end - start) / span * 100}%`;
                 const times = `${timeInput(new Date(b.startMs))} — ${b.endMs === day.endMs ? '24:00' : timeInput(new Date(b.endMs))}`;
                 const label = item.movie?.mediaType === 'tv-series'
                     ? [item.title, mediaLabel(item.movie), item.movie.episodeTitle].filter(Boolean).join(' · ') : item.title;
-                block.title = `${label} · ${times}`; block.setAttribute('aria-label', `${label}, ${times}. Стрелки — перенос на 5 минут, Shift и стрелки — на 15 минут.`);
+                block.title = `${label} · ${times}`; block.setAttribute('aria-label', `${label}, ${times}. Стрелки — перенос на 5 минут, Shift и стрелки — на 15 минут, Alt и стрелки — длина на 5 минут.`);
                 const time = document.createElement('small'); time.className = 'live-planner__time'; time.textContent = times;
                 const name = document.createElement('strong'); name.textContent = item.title || 'Без названия';
                 const meta = document.createElement('span'); meta.className = 'live-planner__kind'; meta.textContent = mediaLabel({ mode: item.mode, ...item.movie });
                 block.append(time, name, meta);
                 const mini = document.createElement('span'); mini.className = 'live-planner__mini';
                 mini.innerHTML = window.Icons?.PLAY || ''; mini.setAttribute('aria-hidden', 'true'); block.append(mini);
+                // Only the right edge resizes. A show running past midnight is
+                // resized from the end field, where its whole length is visible.
+                if (b.endMs <= day.endMs && this.onAir(item) !== 'paused') {
+                    const handle = document.createElement('span'); handle.className = 'live-planner__resize';
+                    handle.dataset.resize = 'end'; handle.title = 'Потяните, чтобы изменить длину показа';
+                    handle.setAttribute('aria-hidden', 'true'); block.append(handle);
+                }
+                block.classList.toggle('is-resizing', this.drag?.item.id === item.id && this.drag.mode === 'resize');
                 const occupied = this.drag?.item.id === item.id && overlaps(this.drag.start, this.drag.end, this.items, item.id);
                 block.classList.toggle('is-overlap', Boolean(occupied));
                 if (occupied) block.title = 'Место занято — перетащите дальше';
@@ -480,6 +565,23 @@
             this.ui.PlannerLine.hidden = at < day.startMs || at >= day.endMs;
             this.ui.PlannerLine.style.left = `${(at - day.startMs) / (day.endMs - day.startMs) * 100}%`;
             this.ui.PlannerLine.firstElementChild.textContent = `${timeInput(new Date(at))} · сейчас`;
+            // A paused show slides with the clock until it resumes: move its block in place.
+            const paused = this.items.find(item => this.onAir(item) === 'paused');
+            // Its form follows too, unless the admin is typing a new end.
+            if (paused && !this.drag && this.selected?.id === paused.id && !Number.isFinite(this.lengthMs) && !this.endError
+                && this.ui.SlotEnd.ownerDocument.activeElement !== this.ui.SlotEnd) {
+                this.fillRange(this.selected); this.renderNote();
+            }
+            if (paused && !this.drag) {
+                const block = [...this.ui.PlannerTrack.querySelectorAll('.live-planner__block')].find(el => el.dataset.id === paused.id);
+                const b = this.displayBounds(paused), span = day.endMs - day.startMs;
+                const start = Math.max(day.startMs, b.startMs), end = Math.min(day.endMs, b.endMs);
+                if (block && end > start) {
+                    block.style.left = `${(start - day.startMs) / span * 100}%`; block.style.width = `${(end - start) / span * 100}%`;
+                    const time = block.querySelector('.live-planner__time');
+                    if (time) time.textContent = `${timeInput(new Date(b.startMs))} — ${b.endMs >= day.endMs ? '24:00' : timeInput(new Date(b.endMs))}`;
+                }
+            }
         }
         startDrag(event) {
             const block = event.target.closest('.live-planner__block');
@@ -487,10 +589,27 @@
             const item = this.items.find(entry => entry.id === block.dataset.id); if (!item) return;
             event.preventDefault(); this.select(item);
             const bounds = boundsFor(item), day = dayBounds(this.date);
-            this.drag = { item,
+            const resize = Boolean(event.target.closest('[data-resize]'));
+            // The show on air plays from its own clock: seek it in the player.
+            // Only its end can be dragged, and only while it is playing.
+            const onAir = this.onAir(item);
+            if (onAir && (!resize || onAir === 'paused')) {
+                this.onStatus?.(onAir === 'paused'
+                    ? 'Показ на паузе: длину меняйте полем «Конец».'
+                    : 'Идущий показ нельзя перенести: перематывайте его в плеере, а длину меняйте правым краем.', 'error');
+                return;
+            }
+            // A resized end stops at the next show instead of overlapping it.
+            const nextStart = Math.min(...this.items.filter(other => other.id !== item.id)
+                .map(other => boundsFor(other).startMs).filter(startMs => startMs >= bounds.endMs));
+            this.drag = { item, mode: resize ? 'resize' : 'move',
                 x: event.clientX, scroll: this.ui.PlannerScroll.scrollLeft, day,
                 scale: (day.endMs - day.startMs) / this.ui.PlannerCanvas.clientWidth,
+                maxEnd: Math.min(day.endMs, nextStart),
+                // A running show is never shortened into the past by a drag.
+                minEnd: (onAir ? Math.max(bounds.startMs, window.CinemaChannel.now()) : bounds.startMs) + MIN_SLOT_MS,
                 originalStart: bounds.startMs, originalEnd: bounds.endMs, start: bounds.startMs, end: bounds.endMs };
+            this.ui.PlannerCanvas.classList.toggle('is-resizing', resize);
             this.ui.PlannerCanvas.setPointerCapture?.(event.pointerId);
         }
         queueMove(event) {
@@ -503,10 +622,18 @@
             const d = this.drag, box = this.ui.PlannerScroll.getBoundingClientRect(), x = this.lastMove.x;
             if (x < box.left + 25) this.ui.PlannerScroll.scrollLeft -= 20;
             else if (x > box.right - 25) this.ui.PlannerScroll.scrollLeft += 20;
-            const delta = Math.round(((x - d.x + this.ui.PlannerScroll.scrollLeft - d.scroll) * d.scale) / STEP_MS) * STEP_MS;
-            const length = d.originalEnd - d.originalStart;
-            d.start = Math.max(d.day.startMs, Math.min(d.day.endMs - Math.min(length, d.day.endMs - d.day.startMs), d.originalStart + delta));
-            d.end = d.start + length;
+            const offset = (x - d.x + this.ui.PlannerScroll.scrollLeft - d.scroll) * d.scale;
+            if (d.mode === 'resize') {
+                // The end snaps to the 5-minute grid; a tiny wobble keeps the exact end.
+                const end = Math.abs(offset) < STEP_MS / 2 ? d.originalEnd : Math.round((d.originalEnd + offset) / STEP_MS) * STEP_MS;
+                d.start = d.originalStart;
+                d.end = Math.max(Math.min(d.minEnd, d.originalEnd), Math.min(Math.max(d.maxEnd, d.originalEnd), end));
+            } else {
+                const delta = Math.round(offset / STEP_MS) * STEP_MS;
+                const length = d.originalEnd - d.originalStart;
+                d.start = Math.max(d.day.startMs, Math.min(d.day.endMs - Math.min(length, d.day.endMs - d.day.startMs), d.originalStart + delta));
+                d.end = d.start + length;
+            }
             this.ui.SlotStart.value = timeInput(new Date(d.start)); this.ui.SlotEnd.value = timeInput(new Date(d.end));
             this.dirty = true; this.renderTrack(); this.renderNote();
         }
@@ -514,34 +641,44 @@
             if (!this.drag) return;
             if (this.frame) { cancelAnimationFrame(this.frame); this.frame = null; this.move(); }
             const drag = this.drag; this.drag = null;
+            this.ui.PlannerCanvas.classList.remove('is-resizing');
             if (event.type === 'pointercancel') { this.select(drag.item); return; }
-            if (drag.start === drag.originalStart && drag.end === drag.originalEnd) { this.dirty = false; return; }
-            await this.saveRange(drag.item, new Date(drag.start));
+            if (drag.start === drag.originalStart && drag.end === drag.originalEnd) { this.dirty = false; this.renderTrack(); return; }
+            if (drag.mode === 'resize') await this.saveSlot(drag.item, new Date(drag.start), new Date(drag.end));
+            else await this.saveRange(drag.item, new Date(drag.start));
         }
         cancelDrag(message) {
             if (!this.drag) return;
             const item = this.drag.item; this.drag = null;
+            this.ui.PlannerCanvas.classList.remove('is-resizing');
             if (this.frame) cancelAnimationFrame(this.frame); this.frame = null;
-            this.dirty = false; this.fillRange(item); this.renderTrack();
+            this.dirty = false; this.resetLength(); this.fillRange(item); this.renderTrack();
             if (message) this.onStatus?.(message, 'error');
         }
+        /** Moves a saved show to `start`, keeping its stored length. */
         async saveRange(item, start) {
+            const bounds = boundsFor(item);
+            return this.saveSlot(item, start, new Date(start.getTime() + bounds.endMs - bounds.startMs));
+        }
+        /** Saves a show's new start and end (a move, a resized end or a typed end). */
+        async saveSlot(item, start, end, options = {}) {
             if (this.busy) return;
-            const bounds = boundsFor(item), end = new Date(start.getTime() + bounds.endMs - bounds.startMs);
-            if (overlaps(start.getTime(), end.getTime(), this.items, item.id)) {
-                this.dirty = false; this.fillRange(item); this.render();
-                this.onStatus?.('Место занято. Показ возвращён на прежнее время.', 'error'); return;
-            }
+            const rejected = message => {
+                this.dirty = false; this.resetLength(); this.fillRange(item); this.render();
+                this.onStatus?.(message, 'error');
+            };
+            if (end - start < MIN_SLOT_MS) return rejected('Показ должен длиться хотя бы 5 минут.');
+            if (overlaps(start.getTime(), end.getTime(), this.items, item.id)) return rejected('Место занято. Показ возвращён на прежнее время.');
             this.setBusy(true);
             try {
-                const saved = await this.onChange(item, start, end);
+                const saved = await this.onChange(item, start, end, options);
                 this.dirty = false;
                 if (saved) { this.items = this.items.map(entry => entry.id === item.id ? saved : entry); this.selected = saved; }
                 else this.selected = this.items.find(entry => entry.id === item.id) || null;
             } catch (error) {
                 this.dirty = false; this.selected = this.items.find(entry => entry.id === item.id) || null;
                 this.onStatus?.(error.code === 'cinema/stale' ? 'Передачу изменили в другой вкладке. Выберите её заново.' : error.message || 'Не удалось сохранить время.', 'error');
-            } finally { this.setBusy(false); if (this.selected) this.fillRange(this.selected); this.render(); this.onRange?.(); }
+            } finally { this.resetLength(); this.setBusy(false); if (this.selected) this.fillRange(this.selected); this.render(); this.onRange?.(); }
         }
         async remove() {
             if (this.busy || !this.selected) return;
@@ -557,8 +694,17 @@
             if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
             event.preventDefault(); const bounds = boundsFor(item), delta = (event.key === 'ArrowRight' ? STEP_MS : -STEP_MS) * (event.shiftKey ? 3 : 1);
             this.select(item);
-            this.saveRange(item, new Date(bounds.startMs + delta))
-                .then(() => [...this.ui.PlannerTrack.querySelectorAll('[data-id]')].find(entry => entry.dataset.id === item.id)?.focus({ preventScroll: true }));
+            const onAir = this.onAir(item);
+            if (onAir && (!event.altKey || onAir === 'paused')) {
+                this.onStatus?.(onAir === 'paused' ? 'Показ на паузе: длину меняйте полем «Конец».'
+                    : 'Идущий показ нельзя перенести: перематывайте его в плеере, а длину меняйте Alt и стрелками.', 'error');
+                return;
+            }
+            // Alt+arrows change only the end (the keyboard twin of the right-edge drag).
+            const saving = event.altKey
+                ? this.saveSlot(item, new Date(bounds.startMs), new Date(bounds.endMs + delta))
+                : this.saveRange(item, new Date(bounds.startMs + delta));
+            saving.then(() => [...this.ui.PlannerTrack.querySelectorAll('[data-id]')].find(entry => entry.dataset.id === item.id)?.focus({ preventScroll: true }));
         }
         destroy() {
             if (this.frame) cancelAnimationFrame(this.frame);
@@ -573,7 +719,7 @@
             this.datePicker?.close(); this.datePicker?.dropdown.remove();
         }
     }
-    const api = { LiveSchedulePlanner, dayBounds, dateKey, timeInput, rangeFromInputs, overlaps };
+    const api = { LiveSchedulePlanner, dayBounds, dateKey, timeInput, rangeFromInputs, endAfter, overlaps };
     if (typeof window !== 'undefined') Object.assign(window, api);
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();

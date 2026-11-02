@@ -346,6 +346,7 @@ test('cleaner holds native playback pending confirmation and retains seek/resume
         assert.equal(paused, true);
         video.dispatchEvent(new win.Event('ended'));
         assert.ok(!reports.some(report => report.type === 'BROADCAST_ENDED'));
+        assert.ok(!reports.some(report => report.type === 'BROADCAST_MEDIA_INFO'), 'an unconfirmed episode reports no length');
         video.play(); video.dispatchEvent(new win.Event('play'));
         assert.equal(paused, true, 'admin cannot release an unconfirmed episode');
         let navigated = false;
@@ -354,6 +355,9 @@ test('cleaner holds native playback pending confirmation and retains seek/resume
         assert.equal(navigated, false);
         send({ admin: true, selectionReady: true, pausedAtSec: 42 });
         assert.equal(time, 42);
+        send({ admin: true, selectionReady: true, pausedAtSec: 42 });
+        const lengths = reports.filter(report => report.type === 'BROADCAST_MEDIA_INFO');
+        assert.deepEqual(lengths.map(report => report.durationSec), [300], 'the real media length is reported once per timeline');
         assert.equal(paused, true);
         video.dispatchEvent(new win.Event('seeked'));
         const later = win.Date.now() + 2000;
@@ -813,6 +817,27 @@ test('a source shorter than the slot reports its end once so the live page shows
         const ended = h.reports.filter(report => report.type === 'BROADCAST_ENDED');
         assert.equal(ended.length, 1);
         assert.equal(ended[0].atSec, 200);
+    } finally { h.dom.window.close(); }
+});
+
+test('a play press resumes a paused channel at its position even when the admin player drifted', async () => {
+    const h = broadcastJoinHarness(true);
+    try {
+        await h.join();
+        h.win.dispatchEvent(new h.win.MessageEvent('message', { source: h.win, origin: h.win.location.origin,
+            data: { type: 'BROADCAST_STATE', startMs: h.state.clock - 300_000, pausedAtSec: 250, admin: true } }));
+        await new Promise(resolve => setTimeout(resolve, 150));
+        assert.equal(h.state.paused, true);
+        assert.equal(h.state.seeking, true, 'the seek to the pause position has not finished: not aligned');
+        h.state.clock += 1000;
+        pressControl(h.win);
+        h.video.play();
+        const resume = h.actions().filter(action => action.action === 'resume');
+        assert.equal(resume.length, 1, 'the press is published instead of being pulled back');
+        assert.equal(resume[0].atSec, 250, 'it resumes at the channel position, not the drifted media time');
+        h.state.clock += 3000;
+        h.video.pause(); h.video.play();
+        assert.equal(h.actions().filter(action => action.action === 'resume').length, 1, 'without a press nothing is published');
     } finally { h.dom.window.close(); }
 });
 

@@ -11,7 +11,7 @@
  *     mode: 'off' | 'youtube' | 'movie',
  *     title: string,
  *     youtube: { videoId: string, live: boolean } | null,
- *     movie: { kinopoiskId: number, durationSec: number, posterUrl?: string,
+ *     movie: { kinopoiskId: number, durationSec: number, durationMeasured?: boolean, posterUrl?: string,
  *              pausedAtSec?: number | null, mediaType?: 'tv-series',
  *              seasonNumber?: number, episodeNumber?: number, episodeTitle?: string,
  *              tmdbId?: number } | null,
@@ -34,6 +34,10 @@
     const MODES = ['off', 'youtube', 'movie'];
     const MAX_TITLE = 120;
     const MAX_EPISODE_TITLE = 200;
+    // A player-reported movie length is trusted only near the catalogue length.
+    const MEASURED_MIN_RATIO = 0.6;
+    const MEASURED_MAX_RATIO = 1.5;
+    const MEASURED_MAX_SEC = 6 * 3600;
 
     function readPause(value) {
         const sec = Number(value);
@@ -184,6 +188,8 @@
                 movie: {
                     kinopoiskId,
                     durationSec: Number.isFinite(durationSec) && durationSec > 0 ? Math.round(durationSec) : 0,
+                    // The player's real length was already checked for this show.
+                    ...(raw.movie?.durationMeasured === true ? { durationMeasured: true } : {}),
                     posterUrl: safeImageUrl(raw.movie?.posterUrl),
                     pausedAtSec: readPause(raw.movie?.pausedAtSec),
                     ...episodeFields
@@ -228,8 +234,48 @@
         const elapsed = Math.floor((nowMs - anchorMs) / 1000);
         if (elapsed < 0) return { state: 'upcoming', offsetSec: -elapsed };
         const duration = media?.durationSec || 0;
-        if (duration > 0 && elapsed >= duration) return { state: 'ended', offsetSec: duration };
+        if (duration > 0 && elapsed >= duration && lengthIsExact(channel)) return { state: 'ended', offsetSec: duration };
         return { state: 'live', offsetSec: elapsed };
+    }
+
+    /**
+     * Whether the stored source length is the real file length. A catalogue
+     * runtime (a film or an episode no player has measured) often differs from
+     * the file, so inside a fixed slot it never ends the show early: the slot
+     * end does, or the player's own end of media (BROADCAST_ENDED).
+     */
+    function lengthIsExact(channel) {
+        return channel?.mode !== 'movie' || channel.movie?.durationMeasured === true
+            || !(channel.scheduled && channel.explicitEnd);
+    }
+
+    /** The furthest position the timeline accepts (pause/seek are kept 5 s before it). */
+    function playableSec(channel) {
+        const duration = channel?.[channel?.mode]?.durationSec || 0;
+        if (lengthIsExact(channel)) return duration;
+        const anchorMs = Number.isFinite(channel.playbackStartedAtMs) ? channel.playbackStartedAtMs : channel.startedAtMs;
+        // The slot length from the playback clock; resume and seek keep it constant.
+        const slotSec = Number.isFinite(channel.endsAtMs) && Number.isFinite(anchorMs) ? Math.floor((channel.endsAtMs - anchorMs) / 1000) : 0;
+        return Math.max(duration, slotSec);
+    }
+
+    /**
+     * Where a scheduled show sits on the programme while it is on air: from the
+     * moment its playback clock started (moved by seeks; a paused show waits)
+     * to its end. The now-line then marks the film's own position. Not on air,
+     * a live stream, or a manual show: its fixed slot.
+     */
+    function playbackBounds(item, nowMs = now()) {
+        const bounds = getScheduleBounds(item);
+        if (!item?.scheduled || (item.mode === 'youtube' && item.youtube?.live) || !(nowMs >= item.startedAtMs)) return bounds;
+        const position = computePosition(item, nowMs);
+        if (!['live', 'paused'].includes(position.state)) return bounds;
+        const pausedAt = item[item.mode]?.pausedAtSec;
+        const anchorMs = Number.isFinite(pausedAt) ? nowMs - pausedAt * 1000
+            : Number.isFinite(item.playbackStartedAtMs) ? item.playbackStartedAtMs : item.startedAtMs;
+        if (Number.isFinite(pausedAt)) return { ...bounds, startMs: anchorMs, endMs: shiftedEnd(item, anchorMs) };
+        const duration = item[item.mode]?.durationSec || 0;
+        return { ...bounds, startMs: anchorMs, endMs: item.explicitEnd ? item.endsAtMs : duration ? anchorMs + duration * 1000 : bounds.endMs };
     }
 
     /** Builds the Firestore payload an admin writes. Throws a readable error on bad input. */
@@ -338,13 +384,30 @@
         const endMs = shiftedEnd(channel, nowMs - pausedAt * 1000);
         const shifts = new Map(followingShifts(channel, endMs, items).map(shift => [shift.item.id, shift.delta]));
         return items.map(item => {
-            if (item.docPath === channel.docPath) return { ...item, endsAtMs: endMs, explicitEnd: true };
+            // The preview also carries the playback clock resume would set.
+            if (item.docPath === channel.docPath) return { ...item, endsAtMs: endMs, explicitEnd: true, playbackStartedAtMs: nowMs - pausedAt * 1000 };
             const delta = shifts.get(item.id);
             if (!delta) return item;
             return { ...item, startedAtMs: item.startedAtMs + delta,
                 endsAtMs: item.endsAtMs + delta,
                 playbackStartedAtMs: (Number.isFinite(item.playbackStartedAtMs) ? item.playbackStartedAtMs : item.startedAtMs) + delta };
         });
+    }
+
+    /**
+     * The movie length a show should use after its player reported `reportedSec`,
+     * or null when the report must be ignored: the show was already checked, or
+     * the number does not look like this film (a short advert, a wrong file).
+     * The catalogue length is only ever extended, never shortened.
+     */
+    function measuredMovieDuration(media, reportedSec) {
+        const sec = readDuration(reportedSec);
+        if (!media || media.durationMeasured === true || !sec) return null;
+        const planned = media.durationSec || 0;
+        const plausible = planned > 0
+            ? sec >= Math.max(60, planned * MEASURED_MIN_RATIO) && sec <= planned * MEASURED_MAX_RATIO
+            : sec >= 60 && sec <= MEASURED_MAX_SEC;
+        return plausible ? Math.max(planned, sec) : null;
     }
 
     function nextScheduled(items = [], nowMs = now()) {
@@ -533,7 +596,12 @@
             });
         }
 
-        async updateSchedule(item, startDate, endDate) {
+        /**
+         * Retimes a planned show. A move carries its playback clock along; with
+         * keepPlayback (a running show whose grid start is aligned to where the
+         * film began) the playback clock stays where it is.
+         */
+        async updateSchedule(item, startDate, endDate, { keepPlayback = false } = {}) {
             const { startMs, endMs } = validateBounds(startDate, endDate);
             if (!item?.scheduled || !/^[A-Za-z0-9_-]{1,64}$/.test(String(item.id || ''))) throw cinemaError('stale', 'Показ больше не найден. Обновите расписание.');
             const ref = this.scheduleRef.doc(item.id);
@@ -546,7 +614,8 @@
                 }
                 const data = { startedAt: new Date(startMs), endsAt: new Date(endMs), ...this.writeStamp() };
                 const delta = startMs - current.startedAtMs;
-                if (delta !== 0) data.playbackStartedAt = new Date((Number.isFinite(current.playbackStartedAtMs) ? current.playbackStartedAtMs : current.startedAtMs) + delta);
+                const anchorMs = Number.isFinite(current.playbackStartedAtMs) ? current.playbackStartedAtMs : current.startedAtMs;
+                if (delta !== 0) data.playbackStartedAt = new Date(keepPlayback ? anchorMs : anchorMs + delta);
                 const result = normalizeChannel({ ...snapshot.data(), ...data }, { id: item.id, docPath: `cinemaSchedule/${item.id}`, scheduled: true });
                 checkOverlap(result, items, item.id);
                 return { type: 'update', data, result };
@@ -610,7 +679,8 @@
                 const key = current.mode;
                 const media = current[key];
                 const position = computePosition(current);
-                const duration = media?.durationSec || 0;
+                // A catalogue length must not stop a seek into a longer file.
+                const duration = playableSec(current);
                 const clamp = sec => Math.max(0, duration > 0 ? Math.min(sec, Math.max(0, duration - 5)) : sec);
                 const data = this.writeStamp();
                 const setPause = value => {
@@ -711,6 +781,51 @@
             });
         }
 
+        /**
+         * Admin only: the first admin player that plays a file longer than the
+         * catalogue length stores that length once per show, extending the show
+         * (and its slot, moving overlapping later shows). A shorter or equal file
+         * writes nothing, so switching to a longer source later still counts.
+         * The flag is read inside the transaction, so a second admin's report that
+         * races the first one finds it set and writes nothing.
+         */
+        async setMovieDuration(channel, reportedSec) {
+            const longer = media => {
+                const next = measuredMovieDuration(media, reportedSec);
+                return next !== null && next > (media.durationSec || 0) ? next : null;
+            };
+            if (channel?.mode !== 'movie' || longer(channel.movie) === null) return false;
+            const ref = this.refFor(channel);
+            const patchFor = (current, next) => ({ 'movie.durationMeasured': true, 'movie.durationSec': next, ...this.writeStamp() });
+            if (channel.scheduled) {
+                return this.mutateSchedule(ref, (snapshot, items) => {
+                    const current = snapshot.exists ? this.normalizeSchedule(snapshot) : null;
+                    if (!current || !sameMedia(current, channel) || current.startedAtMs !== channel.startedAtMs) return null;
+                    const next = longer(current.movie);
+                    if (next === null) return null;
+                    const data = patchFor(current, next);
+                    let endMs = getScheduleBounds({ ...current, movie: { ...current.movie, durationSec: next } }).endMs;
+                    if (current.explicitEnd) {
+                        // A slot that already leaves room for the longer file keeps its end.
+                        const anchorMs = Number.isFinite(current.playbackStartedAtMs) ? current.playbackStartedAtMs : current.startedAtMs;
+                        endMs = Math.max(current.endsAtMs, anchorMs + next * 1000);
+                        if (endMs !== current.endsAtMs) data.endsAt = new Date(endMs);
+                    }
+                    return { type: 'update', data, result: true, shifts: followingShifts(current, endMs, items) };
+                });
+            }
+            return this.firebaseManager.db.runTransaction(async transaction => {
+                const snapshot = await transaction.get(ref);
+                const current = snapshot.exists ? normalizeChannel(snapshot.data()) : null;
+                // Only this exact manual playback, not a restarted or replaced one.
+                if (!current || !sameMedia(current, channel) || current.startedAtMs !== channel.startedAtMs) return false;
+                const next = longer(current.movie);
+                if (next === null) return false;
+                transaction.update(ref, patchFor(current, next));
+                return true;
+            });
+        }
+
         /** Admin only (enforced by Firestore rules). `restart` resets the broadcast clock to now. */
         async save(input, { restart = true } = {}) {
             const payload = buildChannelPayload(input);
@@ -729,7 +844,7 @@
         }
     }
 
-    const api = { CinemaChannelService, normalizeChannel, computePosition, resolveChannel, getScheduleBounds, nextScheduled, projectPausedSchedule, buildChannelPayload, formatClock, coverUrl, now, syncClock, toLocalMs, DOC_ID };
+    const api = { CinemaChannelService, normalizeChannel, computePosition, resolveChannel, getScheduleBounds, playbackBounds, playableSec, lengthIsExact, nextScheduled, projectPausedSchedule, measuredMovieDuration, buildChannelPayload, formatClock, coverUrl, now, syncClock, toLocalMs, DOC_ID };
     if (typeof window !== 'undefined') Object.assign(window, { CinemaChannelService, CinemaChannel: api });
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();

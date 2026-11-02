@@ -647,7 +647,7 @@
                                         </div>
                                     </div>
                                     <div class="live-planner__scroll" id="livePlannerScroll"><div class="live-planner__canvas" id="livePlannerCanvas"><div class="live-planner__ruler" id="livePlannerRuler"></div><div class="live-planner__track" id="livePlannerTrack" aria-label="Дорожка передач"></div><div class="live-planner__now" id="livePlannerLine" hidden><span></span></div></div></div>
-                                    <div class="live-planner__legend"><span>Переносите блоки через соседние передачи. Пустой промежуток — заставка.</span><span id="livePlannerStats"></span></div>
+                                    <div class="live-planner__legend"><span>Переносите блоки через соседние передачи, правым краем меняйте длину. Пустой промежуток — заставка.</span><span id="livePlannerStats"></span></div>
                                 </div>
                             </section>
 
@@ -724,9 +724,9 @@
                                     <input id="liveTitleInput" class="admin-input" type="text" maxlength="120" autocomplete="off" placeholder="Подставится из видео или фильма">
                                 </label>
 
-                                <div class="live-slot-range"><label class="admin-form-field" for="liveSlotStart"><span>Начало</span><input id="liveSlotStart" class="admin-input" type="text" inputmode="numeric" maxlength="5" placeholder="18:00" autocomplete="off" spellcheck="false"></label><label class="admin-form-field" for="liveSlotEnd"><span>Конец · автоматически</span><input id="liveSlotEnd" class="admin-input" type="text" readonly aria-readonly="true" tabindex="-1"></label></div>
+                                <div class="live-slot-range"><label class="admin-form-field" for="liveSlotStart"><span>Начало</span><input id="liveSlotStart" class="admin-input" type="text" inputmode="numeric" maxlength="5" placeholder="18:00" autocomplete="off" spellcheck="false"></label><label class="admin-form-field" for="liveSlotEnd"><span>Конец</span><input id="liveSlotEnd" class="admin-input" type="text" inputmode="numeric" maxlength="8" placeholder="20:00" autocomplete="off" spellcheck="false"></label></div>
                                 <p class="live-slot-meta"><span id="livePlannerTimezone"></span><strong id="liveSlotDuration"></strong></p>
-                                <p class="live-slot-help">Длина блока фиксирована. После полуночи показ продолжится на следующий день.</p>
+                                <p class="live-slot-help">Длину показа меняйте правым краем блока на шкале или полем «Конец». После полуночи показ продолжится на следующий день.</p>
                                 <p class="live-slot-note" id="liveSlotNote"></p>
                                 <p class="live-series__timing" id="liveSeriesTiming" role="status" aria-live="polite" hidden></p>
                                 <button type="button" class="btn btn-secondary live-series__find" id="liveFindFreeSlotBtn" hidden>Найти свободное время</button>

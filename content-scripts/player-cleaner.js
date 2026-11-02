@@ -353,6 +353,7 @@
     const broadcastGestureSeeks = new WeakSet();
     const broadcastIdleStarts = new WeakMap();
     const broadcastShortEnds = new WeakMap();
+    const broadcastReportedLengths = new WeakMap();
     const broadcastViewerResumes = new WeakMap();
     let broadcastMediaSessionViewer = null;
     const BROADCAST_DRIFT_SEC = 3;
@@ -465,6 +466,22 @@
         return false;
     }
 
+    function broadcastMediaAtEnd(video) {
+        const duration = Number(video.duration);
+        return Number.isFinite(duration) && duration > 5 && Number(video.currentTime) >= duration - 1;
+    }
+
+    // Tells the live page the real length of the media once per timeline. The
+    // catalogue length of a film often differs from the file this source plays;
+    // the admin's page stores the real one so the show does not end too early.
+    function reportBroadcastLength(video, duration) {
+        if (!broadcastState || broadcastState.selectionReady === false || video !== getRoomSyncVideo()) return;
+        const key = `${broadcastState.startMs}|${Math.round(duration)}`;
+        if (broadcastReportedLengths.get(video) === key) return;
+        broadcastReportedLengths.set(video, key);
+        postToHost({ type: 'BROADCAST_MEDIA_INFO', isLive: false, durationSec: duration });
+    }
+
     // The source is shorter than its slot: stop it instead of replaying it from
     // the start, and tell the live page once so it shows the standby screen.
     function finishShortBroadcast(video, duration) {
@@ -509,6 +526,7 @@
             }
             return;
         }
+        reportBroadcastLength(video, duration);
         const target = broadcastTargetSec();
         if (target >= duration - 1) {
             if (!paused && !video.ended) finishShortBroadcast(video, duration);
@@ -539,6 +557,13 @@
         // A second admin may join while metadata or the initial seek is still
         // loading. Autoplay at zero is local startup, never a channel command.
         if (broadcastState?.admin && !broadcastAlignedVideos.has(video)) {
+            // A paused channel has one position. A play press resumes it there even
+            // when this player drifted while paused (a reload, an imprecise seek):
+            // otherwise the press is pulled back and the admin can never resume.
+            if (action === 'resume' && Number.isFinite(broadcastState.pausedAtSec) && (intent ?? takeAdminIntent('toggle'))) {
+                postToHost({ type: 'BROADCAST_ADMIN_ACTION', action: 'resume', atSec: broadcastState.pausedAtSec });
+                return;
+            }
             broadcastIntent = null; // A press before alignment must not authorise a later event.
             enforceBroadcast(video, { force: true });
             return;
@@ -611,7 +636,9 @@
             // Only the admin pauses the channel; a viewer's media resumes at once.
             // A hidden tab resumes on return (the browser may keep pausing muted
             // background media), and repeated pauses fall back to the short delay.
-            if (broadcastState?.admin) { if (!video.ended) reportAdminAction('pause', video); return; }
+            // Media that runs out pauses itself (YouTube may report the pause just
+            // before «ended»): that is the end of the show, never an admin pause.
+            if (broadcastState?.admin) { if (!video.ended && !broadcastMediaAtEnd(video)) reportAdminAction('pause', video); return; }
             if (document.hidden) return;
             if (Date.now() - (broadcastViewerResumes.get(video) || 0) < 500) { settle(); return; }
             broadcastViewerResumes.set(video, Date.now());

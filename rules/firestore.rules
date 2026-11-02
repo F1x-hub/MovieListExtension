@@ -503,8 +503,9 @@ service cloud.firestore {
           && data.youtube.live is bool && validCinemaDuration(data.youtube)
           && (!data.youtube.live || data.youtube.get('pausedAtSec', null) == null))
         || (data.mode == 'movie' && data.movie is map && data.get('youtube', null) == null
-          && data.movie.keys().hasOnly(['kinopoiskId', 'durationSec', 'posterUrl', 'pausedAtSec', 'mediaType', 'seasonNumber', 'episodeNumber', 'episodeTitle', 'tmdbId'])
+          && data.movie.keys().hasOnly(['kinopoiskId', 'durationSec', 'durationMeasured', 'posterUrl', 'pausedAtSec', 'mediaType', 'seasonNumber', 'episodeNumber', 'episodeTitle', 'tmdbId'])
           && data.movie.kinopoiskId is int && data.movie.kinopoiskId > 0 && data.movie.kinopoiskId <= 9007199254740991
+          && (!('durationMeasured' in data.movie) || data.movie.durationMeasured is bool)
           && validCinemaDuration(data.movie) && validCinemaEpisode(data.movie)
           && (!('posterUrl' in data.movie) || (data.movie.posterUrl is string
             && (data.movie.posterUrl == '' || (data.movie.posterUrl.size() <= 508 && data.movie.posterUrl.matches('^https://[^\\s"\'<>]+$'))))));

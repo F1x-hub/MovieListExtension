@@ -1283,6 +1283,17 @@ class MovieDetailsManager {
                 if (lastState && (fromSelf || sourceFrame)) toParent({ type, atSec: Math.max(0, Number(event.data.atSec) || 0), startMs: Number(event.data.startMs) });
                 return;
             }
+            // The real length of the playing file: the live page keeps the show this long.
+            if (type === 'BROADCAST_MEDIA_INFO') {
+                const sourceFrame = [...(document.getElementById('videoContainer')?.querySelectorAll('iframe') || [])]
+                    .some(frame => frame.contentWindow === event.source);
+                const fromSelf = event.source === window && event.origin === window.location.origin;
+                const durationSec = Number(event.data.durationSec);
+                if (lastState && (fromSelf || sourceFrame) && Number.isFinite(durationSec) && durationSec > 0) {
+                    toParent({ type, isLive: false, durationSec });
+                }
+                return;
+            }
             if (event.source !== window.parent && ['BROADCAST_MUTED', 'BROADCAST_UNMUTED', 'BROADCAST_PLAYING', 'BROADCAST_ADMIN_ACTION'].includes(type)) {
                 toParent(type === 'BROADCAST_ADMIN_ACTION' ? { type, action: event.data.action, atSec: Number(event.data.atSec) || 0 } : { type });
             }

@@ -6483,21 +6483,67 @@ body.player-modal-open .seasonal-decor * {
     animation-play-state: paused !important;
 }
 
+/* The player shell is visible from the first paint (broadcast-boot.js sets the
+   class early); the page opens the modal only after the movie has loaded. */
 html.broadcast-mode #videoPlayerModal {
+    display: flex !important;
     padding: 0;
     background: #000000;
     backdrop-filter: none;
+    -webkit-backdrop-filter: none;
 }
 
 html.broadcast-mode #videoPlayerModal .video-modal {
-    width: 100vw;
+    width: 100%;
     max-width: none;
-    height: 100vh;
+    height: 100%;
     max-height: none;
     margin: 0;
     border: 0;
+    border-radius: 0 !important;
+    background: #000000;
+    box-shadow: none;
+    animation: none;
+}
+
+/* The picture fills the frame: no padding, no 16:9 box taller than the frame,
+   and so no scrollbar inside the player. */
+html.broadcast-mode #videoPlayerModal .video-modal > .video-body {
+    flex: 1 1 auto;
+    gap: 0;
+    padding: 0;
+    overflow: hidden !important;
+    scrollbar-gutter: auto;
+    border-radius: 0;
+}
+
+html.broadcast-mode #videoPlayerModal .source-toolbar {
+    min-height: 40px;
+    padding: 4px 8px;
+    border: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 0;
     box-shadow: none;
+}
+
+html.broadcast-mode #videoPlayerModal .player-stage {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+}
+
+html.broadcast-mode #videoPlayerModal .video-container {
+    flex: 1 1 auto;
+    width: 100%;
+    height: 100%;
+    aspect-ratio: auto;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+html.broadcast-mode #videoPlayerModal .video-container :is(iframe, video, .player-surface__content, .video-wrapper, .player-clean, .native-player-wrapper, .player-surface__poster) {
+    border-radius: 0;
 }
 
 html.broadcast-mode #videoPlayerModal .video-header,

@@ -115,7 +115,6 @@ body.live-page { overflow-x: clip; overflow-y: visible; }
 .live-screen--movie {
     aspect-ratio: auto;
     height: clamp(320px, calc(100svh - 320px), 900px);
-    background: var(--theme-bg-primary);
 }
 
 .live-screen .app-loader {

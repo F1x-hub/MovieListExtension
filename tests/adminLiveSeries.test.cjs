@@ -40,7 +40,7 @@ test('series editor adds exactly one episode with its runtime and prepares the n
     await f.choose();
     assert.equal(f.$('liveSeriesCode').textContent, 'S01E01');
     assert.equal(f.$('liveMovieDurationInput').value, '42', 'series-wide 99 minutes must not become slot duration');
-    assert.equal(f.$('liveMovieDurationInput').readOnly, true);
+    assert.equal(f.$('liveMovieDurationInput').readOnly, false, 'the episode runtime can be corrected');
     f.input('liveSlotStart', '16:00');
     await f.submit();
     const writes = f.w.liveFixture.writes.filter(item => item.action === 'create');

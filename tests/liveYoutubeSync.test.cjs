@@ -519,6 +519,37 @@ test('in-flight Firestore write (adminBusy) preserves follow-up resume instead o
     }
 });
 
+test('a YouTube video running out is not an admin pause, and a pause stuck at its end is released by the admin page', async () => {
+    const bus = createChannelBus({
+        ...YT,
+        startedAt: new Date(Date.now() - 297_000),
+        youtube: { videoId: 'dQw4w9WgXcQ', live: false, durationSec: 300, pausedAtSec: null }
+    });
+    const admin = await mountLiveClient(bus, { uid: 'admin-1', isAdmin: true, cachedAdmin: true });
+    try {
+        admin.emitFrame({ type: 'BROADCAST_ADMIN_ACTION', action: 'pause', atSec: 299.6 });
+        admin.emitFrame({ type: 'BROADCAST_ADMIN_ACTION', action: 'resume', atSec: 299.8 });
+        await wait(450);
+        assert.equal(bus.writes.length, 0, 'the pause and replay of the end screen never reach the channel');
+    } finally { admin.close(); }
+
+    const stuckBus = createChannelBus({
+        ...YT,
+        startedAt: new Date(Date.now() - 900_000),
+        youtube: { videoId: 'dQw4w9WgXcQ', live: false, durationSec: 300, pausedAtSec: 295 }
+    });
+    const viewer = await mountLiveClient(stuckBus, { uid: 'viewer-1', isAdmin: false });
+    await wait(60);
+    assert.equal(stuckBus.writes.length, 0, 'viewers never write');
+    viewer.close();
+    const host = await mountLiveClient(stuckBus, { uid: 'admin-1', isAdmin: true, cachedAdmin: true });
+    try {
+        await wait(60);
+        assert.equal(stuckBus.getDoc().youtube.pausedAtSec, null, 'the stuck end-of-video pause is released');
+        assert.equal(stuckBus.writes.length, 1, 'released once');
+    } finally { host.close(); }
+});
+
 test('YouTube video without a stored length ends by itself: admin stores the player length, viewers switch to «ended»', async () => {
     const bus = createChannelBus({
         ...YT,
@@ -539,6 +570,38 @@ test('YouTube video without a stored length ends by itself: admin stores the pla
         await wait(1100);
         assert.equal(viewer.window.document.getElementById('liveEmpty').hidden, false, 'viewer sees the ended screen');
         assert.equal(viewer.window.document.getElementById('liveEmptyTitle').textContent, 'live_page.ended_title');
+    } finally {
+        admin.close();
+        viewer.close();
+    }
+});
+
+test('film longer than its catalogue length: the admin stores the player length once, viewers never write', async () => {
+    const bus = createChannelBus({ mode: 'movie', title: 'Movie', startedAt: new Date(Date.now() - 150_000),
+        movie: { kinopoiskId: 301, durationSec: 6180, pausedAtSec: null } });
+    const admin = await mountLiveClient(bus, { uid: 'admin-1', isAdmin: true, cachedAdmin: true });
+    const viewer = await mountLiveClient(bus, { uid: 'viewer-1', isAdmin: false });
+    try {
+        await wait(30);
+        viewer.emitFrame({ type: 'BROADCAST_MEDIA_INFO', isLive: false, durationSec: 6487 });
+        admin.emitFrame({ type: 'BROADCAST_MEDIA_INFO', isLive: false, durationSec: 25 });
+        await wait(30);
+        assert.equal(bus.writes.length, 0, 'viewers and adverts write nothing');
+        admin.emitFrame({ type: 'BROADCAST_MEDIA_INFO', isLive: false, durationSec: 6000 });
+        await wait(30);
+        assert.equal(bus.writes.length, 0, 'a file shorter than the catalogue writes nothing');
+        viewer.emitFrame({ type: 'BROADCAST_MEDIA_INFO', isLive: false, durationSec: 6487 });
+        assert.match(viewer.window.document.getElementById('liveClock').textContent, /\/ 1:48:07$/, 'the clock shows the file this page plays');
+        admin.emitFrame({ type: 'BROADCAST_MEDIA_INFO', isLive: false, durationSec: 6487.2 });
+        admin.emitFrame({ type: 'BROADCAST_MEDIA_INFO', isLive: false, durationSec: 6487.2 });
+        await wait(30);
+        const lengthWrites = bus.writes.filter(w => w.patch['movie.durationMeasured']);
+        assert.equal(lengthWrites.length, 1, 'stored once');
+        assert.equal(lengthWrites[0].patch['movie.durationSec'], 6487);
+        assert.equal(bus.getDoc().movie.durationMeasured, true);
+        admin.emitFrame({ type: 'BROADCAST_MEDIA_INFO', isLive: false, durationSec: 6600 });
+        await wait(30);
+        assert.equal(bus.writes.filter(w => w.patch['movie.durationMeasured']).length, 1, 'a checked show is not measured again');
     } finally {
         admin.close();
         viewer.close();

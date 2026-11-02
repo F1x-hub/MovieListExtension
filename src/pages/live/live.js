@@ -25,6 +25,13 @@
     // What the YouTube player reported about the mounted video. A video published
     // without a length still ends on time: { key, sec } is the learned length.
     const ytInfo = { key: '', duration: 0, isLive: false, endSec: 0, stored: '' };
+    // The channel never pauses inside the last seconds of a video (the service
+    // clamps a pause to length - 5): a pause or play there is the video ending.
+    const END_ZONE_SEC = 5;
+    let endPauseCleared = '';
+    // The show whose film length this admin page already sent (see learnMovieLength).
+    let movieLengthStored = '';
+    let movieReport = null;
 
     // Fallback relay (WebRTC from the admin's tab) for viewers whose sources fail.
     const AUTO_RELAY_AFTER_MS = 45000;
@@ -164,6 +171,43 @@
         }
     }
 
+    /**
+     * The film's file is often longer than its catalogue length. The admin's page
+     * stores the real length once per show (the service lets only the first admin
+     * write it), so every viewer's show ends with the media, not minutes before.
+     */
+    function movieShowKey() {
+        return channel?.mode === 'movie' ? `${channelKey(channel)}@${channel.startedAtMs}` : '';
+    }
+
+    function learnMovieLength(sec) {
+        if (channel?.mode !== 'movie') return;
+        // Adverts and placeholders report other lengths: wait for the film itself.
+        if (window.CinemaChannel.measuredMovieDuration(channel.movie, sec) === null) return;
+        // The player reports once; keep it until the admin role is confirmed.
+        movieReport = { key: movieShowKey(), sec };
+        renderClock();
+        storeMovieLength();
+    }
+
+    function storeMovieLength() {
+        if (!isAdmin || !service || channel?.mode !== 'movie' || channel.movie.durationMeasured) return;
+        const key = movieShowKey();
+        const sec = movieReport?.key === key ? movieReport.sec : 0;
+        // Only a longer file changes the show; another source may be longer later.
+        if (!(Math.round(sec) > (channel.movie.durationSec || 0))) return;
+        const attempt = `${key}#${Math.round(sec)}`;
+        if (movieLengthStored === attempt) return;
+        movieLengthStored = attempt;
+        const source = [manualChannel, ...scheduleItems].find(item => channelKey(item) === channelKey(channel)) || channel;
+        service.setMovieDuration(source, sec).then(stored => {
+            if (stored) console.info(`[Live] Stored the film length from the player: ${window.CinemaChannel.formatClock(sec)}`);
+        }).catch(error => {
+            movieLengthStored = '';
+            console.warn('[Live] Could not store the film length:', error);
+        });
+    }
+
     /** What the embedded YouTube player page reports about the video. */
     function onYoutubeReport(data) {
         if (data.type === 'BROADCAST_ENDED' && channel?.mode !== 'off'
@@ -179,6 +223,10 @@
             if (channel.mode === 'youtube') learnYoutubeLength(reported);
             renderClock(); return;
         }
+        if (data.type === 'BROADCAST_MEDIA_INFO' && channel?.mode === 'movie') {
+            learnMovieLength(Number(data.durationSec));
+            return;
+        }
         if (channel?.mode !== 'youtube') return;
         const key = channelKey(channel);
         if (ytInfo.key !== key) Object.assign(ytInfo, { key, duration: 0, isLive: false, endSec: 0 });
@@ -191,6 +239,7 @@
             if (Number.isFinite(duration) && duration > 0) {
                 ytInfo.duration = duration;
                 learnYoutubeLength(duration);
+                releaseEndOfVideoPause();
             }
         } else if (data.type === 'BROADCAST_SOURCE_ERROR') {
             relay.sourceFailed = true;
@@ -549,6 +598,7 @@
         mountMedia();
         postBroadcastState();
         renderClock();
+        releaseEndOfVideoPause();
     }
 
     function renderClock() {
@@ -575,7 +625,9 @@
         } else if (position.state === 'upcoming') {
             setText(els.clock, t('clock_upcoming', { time: CinemaChannel.formatClock(position.offsetSec) }));
         } else if (position.state === 'live' && !isLiveStream) {
-            const total = channel[channel.mode]?.durationSec || (channel.mode === 'youtube' && ytInfo.key === channelKey(channel) && ytInfo.duration > 0 ? Math.round(ytInfo.duration) : 0);
+            // The file this page plays is the honest total: a catalogue runtime can be off by minutes.
+            const playerSec = channel.mode === 'movie' && movieReport?.key === movieShowKey() ? Math.round(movieReport.sec) : 0;
+            const total = playerSec || channel[channel.mode]?.durationSec || (channel.mode === 'youtube' && ytInfo.key === channelKey(channel) && ytInfo.duration > 0 ? Math.round(ytInfo.duration) : 0);
             setText(els.clock, total
                 ? `${CinemaChannel.formatClock(position.offsetSec)} / ${CinemaChannel.formatClock(total)}`
                 : t('clock_playing', { time: CinemaChannel.formatClock(position.offsetSec) }));
@@ -610,9 +662,44 @@
     let adminActionTimer = null;
     let pendingAdminPause = null;
 
+    /** Length of the mounted YouTube video in seconds, 0 while unknown. */
+    function youtubeEndSec() {
+        if (channel?.mode !== 'youtube' || channel.youtube.live || ytInfo.isLive) return 0;
+        if (channel.youtube.durationSec > 0) return channel.youtube.durationSec;
+        if (ytInfo.key !== channelKey(channel)) return 0;
+        return ytInfo.endSec > 0 ? ytInfo.endSec : ytInfo.duration;
+    }
+
+    function inYoutubeEndZone(sec) {
+        const endSec = youtubeEndSec();
+        return endSec > 0 && Number(sec) >= endSec - END_ZONE_SEC - 1;
+    }
+
+    /**
+     * Earlier builds stored the pause a YouTube video makes when it runs out as
+     * the admin's pause, which holds the whole programme. The admin's page
+     * releases such a pause once, so the show ends and the programme moves on.
+     */
+    function releaseEndOfVideoPause() {
+        if (!isAdmin || !service || adminBusy || pendingAdminPause || pendingAdminAction) return;
+        const pausedAt = channel?.youtube?.pausedAtSec;
+        if (channel?.mode !== 'youtube' || !Number.isFinite(pausedAt) || !inYoutubeEndZone(pausedAt)) return;
+        const marker = `${channelKey(channel)}@${pausedAt}`;
+        if (endPauseCleared === marker) return;
+        endPauseCleared = marker;
+        const source = [manualChannel, ...scheduleItems].find(item => channelKey(item) === channelKey(channel)) || channel;
+        service.control(source, 'resume', { offsetSec: pausedAt }).catch(error => {
+            console.warn('[Live] Could not release the end-of-video pause:', error);
+        });
+    }
+
     function publishAdminAction(action, atSec) {
         if (!isAdmin || !service || !channel || channel.mode === 'off') return;
         if (channel.mode === 'youtube' && channel.youtube.live) return;
+        // A video that runs out pauses, and «play» on its end screen restarts the
+        // tail: neither is a timeline command. Resume still releases a stuck pause.
+        if (inYoutubeEndZone(atSec) && (action === 'pause'
+            || (action === 'resume' && currentPosition().state !== 'paused'))) return;
         // Scrubbing changes the position, not an earlier queued pause/play.
         // Coalescing only the final event loses that phase before the write.
         const queued = pendingAdminAction;
@@ -620,7 +707,7 @@
         if (action === 'seek' && queued?.key === key && ['pause', 'resume'].includes(queued.action)) action = queued.action;
         pendingAdminAction = { action, atSec: Math.max(0, Number(atSec) || 0), key };
         if (action === 'pause' || (action === 'seek' && pendingAdminPause?.key === key)) {
-            const duration = channel[channel.mode]?.durationSec || 0;
+            const duration = window.CinemaChannel.playableSec(channel);
             const source = [manualChannel, ...scheduleItems].find(item => channelKey(item) === key) || channel;
             pendingAdminPause = { key, startedAtMs: channel.startedAtMs, baseVersion: source.updatedAtVersion, committed: false,
                 atSec: duration > 0 ? Math.min(pendingAdminAction.atSec, Math.max(0, duration - 5)) : pendingAdminAction.atSec };
@@ -702,6 +789,8 @@
         if (changed) {
             postBroadcastState();
             renderClock();
+            releaseEndOfVideoPause();
+            storeMovieLength();
         }
     }
 

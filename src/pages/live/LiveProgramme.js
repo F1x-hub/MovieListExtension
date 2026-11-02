@@ -15,8 +15,12 @@
         const next = cinema.nextScheduled(items, nowMs);
         const rows = sources.filter(item => item?.mode !== 'off' && Number.isFinite(item?.startedAtMs))
             .map(item => {
-                const bounds = cinema.getScheduleBounds(item);
                 const current = active && identity(item) === identity(active);
+                // The show on air follows its playback clock, so a seek moves it too.
+                // Whole minutes: a paused show's start moves every second, its row once a minute.
+                const minute = ms => Number.isFinite(ms) ? Math.floor(ms / 60_000) * 60_000 : ms;
+                const playback = current && cinema.playbackBounds ? cinema.playbackBounds(item, nowMs) : null;
+                const bounds = playback ? { ...playback, startMs: minute(playback.startMs), endMs: minute(playback.endMs) } : cinema.getScheduleBounds(item);
                 const ended = bounds.endMs <= nowMs || (identity(item) === identity(channel) && position?.state === 'ended');
                 const status = current ? 'current' : ended ? 'finished' : item.startedAtMs > nowMs
                     ? identity(item) === identity(next) ? 'next' : 'later' : 'not_on_air';

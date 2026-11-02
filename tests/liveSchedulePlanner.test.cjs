@@ -27,7 +27,7 @@ const markup = `<!doctype html><html><body>
     </div></div>
     <span id="livePlannerStats"></span><button id="livePlannerAdd">Добавить</button>
     <aside><img id="liveSelectedPoster"><strong id="liveSelectedName"></strong><span id="liveSelectedMeta"></span>
-      <span id="liveSelectionBadge"></span><input id="liveSlotStart" type="time" step="1"><input id="liveSlotEnd" type="time" step="1" readonly>
+      <span id="liveSelectionBadge"></span><input id="liveSlotStart" type="time" step="1"><input id="liveSlotEnd" type="time" step="1">
       <span id="liveSlotDuration"></span><p id="liveSlotNote"></p><button id="liveDeleteShowBtn">Удалить</button>
     </aside>
   </section>
@@ -231,7 +231,7 @@ test('same-millisecond server revision change also cancels a stale drag', async 
     } finally { app.close(); }
 });
 
-test('pointercancel restores selection and selected blocks offer no resize handles', async () => {
+test('pointercancel restores selection and blocks resize only from their right edge', async () => {
     const app = mount();
     try {
         const moving = slot('moving', 21, 22);
@@ -241,7 +241,8 @@ test('pointercancel restores selection and selected blocks offer no resize handl
         assert.equal(app.changes.length, 0);
         assert.equal(app.byId('liveSlotStart').value, '21:00');
         app.planner.select(moving);
-        assert.equal(app.window.document.querySelectorAll('[data-handle], .live-planner__handle').length, 0);
+        assert.equal(app.window.document.querySelectorAll('[data-resize]').length, 1);
+        assert.equal(app.window.document.querySelectorAll('[data-resize="end"]').length, 1, 'no left-edge handle');
     } finally { app.close(); }
 });
 
@@ -262,7 +263,7 @@ test('a hidden pane opening fits the day grid without a window resize and discon
     } finally { app.close(); }
 });
 
-test('new draft preserves source seconds, moves its end with the start, and ignores the readonly end input', () => {
+test('new draft preserves source seconds, moves its end with the start, and a typed end sets its length', () => {
     const app = mount();
     try {
         app.planner.setDraft({ key: 'yt:one', mode: 'youtube', title: 'Video', durationSec: 3667 });
@@ -270,9 +271,21 @@ test('new draft preserves source seconds, moves its end with the start, and igno
         app.input('liveSlotStart', '15:00');
         assert.equal(app.planner.range.start.getTime(), DAY + 15 * HOUR);
         assert.equal(app.planner.range.end.getTime(), DAY + 15 * HOUR + 3667_000);
-        assert.equal(app.byId('liveSlotEnd').readOnly, true);
+        assert.equal(app.byId('liveSlotEnd').readOnly, false);
         app.input('liveSlotEnd', '23:00');
-        assert.equal(app.planner.range.end.getTime(), DAY + 15 * HOUR + 3667_000, 'end input cannot resize the computed range');
+        assert.equal(app.planner.range.end.getTime(), DAY + 23 * HOUR, 'the typed end sets the length');
+        app.input('liveSlotStart', '16:00');
+        assert.equal(app.planner.range.end.getTime(), DAY + 24 * HOUR, 'a moved start keeps the typed length');
+        app.planner.setDraft({ key: 'yt:one', mode: 'youtube', title: 'Video', durationSec: 3700 });
+        assert.equal(app.planner.range.end.getTime(), DAY + 24 * HOUR, 'a late length of the same source keeps the typed end');
+        app.input('liveSlotEnd', '01:30');
+        assert.equal(app.planner.range.end.getTime(), DAY + 25.5 * HOUR, 'an earlier clock time is the next day');
+        app.input('liveSlotEnd', '16:03');
+        assert.throws(() => app.planner.range, /хотя бы 5 минут/);
+        app.input('liveSlotEnd', '9:5');
+        assert.throws(() => app.planner.range, /ЧЧ:ММ/);
+        app.planner.setDraft({ key: 'yt:two', mode: 'youtube', title: 'Other', durationSec: 600 });
+        assert.equal(app.planner.range.end - app.planner.range.start, 600_000, 'another source starts from its own length');
         assert.equal(app.changes.length, 0, 'metadata only fills the form; it does not save');
     } finally { app.close(); }
 });
@@ -285,7 +298,6 @@ test('late source length fills the draft end without resetting the chosen start'
         app.planner.setDraft({ key: 'yt:one', mode: 'youtube', title: 'Video', durationSec: 97 });
         assert.equal(app.planner.range.start.getTime(), DAY + 15 * HOUR);
         assert.equal(app.planner.range.end.getTime(), DAY + 15 * HOUR + 97_000);
-        app.input('liveSlotEnd', '23:00');
         app.planner.setDraft({ key: 'yt:one', mode: 'youtube', title: 'Video', durationSec: 121 });
         assert.equal(app.planner.range.start.getTime(), DAY + 15 * HOUR);
         assert.equal(app.planner.range.end.getTime(), DAY + 15 * HOUR + 121_000);
@@ -306,6 +318,140 @@ test('keyboard moves both boundaries by five minutes or fifteen with Shift and p
         assert.equal(app.changes[1].endMs, moving.endsAtMs + 10 * 60_000);
         assert.equal(app.changes[1].endMs - app.changes[1].startMs, HOUR + 17_000, 'existing slot length differs from metadata and remains exact');
     } finally { app.close(); }
+});
+
+test('dragging the right edge resizes only the end, snaps to five minutes and stops at the next show', async () => {
+    const app = mount();
+    try {
+        app.planner.setItems([slot('show', 21, 22), slot('next', 23, 24)], null);
+        const handle = () => app.window.document.querySelector('[data-id="show"] [data-resize="end"]');
+        const press = x => {
+            const event = new app.window.MouseEvent('pointerdown', { bubbles: true, cancelable: true, clientX: x, button: 0 });
+            Object.defineProperty(event, 'pointerId', { value: 1 });
+            handle().dispatchEvent(event);
+        };
+        press(2200);
+        assert.equal(app.planner.drag.mode, 'resize');
+        app.move(2251);
+        assert.equal(app.byId('liveSlotStart').value, '21:00', 'the start never moves');
+        assert.equal(app.byId('liveSlotEnd').value, '22:30');
+        app.move(2600);
+        assert.equal(app.byId('liveSlotEnd').value, '23:00', 'the end stops at the next show');
+        assert.equal(app.window.document.querySelector('[data-id="show"]').classList.contains('is-overlap'), false);
+        await app.drop(2600);
+        assert.equal(app.changes.length, 1);
+        assert.equal(app.changes[0].startMs, DAY + 21 * HOUR);
+        assert.equal(app.changes[0].endMs, DAY + 23 * HOUR);
+
+        press(2300); app.move(1000);
+        assert.equal(app.byId('liveSlotEnd').value, '21:05', 'a show keeps at least five minutes');
+        await app.drop(1000);
+        assert.equal(app.changes.at(-1).endMs, DAY + 21 * HOUR + 5 * 60_000);
+
+        press(2105); app.move(2106);
+        await app.drop(2106);
+        assert.equal(app.changes.length, 2, 'a click on the edge without moving saves nothing');
+    } finally { app.close(); }
+});
+
+test('Alt+arrows change only the end; a typed end on a saved show is applied and overlaps are refused', async () => {
+    const app = mount();
+    try {
+        app.planner.setItems([slot('show', 21, 22), slot('next', 23, 24)], null);
+        const key = (name, extra) => app.window.document.querySelector('[data-id="show"]')
+            .dispatchEvent(new app.window.KeyboardEvent('keydown', { key: name, bubbles: true, ...extra }));
+        key('ArrowRight', { altKey: true }); await settle();
+        assert.equal(app.changes[0].startMs, DAY + 21 * HOUR);
+        assert.equal(app.changes[0].endMs, DAY + 22 * HOUR + 5 * 60_000);
+        key('ArrowLeft', { altKey: true, shiftKey: true }); await settle();
+        assert.equal(app.changes[1].endMs, DAY + 22 * HOUR - 10 * 60_000);
+
+        const saved = app.planner.items.find(item => item.id === 'show');
+        app.planner.select(saved);
+        app.input('liveSlotEnd', '23:30');
+        assert.equal(app.planner.dirty, true);
+        await app.planner.saveSlot(saved, app.planner.range.start, app.planner.range.end);
+        assert.equal(app.changes.length, 2, 'an overlapping end is refused before saving');
+        assert.match(app.statuses.at(-1).message, /Место занято/);
+        assert.equal(app.byId('liveSlotEnd').value, '21:50', 'the form returns to the saved end');
+    } finally { app.close(); }
+});
+
+test('the on-air block follows its playback clock; it is resized, never moved, and slides while paused', async () => {
+    const app = mount();
+    try {
+        const block = id => app.window.document.querySelector(`.live-planner__block[data-id="${id}"]`);
+        const left = id => Number.parseFloat(block(id).style.left);
+        const live = slot('live', 11, 13, { playbackStartedAtMs: DAY + 10 * HOUR });
+        app.planner.setItems([live, slot('next', 14, 15)], live);
+        assert.ok(Math.abs(left('live') - 10 / 24 * 100) < 0.01, 'a seek one hour ahead draws the show from 10:00');
+        assert.equal(block('live').querySelector('.live-planner__time').textContent, '10:00 — 13:00');
+        assert.equal(block('live').classList.contains('is-live'), true);
+        app.startDrag('live', 1100);
+        assert.equal(app.planner.drag, null, 'the running show is not moved');
+        assert.match(app.statuses.at(-1).message, /перематывайте его в плеере/);
+        const press = x => {
+            const event = new app.window.MouseEvent('pointerdown', { bubbles: true, cancelable: true, clientX: x, button: 0 });
+            Object.defineProperty(event, 'pointerId', { value: 1 });
+            block('live').querySelector('[data-resize="end"]').dispatchEvent(event);
+        };
+        press(1300); app.move(1450);
+        assert.equal(app.byId('liveSlotEnd').value, '14:00', 'the end stops at the next show');
+        await app.drop(1450);
+        assert.equal(app.changes.length, 1);
+        assert.equal(app.changes[0].startMs, DAY + 11 * HOUR, 'the grid start is never touched');
+        assert.equal(app.changes[0].endMs, DAY + 14 * HOUR);
+        press(1400); app.move(0);
+        assert.equal(app.byId('liveSlotEnd').value, '12:05', 'a drag never ends the running show in the past');
+        await app.drop(0);
+
+        const paused = slot('paused', 11, 13, { movie: { kinopoiskId: 301, durationSec: 7200, posterUrl: '', pausedAtSec: 1800 } });
+        app.planner.setItems([paused], paused);
+        assert.ok(Math.abs(left('paused') - 11.5 / 24 * 100) < 0.01, 'paused at 30 minutes: drawn from 11:30');
+        assert.equal(block('paused').querySelector('[data-resize]'), null, 'a paused show is resized from the end field');
+        app.window.CinemaChannel.now = () => DAY + 12 * HOUR + 10 * 60_000;
+        app.planner.tick();
+        assert.ok(Math.abs(left('paused') - (11.5 + 10 / 60) / 24 * 100) < 0.01, 'the paused block slides with the clock');
+    } finally { app.close(); }
+});
+
+test('a running show is edited on its playback clock: the end is set from where the film began', async () => {
+    const app = mount();
+    try {
+        // Grid 11:00-13:00, seeked so the film began at 10:00; now is 12:00.
+        const live = slot('live', 11, 13, { playbackStartedAtMs: DAY + 10 * HOUR });
+        app.planner.setItems([live], live);
+        app.planner.select(live);
+        assert.equal(app.byId('liveSlotStart').value, '10:00', 'the start is where the film began');
+        assert.equal(app.byId('liveSlotStart').readOnly, true);
+        assert.equal(app.byId('liveSlotEnd').value, '13:00');
+        app.input('liveSlotEnd', '12:15');
+        assert.equal(app.byId('liveSlotDuration').textContent, '2 ч 15 мин', 'the length counts from the playback start');
+        await app.planner.saveSelection();
+        assert.equal(app.changes.length, 1);
+        assert.equal(app.changes[0].startMs, DAY + 11 * HOUR, 'the grid start is kept');
+        assert.equal(app.changes[0].endMs, DAY + 12 * HOUR + 15 * 60_000, 'the end is exactly what the admin typed');
+
+        // A far seek: the wanted end falls before the grid start.
+        const far = slot('far', 11, 13, { playbackStartedAtMs: DAY + 9 * HOUR });
+        app.window.CinemaChannel.now = () => DAY + 11 * HOUR + 5 * 60_000;
+        app.planner.setItems([far], far);
+        app.planner.select(far);
+        app.input('liveSlotEnd', '10:55');
+        const options = [];
+        app.planner.onChange = async (item, start, end, extra) => { options.push({ start: start.getTime(), end: end.getTime(), extra }); return { ...item, startedAtMs: start.getTime(), endsAtMs: end.getTime() }; };
+        await app.planner.saveSelection();
+        assert.equal(options[0].start, DAY + 9 * HOUR, 'the grid starts where the film began');
+        assert.equal(options[0].end, DAY + 10 * HOUR + 55 * 60_000);
+        assert.equal(options[0].extra.keepPlayback, true, 'the playback clock is not moved');
+    } finally { app.close(); }
+});
+
+test('endAfter reads the end on the clock after the start, across midnight', () => {
+    const start = new Date(DAY + 23 * HOUR);
+    assert.equal(helpers.endAfter(start, '23:30').getTime(), DAY + 23.5 * HOUR);
+    assert.equal(helpers.endAfter(start, '01:00').getTime(), DAY + 25 * HOUR);
+    assert.equal(helpers.endAfter(start, '23:00').getTime(), DAY + 47 * HOUR, 'the same clock time is a full day later');
 });
 
 test('saveRange preserves stored duration and ignores an obsolete third end argument', async () => {

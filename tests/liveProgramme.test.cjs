@@ -174,3 +174,21 @@ test('calendar-day bounds respect 23/25-hour daylight-saving days', () => {
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(JSON.parse(result.stdout.trim()), [23, 25]);
 });
+
+test('the show on air moves in the programme with a seek and while paused', () => {
+    const items = fixtures();
+    const seeked = { ...items[1], playbackStartedAtMs: at(17) };
+    items[1] = seeked;
+    const row = programmeModel(items, seeked, { state: 'live' }, NOW, cinema).rows.find(entry => entry.item.id === 'current');
+    assert.equal(row.startMs, at(17), 'a seek one hour ahead moves the start one hour back');
+    assert.equal(row.endMs, at(20, 35));
+    assert.equal(row.progress, Math.floor((NOW - at(17)) / (at(20, 35) - at(17)) * 100));
+
+    const paused = { ...fixtures()[1], movie: { ...fixtures()[1].movie, pausedAtSec: 3000 } };
+    const projected = cinema.projectPausedSchedule([fixtures()[0], paused, ...fixtures().slice(2)], paused, NOW);
+    const pausedRow = programmeModel(projected, paused, { state: 'paused', offsetSec: 3000 }, NOW, cinema).rows.find(entry => entry.item.id === 'current');
+    assert.equal(pausedRow.startMs, at(18, 22), 'paused at 50 minutes: the show started 50 minutes before now');
+    assert.equal(pausedRow.endMs, at(20, 57));
+    const other = programmeModel(items, seeked, { state: 'live' }, NOW, cinema).rows.find(entry => entry.item.id === 'next');
+    assert.equal(other.startMs, at(21), 'other shows keep their slot');
+});

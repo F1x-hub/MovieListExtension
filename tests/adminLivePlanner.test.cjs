@@ -48,28 +48,39 @@ test('actual admin markup wires the 24-hour grid and keeps upcoming shows out of
     assert.equal(f.$('livePlannerViewport').getAttribute('role'), 'slider');
     assert.equal(f.$('livePlannerOverviewBlocks').children.length, 2);
     assert.ok(f.w.SortControl.instances.get(f.$('livePlannerZoom')));
-    assert.equal(f.$('liveSlotEnd').readOnly, true);
+    assert.equal(f.$('liveSlotEnd').readOnly, false, 'the end can be typed when the drag is not convenient');
+    assert.equal(f.w.document.querySelectorAll('.live-planner__block [data-resize="end"]').length, 2, 'every block resizes from its right edge');
+    assert.equal(f.$('liveMovieMarginInput'), null, 'the margin field is gone');
 });
 
-test('catalogue selection locks known source duration and calculates its end from the moved start', async t => {
+test('catalogue length pre-fills an editable field and a typed end sets the slot length', async t => {
     const f = await mount(); t.after(() => f.dom.window.close());
     f.$('liveMovieSearch').value = '258687';
     f.$('liveMovieSearch').dispatchEvent(new f.w.Event('input', { bubbles: true }));
     await new Promise(resolve => setTimeout(resolve, 400));
     f.w.document.querySelector('.live-result').click();
-    assert.equal(f.$('liveMovieDurationInput').readOnly, true);
+    assert.equal(f.$('liveMovieDurationInput').value, '169');
+    assert.equal(f.$('liveMovieDurationInput').readOnly, false, 'the catalogue length can be corrected');
+    assert.match(f.$('liveMovieMeta').textContent, /по каталогу 169 мин/);
     f.$('livePlannerNext').click();
     f.$('liveSlotStart').value = '16:00'; f.$('liveSlotStart').dispatchEvent(new f.w.Event('input', { bubbles: true }));
-    f.$('liveSlotEnd').value = '18:00'; f.$('liveSlotEnd').dispatchEvent(new f.w.Event('input', { bubbles: true }));
+    assert.equal(f.$('liveSlotEnd').value, '18:49', 'a new block matches the source length');
+    f.$('liveMovieDurationInput').value = '175';
+    f.$('liveMovieDurationInput').dispatchEvent(new f.w.Event('input', { bubbles: true }));
+    assert.equal(f.$('liveSlotEnd').value, '18:55', 'the end follows the corrected length');
+    f.$('liveSlotEnd').value = '19:10'; f.$('liveSlotEnd').dispatchEvent(new f.w.Event('input', { bubbles: true }));
+    assert.equal(f.$('liveSlotDuration').textContent, '3 ч 10 мин');
+    assert.match(f.$('liveSlotNote').textContent, /Запас 15 мин после видео/);
     assert.equal(f.$('liveStartBtn').disabled, false);
     f.$('liveChannelForm').dispatchEvent(new f.w.Event('submit', { bubbles: true, cancelable: true }));
     await settle();
     const write = f.w.liveFixture.writes.find(item => item.action === 'create');
     assert.equal(write.input.kinopoiskId, 258687);
-    assert.equal(write.input.durationMin, '169');
-    assert.equal(write.start.getHours(), 16); assert.equal(write.end.getHours(), 18); assert.equal(write.end.getMinutes(), 49);
-    assert.equal(write.end - write.start, 169 * 60_000, 'readonly end cannot stretch or shorten the source');
+    assert.equal(write.input.durationMin, '175', 'the corrected length is the source length');
+    assert.equal(write.start.getHours(), 16); assert.equal(write.end.getHours(), 19); assert.equal(write.end.getMinutes(), 10);
+    assert.equal(write.end - write.start, 190 * 60_000, 'the typed end sets the slot; the film stays 175 minutes');
     assert.equal(f.$('liveStartBtn').textContent, 'Применить время');
+    assert.equal(f.$('liveMovieDurationInput').readOnly, true, 'a saved show keeps its length');
     assert.deepEqual(f.errors, []);
 });
 
@@ -79,11 +90,12 @@ test('selecting, retiming and removing an existing show use schedule APIs', asyn
     assert.equal(f.$('liveTitleInput').readOnly, true);
     f.$('liveSlotStart').value = '16:00'; f.$('liveSlotStart').dispatchEvent(new f.w.Event('input', { bubbles: true }));
     f.$('liveSlotEnd').value = '17:00'; f.$('liveSlotEnd').dispatchEvent(new f.w.Event('input', { bubbles: true }));
+    assert.match(f.$('liveSlotNote').textContent, /прервётся/, 'a slot shorter than the film warns');
     f.$('liveChannelForm').dispatchEvent(new f.w.Event('submit', { bubbles: true, cancelable: true }));
     await settle();
     const write = f.w.liveFixture.writes.find(item => item.action === 'update');
     assert.equal(write.item.id, 'second'); assert.equal(write.start.getHours(), 16);
-    assert.equal(write.end - write.start, 120 * 60_000);
+    assert.equal(write.end - write.start, 60 * 60_000, 'a typed end changes the saved slot');
     assert.equal(f.w.liveFixture.items.find(item => item.id === 'second').movie.durationSec, 7200);
     assert.equal(f.$('liveStartBtn').disabled, false);
     f.$('liveDeleteShowBtn').click(); await settle();

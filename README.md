@@ -440,6 +440,21 @@ keeps npm-compatible three-component semver metadata.
 <details open>
 <summary><strong>Unreleased</strong></summary>
 
+### Features
+
+- Live admin: the film and episode length is editable when a show is planned; the catalogue value only pre-fills the field and is shown as «по каталогу N мин».
+- Live admin: a show's length can be changed from its end. Drag the right edge of a block in «Программа эфира» (it snaps to 5 minutes, stops at the next show and keeps at least 5 minutes), press Alt+arrows on a block, or type the end in the «Конец» field, which is no longer read-only and also works for a new show. The start never moves on a resize, and the inspector shows the extra time after the video as a margin.
+
+### Fixes
+
+- Live: a movie on air no longer flashes the movie page before the player appears. The embedded page switches to the player-only layout before its first paint (`broadcast-boot.js`) and shows the player shell with its loader right away; the Live frame behind it is black instead of the theme background.
+- Live: the movie player fills the whole frame without an inner scrollbar. In broadcast mode the player body has no padding or reserved scrollbar gutter, the picture stretches to the frame instead of a 16:9 box taller than it, and the source toolbar is a thin strip above the picture.
+- Live: a YouTube video that runs out no longer freezes the programme on «Пауза». The pause the player makes at the end of a video (and «play» on its end screen) was sent to the channel as the admin's pause, which holds the whole schedule; the end is now ignored both in `player-cleaner` and on the live page. A pause already stuck in the last seconds of a YouTube video is released once when the admin opens the live page, so the show ends and the programme moves on.
+- Live: a film whose file is longer than its catalogue length no longer ends early (e.g. 1:43 in the catalogue, 1:48 in the player). The player reports the real length of the file, and the first admin whose player loads the film stores it once per show (`movie.durationMeasured`, checked inside a Firestore transaction, so other admins write nothing). A longer file extends the show and its slot, moving overlapping later shows; a shorter file keeps the catalogue length. Lengths far from the catalogue one (adverts, wrong files) are ignored. A shorter or equal file writes nothing, so switching to a longer source later still extends the show once. Firestore rules allow the new field.
+- Live: a planned film or episode is no longer cut off at its catalogue runtime inside its slot (e.g. at 1:43 although the slot was stretched to 1:50). Until the real file length is known, the slot end or the player's own end of media ends the show, and seeks may go past the catalogue length up to the slot. The live clock shows the length of the file this page actually plays.
+- Live: the programme follows the film after a seek. The show on air is drawn from where its playback began (a seek moves it, a pause slides it) in the public programme and on the admin track, so the now-line marks the film's own position. For a running show the admin form uses the same clock: the start is read-only, the end and length count from where the film began, and the show can only be resized, not moved (seek it in the player instead).
+- Live: the admin can always resume a paused show. A play press on a paused channel is published at the channel's pause position even when the admin player drifted from it while paused; before, the press was pulled back and the show stayed paused.
+
 </details>
 
 <details>

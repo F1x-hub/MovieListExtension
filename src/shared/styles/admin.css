@@ -4218,6 +4218,13 @@
 .live-planner__time { color: var(--ui-color-content-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
 .live-planner__kind { position: absolute; left: 15px; bottom: 12px; font-size: 10px; color: var(--ui-color-content-subtle); }
 .live-planner__mini { display: none; }
+/* Right-edge resize: only the end of a show changes; the grip appears on hover. */
+.live-planner__resize { position: absolute; top: 0; right: 0; bottom: 0; width: min(10px, 35%); cursor: ew-resize; z-index: 2; touch-action: none; }
+.live-planner__resize::after { content: ''; position: absolute; top: 50%; right: 3px; width: 3px; height: 28px; max-height: 60%; border-radius: 2px; background: var(--ui-color-content); opacity: 0; transform: translateY(-50%); transition: opacity var(--motion-duration-fast) var(--motion-ease-out); }
+.live-planner__block:hover .live-planner__resize::after, .live-planner__block.is-selected .live-planner__resize::after, .live-planner__block.is-resizing .live-planner__resize::after { opacity: .55; }
+.live-planner__resize:hover::after, .live-planner__block.is-resizing .live-planner__resize::after { opacity: 1; }
+.live-planner__canvas.is-resizing, .live-planner__canvas.is-resizing .live-planner__block { cursor: ew-resize; }
+@media (prefers-reduced-motion: reduce) { .live-planner__resize::after { transition: none; } }
 .live-planner__block.is-live .live-planner__kind::before { content: 'В эфире · '; color: var(--ui-color-status-danger); }
 .live-planner__now { position: absolute; top: 35px; bottom: 24px; width: 1px; background: var(--ui-color-status-danger); z-index: 4; pointer-events: none; }
 .live-planner__now span { position: absolute; top: 0; left: 0; transform: translate(-50%, -100%); padding: 3px 6px; border-radius: 4px; white-space: nowrap; font-size: 10px; background: var(--ui-color-status-danger); color: var(--ui-color-content); }
