@@ -1,5 +1,14 @@
 export const whatsNew = [
     {
+        id: '1.4.9', version: '1.4.9', date: '2026-11-02',
+        highlights: [
+            { id: 'live-real-length', title: { ru: 'Фильм идёт до конца', en: 'Films play to the end' }, text: { ru: 'Эфир узнаёт настоящую длину файла и больше не обрывает фильм раньше времени.', en: 'Live learns the real length of the file and no longer cuts a film off early.' } },
+            { id: 'live-resize', title: { ru: 'Длина показа с конца', en: 'Resize a show from its end' }, text: { ru: 'Ведущий меняет длину показа, потянув правый край блока, клавишами Alt+стрелки или в поле «Конец».', en: 'The host changes a show’s length by dragging the block’s right edge, with Alt+arrows or in the “End” field.' } },
+            { id: 'live-player', title: { ru: 'Плеер на весь кадр', en: 'Full-frame player' }, text: { ru: 'Плеер в эфире сразу занимает весь кадр, без мелькания страницы фильма и лишней прокрутки.', en: 'The Live player fills the frame at once, without the movie page flashing or an extra scrollbar.' } },
+            { id: 'live-pause', title: { ru: 'Без зависаний на паузе', en: 'No more stuck pauses' }, text: { ru: 'Конец YouTube-ролика больше не ставит программу на паузу, а ведущий всегда может продолжить показ.', en: 'The end of a YouTube video no longer pauses the programme, and the host can always resume a show.' } }
+        ]
+    },
+    {
         id: '1.4.8', version: '1.4.8', date: '2026-10-30',
         highlights: [
             { id: 'actor-age', title: { ru: 'Возраст актёров', en: 'Actors’ age' }, text: { ru: 'На вкладке «Актёры» видно, сколько лет было каждому актёру на премьере фильма.', en: 'The Actors tab shows how old each actor was at the film’s release.' } },
