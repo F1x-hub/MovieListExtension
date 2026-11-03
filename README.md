@@ -440,6 +440,10 @@ keeps npm-compatible three-component semver metadata.
 <details open>
 <summary><strong>Unreleased</strong></summary>
 
+### Fixes
+
+- The popup and the Updates settings no longer offer an older version (for example "1.4.5 ready to install") after a newer build is already running. The stale update is dropped, and an unfinished updater journal for that older version is closed instead of reloading the extension for it.
+
 </details>
 
 <details>

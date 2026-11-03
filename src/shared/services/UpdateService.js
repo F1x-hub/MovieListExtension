@@ -253,10 +253,35 @@
         return extensionTabIds.length;
     }
 
+    function isOlderThanRunning(version) {
+        return Boolean(version) && compareVersions(version, chrome.runtime.getManifest().version) < 0;
+    }
+
+    // An update to a version older than the running build (installed manually
+    // or by a later release) can never be confirmed, so it must not be offered.
+    function withoutStaleRelease(state) {
+        if (!isOlderThanRunning(state.availableVersion)) return state;
+        return {
+            ...state,
+            status: 'idle',
+            currentVersion: chrome.runtime.getManifest().version,
+            availableVersion: null,
+            operationId: null,
+            reloadOperationId: null,
+            metadata: null,
+            metadataText: null,
+            signature: null,
+            errorCode: null,
+            errorMessage: null,
+            requiresConfirmation: false,
+            playbackReasons: []
+        };
+    }
+
     async function readState() {
         const result = await chrome.storage.local.get([STATE_KEY, SETTINGS_KEY]);
         return {
-            state: { ...defaultState(), ...(result[STATE_KEY] || {}) },
+            state: withoutStaleRelease({ ...defaultState(), ...(result[STATE_KEY] || {}) }),
             settings: { ...defaultSettings(), ...(result[SETTINGS_KEY] || {}), componentAutoUpdateEnabled: {
                 ...defaultSettings().componentAutoUpdateEnabled, ...result[SETTINGS_KEY]?.componentAutoUpdateEnabled } }
         };
@@ -328,9 +353,9 @@
 
     // Tells the host to close a journal waiting for a reload that loaded another
     // folder; otherwise the host keeps it active and rejects every later update.
-    async function abandonOperation(operationId) {
+    async function abandonOperation(operationId, reason = RELOAD_MISMATCH_CODE) {
         try {
-            await nativeMessage({ action: 'abandon', operationId, reason: RELOAD_MISMATCH_CODE });
+            await nativeMessage({ action: 'abandon', operationId, reason });
         } catch (error) {
             diagnostic('abandon_failed', { errorCode: error?.message });
         }
@@ -642,6 +667,13 @@
         await syncComponentOperation(response);
         const operation = response.operation;
         if (!operation?.operationId) return response;
+        if (operation.status === 'awaiting_confirmation' && isOlderThanRunning(operation.version)) {
+            // A newer build is already running; adopting this journal would
+            // resurrect the old offer and reload the extension in a loop.
+            clearOperationAlarm();
+            await abandonOperation(operation.operationId, 'SUPERSEDED');
+            return response;
+        }
         // A completed legacy extension journal must not cancel polling for a
         // concurrently running component worker.
         if (isComponentOperationPending((await readState()).state)
@@ -735,6 +767,9 @@
                 });
             }
             if (hostStatus.operation?.status === 'awaiting_confirmation'
+                && isOlderThanRunning(hostStatus.operation.version)) {
+                await abandonOperation(hostStatus.operation.operationId, 'SUPERSEDED');
+            } else if (hostStatus.operation?.status === 'awaiting_confirmation'
                 && state.reloadOperationId === hostStatus.operation.operationId
                 && hostStatus.operation.version !== chrome.runtime.getManifest().version) {
                 await abandonOperation(hostStatus.operation.operationId);

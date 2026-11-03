@@ -288,6 +288,59 @@ assert.match(source, /\\d\+\(\?:\\\.\\d\+\)\{2,3\}/);
     chrome.runtime.sendNativeMessage = originalNative;
     await context.UpdateService.getNativeStatus();
     assert.strictEqual(storage.extension_update_state_v2.hostAvailability, 'available');
+
+    // A newer build installed over an unfinished older update must drop the
+    // stale offer and close the host journal instead of reloading for it.
+    const staleOperationId = '00000000-0000-4000-8000-000000000003';
+    const staleStorage = {
+        extension_update_state_v2: {
+            status: 'awaiting_confirmation',
+            currentVersion: '1.4.5',
+            availableVersion: '1.4.5',
+            operationId: staleOperationId,
+            metadata,
+            signature: 'old-signature'
+        }
+    };
+    const staleNativeActions = [];
+    const staleContext = {
+        chrome: {
+            runtime: {
+                id: extensionId,
+                getManifest: () => ({ version: '1.4.9' }),
+                sendMessage: () => Promise.resolve(),
+                sendNativeMessage: (name, request, callback) => {
+                    staleNativeActions.push(request);
+                    callback({ success: true, configured: true, updaterVersion: '1.1.4',
+                        operation: { operationId: staleOperationId, status: 'awaiting_confirmation', version: '1.4.5' } });
+                }
+            },
+            storage: { local: {
+                async get(keys) {
+                    if (Array.isArray(keys)) return Object.fromEntries(keys.map(key => [key, staleStorage[key]]));
+                    return { ...staleStorage };
+                },
+                async set(values) { Object.assign(staleStorage, values); }
+            } },
+            alarms: { create() {}, clear: () => Promise.resolve() }
+        },
+        console, globalThis: null, setTimeout, clearTimeout, AbortController, URL,
+        crypto: { randomUUID: () => '00000000-0000-4000-8000-000000000004' }
+    };
+    staleContext.globalThis = staleContext;
+    vm.runInNewContext(source, staleContext, { filename: 'UpdateService-stale.js' });
+    const { state: staleState } = await staleContext.UpdateService.getState();
+    assert.strictEqual(staleState.status, 'idle', 'an update older than the running build must not be offered');
+    assert.strictEqual(staleState.availableVersion, null);
+    assert.strictEqual(staleState.currentVersion, '1.4.9');
+    staleNativeActions.length = 0;
+    await staleContext.UpdateService.syncNativeOperation();
+    assert.ok(staleNativeActions.some(request => request.action === 'abandon'
+        && request.operationId === staleOperationId && request.reason === 'SUPERSEDED'),
+    'the host journal for the superseded version must be closed');
+    assert.strictEqual(staleStorage.extension_update_state_v2.availableVersion, null);
+    assert.ok(!staleStorage.extension_update_state_v2.reloadOperationId,
+        'a superseded journal must not schedule an extension reload');
     console.log('updateService.test.js passed');
 })().catch((error) => {
     console.error(error);
