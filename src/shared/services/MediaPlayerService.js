@@ -461,10 +461,18 @@
             if (!this.isUuid(downloadId)) {
                 throw new MediaPlayerServiceError('download_id_invalid', 'Сохранённая загрузка устарела. Обновите список.');
             }
-            await this.requestJson(
-                `/api/downloads/${encodeURIComponent(downloadId)}`,
-                { method: 'DELETE', scope: 'torrent:control' }
-            );
+            try {
+                await this.requestJson(
+                    `/api/downloads/${encodeURIComponent(downloadId)}`,
+                    { method: 'DELETE', scope: 'torrent:control' }
+                );
+            } catch (error) {
+                // This code's shared text is about pause and resume, which would mislead here.
+                if (error?.code === 'download_control_unavailable') {
+                    error.message = 'Не удалось удалить файл: он ещё занят или нет доступа к папке. Повторите через несколько минут.';
+                }
+                throw error;
+            }
             return true;
         }
 

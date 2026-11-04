@@ -1372,6 +1372,10 @@ class MovieDetailsTorrentPanelMethods {
             if (!confirmed) return false;
         }
         try {
+            // This page's own player would otherwise keep reading the file being removed.
+            if (String(this.torrentPlaybackSession?.downloadId || '') === String(downloadId)) {
+                await this.revokeTorrentPlaybackSession();
+            }
             await this.mediaPlayerService.deleteDownload(downloadId);
             this.torrentDownloads = this.torrentDownloads.filter(download => download.id !== downloadId);
             if (String(this.torrentActiveContext?.downloadId || '') === String(downloadId)) {

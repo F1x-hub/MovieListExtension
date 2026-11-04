@@ -578,6 +578,27 @@ assert.equal(monitorRequestAborted, true);
     context.document = previousDocument;
 }
 
+// Deleting a download that is playing here must close the player first, or the file stays busy.
+{
+    const calls = [];
+    const deleting = Object.create(context.__MovieDetailsManager.prototype);
+    deleting.torrentDownloads = [{ id: 'playing', title: 'Playing' }, { id: 'other', title: 'Other' }];
+    deleting.torrentPlaybackSession = { sessionId: 'session', downloadId: 'playing' };
+    deleting.torrentSources = [];
+    deleting.torrentSearchState = { status: 'completed', found: 0 };
+    deleting.elements = {};
+    deleting.selectedMovie = { id: 1 };
+    deleting.getMatchingTorrentDownloads = () => [];
+    deleting.setTorrentSourceStatus = () => {};
+    deleting.revokeTorrentPlaybackSession = async () => { calls.push('revoke'); deleting.torrentPlaybackSession = null; };
+    deleting.mediaPlayerService = { deleteDownload: async id => { calls.push(`delete:${id}`); } };
+    assert.equal(await deleting.deleteSavedTorrent('other'), true);
+    assert.deepEqual(Array.from(calls), ['delete:other'], 'another download leaves the player alone');
+    calls.length = 0;
+    assert.equal(await deleting.deleteSavedTorrent('playing'), true);
+    assert.deepEqual(Array.from(calls), ['revoke', 'delete:playing'], 'the player closes before its file is removed');
+}
+
 const emptyResultStatus = async searchState => {
     const statusManager = Object.create(context.__MovieDetailsManager.prototype);
     const statuses = [];
