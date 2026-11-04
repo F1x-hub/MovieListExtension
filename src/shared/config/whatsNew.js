@@ -1,5 +1,14 @@
 export const whatsNew = [
     {
+        id: '1.4.10', version: '1.4.10', date: '2026-11-04',
+        highlights: [
+            { id: 'torrent-more-sources', title: { ru: 'Больше торрент-раздач', en: 'More torrent sources' }, text: { ru: 'Поиск находит фильмы, которые трекеры держат в разделах аниме и «Другое», например «Ариэтти из страны лилипутов».', en: 'Search now finds films that trackers keep in their anime and “Other” sections, such as “The Secret World of Arrietty”.' } },
+            { id: 'torrent-year-title', title: { ru: 'Фильмы с годом в названии', en: 'Films named after a year' }, text: { ru: 'Раздачи «1917» и похожих фильмов больше не отсеиваются из-за числа в названии.', en: 'Releases of “1917” and similar films are no longer dropped because of the number in their title.' } },
+            { id: 'torrent-search-status', title: { ru: 'Понятный итог поиска', en: 'A clear search result' }, text: { ru: 'Панель раздач честно сообщает, что поиск ничего не нашёл или завершился ошибкой, а не пишет про сохранённые загрузки.', en: 'The sources panel now says when a search found nothing or failed instead of talking about saved downloads.' } },
+            { id: 'update-stale-offer', title: { ru: 'Без старых обновлений', en: 'No outdated update offers' }, text: { ru: 'Всплывающее окно и настройки больше не предлагают версию старше установленной.', en: 'The popup and Settings no longer offer a version older than the one installed.' } }
+        ]
+    },
+    {
         id: '1.4.9', version: '1.4.9', date: '2026-11-02',
         highlights: [
             { id: 'live-real-length', title: { ru: 'Фильм идёт до конца', en: 'Films play to the end' }, text: { ru: 'Эфир узнаёт настоящую длину файла и больше не обрывает фильм раньше времени.', en: 'Live learns the real length of the file and no longer cuts a film off early.' } },

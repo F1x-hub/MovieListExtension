@@ -7,7 +7,7 @@ series, cartoons, and anime.
 
 <p>
   <img src="https://img.shields.io/badge/MANIFEST-V3-1687c9?style=flat-square&logo=googlechrome&logoColor=white" alt="Manifest V3">
-  <img src="https://img.shields.io/badge/VERSION-1.4.9-69b500?style=flat-square" alt="Version 1.4.9">
+  <img src="https://img.shields.io/badge/VERSION-1.4.10-69b500?style=flat-square" alt="Version 1.4.10">
   <img src="https://img.shields.io/badge/JAVASCRIPT-ES6%2B-f0d000?style=flat-square&logo=javascript&logoColor=111827" alt="JavaScript ES6+">
   <img src="https://img.shields.io/badge/VANILLA-ES6%2B-e2c400?style=flat-square" alt="Vanilla ES6+">
   <img src="https://img.shields.io/badge/AUTHOR-FIX-f47721?style=flat-square" alt="Author Fix">
@@ -440,8 +440,14 @@ keeps npm-compatible three-component semver metadata.
 <details open>
 <summary><strong>Unreleased</strong></summary>
 
+</details>
+
+<details>
+<summary><strong>1.4.10</strong> — Torrent search finds films it used to miss, with MediaPlayer Suite 0.1.4</summary>
+
 ### Fixes
 
+- Torrent search finds far more films through MediaPlayer Suite 0.1.4: it also looks in the anime and "Other" tracker sections, so films such as «Ариэтти из страны лилипутов» are no longer reported as missing, and keeps releases whose Russian title was stripped by the indexer when their year agrees. Films named after a year, such as «1917», are found too.
 - The popup and the Updates settings no longer offer an older version (for example "1.4.5 ready to install") after a newer build is already running. The stale update is dropped, and an unfinished updater journal for that older version is closed instead of reloading the extension for it.
 - The torrent panel now keeps the result of a finished search. A background download check used to replace «Для этого фильма раздачи не найдены» or a search error with «Сохранённых загрузок для этого фильма нет», which hid what the search had actually returned.
 
