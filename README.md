@@ -443,6 +443,7 @@ keeps npm-compatible three-component semver metadata.
 ### Fixes
 
 - The popup and the Updates settings no longer offer an older version (for example "1.4.5 ready to install") after a newer build is already running. The stale update is dropped, and an unfinished updater journal for that older version is closed instead of reloading the extension for it.
+- The torrent panel now keeps the result of a finished search. A background download check used to replace «Для этого фильма раздачи не найдены» or a search error with «Сохранённых загрузок для этого фильма нет», which hid what the search had actually returned.
 
 </details>
 

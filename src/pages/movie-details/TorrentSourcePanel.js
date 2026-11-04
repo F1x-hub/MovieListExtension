@@ -1000,8 +1000,12 @@ class MovieDetailsTorrentPanelMethods {
             if (this.torrentActiveContext && !this.torrentPlaybackSession) {
                 this.renderTorrentPlaybackStatus(this.getTorrentProgressFromDownload(this.getTorrentActiveDownload()));
             }
-            if (!this.torrentSearchJobId && this.torrentSources.length === 0) {
-                this.setTorrentSourceStatus(this.getTorrentDownloadSummary());
+            // Once a search has run, its result owns the status: this poll must not
+            // replace "nothing found" or a search error with the download summary.
+            if (this.torrentSources.length === 0) {
+                const searchStatus = this.torrentSearchState?.status || 'idle';
+                if (searchStatus === 'idle') this.setTorrentSourceStatus(this.getTorrentDownloadSummary());
+                else if (searchStatus === 'completed') this.updateTorrentSourceSummary();
             }
             return true;
         } catch (error) {

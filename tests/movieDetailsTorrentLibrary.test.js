@@ -410,6 +410,45 @@ cancellationManager.stopTorrentDownloadMonitoring();
 await flushMonitor();
 assert.equal(monitorRequestAborted, true);
 
+const emptyResultStatus = async searchState => {
+    const statusManager = Object.create(context.__MovieDetailsManager.prototype);
+    const statuses = [];
+    statusManager.mediaPlayerService = { listDownloads: async () => [] };
+    statusManager.selectedMovie = monitoredMovie;
+    statusManager.torrentRequestId = 1;
+    statusManager.torrentSources = [];
+    statusManager.torrentSearchJobId = null;
+    statusManager.torrentSearchState = searchState;
+    statusManager.isTorrentRequestCurrent = () => true;
+    statusManager.getMatchingTorrentDownloads = () => [];
+    statusManager.resolveTorrentActiveDownload = () => {};
+    statusManager.renderTorrentDownloads = () => {};
+    statusManager.setTorrentSourceStatus = text => statuses.push(text);
+    statusManager.torrentDownloads = [];
+    await statusManager.refreshTorrentDownloads(monitoredMovie, 1);
+    return statuses;
+};
+assert.deepEqual(
+    Array.from(await emptyResultStatus({ status: 'completed', found: 0 })),
+    ['Для этого фильма раздачи не найдены.'],
+    'a download poll must not hide that the search found nothing'
+);
+assert.deepEqual(
+    Array.from(await emptyResultStatus({ status: 'error', found: 0 })),
+    [],
+    'a download poll must not replace a search error'
+);
+assert.deepEqual(
+    Array.from(await emptyResultStatus({ status: 'running', found: 0 })),
+    [],
+    'a download poll must not replace the running search status'
+);
+assert.deepEqual(
+    Array.from(await emptyResultStatus({ status: 'idle', found: 0 })),
+    ['Сохранённых загрузок для этого фильма нет.'],
+    'before any search the panel still reports the saved downloads'
+);
+
 const progressCancellationManager = Object.create(context.__MovieDetailsManager.prototype);
 let progressRequestStarted = false;
 let progressRequestAborted = false;
