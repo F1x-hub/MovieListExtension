@@ -91,6 +91,41 @@ assert.deepEqual(
     'recommended order prioritizes release quality before swarm size'
 );
 
+// Without the service's details the panel reads the release name by the same rules.
+for (const [title, bucket] of [
+    ['Inception [2010, UHD BDRip 1080p, HDR10]', '1080p'],
+    ['Inception [2010, UHD BDRemux 2160p, HDR10]', '4k'],
+    ['Dune 4K (Denis Villeneuve) [2021]', '4k'],
+    ['Фильм (2010) WEB-DL 4К', '4k'],
+    ['Фильм (2010) BDRip 1080р', '1080p'],
+    ['Film 2020 2K WEB-DL', '2k'],
+    ['Film 2024 1440p WEB-DL', '2k'],
+    ['Film 2024 1080i HDTV', '1080p'],
+    ['Film.2024.2160p.WEB-DL.HEVC', '4k'],
+    ['Kari-gurashi no Arietti [2010, MV] BDRip 1040p rus', '1080p'],
+    ['Film 2024 BDRip 1920x800', '1080p'],
+    ['Avatar [2009, FullHD 1080p, 720p]', '1080p'],
+    ['Kari-gurashi no Arietti [2010, MV] BDRip 400p rus', 'sd'],
+    ['Spirited Away [2001, DVDRip]', 'sd'],
+    ['Karigurashi no Arrietty 2010 DUB HDRip - RUSSIAN', 'sd'],
+    ['Karigurashi no Arrietty [2010, BDRip]', 'sd'],
+    ['Karigurashi no Arrietty [2010, Blu-ray]', 'unknown'],
+    ['1917 (2019)', 'unknown']
+]) {
+    assert.equal(manager.getTorrentQualityBucket({ title }), bucket, title);
+}
+assert.equal(
+    manager.getTorrentQualityBucket({ title: 'Example without a size', quality: '1080p' }),
+    '1080p',
+    'the short quality still answers when the name states nothing'
+);
+assert.equal(
+    manager.getTorrentQualityBucket({ title: 'Inception [2010, UHD BDRip 1080p]', quality: '4K 2160p' }),
+    '1080p',
+    'a stale short quality from an older service does not override the release name'
+);
+assert.equal(manager.getTorrentQualityDetails({ title: 'Film [2010, BDRemux 1080p]' }).source, 'remux');
+
 const qualitySources = [
     {
         sourceId: 'web-dl',

@@ -474,6 +474,37 @@ class MovieDetailsTorrentPanelMethods {
         return { audioLanguages, subtitleLanguages, confidence };
     }
 
+    /**
+     * Mirrors detectResolution in MediaPlayer's sources/metadata.ts for services that
+     * send no quality details: a stated number outranks a name ("UHD BDRip 1080p" is 1080p).
+     */
+    detectTorrentResolution(value) {
+        const text = String(value).replace(/Р/g, 'P').replace(/І/g, 'I').replace(/К/g, 'K');
+        const heights = [...text.matchAll(/(?<![\p{L}\d*×])(\d{3,4})[PI](?![\p{L}])/gu)]
+            .map(match => Number(match[1]))
+            .filter(height => height >= 240 && height <= 4320);
+        if (heights.length) {
+            const height = Math.max(...heights);
+            return height >= 1800 ? 2160 : height >= 1200 ? 1440 : height >= 780 ? 1080
+                : height >= 600 ? 720 : height >= 520 ? 576 : 480;
+        }
+        const widths = [...text.matchAll(/(?<![\p{L}\d])(\d{3,4})\s?[X×*Х]\s?(\d{3,4})(?![\p{L}\d])/gu)]
+            .map(match => Number(match[1]))
+            .filter(width => width >= 320);
+        if (widths.length) {
+            const width = Math.max(...widths);
+            return width >= 3200 ? 2160 : width >= 2400 ? 1440 : width >= 1800 ? 1080
+                : width >= 1200 ? 720 : width >= 900 ? 576 : 480;
+        }
+        if (this.hasTorrentToken(text, ['4K', 'UHD', 'UHDRIP', 'UHD-RIP', 'UHDVCRIP', 'ULTRAHD', 'ULTRA HD'])) return 2160;
+        if (this.hasTorrentToken(text, ['2K', 'QHD'])) return 1440;
+        if (this.hasTorrentToken(text, ['FHD', 'FULLHD', 'FULL HD'])) return 1080;
+        if (this.hasTorrentToken(text, ['HD'])) return 720;
+        if (this.hasTorrentToken(text, ['576'])) return 576;
+        if (this.hasTorrentToken(text, ['480', 'SD'])) return 480;
+        return null;
+    }
+
     getTorrentQualityDetails(source = {}) {
         const supplied = source.qualityDetails;
         if (supplied && typeof supplied === 'object') {
@@ -495,15 +526,13 @@ class MovieDetailsTorrentPanelMethods {
             .normalize('NFKD')
             .replace(/[\u0300-\u036f]/g, '')
             .toUpperCase();
-        const resolution = this.hasTorrentToken(text, ['2160P', '4K', 'UHD']) ? 2160
-            : this.hasTorrentToken(text, ['1440P', '2K', 'QHD']) ? 1440
-                : this.hasTorrentToken(text, ['1080P', 'FHD']) ? 1080
-                    : this.hasTorrentToken(text, ['720P', 'HD']) ? 720
-                        : this.hasTorrentToken(text, ['576P', '576']) ? 576
-                            : this.hasTorrentToken(text, ['480P', '480', 'SD']) ? 480
-                                : null;
-        const releaseSource = this.hasTorrentToken(text, ['REMUX']) ? 'remux'
-            : this.hasTorrentToken(text, ['BLURAY', 'BLU-RAY']) ? 'bluray'
+        // The release name is the evidence; the provider's short quality is only a fallback.
+        const normalizeForResolution = value => String(value || '')
+            .normalize('NFKD').replace(/[̀-ͯ]/g, '').toUpperCase();
+        const resolution = this.detectTorrentResolution(normalizeForResolution(source.title))
+            ?? this.detectTorrentResolution(normalizeForResolution(source.quality));
+        const releaseSource = this.hasTorrentToken(text, ['REMUX', 'BDREMUX', 'BD-REMUX']) ? 'remux'
+            : this.hasTorrentToken(text, ['BLURAY', 'BLU-RAY', 'BR-DISK', 'BD-DISK', 'BDMV']) ? 'bluray'
                 : this.hasTorrentToken(text, ['WEB-DL', 'WEBDL']) ? 'web-dl'
                     : this.hasTorrentToken(text, ['WEBRIP', 'WEB-RIP']) ? 'webrip'
                         : this.hasTorrentToken(text, ['BDRIP', 'BD-RIP']) ? 'bdrip'
@@ -544,7 +573,15 @@ class MovieDetailsTorrentPanelMethods {
 
     getTorrentQualityBucket(source = {}) {
         const rank = this.getTorrentQualityRank(source);
-        return rank === 4 ? '4k' : rank === 3 ? '2k' : rank === 2 ? '1080p' : rank === 1 ? '720p' : rank === 0 ? 'sd' : 'unknown';
+        if (rank === 4) return '4k';
+        if (rank === 3) return '2k';
+        if (rank === 2) return '1080p';
+        if (rank === 1) return '720p';
+        if (rank === 0) return 'sd';
+        // Trackers name a size only when it is above standard definition, so a rip
+        // with no stated size belongs under SD rather than under no filter at all.
+        const releaseSource = this.getTorrentQualityDetails(source).source;
+        return ['bdrip', 'hdrip', 'dvdrip'].includes(releaseSource) ? 'sd' : 'unknown';
     }
 
     getTorrentNumber(value, fallback = -1) {
