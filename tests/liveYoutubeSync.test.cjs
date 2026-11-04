@@ -664,7 +664,8 @@ test('a YouTube video that cannot play shows the notice', async () => {
     }
 });
 
-const FIXED_NOW = Math.floor(Date.now() / 1000) * 1000;
+// Local midday: the fixtures below stay inside one local day, as the viewer programme lists only today.
+const FIXED_NOW = new Date(2026, 9, 26, 12).getTime();
 const scheduleDoc = (mode, start, end, extra = {}) => ({
     mode, title: mode === 'movie' ? 'Фильм в программе' : 'YouTube в программе',
     startedAt: new Date(start), endsAt: new Date(end),
