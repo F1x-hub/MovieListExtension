@@ -33,7 +33,7 @@ async function main() {
                     elements: { sourceButtonsContainer: container, videoContainer: document.getElementById('videoContainer') },
                     selectedMovie: { kinopoiskId: 42, type: 'anime' }, mediaPlayerReady: true, isTorrentMovie: () => true,
                     activeSourceValue: 'parser:animego', handleWatchClick: async () => { window.watchClicks = (window.watchClicks || 0) + 1; },
-                    openTorrentPicker: () => { window.torrentClicks = (window.torrentClicks || 0) + 1; },
+                    toggleTorrentPanel: () => { window.torrentClicks = (window.torrentClicks || 0) + 1; },
                     populateSourceSelector() { this.syncWatchEntry(); }
                 };
                 await manager.initializeWatchEntry(); manager.syncWatchEntry();

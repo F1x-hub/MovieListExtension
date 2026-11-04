@@ -12,6 +12,13 @@
 // Must match MEDIA_PLAYER_TORRENT_SOURCE in movie-details.js.
 const MOVIE_DETAILS_TORRENT_SOURCE = 'mediaplayer:torrent';
 
+const TORRENT_ACTION_ICONS = Object.freeze({
+    play: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l12-7.5-12-7.5Z"></path></svg>',
+    pause: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"></rect><rect x="14" y="5" width="4" height="14" rx="1"></rect></svg>',
+    resume: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"></path><path d="m6 13 6 6 6-6"></path></svg>',
+    delete: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="m6 6 1 14h10l1-14"></path></svg>'
+});
+
 class MovieDetailsTorrentPanelMethods {
     setTorrentSourceStatus(message, state = '') {
         const status = this.elements?.torrentSourceStatus;
@@ -63,12 +70,107 @@ class MovieDetailsTorrentPanelMethods {
     }
 
     focusTorrentRegion(target) {
-        const body = target?.closest?.('.video-body');
-        if (!body || target.hidden) return;
+        if (!target || target.hidden) return;
         target.focus?.({ preventScroll: true });
-        const bounds = target.getBoundingClientRect();
-        const viewport = body.getBoundingClientRect();
-        body.scrollTop += bounds.top - viewport.top - 10;
+        // Only the stacked narrow layout can leave the target off screen.
+        target.scrollIntoView?.({ block: 'nearest' });
+    }
+
+    getTorrentToggleButtons() {
+        if (typeof document === 'undefined') return [];
+        return [
+            document.getElementById?.('torrentEntryBtn'),
+            ...(document.querySelectorAll?.('.source-btn[data-value="mediaplayer:torrent"]') || [])
+        ].filter(Boolean);
+    }
+
+    setTorrentPanelTab(tab, { focus = false } = {}) {
+        const active = tab === 'downloads' ? 'downloads' : 'sources';
+        this.torrentPanelTab = active;
+        const tabs = { sources: this.elements?.torrentTabSources, downloads: this.elements?.torrentTabDownloads };
+        for (const [name, button] of Object.entries(tabs)) {
+            if (!button) continue;
+            button.setAttribute('aria-selected', String(name === active));
+            button.tabIndex = name === active ? 0 : -1;
+        }
+        if (this.elements?.torrentSourcesPane) this.elements.torrentSourcesPane.hidden = active !== 'sources';
+        if (this.elements?.torrentDownloadLibrary) this.elements.torrentDownloadLibrary.hidden = active !== 'downloads';
+        if (focus) tabs[active]?.focus();
+    }
+
+    resetTorrentFilters() {
+        this.torrentQualityFilter = 'all';
+        this.torrentLanguageFilter = 'all';
+        const qualityChoices = this.elements?.torrentSourceControls?.querySelector('.torrent-source-controls__filters');
+        window.FilterChoice?.syncSingleGroup(qualityChoices, {
+            value: 'all', attribute: 'data-quality-filter', selector: '[data-quality-filter]'
+        });
+        if (this.elements?.torrentSourceLanguageFilter) this.elements.torrentSourceLanguageFilter.value = 'all';
+        this.torrentSourceLanguageControl?.syncFromNative();
+        this.renderTorrentSources(this.torrentSources);
+    }
+
+    /** Keeps everything derived from the search and downloads in one place. */
+    syncTorrentPanelChrome() {
+        const available = this.deduplicateTorrentSources(this.torrentSources);
+        const status = this.torrentSearchState?.status || 'idle';
+        const searching = status === 'running';
+        const panel = this.elements?.torrentSourcePanel;
+        if (panel?.dataset) panel.dataset.searching = String(searching);
+
+        const controls = this.elements?.torrentSourceControls;
+        if (controls) {
+            controls.hidden = available.length === 0;
+            const buckets = new Set(available.map(source => this.getTorrentQualityBucket(source)));
+            const selected = this.torrentQualityFilter || 'all';
+            controls.querySelectorAll('[data-quality-filter]').forEach((chip) => {
+                const value = chip.getAttribute('data-quality-filter');
+                chip.hidden = value !== 'all' && value !== selected && !buckets.has(value);
+            });
+        }
+        if (this.elements?.torrentSourceSkeleton) {
+            this.elements.torrentSourceSkeleton.hidden = !searching || available.length > 0;
+        }
+        const setCount = (button, value) => {
+            const count = button?.querySelector('[data-torrent-tab-count]');
+            if (count) count.textContent = value ? String(value) : '';
+        };
+        setCount(this.elements?.torrentTabSources, available.length);
+        setCount(this.elements?.torrentTabDownloads, this.selectedMovie ? this.getMatchingTorrentDownloads().length : 0);
+
+        const open = panel?.hidden === false;
+        for (const button of this.getTorrentToggleButtons()) {
+            button.setAttribute('aria-expanded', String(open));
+            if (available.length) button.setAttribute('data-torrent-count', String(available.length));
+            else button.removeAttribute('data-torrent-count');
+        }
+        // CSS shows the hint only over the untouched stage, so it can never cover a player.
+        if (this.elements?.torrentPlayerHint) this.elements.torrentPlayerHint.hidden = !open;
+    }
+
+
+    /** Release ids live for 15 minutes on the service, so a finished search is reused for less. */
+    isTorrentSearchReusable(movie = this.selectedMovie) {
+        const finishedAt = Number(this.torrentSearchFinishedAt);
+        return this.torrentSearchState?.status === 'completed'
+            && this.torrentSources?.length > 0
+            && this.torrentSearchKey === this.getTorrentSearchKey(movie)
+            && Number.isFinite(finishedAt)
+            && Date.now() - finishedAt < 10 * 60 * 1000;
+    }
+
+    getTorrentSearchKey(movie = this.selectedMovie) {
+        const identity = this.getTorrentPlaybackIdentity(movie);
+        return [this.getTorrentMovieKey(movie), identity.seasonNumber ?? '', identity.episodeNumber ?? ''].join(':');
+    }
+
+    async toggleTorrentPanel() {
+        const panel = this.elements?.torrentSourcePanel;
+        if (panel && !panel.hidden) {
+            this.closeTorrentPicker();
+            return false;
+        }
+        return this.openTorrentPicker();
     }
 
     async openTorrentPicker() {
@@ -79,6 +181,7 @@ class MovieDetailsTorrentPanelMethods {
 
         if (!(await this.refreshMediaPlayerReadiness())) {
             panel.hidden = true;
+            this.syncTorrentPanelChrome();
             this.setTorrentSourceStatus('Включите и проверьте MediaPlayer в настройках расширения.', 'error');
             return false;
         }
@@ -89,17 +192,23 @@ class MovieDetailsTorrentPanelMethods {
             this.torrentHasPlaybackSnapshot = false;
             this.latestTorrentPlaybackProgress = { state: 'starting' };
         }
+        const reopened = panel.hidden && this.isTorrentSearchReusable(movie);
         panel.hidden = false;
-        const workspaceButton = document.getElementById('torrentWorkspaceBtn');
-        if (workspaceButton) workspaceButton.hidden = false;
         this.focusTorrentRegion(panel);
         this.updateActiveSourceButton(MOVIE_DETAILS_TORRENT_SOURCE);
         const requestId = ++this.torrentRequestId;
         this.stopTorrentDownloadMonitoring();
+        if (reopened) {
+            // Toggling the panel keeps the results, filters and tab it was closed with.
+            this.renderTorrentSources(this.torrentSources);
+            this.startTorrentDownloadMonitoring(movie, requestId);
+            return true;
+        }
         this.torrentSources = [];
         this.torrentDownloads = [];
-        this.torrentVisibleSourceLimit = 10;
+        this.torrentSearchKey = null;
         this.torrentSearchState = { status: 'idle', found: 0 };
+        this.setTorrentPanelTab('sources');
         this.torrentSort = 'recommended';
         this.torrentQualityFilter = 'all';
         this.torrentLanguageFilter = 'all';
@@ -116,13 +225,10 @@ class MovieDetailsTorrentPanelMethods {
         });
         this.elements.torrentSourceList?.replaceChildren();
         this.elements.torrentDownloadList?.replaceChildren();
-        this.elements.torrentDownloadLibrary?.setAttribute('hidden', '');
-        if (this.elements.torrentSourceDisclosure) {
-            this.elements.torrentSourceDisclosure.hidden = true;
-            this.elements.torrentSourceDisclosure.open = false;
-        }
+        this.elements.torrentCurrentDownload?.replaceChildren();
         this.setTorrentSourceControlsVisible(false);
         this.cancelActiveTorrentSearch();
+        this.syncTorrentPanelChrome();
         this.setTorrentSourceStatus('Проверяем локальный MediaPlayer…');
 
         if (!this.isTorrentAvailable(movie)) {
@@ -158,10 +264,10 @@ class MovieDetailsTorrentPanelMethods {
                 this.renderTorrentPlaybackStatus();
             }
 
-            if (this.torrentDownloads.length > 0) {
-                this.setTorrentSourceStatus(this.getTorrentDownloadSummary());
-                return true;
-            }
+            // Saved copies come first when there are any beyond the pinned current one;
+            // the search still runs so the other tab is ready.
+            const pinned = this.getTorrentActiveDownload() ? 1 : 0;
+            if (this.torrentDownloads.length > pinned) this.setTorrentPanelTab('downloads');
             return await this.searchTorrentSources(requestId);
         } catch (error) {
             if (!this.isTorrentRequestCurrent(requestId, movie)) return false;
@@ -171,8 +277,6 @@ class MovieDetailsTorrentPanelMethods {
     }
 
     setTorrentSourceControlsVisible(visible) {
-        const controls = this.elements?.torrentSourceControls;
-        if (controls) controls.hidden = !visible;
         if (this.elements?.torrentSourceSearchBtn) this.elements.torrentSourceSearchBtn.hidden = !visible;
     }
 
@@ -194,12 +298,11 @@ class MovieDetailsTorrentPanelMethods {
         this.startTorrentDownloadMonitoring(movie, activeRequestId);
         this.cancelActiveTorrentSearch();
         this.torrentSources = [];
-        this.torrentVisibleSourceLimit = 10;
+        this.torrentSearchKey = null;
         this.torrentSearchState = { status: 'running', found: 0 };
-        if (this.elements.torrentSourceDisclosure) this.elements.torrentSourceDisclosure.open = true;
         this.elements.torrentSourceList?.replaceChildren();
-        if (this.elements.torrentSourceDisclosure) this.elements.torrentSourceDisclosure.hidden = true;
         if (this.elements?.torrentSourceSearchBtn) this.elements.torrentSourceSearchBtn.disabled = true;
+        this.syncTorrentPanelChrome();
         this.setTorrentSourceStatus('Ищем раздачи…');
 
         const searchArgs = {
@@ -243,6 +346,8 @@ class MovieDetailsTorrentPanelMethods {
                 status: 'completed',
                 found: this.torrentSources.length
             };
+            this.torrentSearchKey = this.getTorrentSearchKey(movie);
+            this.torrentSearchFinishedAt = Date.now();
             this.renderTorrentSources(this.torrentSources);
             return true;
         } catch (error) {
@@ -264,12 +369,12 @@ class MovieDetailsTorrentPanelMethods {
     closeTorrentPicker() {
         this.clearTorrentFileSelection(false);
         if (this.elements?.torrentSourcePanel) this.elements.torrentSourcePanel.hidden = true;
-        const workspaceButton = document.getElementById('torrentWorkspaceBtn');
-        if (workspaceButton) workspaceButton.hidden = true;
-        this.focusTorrentRegion(this.elements?.videoContainer);
+        const toggle = this.getTorrentToggleButtons().find(button => !button.hidden);
+        this.focusTorrentRegion(toggle || this.elements?.videoContainer);
         this.stopTorrentDownloadMonitoring();
         this.cancelActiveTorrentSearch();
         this.torrentRequestId += 1;
+        this.syncTorrentPanelChrome();
     }
 
     normalizeTorrentLanguage(value) {
@@ -569,23 +674,23 @@ class MovieDetailsTorrentPanelMethods {
         this.torrentPreparedSource = null;
         const picker = this.elements?.torrentSourcePanel?.querySelector('#torrentFilePicker');
         if (picker) picker.hidden = true;
-        this.elements?.torrentSourceList?.querySelectorAll('.torrent-source-card__select').forEach(button => { button.disabled = false; });
+        if (!this.torrentPlaybackSession && this.torrentSelectedSourceId) {
+            this.torrentSelectedSourceId = null;
+            this.renderTorrentSources(this.torrentSources);
+        }
         if (restoreFocus) {
             this.setTorrentSourceStatus('Выберите раздачу.');
             this.elements?.torrentSourceList?.querySelector('.torrent-source-card__select')?.focus();
         }
     }
 
-    showTorrentFileSelection(sourceId, files = [], identity = this.getTorrentPlaybackIdentity(), loading = false) {
+    showTorrentFileSelection(sourceId, files = [], identity = this.getTorrentPlaybackIdentity()) {
         const picker = this.elements?.torrentSourcePanel?.querySelector('#torrentFilePicker');
         if (!picker) return;
         picker.hidden = false;
-        picker.setAttribute('aria-busy', String(loading));
-        picker.querySelector('[data-torrent-files-hint]').textContent = loading
-            ? 'Получаем список видео… Можно вернуться к раздачам.'
-            : identity.mediaType === 'tv'
-                ? `Сезон ${identity.seasonNumber ?? '—'}, серия ${identity.episodeNumber ?? '—'}. Проверьте название файла перед запуском.`
-                : 'Выберите видео для просмотра.';
+        picker.querySelector('[data-torrent-files-hint]').textContent = identity.mediaType === 'tv'
+            ? `Сезон ${identity.seasonNumber ?? '—'}, серия ${identity.episodeNumber ?? '—'}. Проверьте название файла перед запуском.`
+            : 'Выберите видео для просмотра.';
         const list = picker.querySelector('[data-torrent-files-list]');
         list.replaceChildren();
         for (const file of files) {
@@ -693,20 +798,49 @@ class MovieDetailsTorrentPanelMethods {
         if (this.torrentSearchState.status === 'error') return;
         const found = this.torrentSearchState.found || this.torrentSources.length;
         const visible = this.getVisibleTorrentSources().length;
+        const isRunning = this.torrentSearchState.status === 'running';
         if (!found) {
+            // The empty block in the list says this visually.
             this.setTorrentSourceStatus(
-                this.torrentSearchState.status === 'running'
-                    ? 'Ищем раздачи…'
-                    : 'Для этого фильма раздачи не найдены.'
+                isRunning ? 'Ищем раздачи…' : 'Для этого фильма раздачи не найдены.',
+                isRunning ? '' : 'quiet'
             );
             return;
         }
-        const limit = Math.max(1, Number(this.torrentVisibleSourceLimit) || 10);
-        const shown = Math.min(visible, limit);
-        const filtered = visible !== this.torrentSources.length ? ` · подходит: ${visible}` : '';
-        const paged = shown < visible ? ` · показано: ${shown}` : '';
-        const running = this.torrentSearchState.status === 'running' ? ' · поиск продолжается' : '';
-        this.setTorrentSourceStatus(`Найдено раздач: ${found}${filtered}${paged}${running}`);
+        if (isRunning) {
+            this.setTorrentSourceStatus(`Найдено раздач: ${found} · поиск продолжается`);
+            return;
+        }
+        // The tab already shows the total; only a narrowed list needs a visible line.
+        if (visible !== found) {
+            this.setTorrentSourceStatus(`Подходит: ${visible} из ${found}`);
+            return;
+        }
+        this.setTorrentSourceStatus(`Найдено раздач: ${found}`, 'quiet');
+    }
+
+    getTorrentSourceHeadline(source = {}) {
+        const parts = String(this.getTorrentQualityDetails(source).label || '').split(' · ').filter(Boolean);
+        const named = { '2160p': '4K', '1440p': '2K' };
+        const resolution = /^\d{3,4}p$/.test(parts[0] || '') ? parts.shift() : null;
+        if (resolution) return { lead: named[resolution] || resolution, detail: parts.join(' · ') };
+        return { lead: parts.shift() || 'Качество не указано', detail: parts.join(' · ') };
+    }
+
+    createTorrentSourceEmptyState(title, text, button) {
+        const empty = document.createElement('div');
+        empty.className = 'torrent-source-empty';
+        empty.setAttribute('role', 'status');
+        const heading = document.createElement('h4');
+        heading.textContent = title;
+        const paragraph = document.createElement('p');
+        paragraph.textContent = text;
+        const action = document.createElement('button');
+        action.type = 'button';
+        action.textContent = button.label;
+        action.setAttribute(button.attribute, '');
+        empty.append(heading, paragraph, action);
+        return empty;
     }
 
     renderTorrentSources(sources = []) {
@@ -714,12 +848,19 @@ class MovieDetailsTorrentPanelMethods {
         if (!list) return;
         list.replaceChildren();
         const availableSources = this.deduplicateTorrentSources(sources);
-        const filteredSources = this.getVisibleTorrentSources(availableSources);
-        const limit = Math.max(1, Number(this.torrentVisibleSourceLimit) || 10);
-        const visibleSources = filteredSources.slice(0, limit);
-        visibleSources.forEach((source) => {
+        const visibleSources = this.getVisibleTorrentSources(availableSources);
+        const hasNoFilters = (this.torrentQualityFilter || 'all') === 'all' && (this.torrentLanguageFilter || 'all') === 'all';
+        const canRecommend = hasNoFilters && (this.torrentSort || 'recommended') === 'recommended';
+        const currentSourceId = this.torrentSelectedSourceId;
+        visibleSources.forEach((source, index) => {
             const sourceId = typeof source?.sourceId === 'string' ? source.sourceId : '';
             if (!sourceId) return;
+            const seeders = this.getTorrentNumber(source.seeders, 0);
+            const language = this.getTorrentSourceLanguageLabel(source);
+            const sizeText = this.formatTorrentBytes(source.sizeBytes);
+            const providerName = String(source.provider || 'Неизвестный индексер');
+            const releaseTitle = String(source.title || 'Без названия');
+            const { lead, detail } = this.getTorrentSourceHeadline(source);
 
             const item = document.createElement('article');
             item.className = 'torrent-source-card-item';
@@ -730,65 +871,76 @@ class MovieDetailsTorrentPanelMethods {
             card.className = 'torrent-source-card';
             card.classList.add('torrent-source-card__select');
             card.setAttribute('data-source-id', sourceId);
-            card.setAttribute('aria-label', `Открыть раздачу: ${String(source.title || 'Без названия')}`);
+            card.title = releaseTitle;
+            card.setAttribute('aria-label', `Открыть раздачу: ${[lead, detail, language, sizeText, providerName].filter(Boolean).join(', ')}, сидов: ${seeders}. ${releaseTitle}`);
+            if (sourceId === currentSourceId) {
+                card.classList.add('is-current');
+                card.setAttribute('aria-current', 'true');
+            }
 
-            const title = document.createElement('span');
-            title.className = 'torrent-source-card__title';
-            title.textContent = String(source.title || 'Без названия');
+            const main = document.createElement('span');
+            main.className = 'torrent-source-card__main';
 
-            const quality = document.createElement('span');
-            quality.className = 'torrent-source-card__quality';
-            quality.textContent = this.getTorrentQualityDetails(source).label;
-
-            const language = document.createElement('span');
-            language.className = 'torrent-source-card__language';
-            language.textContent = this.getTorrentSourceLanguageLabel(source);
-
-            const provider = document.createElement('span');
-            provider.className = 'torrent-source-card__provider';
-            provider.textContent = String(source.provider || 'Неизвестный индексер');
+            const head = document.createElement('span');
+            head.className = 'torrent-source-card__head';
+            head.append(lead);
+            if (detail) {
+                const quality = document.createElement('span');
+                quality.className = 'torrent-source-card__quality';
+                quality.textContent = detail;
+                head.append(' ', quality);
+            }
+            // A release nobody seeds must not be advertised as the best choice.
+            if (canRecommend && index === 0 && seeders >= 5) {
+                const badge = document.createElement('span');
+                badge.className = 'torrent-source-card__badge';
+                badge.textContent = 'Рекомендуем';
+                head.append(badge);
+            }
 
             const meta = document.createElement('span');
             meta.className = 'torrent-source-card__meta';
-            const releaseYear = Number(source.year);
-            if (Number.isInteger(releaseYear) && releaseYear > 0) {
-                const year = document.createElement('span');
-                year.textContent = `Год: ${releaseYear}`;
-                meta.appendChild(year);
-            }
-            const size = document.createElement('span');
-            size.textContent = `Размер: ${this.formatTorrentBytes(source.sizeBytes)}`;
-            const peers = document.createElement('span');
-            peers.textContent = `Сиды: ${this.getTorrentNumber(source.seeders, '—')}`;
-            const leechers = document.createElement('span');
-            leechers.textContent = `Личеры: ${this.getTorrentNumber(source.leechers, '—')}`;
-            meta.append(size, peers, leechers);
+            meta.textContent = [language, sizeText, providerName].join(' · ');
 
-            card.append(title, quality, language, provider, meta);
+            const title = document.createElement('span');
+            title.className = 'torrent-source-card__title';
+            title.textContent = releaseTitle;
+
+            main.append(head, meta, title);
+
+            const seeds = document.createElement('span');
+            seeds.className = `torrent-source-card__seeds${seeders <= 2 ? ' is-low' : ''}`;
+            seeds.title = `Сиды: ${seeders}, личеры: ${this.getTorrentNumber(source.leechers, '—')}`;
+            seeds.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"></path><path d="m5 12 7-7 7 7"></path></svg>';
+            seeds.append(String(seeders));
+
+            card.append(main, seeds);
             item.appendChild(card);
             list.appendChild(item);
         });
+        const searchStatus = this.torrentSearchState?.status;
         if (!visibleSources.length && availableSources.length) {
-            const empty = document.createElement('div');
-            empty.className = 'torrent-source-empty';
-            empty.setAttribute('role', 'status');
-            empty.textContent = this.torrentQualityFilter === 'all' && (this.torrentLanguageFilter || 'all') === 'all'
-                ? 'Подходящих раздач нет.'
-                : 'По выбранным фильтрам раздач нет. Выберите «Все» или другой язык/формат.';
-            list.appendChild(empty);
+            list.appendChild(hasNoFilters
+                ? this.createTorrentSourceEmptyState('Подходящих раздач нет', 'Попробуйте искать заново.', { label: 'Искать снова', attribute: 'data-torrent-retry' })
+                : this.createTorrentSourceEmptyState(
+                    'По выбранным фильтрам раздач нет',
+                    `Всего найдено: ${availableSources.length}. Выберите другой язык или формат.`,
+                    { label: 'Сбросить фильтры', attribute: 'data-torrent-reset-filters' }
+                ));
+        } else if (!availableSources.length && searchStatus === 'completed') {
+            list.appendChild(this.createTorrentSourceEmptyState(
+                'Раздачи не найдены',
+                'Трекеры ничего не вернули. Попробуйте позже или проверьте индексеры в настройках.',
+                { label: 'Искать снова', attribute: 'data-torrent-retry' }
+            ));
+        } else if (!availableSources.length && searchStatus === 'error') {
+            list.appendChild(this.createTorrentSourceEmptyState(
+                'Поиск не удался',
+                'Причина указана выше.',
+                { label: 'Повторить', attribute: 'data-torrent-retry' }
+            ));
         }
-        if (this.elements.torrentSourceDisclosure) {
-            this.elements.torrentSourceDisclosure.hidden = availableSources.length === 0;
-        }
-        if (this.elements.torrentSourceShowMoreBtn) {
-            const hasMore = visibleSources.length < filteredSources.length;
-            this.elements.torrentSourceShowMoreBtn.hidden = !hasMore;
-            this.elements.torrentSourceShowMoreBtn.textContent = hasMore
-                ? `Показать ещё (${Math.min(10, filteredSources.length - visibleSources.length)})`
-                : 'Показать ещё';
-        }
-        const count = this.elements.torrentSourceDisclosure?.querySelector('[data-torrent-disclosure-count]');
-        if (count) count.textContent = availableSources.length ? `${filteredSources.length}` : '';
+        this.syncTorrentPanelChrome();
         this.updateTorrentSourceSummary();
     }
 
@@ -828,14 +980,6 @@ class MovieDetailsTorrentPanelMethods {
         return labels[download.status] || 'Состояние неизвестно';
     }
 
-    getTorrentDownloadSummary() {
-        const count = this.torrentDownloads.length;
-        if (!count) return 'Сохранённых загрузок для этого фильма нет.';
-        const active = this.torrentDownloads.filter(download => ['starting', 'downloading'].includes(download.status)).length;
-        if (active) return `В библиотеке: ${count} · ${active} продолжается автоматически`;
-        return `В библиотеке: ${count} · загрузка сохранена`;
-    }
-
     getTorrentPlaybackSummary(progress = this.latestTorrentPlaybackProgress || {}) {
         const playback = progress.playback && typeof progress.playback === 'object'
             ? progress.playback
@@ -864,15 +1008,29 @@ class MovieDetailsTorrentPanelMethods {
         const list = this.elements?.torrentDownloadList;
         if (!library || !list) return;
         list.replaceChildren();
+        const pinnedSlot = this.elements?.torrentCurrentDownload;
+        pinnedSlot?.replaceChildren();
+        if (pinnedSlot) pinnedSlot.hidden = true;
         const matching = this.getMatchingTorrentDownloads(downloads);
-        library.hidden = matching.length === 0;
-        if (!matching.length) return;
+        const pinsCurrent = (download) => Boolean(pinnedSlot)
+            && String(this.torrentActiveContext?.downloadId || '') === String(download.id);
+        if (!matching.some(download => !pinsCurrent(download))) {
+            const empty = document.createElement('div');
+            empty.className = 'torrent-source-empty';
+            const heading = document.createElement('h4');
+            heading.textContent = matching.length ? 'Других загрузок нет' : 'Загрузок пока нет';
+            const text = document.createElement('p');
+            text.textContent = 'Выберите раздачу на вкладке «Раздачи»: она сохранится здесь.';
+            empty.append(heading, text);
+            list.appendChild(empty);
+        }
+        this.syncTorrentPanelChrome();
 
         matching.forEach((download) => {
             const card = document.createElement('article');
             const isCurrent = String(this.torrentActiveContext?.downloadId || '') === String(download.id);
             const serviceUnavailable = this.torrentServiceHealth === 'unavailable';
-            card.className = `torrent-download-card${isCurrent ? ' torrent-download-card--current' : ''}`;
+            card.className = 'torrent-download-card';
             card.dataset.state = String(download.status || 'unknown');
             card.dataset.current = isCurrent ? 'true' : 'false';
             card.dataset.serviceHealth = serviceUnavailable ? 'unavailable' : this.torrentServiceHealth;
@@ -885,18 +1043,13 @@ class MovieDetailsTorrentPanelMethods {
             state.textContent = this.getTorrentDownloadStatus(download);
             const quality = document.createElement('span');
             quality.className = 'torrent-download-card__quality';
-            quality.textContent = String(download.quality || 'Качество не указано');
+            quality.textContent = `${String(download.quality || 'Качество не указано')} · ${String(download.provider || 'MediaPlayer')}`;
             header.append(state, quality);
 
             const title = document.createElement('div');
             title.className = 'torrent-download-card__title';
             title.textContent = String(download.title || this.selectedMovie?.name || 'Без названия');
-            if (isCurrent) {
-                const current = document.createElement('span');
-                current.className = 'torrent-download-card__current';
-                current.textContent = 'Текущий файл';
-                title.appendChild(current);
-            }
+            title.title = title.textContent;
 
             const progress = document.createElement('div');
             progress.className = 'torrent-download-card__progress';
@@ -917,20 +1070,19 @@ class MovieDetailsTorrentPanelMethods {
             meta.className = 'torrent-download-card__meta';
             const downloaded = this.formatTorrentBytes(download.downloadedBytes);
             const total = this.formatTorrentBytes(download.totalBytes || download.sizeBytes);
-            const progressText = total === '—' ? downloaded : `${downloaded} из ${total}`;
+            const isComplete = download.status === 'complete';
+            const progressText = total === '—' ? downloaded : isComplete ? total : `${downloaded} из ${total}`;
             const details = serviceUnavailable
                 ? [progressText, 'данные устарели']
-                : [progressText, this.formatTorrentRate(download.downloadSpeedBytesPerSecond)];
-            if (!serviceUnavailable && download.status !== 'complete') {
+                : isComplete
+                    ? [progressText]
+                    : [progressText, this.formatTorrentRate(download.downloadSpeedBytesPerSecond)];
+            if (!serviceUnavailable && !isComplete) {
                 details.push(`пиры: ${this.getTorrentNumber(download.peers, 0)}`);
             }
             const remaining = serviceUnavailable ? '' : this.formatTorrentTime(download.timeRemainingSeconds);
             if (remaining) details.push(`осталось: ${remaining}`);
             meta.textContent = details.join(' · ');
-
-            const provider = document.createElement('div');
-            provider.className = 'torrent-download-card__provider';
-            provider.textContent = String(download.provider || 'MediaPlayer');
 
             const playbackSummary = this.getTorrentPlaybackSummary();
             const playbackElement = isCurrent && playbackSummary
@@ -948,41 +1100,50 @@ class MovieDetailsTorrentPanelMethods {
 
             const actions = document.createElement('div');
             actions.className = 'torrent-download-card__actions';
+            const addAction = (button, label, icon) => {
+                button.type = 'button';
+                button.dataset.downloadId = download.id;
+                button.title = label;
+                button.setAttribute('aria-label', `${label}: ${download.title || 'фильм'}`);
+                button.innerHTML = icon;
+                actions.appendChild(button);
+            };
             const isActiveDownload = ['starting', 'downloading'].includes(download.status);
             if (download.status === 'complete' || isActiveDownload) {
                 const playButton = document.createElement('button');
-                playButton.type = 'button';
                 playButton.className = 'torrent-download-card__action torrent-download-card__action--primary';
                 playButton.dataset.downloadAction = 'play';
-                playButton.dataset.downloadId = download.id;
-                playButton.textContent = download.status === 'complete' ? 'Смотреть' : 'Открыть просмотр';
-                playButton.setAttribute('aria-label', `${playButton.textContent}: ${download.title || 'фильм'}`);
-                actions.appendChild(playButton);
+                addAction(playButton, download.status === 'complete' ? 'Смотреть' : 'Открыть просмотр', TORRENT_ACTION_ICONS.play);
             }
             if (isActiveDownload || download.status === 'paused' || download.status === 'error') {
                 const controlButton = document.createElement('button');
-                controlButton.type = 'button';
                 controlButton.className = 'torrent-download-card__action torrent-download-card__action--control';
                 controlButton.dataset.downloadAction = isActiveDownload ? 'pause' : 'resume';
-                controlButton.dataset.downloadId = download.id;
-                controlButton.textContent = isActiveDownload
-                    ? 'Пауза'
-                    : download.status === 'error' ? 'Повторить' : 'Продолжить';
-                controlButton.setAttribute('aria-label', `${controlButton.textContent}: ${download.title || 'фильм'}`);
-                actions.appendChild(controlButton);
+                addAction(
+                    controlButton,
+                    isActiveDownload ? 'Пауза' : download.status === 'error' ? 'Повторить' : 'Продолжить',
+                    isActiveDownload ? TORRENT_ACTION_ICONS.pause : TORRENT_ACTION_ICONS.resume
+                );
             }
             const deleteButton = document.createElement('button');
-            deleteButton.type = 'button';
             deleteButton.className = 'torrent-download-card__action';
             deleteButton.dataset.downloadAction = 'delete';
-            deleteButton.dataset.downloadId = download.id;
-            deleteButton.textContent = 'Удалить';
-            actions.appendChild(deleteButton);
+            addAction(deleteButton, 'Удалить', TORRENT_ACTION_ICONS.delete);
 
-            card.append(header, title, progress, meta, provider);
+            const top = document.createElement('div');
+            top.className = 'torrent-download-card__top';
+            top.append(header, actions);
+            card.append(top, title);
+            // A finished download has nothing left to show progress for.
+            if (!isComplete) card.appendChild(progress);
+            card.appendChild(meta);
             if (playbackElement) card.appendChild(playbackElement);
-            card.appendChild(actions);
-            list.appendChild(card);
+            if (pinsCurrent(download)) {
+                pinnedSlot.appendChild(card);
+                pinnedSlot.hidden = false;
+            } else {
+                list.appendChild(card);
+            }
         });
     }
 
@@ -1002,10 +1163,8 @@ class MovieDetailsTorrentPanelMethods {
             }
             // Once a search has run, its result owns the status: this poll must not
             // replace "nothing found" or a search error with the download summary.
-            if (this.torrentSources.length === 0) {
-                const searchStatus = this.torrentSearchState?.status || 'idle';
-                if (searchStatus === 'idle') this.setTorrentSourceStatus(this.getTorrentDownloadSummary());
-                else if (searchStatus === 'completed') this.updateTorrentSourceSummary();
+            if (this.torrentSources.length === 0 && this.torrentSearchState?.status === 'completed') {
+                this.updateTorrentSourceSummary();
             }
             return true;
         } catch (error) {
@@ -1185,7 +1344,7 @@ class MovieDetailsTorrentPanelMethods {
                 }
             }
             this.renderTorrentDownloads(this.torrentDownloads);
-            this.setTorrentSourceStatus(this.getTorrentDownloadSummary());
+            this.updateTorrentSourceSummary();
             return true;
         } catch (error) {
             this.setTorrentSourceStatus(this.formatTorrentError(error), 'error');
@@ -1210,17 +1369,17 @@ class MovieDetailsTorrentPanelMethods {
             sizeBytes: source.sizeBytes
         });
         this.cancelActiveTorrentSearch();
-        this.elements.torrentSourceList?.querySelectorAll('.torrent-source-card__select').forEach(card => {
-            card.disabled = true;
-        });
-        this.setTorrentSourceStatus('Подготавливаем просмотр…');
+        // The list stays usable while connecting: picking another release supersedes
+        // this attempt through the playback generation, so a slow swarm cannot trap the panel.
+        this.torrentSelectedSourceId = sourceId;
+        this.renderTorrentSources(this.torrentSources);
+        this.setTorrentSourceStatus('Подключаемся к раздаче…');
 
         try {
             if (this.mediaPlayerService.capabilities?.playback?.fileSelection === true) {
                 const cached = this.torrentPreparedSource;
                 let prepared = cached?.sourceId === sourceId && fileId ? cached : null;
                 if (!prepared) {
-                    this.showTorrentFileSelection(sourceId, [], identity, true);
                     prepared = await this.mediaPlayerService.preparePlayback({ sourceId, ...identity });
                     if (!isCurrent()) return false;
                 }
@@ -1260,10 +1419,9 @@ class MovieDetailsTorrentPanelMethods {
             return await this.mountTorrentPlaybackSession(session, requestId, movie, generation);
         } catch (error) {
             if (!isCurrent()) return false;
+            this.torrentSelectedSourceId = null;
+            this.renderTorrentSources(this.torrentSources);
             this.setTorrentSourceStatus(this.formatTorrentError(error), 'error');
-            this.elements.torrentSourceList?.querySelectorAll('.torrent-source-card__select').forEach(card => {
-                card.disabled = false;
-            });
             return false;
         }
     }
@@ -1332,10 +1490,8 @@ class MovieDetailsTorrentPanelMethods {
         this.renderTorrentPlaybackStatus({ state: 'starting' });
         if (session.downloadId) void this.refreshTorrentDownloads(movie, requestId);
         this.startTorrentProgressMonitoring(session);
-        if (this.elements.torrentSourceDisclosure) this.elements.torrentSourceDisclosure.open = false;
-        this.elements.torrentSourceList?.querySelectorAll('.torrent-source-card__select').forEach(card => {
-            card.disabled = false;
-        });
+        // Redraw to mark the chosen release and settle the "preparing" status.
+        this.renderTorrentSources(this.torrentSources);
         this.focusTorrentRegion(this.elements.videoContainer);
         return true;
     }
@@ -1377,7 +1533,6 @@ class MovieDetailsTorrentPanelMethods {
         status.innerHTML = `
             <div class="torrent-playback-status__header">
                 <div>
-                    <span class="torrent-playback-status__eyebrow">ТОРРЕНТ-ПРОСМОТР</span>
                     <h4 class="torrent-playback-status__title" id="torrentPlaybackTitle" data-status-title>Поток готовится</h4>
                     <div class="torrent-playback-status__context">
                         <span data-status-quality>Качество не указано</span>

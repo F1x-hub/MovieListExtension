@@ -34,6 +34,8 @@
             this.toggle.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>';
             this.torrent = button('torrentEntryBtn', 'Торрент');
             this.torrent.hidden = true;
+            this.torrent.setAttribute('aria-controls', 'torrentSourcePanel');
+            this.torrent.setAttribute('aria-expanded', 'false');
             const popover = this.popover = doc.createElement('div');
             popover.id = 'sourcePopover';
             popover.className = 'watch-source-popover popover-surface';

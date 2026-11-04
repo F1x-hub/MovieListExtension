@@ -24,7 +24,7 @@ const playbackStatus = htmlDom.window.document.querySelector('#torrentPlaybackSt
 assert.equal(htmlDom.window.document.querySelectorAll('#torrentPlaybackStatus').length, 1);
 assert.equal(playbackStatus?.parentElement, panel);
 assert.equal(panel?.querySelectorAll('.torrent-playback-status').length, 1);
-assert.ok(panel?.querySelector('#torrentSourceDisclosure'));
+assert.ok(panel?.querySelector('#torrentSourcesPane'));
 const executableSource = `${torrentPanelSource}
 ${movieDetailsSource
     .replace(/^import .*?;\r?\n/gm, '')}
@@ -71,7 +71,6 @@ assert.equal(blockedPickerOpened, false);
 manager.torrentQualityFilter = 'all';
 manager.torrentLanguageFilter = 'all';
 manager.torrentSort = 'recommended';
-manager.torrentVisibleSourceLimit = 10;
 
 const sources = [
     { sourceId: 'low', title: 'Example 720p', quality: '720p', seeders: 100, sizeBytes: 1_000 },
@@ -176,24 +175,29 @@ const renderDom = new JSDOM(`
         <section id="torrentDownloadLibrary" hidden>
             <div id="torrentDownloadList" role="list"></div>
         </section>
-        <details id="torrentSourceDisclosure" hidden>
-            <span data-torrent-disclosure-count></span>
+        <button id="torrentTabSources" data-torrent-tab="sources"><span data-torrent-tab-count></span></button>
+        <button id="torrentTabDownloads" data-torrent-tab="downloads"><span data-torrent-tab-count></span></button>
+        <div id="torrentSourcesPane">
             <div id="torrentSourceControls" hidden>
                 <button data-quality-filter="all"></button>
                 <button data-quality-filter="4k"></button>
+                <button data-quality-filter="1080p"></button>
             </div>
             <select id="torrentSourceLanguageFilter"><option value="all">Все языки</option></select>
             <div id="torrentSourceList" role="list"></div>
-            <button id="torrentSourceShowMoreBtn" hidden></button>
-        </details>
+            <div id="torrentSourceSkeleton" hidden></div>
+        </div>
     </section>
 `);
 context.document = renderDom.window.document;
 manager.elements = {
+    torrentSourcePanel: renderDom.window.document.querySelector('#torrentSourcePanel'),
+    torrentSourcesPane: renderDom.window.document.querySelector('#torrentSourcesPane'),
+    torrentSourceSkeleton: renderDom.window.document.querySelector('#torrentSourceSkeleton'),
+    torrentTabSources: renderDom.window.document.querySelector('#torrentTabSources'),
+    torrentTabDownloads: renderDom.window.document.querySelector('#torrentTabDownloads'),
     torrentSourceList: renderDom.window.document.querySelector('#torrentSourceList'),
-    torrentSourceDisclosure: renderDom.window.document.querySelector('#torrentSourceDisclosure'),
     torrentSourceControls: renderDom.window.document.querySelector('#torrentSourceControls'),
-    torrentSourceShowMoreBtn: renderDom.window.document.querySelector('#torrentSourceShowMoreBtn'),
     torrentSourceLanguageFilter: renderDom.window.document.querySelector('#torrentSourceLanguageFilter'),
     torrentSourceStatus: renderDom.window.document.querySelector('#torrentSourceStatus'),
     torrentPlaybackStatus: renderDom.window.document.querySelector('#torrentPlaybackStatus'),
@@ -214,24 +218,61 @@ manager.setTorrentSourceStatus = (message) => {
     manager.elements.torrentSourceStatus.textContent = message;
 };
 manager.renderTorrentSources(manager.torrentSources);
-assert.equal(manager.elements.torrentSourceList.querySelectorAll('.torrent-source-card__select').length, 10);
-assert.equal(manager.elements.torrentSourceList.querySelectorAll('[role="listitem"]').length, 10);
-assert.equal(manager.elements.torrentSourceShowMoreBtn.hidden, false);
-manager.torrentVisibleSourceLimit = 20;
-manager.renderTorrentSources(manager.torrentSources);
-assert.equal(manager.elements.torrentSourceList.querySelectorAll('.torrent-source-card__select').length, 20);
+assert.equal(
+    manager.elements.torrentSourceList.querySelectorAll('.torrent-source-card__select').length,
+    21,
+    'the panel list shows every distinct release instead of paging'
+);
+assert.equal(manager.elements.torrentTabSources.querySelector('[data-torrent-tab-count]').textContent, '21');
+assert.equal(manager.elements.torrentSourceControls.querySelector('[data-quality-filter="4k"]').hidden, true, 'a quality nothing was found in is not offered');
+assert.equal(manager.elements.torrentSourceControls.querySelector('[data-quality-filter="1080p"]').hidden, false);
+
+const headlineCard = manager.elements.torrentSourceList.querySelector('.torrent-source-card__select');
+assert.match(headlineCard.querySelector('.torrent-source-card__head').textContent, /^1080p/, 'quality leads the row');
+assert.match(headlineCard.querySelector('.torrent-source-card__meta').textContent, /test/, 'size and tracker stay on the row');
+assert.equal(headlineCard.querySelector('.torrent-source-card__seeds').textContent, '10');
+assert.equal(headlineCard.title, headlineCard.querySelector('.torrent-source-card__title').textContent, 'the full release name stays reachable');
+assert.equal(headlineCard.querySelector('.torrent-source-card__badge')?.textContent, 'Рекомендуем');
+assert.deepEqual(
+    { ...manager.getTorrentSourceHeadline({ qualityDetails: { score: 1, resolution: 2160, label: '2160p · BDRip · HEVC' } }) },
+    { lead: '4K', detail: 'BDRip · HEVC' }
+);
+assert.deepEqual(
+    { ...manager.getTorrentSourceHeadline({ qualityDetails: { score: 1, label: 'HDRip' } }) },
+    { lead: 'HDRip', detail: '' },
+    'a release without a resolution leads with what is known'
+);
+
+const thinSwarm = [{ sourceId: 'thin', title: 'Thin 1080p', quality: '1080p', provider: 'test', seeders: 2, sizeBytes: 1_000 }];
+manager.torrentSources = thinSwarm;
+manager.renderTorrentSources(thinSwarm);
+assert.equal(
+    manager.elements.torrentSourceList.querySelector('.torrent-source-card__badge'),
+    null,
+    'a release almost nobody seeds is not advertised as the best choice'
+);
+assert.ok(manager.elements.torrentSourceList.querySelector('.torrent-source-card__seeds.is-low'));
+manager.torrentSources = Array.from({ length: 21 }, (_, index) => ({
+    sourceId: `source-${index}`,
+    title: `Example ${index}`,
+    quality: '1080p',
+    provider: 'test',
+    seeders: 10,
+    sizeBytes: 1_000
+}));
 
 manager.setTorrentSourceControlsVisible(true);
 manager.torrentQualityFilter = '4k';
 manager.renderTorrentSources(manager.torrentSources);
-assert.equal(manager.elements.torrentSourceDisclosure.hidden, false);
 assert.equal(manager.elements.torrentSourceControls.hidden, false);
+assert.equal(manager.elements.torrentSourceControls.querySelector('[data-quality-filter="4k"]').hidden, false, 'the active filter stays reachable');
 assert.equal(manager.elements.torrentSourceList.querySelectorAll('.torrent-source-card__select').length, 0);
 assert.match(
     manager.elements.torrentSourceList.querySelector('.torrent-source-empty').textContent,
     /выбранным фильтрам/i,
     'empty filters keep the picker available and explain how to recover'
 );
+assert.ok(manager.elements.torrentSourceList.querySelector('[data-torrent-reset-filters]'));
 manager.torrentQualityFilter = 'all';
 
 manager.torrentSources = [];
@@ -242,6 +283,36 @@ assert.match(
     /Ищем раздачи/i,
     'an empty intermediate batch must not be reported as a completed empty search'
 );
+assert.equal(manager.elements.torrentSourceSkeleton.hidden, false, 'an empty running search shows placeholders');
+assert.equal(manager.elements.torrentSourcePanel.dataset.searching, 'true');
+assert.equal(manager.elements.torrentSourceControls.hidden, true);
+
+manager.torrentSearchState = { status: 'completed', found: 0 };
+manager.renderTorrentSources([]);
+assert.ok(manager.elements.torrentSourceList.querySelector('[data-torrent-retry]'), 'an empty search offers another attempt');
+assert.equal(manager.elements.torrentSourceSkeleton.hidden, true);
+
+manager.setTorrentPanelTab('downloads');
+assert.equal(manager.elements.torrentDownloadLibrary.hidden, false);
+assert.equal(manager.elements.torrentSourcesPane.hidden, true);
+assert.equal(manager.elements.torrentTabDownloads.getAttribute('aria-selected'), 'true');
+assert.equal(manager.elements.torrentTabSources.tabIndex, -1);
+manager.setTorrentPanelTab('sources');
+
+// Toggling the panel keeps a fresh search, but never one the service has expired.
+manager.torrentSources = [{ sourceId: 'kept', title: 'Kept', quality: '1080p', seeders: 3, sizeBytes: 1_000 }];
+manager.torrentSearchState = { status: 'completed', found: 1 };
+manager.torrentSearchKey = manager.getTorrentSearchKey(manager.selectedMovie);
+manager.torrentSearchFinishedAt = Date.now();
+assert.equal(manager.isTorrentSearchReusable(manager.selectedMovie), true);
+manager.torrentSearchFinishedAt = Date.now() - 11 * 60 * 1000;
+assert.equal(manager.isTorrentSearchReusable(manager.selectedMovie), false);
+manager.torrentSearchFinishedAt = Date.now();
+manager.torrentSearchKey = 'another-episode';
+assert.equal(manager.isTorrentSearchReusable(manager.selectedMovie), false);
+manager.torrentSearchKey = null;
+manager.torrentSources = [];
+manager.torrentSearchState = { status: 'running', found: 0 };
 
 manager.torrentActiveContext = {
     title: 'Example 4K',
@@ -347,7 +418,6 @@ monitoredManager.getMatchingTorrentDownloads = () => [];
 monitoredManager.resolveTorrentActiveDownload = () => {};
 monitoredManager.renderTorrentDownloads = () => {};
 monitoredManager.setTorrentSourceStatus = () => {};
-monitoredManager.getTorrentDownloadSummary = () => '';
 
 const flushMonitor = () => new Promise(resolve => setImmediate(resolve));
 const runNextMonitorTimer = async expectedDelay => {
@@ -402,13 +472,76 @@ cancellationManager.getMatchingTorrentDownloads = () => [];
 cancellationManager.resolveTorrentActiveDownload = () => {};
 cancellationManager.renderTorrentDownloads = () => {};
 cancellationManager.setTorrentSourceStatus = () => {};
-cancellationManager.getTorrentDownloadSummary = () => '';
 cancellationManager.startTorrentDownloadMonitoring(monitoredMovie, 1);
 await flushMonitor();
 assert.equal(monitorRequestStarted, true);
 cancellationManager.stopTorrentDownloadMonitoring();
 await flushMonitor();
 assert.equal(monitorRequestAborted, true);
+
+// The torrent button toggles the panel; reopening keeps a fresh search instead of repeating it.
+{
+    const toggleDom = new JSDOM(`<section id="torrentSourcePanel" hidden tabindex="-1">
+        <div id="torrentSourceStatus"></div>
+        <button id="torrentSourceSearchBtn" hidden></button>
+        <div id="torrentSourceList"></div>
+        <div id="torrentSourceControls" hidden></div>
+    </section><button id="torrentEntryBtn"></button><div id="videoContainer" tabindex="-1"></div>`);
+    const doc = toggleDom.window.document;
+    const previousDocument = context.document;
+    context.document = doc;
+    const toggleManager = Object.create(context.__MovieDetailsManager.prototype);
+    let searches = 0;
+    const movie = { tmdbId: 7, name: 'Toggle', year: 2010 };
+    toggleManager.selectedMovie = movie;
+    toggleManager.torrentRequestId = 0;
+    toggleManager.torrentDownloadMonitorToken = 0;
+    toggleManager.torrentDownloadRequestToken = 0;
+    toggleManager.torrentSources = [];
+    toggleManager.torrentDownloads = [];
+    toggleManager.elements = {
+        torrentSourcePanel: doc.querySelector('#torrentSourcePanel'),
+        torrentSourceStatus: doc.querySelector('#torrentSourceStatus'),
+        torrentSourceSearchBtn: doc.querySelector('#torrentSourceSearchBtn'),
+        torrentSourceList: doc.querySelector('#torrentSourceList'),
+        torrentSourceControls: doc.querySelector('#torrentSourceControls'),
+        videoContainer: doc.querySelector('#videoContainer')
+    };
+    toggleManager.refreshMediaPlayerReadiness = async () => true;
+    toggleManager.isTorrentAvailable = () => true;
+    toggleManager.isTorrentMovie = () => true;
+    toggleManager.getMediaPlayerTmdbId = () => 7;
+    toggleManager.updateActiveSourceButton = () => {};
+    toggleManager.mediaPlayerService = {
+        getCapabilities: async () => ({ torrents: { movies: { supported: true, status: 'ready' } } }),
+        listDownloads: async () => [],
+        cancelMovieSourceSearch: async () => true,
+        searchMovieSourcesIncrementally: async () => {
+            searches += 1;
+            return { sources: [{ sourceId: 'kept', title: 'Kept 1080p', quality: '1080p', provider: 'test', seeders: 9, sizeBytes: 1_000 }] };
+        }
+    };
+    await toggleManager.toggleTorrentPanel();
+    assert.equal(toggleManager.elements.torrentSourcePanel.hidden, false);
+    assert.equal(searches, 1);
+    assert.equal(doc.querySelector('#torrentEntryBtn').getAttribute('aria-expanded'), 'true');
+    assert.equal(doc.querySelector('#torrentEntryBtn').getAttribute('data-torrent-count'), '1');
+    await toggleManager.toggleTorrentPanel();
+    assert.equal(toggleManager.elements.torrentSourcePanel.hidden, true, 'a second press closes the panel');
+    assert.equal(doc.querySelector('#torrentEntryBtn').getAttribute('aria-expanded'), 'false');
+    assert.equal(doc.activeElement?.id, 'torrentEntryBtn', 'closing returns focus to the button that opens it');
+    await toggleManager.toggleTorrentPanel();
+    assert.equal(toggleManager.elements.torrentSourcePanel.hidden, false);
+    assert.equal(searches, 1, 'reopening keeps the finished search');
+    assert.equal(toggleManager.elements.torrentSourceList.querySelectorAll('.torrent-source-card__select').length, 1);
+    toggleManager.stopTorrentDownloadMonitoring();
+    toggleManager.torrentSearchFinishedAt = Date.now() - 11 * 60 * 1000;
+    toggleManager.closeTorrentPicker();
+    await toggleManager.toggleTorrentPanel();
+    assert.equal(searches, 2, 'an expired search runs again');
+    toggleManager.stopTorrentDownloadMonitoring();
+    context.document = previousDocument;
+}
 
 const emptyResultStatus = async searchState => {
     const statusManager = Object.create(context.__MovieDetailsManager.prototype);
@@ -445,8 +578,8 @@ assert.deepEqual(
 );
 assert.deepEqual(
     Array.from(await emptyResultStatus({ status: 'idle', found: 0 })),
-    ['Сохранённых загрузок для этого фильма нет.'],
-    'before any search the panel still reports the saved downloads'
+    [],
+    'before any search the downloads tab count speaks for itself'
 );
 
 const progressCancellationManager = Object.create(context.__MovieDetailsManager.prototype);

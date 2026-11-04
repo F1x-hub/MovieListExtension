@@ -33,8 +33,9 @@ const torrentPanel = torrentDom.window.document.querySelector('#torrentSourcePan
 const playbackStatus = torrentDom.window.document.querySelector('#torrentPlaybackStatus');
 assert.equal(torrentDom.window.document.querySelectorAll('#torrentPlaybackStatus').length, 1);
 assert.equal(playbackStatus?.parentElement, torrentPanel, 'Playback status must live inside the Torrent workspace');
-assert.ok(torrentPanel?.querySelector('#torrentSourceDisclosure'), 'Results must use the workspace disclosure');
-assert.ok(torrentPanel?.querySelector('#torrentSourceShowMoreBtn'), 'Results must support incremental reveal');
+assert.equal(torrentPanel?.parentElement?.id, 'playerWorkspace', 'The panel sits beside the player, not inside its scrolling body');
+assert.ok(torrentPanel?.querySelector('[role="tablist"] [data-torrent-tab="downloads"]'), 'Releases and downloads are tabs of one panel');
+assert.equal(torrentDom.window.document.querySelector('#torrentWorkspaceBtn'), null, 'The torrent button itself toggles the panel');
 assert.doesNotMatch(html, /<\/section>\s*<div class="torrent-playback-status"/);
 assert.match(movieDetails, /mediaplayer:torrent/);
 assert.match(movieDetails, /openTorrentPicker/);
@@ -128,7 +129,7 @@ const mountEnd = movieDetails.indexOf('\n    ensureTorrentPlaybackStatusMarkup',
 assert.doesNotMatch(movieDetails.slice(mountStart, mountEnd), /closeTorrentPicker\(\)/);
 assert.match(movieDetails, /getTorrentWorkspaceState/);
 assert.match(movieDetails, /torrentHasPlaybackSnapshot/);
-assert.match(movieDetails, /torrentVisibleSourceLimit = 10/);
+assert.doesNotMatch(movieDetails, /torrentVisibleSourceLimit/, 'The panel list scrolls instead of paging');
 
 const requests = [];
 const stored = {};

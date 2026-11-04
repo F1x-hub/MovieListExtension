@@ -295,11 +295,14 @@ MovieDetails comment links use `Utils.extractYouTubeVideoInfo()` to mark verifie
 
 ## Key Conventions
 
-- **Torrent modal layout**: Keep the video before the torrent workspace in DOM order.
-  The video body owns vertical scrolling; the header cannot shrink. Explicit picker/play
-  actions focus and scroll only that body; progress updates never scroll or stop monitoring.
-  Search opens the release disclosure; successful playback collapses it without closing the panel.
-  Verify viewport geometry with `node tests/torrentModalLayout.test.cjs`.
+- **Torrent panel layout**: `#playerWorkspace` holds the player dialog and `#torrentSourcePanel`
+  as siblings, video first in DOM order. The panel narrows the player from 900px up and follows
+  it below that; only the panel's list scrolls, so the video stays whole. The torrent button
+  toggles the panel. Reopening reuses a completed search for under 10 minutes (release ids expire
+  on the service after 15) and never crosses a film or episode. Releases and downloads are tabs;
+  the current download is pinned above them. Connecting keeps the list usable: another release
+  supersedes the attempt through the playback generation. Esc steps out of the file choice,
+  then closes the panel. Verify with `node tests/torrentModalLayout.test.cjs`.
 
 - Remux-first torrent playback: MovieDetails sends explicit browser HLS codec capabilities,
   including AV1/fMP4, to MediaPlayer. Never claim AV1 when MediaSource capability detection is

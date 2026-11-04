@@ -115,7 +115,7 @@ class MovieDetailsManager {
         this.torrentPlaybackAvailableDurationSeconds = null;
         this.torrentHasPlaybackSnapshot = false;
         this.torrentActiveContext = null;
-        this.torrentVisibleSourceLimit = 10;
+        this.torrentPanelTab = 'sources';
         this.torrentDownloads = [];
         this.torrentDownloadTimer = null;
         this.torrentDownloadRequestActive = false;
@@ -402,8 +402,12 @@ class MovieDetailsManager {
             torrentSourceLanguageFilter: document.getElementById('torrentSourceLanguageFilter'),
             torrentSourceSearchBtn: document.getElementById('torrentSourceSearchBtn'),
             torrentSourceList: document.getElementById('torrentSourceList'),
-            torrentSourceDisclosure: document.getElementById('torrentSourceDisclosure'),
-            torrentSourceShowMoreBtn: document.getElementById('torrentSourceShowMoreBtn'),
+            torrentSourceSkeleton: document.getElementById('torrentSourceSkeleton'),
+            torrentSourcesPane: document.getElementById('torrentSourcesPane'),
+            torrentTabSources: document.getElementById('torrentTabSources'),
+            torrentTabDownloads: document.getElementById('torrentTabDownloads'),
+            torrentPlayerHint: document.getElementById('torrentPlayerHint'),
+            torrentCurrentDownload: document.getElementById('torrentCurrentDownload'),
             torrentDownloadLibrary: document.getElementById('torrentDownloadLibrary'),
             torrentDownloadList: document.getElementById('torrentDownloadList'),
             torrentSourceCloseBtn: document.getElementById('torrentSourceCloseBtn'),
@@ -667,7 +671,7 @@ class MovieDetailsManager {
                     const value = btn.getAttribute('data-value');
                     if (value === 'mediaplayer:torrent') {
                         e.preventDefault();
-                        await this.openTorrentPicker();
+                        await this.toggleTorrentPanel();
                         return;
                     }
                     if (value && !btn.classList.contains('active')) {
@@ -682,9 +686,6 @@ class MovieDetailsManager {
         if (this.elements.torrentSourceCloseBtn) {
             this.elements.torrentSourceCloseBtn.addEventListener('click', () => this.closeTorrentPicker());
         }
-        document.getElementById('torrentWorkspaceBtn')?.addEventListener('click', () => {
-            this.focusTorrentRegion(this.elements.torrentSourcePanel);
-        });
         if (this.elements.torrentSourceControls) {
             const qualityChoices = this.elements.torrentSourceControls.querySelector('.torrent-source-controls__filters');
             window.FilterChoice?.enhanceSingleGroup(qualityChoices, {
@@ -711,7 +712,6 @@ class MovieDetailsManager {
             this.torrentSourceLanguageControl = window.SortControl?.enhance(this.elements.torrentSourceLanguageFilter);
             this.elements.torrentSourceLanguageFilter.addEventListener('change', (event) => {
                 this.torrentLanguageFilter = String(event.target.value || 'all');
-                this.torrentVisibleSourceLimit = 10;
                 this.renderTorrentSources(this.torrentSources);
             });
         }
@@ -721,11 +721,23 @@ class MovieDetailsManager {
             });
         }
         if (this.elements.torrentSourcePanel) {
+            this.elements.torrentSourcePanel.addEventListener('keydown', (event) => {
+                if (!['ArrowLeft', 'ArrowRight'].includes(event.key) || !event.target.closest('[data-torrent-tab]')) return;
+                event.preventDefault();
+                this.setTorrentPanelTab(this.torrentPanelTab === 'sources' ? 'downloads' : 'sources', { focus: true });
+            });
             this.elements.torrentSourcePanel.addEventListener('click', (event) => {
-                const showMore = event.target.closest('#torrentSourceShowMoreBtn');
-                if (showMore) {
-                    this.torrentVisibleSourceLimit += 10;
-                    this.renderTorrentSources(this.torrentSources);
+                const tab = event.target.closest('[data-torrent-tab]');
+                if (tab) {
+                    this.setTorrentPanelTab(tab.getAttribute('data-torrent-tab'));
+                    return;
+                }
+                if (event.target.closest('[data-torrent-retry]')) {
+                    void this.searchTorrentSources();
+                    return;
+                }
+                if (event.target.closest('[data-torrent-reset-filters]')) {
+                    this.resetTorrentFilters();
                     return;
                 }
 
@@ -3985,14 +3997,14 @@ class MovieDetailsManager {
             close: () => this.closeReviewReader(),
             getFocusContainer: () => this.elements.reviewReaderModal
         });
-        stack.register('torrent-source-disclosure', {
+        stack.register('torrent-panel', {
             order: 30,
-            isOpen: () => this.isVideoPlayerShown()
-                && !this.elements.torrentSourcePanel?.hidden
-                && Boolean(this.elements.torrentSourceDisclosure?.open),
+            isOpen: () => this.isVideoPlayerShown() && this.elements.torrentSourcePanel?.hidden === false,
             close: () => {
-                this.elements.torrentSourceDisclosure.open = false;
-                this.elements.torrentSourceDisclosure.querySelector('summary')?.focus();
+                // The file choice is a step inside the panel, so Esc steps back first.
+                const picker = this.elements.torrentSourcePanel.querySelector('#torrentFilePicker');
+                if (picker && !picker.hidden) this.clearTorrentFileSelection();
+                else this.closeTorrentPicker();
             }
         });
         stack.register('watch-room-invite', {

@@ -440,6 +440,16 @@ keeps npm-compatible three-component semver metadata.
 <details open>
 <summary><strong>Unreleased</strong></summary>
 
+### Features
+
+- The torrent picker is now a side panel. «Торрент» opens it next to the player and moves the player aside, so the video stays fully visible; pressing it again closes the panel and restores the width. Below 900px wide the panel sits under the player.
+- Release rows lead with what differs between releases: quality, voice-over, size, tracker and seeders, with the full release name on a muted line. All releases are in one scrolling list, the filters offer only the qualities that were found, and «Рекомендуем» marks a top release only when it has enough seeders.
+- Releases and saved downloads are two tabs of the panel, and the current download stays pinned above them. A paused or finished download is managed with compact icon actions.
+
+### Fixes
+
+- Choosing a release no longer hides the list while it connects, so a slow swarm can be abandoned by choosing another release. Reopening the panel within 10 minutes keeps the results and filters instead of searching again.
+
 </details>
 
 <details>

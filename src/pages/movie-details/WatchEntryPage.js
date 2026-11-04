@@ -51,7 +51,7 @@
                     if (value && this.getWatchInnerValues().includes(value)) this.activeSourceValue = value;
                     await this.handleWatchClick();
                 },
-                onTorrent: () => this.openTorrentPicker()
+                onTorrent: () => this.toggleTorrentPanel()
             });
             this.watchEntryController.sync(this.activeSourceValue, {
                 torrentEligible: Boolean(this.mediaPlayerReady && this.isTorrentMovie()), busy: Boolean(this.watchSearching),
