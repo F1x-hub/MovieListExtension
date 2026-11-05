@@ -742,6 +742,9 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+    /* Two text lines are shorter than a card body; the rest keeps the card's
+       full height. Checked by tests/e2e/specs/home-placeholders.spec.cjs. */
+    padding-bottom: 37px;
 }
 
 .home-skeleton-poster,

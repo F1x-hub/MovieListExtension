@@ -206,8 +206,18 @@ class HomePage {
             }
         }
         if (authGeneration === this.authGeneration && knownUid && !this.personalSnapshot) {
-            this.renderer.renderPersonalSkeleton(this.personalTierSection);
+            this.reservePersonalLayout();
         }
+    }
+
+    /**
+     * The personal tier and the dashboard load independently. Both hold their
+     * space from the first paint, so whichever answers first cannot pull the
+     * sections below into view.
+     */
+    reservePersonalLayout() {
+        this.renderer.renderPersonalSkeleton(this.personalTierSection);
+        this.renderer.renderDashboardSkeleton(this.dashboardSection);
     }
 
     selectPersonalUid(uid) {
@@ -221,7 +231,7 @@ class HomePage {
         if (previousUid) this.dataController.invalidatePersonalPreview(previousUid);
         // The first confirmed account can reuse its already mounted skeleton.
         if (previousUid !== undefined || !uid) this.renderer.resetPersonalTier(this.personalTierSection);
-        if (uid) this.renderer.renderPersonalSkeleton(this.personalTierSection);
+        if (uid) this.reservePersonalLayout();
     }
 
     renderPersonalData(data) {
@@ -243,6 +253,9 @@ class HomePage {
         if (this.personalSnapshot) this.renderPersonalData(this.personalSnapshot);
         else if (this.personalTierSection?.hasAttribute('aria-busy')) {
             this.renderer.renderPersonalSkeleton(this.personalTierSection);
+        }
+        if (this.dashboardSection?.hasAttribute('aria-busy')) {
+            this.renderer.renderDashboardSkeleton(this.dashboardSection);
         }
         if (this.personalUid !== undefined) {
             this.updatePersonalTier(this.personalUid || false);
@@ -525,6 +538,7 @@ class HomePage {
             this.renderer.renderDashboard(dashboardData, this.dashboardSection);
         } catch (error) {
             console.warn('HomePage: Error updating dashboard:', error);
+            if (generation === this.dashboardGeneration) this.renderer.clearDashboardSkeleton(this.dashboardSection);
         }
     }
 

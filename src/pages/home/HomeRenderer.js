@@ -6,6 +6,8 @@
 // Cards visible on the first slider page load eagerly; later slides are lazy.
 const HOME_FEATURED_EAGER_COUNT = 5;
 const HOME_GRID_SKELETON_COUNT = 6;
+// Community picks shown on Home: HOME_COMMUNITY_TOP_LIMIT in HomeDataController.
+const HOME_COMMUNITY_SKELETON_COUNT = 4;
 
 class HomeRenderer {
     constructor(options = {}) {
@@ -666,27 +668,13 @@ class HomeRenderer {
     }
 
     /**
-     * Render Dashboard Block (User statistics + Community Top)
-     * @param {Object} dashboardData
-     * @param {HTMLElement} container
+     * The dashboard frame. The placeholder and the loaded dashboard share it,
+     * so replacing one with the other keeps the layout.
+     * @param {Object} stats
+     * @param {string} [communityMarkup]
+     * @returns {string}
      */
-    renderDashboard(dashboardData = {}, container) {
-        if (!container) return;
-
-        if (!dashboardData.isAuthenticated) {
-            container.style.display = 'none';
-            container.innerHTML = '';
-            return;
-        }
-
-        const stats = dashboardData.stats || {
-            totalRatings: 0,
-            averageRating: '—',
-            watchingCount: 0,
-            watchlistCount: 0
-        };
-
-        const communityDocs = dashboardData.communityTop || [];
+    getDashboardMarkup(stats, communityMarkup = '') {
         const statBox = (icon, value, label) => `
             <div class="home-stat-box">
                 <div class="home-stat-icon">${icon}</div>
@@ -695,7 +683,7 @@ class HomeRenderer {
             </div>
         `;
 
-        container.innerHTML = `
+        return `
             <div class="home-dashboard-grid">
                 <div class="home-dashboard-card">
                     <h2>
@@ -725,11 +713,70 @@ class HomeRenderer {
                         ${this.escapeHtml(this.t('dashboard.community', 'Выбор сообщества'))}
                     </h2>
                     <div class="home-community-list" id="home-community-grid">
-                        ${communityDocs.length === 0 ? `<p class="home-community-empty">${this.escapeHtml(this.t('dashboard.community_empty', 'Пока нет оцененных фильмов'))}</p>` : ''}
+                        ${communityMarkup}
                     </div>
                 </div>
             </div>
         `;
+    }
+
+    /**
+     * Holds the dashboard's height while its data loads. Without this the
+     * section takes no space until then, so a shorter personal tier above it
+     * pulls the sections below into view just before the dashboard pushes them
+     * back out.
+     * @param {HTMLElement} container
+     */
+    renderDashboardSkeleton(container) {
+        if (!container) return;
+        // A dash, as for a failed read: loading must not claim a zero total.
+        const pending = '—';
+        container.innerHTML = this.getDashboardMarkup({
+            totalRatings: pending,
+            averageRating: pending,
+            watchingCount: pending,
+            watchlistCount: pending
+        });
+        this.renderGridSkeleton(container.querySelector('#home-community-grid'), HOME_COMMUNITY_SKELETON_COUNT);
+        container.setAttribute('aria-busy', 'true');
+        container.style.display = 'block';
+    }
+
+    /**
+     * Ends a placeholder whose request failed. A dashboard that already loaded
+     * stays on screen.
+     * @param {HTMLElement} container
+     */
+    clearDashboardSkeleton(container) {
+        if (container?.hasAttribute('aria-busy')) this.renderDashboard({ isAuthenticated: false }, container);
+    }
+
+    /**
+     * Render Dashboard Block (User statistics + Community Top)
+     * @param {Object} dashboardData
+     * @param {HTMLElement} container
+     */
+    renderDashboard(dashboardData = {}, container) {
+        if (!container) return;
+        container.removeAttribute('aria-busy');
+
+        if (!dashboardData.isAuthenticated) {
+            container.style.display = 'none';
+            container.innerHTML = '';
+            return;
+        }
+
+        const stats = dashboardData.stats || {
+            totalRatings: 0,
+            averageRating: '—',
+            watchingCount: 0,
+            watchlistCount: 0
+        };
+
+        const communityDocs = dashboardData.communityTop || [];
+        container.innerHTML = this.getDashboardMarkup(stats, communityDocs.length === 0
+            ? `<p class="home-community-empty">${this.escapeHtml(this.t('dashboard.community_empty', 'Пока нет оцененных фильмов'))}</p>`
+            : '');
 
         const communityGrid = container.querySelector('#home-community-grid');
         if (communityGrid && communityDocs.length > 0) {

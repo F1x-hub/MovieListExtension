@@ -162,6 +162,115 @@ async function run() {
         h.dispose();
     }
 
+    // The dashboard placeholder is the real frame: same stat boxes, one slot per community pick, no invented totals.
+    {
+        const h = harness();
+        const section = h.element('dashboard-section');
+        h.page.renderer.renderDashboardSkeleton(section);
+        assert.equal(section.style.display, 'block', 'The placeholder takes its space');
+        assert.equal(section.getAttribute('aria-busy'), 'true');
+        assert.equal(section.querySelectorAll('.home-stat-box').length, 4);
+        assert.equal(section.querySelectorAll('#home-community-grid .home-skeleton-card').length, 4);
+        for (const value of section.querySelectorAll('.home-stat-value')) {
+            assert.notEqual(value.textContent.trim(), '0', 'Loading must not claim a zero total');
+        }
+        h.page.renderer.renderDashboard({ isAuthenticated: true, communityTop: [movie(9)] }, section);
+        assert.equal(section.hasAttribute('aria-busy'), false);
+        assert.equal(section.querySelector('.home-skeleton-card'), null);
+        h.page.renderer.renderDashboardSkeleton(section);
+        h.page.renderer.renderDashboard({ isAuthenticated: false }, section);
+        assert.equal(section.hasAttribute('aria-busy'), false);
+        assert.equal(section.style.display, 'none', 'A guest has no dashboard');
+        h.dispose();
+    }
+
+    // An empty personal tier answering first cannot leave the dashboard's space empty, which pulled Films into view.
+    {
+        const h = harness();
+        h.user({ uid: 'a' });
+        h.favorites(async () => []);
+        const reply = deferred();
+        h.page.dataController.fetchDashboardData = () => reply.promise;
+        const dashboard = h.page.updateDashboard({ uid: 'a' });
+        await h.page.updatePersonalTier({ uid: 'a' });
+        const section = h.element('dashboard-section');
+        assert.ok(h.element('personal-tier').querySelector('.home-empty-personal'));
+        assert.equal(section.style.display, 'block', 'The dashboard still holds its space');
+        assert.equal(section.getAttribute('aria-busy'), 'true');
+        reply.resolve({ isAuthenticated: true, userId: 'a', stats: null, communityTop: [] });
+        await dashboard;
+        assert.equal(section.hasAttribute('aria-busy'), false);
+        assert.equal(section.querySelector('.home-skeleton-card'), null);
+        h.dispose();
+    }
+
+    // Unresolved auth reserves the dashboard before the page is revealed; a confirmed guest releases it.
+    {
+        const h = harness();
+        const auth = deferred();
+        h.user({ uid: 'a' });
+        h.dom.window.firebaseManager.isAuthReady = false;
+        h.auth(() => auth.promise);
+        const init = h.page.init();
+        await flush();
+        const section = h.element('dashboard-section');
+        assert.equal(section.getAttribute('aria-busy'), 'true');
+        assert.equal(section.style.display, 'block');
+        h.user(null);
+        h.dom.window.firebaseManager.isAuthReady = true;
+        auth.resolve(null);
+        await init;
+        assert.equal(section.style.display, 'none');
+        assert.equal(section.querySelector('.home-skeleton-card'), null);
+        h.dispose();
+    }
+
+    // Switching accounts replaces the previous user's stats at once instead of showing them until the new reply.
+    {
+        const h = harness();
+        h.user({ uid: 'a' });
+        h.favorites(async () => []);
+        const section = h.element('dashboard-section');
+        await h.page.updatePersonalTier({ uid: 'a' });
+        h.page.renderer.renderDashboard({
+            isAuthenticated: true, userId: 'a', communityTop: [],
+            stats: { totalRatings: 77, averageRating: '9.0', watchingCount: 1, watchlistCount: 1 }
+        }, section);
+        assert.match(section.textContent, /77/);
+        await h.page.updatePersonalTier({ uid: 'b' });
+        assert.doesNotMatch(section.textContent, /77/);
+        assert.equal(section.getAttribute('aria-busy'), 'true');
+        h.dispose();
+    }
+
+    // A failed request ends the placeholder, but only the latest request may, and it never removes a loaded dashboard.
+    {
+        const h = harness();
+        const section = h.element('dashboard-section');
+        const stale = deferred();
+        const latest = deferred();
+        const replies = [stale.promise, latest.promise];
+        h.page.dataController.fetchDashboardData = () => replies.shift();
+        h.page.renderer.renderDashboardSkeleton(section);
+        const staleTask = h.page.updateDashboard('a');
+        const latestTask = h.page.updateDashboard('a');
+        stale.reject(new Error('stale'));
+        await staleTask;
+        assert.equal(section.getAttribute('aria-busy'), 'true', 'A stale failure cannot end the newer request');
+        latest.reject(new Error('down'));
+        await latestTask;
+        assert.equal(section.hasAttribute('aria-busy'), false);
+        assert.equal(section.style.display, 'none', 'A placeholder cannot outlive its request');
+
+        h.page.dataController.fetchDashboardData = async () => ({ isAuthenticated: true, userId: 'a', stats: null, communityTop: [] });
+        await h.page.updateDashboard('a');
+        h.page.dataController.fetchDashboardData = async () => { throw new Error('down'); };
+        await h.page.updateDashboard('a');
+        assert.equal(section.style.display, 'block', 'A failed refresh keeps the loaded dashboard');
+        assert.ok(section.querySelector('.home-stats-grid'));
+        h.dispose();
+    }
+
     // Preview persistence projects at most six cards per list and excludes private bookmark notes.
     {
         const h = harness();

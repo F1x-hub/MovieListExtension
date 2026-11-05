@@ -448,6 +448,7 @@ keeps npm-compatible three-component semver metadata.
 
 ### Fixes
 
+- Home no longer flashes the Films section on load for signed-in users. «Ваша активность» took no space until its data arrived, so the section below came into view and was pushed back out. The block now holds its height from the first paint, and card placeholders match the real card height on every Home grid.
 - Choosing a release no longer hides the list while it connects, so a slow swarm can be abandoned by choosing another release. Reopening the panel within 10 minutes keeps the results and filters instead of searching again.
 - Quality filters follow what a release name actually states: `UHD BDRip 1080p` is under 1080p rather than 4K, and sizes typed in Cyrillic or given as a frame size are recognized. Rips with no stated size (`BDRip`, `HDRip`, `DVDRip`) now appear under SD instead of under no filter. Finding 4K releases filed under TV categories needs the next MediaPlayer Suite.
 - Deleting a download closes this page's player for it first, and a failed deletion now says the file is busy instead of talking about pause and resume. Removing the conversion jobs that keep the file busy needs the next MediaPlayer Suite.
