@@ -51,12 +51,13 @@ test.describe('motion detectors', () => {
 
     test('allow one spring overshoot', async ({ page }) => {
         const { analysis } = await record(page, () => {
+            // From rest: if it began at an offset, a frame sampled before the start
+            // would see that jump as one more movement, and a second reversal.
             document.getElementById('box').animate(
-                [{ transform: 'translateY(30px)' }, { transform: 'translateY(-6px)' }, { transform: 'translateY(0)' }],
-                { duration: 300, easing: 'ease-out' });
+                [{ transform: 'translateY(0)' }, { transform: 'translateY(36px)' }, { transform: 'translateY(30px)' }],
+                { duration: 300, easing: 'ease-out', fill: 'forwards' });
         });
-        // A stalled machine can drop the turning point, never add a second one.
-        expect(analysis.reversals.y).toBeLessThanOrEqual(1);
+        expect(analysis.reversals.y).toBe(1);
         expect(analysis.problems).toEqual([]);
     });
 
