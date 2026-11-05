@@ -1,7 +1,4 @@
 import { i18n } from '../../shared/i18n/I18n.js';
-import { isSpidermanMovie } from '../../shared/config/spidermanMovies.js';
-import { isStarWarsMovie } from '../../shared/config/starwarsMovies.js';
-import { getRatingIconMarkup } from '../../shared/components/RatingIcons.js';
 
 function searchTraceNow() {
     return typeof performance !== 'undefined' && typeof performance.now === 'function'
@@ -32,8 +29,6 @@ class SearchManager {
         this.commentReactionSummaries = new Map();
         this.commentUserReactions = new Map();
         this.commentReactionPending = new Set();
-        this.currentRating = 0; // State for new rating system
-        this.isReviewVisible = false;
         this.searchHistoryService = new SearchHistoryService();
         this.parserRegistry = window.parserRegistry || new ParserRegistry();
         this.progressService = new ProgressService();
@@ -172,23 +167,8 @@ class SearchManager {
             modalBody: document.getElementById('modalBody'),
             modalClose: document.getElementById('modalClose'),
             closeModalBtn: document.getElementById('closeModalBtn'),
-            rateMovieBtn: document.getElementById('rateMovieBtn'),
             movieDetailBtn: document.getElementById('movieDetailBtn'),
             
-            // Rating Modal
-            ratingModal: document.getElementById('ratingModal'),
-            ratingMoviePoster: document.getElementById('ratingMoviePoster'),
-            ratingMovieTitle: document.getElementById('ratingMovieTitle'),
-            ratingMovieMeta: document.getElementById('ratingMovieMeta'),
-            ratingStars: document.getElementById('ratingStars'),
-            writeReviewBtn: document.getElementById('writeReviewBtn'),
-            reviewContainer: document.getElementById('reviewContainer'),
-            ratingComment: document.getElementById('ratingComment'),
-            charCount: document.getElementById('charCount'),
-            saveRatingBtn: document.getElementById('saveRatingBtn'),
-            cancelRatingBtn: document.getElementById('cancelRatingBtn'),
-            ratingModalClose: document.getElementById('ratingModalClose'),
-
             // Video Player Modal
             videoPlayerModal: document.getElementById('videoPlayerModal'),
             videoTitle: document.getElementById('videoTitle'),
@@ -257,9 +237,6 @@ class SearchManager {
         if (this.elements.closeModalBtn) {
             this.elements.closeModalBtn.addEventListener('mousedown', () => this.closeMovieModal());
         }
-        if (this.elements.rateMovieBtn) {
-            this.elements.rateMovieBtn.addEventListener('mousedown', () => this.showRatingModal(this.selectedMovie));
-        }
         if (this.elements.movieDetailBtn) {
             this.elements.movieDetailBtn.addEventListener('mousedown', (e) => {
                 if (e.button !== 0) return;
@@ -268,12 +245,6 @@ class SearchManager {
                     window.location.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${this.selectedMovie.kinopoiskId}`);
                 }
             });
-        }
-        if (this.elements.ratingModalClose) {
-            this.elements.ratingModalClose.addEventListener('mousedown', () => this.closeRatingModal());
-        }
-        if (this.elements.cancelRatingBtn) {
-            this.elements.cancelRatingBtn.addEventListener('mousedown', () => this.closeRatingModal());
         }
 
         // Delegation for MovieCard actions
@@ -310,26 +281,6 @@ class SearchManager {
                  if (typeof Utils !== 'undefined') {
                     Utils.showToast('Collection feature coming soon!', 'info');
                 }
-            } else if (action === 'edit-rating' || action === 'edit') {
-                // Handle edit rating action
-                let targetMovieId = movieId;
-                
-                // If movieId is missing on the button (e.g. inside a menu item), try to find it on the card
-                if (!targetMovieId) {
-                    const card = actionBtn.closest('.movie-card-component');
-                    if (card) {
-                        targetMovieId = card.getAttribute('data-movie-id');
-                    }
-                }
-
-                if (targetMovieId) {
-                    const movie = this.currentResults.docs.find(m => String(m.kinopoiskId) === String(targetMovieId));
-                    if (movie) {
-                        this.showRatingModal(movie);
-                    } else if (this.selectedMovie && String(this.selectedMovie.kinopoiskId) === String(targetMovieId)) {
-                         this.showRatingModal(this.selectedMovie);
-                     }
-                 }
             } else if (action === 'open-review' && movieId) {
                 const params = new URLSearchParams({ movieId: String(movieId) });
                 if (ratingId) params.set('reviewId', String(ratingId));
@@ -339,61 +290,10 @@ class SearchManager {
             }
         });
         
-        // Rating Interactions
-        if (this.elements.ratingStars) {
-            // Star hover delegation
-            this.elements.ratingStars.addEventListener('mouseover', (e) => {
-                const btn = e.target.closest('.star-rating-btn');
-                if (btn) {
-                    const rating = parseInt(btn.dataset.rating);
-                    this.updateStarVisuals(rating, true); // true for hover state
-                }
-            });
-
-            this.elements.ratingStars.addEventListener('mouseout', () => {
-                this.updateStarVisuals(this.currentRating, false); // restore actual rating
-            });
-
-            // Star click delegation
-            this.elements.ratingStars.addEventListener('mousedown', (e) => {
-                const btn = e.target.closest('.star-rating-btn');
-                if (btn) {
-                    e.preventDefault(); // Prevent focus issues
-                    const rating = parseInt(btn.dataset.rating);
-                    this.currentRating = rating;
-                    this.updateStarVisuals(rating, false);
-                }
-            });
-        }
-
-        if (this.elements.writeReviewBtn) {
-            this.elements.writeReviewBtn.addEventListener('mousedown', () => {
-                this.isReviewVisible = !this.isReviewVisible;
-                this.elements.reviewContainer.style.display = this.isReviewVisible ? 'block' : 'none';
-                if (this.isReviewVisible) {
-                    this.elements.ratingComment.focus();
-                }
-            });
-        }
-
-        if (this.elements.ratingComment && this.elements.charCount) {
-            this.elements.ratingComment.addEventListener('input', (e) => {
-                this.elements.charCount.textContent = e.target.value.length;
-            });
-        }
-        if (this.elements.saveRatingBtn) {
-            this.elements.saveRatingBtn.addEventListener('mousedown', () => this.saveRating());
-        }
-        
         // Modal overlays
         if (this.elements.movieModal) {
             this.elements.movieModal.addEventListener('mousedown', (e) => {
                 if (e.target === this.elements.movieModal) this.closeMovieModal();
-            });
-        }
-        if (this.elements.ratingModal) {
-            this.elements.ratingModal.addEventListener('mousedown', (e) => {
-                if (e.target === this.elements.ratingModal) this.closeRatingModal();
             });
         }
 
@@ -1512,141 +1412,6 @@ class SearchManager {
 
     // Removed createMovieCard method as it is replaced by MovieCard component
 
-    async loadMovieById(movieId, showLoading = true) {
-        try {
-            if (showLoading) {
-                this.page.setLoading(true);
-            }
-            
-            const kinopoiskService = firebaseManager.getKinopoiskService();
-            const movieCacheService = firebaseManager.getMovieCacheService();
-            
-            // Check cache/firebase first
-            // Note: getCachedMovie already checks localStorage then Firestore
-            let movie = await movieCacheService.getCachedMovie(movieId);
-            
-            // Check if movie exists and has detailed info (using budget/fees/persons as proxy)
-            // Search results might be cached but lack detailed info like budget/fees/full crew
-            const hasDetailedInfo = movie && (movie.budget || movie.fees?.world || movie.fees?.usa || (movie.persons && movie.persons.length > 0));
-            
-            if (!movie || !hasDetailedInfo) {
-                console.log('Movie not found in cache or missing details, fetching from API...');
-                movie = await kinopoiskService.getMovieById(movieId);
-                
-                // Cache the new movie data
-                if (movie) {
-                    await movieCacheService.cacheMovie(movie);
-                }
-            } else {
-                console.log('Loaded movie from cache');
-            }
-            
-            if (!movie) {
-               throw new Error('Movie not found');
-            }
-            
-            // Check and fetch awards (works for both cached and newly fetched movies)
-            // Awards are parsed for display but saved to Firebase only if movie is rated
-            console.log('[Awards Debug] Checking awards for movie...');
-            console.log('[Awards Debug] movie.awards:', movie.awards);
-            console.log('[Awards Debug] Awards exists?', !!movie.awards);
-            console.log('[Awards Debug] Awards length:', movie.awards?.length);
-            
-            // Check for legacy/invalid awards data (missing name or using old property names)
-            if (movie.awards && movie.awards.length > 0) {
-                const firstAward = movie.awards[0];
-                const isLegacy = !firstAward.name || Object.prototype.hasOwnProperty.call(firstAward, 'winning'); // Old format used 'winning' instead of 'win'
-                
-                if (isLegacy) {
-                    console.log('[Awards Debug] ⚠ Detected legacy/invalid awards data, forcing re-parse');
-                    movie.awards = [];
-                }
-            }
-            
-            if (!movie.awards || movie.awards.length === 0) {
-                console.log('[Awards Debug] ✓ Awards missing or empty, starting parsing...');
-                try {
-                    console.log('Fetching awards by parsing kinopoisk.ru...');
-                    const awardsParser = new AwardsParsingService();
-                    const awards = await awardsParser.getAwards(movieId);
-                    movie.awards = awards;
-                    console.log(`Fetched ${awards.length} awards from Kinopoisk.ru`);
-                    
-                    // Check if movie is already rated by user
-                    try {
-                        const ratingService = firebaseManager.getRatingService();
-                        const currentUser = firebaseManager.getCurrentUser();
-                        
-                        if (currentUser) {
-                            const userRating = await ratingService.getRating(currentUser.uid, movieId);
-                            
-                            if (userRating) {
-                                // Movie is rated → save awards to Firebase
-                                console.log('[Awards Debug] Movie is rated, saving awards to Firebase');
-                                await movieCacheService.cacheMovie(movie, true); // isRated = true
-                            } else {
-                                // Movie not rated → don't save to Firebase
-                                console.log('[Awards Debug] Movie NOT rated, awards parsed but NOT saved to Firebase');
-                            }
-                        } else {
-                            console.log('[Awards Debug] User not authenticated, not saving awards');
-                        }
-                    } catch (ratingError) {
-                        console.warn('[Awards Debug] Could not check rating status:', ratingError);
-                        // If can't check rating, don't save to be safe
-                    }
-                } catch (e) {
-                     console.error('Failed to parse awards', e);
-                     movie.awards = [];
-                }
-            } else {
-                console.log('[Awards Debug] ✗ Awards already present and valid, skipping parsing');
-            }
-            
-            // Try to get movie images/frames
-            // We only fetch frames if we are showing the details view
-            try {
-                // Determine if we need to fetch frames (e.g. if cached frames are missing or empty)
-                // For now, we attempt to fetch if not present, but maybe cache them too? 
-                // The current MovieCacheService structure might not store strict "frames", 
-                // but let's see if we can attach them to the movie object before display.
-                
-                // If the movie came from cache and has frames stored, reuse them?
-                // Standard movie object might not have frames. 
-                // We will try to fetch frames from API if they are missing, 
-                // but this is a secondary request so it is less critical.
-                // To totally minimize API calls per user request, we could skip this if "only db" is strict,
-                // but frames usually need API. User asked "details of movie... from base",
-                // usually meaning the main metadata.
-                
-                if (!movie.frames || movie.frames.length === 0) {
-                     const images = await kinopoiskService.getMovieImages(movieId);
-                     if (images && images.length > 0) {
-                        movie.frames = images;
-                        // Optional: update cache with frames if the structure allows, 
-                        // but MovieCacheService might need update for that. 
-                        // For now we just display them.
-                     }
-                }
-            } catch {
-                // Silently handle image loading errors
-            }
-            
-            // Start preloading video sources in background
-            this.preloadSources(movie);
-            
-            await this.displaySingleMovieResult(movie);
-            
-        } catch (error) {
-            console.error('Error loading movie:', error);
-            Utils.showToast(`Failed to load movie: ${error.message}`, 'error');
-        } finally {
-            if (showLoading) {
-                this.page.setLoading(false);
-            }
-        }
-    }
-
     async displaySingleMovieResult(movie) {
         // Show results header for single movie
         this.elements.resultsHeader.style.display = 'flex';
@@ -2099,10 +1864,6 @@ class SearchManager {
                                     <span><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg></span>
                                 </button>
                                 <div class="popover-surface user-rating-menu-dropdown" id="menu-${rating.id}" style="display: none;">
-                                    <button class="menu-item edit-item" data-rating-id="${rating.id}" data-action="edit">
-                                        <span class="menu-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></span>
-                                        <span>${i18n.get('movie_details.edit')}</span>
-                                    </button>
                                     <button class="menu-item delete-item" data-rating-id="${rating.id}" data-action="delete">
                                         <span class="menu-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></span>
                                         <span>${i18n.get('movie_details.delete')}</span>
@@ -2341,10 +2102,6 @@ class SearchManager {
                             <button class="btn btn-primary btn-lg watch-movie-btn" data-movie-id="${movie.kinopoiskId}">
                                 <span class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
                                 ${i18n.get('movie_details.watch_movie')}
-                            </button>
-                            <button class="btn btn-accent btn-lg rate-movie-btn" data-movie-id="${movie.kinopoiskId}">
-                                <span class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></span>
-                                ${i18n.get('movie_details.rate_title')}
                             </button>
                         </div>
                     </div>
@@ -2718,159 +2475,6 @@ class SearchManager {
         this.selectedMovie = null;
     }
 
-    async showRatingModal(movie) {
-        this.selectedMovie = movie;
-        
-        // Get current user dynamically
-        const currentUser = firebaseManager.getCurrentUser();
-        
-        // Check if user is authenticated
-        if (!currentUser) {
-            Utils.showToast(i18n.get('navbar.sign_in'), 'error');
-            return;
-        }
-        
-        // Update cached user
-        this.currentUser = currentUser;
-        
-        // 1. Setup UI Content
-        this.elements.ratingMoviePoster.src = movie.posterUrl || IconUtils.getCurrentThemeIconPath(48);
-        this.elements.ratingMoviePoster.alt = movie.name;
-        this.elements.ratingMovieTitle.textContent = movie.name;
-        this.elements.ratingMovieMeta.textContent = `${movie.year} • ${(typeof Utils !== 'undefined' && Utils.formatGenres ? Utils.formatGenres(movie.genres, 3) : (movie.genres?.slice(0, 3).join(', ') || ''))}`;
-        
-        // 2. Generate Stars
-        this.elements.ratingStars.innerHTML = '';
-        const isSpiderman = isSpidermanMovie(movie);
-        const isStarWars = isStarWarsMovie(movie);
-        const ratingIcon = getRatingIconMarkup({ isSpiderman, isStarWars });
-
-        for (let i = 1; i <= 10; i++) {
-            const btn = document.createElement('button');
-            btn.className = 'star-rating-btn';
-            btn.classList.toggle('spiderman-rating-btn', isSpiderman);
-            btn.classList.toggle('starwars-rating-btn', isStarWars);
-            btn.dataset.rating = i;
-            btn.setAttribute('aria-label', `Оценить на ${i} из 10`);
-            btn.innerHTML = ratingIcon;
-            this.elements.ratingStars.appendChild(btn);
-        }
-        
-        // 3. Check existing rating
-        const ratingService = firebaseManager.getRatingService();
-        const existingRating = await ratingService.getRating(currentUser.uid, movie.kinopoiskId);
-        
-        if (existingRating) {
-            this.currentRating = existingRating.rating;
-            this.updateStarVisuals(this.currentRating, false);
-            
-            const normalizedComment = Utils.normalizeRatingComment(existingRating.comment);
-            this.elements.ratingComment.value = normalizedComment;
-            this.elements.charCount.textContent = normalizedComment.length;
-            
-            // Show review section if there is a comment
-            this.isReviewVisible = !!normalizedComment;
-            this.elements.reviewContainer.style.display = this.isReviewVisible ? 'block' : 'none';
-        } else {
-            this.currentRating = 0;
-            this.updateStarVisuals(0, false);
-            
-            this.elements.ratingComment.value = '';
-            this.elements.charCount.textContent = '0';
-            
-            this.isReviewVisible = false;
-            this.elements.reviewContainer.style.display = 'none';
-        }
-        
-        this.elements.ratingModal.style.display = 'flex';
-    }
-
-    closeRatingModal() {
-        this.elements.ratingModal.style.display = 'none';
-        // Reset state
-        this.currentRating = 0;
-        this.elements.ratingComment.value = ''; // extra safety
-    }
-
-    async saveRating() {
-        try {
-            // Get current user dynamically
-            const currentUser = firebaseManager.getCurrentUser();
-            
-            // Check if user is authenticated
-            if (!currentUser) {
-                Utils.showToast(i18n.get('navbar.sign_in'), 'error');
-                return;
-            }
-            
-            const rating = this.currentRating;
-            const comment = this.elements.ratingComment.value.trim();
-            
-            if (!rating || rating < 1 || rating > 10) {
-                Utils.showToast(i18n.get('ratings.modal.rate_movie'), 'warning');
-                return;
-            }
-            
-            const ratingService = firebaseManager.getRatingService();
-            const userService = firebaseManager.getUserService();
-            
-            // Get user profile
-            const userProfile = await userService.getUserProfile(currentUser.uid);
-            
-            // Get display name based on user preference
-            const displayName = typeof Utils !== 'undefined' && Utils.getDisplayName
-                ? Utils.getDisplayName(userProfile, currentUser)
-                : (userProfile?.displayName || currentUser.displayName || currentUser.email);
-            
-            await ratingService.addOrUpdateRating(
-                currentUser.uid,
-                displayName,
-                userProfile?.photoURL || currentUser.photoURL || '',
-                this.selectedMovie.kinopoiskId,
-                rating,
-                comment,
-                this.selectedMovie // Pass movie data for potential caching
-            );
-            
-            this.closeRatingModal();
-            Utils.showToast(i18n.get('settings.saved'), 'success');
-            
-            // Reload user ratings section if on detail page
-            if (this.selectedMovie && document.getElementById('userRatingsSection')) {
-                await this.loadAndDisplayUserRatings(this.selectedMovie.kinopoiskId);
-            }
-            
-            // Reload movie detail page to show favorite button if movie is now rated
-            if (this.selectedMovie) {
-                await this.loadMovieById(this.selectedMovie.kinopoiskId, false);
-            }
-            
-            // Update button states to show favorite button if movie is now rated
-            if (this.currentUser) {
-                setTimeout(() => {
-                    this.updateButtonStates().catch(err => console.error('Error updating button states:', err));
-                }, 200);
-            }
-            
-        } catch (error) {
-            console.error('Error saving rating:', error);
-            Utils.showToast(`${i18n.get('settings.save_failed')}: ${error.message}`, 'error');
-        }
-    }
-
-    updateStarVisuals(rating, isHover) {
-        const buttons = this.elements.ratingStars.querySelectorAll('.star-rating-btn');
-        buttons.forEach(btn => {
-            const starRating = parseInt(btn.dataset.rating);
-            if (starRating <= rating) {
-                btn.classList.add(isHover ? 'hover' : 'active');
-                if (isHover) btn.classList.remove('active'); // Priority to hover class during hover
-            } else {
-                btn.classList.remove('active', 'hover');
-            }
-        });
-    }
-
     setupRatingMenuListeners() {
         document.addEventListener('click', (e) => {
             if (!e.target.closest('.user-rating-menu')) {
@@ -2914,9 +2518,7 @@ class SearchManager {
                 const menu = document.getElementById(`menu-${ratingId}`);
                 if (menu) menu.style.display = 'none';
                 
-                if (action === 'edit') {
-                    await this.editUserRating(ratingId);
-                } else if (action === 'delete') {
+                if (action === 'delete') {
                     await this.deleteUserRating(ratingId);
                 }
             });
@@ -2942,51 +2544,6 @@ class SearchManager {
                 }
             });
         });
-    }
-
-    async editUserRating(ratingId) {
-        try {
-            const currentUser = firebaseManager.getCurrentUser();
-            if (!currentUser) {
-                Utils.showToast(i18n.get('navbar.sign_in'), 'error');
-                return;
-            }
-
-            // We assume the edit action is for the currently selected movie
-            // or we try to find the movie from results if available.
-            // Since this is search.js, we prioritize selectedMovie.
-            
-            if (this.selectedMovie) {
-                // Verify this rating belongs to this movie?
-                // For simplicity/performance, we just open the rating modal for the selected movie.
-                // The modal will fetch the user's existing rating for this movie.
-                this.showRatingModal(this.selectedMovie);
-            } else {
-                // Try to find movie from ratingId? 
-                // Getting rating doc is needed to know which movie it is if selectedMovie is null
-                const ratingDoc = await firebaseManager.db.collection('ratings').doc(ratingId).get();
-                if (!ratingDoc.exists) {
-                    Utils.showToast('Rating not found', 'error');
-                    return;
-                }
-                const data = ratingDoc.data();
-                const movieId = data.movieId;
-                
-                // Find movie in results
-                const movie = this.currentResults.docs.find(m => String(m.kinopoiskId) === String(movieId));
-                if (movie) {
-                    this.showRatingModal(movie);
-                } else {
-                    // Fetch movie if not in results?
-                    // For now, show error or try to fetch
-                     Utils.showToast('Movie data not found. Please try opening the movie details first.', 'error');
-                }
-            }
-            
-        } catch (error) {
-            console.error('Error editing rating:', error);
-            Utils.showToast(`Error opening edit modal: ${error.message}`, 'error');
-        }
     }
 
     // showEditRatingModal removed - legacy code
@@ -4571,23 +4128,6 @@ document.addEventListener('click', (e) => {
         window.location.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`);
     }
     
-    if (e.target.classList.contains('rate-movie-btn')) {
-        e.stopPropagation();
-        const movieId = e.target.dataset.movieId;
-        
-        // Try to find movie in search results first
-        let movie = searchManager.currentResults.docs?.find(m => m.kinopoiskId == movieId);
-        
-        // If not found in search results, check if it's the selected movie (detail page)
-        if (!movie && searchManager.selectedMovie && searchManager.selectedMovie.kinopoiskId == movieId) {
-            movie = searchManager.selectedMovie;
-        }
-        
-        if (movie) {
-            searchManager.showRatingModal(movie);
-        }
-    }
-
     if (e.target.classList.contains('watch-movie-btn') || e.target.closest('.watch-movie-btn')) {
         console.log('👁️ Watch button clicked!');
         e.stopPropagation();

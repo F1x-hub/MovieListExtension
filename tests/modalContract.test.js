@@ -59,7 +59,6 @@ for (const selector of ['modal-overlay', 'modal-content', 'modal-header', 'modal
 }
 
 assert.match(searchHtml, /class="modal search-detail-modal"/);
-assert.match(searchHtml, /id="ratingModal"[^>]*role="dialog"[^>]*aria-modal="true"/);
 assert.match(searchHtml, /id="videoPlayerModal"[^>]*role="dialog"[^>]*aria-modal="true"/);
 assert.match(searchStyles, /\.search-detail-modal(?:\s|\.)/);
 
@@ -84,9 +83,11 @@ for (const selector of ['modal-header', 'modal-close', 'modal-body', 'modal-foot
 }
 
 assert.match(favoritesHtml, /class="modal limit-modal"/);
-assert.match(favoritesHtml, /class="modal rating-modal"/);
-assert.match(watchlistHtml, /class="modal rating-modal"/);
-assert.match(watchingHtml, /class="modal rating-modal"/);
+// Nothing opened these pages' rating dialogs, so they were removed. Ratings and
+// Movie Details own the rating dialogs people can reach.
+for (const [name, html] of [['Search', searchHtml], ['Favorites', favoritesHtml], ['Watchlist', watchlistHtml], ['Watching', watchingHtml]]) {
+    assert.doesNotMatch(html, /id="ratingModal"|id="saveRatingBtn"/, `${name} must not carry an unreachable rating dialog`);
+}
 
 for (const [name, styles] of [['Favorites', favoritesStyles], ['Watchlist', watchlistStyles]]) {
     for (const selector of ['modal-content', 'modal-header', 'modal-title', 'modal-close', 'modal-body', 'modal-footer']) {

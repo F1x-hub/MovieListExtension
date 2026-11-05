@@ -74,9 +74,17 @@ broken and clean motion, so a green journey means something.
   then 39px on the search control), with or without a window. Later loads are
   stable. The journey measures a later load, so this does not fail it.
 - The rating dialog opens only after Firestore answers, with no feedback before it.
-- Rating dialogs outside the film page have no pending state. Search, Favorites,
-  Watching and Watchlist also have no guard against a double press; Ratings has
-  the guard but no spinner.
+
+## Rating dialogs outside the film page
+
+`rating-save.spec.cjs` covers the film page. The other two places that save a rating
+have their own unit tests, and this rig does not exercise them:
+
+- Ratings closes its dialog at once and writes in the background, rolling back on
+  failure, so it has nothing to wait for. `ratingsPageState` covers its double-press
+  guard.
+- The popup's edit dialog has its own guard and shows failures. `popupAuditFixes`
+  covers both.
 
 ## Reading the numbers
 

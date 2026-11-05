@@ -301,10 +301,9 @@ Each generic visual primitive has one owner:
 `--popover-backdrop` must not be introduced or reused.
 
 Search styles must not become a shared catch-all. `search.css` is a temporary
-compatibility dependency for list-page rating modals; do not add new consumers
-or selectors to it. Extracting that modal surface requires a verified runtime
-pass across Favorites, Collection, Ratings, Watching, and Watchlist before any
-existing link is removed.
+compatibility dependency for the Ratings rating dialog and for the other list
+pages that still link it; do not add new consumers or selectors to it. Removing
+a link requires a verified runtime pass on that page.
 
 ## Component behavior
 

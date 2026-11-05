@@ -41,18 +41,6 @@ class WatchingPageManager {
             
             // Results info
             resultsCount: document.getElementById('resultsCount'),
-            
-            // Rating Modal
-            ratingModal: document.getElementById('ratingModal'),
-            ratingModalTitle: document.getElementById('ratingModalTitle'),
-            ratingModalClose: document.getElementById('ratingModalClose'),
-            ratingSlider: document.getElementById('ratingSlider'),
-            ratingValue: document.getElementById('ratingValue'),
-            ratingComment: document.getElementById('ratingComment'),
-            charCount: document.getElementById('charCount'),
-            saveRatingBtn: document.getElementById('saveRatingBtn'),
-            cancelRatingBtn: document.getElementById('cancelRatingBtn'),
-            movieRatingInfo: document.getElementById('movieRatingInfo')
         };
     }
 
@@ -79,56 +67,6 @@ class WatchingPageManager {
                 this.loadWatchingList();
             });
         }
-
-        // Rating modal
-        this.setupRatingModal();
-    }
-
-    setupRatingModal() {
-        if (!this.elements.ratingModal) return;
-
-        // Close modal
-        if (this.elements.ratingModalClose) {
-            this.elements.ratingModalClose.addEventListener('mousedown', () => {
-                this.closeRatingModal();
-            });
-        }
-
-        if (this.elements.cancelRatingBtn) {
-            this.elements.cancelRatingBtn.addEventListener('mousedown', () => {
-                this.closeRatingModal();
-            });
-        }
-
-        // Rating slider
-        if (this.elements.ratingSlider && this.elements.ratingValue) {
-            this.elements.ratingSlider.addEventListener('input', (e) => {
-                const value = parseInt(e.target.value);
-                this.elements.ratingValue.textContent = value;
-            });
-        }
-
-        // Comment character counter
-        if (this.elements.ratingComment && this.elements.charCount) {
-            this.elements.ratingComment.addEventListener('input', (e) => {
-                const length = e.target.value.length;
-                this.elements.charCount.textContent = length;
-            });
-        }
-
-        // Save rating
-        if (this.elements.saveRatingBtn) {
-            this.elements.saveRatingBtn.addEventListener('mousedown', () => {
-                this.saveRating();
-            });
-        }
-
-        // Close on overlay click
-        this.elements.ratingModal.addEventListener('mousedown', (e) => {
-            if (e.target === this.elements.ratingModal) {
-                this.closeRatingModal();
-            }
-        });
     }
 
     async setupFirebase() {
@@ -369,104 +307,6 @@ class WatchingPageManager {
         }
     }
 
-    async showRatingModal(movieData) {
-        if (!this.elements.ratingModal) return;
-
-        this.currentRatingMovie = movieData;
-        
-        // Set movie info
-        if (this.elements.movieRatingInfo) {
-            const posterUrl = movieData.posterPath || '/src/shared/assets/icons/app/icon48.png';
-            const title = movieData.movieTitle || 'Unknown Movie';
-            const year = movieData.releaseYear || '';
-            
-            this.elements.movieRatingInfo.innerHTML = `
-                <div class="movie-rating-poster">
-                    <img src="${posterUrl}" alt="${title}" onerror="this.src='/src/shared/assets/icons/app/icon48.png'">
-                </div>
-                <div class="movie-rating-info">
-                    <h3>${this.escapeHtml(title)}</h3>
-                    ${year ? `<p>${year}</p>` : ''}
-                </div>
-            `;
-        }
-
-        // Reset form
-        if (this.elements.ratingSlider) {
-            this.elements.ratingSlider.value = 5;
-        }
-        if (this.elements.ratingValue) {
-            this.elements.ratingValue.textContent = '5';
-        }
-        if (this.elements.ratingComment) {
-            this.elements.ratingComment.value = '';
-        }
-        if (this.elements.charCount) {
-            this.elements.charCount.textContent = '0';
-        }
-
-        // Show modal
-        this.elements.ratingModal.style.display = 'flex';
-    }
-
-    closeRatingModal() {
-        if (this.elements.ratingModal) {
-            this.elements.ratingModal.style.display = 'none';
-        }
-        this.currentRatingMovie = null;
-    }
-
-    async saveRating() {
-        if (!this.currentUser || !this.currentRatingMovie) return;
-
-        try {
-            const rating = parseInt(this.elements.ratingSlider.value);
-            const comment = this.elements.ratingComment.value.trim();
-
-            const ratingService = firebaseManager.getRatingService();
-            const user = this.currentUser;
-            
-            await ratingService.addOrUpdateRating(
-                user.uid,
-                user.displayName || user.email || 'User',
-                user.photoURL || '',
-                this.currentRatingMovie.movieId,
-                rating,
-                comment,
-                {
-                    kinopoiskId: this.currentRatingMovie.movieId,
-                    name: this.currentRatingMovie.movieTitle,
-                    posterUrl: this.currentRatingMovie.posterPath,
-                    year: this.currentRatingMovie.releaseYear,
-                    genres: this.currentRatingMovie.genres || []
-                }
-            );
-
-            // Remove from watching after rating
-            const watchingService = firebaseManager.getWatchingService();
-            await watchingService.removeFromWatching(this.currentUser.uid, this.currentRatingMovie.movieId);
-
-            if (typeof Utils !== 'undefined') {
-                Utils.showToast('Фильм оценен и перемещен в просмотренные!', 'success');
-            }
-
-            this.closeRatingModal();
-            
-            // Reload list
-            await this.loadWatchingList();
-            
-            // Update counts in navigation
-            if (window.navigation && typeof window.navigation.updateCounts === 'function') {
-                await window.navigation.updateCounts();
-            }
-        } catch (error) {
-            console.error('Error saving rating:', error);
-            if (typeof Utils !== 'undefined') {
-                Utils.showToast('Ошибка при сохранении оценки', 'error');
-            }
-        }
-    }
-
     updateResultsInfo() {
         if (!this.elements.resultsCount) return;
 
@@ -540,12 +380,6 @@ class WatchingPageManager {
         const month = months[date.getMonth()];
         const year = date.getFullYear();
         return `${day} ${month} ${year}`;
-    }
-
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
     }
 
     async loadWatchingProgress() {

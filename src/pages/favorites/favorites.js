@@ -13,7 +13,6 @@ class FavoritesPageManager {
         this.watchingProgressMap = {}; // Map to store progress by movieId
         this.currentUser = null;
         this.isLoading = false;
-        this.currentRatingMovie = null;
         
         this.init();
     }
@@ -51,21 +50,6 @@ class FavoritesPageManager {
             limitModalClose: document.getElementById('limitModalClose'),
             manageFavoritesBtn: document.getElementById('manageFavoritesBtn'),
             cancelLimitBtn: document.getElementById('cancelLimitBtn'),
-            
-            // Rating Modal
-            ratingModal: document.getElementById('ratingModal'),
-            ratingModalTitle: document.getElementById('ratingModalTitle'),
-            ratingModalClose: document.getElementById('ratingModalClose'),
-            ratingSlider: document.getElementById('ratingSlider'),
-            ratingValue: document.getElementById('ratingValue'),
-            ratingComment: document.getElementById('ratingComment'),
-            charCount: document.getElementById('charCount'),
-            saveRatingBtn: document.getElementById('saveRatingBtn'),
-            cancelRatingBtn: document.getElementById('cancelRatingBtn'),
-            movieRatingInfo: document.getElementById('movieRatingInfo'),
-            currentRatingInfo: document.getElementById('currentRatingInfo'),
-            existingRatingValue: document.getElementById('existingRatingValue'),
-            existingRatingComment: document.getElementById('existingRatingComment')
         };
 
         // UI State Manager
@@ -104,8 +88,6 @@ class FavoritesPageManager {
         // Limit Modal
         this.setupLimitModal();
 
-        // Rating modal
-        this.setupRatingModal();
     }
 
     setupLimitModal() {
@@ -150,53 +132,6 @@ class FavoritesPageManager {
         if (this.elements.limitModal) {
             this.elements.limitModal.style.display = 'none';
         }
-    }
-
-    setupRatingModal() {
-        if (!this.elements.ratingModal) return;
-
-        // Close modal
-        if (this.elements.ratingModalClose) {
-            this.elements.ratingModalClose.addEventListener('mousedown', () => {
-                this.closeRatingModal();
-            });
-        }
-
-        if (this.elements.cancelRatingBtn) {
-            this.elements.cancelRatingBtn.addEventListener('mousedown', () => {
-                this.closeRatingModal();
-            });
-        }
-
-        // Rating slider
-        if (this.elements.ratingSlider && this.elements.ratingValue) {
-            this.elements.ratingSlider.addEventListener('input', (e) => {
-                const value = parseInt(e.target.value);
-                this.elements.ratingValue.textContent = value;
-            });
-        }
-
-        // Comment character counter
-        if (this.elements.ratingComment && this.elements.charCount) {
-            this.elements.ratingComment.addEventListener('input', (e) => {
-                const length = e.target.value.length;
-                this.elements.charCount.textContent = length;
-            });
-        }
-
-        // Save rating
-        if (this.elements.saveRatingBtn) {
-            this.elements.saveRatingBtn.addEventListener('mousedown', () => {
-                this.saveRating();
-            });
-        }
-
-        // Close on overlay click
-        this.elements.ratingModal.addEventListener('mousedown', (e) => {
-            if (e.target === this.elements.ratingModal) {
-                this.closeRatingModal();
-            }
-        });
     }
 
     async setupFirebase() {
@@ -362,7 +297,6 @@ class FavoritesPageManager {
             showFavorite: true,  // Show favorite toggle (to remove from favorites)
             showWatchlist: false,
             showUserInfo: false,
-            showEditRating: true,  // Show edit rating in menu
             showAddToCollection: false,
             showThreeDotMenu: true,
             animeStyle: true, // Use anime style for favorites
@@ -411,109 +345,6 @@ class FavoritesPageManager {
         }
     }
 
-    async showRatingModal(favorite) {
-        if (!this.elements.ratingModal) return;
-
-        this.currentRatingMovie = favorite;
-        const movie = favorite.movie;
-        
-        // Set movie info
-        if (this.elements.movieRatingInfo) {
-            const posterUrl = movie?.posterUrl || '/src/shared/assets/icons/app/icon48.png';
-            const title = movie?.name || favorite.movieTitle || 'Unknown Movie';
-            const year = movie?.year || favorite.releaseYear || '';
-            
-            this.elements.movieRatingInfo.innerHTML = `
-                <div class="movie-rating-poster">
-                    <img src="${posterUrl}" alt="${title}" onerror="this.src='/src/shared/assets/icons/app/icon48.png'">
-                </div>
-                <div class="movie-rating-info">
-                    <h3>${this.escapeHtml(title)}</h3>
-                    ${year ? `<p>${year}</p>` : ''}
-                </div>
-            `;
-        }
-
-        // Set current rating info
-        if (this.elements.currentRatingInfo && favorite.rating) {
-            this.elements.currentRatingInfo.style.display = 'block';
-            if (this.elements.existingRatingValue) {
-                this.elements.existingRatingValue.textContent = `${favorite.rating}`;
-            }
-            if (this.elements.existingRatingComment) {
-                this.elements.existingRatingComment.textContent = favorite.comment || 'No comment';
-            }
-        } else if (this.elements.currentRatingInfo) {
-            this.elements.currentRatingInfo.style.display = 'none';
-        }
-
-        // Set form values
-        if (this.elements.ratingSlider) {
-            this.elements.ratingSlider.value = favorite.rating || 5;
-        }
-        if (this.elements.ratingValue) {
-            this.elements.ratingValue.textContent = favorite.rating || 5;
-        }
-        if (this.elements.ratingComment) {
-            this.elements.ratingComment.value = favorite.comment || '';
-        }
-        if (this.elements.charCount) {
-            this.elements.charCount.textContent = (favorite.comment || '').length;
-        }
-
-        // Show modal
-        this.elements.ratingModal.style.display = 'flex';
-    }
-
-    closeRatingModal() {
-        if (this.elements.ratingModal) {
-            this.elements.ratingModal.style.display = 'none';
-        }
-        this.currentRatingMovie = null;
-    }
-
-    async saveRating() {
-        if (!this.currentUser || !this.currentRatingMovie) return;
-
-        try {
-            const rating = parseInt(this.elements.ratingSlider.value);
-            const comment = this.elements.ratingComment.value.trim();
-            const movie = this.currentRatingMovie.movie;
-
-            const ratingService = firebaseManager.getRatingService();
-            const user = this.currentUser;
-            
-            await ratingService.addOrUpdateRating(
-                user.uid,
-                user.displayName || user.email || 'User',
-                user.photoURL || '',
-                this.currentRatingMovie.movieId,
-                rating,
-                comment,
-                movie ? {
-                    kinopoiskId: movie.kinopoiskId || this.currentRatingMovie.movieId,
-                    name: movie.name,
-                    posterUrl: movie.posterUrl,
-                    year: movie.year,
-                    genres: movie.genres || []
-                } : null
-            );
-
-            if (typeof Utils !== 'undefined') {
-                Utils.showToast('Рейтинг обновлен', 'success');
-            }
-
-            this.closeRatingModal();
-            
-            await this.loadFavorites();
-        } catch (error) {
-            console.error('Error saving rating:', error);
-            if (typeof Utils !== 'undefined') {
-                Utils.showToast('Ошибка при сохранении рейтинга', 'error');
-            }
-        }
-    }
-
     updateResultsInfo() {
         if (!this.elements.resultsCount) return;
 
@@ -535,12 +366,6 @@ class FavoritesPageManager {
         const month = months[date.getMonth()];
         const year = date.getFullYear();
         return `${day} ${month} ${year}`;
-    }
-
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
     }
 
     async handleMigration() {

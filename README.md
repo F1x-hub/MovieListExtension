@@ -460,6 +460,10 @@ keeps npm-compatible three-component semver metadata.
 - Quality filters follow what a release name actually states: `UHD BDRip 1080p` is under 1080p rather than 4K, and sizes typed in Cyrillic or given as a frame size are recognized. Rips with no stated size (`BDRip`, `HDRip`, `DVDRip`) now appear under SD instead of under no filter. Finding 4K releases filed under TV categories needs the next MediaPlayer Suite.
 - Deleting a download closes this page's player for it first, and a failed deletion now says the file is busy instead of talking about pause and resume. Removing the conversion jobs that keep the file busy needs the next MediaPlayer Suite.
 
+### Refactor
+
+- Removed the rating dialogs from Search, Favorites, Watching and Watchlist, which nothing could open. Search's `?sourceUrl=` view, the one route left into that code, no longer offers rating or editing a rating; deleting one there is unchanged. Favorites cards lose their inert «Изменить оценку» menu item.
+
 </details>
 
 <details>
