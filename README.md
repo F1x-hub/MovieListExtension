@@ -280,6 +280,9 @@ settings and pairing. See the
 | `npm run test:player-network-experiment` | Reproduce redirect, DNR allow and iframe-initiator boundaries on test-owned local servers; does not enable production URL policy |
 | `npm run test:player-hls-policy` | Verify controlled HLS frames and zero server hits for rejected initial URLs, redirects, child resources and keys on test-owned servers |
 | `npm run test:watch-room` | Verify watch-room sync, sessions, invites, RTDB rules, and the room Cloud Function and cleanup |
+| `npm run test:e2e` | Build, then click through the real extension in Chromium against local Firebase emulators and check motion and screenshots; see [`tests/e2e/README.md`](tests/e2e/README.md) |
+| `npm run test:e2e:headed` | The same journeys in a visible browser, for frame timing on a real GPU (skips screenshot comparison) |
+| `npm run test:e2e:update` | Rewrite the screenshot baselines after an intended visual change |
 | `npm run package` | Build and create `movie-rating-extension.zip` |
 | `npm run test:security` | Verify the Firestore/Storage access-rule contracts, absence of embedded credentials, and the `spotifyToken` handler |
 | `npm run backfill` | Run the administrative Firestore backfill utility (needs `BACKFILL_RUNNER_EMAIL` and `BACKFILL_RUNNER_PASSWORD`) |
@@ -425,6 +428,8 @@ Set `$env:HDREZKA_PROBE_DIST='1'` as well to check the generated `dist/` files.
   CSS ownership, allowed color exceptions, and UI review checklist.
 - [`docs/UPDATER_RELEASE.md`](docs/UPDATER_RELEASE.md) — signed GitHub release and
   one-time Windows updater setup.
+- [`tests/e2e/README.md`](tests/e2e/README.md) — browser test rig: how to run it, read
+  its filmstrips, add a journey, and which defects it currently lists as open.
 - [`docs/README.md`](docs/README.md) — extended user-facing feature guide.
 
 ## License
@@ -445,6 +450,7 @@ keeps npm-compatible three-component semver metadata.
 - The torrent picker is now a side panel. «Торрент» opens it next to the player and moves the player aside, so the video stays fully visible; pressing it again closes the panel and restores the width. Below 900px wide the panel sits under the player.
 - Release rows lead with what differs between releases: quality, voice-over, size, tracker and seeders, with the full release name on a muted line. All releases are in one scrolling list, the filters offer only the qualities that were found, and «Рекомендуем» marks a top release only when it has enough seeders.
 - Releases and saved downloads are two tabs of the panel, and the current download stays pinned above them. A paused or finished download is managed with compact icon actions.
+- `npm run test:e2e` adds a browser test rig: the built extension runs in real Chromium and a test clicks from Home to a film page and saves a rating, on Firebase emulators with the real security rules. It records per-frame motion, layout jumps and wrong-theme flashes, renders filmstrips, and compares screenshots in both themes. This pilot covers one journey and has not been added to `npm test` or CI.
 
 ### Fixes
 

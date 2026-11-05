@@ -32,6 +32,9 @@
     "test:catalog-navigation": "node tests/catalogNavigationDependencies.test.js",
     "test:kinopoisk-similar": "node tests/kinopoiskSimilarParser.test.js",
     "test:security": "node tests/securityHardening.test.js && node tests/spotifyToken.test.cjs",
+    "test:e2e": "node tests/e2e/run.cjs",
+    "test:e2e:headed": "node tests/e2e/run.cjs --headed",
+    "test:e2e:update": "node tests/e2e/run.cjs --update-snapshots",
     "test:visual-design": "node tests/visualDesignContract.test.js",
     "test:seasonal-theme": "node tests/seasonalTheme.test.cjs",
     "test:actor-age": "node tests/actorAge.test.cjs",
@@ -93,6 +96,7 @@
   "license": "MIT",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "1.62.1",
     "copyfiles": "^2.4.1",
     "eslint": "^10.2.1",
     "globals": "^17.5.0",

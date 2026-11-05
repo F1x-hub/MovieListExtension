@@ -55,6 +55,7 @@ src/shared/config/tmdb.config.js
 
 # Build outputs
 dist/
+.e2e-output/
 build/
 MovieList-extension-*.zip
 MovieListSetup.exe
