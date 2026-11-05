@@ -73,11 +73,10 @@ broken and clean motion, so a green journey means something.
 - The first Home load after signing in moves the nav items sideways (by 105px and
   then 39px on the search control), with or without a window. Later loads are
   stable. The journey measures a later load, so this does not fail it.
-- The rating dialog opens only after Firestore answers, with no feedback before it.
 
 ## Rating dialogs outside the film page
 
-`rating-save.spec.cjs` covers the film page. The other two places that save a rating
+`rating-open.spec.cjs` and `rating-save.spec.cjs` cover the film page. The other two places that save a rating
 have their own unit tests, and this rig does not exercise them:
 
 - Ratings closes its dialog at once and writes in the background, rolling back on

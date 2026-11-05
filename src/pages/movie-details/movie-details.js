@@ -2539,7 +2539,10 @@ class MovieDetailsManager {
                     : i18n.get('movie_details.rate_title');
             }
         }
-        this.currentRating = Number(rating?.rating) || 0;
+        // While the dialog is open this is the user's choice, not the stored rating.
+        if (!this.isDialogShown(this.elements.ratingModal)) {
+            this.currentRating = Number(rating?.rating) || 0;
+        }
         this.updateSeriesEpisodeRatingUI();
     }
 
@@ -6796,6 +6799,8 @@ class MovieDetailsManager {
         try {
             const ratingService = firebaseManager.getRatingService();
             await ratingService.deleteRating(this.currentUser.uid, ratingId);
+            // The dialog must not offer it again while the refresh below is on its way.
+            this.currentPersonalRating = null;
             document.querySelector(`[data-rating-id="${CSS.escape(String(ratingId))}"]`)?.remove();
             if (typeof Utils !== 'undefined') Utils.showToast('Отзыв удален', 'success');
             // The ratings listener owns the review list; only user-scoped controls need a refresh.
@@ -6848,8 +6853,24 @@ class MovieDetailsManager {
             this.elements.ratingStars.appendChild(btn);
         }
         
-        const ratingService = firebaseManager.getRatingService();
-        const existingRating = await ratingService.getRating(currentUser.uid, movie.kinopoiskId);
+        // Open at once with what the page already knows. The read below only
+        // confirms it, so a press never waits for the network.
+        const knownRating = this.currentPersonalRating;
+        this.applyRatingToDialog(knownRating);
+        this.openAccessibleDialog(this.elements.ratingModal);
+
+        const load = this.beginRatingDialogLoad();
+        const freshRating = await firebaseManager.getRatingService()
+            .getRating(currentUser.uid, movie.kinopoiskId)
+            .catch(() => null);
+        // Closed or reopened meanwhile: the reply belongs to a dialog that is gone.
+        if (this.ratingDialogLoad !== load) return;
+        this.endRatingDialogLoad();
+        // getRating reports a failed read as null, which must not erase a known rating.
+        this.applyRatingToDialog(freshRating || knownRating);
+    }
+
+    applyRatingToDialog(existingRating) {
         this.currentRatingId = existingRating?.id || null;
         this.currentPersonalRating = existingRating || null;
         if (existingRating) {
@@ -6890,13 +6911,41 @@ class MovieDetailsManager {
             this.elements.reviewContainer.inert = true;
             this.elements.writeReviewBtn?.setAttribute('aria-expanded', 'false');
         }
-        
-        this.openAccessibleDialog(this.elements.ratingModal);
+    }
+
+    /**
+     * Until the fresh read answers, the choice stays locked: it could be replaced
+     * by a rating changed in another tab, and saving would overwrite that one.
+     * @returns {Object} Identifies this load, so a late reply can tell it is stale
+     */
+    beginRatingDialogLoad() {
+        clearTimeout(this.ratingLoadingHintTimer);
+        const load = {};
+        this.ratingDialogLoad = load;
+        const body = this.elements.ratingModal?.querySelector('.rating-modal-body');
+        if (body) body.inert = true;
+        this.elements.saveRatingBtn?.setAttribute('aria-disabled', 'true');
+        // Like other loaders, the hint waits 150ms so a quick read never flashes it.
+        this.ratingLoadingHintTimer = setTimeout(() => {
+            if (!this.elements.ratingStatus) return;
+            this.elements.ratingStatus.textContent = i18n.get('movie_details.rating_loading');
+            this.elements.ratingStatus.dataset.state = 'loading';
+        }, 150);
+        return load;
+    }
+
+    endRatingDialogLoad() {
+        clearTimeout(this.ratingLoadingHintTimer);
+        this.ratingDialogLoad = null;
+        const body = this.elements.ratingModal?.querySelector('.rating-modal-body');
+        if (body) body.inert = false;
+        this.elements.saveRatingBtn?.removeAttribute('aria-disabled');
     }
 
     closeRatingModal() {
         // A write cannot be recalled, so the dialog stays until it settles.
         if (this.isSavingRating) return;
+        this.endRatingDialogLoad();
         this.closeAccessibleDialog(this.elements.ratingModal);
         this.currentRating = 0;
     }
@@ -6921,7 +6970,7 @@ class MovieDetailsManager {
     }
 
     async saveRating() {
-        if (this.isSavingRating) return;
+        if (this.isSavingRating || this.ratingDialogLoad) return;
         const currentUser = firebaseManager.getCurrentUser();
         if (!currentUser) {
             this.page.showError(createAppError('AUTH_REQUIRED', {

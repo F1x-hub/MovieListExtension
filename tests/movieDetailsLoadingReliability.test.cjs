@@ -263,6 +263,87 @@ function firebase(services = {}) {
     await deniedDetails.saveRating();
     assert.equal(addOrUpdateCalls, 1, 'an ordinary title score remains saveable after the denied episode read');
 
+    // A press opens the rating dialog before its read answers, with the choice locked until it does.
+    {
+        const element = () => ({
+            style: {}, dataset: {}, attributes: {}, value: '', textContent: '', innerHTML: '', inert: false,
+            classList: { toggle() {}, add() {}, remove() {} },
+            setAttribute(name, value) { this.attributes[name] = value; },
+            removeAttribute(name) { delete this.attributes[name]; },
+            appendChild() {}, querySelectorAll: () => [], focus() {}
+        });
+        Object.assign(context, { isSpidermanMovie: () => false, isStarWarsMovie: () => false, getRatingIconMarkup: () => '' });
+        Object.assign(context.document, { createElement: element, activeElement: null });
+        const body = element();
+        const dialog = { ...element(), style: { display: 'none' }, querySelector: selector => (selector === '.rating-modal-body' ? body : null) };
+        const elements = { ratingModal: dialog };
+        for (const name of ['ratingMoviePoster', 'ratingMovieTitle', 'ratingMovieMeta', 'ratingStars', 'ratingComment', 'charCount',
+            'ratingReview', 'reviewCharCount', 'reviewContainer', 'writeReviewBtn', 'saveRatingBtn', 'cancelRatingBtn', 'ratingModalClose', 'ratingStatus']) {
+            elements[name] = element();
+        }
+        let writes = 0;
+        let read = deferred();
+        firebase({
+            getRatingService: () => ({ getRating: () => read.promise, addOrUpdateRating: async () => { writes++; } }),
+            getUserService: () => ({ getUserProfile: async () => ({ displayName: 'User' }) })
+        });
+        const details = manager();
+        details.elements = elements;
+        details.updateSeriesEpisodeRatingUI = () => {};
+        details.currentPersonalRating = { id: 'known', rating: 7, comment: 'Known comment' };
+        const movie = { kinopoiskId: 101, name: 'Film', year: 2020, genres: [] };
+
+        const opening = details.showRatingModal(movie);
+        assert.equal(dialog.style.display, 'flex', 'the dialog shows before the read answers');
+        assert.equal(details.currentRating, 7, 'with the rating the page already knows');
+        assert.equal(elements.ratingComment.value, 'Known comment');
+        assert.equal(body.inert, true, 'nothing can be chosen from unconfirmed data');
+        assert.equal(elements.saveRatingBtn.attributes['aria-disabled'], 'true');
+        await details.saveRating();
+        assert.equal(writes, 0, 'nothing can be saved from unconfirmed data');
+
+        read.resolve(null);
+        await opening;
+        assert.equal(body.inert, false);
+        assert.equal(elements.saveRatingBtn.attributes['aria-disabled'], undefined);
+        assert.equal(details.currentRating, 7, 'a failed read, reported as null, keeps the known rating');
+        assert.equal(elements.ratingComment.value, 'Known comment');
+
+        details.currentRating = 9;
+        details.patchPersonalRating({ rating: 4 }, {});
+        assert.equal(details.currentRating, 9, 'a late personal-state read cannot replace the choice on screen');
+        assert.equal(details.currentPersonalRating.rating, 4);
+        details.closeRatingModal();
+        details.patchPersonalRating({ rating: 4 }, {});
+        assert.equal(details.currentRating, 4, 'with the dialog closed it applies as before');
+
+        read = deferred();
+        details.currentPersonalRating = null;
+        const closedOpening = details.showRatingModal(movie);
+        details.closeRatingModal();
+        assert.equal(body.inert, false, 'closing releases the lock');
+        read.resolve({ id: 'late', rating: 3, comment: 'Late reply' });
+        await closedOpening;
+        assert.equal(dialog.style.display, 'none', 'a late reply does not reopen a closed dialog');
+        assert.equal(elements.ratingComment.value, '', 'and does not fill it');
+        assert.equal(details.currentPersonalRating, null);
+
+        read = deferred();
+        const stale = read;
+        const firstOpening = details.showRatingModal(movie);
+        read = deferred();
+        const secondOpening = details.showRatingModal(movie);
+        stale.resolve({ id: 'stale', rating: 2, comment: 'Stale reply' });
+        await firstOpening;
+        assert.equal(body.inert, true, 'a stale reply cannot unlock the newer opening');
+        read.resolve({ id: 'fresh', rating: 6, comment: 'Fresh reply' });
+        await secondOpening;
+        assert.equal(body.inert, false);
+        assert.equal(details.currentRating, 6);
+        assert.equal(elements.ratingComment.value, 'Fresh reply');
+        details.closeRatingModal();
+    }
+
     // A running write locks the rating dialog: one press means one write, and
     // the dialog cannot be dismissed or edited until the write settles.
     {
@@ -270,6 +351,7 @@ function firebase(services = {}) {
             disabled: false, focused: 0, attributes: {}, classes: new Set(),
             classList: { toggle: (name, on) => saveButton.classes[on ? 'add' : 'delete'](name) },
             setAttribute(name, value) { this.attributes[name] = value; },
+            removeAttribute(name) { delete this.attributes[name]; },
             focus() { this.focused++; }
         };
         const body = { inert: false };
