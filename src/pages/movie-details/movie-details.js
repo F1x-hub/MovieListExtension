@@ -6808,6 +6808,8 @@ class MovieDetailsManager {
 
     // Rating Modal Methods
     async showRatingModal(movie) {
+        if (this.isSavingRating) return;
+        this.setRatingSaving(false);
         this.selectedMovie = movie;
         const currentUser = firebaseManager.getCurrentUser();
         if (!currentUser) {
@@ -6893,39 +6895,63 @@ class MovieDetailsManager {
     }
 
     closeRatingModal() {
+        // A write cannot be recalled, so the dialog stays until it settles.
+        if (this.isSavingRating) return;
         this.closeAccessibleDialog(this.elements.ratingModal);
         this.currentRating = 0;
     }
 
+    /**
+     * While a rating is being written the dialog shows it and cannot be edited
+     * or dismissed, so what was saved is always what the user last saw.
+     * @param {boolean} saving
+     */
+    setRatingSaving(saving) {
+        this.isSavingRating = saving;
+        const { saveRatingBtn, cancelRatingBtn, ratingModalClose, ratingModal } = this.elements;
+        if (saveRatingBtn) {
+            saveRatingBtn.disabled = saving;
+            saveRatingBtn.classList.toggle('btn--pending', saving);
+            saveRatingBtn.setAttribute('aria-busy', String(saving));
+        }
+        if (cancelRatingBtn) cancelRatingBtn.disabled = saving;
+        if (ratingModalClose) ratingModalClose.disabled = saving;
+        const body = ratingModal?.querySelector('.rating-modal-body');
+        if (body) body.inert = saving;
+    }
+
     async saveRating() {
+        if (this.isSavingRating) return;
+        const currentUser = firebaseManager.getCurrentUser();
+        if (!currentUser) {
+            this.page.showError(createAppError('AUTH_REQUIRED', {
+                category: 'auth',
+                retryable: false,
+                context: { operation: 'rating-save' }
+            }));
+            return;
+        }
+
+        if (!this.currentRating || this.currentRating < 1) {
+            if (typeof Utils !== 'undefined') Utils.showToast('Выберите оценку', 'warning');
+            return;
+        }
+
+        const comment = Utils.normalizeRatingComment(this.elements.ratingComment.value);
+        const review = this.normalizeReviewForDisplay(this.elements.ratingReview?.value || '');
+        if (this.getRatingTextLength(review) > 5000) {
+            this.showRatingReviewError('Рецензия не должна превышать 5000 символов.');
+            return;
+        }
+
+        this.setRatingSaving(true);
         try {
-            const currentUser = firebaseManager.getCurrentUser();
-            if (!currentUser) {
-                this.page.showError(createAppError('AUTH_REQUIRED', {
-                    category: 'auth',
-                    retryable: false,
-                    context: { operation: 'rating-save' }
-                }));
-                return;
-            }
-            
-            if (!this.currentRating || this.currentRating < 1) {
-                if (typeof Utils !== 'undefined') Utils.showToast('Выберите оценку', 'warning');
-                return;
-            }
-            
             const ratingService = firebaseManager.getRatingService();
             const userService = firebaseManager.getUserService();
             const userProfile = await userService.getUserProfile(currentUser.uid);
             const displayName = userProfile?.displayName || currentUser.displayName || currentUser.email;
-            const comment = Utils.normalizeRatingComment(this.elements.ratingComment.value);
-            const review = this.normalizeReviewForDisplay(this.elements.ratingReview?.value || '');
             const commentChanged = comment !== this.originalRatingComment;
             const reviewChanged = review !== this.originalRatingReview;
-            if (this.getRatingTextLength(review) > 5000) {
-                this.showRatingReviewError('Рецензия не должна превышать 5000 символов.');
-                return;
-            }
 
             if (this.currentRatingId && this.originalRating === Number(this.currentRating) && (commentChanged || reviewChanged)) {
                 const patch = {};
@@ -6940,15 +6966,27 @@ class MovieDetailsManager {
                     comment, this.selectedMovie, reviewOptions
                 );
             }
-            
-            this.closeRatingModal();
-            if (typeof Utils !== 'undefined') Utils.showToast('Оценка сохранена!', 'success');
+        } catch (error) {
+            console.error('Error saving rating:', error);
+            this.setRatingSaving(false);
+            this.elements.saveRatingBtn?.focus();
+            // A toast, not the review field's error slot: that slot sits inside a
+            // section that is usually collapsed, where nobody would see it.
+            if (typeof Utils !== 'undefined') Utils.showToast(i18n.get('ratings.toast.rating_save_error'), 'error');
+            return;
+        }
+
+        // The buttons keep their state while the dialog closes, so they do not
+        // visibly flip back; showRatingModal resets them on the next opening.
+        this.isSavingRating = false;
+        this.closeRatingModal();
+        if (typeof Utils !== 'undefined') Utils.showToast('Оценка сохранена!', 'success');
+        try {
             // The ratings listener patches the review list live; a full page reload
             // would reset scroll and drop render-bound enrichments.
             await this.loadPersonalState(this.selectedMovie.kinopoiskId);
         } catch (error) {
-            console.error('Error saving rating:', error);
-            this.showRatingReviewError(error.message || 'Не удалось сохранить рецензию.');
+            console.error('Error refreshing personal state after saving a rating:', error);
         }
     }
 

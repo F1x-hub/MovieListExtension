@@ -1,4 +1,4 @@
-const { test, expect, emulator, waitForStillness } = require('../lib/fixtures.cjs');
+const { test, expect, emulator, setTheme, waitForStillness } = require('../lib/fixtures.cjs');
 const { SECTIONS, kinopoiskIdFor } = require('../lib/catalog.cjs');
 
 const THEMES = ['dark', 'light'];
@@ -25,16 +25,6 @@ const EXPLAINED_LOAD_JUMPS = {
 
 function unexplainedJumps(report, page) {
     return report.shifts.jumps.filter(jump => !EXPLAINED_LOAD_JUMPS[page].some(known => known.test(jump.what)));
-}
-
-async function setTheme(page, theme) {
-    await page.evaluate(id => {
-        localStorage.setItem('movieExtensionTheme', id);
-        return chrome.storage.local.set({ theme: id });
-    }, theme);
-    // Recording starts from this theme, not from a page painted in the previous one.
-    await page.reload();
-    await waitForStillness(page);
 }
 
 async function loadedImagesIn(locator) {

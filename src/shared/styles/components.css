@@ -32,6 +32,46 @@
     cursor: not-allowed;
 }
 
+/* A button whose action is running. The invisible label keeps its size, and the
+   spinner waits 150ms like other loaders, so a quick action never flashes it.
+   Reduced motion drops the animations: the spinner then shows at once, still. */
+.btn--pending {
+    position: relative;
+    -webkit-text-fill-color: transparent;
+    animation: btn-pending-label 150ms step-end;
+}
+
+.btn--pending:disabled {
+    opacity: 1;
+    cursor: progress;
+}
+
+.btn--pending::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    width: 16px;
+    height: 16px;
+    margin: auto;
+    box-sizing: border-box;
+    border: 2px solid color-mix(in srgb, currentColor 25%, transparent);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: btn-pending-spinner 150ms step-end, btn-pending-spin 800ms linear infinite;
+}
+
+@keyframes btn-pending-label {
+    from, to { -webkit-text-fill-color: currentColor; }
+}
+
+@keyframes btn-pending-spinner {
+    from, to { opacity: 0; }
+}
+
+@keyframes btn-pending-spin {
+    to { transform: rotate(360deg); }
+}
+
 .btn-sm {
     padding: var(--space-xs) var(--space-sm);
     font-size: var(--font-size-xs);
@@ -671,6 +711,12 @@
 .modal-close:focus-visible {
     outline: 2px solid var(--ui-color-interactive);
     outline-offset: 2px;
+}
+
+.modal-close:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    pointer-events: none;
 }
 
 .modal-body {

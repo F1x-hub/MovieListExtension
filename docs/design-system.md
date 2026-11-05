@@ -312,6 +312,9 @@ existing link is removed.
 - Keep borders, shadows, radius, spacing, and motion consistent across pages.
 - Use `:focus-visible` with a visible neutral focus treatment; never remove focus
   outlines globally without a replacement.
+- A button whose action is running stays the same size and swaps its label for a
+  spinner with `.btn--pending`, alongside `disabled` and `aria-busy`. The spinner
+  waits 150ms, so a quick action does not flash it.
 - Keep provider badges and game visuals small and bounded by their content area.
 - Use explicit modifier classes for intentional variants instead of overriding a
   generic class from a page stylesheet.

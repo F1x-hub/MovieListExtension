@@ -263,6 +263,85 @@ function firebase(services = {}) {
     await deniedDetails.saveRating();
     assert.equal(addOrUpdateCalls, 1, 'an ordinary title score remains saveable after the denied episode read');
 
+    // A running write locks the rating dialog: one press means one write, and
+    // the dialog cannot be dismissed or edited until the write settles.
+    {
+        const saveButton = {
+            disabled: false, focused: 0, attributes: {}, classes: new Set(),
+            classList: { toggle: (name, on) => saveButton.classes[on ? 'add' : 'delete'](name) },
+            setAttribute(name, value) { this.attributes[name] = value; },
+            focus() { this.focused++; }
+        };
+        const body = { inert: false };
+        const toasts = [];
+        const realToast = context.Utils.showToast;
+        context.Utils.showToast = (message, type) => toasts.push({ message, type });
+        let writes = 0;
+        let settle;
+        firebase({
+            getUserService: () => ({ getUserProfile: async () => ({ displayName: 'User' }) }),
+            getRatingService: () => ({
+                addOrUpdateRating: () => {
+                    writes++;
+                    return new Promise((resolve, reject) => { settle = { resolve, reject }; });
+                }
+            })
+        });
+        const details = manager();
+        details.elements = {
+            ratingComment: { value: '' }, ratingReview: { value: '' },
+            saveRatingBtn: saveButton, cancelRatingBtn: { disabled: false }, ratingModalClose: { disabled: false },
+            ratingModal: { style: { display: 'flex' }, querySelector: selector => (selector === '.rating-modal-body' ? body : null) }
+        };
+        details.selectedMovie = { kinopoiskId: 101 };
+        details.currentRating = 8;
+        details.originalRating = 0;
+        details.originalRatingComment = '';
+        details.originalRatingReview = '';
+        const flush = () => new Promise(resolve => setImmediate(resolve));
+
+        const failing = details.saveRating();
+        const repeated = details.saveRating();
+        await repeated;
+        await flush();
+        assert.equal(writes, 1, 'a second press while saving does not write again');
+        assert.equal(saveButton.disabled, true);
+        assert.equal(saveButton.classes.has('btn--pending'), true);
+        assert.equal(saveButton.attributes['aria-busy'], 'true');
+        assert.equal(details.elements.cancelRatingBtn.disabled, true);
+        assert.equal(details.elements.ratingModalClose.disabled, true);
+        assert.equal(body.inert, true, 'the choice cannot change during the write');
+        details.closeRatingModal();
+        assert.equal(details.elements.ratingModal.style.display, 'flex', 'a running write cannot be dismissed');
+
+        settle.reject(new Error('Failed to save rating: offline'));
+        await failing;
+        assert.deepEqual(toasts, [{ message: 'ratings.toast.rating_save_error', type: 'error' }],
+            'a failure is announced even with the review section collapsed, without technical text');
+        assert.equal(saveButton.disabled, false);
+        assert.equal(saveButton.classes.has('btn--pending'), false);
+        assert.equal(saveButton.focused, 1, 'focus returns to the control that can retry');
+        assert.equal(details.elements.cancelRatingBtn.disabled, false);
+        assert.equal(body.inert, false);
+        assert.equal(details.currentRating, 8, 'a failure keeps the chosen rating');
+        assert.equal(details.elements.ratingModal.style.display, 'flex');
+
+        toasts.length = 0;
+        let refreshes = 0;
+        details.loadPersonalState = async () => { refreshes++; throw new Error('refresh failed'); };
+        const succeeding = details.saveRating();
+        await flush();
+        settle.resolve();
+        await succeeding;
+        assert.equal(writes, 2);
+        assert.equal(details.isSavingRating, false);
+        assert.equal(details.elements.ratingModal.style.display, 'none', 'a finished write closes the dialog');
+        assert.equal(refreshes, 1);
+        assert.deepEqual(toasts.map(toast => toast.type), ['success'],
+            'a failed refresh after a stored write is not reported as a failed save');
+        context.Utils.showToast = realToast;
+    }
+
     // A partial first paint (cold start) is rerendered when the complete movie
     // fills its gaps, so backdrop, seasons and provider ratings do not need a reload.
     const gaps = context.window.MovieDetailsManager.fillsRenderGaps;

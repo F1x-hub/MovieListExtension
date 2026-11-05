@@ -59,6 +59,16 @@ async function waitForStillness(page, quietMs = 400) {
     await page.evaluate(() => { delete globalThis.__e2eStillSince; });
 }
 
+async function setTheme(page, theme) {
+    await page.evaluate(id => {
+        localStorage.setItem('movieExtensionTheme', id);
+        return chrome.storage.local.set({ theme: id });
+    }, theme);
+    // Recording starts from this theme, not from a page painted in the previous one.
+    await page.reload();
+    await waitForStillness(page);
+}
+
 function describeReport(report) {
     const parts = [`${report.label}: shift ${report.shifts.score} (${report.shifts.count}), long frames ${report.longFrames.count}, brightness ${report.brightness.min}..${report.brightness.max}`];
     for (const element of report.elements || []) {
@@ -200,4 +210,4 @@ const test = base.extend({
     }
 });
 
-module.exports = { test, expect, emulator, waitForStillness };
+module.exports = { test, expect, emulator, setTheme, waitForStillness };
