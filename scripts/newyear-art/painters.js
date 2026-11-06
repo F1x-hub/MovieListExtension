@@ -364,8 +364,8 @@
         f.lineCap = 'round';
         const r = rng(3131);
         L.ornaments.forEach(o => {
-            [-1, 1, r() < 0.5 ? -1 : 1].forEach((side, i) => {
-                const needle = L.needle * (0.56 + r() * 0.2);
+            [-1, 1].forEach((side, i) => {
+                const needle = L.needle * (0.5 + r() * 0.16);
                 const sx = o.x - side * (10 + r() * 7) * k, sy = o.y - (5 + r() * 7) * k;
                 bough(f, {
                     P: T, r, needle, step: Math.max(1.1, needle * 0.15), lw: 0.62 * k + 0.2,

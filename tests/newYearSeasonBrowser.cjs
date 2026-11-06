@@ -440,6 +440,54 @@ async function main() {
         assert.deepEqual(errors, []);
     });
 
+    // The tree carries many kinds of ornament, angels among them, and none melts into its
+    // warm light. The share of yellow is measured on the painted ornament itself.
+    await withExtension({ date: '2026-12-20T12:00:00+03:00' }, async (page, url, errors) => {
+        await page.goto(url(HOME));
+        await waitForSign(page);
+        const tree = await page.evaluate(() => {
+            const { NyOrnaments, NyTree } = window;
+            const yellowShare = ornament => {
+                const { canvas } = NyOrnaments.sprite(ornament, 2);
+                const { data } = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+                let solid = 0, yellow = 0;
+                for (let i = 0; i < data.length; i += 4) {
+                    if (data[i + 3] < 200) continue;
+                    solid += 1;
+                    const r = data[i], g = data[i + 1], b = data[i + 2];
+                    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+                    if (max < 110 || (max - min) / max < 0.35 || b === max) continue;
+                    const hue = r === max ? 60 * (g - b) / (max - min) : 60 * (2 + (b - r) / (max - min));
+                    if (hue >= 28 && hue <= 72) yellow += 1;
+                }
+                return solid ? yellow / solid : -1;
+            };
+            const width = document.querySelector('.ny-tree__live').clientWidth;
+            const dressed = NyOrnaments.dress(NyTree.treeLayout(width).ornaments);
+            const shares = dressed.map(ornament => ({ name: `${ornament.type}:${ornament.tone || ''}`, share: yellowShare(ornament) }));
+            NyOrnaments.GLASS.gold = [228, 168, 54];
+            const control = yellowShare({ type: 'ball', tone: 'gold', deco: 'plain', R: 12, len: 5, seed: 1 });
+            delete NyOrnaments.GLASS.gold;
+            return {
+                total: dressed.length,
+                kinds: new Set(dressed.map(ornament => ornament.type)).size,
+                angels: dressed.filter(ornament => ornament.type === 'angel').length,
+                blank: shares.filter(item => item.share < 0).map(item => item.name),
+                yellow: shares.filter(item => item.share > 0.15).map(item => `${item.name} ${item.share.toFixed(2)}`),
+                control
+            };
+        });
+        assert.ok(tree.control > 0.5, `the measure must catch a gold ball (${tree.control})`);
+        assert.ok(tree.kinds >= 12, `the tree needs variety, it has ${tree.kinds} kinds of ornament`);
+        assert.ok(tree.angels >= 2, 'the tree needs its angels');
+        assert.deepEqual(tree.blank, []);
+        assert.deepEqual(tree.yellow, [], 'no ornament may melt into the warm light');
+        await page.evaluate(() => document.querySelector('.ny-marquee').scrollIntoView({ block: 'center' }));
+        await page.waitForTimeout(4200);
+        await shot(page, 'tree-lit');
+        assert.deepEqual(errors, []);
+    });
+
     // On every page the sky shows through: nothing in the page's flow paints over it.
     await withExtension({ date: '2026-12-20T12:00:00+03:00' }, async (page, url, errors) => {
         const pages = ['home/home.html', 'random/random.html', 'catalog/catalog.html', 'search/search.html', 'ratings/ratings.html',

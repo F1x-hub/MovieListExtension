@@ -112,7 +112,13 @@ cinema under the snow at night, and it belongs to this season alone:
 - Home's `.ny-marquee`: an Art Deco sign, night in both themes, with a neon title in
   the bundled Poiret One, running lamps, a film-leader dial and flip digits counting
   to midnight on 1 January, a decorated tree breaking through its top edge and twelve
-  gifts. Any gift opens onto a New Year film from TMDB (keyword 207317, requested on
+  gifts. The ornaments (`src/shared/seasonal/newyear/ornaments.js`) are glass balls, angels,
+  a snowman, bells, a candy cane, a mitten, a snowflake, a star, a frosted cone, an icicle,
+  and from the cinema a popcorn tub, a clapperboard and a film reel. None is yellow: the
+  needles already glow warm, so a yellow ornament disappears there. The lamps' glow is
+  drawn behind the ornaments for the same reason, because over them it would turn every
+  color toward yellow. Slots are in `tree.js`, and the art generator paints their sprigs
+  and shadows; who hangs in which slot is the arrangement in `ornaments.js`. Any gift opens onto a New Year film from TMDB (keyword 207317, requested on
   the first opening only and again after an answer without films; `«Случайный»` is
   the fallback). All gifts share one card, which says so while the film is on its way
   and belongs to the gift opened last, even while an earlier one still closes. It

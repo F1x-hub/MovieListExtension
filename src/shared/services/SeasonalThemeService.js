@@ -39,7 +39,7 @@
             // TMDB keyword "christmas".
             ctaHref: '../catalog/catalog.html?category=films&keyword=207317',
             // The sign, the snow and the forest load only while the season is on.
-            runtime: Object.freeze(['art', 'tree', 'gifts', 'sleigh', 'fx', 'banner'])
+            runtime: Object.freeze(['art', 'tree', 'ornaments', 'gifts', 'sleigh', 'fx', 'banner'])
         })
     ]);
 

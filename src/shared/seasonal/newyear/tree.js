@@ -2,8 +2,8 @@
  * New Year season: the decorated fir, live part.
  *
  * The body is a pre-rendered picture whose needles are already warmed by its own
- * lights. This layer draws what moves: swinging ornaments, twinkling lights, the
- * film garland that keeps running around the tree, and the star.
+ * lights. This layer draws what moves: swinging ornaments (painted in ornaments.js),
+ * twinkling lights, the film garland that keeps running around the tree, and the star.
  */
 (function (g) {
     'use strict';
@@ -11,13 +11,6 @@
     const A = g.NyArt;
     const TAU = A.TAU, rng = A.rng, clamp = A.clamp, lerp = A.lerp, mix = A.mix, rgb = A.rgb;
     const WHITE = [255, 255, 255], BLACK = [0, 0, 0];
-
-    const ORNAMENT_COLORS = {
-        red: [198, 24, 40],
-        gold: [228, 168, 54],
-        ice: [172, 198, 228],
-        blue: [26, 62, 150]
-    };
 
     /* ---------- Where everything hangs: shared with the art generator ---------- */
 
@@ -49,26 +42,23 @@
             });
         }
 
-        /* Ornaments in staggered rows, big low down and small near the top. */
+        /* Ornaments in staggered rows, big low down and small near the top. The gifts hide
+           the lower part of the tree in every layout, so they hang closer together above it. */
         const ornaments = [];
-        const cycle = ['red', 'gold', 'red', 'ice', 'gold', 'red', 'blue', 'gold'];
-        const decos = ['plain', 'band', 'plain', 'meridian', 'plain', 'stars', 'plain', 'frost'];
-        let n = 0, rowT = 0.15;
-        const minD = 31;
+        let n = 0, rowT = 0.14, odd = false;
+        const minD = 29;
         while (rowT < 1) {
             const wd = widthAt(rowT) * 0.86;
-            const cnt = Math.max(1, Math.round(wd * 2 / (minD * 1.22)));
+            const spacing = rowT < 0.74 ? 37 : 62;
+            const cnt = Math.max(1, Math.round(wd * 2 / spacing));
+            const step = wd * 2 / cnt;
             for (let i = 0; i < cnt; i++) {
-                const x = cx + lerp(-wd, wd, (i + 0.5 + (r() - 0.5) * 0.55) / cnt);
-                const y = top + TH * rowT + (r() - 0.5) * 12;
+                const shift = cnt > 1 ? (odd ? 0.24 : -0.24) * step : 0;
+                const x = cx - wd + step * (i + 0.5) + shift + (r() - 0.5) * 6;
+                const y = top + TH * rowT + (r() - 0.5) * 8;
                 if (ornaments.some(o => Math.hypot(o.x - x, o.y - y) < minD)) continue;
-                const R = lerp(8.6, 14.6, rowT) * (0.9 + r() * 0.2);
-                const roll = r();
-                const type = rowT < 0.2 ? 'ball' : roll < 0.12 ? 'icicle' : roll < 0.22 ? 'cone' : roll < 0.3 ? 'star' : 'ball';
                 ornaments.push({
-                    x, y, R, type, t: rowT,
-                    color: ORNAMENT_COLORS[cycle[n % cycle.length]],
-                    deco: decos[(n * 3) % decos.length],
+                    x, y, R: lerp(8.6, 14.6, rowT) * (0.9 + r() * 0.2), t: rowT,
                     seed: 500 + n,
                     len: 3 + r() * 5,
                     ph: r() * TAU, fq: 0.5 + r() * 0.8, spin: 0.4 + r() * 0.5,
@@ -76,7 +66,8 @@
                 });
                 n++;
             }
-            rowT += lerp(0.082, 0.06, rowT);
+            odd = !odd;
+            rowT += lerp(0.086, 0.07, rowT);
         }
         ornaments.sort((a, b) => a.y - b.y);
         base = { cx, top, base: bottom, hw, TH, lights, ornaments, needle: 15, gap: 8.2, starY: top - 13, starR: 29 };
@@ -98,8 +89,6 @@
         });
     }
 
-    /* ---------- Ornaments ---------- */
-
     function fivePoint(x, cx, cy, R, r0, rot) {
         x.beginPath();
         for (let i = 0; i < 10; i++) {
@@ -108,213 +97,6 @@
             else x.moveTo(cx + Math.cos(a) * q, cy + Math.sin(a) * q);
         }
         x.closePath();
-    }
-
-    function ball(x, cy, R, o) {
-        const c = o.color, r = rng(o.seed);
-        const gr = x.createRadialGradient(-R * 0.36, cy - R * 0.42, R * 0.05, 0, cy, R * 1.14);
-        gr.addColorStop(0, rgb(mix(c, WHITE, 0.78)));
-        gr.addColorStop(0.17, rgb(mix(c, WHITE, 0.32)));
-        gr.addColorStop(0.46, rgb(c));
-        gr.addColorStop(0.82, rgb(mix(c, BLACK, 0.56)));
-        gr.addColorStop(1, rgb(mix(c, BLACK, 0.8)));
-        x.fillStyle = gr;
-        x.beginPath();
-        x.arc(0, cy, R, 0, TAU);
-        x.fill();
-
-        x.save();
-        x.beginPath();
-        x.arc(0, cy, R, 0, TAU);
-        x.clip();
-        const ink = c === ORNAMENT_COLORS.gold ? 'rgba(120,28,30,0.85)' : 'rgba(255,214,128,0.95)';
-        if (o.deco === 'band') {
-            x.strokeStyle = ink;
-            x.lineWidth = R * 0.11;
-            [-0.3, 0.3].forEach(q => {
-                x.beginPath();
-                x.ellipse(0, cy + R * q, R * 1.02, R * 0.22, 0, 0.1, Math.PI - 0.1);
-                x.stroke();
-            });
-            x.fillStyle = ink;
-            for (let i = -3; i <= 3; i++) {
-                const a = i * 0.42;
-                x.beginPath();
-                x.arc(Math.sin(a) * R * 0.98, cy + Math.cos(a) * R * 0.22 + R * 0.02, R * 0.07, 0, TAU);
-                x.fill();
-            }
-        } else if (o.deco === 'meridian') {
-            x.strokeStyle = ink;
-            x.lineWidth = R * 0.075;
-            for (let i = 1; i <= 3; i++) {
-                x.beginPath();
-                x.ellipse(0, cy, Math.sin(i * 0.5) * R, R, 0, 0, TAU);
-                x.stroke();
-            }
-            x.beginPath();
-            x.moveTo(0, cy - R);
-            x.lineTo(0, cy + R);
-            x.stroke();
-        } else if (o.deco === 'stars') {
-            x.fillStyle = ink;
-            for (let i = 0; i < 7; i++) {
-                const a = r() * TAU, q = Math.sqrt(r()) * R * 0.86;
-                fivePoint(x, Math.cos(a) * q, cy + Math.sin(a) * q, R * 0.17, R * 0.07, r());
-                x.fill();
-            }
-        } else if (o.deco === 'frost') {
-            x.strokeStyle = 'rgba(255,255,255,0.72)';
-            x.lineWidth = R * 0.05;
-            x.lineCap = 'round';
-            for (let i = 0; i < 5; i++) {
-                const a = i * 1.26 + 0.4;
-                x.beginPath();
-                x.moveTo(0, cy);
-                x.quadraticCurveTo(Math.cos(a) * R * 0.5, cy + Math.sin(a) * R * 0.1, Math.cos(a + 0.5) * R * 0.92, cy + Math.sin(a + 0.5) * R * 0.92);
-                x.stroke();
-            }
-        }
-        /* Warm bounce from the lights around it. */
-        const b = x.createRadialGradient(R * 0.5, cy + R * 0.62, 0, R * 0.5, cy + R * 0.62, R * 0.9);
-        b.addColorStop(0, 'rgba(255,196,120,0.58)');
-        b.addColorStop(1, 'rgba(255,196,120,0)');
-        x.fillStyle = b;
-        x.fillRect(-R, cy - R, R * 2, R * 2);
-        x.restore();
-
-        /* A curved window of light, the thing that makes glass read as glass. */
-        x.save();
-        x.translate(-R * 0.42, cy - R * 0.46);
-        x.rotate(-0.72);
-        x.fillStyle = 'rgba(255,255,255,0.92)';
-        x.beginPath();
-        x.ellipse(0, 0, R * 0.27, R * 0.13, 0, 0, TAU);
-        x.fill();
-        x.restore();
-        x.fillStyle = 'rgba(255,255,255,0.55)';
-        x.beginPath();
-        x.arc(R * 0.2, cy - R * 0.66, R * 0.055, 0, TAU);
-        x.fill();
-        x.strokeStyle = 'rgba(255,226,180,0.42)';
-        x.lineWidth = Math.max(0.5, R * 0.05);
-        x.beginPath();
-        x.arc(0, cy, R - 0.5, 0.15 * Math.PI, 0.55 * Math.PI);
-        x.stroke();
-    }
-
-    function icicle(x, cy, R, o) {
-        const L = R * 3.6, W = R * 0.66;
-        x.beginPath();
-        x.moveTo(-W * 0.45, cy - R);
-        x.bezierCurveTo(-W, cy - R + L * 0.16, -W * 0.62, cy - R + L * 0.5, 0, cy - R + L);
-        x.bezierCurveTo(W * 0.62, cy - R + L * 0.5, W, cy - R + L * 0.16, W * 0.45, cy - R);
-        x.closePath();
-        const gr = x.createLinearGradient(-W, 0, W, 0);
-        gr.addColorStop(0, '#5f86c2');
-        gr.addColorStop(0.32, '#eaf5ff');
-        gr.addColorStop(0.62, '#a8c8ee');
-        gr.addColorStop(1, '#3f629f');
-        x.fillStyle = gr;
-        x.fill();
-        x.save();
-        x.clip();
-        x.strokeStyle = 'rgba(255,255,255,0.72)';
-        x.lineWidth = Math.max(0.5, R * 0.09);
-        for (let i = 0; i < 7; i++) {
-            const y = cy - R + i * L / 7;
-            x.beginPath();
-            x.moveTo(-W, y + R * 0.3);
-            x.quadraticCurveTo(0, y + R * 0.1, W, y - R * 0.3);
-            x.stroke();
-        }
-        x.restore();
-    }
-
-    function pineCone(x, cy, R) {
-        const L = R * 2.5, W = R * 0.92;
-        const top = cy - R;
-        x.beginPath();
-        x.ellipse(0, top + L / 2, W, L / 2, 0, 0, TAU);
-        const gr = x.createLinearGradient(-W, 0, W, 0);
-        gr.addColorStop(0, '#6d4312');
-        gr.addColorStop(0.4, '#f4cf7c');
-        gr.addColorStop(1, '#5c360d');
-        x.fillStyle = gr;
-        x.fill();
-        x.save();
-        x.clip();
-        const rows = 7;
-        for (let i = rows; i >= 0; i--) {
-            const y = top + i * L / rows;
-            const cols = 5;
-            for (let c = -cols; c <= cols; c++) {
-                const px = (c + (i % 2) * 0.5) * W * 0.46;
-                x.beginPath();
-                x.arc(px, y, W * 0.27, 0, Math.PI);
-                x.lineWidth = Math.max(0.4, R * 0.05);
-                x.strokeStyle = 'rgba(70,38,6,0.72)';
-                x.stroke();
-                x.beginPath();
-                x.arc(px, y + 0.5, W * 0.21, 0.5, Math.PI - 0.5);
-                x.strokeStyle = 'rgba(255,240,190,0.55)';
-                x.stroke();
-            }
-        }
-        x.restore();
-    }
-
-    function flatStar(x, cy, R) {
-        const RR = R * 1.26;
-        for (let i = 0; i < 10; i++) {
-            const a0 = -Math.PI / 2 + i * Math.PI / 5, a1 = a0 + Math.PI / 5;
-            const r0 = i % 2 ? RR * 0.44 : RR, r1 = i % 2 ? RR : RR * 0.44;
-            x.fillStyle = i % 2 ? '#fff0bb' : '#cf8f25';
-            x.beginPath();
-            x.moveTo(0, cy);
-            x.lineTo(Math.cos(a0) * r0, cy + Math.sin(a0) * r0);
-            x.lineTo(Math.cos(a1) * r1, cy + Math.sin(a1) * r1);
-            x.closePath();
-            x.fill();
-        }
-    }
-
-    function ornamentSprite(o, scale) {
-        const R = o.R;
-        const capH = o.type === 'star' ? 0 : R * 0.36;
-        const tall = o.type === 'icicle' ? R * 3.6 : o.type === 'cone' ? R * 2.5 : o.type === 'star' ? R * 2.6 : R * 2;
-        const sw = Math.ceil((o.type === 'star' ? R * 1.3 : R) * 2 + 10), sh = Math.ceil(o.len + capH + tall + 8);
-        const c = document.createElement('canvas');
-        c.width = Math.ceil(sw * scale);
-        c.height = Math.ceil(sh * scale);
-        const x = c.getContext('2d');
-        x.scale(scale, scale);
-        x.translate(sw / 2, 2);
-
-        x.strokeStyle = 'rgba(240,222,170,0.8)';
-        x.lineWidth = 0.6;
-        x.beginPath();
-        x.moveTo(0, 0);
-        x.lineTo(0, o.len + 1);
-        x.stroke();
-
-        const cy = o.len + capH + (o.type === 'star' ? R * 1.3 : R) - 1;
-        if (o.type === 'ball') ball(x, cy, R, o);
-        else if (o.type === 'icicle') icicle(x, cy, R, o);
-        else if (o.type === 'cone') pineCone(x, cy, R);
-        else flatStar(x, cy, R);
-
-        if (capH) {
-            const cw = o.type === 'icicle' ? R * 0.62 : R * 0.64;
-            const gr = x.createLinearGradient(-cw / 2, 0, cw / 2, 0);
-            gr.addColorStop(0, '#7a5417');
-            gr.addColorStop(0.42, '#ffe7ac');
-            gr.addColorStop(1, '#6b4712');
-            x.fillStyle = gr;
-            x.fillRect(-cw / 2, o.len, cw, capH);
-            x.fillStyle = 'rgba(60,34,4,0.5)';
-            for (let i = 1; i < 3; i++) x.fillRect(-cw / 2, o.len + capH * i / 3, cw, Math.max(0.4, capH * 0.08));
-        }
-        return { canvas: c, ox: sw / 2, oy: 2, w: sw, h: sh, flat: o.type === 'star' };
     }
 
     /* ---------- The film garland: one long texture mapped onto slices of a spiral ---------- */
@@ -399,8 +181,13 @@
         const L = treeLayout(W), k = L.k;
         const scale = Math.max(2, dpr * 1.5);
 
-        const ornaments = L.ornaments.map(o => Object.assign({}, o, {
-            th: (Math.random() - 0.5) * 0.1, om: 0, sprite: ornamentSprite(o, scale)
+        const ornaments = g.NyOrnaments.dress(L.ornaments).map(o => Object.assign(o, {
+            th: (Math.random() - 0.5) * 0.1, om: 0, sprite: g.NyOrnaments.sprite(o, scale)
+        }));
+        /* A lamp that an ornament hangs in front of stays behind it. */
+        const lamps = L.lights.map(l => Object.assign({}, l, {
+            behind: ornaments.some(o => Math.abs(l.x - o.x) < o.sprite.bodyHalfW * 0.92
+                && l.y > o.y + o.sprite.bodyTop && l.y < o.y + o.sprite.bodyTop + o.sprite.bodyH)
         }));
 
         const tex = filmTexture();
@@ -449,8 +236,57 @@
             shade.height = canvas.height;
         }
 
+        /* The sprigs lie over the moving glow, so they carry a still copy of it. Without it they
+           read as dark patches on a lit tree. */
+        let sprigsLit = null;
+        function ensureSprigs() {
+            const sprigs = opts.sprigs;
+            if (sprigsLit || !sprigs?.complete || !sprigs.naturalWidth) return;
+            const light = document.createElement('canvas');
+            light.width = canvas.width;
+            light.height = canvas.height;
+            const lx = light.getContext('2d');
+            lx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            lx.globalCompositeOperation = 'lighter';
+            lamps.forEach(l => {
+                lx.globalAlpha = 0.66 * (0.34 + 0.66 * Math.max(0, l.z)) * 0.74;
+                const gs = (20 + 17 * 0.66) * l.s;
+                lx.drawImage(glow, l.x - gs / 2, l.y - gs / 2, gs, gs);
+            });
+            lx.setTransform(1, 0, 0, 1, 0, 0);
+            lx.globalAlpha = 1;
+            lx.globalCompositeOperation = 'destination-in';
+            lx.drawImage(sprigs, 0, 0, light.width, light.height);
+            sprigsLit = document.createElement('canvas');
+            sprigsLit.width = canvas.width;
+            sprigsLit.height = canvas.height;
+            const sx = sprigsLit.getContext('2d');
+            sx.drawImage(sprigs, 0, 0, sprigsLit.width, sprigsLit.height);
+            sx.globalCompositeOperation = 'lighter';
+            sx.drawImage(light, 0, 0);
+        }
+
         let ign = opts.lit ? 1.2 : 0, starHit = !!opts.lit, filmU = 0;
         const texW = tex.width;
+
+        function drawOrnament(o, t) {
+            const c = Math.cos(o.th), s = Math.sin(o.th), sp = o.sprite;
+            let fx = 1;
+            if (sp.flat) fx = 0.35 + 0.65 * Math.abs(Math.cos(t * o.spin + o.ph));
+            ctx.setTransform(dpr * c * fx, dpr * s * fx, -dpr * s, dpr * c, dpr * o.x, dpr * o.y);
+            ctx.drawImage(sp.canvas, -sp.ox, -sp.oy, sp.w, sp.h);
+        }
+
+        function lampPower(l, t, wave, on) {
+            const hit = clamp(1 - (l.t - wave) / 0.2, 0, 1);
+            return (0.66 + 0.2 * Math.sin(t * l.sp + l.ph) + 0.14 * Math.sin(t * 1.1 - l.t * 16)) * on + hit * 0.9;
+        }
+
+        function drawLampCore(l, v, f) {
+            ctx.globalAlpha = Math.min(1, (0.45 + 0.55 * v) * f);
+            const cs = (3.8 + 2.2 * v) * l.s;
+            ctx.drawImage(core, l.x - cs / 2, l.y - cs / 2, cs, cs);
+        }
 
         function draw(t, dt, P) {
             const body = opts.body;
@@ -462,6 +298,7 @@
                 }
             }
             filmU += dt * 26;
+            const wave = 1 - ign * 1.08;
 
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             ctx.clearRect(0, 0, W, H);
@@ -477,8 +314,29 @@
                 ctx.drawImage(tex, sx, 0, q.du, 30, 0, 0, q.du * 1.14, 30);
             }
             ctx.globalAlpha = 1;
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-            /* Ornaments hang like pendulums; the cursor and a slow breeze keep them moving. */
+            /* Lights. A slow wave runs along the wire; each lamp also breathes on its own. Their
+               glow goes on the needles behind the ornaments: over them it would wash every
+               color toward yellow. */
+            ctx.globalCompositeOperation = 'lighter';
+            for (let i = 0; i < lamps.length; i++) {
+                const l = lamps[i];
+                const on = clamp((l.t - wave) / 0.05, 0, 1);
+                if (on <= 0) continue;
+                const v = lampPower(l, t, wave, on);
+                const f = 0.34 + 0.66 * Math.max(0, l.z);
+                ctx.globalAlpha = Math.min(1, v * f * 0.74);
+                const gs = (20 + 17 * v) * l.s;
+                ctx.drawImage(glow, l.x - gs / 2, l.y - gs / 2, gs, gs);
+                if (l.behind) drawLampCore(l, v, f);
+            }
+            ctx.globalAlpha = 1;
+            ctx.globalCompositeOperation = 'source-over';
+
+            /* Ornaments hang like pendulums; the cursor and a slow breeze keep them moving.
+               Glass hangs among the sprigs; the figures hang in front, so none of them loses a
+               halo or a hat. */
             for (let i = 0; i < ornaments.length; i++) {
                 const o = ornaments[i];
                 let acc = -34 * o.th - 1.15 * o.om + Math.sin(t * o.fq + o.ph) * 0.5;
@@ -492,17 +350,17 @@
                 }
                 o.om += acc * dt;
                 o.th = clamp(o.th + o.om * dt, -0.95, 0.95);
-                const c = Math.cos(o.th), s = Math.sin(o.th), sp = o.sprite;
-                let fx = 1;
-                if (sp.flat) fx = 0.35 + 0.65 * Math.abs(Math.cos(t * o.spin + o.ph));
-                ctx.setTransform(dpr * c * fx, dpr * s * fx, -dpr * s, dpr * c, dpr * o.x, dpr * o.y);
-                ctx.drawImage(sp.canvas, -sp.ox, -sp.oy, sp.w, sp.h);
+                if (!o.sprite.inFront) drawOrnament(o, t);
             }
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-            if (opts.sprigs?.complete && opts.sprigs.naturalWidth) ctx.drawImage(opts.sprigs, 0, 0, W, H);
+            ensureSprigs();
+            if (sprigsLit) ctx.drawImage(sprigsLit, 0, 0, W, H);
+            for (let i = 0; i < ornaments.length; i++) {
+                if (ornaments[i].sprite.inFront) drawOrnament(ornaments[i], t);
+            }
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
             /* Before the lights come on, everything above the wave stays in the dark. */
-            const wave = 1 - ign * 1.08;
             if (ign < 1.05 && body) {
                 ensureDark(body);
                 if (dark) {
@@ -522,33 +380,24 @@
                 }
             }
 
-            /* Lights. A slow wave runs along the wire; each lamp also breathes on its own. */
+            /* The lamps themselves sit on the branches in front. */
             ctx.globalCompositeOperation = 'lighter';
-            for (let i = 0; i < L.lights.length; i++) {
-                const l = L.lights[i];
+            for (let i = 0; i < lamps.length; i++) {
+                const l = lamps[i];
                 const on = clamp((l.t - wave) / 0.05, 0, 1);
-                if (on <= 0) continue;
-                const hit = clamp(1 - (l.t - wave) / 0.2, 0, 1);
-                const front01 = Math.max(0, l.z);
-                const v = (0.66 + 0.2 * Math.sin(t * l.sp + l.ph) + 0.14 * Math.sin(t * 1.1 - l.t * 16)) * on + hit * 0.9;
-                const f = 0.34 + 0.66 * front01;
-                ctx.globalAlpha = Math.min(1, v * f * 0.74);
-                const gs = (20 + 17 * v) * l.s;
-                ctx.drawImage(glow, l.x - gs / 2, l.y - gs / 2, gs, gs);
-                ctx.globalAlpha = Math.min(1, (0.45 + 0.55 * v) * f);
-                const cs = (3.8 + 2.2 * v) * l.s;
-                ctx.drawImage(core, l.x - cs / 2, l.y - cs / 2, cs, cs);
+                if (on <= 0 || l.behind) continue;
+                drawLampCore(l, lampPower(l, t, wave, on), 0.34 + 0.66 * Math.max(0, l.z));
             }
 
             /* Glass catches the light now and then. */
             ctx.globalAlpha = 1;
             for (let i = 0; i < ornaments.length; i++) {
                 const o = ornaments[i];
-                if (o.type !== 'ball') continue;
+                if (!o.sprite.glass) continue;
                 const v = Math.sin(t * o.gs + o.gp);
                 if (v > 0.965 && o.t * 1 > wave) {
                     const q = (v - 0.965) / 0.035, size = (5 + q * 15) * k;
-                    const cy = o.y + o.len + o.R * 0.36 + o.R * 0.55;
+                    const cy = o.y + o.sprite.bodyTop + o.R * 0.55;
                     ctx.globalAlpha = q;
                     ctx.drawImage(glint, o.x - o.R * 0.42 - size / 2, cy - o.R * 0.46 - size / 2, size, size);
                 }
