@@ -143,6 +143,7 @@
 }
 
 .season-halloween .nav-logo-image--default,
+.season-halloween .placeholder-icon-animated .theme-icon,
 html.season-halloween .popup-logo-img {
     display: none;
 }
@@ -152,8 +153,20 @@ html.season-halloween .popup-logo-img {
     height: 24px;
 }
 
+/* Random's big app icon gives way to the season's logo at the same size. */
+.random-season-logo {
+    width: 96px;
+    height: 96px;
+    margin: 0 auto;
+}
+
+html[data-season] .placeholder-icon-animated {
+    opacity: 1;
+}
+
 .season-halloween .nav-logo .season-logo,
-.season-halloween .popup-logo .season-logo {
+.season-halloween .popup-logo .season-logo,
+.season-halloween .placeholder-icon-animated .season-logo {
     filter: drop-shadow(0 0 7px var(--season-ember-glow));
 }
 

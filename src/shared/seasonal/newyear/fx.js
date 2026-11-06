@@ -168,7 +168,7 @@
         sky.className = 'ny-sky';
         sky.setAttribute('aria-hidden', 'true');
         sky.innerHTML = '<canvas class="ny-sky__stars"></canvas><canvas class="ny-sky__aurora"></canvas><canvas class="ny-sky__santa"></canvas>';
-        if (!quiet) document.body.prepend(sky);
+        document.body.prepend(sky);
         const starsEl = sky.querySelector('.ny-sky__stars');
         const auroraEl = sky.querySelector('.ny-sky__aurora');
         const santaEl = sky.querySelector('.ny-sky__santa');
@@ -420,10 +420,12 @@
 
         /* ---------- Aurora ---------- */
 
-        const skyAurora = quiet ? null : Aurora(auroraEl, {
+        const skyAurora = Aurora(auroraEl, {
             w: W < 900 ? 200 : 460, h: W < 900 ? 130 : 200, seed: 5,
             curtains: isLight ? AURORA_LIGHT : AURORA_DARK, alpha: isLight ? 0.55 : 1
         });
+        /* Beside a broadcast the sky holds still: one frame, then nothing to draw while the video plays. */
+        if (quiet) skyAurora(8);
         const extraAuroras = new Set();
 
         /* ---------- Santa, through the free band of sky on Home ---------- */
@@ -454,15 +456,19 @@
 
         function clap() {
             if (dead) return;
-            const logo = document.querySelector('.nav-logo');
-            if (logo && !isPaused()) {
-                logo.classList.add('is-clap');
-                later(() => {
-                    const r = logo.getBoundingClientRect();
-                    const x = r.left + r.width / 2;
-                    for (let i = 0; i < 26; i++) emit(x + (R() - 0.5) * 26, r.bottom + R() * 3, (R() - 0.5) * 90, 10 + R() * 70, 0.9 + R() * 0.9, 1.1 + R() * 1.9);
-                }, 170);
-                later(() => logo.classList.remove('is-clap'), 950);
+            if (!isPaused()) {
+                document.querySelectorAll('.nav-logo, [data-seasonal-logo]').forEach(logo => {
+                    const mark = logo.querySelector('.season-logo');
+                    if (!mark?.getBoundingClientRect().width) return;
+                    logo.classList.add('is-clap');
+                    later(() => {
+                        const r = mark.getBoundingClientRect();
+                        const x = r.left + r.width / 2;
+                        const count = Math.min(70, 26 * r.width / 30);
+                        for (let i = 0; i < count; i++) emit(x + (R() - 0.5) * r.width * 0.85, r.bottom + R() * 3, (R() - 0.5) * 90, 10 + R() * 70, 0.9 + R() * 0.9, 1.1 + R() * 1.9);
+                    }, 170);
+                    later(() => logo.classList.remove('is-clap'), 950);
+                });
             }
             later(clap, 9000 + R() * 8000);
         }
@@ -724,7 +730,7 @@
 
             auroraT += dt;
             if (auroraT > (lite ? 1 / 12 : 1 / 24)) {
-                skyAurora?.(t);
+                if (!quiet) skyAurora(t);
                 extraAuroras.forEach(fn => fn(t));
                 auroraT = 0;
             }
@@ -939,7 +945,7 @@
         };
         if (reduced) {
             t = 8;
-            skyAurora?.(8);
+            skyAurora(8);
             later(stillFrame, 400);
             g.addEventListener('scroll', onReducedScroll, { passive: true });
         } else {

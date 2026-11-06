@@ -96,7 +96,8 @@ crosses the turn of the year, so the season's `year` is the year it starts in an
 a collapsed sign stays collapsed for the whole window. The look is «Новогодний сеанс», a
 cinema under the snow at night, and it belongs to this season alone:
 
-- a snowed-in clapperboard logo with a warm Play window that claps now and then;
+- a snowed-in clapperboard logo with a warm Play window that claps now and then, in
+  the navigation and in place of the big app icon on Random (`data-seasonal-logo`);
 - behind the content, on `z-index: -1`: stars, a northern-lights canvas and, on
   Home only, Santa's sleigh and six reindeer crossing the free band of sky between
   the slider and the sign, passing behind posters and the tree's star. A pass waits
@@ -138,7 +139,9 @@ art (ornaments, lamps, the film garland, Santa) keeps its colors in code as part
 illustration. One animation loop owns all of it. It stops while the tab is hidden, while
 the player is open and in fullscreen, sheds snow on a machine that cannot keep up, and
 draws a single still frame under reduced motion. The live broadcast page keeps the
-forest but no falling snow or sky, because the video is part of that page.
+forest and a still sky, but no falling snow or moving aurora, because the video is
+part of that page. A page root that paints the theme background hides the sky, so such
+a root goes on the transparent list in `seasonal-newyear.css`.
 `npm run test:new-year-browser` runs the built extension with a pinned clock. To look
 at a season out of its dates, run `localStorage.setItem('movieExtensionSeasonPreviewDate', '2026-12-20')`
 on any extension page and reload; `removeItem` returns to the real date.

@@ -169,12 +169,14 @@
 }
 
 .season-newyear .nav-logo-image--default,
+.season-newyear .placeholder-icon-animated .theme-icon,
 html.season-newyear .popup-logo-img {
     display: none;
 }
 
 .season-newyear .nav-logo .season-logo,
-.season-newyear .popup-logo .season-logo {
+.season-newyear .popup-logo .season-logo,
+.season-newyear .placeholder-icon-animated .season-logo {
     filter: drop-shadow(0 0 6px var(--ny-logo-glow));
 }
 
@@ -264,6 +266,7 @@ html.season-newyear .popup-logo-img {
 
 /* Some pages paint the theme background on their root: the sky has to show through. */
 .season-newyear .catalog-page,
+.season-newyear .movie-details-page-container,
 .season-newyear .search-container,
 .season-newyear .ratings-main,
 .season-newyear .main-content,
@@ -578,6 +581,9 @@ html.season-newyear .popup-logo-img {
     text-decoration: none;
 }
 
+/* Over a poster, in either theme: the page's general link color is not readable here. */
+.ny-reveal__card:hover { color: var(--theme-text-on-media, #fafafa); }
+
 .ny-reveal__poster {
     position: absolute;
     inset: 0;
@@ -704,6 +710,7 @@ html.season-newyear .popup-logo-img {
 }
 
 .ny-marquee__cta:hover {
+    color: var(--ny-cta-ink);
     transform: translateY(-2px);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 14px 34px -6px var(--ny-cta-glow-strong);
 }

@@ -411,6 +411,114 @@ async function main() {
         assert.deepEqual(errors, []);
     });
 
+    // Links on the sign keep their own colors under the pointer, in both themes: the page's
+    // general link color cannot be read on the gold button or over a poster.
+    await withExtension({ date: '2026-12-20T12:00:00+03:00' }, async (page, url, errors) => {
+        await page.goto(url(HOME));
+        await waitForSign(page);
+        const color = selector => page.evaluate(target => getComputedStyle(document.querySelector(target)).color, selector);
+        for (const light of [false, true]) {
+            const theme = light ? 'light' : 'dark';
+            await page.evaluate(on => document.documentElement.classList.toggle('light-theme', on), light);
+            await page.waitForTimeout(800);
+            await page.mouse.move(5, 5);
+            await page.hover('.ny-marquee__cta');
+            await page.waitForTimeout(300);
+            assert.equal(await color('.ny-marquee__cta'), 'rgb(27, 18, 5)', `the button's label must stay dark under the pointer (${theme})`);
+            await shot(page, `cta-hover-${theme}`);
+
+            const points = await giftPoints(page);
+            await page.mouse.click(points[0].x, points[0].y);
+            await page.waitForTimeout(1500);
+            await page.hover('.ny-reveal__card');
+            await page.waitForTimeout(300);
+            assert.equal(await color('.ny-reveal__title'), 'rgb(250, 250, 250)', `the film's name must stay light under the pointer (${theme})`);
+            await shot(page, `card-hover-${theme}`);
+            await page.evaluate(() => document.querySelector('.ny-reveal__close').click());
+            await page.waitForTimeout(1200);
+        }
+        assert.deepEqual(errors, []);
+    });
+
+    // On every page the sky shows through: nothing in the page's flow paints over it.
+    await withExtension({ date: '2026-12-20T12:00:00+03:00' }, async (page, url, errors) => {
+        const pages = ['home/home.html', 'random/random.html', 'catalog/catalog.html', 'search/search.html', 'ratings/ratings.html',
+            'bookmarks/bookmarks.html', 'calendar/calendar.html', 'collection/collection.html', 'profile/profile.html',
+            'settings/settings.html', 'person-details/person-details.html?id=1', 'movie-details/movie-details.html?movieId=656',
+            'admin/admin.html', 'live/live.html'];
+        for (const target of pages) {
+            await page.goto(url(`src/pages/${target}`));
+            await page.waitForTimeout(1800);
+            const state = await page.evaluate(() => {
+                const opaque = color => {
+                    const parts = (color.match(/rgba?\(([^)]+)\)/)?.[1] || '').split(/[ ,/]+/).filter(Boolean).map(Number);
+                    return parts.length > 0 && (parts.length < 4 || parts[3] > 0.5);
+                };
+                const covers = [...document.body.querySelectorAll('*')].filter(el => {
+                    if (el.closest('.ny-sky, .ny-piles, #seasonalDecor')) return false;
+                    const style = getComputedStyle(el);
+                    if (style.position === 'fixed' || style.display === 'none' || style.visibility === 'hidden') return false;
+                    const box = el.getBoundingClientRect();
+                    return box.width >= innerWidth * 0.8 && box.height >= 240 && opaque(style.backgroundColor);
+                }).map(el => `${el.tagName.toLowerCase()}.${el.className}`);
+                return { sky: !!document.querySelector('.ny-sky'), wings: document.querySelectorAll('.ny-wing').length, covers };
+            });
+            assert.deepEqual(state, { sky: true, wings: 2, covers: [] }, `the sky must show through on ${target}`);
+        }
+        assert.deepEqual(errors, []);
+
+        // The broadcast page keeps a sky that holds still, with nothing falling across the video.
+        const live = await page.evaluate(async () => {
+            const aurora = document.querySelector('.ny-sky__aurora');
+            const first = aurora.toDataURL();
+            const blank = document.createElement('canvas');
+            blank.width = aurora.width;
+            blank.height = aurora.height;
+            await new Promise(resolve => setTimeout(resolve, 900));
+            return {
+                painted: first !== blank.toDataURL(),
+                still: first === aurora.toDataURL(),
+                snow: !!document.querySelector('.ny-fx'),
+                piles: !!document.querySelector('.ny-piles')
+            };
+        });
+        assert.deepEqual(live, { painted: true, still: true, snow: false, piles: false });
+        await shot(page, 'page-live');
+
+        // Random's big icon is the season's logo, at the size of the icon, and claps too.
+        await page.goto(url('src/pages/random/random.html'));
+        await page.waitForSelector('.placeholder-icon-animated .season-logo__heap', { timeout: 8000 });
+        const logo = await page.evaluate(() => ({
+            icon: getComputedStyle(document.querySelector('.placeholder-icon-animated .theme-icon')).display,
+            width: document.querySelector('.placeholder-icon-animated .season-logo').getBoundingClientRect().width
+        }));
+        assert.deepEqual(logo, { icon: 'none', width: 96 });
+        await page.waitForSelector('.placeholder-icon-animated.is-clap', { timeout: 20000 });
+        await shot(page, 'page-random');
+        assert.deepEqual(errors, []);
+    });
+
+    // The same place shows Halloween's logo in its season, and the plain icon out of season.
+    await withExtension({ date: '2026-10-20T12:00:00+03:00' }, async (page, url, errors) => {
+        await page.goto(url('src/pages/random/random.html'));
+        await page.waitForSelector('.placeholder-icon-animated .season-logo__hat', { timeout: 8000 });
+        assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.placeholder-icon-animated .theme-icon')).display), 'none');
+        assert.equal(await page.evaluate(() => document.querySelector('.placeholder-icon-animated .season-logo').getBoundingClientRect().width), 96);
+        await page.waitForTimeout(600);
+        await shot(page, 'page-random-halloween');
+        assert.deepEqual(errors, []);
+    });
+    await withExtension({ date: '2026-06-15T12:00:00+03:00' }, async (page, url, errors) => {
+        await page.goto(url('src/pages/random/random.html'));
+        await page.waitForTimeout(1500);
+        const plain = await page.evaluate(() => ({
+            icon: document.querySelector('.placeholder-icon-animated .theme-icon').getBoundingClientRect().width,
+            logo: document.querySelector('.placeholder-icon-animated .season-logo')?.getBoundingClientRect().width || 0
+        }));
+        assert.deepEqual(plain, { icon: 96, logo: 0 });
+        assert.deepEqual(errors, []);
+    });
+
     // The sign collapses into a strip that brings it back, and stays as it was left.
     await withExtension({ date: '2026-12-20T12:00:00+03:00' }, async (page, url, errors) => {
         const scene = () => page.evaluate(() => ({
