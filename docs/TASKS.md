@@ -28,6 +28,13 @@ records what was finished.
 
 ## Bugs users can see
 
+- **«Смотреть» opened no player once.** In `npm run test:live:player` on 2026-11-07,
+  Breaking Bad (404900) stayed on its details page after the press, with the button back
+  to normal 40 seconds later, and the source steps failed because the player was closed.
+  The next 5 presses on it and Interstellar opened the player. The test records no console
+  and does not press twice, so the cause and whether a second press helps are unknown. It
+  may be a press during a re-render, a watch run ending silently, or a regression from the
+  film page's loading changes in 1.5.0.
 - **Collections can be missing from the card menu on Ratings.** For a user with a
   collection, the section appeared in 1 load of 10. The list may be read before the
   session is known; this has not been confirmed.
