@@ -4,8 +4,10 @@
  * An Art Deco cinema front with a neon title, a countdown to midnight on 1 January,
  * a decorated tree that breaks through its top edge and a pile of gifts. Any gift
  * opens: there is a New Year film inside, fetched only when the first one is opened.
+ * Collapsed, the sign becomes one line of the same cinema front that brings it back.
  *
- * HomeSeasonalBanner owns whether the sign is shown; this module owns what is inside.
+ * HomeSeasonalBanner owns whether the scene is shown and remembers how it was left;
+ * this module owns what is inside.
  */
 (function (g) {
     'use strict';
@@ -13,7 +15,9 @@
     const A = g.NyArt, Gifts = g.NyGifts, Tree = g.NyTree;
     const SVG_ICONS = {
         close: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>',
-        arrow: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>'
+        arrow: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>',
+        up: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 15 12 9 18 15"></polyline></svg>',
+        down: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>'
     };
     const CHRISTMAS_KEYWORD = 207317;
 
@@ -26,6 +30,16 @@
     const layoutFor = width => (width >= 1240 ? 'wide' : width >= 1040 ? 'compact' : 'stacked');
 
     const pad2 = n => String(n).padStart(2, '0');
+
+    function pluralLabel(translate, key, n) {
+        let form = 'other';
+        try {
+            form = new Intl.PluralRules(g.i18n?.currentLocale || 'ru').select(n);
+        } catch {
+            // Falls back to the generic form.
+        }
+        return translate(`${key}.${form}`) || translate(`${key}.other`);
+    }
 
     function dialTicks() {
         let d = '';
@@ -41,17 +55,17 @@
     class NewYearBanner {
         /**
          * @param {HTMLElement} host - empty, hidden element reserved in home.html
-         * @param {{season: object, translate: (key: string) => string, onDismiss: () => void}} options
+         * @param {{season: object, translate: (key: string) => string, onCollapse: () => void}} options
          */
         constructor(host, options) {
             this.host = host;
             this.season = options.season;
             this.translate = options.translate;
-            this.onDismiss = options.onDismiss;
-            this.locale = () => g.i18n?.currentLocale || 'ru';
+            this.onCollapse = options.onCollapse;
             this.faces = {};
             this.shownLeft = null;
             this.openGift = null;
+            this.cardOwner = null;
             this.films = null;
             this.filmsRequest = null;
             this.offs = [];
@@ -102,7 +116,7 @@
                 + `<div class="ny-leader" aria-hidden="true"><div class="ny-leader__sweep"></div><svg class="ny-leader__dial" viewBox="0 0 116 116" focusable="false"><circle class="ny-leader__ring" cx="58" cy="58" r="56"></circle><circle class="ny-leader__ring ny-leader__ring--thin" cx="58" cy="58" r="49"></circle><path class="ny-leader__ticks" d="${dialTicks()}"></path><path class="ny-leader__cross" d="M58 9V107M9 58H107"></path></svg><div class="ny-leader__value"><span class="ny-leader__num"></span><span class="ny-leader__unit"></span></div></div>`
                 + `<div class="ny-clock" aria-hidden="true">${unit('hours', ['h0', 'h1'])}${unit('minutes', ['m0', 'm1'])}${unit('seconds', ['s0', 's1'])}</div>`
                 + `</div><a class="ny-marquee__cta"><span class="ny-marquee__cta-label"></span>${SVG_ICONS.arrow}</a></div></div>`
-                + `<button type="button" class="ny-marquee__close">${SVG_ICONS.close}</button>`
+                + `<button type="button" class="ny-marquee__collapse" aria-expanded="true"><span class="ny-marquee__collapse-label"></span>${SVG_ICONS.up}</button>`
                 + '<div class="ny-reveal"><a class="ny-reveal__card"><img class="ny-reveal__poster" alt=""><span class="ny-reveal__tag"></span><span class="ny-reveal__info"><span class="ny-reveal__title"></span><span class="ny-reveal__meta"></span></span></a>'
                 + `<button type="button" class="ny-reveal__close">${SVG_ICONS.close}</button></div>`
                 + '</section>';
@@ -116,7 +130,8 @@
             this.daysUnit = q('.ny-leader__unit');
             this.cta = q('.ny-marquee__cta');
             this.ctaLabel = q('.ny-marquee__cta-label');
-            this.closeBtn = q('.ny-marquee__close');
+            this.collapseBtn = q('.ny-marquee__collapse');
+            this.collapseLabel = q('.ny-marquee__collapse-label');
             this.reveal = q('.ny-reveal');
             this.revealLink = q('.ny-reveal__card');
             this.revealPoster = q('.ny-reveal__poster');
@@ -146,7 +161,7 @@
                 };
             });
 
-            this.listen(this.closeBtn, 'click', () => this.onDismiss());
+            this.listen(this.collapseBtn, 'click', () => this.onCollapse());
             this.listen(this.revealClose, 'click', () => this.closeGift(true));
             this.giftEls.forEach((el, i) => {
                 this.listen(el, 'click', () => this.toggleGift(i));
@@ -163,13 +178,11 @@
         /* ---------- Copy that depends on the language and the date ---------- */
 
         plural(key, n) {
-            let form = 'other';
-            try {
-                form = new Intl.PluralRules(this.locale()).select(n);
-            } catch {
-                // Falls back to the generic form.
-            }
-            return this.translate(`${key}.${form}`) || this.translate(`${key}.other`);
+            return pluralLabel(this.translate, key, n);
+        }
+
+        focus() {
+            this.collapseBtn.focus({ preventScroll: true });
         }
 
         update() {
@@ -182,9 +195,8 @@
             this.count.style.display = before ? '' : 'none';
             this.ctaLabel.textContent = this.translate('cta');
             this.cta.setAttribute('href', this.season.ctaHref || '');
-            const dismiss = this.translate('dismiss');
-            this.closeBtn.setAttribute('aria-label', dismiss);
-            this.closeBtn.title = dismiss;
+            this.collapseLabel.textContent = this.translate('collapse');
+            this.collapseBtn.title = this.translate('collapse_hint');
             this.revealClose.setAttribute('aria-label', this.translate('gift_close'));
             this.revealTag.textContent = this.translate('gift_tag');
             const giftLabel = this.translate('gift_open');
@@ -389,7 +401,8 @@
 
         /* ---------- Gifts ---------- */
 
-        /* Fetched on the first opening only: a page view that opens nothing costs nothing. */
+        /* Fetched on the first opening only: a page view that opens nothing costs nothing.
+           An answer without films is not kept, so the next gift asks again. */
         loadFilms() {
             if (this.filmsRequest) return this.filmsRequest;
             const Service = g.TMDBService;
@@ -409,6 +422,7 @@
                     [pool[i], pool[j]] = [pool[j], pool[i]];
                 }
                 this.films = pool;
+                if (!pool.length) this.filmsRequest = null;
                 return pool;
             });
             return this.filmsRequest;
@@ -427,9 +441,11 @@
         }
 
         async fillReveal(i) {
-            this.revealTitle.textContent = '';
+            /* The card is never blank, and the last gift's poster does not stay on it. */
+            this.revealTitle.textContent = this.translate('gift_loading');
             this.revealMeta.textContent = '';
             this.revealPoster.hidden = true;
+            this.revealPoster.removeAttribute('src');
             this.revealLink.removeAttribute('href');
             const pool = await this.loadFilms();
             if (this.openGift?.index !== i) return;
@@ -475,9 +491,11 @@
             this.placeReveal(i);
             this.reveal.classList.add('is-shown');
             this.openGift = { index: i, el, anims: [], cardAnim: null };
+            this.cardOwner = this.openGift;
             this.fillReveal(i);
             if (this.fx?.reduced !== false) {
                 lid.style.opacity = '0';
+                this.reveal.classList.add('is-live');
                 return;
             }
             const side = i % 2 ? -1 : 1;
@@ -511,6 +529,11 @@
             this.openGift.anims = [lidAnim, bodyAnim, lightAnim, cardAnim];
             this.openGift.cardAnim = cardAnim;
             this.fx.later(() => this.burstFrom(el), 190);
+            /* A card in flight catches no clicks: a second click meant for a gift must not land on its link. */
+            const owner = this.openGift;
+            this.fx.later(() => {
+                if (this.openGift === owner) this.reveal.classList.add('is-live');
+            }, 620);
         }
 
         burstFrom(el) {
@@ -528,9 +551,11 @@
             const o = this.openGift;
             if (!o) return;
             this.openGift = null;
+            this.reveal.classList.remove('is-live');
             o.el.setAttribute('aria-expanded', 'false');
             const finish = () => {
-                this.reveal.classList.remove('is-shown');
+                /* One card serves every gift: a gift opened while this one closes owns it now. */
+                if (this.cardOwner === o) this.reveal.classList.remove('is-shown');
                 o.el.querySelector('.ny-gift__lid').style.opacity = '';
                 o.anims.forEach(an => an.cancel());
             };
@@ -572,5 +597,173 @@
         }
     }
 
-    g.NewYearBanner = NewYearBanner;
+    /* Two gifts from the pile stand on the strip and break through its top edge. */
+    const STRIP_GIFTS = [{ i: 2, x: 58 }, { i: 3, x: 110 }];
+    const STRIP_GIFT_SCALE = 0.72;
+    const STRIP_FLOOR = 14;
+
+    class NewYearStrip {
+        /**
+         * @param {HTMLElement} host
+         * @param {{season: object, translate: (key: string) => string, onExpand: () => void}} options
+         */
+        constructor(host, options) {
+            this.host = host;
+            this.season = options.season;
+            this.translate = options.translate;
+            const gifts = STRIP_GIFTS.map(item => '<span class="ny-strip__gift">'
+                + `<img alt="" draggable="false" src="${A.assetUrl(Gifts.pictureName(item.i, 'body'))}">`
+                + `<img alt="" draggable="false" src="${A.assetUrl(Gifts.pictureName(item.i, 'lid'))}">`
+                + '</span>').join('');
+            host.innerHTML = '<button type="button" class="ny-strip" aria-expanded="false" data-snow-surface="18" data-snow-carve-x="84" data-snow-carve-half="64">'
+                + '<span class="ny-strip__frame"></span><span class="ny-strip__lamps"></span><span class="ny-strip__panel"></span>'
+                + gifts
+                + '<span class="ny-strip__row"><span class="ny-strip__text"><span class="ny-strip__title"></span><span class="ny-strip__left"></span></span>'
+                + `<span class="ny-strip__action"><span class="ny-strip__action-label"></span>${SVG_ICONS.down}</span></span>`
+                + '</button>';
+            const q = selector => host.querySelector(selector);
+            this.button = q('.ny-strip');
+            this.title = q('.ny-strip__title');
+            this.left = q('.ny-strip__left');
+            this.label = q('.ny-strip__action-label');
+            host.querySelectorAll('.ny-strip__gift').forEach((el, index) => {
+                const item = STRIP_GIFTS[index];
+                const size = Gifts.measure(Gifts.GIFTS[item.i], STRIP_GIFT_SCALE);
+                el.style.left = `${item.x - size.ox}px`;
+                el.style.bottom = `${STRIP_FLOOR - (size.h - size.oy)}px`;
+                el.style.width = `${size.w}px`;
+                el.style.height = `${size.h}px`;
+            });
+            this.onClick = () => options.onExpand();
+            this.button.addEventListener('click', this.onClick);
+            this.update();
+            this.timer = setInterval(() => this.update(), 30000);
+        }
+
+        timeLeft(seconds) {
+            const days = Math.floor(seconds / 86400), hours = Math.floor(seconds / 3600);
+            if (days > 0) return `${days} ${pluralLabel(this.translate, 'days', days)}`;
+            if (hours > 0) return `${hours} ${pluralLabel(this.translate, 'hours', hours)}`;
+            return `${Math.max(1, Math.ceil(seconds / 60))} ${this.translate('unit_minutes')}`;
+        }
+
+        update() {
+            const service = g.SeasonalThemeService;
+            const seconds = Math.floor((this.season.peak.getTime() - service.now()) / 1000);
+            const isToday = seconds <= 0 && service.getDaysUntilPeak(this.season) === 0;
+            this.title.textContent = this.translate(isToday ? 'title_today' : 'title');
+            this.left.textContent = seconds > 0
+                ? this.translate('strip_left').replace('{time}', this.timeLeft(seconds))
+                : this.translate('strip_after');
+            this.label.textContent = this.translate('expand');
+            this.button.title = this.translate('expand_hint');
+        }
+
+        focus() {
+            this.button.focus({ preventScroll: true });
+        }
+
+        destroy() {
+            clearInterval(this.timer);
+            this.button.removeEventListener('click', this.onClick);
+            this.host.innerHTML = '';
+        }
+    }
+
+    /* The sign or its strip, and the move between them. */
+    const SWAP_MS = 420;
+    const SWAP_EASING = 'cubic-bezier(0.22, 0.9, 0.24, 1)';
+
+    class NewYearScene {
+        /**
+         * @param {HTMLElement} host - empty, hidden element reserved in home.html
+         * @param {{season: object, translate: (key: string) => string, collapsed: boolean, onCollapsedChange: (collapsed: boolean) => void}} options
+         */
+        constructor(host, options) {
+            this.host = host;
+            this.options = options;
+            this.collapsed = !!options.collapsed;
+            this.leaving = null;
+            this.anims = [];
+            this.current = this.makeView(this.collapsed);
+            this.offReady = g.NewYearDecor?.onReady(fx => { this.fx = fx; }) || null;
+        }
+
+        makeView(collapsed) {
+            const box = document.createElement('div');
+            box.className = 'ny-view';
+            this.host.appendChild(box);
+            const { season, translate } = this.options;
+            const view = collapsed
+                ? new NewYearStrip(box, { season, translate, onExpand: () => this.switchTo(false) })
+                : new NewYearBanner(box, { season, translate, onCollapse: () => this.switchTo(true) });
+            return { box, view };
+        }
+
+        update() {
+            this.current.view.update();
+        }
+
+        switchTo(collapsed) {
+            if (this.leaving || collapsed === this.collapsed) return;
+            this.collapsed = collapsed;
+            this.options.onCollapsedChange(collapsed);
+            const leaving = this.current;
+            leaving.view.closeGift?.(false, true);
+            const from = this.host.offsetHeight;
+            this.current = this.makeView(collapsed);
+            this.leaving = leaving;
+            leaving.box.classList.add('ny-view--leaving');
+            this.fx?.rescanSurfaces();
+            if (g.matchMedia?.('(prefers-reduced-motion: reduce)').matches) this.finishSwap();
+            else this.animateSwap(from);
+            this.current.view.focus();
+        }
+
+        /* The box eases between the two heights while the sign rolls up or down inside it. */
+        animateSwap(from) {
+            const signBox = this.collapsed ? this.leaving.box : this.current.box;
+            const stripBox = this.collapsed ? this.current.box : this.leaving.box;
+            const hidden = Math.max(0, signBox.offsetHeight - stripBox.offsetHeight);
+            const open = 'inset(-600px -140px 0px -140px)', shut = `inset(-600px -140px ${hidden}px -140px)`;
+            const options = { duration: SWAP_MS, easing: SWAP_EASING };
+            const to = this.host.offsetHeight;
+            /* The page moving is not a card shaken by itself: its snow stays on. */
+            this.fx?.holdPiles(SWAP_MS + 80);
+            this.anims = [
+                this.host.animate([{ height: `${from}px` }, { height: `${to}px` }], options),
+                signBox.animate({ clipPath: this.collapsed ? [open, shut] : [shut, open] }, options),
+                signBox.animate(this.collapsed
+                    ? { opacity: [1, 1, 0], offset: [0, 0.5, 1] }
+                    : { opacity: [0, 1, 1], offset: [0, 0.55, 1] }, options),
+                stripBox.animate(this.collapsed
+                    ? { opacity: [0, 0, 1], offset: [0, 0.45, 1] }
+                    : { opacity: [1, 0, 0], offset: [0, 0.35, 1] }, options)
+            ];
+            Promise.all(this.anims.map(anim => anim.finished))
+                .then(() => this.finishSwap())
+                .catch(() => {
+                    // Cancelled by destroy(), which has already cleaned up.
+                });
+        }
+
+        finishSwap() {
+            const leaving = this.leaving;
+            if (!leaving) return;
+            this.leaving = null;
+            this.anims = [];
+            leaving.view.destroy();
+            leaving.box.remove();
+        }
+
+        destroy() {
+            this.anims.forEach(anim => anim.cancel());
+            this.finishSwap();
+            this.offReady?.();
+            this.current.view.destroy();
+            this.host.innerHTML = '';
+        }
+    }
+
+    g.NewYearScene = NewYearScene;
 })(window);

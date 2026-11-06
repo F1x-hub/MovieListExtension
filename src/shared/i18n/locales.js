@@ -1037,7 +1037,12 @@ export const locales = {
                     cta: "New Year picks",
                     catalog_title: "New Year films",
                     catalog_description: "Films for the holiday evenings",
-                    dismiss: "Hide New Year banner",
+                    collapse: "Collapse",
+                    collapse_hint: "Collapse the New Year banner",
+                    expand: "Expand",
+                    expand_hint: "Expand the New Year banner",
+                    strip_left: "{time} until New Year",
+                    strip_after: "There is a film in every gift",
                     timer: "{days}, {hours} h {minutes} min until New Year",
                     days: { one: "day", other: "days" },
                     hours: { one: "hour", other: "hours" },
@@ -1046,6 +1051,7 @@ export const locales = {
                     gift_open: "Open a gift",
                     gift_close: "Close the gift",
                     gift_tag: "A gift for you",
+                    gift_loading: "Finding a film…",
                     gift_fallback: "Pick a random film"
                 }
             },
@@ -2911,7 +2917,12 @@ export const locales = {
                     cta: "Новогодняя подборка",
                     catalog_title: "Новогодние фильмы",
                     catalog_description: "Кино для праздничных вечеров",
-                    dismiss: "Скрыть новогодний баннер",
+                    collapse: "Свернуть",
+                    collapse_hint: "Свернуть новогодний баннер",
+                    expand: "Развернуть",
+                    expand_hint: "Развернуть новогодний баннер",
+                    strip_left: "До Нового года {time}",
+                    strip_after: "В каждом подарке спрятан фильм",
                     timer: "До Нового года {days}, {hours} ч {minutes} мин",
                     days: { one: "день", few: "дня", many: "дней", other: "дней" },
                     hours: { one: "час", few: "часа", many: "часов", other: "часов" },
@@ -2920,6 +2931,7 @@ export const locales = {
                     gift_open: "Открыть подарок",
                     gift_close: "Закрыть подарок",
                     gift_tag: "Подарок для вас",
+                    gift_loading: "Ищем фильм…",
                     gift_fallback: "Выбрать случайный фильм"
                 }
             },

@@ -85,6 +85,8 @@
     --ny-cta-glow: rgba(255, 180, 80, 0.75);
     --ny-cta-glow-strong: rgba(255, 180, 80, 0.95);
     --ny-close-ink: rgba(250, 250, 250, 0.72);
+    --ny-lamp: #ffe9bd;
+    --ny-lamp-glow: rgba(255, 190, 104, 0.55);
     --ny-halo-a: rgba(255, 176, 92, 0.34);
     --ny-halo-b: rgba(255, 150, 70, 0.1);
     --ny-halo-c: rgba(255, 150, 70, 0);
@@ -350,6 +352,20 @@ html.season-newyear .popup-logo-img {
     margin-bottom: 66px;
 }
 
+/* The sign and its strip swap places in this box, which eases between their heights. */
+.season-newyear #season-marquee:not([hidden]) {
+    position: relative;
+    display: flow-root;
+}
+
+.ny-view--leaving {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    pointer-events: none;
+}
+
 .ny-marquee {
     --ny-tree-x: 1040px;
     --ny-tree-w: 380px;
@@ -539,12 +555,15 @@ html.season-newyear .popup-logo-img {
     opacity: 0;
     visibility: hidden;
     transform-origin: 50% 100%;
+    pointer-events: none;
 }
 
 .ny-reveal.is-shown {
     opacity: 1;
     visibility: visible;
 }
+
+.ny-reveal.is-live { pointer-events: auto; }
 
 .ny-reveal__card {
     position: relative;
@@ -567,6 +586,8 @@ html.season-newyear .popup-logo-img {
     height: 100%;
     object-fit: cover;
 }
+
+.ny-reveal__poster[hidden] { display: none; }
 
 .ny-reveal__tag {
     position: absolute;
@@ -699,7 +720,7 @@ html.season-newyear .popup-logo-img {
     animation: ny-shine 5.5s ease-in-out infinite;
 }
 
-.ny-marquee__close {
+.ny-marquee__collapse {
     position: absolute;
     top: 30px;
     right: 44px;
@@ -707,20 +728,27 @@ html.season-newyear .popup-logo-img {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
+    gap: 4px;
+    min-width: 32px;
     height: 32px;
-    padding: 0;
+    padding: 0 6px 0 10px;
     color: var(--ny-close-ink);
     background: transparent;
     border: 0;
     border-radius: 8px;
     cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
 }
 
-.ny-marquee__close:hover {
+.ny-marquee__collapse:hover {
     color: #fafafa;
     background: rgba(255, 255, 255, 0.12);
 }
+
+.ny-marquee[data-layout="stacked"] .ny-marquee__collapse { padding: 0; }
+.ny-marquee[data-layout="stacked"] .ny-marquee__collapse-label { display: none; }
 
 /* Narrower windows: a smaller tree, a smaller clock. */
 .ny-marquee[data-layout="compact"] .ny-marquee__content {
@@ -1053,14 +1081,225 @@ html.season-newyear .popup-logo-img {
 /* The player covers the page: nothing behind it keeps producing frames. */
 body.player-modal-open .ny-marquee *,
 body.player-modal-open .ny-marquee *::before,
-body.player-modal-open .ny-marquee *::after {
+body.player-modal-open .ny-marquee *::after,
+body.player-modal-open .ny-strip *,
+body.player-modal-open .ny-strip *::before,
+body.player-modal-open .ny-strip *::after {
     animation-play-state: paused !important;
+}
+
+/* ---------- The sign collapsed: one line of the same cinema front ---------- */
+
+.ny-strip {
+    --ny-strip-steps: polygon(
+        12px 0, calc(100% - 12px) 0, calc(100% - 12px) 6px, calc(100% - 6px) 6px, calc(100% - 6px) 12px, 100% 12px,
+        100% calc(100% - 12px), calc(100% - 6px) calc(100% - 12px), calc(100% - 6px) calc(100% - 6px), calc(100% - 12px) calc(100% - 6px), calc(100% - 12px) 100%,
+        12px 100%, 12px calc(100% - 6px), 6px calc(100% - 6px), 6px calc(100% - 12px), 0 calc(100% - 12px),
+        0 12px, 6px 12px, 6px 6px, 12px 6px
+    );
+    position: relative;
+    z-index: 2;
+    display: block;
+    width: 100%;
+    height: 78px;
+    margin: 0 0 44px;
+    padding: 0;
+    color: var(--ny-message);
+    background: none;
+    border: 0;
+    border-radius: 10px;
+    box-shadow: 0 16px 36px -22px var(--ny-cta-glow-strong);
+    cursor: pointer;
+    font-family: var(--font-family, Inter, sans-serif);
+    text-align: left;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.ny-strip:focus { outline: none; }
+
+.ny-strip:focus-visible {
+    outline: 2px solid var(--ny-focus-a);
+    outline-offset: 3px;
+}
+
+.ny-strip__frame {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(100deg, var(--ny-frame-line-a), var(--ny-frame-line-b) 35%, var(--ny-frame-line-c) 65%, var(--ny-frame-line-d));
+    clip-path: var(--ny-strip-steps);
+}
+
+.ny-strip__frame::before {
+    content: "";
+    position: absolute;
+    inset: 1.5px;
+    background: linear-gradient(100deg, var(--ny-frame-a), var(--ny-frame-b) 50%, var(--ny-frame-c));
+    clip-path: var(--ny-strip-steps);
+}
+
+.ny-strip__lamps {
+    position: absolute;
+    inset: 2px 22px;
+}
+
+/* Two sets of lamps take turns, so the light seems to run along the edges. */
+.ny-strip__lamps::before,
+.ny-strip__lamps::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+        radial-gradient(circle, var(--ny-lamp) 0 2px, var(--ny-lamp-glow) 2.6px, transparent 6px),
+        radial-gradient(circle, var(--ny-lamp) 0 2px, var(--ny-lamp-glow) 2.6px, transparent 6px);
+    background-position: 0 0, 0 100%;
+    background-repeat: repeat-x;
+    background-size: 24px 13px;
+    animation: ny-strip-lamps 1.7s ease-in-out infinite;
+}
+
+.ny-strip__lamps::after {
+    background-position: 12px 0, 12px 100%;
+    animation-delay: -0.85s;
+}
+
+.ny-strip__panel {
+    position: absolute;
+    inset: 15px 13px;
+    overflow: hidden;
+    background:
+        radial-gradient(320px 110px at 84px 100%, var(--ny-sign-warm), var(--ny-sign-warm-end) 72%),
+        linear-gradient(100deg, var(--ny-sign-night-a) 0%, var(--ny-sign-night-b) 52%, var(--ny-sign-night-c) 100%);
+    border: 1px solid var(--ny-reveal-edge);
+    border-radius: 2px;
+}
+
+.ny-strip__gift {
+    position: absolute;
+    transform-origin: 50% 82%;
+    pointer-events: none;
+}
+
+.ny-strip__gift img {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    -webkit-user-drag: none;
+}
+
+.ny-strip:hover .ny-strip__gift { animation: ny-strip-wiggle 0.52s ease-out; }
+.ny-strip:hover .ny-strip__gift + .ny-strip__gift { animation-delay: 0.08s; }
+
+.ny-strip__row {
+    position: absolute;
+    top: 15px;
+    right: 30px;
+    bottom: 15px;
+    left: 168px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.ny-strip__text {
+    display: flex;
+    flex: 0 1 auto;
+    align-items: baseline;
+    gap: 18px;
+    min-width: 0;
+}
+
+.season-newyear .ny-strip__title {
+    flex: 0 0 auto;
+    color: var(--ny-title);
+    font-family: "Poiret One", var(--font-family, Inter), sans-serif;
+    font-size: 28px;
+    font-weight: 400;
+    line-height: 1.1;
+    white-space: nowrap;
+    -webkit-text-stroke: 0.5px var(--ny-title);
+    text-shadow: 0 0 2px var(--ny-title-core), 0 0 10px var(--ny-title-glow), 0 0 26px var(--ny-title-glow-far);
+    animation: ny-neon 11s linear infinite;
+}
+
+.ny-strip__left {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--ny-message);
+    font-size: 14px;
+    line-height: 1.3;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ny-strip__action {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+    min-height: 32px;
+    padding: 0 8px 0 12px;
+    color: var(--ny-title);
+    border: 1px solid var(--ny-round-edge);
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    transition: color 0.18s ease, background-color 0.18s ease, border-color 0.18s ease;
+}
+
+.ny-strip__action svg { transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1); }
+
+.ny-strip:hover .ny-strip__action {
+    color: var(--ny-cta-ink);
+    background: linear-gradient(180deg, var(--ny-cta-a), var(--ny-cta-b) 55%, var(--ny-cta-c));
+    border-color: transparent;
+}
+
+.ny-strip:hover .ny-strip__action svg { transform: translateY(2px); }
+
+@media (max-width: 860px) {
+    .ny-strip { margin-bottom: 36px; }
+
+    .ny-strip__text {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1px;
+    }
+
+    .season-newyear .ny-strip__title { font-size: 22px; }
+    .ny-strip__left { max-width: 100%; font-size: 12.5px; }
+}
+
+@media (max-width: 560px) {
+    .ny-strip__gift + .ny-strip__gift { display: none; }
+    .ny-strip__row { right: 24px; left: 100px; gap: 8px; }
+    .season-newyear .ny-strip__title { font-size: 20px; }
+    .ny-strip__action { padding: 0 7px; }
+    .ny-strip__action-label { display: none; }
+}
+
+@keyframes ny-strip-lamps {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.22; }
+}
+
+@keyframes ny-strip-wiggle {
+    0%, 100% { transform: rotate(0deg) translateY(0); }
+    20% { transform: rotate(-3deg) translateY(-3px); }
+    46% { transform: rotate(2.4deg) translateY(-3px); }
+    70% { transform: rotate(-1.2deg) translateY(-1px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
     .ny-marquee__burst,
     .ny-marquee__title,
     .ny-marquee__cta::after,
+    .ny-strip__lamps::before,
+    .ny-strip__lamps::after,
+    .ny-strip:hover .ny-strip__gift,
+    .season-newyear .ny-strip__title,
     .ny-leader__sweep,
     .ny-wing__layer,
     .ny-flip__flap,

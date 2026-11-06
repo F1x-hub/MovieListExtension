@@ -309,7 +309,7 @@
             : null;
         const watched = new WeakSet();
 
-        function scanSurfaces() {
+        function observeSurfaces() {
             if (dead || !io) return;
             const list = document.querySelectorAll(SURFACE_SELECTOR);
             for (let i = 0; i < list.length && i < 400; i++) {
@@ -319,6 +319,11 @@
                 }
             }
             active.forEach(s => { if (!s.el.isConnected) active.delete(s); });
+        }
+
+        function scanSurfaces() {
+            if (dead || !io) return;
+            observeSurfaces();
             later(scanSurfaces, 1200);
         }
         scanSurfaces();
@@ -429,7 +434,7 @@
         function santaBandY() {
             const hero = document.querySelector('.featured-poster');
             if (!hero) return null;
-            const next = document.querySelector('.ny-marquee') || document.getElementById('personal-tier');
+            const next = document.querySelector('.ny-marquee, .ny-strip') || document.getElementById('personal-tier');
             const a = hero.getBoundingClientRect().bottom;
             const b = next ? next.getBoundingClientRect().top : a + 110;
             const y = (a + b) / 2 + (W < 900 ? 2 : 6);
@@ -487,6 +492,7 @@
 
         let t = 0, last = performance.now(), wasPaused = false;
         let auroraT = 0, scrollLast = g.scrollY || 0, scrollV = 0, scrollEase = scrollLast, flingCalm = true, slowFrames = 0;
+        let pilesHeldUntil = 0;
         let lite = false;
         const px = { x: 0, y: 0 };
 
@@ -736,6 +742,7 @@
             } else if (fling > 0) {
                 flingCalm = false;
             }
+            const pilesHeld = performance.now() < pilesHeldUntil;
             for (const known of active) {
                 let s = known;
                 const r = s.el.getBoundingClientRect();
@@ -756,7 +763,7 @@
                 if (s.lastY != null && !reduced && s.on) {
                     const vy = (s.y - s.lastY) / dt;
                     const own = vy + scrollDelta / dt;
-                    if (Math.abs(own) > 30) shed(s, Math.min(0.3, Math.abs(own) / 900), own);
+                    if (Math.abs(own) > 30 && !pilesHeld) shed(s, Math.min(0.3, Math.abs(own) / 900), own);
                     if (fling > s.grip) shed(s, Math.min(0.45, (fling - s.grip) * 0.9), vy, 0.5);
                 }
                 s.lastY = s.y;
@@ -955,6 +962,9 @@
             setSparklerZone(el) { sparkZone = el; },
             setFireworks(on) { fireworks = !!on; },
             redraw() { if (reduced) stillFrame(); },
+            rescanSurfaces: observeSurfaces,
+            /* For a change of layout: cards that slide with the page keep their snow. */
+            holdPiles(ms) { pilesHeldUntil = performance.now() + ms; },
             destroy() {
                 dead = true;
                 cancelAnimationFrame(raf);

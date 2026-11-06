@@ -3,7 +3,8 @@
  *
  * Presents the active season on Home. SeasonalThemeService decides whether a
  * season is active and enabled; this module only owns the banner copy and its
- * per-season dismissal.
+ * per-season dismissal. A season with a scene of its own is never removed: closing
+ * collapses the scene, and the same mark remembers that until it is opened again.
  */
 (function (global) {
     'use strict';
@@ -38,13 +39,18 @@
             }
         }
 
+        remember(dismissed) {
+            try {
+                if (dismissed) global.localStorage?.setItem(DISMISS_KEY, HomeSeasonalBanner.getDismissToken(this.season));
+                else global.localStorage?.removeItem(DISMISS_KEY);
+            } catch {
+                // The choice still applies for this page view.
+            }
+        }
+
         dismiss() {
             if (!this.season) return;
-            try {
-                global.localStorage?.setItem(DISMISS_KEY, HomeSeasonalBanner.getDismissToken(this.season));
-            } catch {
-                // Hiding still applies for this page view.
-            }
+            this.remember(true);
             this.hide();
         }
 
@@ -60,7 +66,8 @@
             if (this.signHost) this.signHost.hidden = true;
         }
 
-        /* The New Year sign is a scene of its own, loaded only while the season is on. */
+        /* The New Year sign is a scene of its own, loaded only while the season is on.
+           Collapsed or not, it stays on Home, so there is always a way back to it. */
         showSign(season, service) {
             if (this.root) this.root.hidden = true;
             if (!this.signHost) return;
@@ -72,11 +79,12 @@
             const request = ++this.signRequest;
             service.loadRuntime(season.id)
                 .then(() => {
-                    if (request !== this.signRequest || !global.NewYearBanner) return;
-                    this.sign = new global.NewYearBanner(this.signHost, {
+                    if (request !== this.signRequest || !global.NewYearScene) return;
+                    this.sign = new global.NewYearScene(this.signHost, {
                         season,
                         translate: key => this.translate(key),
-                        onDismiss: () => this.dismiss()
+                        collapsed: this.isDismissed(season),
+                        onCollapsedChange: collapsed => this.remember(collapsed)
                     });
                 })
                 .catch(error => {
@@ -114,7 +122,7 @@
 
             const season = service.getActiveDecor(date);
             this.season = season;
-            if (!season || this.isDismissed(season)) {
+            if (!season) {
                 this.hide();
                 return;
             }
@@ -123,6 +131,10 @@
                 return;
             }
             this.hideSign();
+            if (this.isDismissed(season)) {
+                this.hide();
+                return;
+            }
 
             if (this.title) this.title.textContent = this.translate('title');
             if (this.message) this.message.textContent = this.getMessage(date);

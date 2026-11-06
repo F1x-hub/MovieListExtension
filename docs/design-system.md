@@ -93,7 +93,7 @@ seasonal restyling of shared buttons, menus and navigation links.
 
 The New Year window is 15 December – 14 January with its peak on 1 January. It
 crosses the turn of the year, so the season's `year` is the year it starts in and
-one dismissal of the sign lasts the whole window. The look is «Новогодний сеанс», a
+a collapsed sign stays collapsed for the whole window. The look is «Новогодний сеанс», a
 cinema under the snow at night, and it belongs to this season alone:
 
 - a snowed-in clapperboard logo with a warm Play window that claps now and then;
@@ -105,15 +105,27 @@ cinema under the snow at night, and it belongs to this season alone:
 - in `#seasonalDecor`: falling snow in three depths that the cursor pushes aside;
 - snow piles on the top edges of slider cards, movie cards and the sign. They live
   on `.ny-piles`, a layer inside the page's scroll, so they cannot lag behind a poster.
-  Calm scrolling leaves them alone; a card's own hover lift or a fast fling knocks
-  some off, a fling never more than half. Below a pixel of height nothing is drawn;
+  Calm scrolling and the page sliding when the sign collapses leave them alone; a
+  card's own hover lift or a fast fling knocks some off, a fling never more than half.
+  Below a pixel of height nothing is drawn;
 - Home's `.ny-marquee`: an Art Deco sign, night in both themes, with a neon title in
   the bundled Poiret One, running lamps, a film-leader dial and flip digits counting
   to midnight on 1 January, a decorated tree breaking through its top edge and twelve
   gifts. Any gift opens onto a New Year film from TMDB (keyword 207317, requested on
-  the first opening only; `«Случайный»` is the fallback). On 1 January the title
+  the first opening only and again after an answer without films; `«Случайный»` is
+  the fallback). All gifts share one card, which says so while the film is on its way
+  and belongs to the gift opened last, even while an earlier one still closes. It
+  takes clicks only once it has arrived, so a click meant for a gift cannot land on
+  its link. On 1 January the title
   becomes «С Новым годом!», the countdown goes away and fireworks fly. The sign has
-  `wide`, `compact` and `stacked` layouts chosen from the content column's width.
+  `wide`, `compact` and `stacked` layouts chosen from the content column's width;
+- `.ny-strip`: the sign collapsed. «Свернуть» never removes the sign: one line of the
+  same cinema front stays in its place, with two of the gifts, the title, the time left
+  and «Развернуть». The choice is kept per season in `movieExtensionSeasonBannerDismissed`,
+  so the next page view opens as it was left, and a collapsed one loads neither the tree
+  nor the other gifts. `NewYearScene` owns the move between the two forms: the box eases
+  between their heights while the sign rolls up or down, at once under reduced motion.
+  The plain Halloween banner keeps its close button.
 
 Everything specific to the season loads on demand: `SeasonalThemeService.loadRuntime()`
 adds `src/shared/seasonal/newyear/*.js` only while the season is active, and pages

@@ -54,6 +54,42 @@ async function shot(page, name) {
 const waitForSign = page => page.waitForFunction(() => document.querySelector('.ny-marquee .ny-tree__body')?.complete
     && document.querySelector('.ny-marquee')?.dataset.layout, null, { timeout: 20000 });
 
+/* Points a real pointer can click, from left to right along the pile. */
+const giftPoints = page => page.evaluate(() => {
+    document.querySelector('.ny-marquee').scrollIntoView({ block: 'center' });
+    return [...document.querySelectorAll('.ny-gift')].map((gift, index) => {
+        const box = gift.getBoundingClientRect();
+        const x = box.left + parseFloat(gift.style.getPropertyValue('--ox'));
+        const y = box.top + parseFloat(gift.style.getPropertyValue('--oy')) - gift.offsetHeight * 0.26;
+        return { index, x, y, reachable: document.elementFromPoint(x, y)?.closest('.ny-gift') === gift };
+    }).filter(point => point.reachable).sort((a, b) => a.x - b.x);
+});
+
+/* What the viewer really sees of the film card, not just its classes. */
+const cardState = page => page.evaluate(() => {
+    const reveal = document.querySelector('.ny-reveal');
+    const style = getComputedStyle(reveal);
+    const box = reveal.getBoundingClientRect();
+    const poster = document.querySelector('.ny-reveal__poster');
+    return {
+        visible: style.visibility === 'visible' && Number(style.opacity) > 0.98,
+        onTop: !!document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest('.ny-reveal'),
+        open: [...document.querySelectorAll('.ny-gift')].flatMap((gift, index) => (gift.getAttribute('aria-expanded') === 'true' ? [index] : [])),
+        title: document.querySelector('.ny-reveal__title').textContent,
+        href: document.querySelector('.ny-reveal__card').getAttribute('href') || '',
+        posterShown: getComputedStyle(poster).display !== 'none' && poster.complete && poster.naturalWidth > 0
+    };
+});
+
+function assertCardHolds(state, index, label) {
+    assert.deepEqual(state.open, [index], `${label}: the gift must stay open`);
+    assert.ok(state.visible, `${label}: the film card must be visible, not an empty gift`);
+    assert.ok(state.onTop, `${label}: the film card must be on top`);
+    assert.ok(state.title, `${label}: the film card must name a film`);
+    assert.match(state.href, /resolveTmdbId=\d+/, `${label}: the film card must lead to the film`);
+    assert.ok(state.posterShown, `${label}: the film card must show its poster`);
+}
+
 async function main() {
     // In season, before midnight: sign, countdown, tree, gifts, snow, sky, Santa.
     await withExtension({ date: '2026-12-20T12:00:00+03:00' }, async (page, url, errors) => {
@@ -131,6 +167,63 @@ async function main() {
         await page.evaluate(() => document.querySelector('.ny-reveal__close').click());
         await page.waitForTimeout(1200);
         assert.equal(await page.evaluate(() => document.querySelector('.ny-reveal').classList.contains('is-shown')), false);
+
+        // Every gift shares one card, and a gift that is still closing must not take it
+        // from the next one: that left an open gift with nothing inside.
+        const points = await giftPoints(page);
+        const first = points[0], last = points[points.length - 1];
+        assert.ok(last.x - first.x > 300, 'the two gifts must be far enough apart for the card not to cover them');
+        const closeCard = () => page.evaluate(() => document.querySelector('.ny-reveal__close').click());
+
+        await page.mouse.click(first.x, first.y);
+        await page.waitForTimeout(500);
+        await page.mouse.click(last.x, last.y);
+        await page.waitForTimeout(1600);
+        assertCardHolds(await cardState(page), last.index, 'another gift opened while one was open');
+        await shot(page, 'gift-switched');
+
+        await closeCard();
+        await page.waitForTimeout(250);
+        await page.mouse.click(last.x, last.y);
+        await page.waitForTimeout(1600);
+        assertCardHolds(await cardState(page), last.index, 'the same gift opened again while closing');
+
+        const titleBox = await page.evaluate(() => {
+            const box = document.querySelector('.ny-marquee__title').getBoundingClientRect();
+            return { x: box.left + 40, y: box.top + box.height / 2 };
+        });
+        await page.mouse.click(titleBox.x, titleBox.y);
+        await page.waitForTimeout(200);
+        await page.mouse.click(first.x, first.y);
+        await page.waitForTimeout(1600);
+        assertCardHolds(await cardState(page), first.index, 'a gift opened right after a click outside');
+
+        await page.mouse.click(last.x, last.y);
+        await page.waitForTimeout(200);
+        await closeCard();
+        await page.waitForTimeout(1600);
+        const closedCard = await cardState(page);
+        assert.deepEqual(closedCard.open, []);
+        assert.equal(closedCard.visible, false, 'the card must go away once every gift has closed');
+
+        // A card in flight catches no clicks, so a double click stays on the page,
+        // and a card that has arrived still leads to its film.
+        const homeUrl = page.url();
+        await page.mouse.dblclick(first.x, first.y);
+        await page.waitForTimeout(1600);
+        assert.equal(page.url(), homeUrl, 'a double click on a gift must not open the film');
+        await page.mouse.click(first.x, first.y);
+        await page.waitForTimeout(1600);
+        const arrived = await cardState(page);
+        assertCardHolds(arrived, first.index, 'a gift opened after a double click');
+        const cardBox = await page.evaluate(() => {
+            const box = document.querySelector('.ny-reveal__card').getBoundingClientRect();
+            return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+        });
+        await Promise.all([page.waitForURL(/movie-details\.html\?resolveTmdbId=\d+/), page.mouse.click(cardBox.x, cardBox.y)]);
+        await page.goto(homeUrl);
+        await waitForSign(page);
+        assert.deepEqual(errors, []);
 
         // Scrolling does not grow the page: the snow layer stays within it.
         const growth = await page.evaluate(async () => {
@@ -233,6 +326,16 @@ async function main() {
         });
         assert.deepEqual(state, { still: true, santa: 'hidden', opened: true });
         await shot(page, 'reduced-motion');
+        const swapped = await page.evaluate(() => {
+            document.querySelector('.ny-marquee__collapse').click();
+            return {
+                sign: !!document.querySelector('.ny-marquee'),
+                strip: !!document.querySelector('.ny-strip'),
+                lamps: getComputedStyle(document.querySelector('.ny-strip__lamps'), '::before').animationName,
+                title: getComputedStyle(document.querySelector('.ny-strip__title')).animationName
+            };
+        });
+        assert.deepEqual(swapped, { sign: false, strip: true, lamps: 'none', title: 'none' });
         assert.deepEqual(errors, []);
     });
 
@@ -248,6 +351,10 @@ async function main() {
         assert.equal(state.title, 'С Новым годом!');
         assert.equal(state.count, 'none');
         await shot(page, 'first-of-january');
+        await page.click('.ny-marquee__collapse');
+        await page.waitForSelector('.ny-marquee', { state: 'detached', timeout: 3000 });
+        assert.equal(await page.textContent('.ny-strip__title'), 'С Новым годом!');
+        assert.equal(await page.textContent('.ny-strip__left'), 'В каждом подарке спрятан фильм');
         assert.deepEqual(errors, []);
     });
 
@@ -261,6 +368,165 @@ async function main() {
             sky: !!document.querySelector('.ny-sky')
         }));
         assert.deepEqual(state, { season: '', scripts: 0, sky: false });
+        assert.deepEqual(errors, []);
+    });
+
+    // A card is never blank: it says so while the film is on its way, and an answer that
+    // failed is asked for again by the next gift.
+    await withExtension({ date: '2026-12-20T12:00:00+03:00' }, async (page, url, errors) => {
+        let answerMode = 'fail';
+        let release;
+        const released = new Promise(resolve => { release = resolve; });
+        await page.route(/with_keywords/, async route => {
+            if (answerMode === 'fail') return route.abort();
+            await released;
+            return route.fallback();
+        });
+        await page.goto(url(HOME));
+        await waitForSign(page);
+        const points = await giftPoints(page);
+        const first = points[0], last = points[points.length - 1];
+
+        await page.mouse.click(first.x, first.y);
+        await page.waitForTimeout(1600);
+        const failed = await cardState(page);
+        assert.ok(failed.visible);
+        assert.equal(failed.title, 'Выбрать случайный фильм');
+        assert.match(failed.href, /random\.html/);
+        assert.equal(failed.posterShown, false);
+
+        answerMode = 'hold';
+        await page.mouse.click(last.x, last.y);
+        await page.waitForTimeout(1600);
+        const waiting = await cardState(page);
+        assert.ok(waiting.visible);
+        assert.equal(waiting.title, 'Ищем фильм…');
+        assert.equal(waiting.href, '');
+        assert.equal(waiting.posterShown, false);
+
+        release();
+        await page.waitForFunction(() => document.querySelector('.ny-reveal__card').getAttribute('href'), null, { timeout: 10000 });
+        await page.waitForFunction(() => document.querySelector('.ny-reveal__poster').naturalWidth > 0, null, { timeout: 10000 });
+        assertCardHolds(await cardState(page), last.index, 'the film that arrived late');
+        assert.deepEqual(errors, []);
+    });
+
+    // The sign collapses into a strip that brings it back, and stays as it was left.
+    await withExtension({ date: '2026-12-20T12:00:00+03:00' }, async (page, url, errors) => {
+        const scene = () => page.evaluate(() => ({
+            sign: !!document.querySelector('.ny-marquee'),
+            strip: !!document.querySelector('.ny-strip'),
+            saved: localStorage.getItem('movieExtensionSeasonBannerDismissed')
+        }));
+        const hostHeight = () => page.evaluate(() => document.getElementById('season-marquee').offsetHeight);
+        await page.goto(url(HOME));
+        await waitForSign(page);
+        await page.waitForTimeout(1500);
+        const signHeight = await hostHeight();
+        assert.equal(await page.textContent('.ny-marquee__collapse'), 'Свернуть');
+        await shot(page, 'sign-with-collapse');
+
+        // An open gift goes away with the sign, and the page eases instead of jumping.
+        const points = await giftPoints(page);
+        await page.mouse.click(points[0].x, points[0].y);
+        await page.waitForTimeout(400);
+        await page.click('.ny-marquee__collapse');
+        await page.waitForTimeout(170);
+        const midway = await hostHeight();
+        assert.ok(midway < signHeight && midway > 100, `the box must ease between the heights (${midway})`);
+        await shot(page, 'strip-moving');
+        await page.waitForSelector('.ny-marquee', { state: 'detached', timeout: 3000 });
+        await page.waitForTimeout(1400);
+        assert.deepEqual(await scene(), { sign: false, strip: true, saved: 'newyear-2026' });
+        const strip = await page.evaluate(() => {
+            const button = document.querySelector('.ny-strip');
+            const box = button.getBoundingClientRect();
+            return {
+                title: document.querySelector('.ny-strip__title').textContent,
+                left: document.querySelector('.ny-strip__left').textContent,
+                action: document.querySelector('.ny-strip__action').textContent,
+                expanded: button.getAttribute('aria-expanded'),
+                focused: document.activeElement === button,
+                giftsLoaded: [...button.querySelectorAll('img')].every(img => img.complete && img.naturalWidth > 0),
+                onTop: !!document.elementFromPoint(box.right - 60, box.top + box.height / 2)?.closest('.ny-strip'),
+                height: document.getElementById('season-marquee').offsetHeight,
+                overflow: document.documentElement.scrollWidth - innerWidth
+            };
+        });
+        assert.deepEqual(strip, {
+            title: 'Новогодний сеанс',
+            left: 'До Нового года 11 дней',
+            action: 'Развернуть',
+            expanded: 'false',
+            focused: true,
+            giftsLoaded: true,
+            onTop: true,
+            height: strip.height,
+            overflow: strip.overflow
+        });
+        assert.ok(strip.height < 140, `the strip must be slim (${strip.height})`);
+        assert.ok(strip.overflow <= 0);
+        await shot(page, 'strip-1920');
+
+        await page.evaluate(() => document.documentElement.classList.add('light-theme'));
+        await page.waitForTimeout(1800);
+        assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.ny-strip__title')).color), 'rgb(255, 243, 210)');
+        await shot(page, 'strip-light');
+        await page.evaluate(() => document.documentElement.classList.remove('light-theme'));
+        await page.waitForTimeout(800);
+
+        // A collapsed sign stays collapsed on the next page view and costs nothing of the scene.
+        await page.reload();
+        await page.waitForSelector('.ny-strip', { timeout: 20000 });
+        await page.waitForTimeout(1200);
+        assert.deepEqual(await scene(), { sign: false, strip: true, saved: 'newyear-2026' });
+        assert.equal(await page.evaluate(() => performance.getEntriesByType('resource').some(item => item.name.includes('tree-body'))), false);
+
+        // The opt-out takes the strip away too, and turning decor on brings back the strip.
+        const optedOut = await page.evaluate(async () => {
+            window.SeasonalThemeService.setEnabled(false);
+            await new Promise(resolve => setTimeout(resolve, 100));
+            const state = { strip: !!document.querySelector('.ny-strip'), host: !document.getElementById('season-marquee').hidden };
+            window.SeasonalThemeService.setEnabled(true);
+            return state;
+        });
+        assert.deepEqual(optedOut, { strip: false, host: false });
+        await page.waitForSelector('.ny-strip', { timeout: 8000 });
+        assert.equal((await scene()).sign, false);
+
+        // One click brings everything back and the choice is forgotten.
+        await page.click('.ny-strip');
+        await page.waitForSelector('.ny-strip', { state: 'detached', timeout: 3000 });
+        await page.waitForTimeout(600);
+        assert.deepEqual(await scene(), { sign: true, strip: false, saved: null });
+        assert.equal(await hostHeight(), signHeight);
+        assert.equal(await page.evaluate(() => document.activeElement === document.querySelector('.ny-marquee__collapse')), true);
+        assert.equal(await page.evaluate(() => document.querySelectorAll('.ny-gift').length), 12);
+
+        // A double click does no harm: the second click lands on the sign that is arriving.
+        await page.click('.ny-marquee__collapse');
+        await page.waitForSelector('.ny-marquee', { state: 'detached', timeout: 3000 });
+        const before = page.url();
+        await page.dblclick('.ny-strip');
+        await page.waitForSelector('.ny-strip', { state: 'detached', timeout: 3000 });
+        await page.waitForTimeout(600);
+        assert.equal(page.url(), before);
+        assert.deepEqual(await scene(), { sign: true, strip: false, saved: null });
+
+        const backPoints = await giftPoints(page);
+        await page.mouse.click(backPoints[0].x, backPoints[0].y);
+        await page.waitForTimeout(1600);
+        assertCardHolds(await cardState(page), backPoints[0].index, 'a gift of the sign that came back');
+        await page.reload();
+        await waitForSign(page);
+        assert.deepEqual(await scene(), { sign: true, strip: false, saved: null });
+
+        // A mark left by last season does not collapse this one.
+        await page.evaluate(() => localStorage.setItem('movieExtensionSeasonBannerDismissed', 'newyear-2025'));
+        await page.reload();
+        await waitForSign(page);
+        assert.equal((await scene()).strip, false);
+        await page.evaluate(() => localStorage.removeItem('movieExtensionSeasonBannerDismissed'));
         assert.deepEqual(errors, []);
     });
 
@@ -298,6 +564,10 @@ async function main() {
         await page.waitForTimeout(3500);
         assert.equal(await page.evaluate(() => document.querySelector('.ny-marquee').dataset.layout), 'compact');
         await shot(page, 'dark-1100');
+        await page.click('.ny-marquee__collapse');
+        await page.waitForSelector('.ny-marquee', { state: 'detached', timeout: 3000 });
+        await page.waitForTimeout(1400);
+        await shot(page, 'strip-1100');
     });
     await withExtension({ date: '2026-12-20T12:00:00+03:00', viewport: { width: 420, height: 900 } }, async (page, url) => {
         await page.goto(url(HOME));
@@ -308,6 +578,21 @@ async function main() {
         await sign.scrollIntoViewIfNeeded();
         await page.waitForTimeout(800);
         await shot(page, 'stacked-420');
+        await page.click('.ny-marquee__collapse');
+        await page.waitForSelector('.ny-marquee', { state: 'detached', timeout: 3000 });
+        await page.waitForTimeout(1400);
+        const narrow = await page.evaluate(() => {
+            const title = document.querySelector('.ny-strip__title').getBoundingClientRect();
+            const action = document.querySelector('.ny-strip__action').getBoundingClientRect();
+            return {
+                labelHidden: getComputedStyle(document.querySelector('.ny-strip__action-label')).display === 'none',
+                clear: title.right <= action.left,
+                overflow: document.documentElement.scrollWidth - innerWidth
+            };
+        });
+        assert.deepEqual(narrow, { labelHidden: true, clear: true, overflow: narrow.overflow });
+        assert.ok(narrow.overflow <= 0, `the strip must not scroll the page sideways (${narrow.overflow}px)`);
+        await shot(page, 'strip-420');
     });
 
     console.log('New Year season browser tests passed');

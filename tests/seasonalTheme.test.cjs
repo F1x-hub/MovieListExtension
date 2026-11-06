@@ -172,7 +172,7 @@ for (const [, reference] of sideArt.matchAll(/url\(#(\w+)\)/g)) {
         assert.match(copy.before.other, /\{count\}/);
 
         const newYearCopy = locales[locale].home.season.newyear;
-        for (const key of ['title', 'title_today', 'message', 'today', 'after', 'cta', 'dismiss', 'timer', 'unit_minutes', 'unit_seconds', 'gift_open', 'gift_close', 'gift_tag', 'gift_fallback']) {
+        for (const key of ['title', 'title_today', 'message', 'today', 'after', 'cta', 'collapse', 'collapse_hint', 'expand', 'expand_hint', 'strip_left', 'strip_after', 'timer', 'unit_minutes', 'unit_seconds', 'gift_open', 'gift_close', 'gift_tag', 'gift_loading', 'gift_fallback']) {
             assert.ok(newYearCopy[key], `${locale} home.season.newyear.${key} is missing`);
         }
         for (const group of ['days', 'hours']) assert.ok(newYearCopy[group].other, `${locale} home.season.newyear.${group} is missing`);
