@@ -13,11 +13,6 @@ const profileStyles = read('src/shared/styles/profile.css');
 const profileHtml = read('src/pages/profile/profile.html');
 const searchStyles = read('src/shared/styles/search.css');
 const searchHtml = read('src/pages/search/search.html');
-const favoritesStyles = read('src/shared/styles/favorites.css');
-const favoritesHtml = read('src/pages/favorites/favorites.html');
-const watchlistStyles = read('src/shared/styles/watchlist.css');
-const watchlistHtml = read('src/pages/watchlist/watchlist.html');
-const watchingHtml = read('src/pages/watching/watching.html');
 const movieDetailsStyles = read('src/pages/movie-details/movie-details.css');
 const overflowFixesStyles = read('src/shared/styles/overflow-fixes.css');
 
@@ -82,22 +77,9 @@ for (const selector of ['modal-header', 'modal-close', 'modal-body', 'modal-foot
     );
 }
 
-assert.match(favoritesHtml, /class="modal limit-modal"/);
-// Nothing opened these pages' rating dialogs, so they were removed. Ratings and
-// Movie Details own the rating dialogs people can reach.
-for (const [name, html] of [['Search', searchHtml], ['Favorites', favoritesHtml], ['Watchlist', watchlistHtml], ['Watching', watchingHtml]]) {
-    assert.doesNotMatch(html, /id="ratingModal"|id="saveRatingBtn"/, `${name} must not carry an unreachable rating dialog`);
-}
-
-for (const [name, styles] of [['Favorites', favoritesStyles], ['Watchlist', watchlistStyles]]) {
-    for (const selector of ['modal-content', 'modal-header', 'modal-title', 'modal-close', 'modal-body', 'modal-footer']) {
-        assert.doesNotMatch(
-            styles,
-            new RegExp(`^\\.${selector}\\s*\\{`, 'm'),
-            `${name} must not redefine generic .${selector} ownership`
-        );
-    }
-}
+// Nothing opened Search's rating dialog, so it was removed. Ratings and Movie
+// Details own the rating dialogs people can reach.
+assert.doesNotMatch(searchHtml, /id="ratingModal"|id="saveRatingBtn"/, 'Search must not carry an unreachable rating dialog');
 
 const movieDetailsHtml = read('src/pages/movie-details/movie-details.html');
 assert.match(movieDetailsHtml, /class="modal-overlay movie-details-modal-overlay"/);

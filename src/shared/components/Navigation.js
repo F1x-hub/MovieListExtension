@@ -192,12 +192,6 @@ class Navigation {
                 return chrome.runtime.getURL('src/pages/search/search.html');
             case 'ratings':
                 return chrome.runtime.getURL('src/pages/ratings/ratings.html');
-            case 'watchlist':
-                return chrome.runtime.getURL('src/pages/watchlist/watchlist.html');
-            case 'favorites':
-                return chrome.runtime.getURL('src/pages/favorites/favorites.html');
-            case 'watching':
-                return chrome.runtime.getURL('src/pages/watching/watching.html');
             case 'bookmarks':
                 return chrome.runtime.getURL('src/pages/bookmarks/bookmarks.html');
             case 'random':
@@ -2543,10 +2537,6 @@ if (typeof window !== 'undefined' && !window.location.pathname.includes('popup.h
             currentPage = 'ratings';
         } else if (window.location.pathname.includes('calendar.html') || window.location.pathname.includes('src/pages/calendar/')) {
             currentPage = 'calendar';
-        } else if (window.location.pathname.includes('watchlist.html')) {
-            currentPage = 'watchlist';
-        } else if (window.location.pathname.includes('favorites.html')) {
-            currentPage = 'favorites';
         } else if (window.location.pathname.includes('admin.html') || window.location.pathname.includes('src/pages/admin/')) {
             // Admin page handles its own navigation init
             return;

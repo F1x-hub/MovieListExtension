@@ -8,9 +8,6 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const pairs = fields => fields.flatMap(field => [`${field}-desc`, `${field}-asc`]);
 const pages = [
     ['ratings', 'sortFilter', pairs(['date', 'rating', 'avg-rating', 'title', 'year'])],
-    ['favorites', 'sortFilter', pairs(['favoritedAt', 'rating', 'watchedDate', 'movieTitle', 'releaseYear'])],
-    ['watching', 'sortFilter', pairs(['addedAt', 'movieTitle', 'releaseYear', 'avgRating'])],
-    ['watchlist', 'sortFilter', pairs(['addedAt', 'movieTitle', 'releaseYear', 'avgRating'])],
     ['collection', 'sortFilter', pairs(['date', 'title', 'rating', 'year'])],
     ['bookmarks', 'sortFilter', ['updatedAt-desc', 'createdAt-desc', 'movieTitle-asc', 'releaseYear-desc', 'avgRating-desc']],
     ['catalog', 'catalogSort', ['popularity.desc', 'vote_average.desc', 'primary_release_date.desc']],
@@ -70,7 +67,7 @@ function checkMarkupAndNativeContracts() {
 }
 
 function checkListManagers() {
-    for (const page of ['favorites', 'watching', 'watchlist', 'collection']) {
+    for (const page of ['collection']) {
         const dom = fixture(page);
         try {
             const className = `${page[0].toUpperCase()}${page.slice(1)}PageManager`;
@@ -235,7 +232,7 @@ async function checkCatalogRequestSupersession() {
 }
 
 async function checkListLocaleSynchronization() {
-    for (const page of ['favorites', 'watching', 'watchlist', 'collection']) {
+    for (const page of ['collection']) {
         const dom = fixture(page);
         try {
             const { window } = dom;
@@ -262,7 +259,7 @@ async function checkListLocaleSynchronization() {
                 }
                 assert.equal(control.valueLabel.textContent, select.selectedOptions[0].textContent, `${page}: locale observer syncs selected presentation`);
                 if (locale === 'ru') {
-                    control.setValue(page === 'favorites' ? 'watchedDate-asc' : select.options[3].value, { emit: true });
+                    control.setValue(select.options[3].value, { emit: true });
                     assert.equal(changes, 1);
                 }
             }
@@ -278,5 +275,5 @@ async function checkListLocaleSynchronization() {
     checkCatalogAdapter();
     await checkCatalogRequestSupersession();
     await checkListLocaleSynchronization();
-    console.log('SortControl integrations passed: 8 native contracts, 4 manager callbacks/reset and RU/EN translation sync, Ratings range lock, Catalog options/URL and superseded request races (JSDOM fixtures).');
+    console.log('SortControl integrations passed: 5 native contracts, Collection manager callbacks/reset and RU/EN translation sync, Ratings range lock, Catalog options/URL and superseded request races (JSDOM fixtures).');
 })().catch(error => { console.error(error); process.exitCode = 1; });

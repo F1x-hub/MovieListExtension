@@ -72,7 +72,7 @@ async function main() {
     // 6. No native confirm() remains in extension sources, and every caller page loads the component.
     const sourceFiles = [
         'src/pages/admin/admin.js', 'src/pages/bookmarks/bookmarks.js', 'src/pages/search/search.js',
-        'src/pages/settings/settings.js', 'src/pages/watching/watching.js', 'src/pages/watchlist/watchlist.js',
+        'src/pages/settings/settings.js',
         'src/popup/popup.js', 'src/pages/movie-details/movie-details.js'
     ];
     for (const file of sourceFiles) {

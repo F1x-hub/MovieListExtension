@@ -73,7 +73,7 @@ async function main() {
         assert.ok(fs.existsSync(path.resolve(path.dirname(full), scripts[0])));
         checked++;
     }
-    assert.ok(checked >= 18);
+    assert.ok(checked >= 15);
     console.log(`NumberStepper passed: step/bounds/events/focus, readonly/disabled, dynamic inputs, localization and ${checked} page entry points.`);
 }
 

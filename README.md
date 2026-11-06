@@ -471,6 +471,7 @@ keeps npm-compatible three-component semver metadata.
 
 ### Refactor
 
+- Favorites, Watchlist and Watching now open Bookmarks. No link in the interface has led to these pages since February and Bookmarks replaced them, so an old link lands on the matching Bookmarks filter, and their code and styles are gone. `list-pages.spec.cjs` checks the old links in the browser rig. Nothing is deleted from Firestore. The buttons on external sites still save to the old `watchlist` collection, which Bookmarks does not read, so films added that way do not appear there.
 - Removed the rating dialogs from Search, Favorites, Watching and Watchlist, which nothing could open. Search's `?sourceUrl=` view, the one route left into that code, no longer offers rating or editing a rating; deleting one there is unchanged. Favorites cards lose their inert «Изменить оценку» menu item.
 
 </details>
