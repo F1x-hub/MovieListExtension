@@ -154,52 +154,58 @@ let initialState = {
 let currentState = { ...initialState };
 let isDirty = false;
 
+// settings.html loads this module with blocking="render", so the browser paints nothing
+// until it runs, and by then the document is parsed. The footer buttons are as wide as
+// their labels and the footer sits below the open section, so the language and the
+// section have to be final in the first frame. Keep this part synchronous.
+const sidebarLinks = document.querySelectorAll('.sidebar-link');
+const settingsPanes = document.querySelectorAll('.settings-pane');
+const paneTargets = new Set(Array.from(sidebarLinks)
+    .map((link) => link.dataset.target)
+    .filter(Boolean));
+const defaultPaneTarget = sidebarLinks[0]?.dataset.target || 'appearance';
+
+function readActivePane() {
+    try {
+        const savedPane = typeof localStorage !== 'undefined'
+            ? localStorage.getItem(ACTIVE_SETTINGS_PANE_STORAGE_KEY)
+            : null;
+        return paneTargets.has(savedPane) ? savedPane : defaultPaneTarget;
+    } catch {
+        return defaultPaneTarget;
+    }
+}
+
+function persistActivePane(target) {
+    try {
+        if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(ACTIVE_SETTINGS_PANE_STORAGE_KEY, target);
+        }
+    } catch {
+        // Settings navigation still works when storage is unavailable.
+    }
+}
+
+function setActivePane(target, { persist = true } = {}) {
+    const activeTarget = paneTargets.has(target) ? target : defaultPaneTarget;
+    sidebarLinks.forEach((link) => {
+        const isActive = link.dataset.target === activeTarget;
+        link.classList.toggle('active', isActive);
+        if (isActive) link.setAttribute('aria-current', 'page');
+        else link.removeAttribute('aria-current');
+    });
+    settingsPanes.forEach((pane) => {
+        pane.classList.toggle('active', pane.id === `pane-${activeTarget}`);
+    });
+    if (persist) persistActivePane(activeTarget);
+}
+
+i18n.restoreLanguage();
+i18n.translatePage();
+setActivePane(readActivePane(), { persist: false });
+
 document.addEventListener('DOMContentLoaded', async () => {
-    const sidebarLinks = document.querySelectorAll('.sidebar-link');
-    const settingsPanes = document.querySelectorAll('.settings-pane');
-    const paneTargets = new Set(Array.from(sidebarLinks)
-        .map((link) => link.dataset.target)
-        .filter(Boolean));
-    const defaultPaneTarget = sidebarLinks[0]?.dataset.target || 'appearance';
-
-    function readActivePane() {
-        try {
-            const savedPane = typeof localStorage !== 'undefined'
-                ? localStorage.getItem(ACTIVE_SETTINGS_PANE_STORAGE_KEY)
-                : null;
-            return paneTargets.has(savedPane) ? savedPane : defaultPaneTarget;
-        } catch {
-            return defaultPaneTarget;
-        }
-    }
-
-    function persistActivePane(target) {
-        try {
-            if (typeof localStorage !== 'undefined') {
-                localStorage.setItem(ACTIVE_SETTINGS_PANE_STORAGE_KEY, target);
-            }
-        } catch {
-            // Settings navigation still works when storage is unavailable.
-        }
-    }
-
-    function setActivePane(target, { persist = true } = {}) {
-        const activeTarget = paneTargets.has(target) ? target : defaultPaneTarget;
-        sidebarLinks.forEach((link) => {
-            const isActive = link.dataset.target === activeTarget;
-            link.classList.toggle('active', isActive);
-            if (isActive) link.setAttribute('aria-current', 'page');
-            else link.removeAttribute('aria-current');
-        });
-        settingsPanes.forEach((pane) => {
-            pane.classList.toggle('active', pane.id === `pane-${activeTarget}`);
-        });
-        if (persist) persistActivePane(activeTarget);
-    }
-
-    setActivePane(readActivePane(), { persist: false });
-
-    // Initialize I18n
+    // The saved language itself, in case the copy used above has gone stale.
     await i18n.init();
     i18n.translatePage();
     const previewWhatsNew = new URLSearchParams(window.location.search).get('whatsNewPreview') === 'draft';
@@ -211,9 +217,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     bindWhatsNewSettings({ openDialog: openWhatsNew });
     if (previewWhatsNew) void openWhatsNew();
-    // Initialize Navigation
-    const nav = new Navigation('navbar');
-    nav.render();
+    // Initialize Navigation. It renders itself once it knows the session; rendering
+    // any earlier would paint the account block without it.
+    new Navigation('navbar');
 
     // Intercept Navigation
     setupNavigationInterception();

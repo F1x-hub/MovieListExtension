@@ -192,6 +192,54 @@ async function run() {
     await savedI18n.init();
     assert.equal(savedI18n.currentLocale, 'en', 'a saved choice wins');
 
+    // The language a page paints with before storage can answer.
+    const stored = new Map();
+    global.localStorage = {
+        getItem: key => (stored.has(key) ? stored.get(key) : null),
+        setItem: (key, value) => stored.set(key, value),
+        removeItem: key => stored.delete(key)
+    };
+    const storageListeners = [];
+    global.chrome.storage.onChanged = { addListener: listener => storageListeners.push(listener) };
+    const languageChange = (newValue, area = 'sync') => storageListeners.forEach(listener => listener({ language: { newValue } }, area));
+    const restored = () => {
+        const page = new I18n();
+        page.restoreLanguage();
+        return page.currentLocale;
+    };
+    assert.equal(restored(), 'ru', 'without a copy it follows the browser');
+    const copying = new I18n();
+    await copying.init();
+    await copying.init();
+    assert.equal(storageListeners.length, 1, 'init can run more than once');
+    assert.equal(restored(), 'en', 'init keeps the saved language');
+    languageChange('ru', 'local');
+    assert.equal(restored(), 'en', 'only the synced setting counts');
+    languageChange('ru');
+    global.chrome.i18n.getUILanguage = () => 'en';
+    assert.equal(restored(), 'ru', 'a language saved anywhere is the next one painted');
+    languageChange('xx');
+    assert.equal(restored(), 'en', 'an unknown language is not kept');
+    languageChange('ru');
+    languageChange(undefined);
+    assert.equal(restored(), 'en', 'a removed setting removes the copy');
+    global.chrome.storage.sync.get = async () => ({});
+    languageChange('ru');
+    await new I18n().init();
+    assert.equal(restored(), 'en', 'no saved language leaves no copy to outlive it');
+    global.localStorage = {
+        getItem: () => { throw new Error('blocked'); },
+        setItem: () => { throw new Error('blocked'); },
+        removeItem: () => { throw new Error('blocked'); }
+    };
+    assert.equal(restored(), 'en', 'blocked storage falls back to the browser');
+    const blocked = new I18n();
+    global.chrome.storage.sync.get = async () => ({ language: 'ru' });
+    await blocked.init();
+    assert.equal(blocked.currentLocale, 'ru', 'blocked storage does not cost the saved language');
+    delete global.localStorage;
+    delete global.chrome.storage.onChanged;
+
     // Detached cards are released from the ratings observer.
     const MovieRatingsEnrichmentService = require('../src/shared/services/MovieRatingsEnrichmentService.js');
     const enricher = new MovieRatingsEnrichmentService({ trace: false });

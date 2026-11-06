@@ -1,10 +1,38 @@
 import { locales } from './locales.js';
 
+// chrome.storage answers only after a page could already have painted, so the saved
+// language is copied where a page can read it at once. chrome.storage stays the source.
+const LANGUAGE_COPY_KEY = 'movieExtensionLanguage';
+
+function readLanguageCopy() {
+    try {
+        return localStorage.getItem(LANGUAGE_COPY_KEY);
+    } catch {
+        return null;
+    }
+}
+
+function writeLanguageCopy(language) {
+    try {
+        if (language) localStorage.setItem(LANGUAGE_COPY_KEY, language);
+        else localStorage.removeItem(LANGUAGE_COPY_KEY);
+    } catch {
+        // Without the copy a page still gets its language, only after painting.
+    }
+}
+
 class I18n {
     constructor() {
         this.currentLocale = 'en'; // Default
         this.locales = locales;
         this.localeListeners = new Set();
+        this.languageCopyWatched = false;
+    }
+
+    /** The language to paint with, for a page that cannot wait for init(). */
+    restoreLanguage() {
+        const copy = readLanguageCopy();
+        this.currentLocale = this.locales[copy] ? copy : this.detectBrowserLocale();
     }
 
     async init() {
@@ -12,14 +40,29 @@ class I18n {
             const result = await chrome.storage.sync.get(['language']);
             if (result.language && this.locales[result.language]) {
                 this.currentLocale = result.language;
+                writeLanguageCopy(result.language);
             } else {
                 // No saved choice yet: follow the browser language instead of
                 // silently switching Russian-speaking users to English.
                 this.currentLocale = this.detectBrowserLocale();
+                writeLanguageCopy(null);
             }
+            this.watchSavedLanguage();
         } catch (error) {
             console.error('Failed to load language settings:', error);
         }
+    }
+
+    // Settings saves the language itself and another window can too, so the copy
+    // follows the storage rather than the code paths that write to it.
+    watchSavedLanguage() {
+        if (this.languageCopyWatched) return;
+        this.languageCopyWatched = true;
+        chrome.storage.onChanged?.addListener?.((changes, area) => {
+            if (area !== 'sync' || !changes.language) return;
+            const language = changes.language.newValue;
+            writeLanguageCopy(this.locales[language] ? language : null);
+        });
     }
 
     detectBrowserLocale() {
