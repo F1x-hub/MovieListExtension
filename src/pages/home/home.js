@@ -205,8 +205,13 @@ class HomePage {
                 // Unknown auth stays neutral; Firebase's eventual event resolves it.
             }
         }
-        if (authGeneration === this.authGeneration && knownUid && !this.personalSnapshot) {
+        if (authGeneration !== this.authGeneration || this.personalSnapshot) return;
+        if (knownUid) {
             this.reservePersonalLayout();
+        } else if (fm) {
+            // Most likely a guest, which only Firebase may confirm. Its answer
+            // comes after the first paint, and fills this place when it does.
+            this.renderer.reserveGuestInvitation(this.personalTierSection);
         }
     }
 

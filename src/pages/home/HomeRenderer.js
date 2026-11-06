@@ -217,6 +217,20 @@ class HomeRenderer {
         this.personalTierStates.set(container, { mode: 'skeleton', sections });
     }
 
+    /**
+     * Takes the guest invitation's exact place, which depends on the width and the
+     * language, while the session is unknown. Nobody can see or reach it: only a
+     * confirmed guest gets the real one, and any later render replaces this.
+     */
+    reserveGuestInvitation(container) {
+        if (!container) return;
+        this.renderPersonalTier({ isAuthenticated: false }, container);
+        const card = container.querySelector('.home-cta-card');
+        card.classList.add('home-cta-card--reserved');
+        card.querySelector('#homeSignInBtn').removeAttribute('id');
+        this.personalTierStates.set(container, { mode: 'reserved' });
+    }
+
     resetPersonalTier(container) {
         if (!container) return;
         this.personalTierStates.delete(container);

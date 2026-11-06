@@ -91,6 +91,10 @@ have their own unit tests, and this rig does not exercise them:
   reliable, but timings run about two to three times slower than in a visible
   browser. Confirm a timing with `test:e2e:headed`. That mode opens a window and
   skips the screenshot comparison, because a GPU paints text differently.
+- A window also changes layout, by fractions of a pixel. It follows the system's
+  display scale, which `deviceScaleFactor: 1` does not override, and it has
+  scrollbars. At 125% a 1px border takes 0.8px and a 1100px page is 1094px wide.
+  Compare sizes unrounded: 454.4 and 454.65 round to 1px apart.
 - Page state changes results as much as rendering does: the first load after
   signing in behaves differently from later ones. When comparing two runs, make
   sure they measure the same load.
@@ -99,6 +103,11 @@ have their own unit tests, and this rig does not exercise them:
 - A detector reports what moved, not whether it matters. The film page's 30px
   move is a harmless empty box, which only the filmstrip revealed. Look before
   concluding.
+- A quiet layout-shift report does not prove nothing moved. While a page fades in,
+  the browser rarely reports a move: Films moved 146px on every guest load and was
+  reported once in 60 loads, yet in all 15 with the fade off. To check that something
+  holds its place, read the place on every frame with `__e2eMotion.startTrack`, as
+  the guest tests in `specs/nav-first-load.spec.cjs` do.
 
 ## Adding a journey
 

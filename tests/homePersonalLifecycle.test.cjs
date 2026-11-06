@@ -686,6 +686,59 @@ async function run() {
         h.dispose();
     }
 
+    // With no saved session the invitation holds its place unseen until Firebase says who is there, so Films cannot move.
+    {
+        const h = harness();
+        const auth = deferred();
+        h.dom.window.firebaseManager.isAuthReady = false;
+        h.auth(() => auth.promise);
+        const init = h.page.init();
+        await flush();
+        const held = h.element('personal-tier').querySelector('.home-cta-card');
+        assert.ok(held?.classList.contains('home-cta-card--reserved'), 'The place is taken before the page is revealed');
+        assert.equal(h.element('homeSignInBtn'), null, 'Nobody is offered to sign in yet');
+        h.dom.window.firebaseManager.isAuthReady = true;
+        auth.resolve(null);
+        await init;
+        const card = h.element('personal-tier').querySelector('.home-cta-card');
+        assert.equal(card.classList.contains('home-cta-card--reserved'), false);
+        let opened = 0;
+        h.page.handleAuthModal = () => { opened += 1; };
+        h.element('homeSignInBtn').click();
+        assert.equal(opened, 1, 'The revealed invitation works');
+        h.dispose();
+    }
+
+    // The held place is not a promise: a session Firebase confirms replaces it, and no guest invitation appears.
+    {
+        const h = harness();
+        const auth = deferred();
+        h.dom.window.firebaseManager.isAuthReady = false;
+        h.auth(() => auth.promise);
+        h.favorites(async (uid, status) => status === 'watching' ? [movie(90)] : []);
+        const init = h.page.init();
+        await flush();
+        h.authEvent({ uid: 'a' });
+        await flush();
+        assert.equal(h.element('personal-tier').querySelector('.home-cta-card'), null);
+        assert.ok(h.card(90));
+        auth.resolve({ uid: 'a' });
+        await init;
+        h.dispose();
+    }
+
+    // A saved session reserves the signed-in layout, not the invitation's.
+    {
+        const h = harness();
+        h.store.isAuthenticated = true;
+        h.store.user = { uid: 'a' };
+        h.dom.window.firebaseManager.isAuthReady = false;
+        await h.page.preparePersonalTier();
+        assert.ok(h.element('home-watching-grid').querySelector('.home-skeleton-card'));
+        assert.equal(h.element('personal-tier').querySelector('.home-cta-card'), null);
+        h.dispose();
+    }
+
     // Missing Firebase bootstrap is an unresolved session, not a confirmed guest.
     {
         const h = harness();
@@ -693,6 +746,7 @@ async function run() {
         h.page.dataController.firebaseManager = null;
         await h.page.preparePersonalTier();
         assert.equal(h.element('homeSignInBtn'), null);
+        assert.equal(h.element('personal-tier').querySelector('.home-cta-card'), null, 'No answer is coming, so nothing holds a place for it');
         assert.equal(h.element('personal-tier').querySelector('.home-skeleton-card'), null);
         assert.equal(h.cards().length, 0);
         assert.equal(await h.page.resolveInitialUser(), undefined);

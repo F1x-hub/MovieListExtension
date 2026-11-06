@@ -239,6 +239,9 @@
     gap: 8px;
     padding: 14px 0 6px;
     margin-top: 6px;
+    /* The dots' height, held before they are created so that nothing below moves. */
+    box-sizing: content-box;
+    min-height: 6px;
 }
 
 .pagination-dot {
@@ -400,6 +403,11 @@
 
 .home-cta-card:hover {
     border-color: var(--theme-border-hover);
+}
+
+/* Holds the invitation's place until Firebase says this is a guest. */
+.home-cta-card--reserved {
+    visibility: hidden;
 }
 
 .home-cta-content {
@@ -742,9 +750,13 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+    /* A card's poster takes its width, and so its height, from inside the border.
+       Browsers snap a border to device pixels (0.8px at 125%), so without the same
+       border here the two heights only agree at a display scale of 100%. */
+    border: 1px solid transparent;
     /* Two text lines are shorter than a card body; the rest keeps the card's
        full height. Checked by tests/e2e/specs/home-placeholders.spec.cjs. */
-    padding-bottom: 37px;
+    padding-bottom: 38.05px;
 }
 
 .home-skeleton-poster,
