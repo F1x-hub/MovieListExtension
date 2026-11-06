@@ -107,6 +107,8 @@ movie-rating-extension/
 
 ## Architecture
 
+- **Seasonal runtime**: `SeasonalThemeService` owns windows, the opt-out, the `season-*` class and `#seasonalDecor`. A season with a `runtime` list loads `src/shared/seasonal/<id>/*.js` on demand through `loadRuntime()`, so off-season pages fetch none of it. The New Year season's static pictures are pre-rendered by `scripts/generate-newyear-art.cjs`; see `docs/design-system.md`.
+
 - **Release notes**: `WhatsNewService` stores installation acknowledgement in
   `chrome.storage.local.whatsNewV1`; `WhatsNewDialog` opens from Navigation and
   popup after language initialization, independently of auth/Firebase. Settings

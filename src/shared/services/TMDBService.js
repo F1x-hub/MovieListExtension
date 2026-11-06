@@ -636,6 +636,7 @@ class TMDBService {
         const yearFrom = Number.parseInt(options.yearFrom, 10);
         const yearTo = Number.parseInt(options.yearTo, 10);
         const genre = Number.parseInt(options.genre, 10);
+        const keyword = Number.parseInt(options.keyword, 10);
         const country = typeof options.country === 'string' && /^[A-Z]{2}$/i.test(options.country)
             ? options.country.toUpperCase()
             : '';
@@ -676,6 +677,7 @@ class TMDBService {
                 }
             }
 
+            if (Number.isInteger(keyword) && keyword > 0) params.set('with_keywords', String(keyword));
             if (country) params.set('with_origin_country', country);
             if (Number.isInteger(yearFrom) && yearFrom >= 1870) {
                 params.set(isTv ? 'first_air_date.gte' : 'primary_release_date.gte', `${yearFrom}-01-01`);
@@ -695,7 +697,7 @@ class TMDBService {
         // TMDB returns at most 20 results per provider page. Fetch enough
         // provider pages for every catalogue page, not only mixed categories.
         const providerPageCount = Math.max(1, Math.ceil((page * pageSize) / 20));
-        const filterKey = [category, requestedSort, yearFrom || '', yearTo || '', genre || '', country || ''].join('|');
+        const filterKey = [category, requestedSort, yearFrom || '', yearTo || '', genre || '', country || '', keyword || ''].join('|');
 
         const getProviderPage = async (kind, providerPage) => {
             const cacheKey = `${filterKey}|${kind}|${providerPage}`;

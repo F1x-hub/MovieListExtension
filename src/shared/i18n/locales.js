@@ -1027,6 +1027,26 @@ export const locales = {
                     after: "Halloween is over, but it is never too late for a scary story.",
                     cta: "Horror picks",
                     dismiss: "Hide Halloween banner"
+                },
+                newyear: {
+                    title: "New Year screening",
+                    title_today: "Happy New Year!",
+                    message: "A blanket, tangerines and films for the long holidays. There is a film in every gift.",
+                    today: "The screening has begun. There is a film in every gift under the tree.",
+                    after: "The holidays go on: blankets, tangerines and a film in every gift.",
+                    cta: "New Year picks",
+                    catalog_title: "New Year films",
+                    catalog_description: "Films for the holiday evenings",
+                    dismiss: "Hide New Year banner",
+                    timer: "{days}, {hours} h {minutes} min until New Year",
+                    days: { one: "day", other: "days" },
+                    hours: { one: "hour", other: "hours" },
+                    unit_minutes: "min",
+                    unit_seconds: "sec",
+                    gift_open: "Open a gift",
+                    gift_close: "Close the gift",
+                    gift_tag: "A gift for you",
+                    gift_fallback: "Pick a random film"
                 }
             },
             loading: "Loading showcase...",
@@ -2881,6 +2901,26 @@ export const locales = {
                     after: "Хэллоуин позади, но для страшной истории никогда не поздно.",
                     cta: "Подборка ужасов",
                     dismiss: "Скрыть баннер Хэллоуина"
+                },
+                newyear: {
+                    title: "Новогодний сеанс",
+                    title_today: "С Новым годом!",
+                    message: "Плед, мандарины и кино на все выходные. В каждом подарке спрятан фильм.",
+                    today: "Сеанс начался. В каждом подарке под ёлкой спрятан фильм.",
+                    after: "Праздники продолжаются: плед, мандарины и фильм в каждом подарке.",
+                    cta: "Новогодняя подборка",
+                    catalog_title: "Новогодние фильмы",
+                    catalog_description: "Кино для праздничных вечеров",
+                    dismiss: "Скрыть новогодний баннер",
+                    timer: "До Нового года {days}, {hours} ч {minutes} мин",
+                    days: { one: "день", few: "дня", many: "дней", other: "дней" },
+                    hours: { one: "час", few: "часа", many: "часов", other: "часов" },
+                    unit_minutes: "мин",
+                    unit_seconds: "сек",
+                    gift_open: "Открыть подарок",
+                    gift_close: "Закрыть подарок",
+                    gift_tag: "Подарок для вас",
+                    gift_fallback: "Выбрать случайный фильм"
                 }
             },
             loading: "Загрузка витрины...",

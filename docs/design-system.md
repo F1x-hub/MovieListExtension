@@ -50,7 +50,7 @@ pattern in addition to color. Color must never be the only carrier of meaning.
 `localStorage` mirror for first paint, the `season-*` class on `<html>`, and the
 decorative `#seasonalDecor` layer. `ThemeService` still owns dark/light state;
 seasonal decor is a layer on top of either theme, never a third theme.
-`src/shared/styles/seasonal.css`, imported by `common.css`, is its only stylesheet.
+`src/shared/styles/seasonal.css` and `seasonal-newyear.css`, imported by `common.css`, are its only stylesheets.
 
 The Halloween window is 17 October – 7 November. Its palette (pumpkin ember
 `#ff8a2a`/`#d9620f`, a violet accent in the navigation edge, lit windows and a
@@ -90,6 +90,46 @@ spider and flicker animations.
 Settings preview, banner copy and token-only scene markup; `test:visual-design`
 requires every chromatic seasonal value to be a season-root token and blocks
 seasonal restyling of shared buttons, menus and navigation links.
+
+The New Year window is 15 December – 14 January with its peak on 1 January. It
+crosses the turn of the year, so the season's `year` is the year it starts in and
+one dismissal of the sign lasts the whole window. The look is «Новогодний сеанс», a
+cinema under the snow at night, and it belongs to this season alone:
+
+- a snowed-in clapperboard logo with a warm Play window that claps now and then;
+- behind the content, on `z-index: -1`: stars, a northern-lights canvas and, on
+  Home only, Santa's sleigh and six reindeer crossing the free band of sky between
+  the slider and the sign, passing behind posters and the tree's star. A pass waits
+  while that band has scrolled away, and the next one comes 45 seconds after the last;
+- a snowy forest in the page margins at 1640px and wider, with pointer parallax;
+- in `#seasonalDecor`: falling snow in three depths that the cursor pushes aside;
+- snow piles on the top edges of slider cards, movie cards and the sign. They live
+  on `.ny-piles`, a layer inside the page's scroll, so they cannot lag behind a poster.
+  Calm scrolling leaves them alone; a card's own hover lift or a fast fling knocks
+  some off, a fling never more than half. Below a pixel of height nothing is drawn;
+- Home's `.ny-marquee`: an Art Deco sign, night in both themes, with a neon title in
+  the bundled Poiret One, running lamps, a film-leader dial and flip digits counting
+  to midnight on 1 January, a decorated tree breaking through its top edge and twelve
+  gifts. Any gift opens onto a New Year film from TMDB (keyword 207317, requested on
+  the first opening only; `«Случайный»` is the fallback). On 1 January the title
+  becomes «С Новым годом!», the countdown goes away and fireworks fly. The sign has
+  `wide`, `compact` and `stacked` layouts chosen from the content column's width.
+
+Everything specific to the season loads on demand: `SeasonalThemeService.loadRuntime()`
+adds `src/shared/seasonal/newyear/*.js` only while the season is active, and pages
+off-season fetch none of it. The forest, tree and gift pictures in
+`src/shared/assets/seasonal/newyear/` are pre-rendered needle by needle, because every
+page is a full load and painting them costs about a second of main thread. Regenerate
+them with `node scripts/generate-newyear-art.cjs` after changing
+`scripts/newyear-art/painters.js`, the arrangement or the `--ny-*` painter tokens; moving
+art (ornaments, lamps, the film garland, Santa) keeps its colors in code as part of the
+illustration. One animation loop owns all of it. It stops while the tab is hidden, while
+the player is open and in fullscreen, sheds snow on a machine that cannot keep up, and
+draws a single still frame under reduced motion. The live broadcast page keeps the
+forest but no falling snow or sky, because the video is part of that page.
+`npm run test:new-year-browser` runs the built extension with a pinned clock. To look
+at a season out of its dates, run `localStorage.setItem('movieExtensionSeasonPreviewDate', '2026-12-20')`
+on any extension page and reload; `removeItem` returns to the real date.
 
 ## Token ownership
 

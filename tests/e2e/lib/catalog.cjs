@@ -99,6 +99,7 @@ function respond(tmdbUrl) {
     if (path === '/movie/now_playing') return page(SECTIONS.films, pageNumber);
     if (path === '/trending/tv/week') return page(SECTIONS.series, pageNumber);
     if (path === '/discover/movie') {
+        if (url.searchParams.has('with_keywords')) return page(SECTIONS.films, pageNumber);
         const isCartoon = url.searchParams.get('with_genres') === '16' && !url.searchParams.has('with_original_language');
         return page(isCartoon ? SECTIONS.cartoons : [], pageNumber);
     }

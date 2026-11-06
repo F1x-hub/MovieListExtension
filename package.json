@@ -39,6 +39,7 @@
     "test:e2e:player:headed": "node tests/e2e/run.cjs --player --headed",
     "test:visual-design": "node tests/visualDesignContract.test.js",
     "test:seasonal-theme": "node tests/seasonalTheme.test.cjs",
+    "test:new-year-browser": "node tests/newYearSeasonBrowser.cjs",
     "test:actor-age": "node tests/actorAge.test.cjs",
     "test:filter-controls-browser": "node tests/filterControlsBrowserSmoke.cjs",
     "test:filter-controls-layout": "node tests/filterControlsLayoutBrowser.cjs",

@@ -58,6 +58,38 @@ assert.strictEqual(service.getActiveSeason(at(6, 1)), null);
 assert.strictEqual(service.getActiveSeason(new Date('invalid')), null);
 assert.strictEqual(service.getActiveSeason(new Date(2027, 9, 20)).year, 2027);
 
+// New Year crosses the turn of the year: inclusive 15 Dec through 14 Jan, and the
+// whole window belongs to the year it starts in.
+const nyAt = (year, month, day, hour = 12, minute = 0) => new Date(year, month - 1, day, hour, minute);
+assert.strictEqual(service.getActiveSeason(nyAt(2026, 12, 14, 23, 59)), null);
+assert.strictEqual(service.getActiveSeason(nyAt(2026, 12, 15, 0, 0))?.id, 'newyear');
+assert.strictEqual(service.getActiveSeason(nyAt(2026, 12, 31, 23, 59))?.year, 2026);
+assert.strictEqual(service.getActiveSeason(nyAt(2027, 1, 1, 0, 0))?.id, 'newyear');
+assert.strictEqual(service.getActiveSeason(nyAt(2027, 1, 1, 0, 0))?.year, 2026);
+assert.strictEqual(service.getActiveSeason(nyAt(2027, 1, 14, 23, 59))?.year, 2026);
+assert.strictEqual(service.getActiveSeason(nyAt(2027, 1, 15, 0, 0)), null);
+assert.strictEqual(service.getActiveSeason(nyAt(2027, 12, 20))?.year, 2027);
+const newYear = service.getActiveSeason(nyAt(2026, 12, 20));
+assert.strictEqual(newYear.peak.getFullYear(), 2027);
+assert.strictEqual(newYear.peak.getMonth(), 0);
+assert.strictEqual(newYear.peak.getDate(), 1);
+assert.strictEqual(newYear.end.getFullYear(), 2027);
+assert.strictEqual(service.getDaysUntilPeak(newYear, nyAt(2026, 12, 20)), 12);
+assert.strictEqual(service.getDaysUntilPeak(newYear, nyAt(2026, 12, 31, 23, 59)), 1);
+assert.strictEqual(service.getDaysUntilPeak(newYear, nyAt(2027, 1, 1, 0, 5)), 0);
+assert.strictEqual(service.getDaysUntilPeak(newYear, nyAt(2027, 1, 3)), -2);
+assert.ok(service.getActiveSeason(nyAt(2026, 12, 20)).ctaHref.includes('keyword=207317'));
+service.apply({ date: nyAt(2026, 12, 20) });
+assert.ok(root.classList.contains('season-newyear'));
+assert.ok(!root.classList.contains('season-halloween'));
+service.apply({ date: at(10, 20) });
+assert.ok(root.classList.contains('season-halloween'));
+assert.ok(!root.classList.contains('season-newyear'));
+service.apply({ date: nyAt(2026, 6, 1) });
+assert.ok(!root.classList.contains('season-newyear'));
+
+assert.strictEqual(typeof service.now(), 'number');
+
 const season = service.getActiveSeason(at(10, 19));
 assert.strictEqual(service.getDaysUntilPeak(season, at(10, 19, 23, 30)), 12);
 assert.strictEqual(service.getDaysUntilPeak(season, at(10, 31, 0, 5)), 0);
@@ -98,6 +130,20 @@ assert.doesNotMatch(logo.replace(/url\(#\w+\)/g, ''), /#[0-9a-f]{3,8}\b/i, 'logo
 const maskIds = id => [...id.matchAll(/<mask id="([^"]+)"/g)].map(match => match[1]);
 assert.notStrictEqual(maskIds(logo)[0], maskIds(service.getLogoMarkup())[0], 'each logo needs its own hat mask id');
 
+// Each season draws its own mark; color stays in tokens and ids stay unique.
+const newYearLogo = service.getLogoMarkup('nav-logo-image', 'newyear');
+assert.match(newYearLogo, /class="season-logo nav-logo-image"/);
+assert.match(newYearLogo, /season-logo__heap/);
+assert.match(newYearLogo, /season-logo__warm/);
+assert.doesNotMatch(newYearLogo, /season-logo__hat/);
+assert.doesNotMatch(newYearLogo.replace(/url\(#\w+\)/g, ''), /#[0-9a-f]{3,8}\b/i, 'logo color must come from seasonal CSS tokens');
+const gradientIds = markup => [...markup.matchAll(/\sid="([^"]+)"/g)].map(match => match[1]);
+assert.strictEqual(gradientIds(newYearLogo).filter(id => gradientIds(service.getLogoMarkup('', 'newyear')).includes(id)).length, 0,
+    'each logo needs its own gradient and mask ids');
+for (const reference of newYearLogo.matchAll(/url\(#(\w+)\)/g)) {
+    assert.ok(gradientIds(newYearLogo).includes(reference[1]), `logo references a missing id ${reference[1]}`);
+}
+
 const scene = service.getSceneMarkup('season-banner__art');
 assert.match(scene, /class="season-scene season-banner__art"/);
 assert.match(scene, /season-scene__window/);
@@ -124,6 +170,18 @@ for (const [, reference] of sideArt.matchAll(/url\(#(\w+)\)/g)) {
             assert.ok(copy[key], `${locale} home.season.halloween.${key} is missing`);
         }
         assert.match(copy.before.other, /\{count\}/);
+
+        const newYearCopy = locales[locale].home.season.newyear;
+        for (const key of ['title', 'title_today', 'message', 'today', 'after', 'cta', 'dismiss', 'timer', 'unit_minutes', 'unit_seconds', 'gift_open', 'gift_close', 'gift_tag', 'gift_fallback']) {
+            assert.ok(newYearCopy[key], `${locale} home.season.newyear.${key} is missing`);
+        }
+        for (const group of ['days', 'hours']) assert.ok(newYearCopy[group].other, `${locale} home.season.newyear.${group} is missing`);
+        assert.match(newYearCopy.timer, /\{days\}/);
+    }
+    for (const group of ['days', 'hours']) {
+        for (const form of ['one', 'few', 'many', 'other']) {
+            assert.ok(locales.ru.home.season.newyear[group][form], `ru plural ${group}.${form} is missing`);
+        }
     }
 
     const makeI18n = locale => ({
@@ -183,6 +241,21 @@ for (const [, reference] of sideArt.matchAll(/url\(#(\w+)\)/g)) {
     assert.strictEqual(bannerRoot.hidden, true);
     banner.render(new Date(2027, 9, 20));
     assert.strictEqual(bannerRoot.hidden, false);
+
+    // New Year keeps one dismissal across the turn of the year, then returns next season.
+    assert.strictEqual(globalThis.HomeSeasonalBanner.getDismissToken(service.getActiveSeason(nyAt(2026, 12, 20))), 'newyear-2026');
+    assert.strictEqual(globalThis.HomeSeasonalBanner.getDismissToken(service.getActiveSeason(nyAt(2027, 1, 10))), 'newyear-2026');
+    assert.strictEqual(globalThis.HomeSeasonalBanner.getDismissToken(service.getActiveSeason(nyAt(2027, 12, 20))), 'newyear-2027');
+
+    // The sign replaces the plain banner; off-season pages never load its scripts.
+    let loaded = 0;
+    const realLoad = service.loadRuntime;
+    service.loadRuntime = () => { loaded += 1; return Promise.resolve(); };
+    banner.render(at(6, 1));
+    assert.strictEqual(loaded, 0);
+    banner.render(nyAt(2026, 12, 20));
+    assert.strictEqual(bannerRoot.hidden, true);
+    service.loadRuntime = realLoad;
 
     console.log('Seasonal theme tests passed');
 })().catch(error => {

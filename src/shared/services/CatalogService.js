@@ -63,6 +63,7 @@ class CatalogService {
                 yearTo: query.yearTo,
                 genre: query.genre,
                 country: query.country,
+                keyword: query.keyword,
                 signal: options.signal || null
             });
 
@@ -134,6 +135,7 @@ class CatalogService {
         const yearFrom = this.normalizeYear(query.yearFrom);
         const yearTo = this.normalizeYear(query.yearTo);
         const genre = this.normalizePositiveInt(query.genre);
+        const keyword = this.normalizePositiveInt(query.keyword);
         const country = typeof query.country === 'string' && /^[A-Z]{2}$/i.test(query.country)
             ? query.country.toUpperCase()
             : '';
@@ -145,7 +147,8 @@ class CatalogService {
             yearFrom: yearFrom && yearFrom >= 1870 ? yearFrom : null,
             yearTo: yearTo && yearTo >= 1870 ? yearTo : null,
             genre,
-            country
+            country,
+            keyword
         };
     }
 
@@ -167,7 +170,8 @@ class CatalogService {
             query.yearFrom || '',
             query.yearTo || '',
             query.genre || '',
-            query.country || ''
+            query.country || '',
+            query.keyword || ''
         ].join('_');
         return `${this.cachePrefix}${category}_${queryKey}`;
     }

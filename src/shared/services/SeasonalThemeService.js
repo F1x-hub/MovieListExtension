@@ -12,6 +12,8 @@
     const STORAGE_KEY = 'seasonalDecorEnabled';
     const MIRROR_KEY = 'movieExtensionSeasonalDecor';
     const BATS_SHOWN_KEY = 'movieExtensionSeasonBatsAt';
+    // Checking a season outside its dates: set to 'YYYY-MM-DD' and reload the page.
+    const PREVIEW_DATE_KEY = 'movieExtensionSeasonPreviewDate';
     const BATS_COOLDOWN_MS = 3 * 60 * 1000;
     const DECOR_ID = 'seasonalDecor';
     const SCROLLED_OFFSET = 24;
@@ -27,6 +29,17 @@
             end: Object.freeze({ month: 11, day: 7 }),
             // Home banner destination; each season owns its own catalog link.
             ctaHref: '../catalog/catalog.html?category=films&genre=27'
+        }),
+        // Crosses New Year's Eve: the window belongs to the year it starts in.
+        Object.freeze({
+            id: 'newyear',
+            start: Object.freeze({ month: 12, day: 15 }),
+            peak: Object.freeze({ month: 1, day: 1 }),
+            end: Object.freeze({ month: 1, day: 14 }),
+            // TMDB keyword "christmas".
+            ctaHref: '../catalog/catalog.html?category=films&keyword=207317',
+            // The sign, the snow and the forest load only while the season is on.
+            runtime: Object.freeze(['art', 'tree', 'gifts', 'sleigh', 'fx', 'banner'])
         })
     ]);
 
@@ -49,6 +62,11 @@
     const LOGO_HAT_BUCKLE_PATH = 'M-9 -18H9V2H-9ZM-4.5 -13.5V-2.5H4.5V-13.5Z';
     const LOGO_HAT_STAR_PATH = 'M-1 -53L1.2 -47.1L7.6 -46.8L2.6 -42.8L4.3 -36.7L-1 -40.2L-6.3 -36.7L-4.6 -42.8L-9.6 -46.8L-3.2 -47.1Z';
     let logoMaskCount = 0;
+
+    // New Year: a snowed-in clapperboard with a warm Play window.
+    const LOGO_SNOW_PATH = 'M4 3C0 -9 13 -16 25 -11C31 -25 53 -28 62 -13C72 -27 95 -27 103 -12C113 -25 134 -25 142 -11C152 -22 173 -20 179 -9C189 -13 200 -6 197 4C180 8 150 7 120 7C90 8 30 9 4 3Z';
+    const LOGO_ICE_PATH = 'M150 44L155 68L160 44ZM170 44L173 60L177 44ZM128 44L133 58L137 44Z';
+    const LOGO_PLAY_BODY_PATH = 'M46 120H210A18 18 0 0 1 228 138V218A18 18 0 0 1 210 236H46A18 18 0 0 1 28 218V138A18 18 0 0 1 46 120ZM110 155Q110 148 116.12 151.4L157.88 174.6Q164 178 157.88 181.4L116.12 204.6Q110 208 110 201Z';
 
     const BAT_PATH ='M32 13L29.6 7.5L28.6 11.2C25 6.5 15 3.5 4 7C9.5 8.5 12 12 12.5 16C15.5 13.8 19.5 14.2 21.5 17.5C23.5 15.5 27 15.8 28.5 19L32 24L35.5 19C37 15.8 40.5 15.5 42.5 17.5C44.5 14.2 48.5 13.8 51.5 16C52 12 54.5 8.5 60 7C49 3.5 39 6.5 35.4 11.2L34.4 7.5Z';
 
@@ -99,12 +117,34 @@
         return typeof document !== 'undefined' ? document.documentElement : null;
     }
 
+    let clockOffset = null;
+
+    /* The current time; the preview date shifts it, and it keeps running from there. */
+    function now() {
+        if (clockOffset === null) {
+            clockOffset = 0;
+            try {
+                const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(getLocalStorage()?.getItem(PREVIEW_DATE_KEY) || '');
+                if (match) clockOffset = new Date(+match[1], +match[2] - 1, +match[3], 12).getTime() - Date.now();
+            } catch {
+                // Without storage the real clock stays.
+            }
+        }
+        return Date.now() + clockOffset;
+    }
+
     function getChromeStorage() {
         return typeof chrome !== 'undefined' && chrome.storage?.local ? chrome.storage.local : null;
     }
 
     function toLocalDate(year, { month, day }) {
         return new Date(year, month - 1, day);
+    }
+
+    // A date earlier in the calendar than the start falls in the following year.
+    function dateInWindow(startYear, season, part) {
+        const crosses = part.month < season.start.month;
+        return toLocalDate(crosses ? startYear + 1 : startYear, part);
     }
 
     function startOfDay(date) {
@@ -114,24 +154,27 @@
     /**
      * @param {Date} [date]
      * @returns {{id: string, year: number, start: Date, peak: Date, end: Date}|null}
+     *   `year` is the year the window starts in, for a window crossing New Year's Eve too.
      */
-    function getActiveSeason(date = new Date()) {
+    function getActiveSeason(date = new Date(now())) {
         if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
         const today = startOfDay(date);
-        const year = today.getFullYear();
+        const thisYear = today.getFullYear();
 
         for (const season of SEASONS) {
-            const start = toLocalDate(year, season.start);
-            const end = toLocalDate(year, season.end);
-            if (today >= start && today <= end) {
-                return {
-                    id: season.id,
-                    year,
-                    start,
-                    peak: toLocalDate(year, season.peak),
-                    end,
-                    ctaHref: season.ctaHref || ''
-                };
+            for (const year of [thisYear, thisYear - 1]) {
+                const start = toLocalDate(year, season.start);
+                const end = dateInWindow(year, season, season.end);
+                if (today >= start && today <= end) {
+                    return {
+                        id: season.id,
+                        year,
+                        start,
+                        peak: dateInWindow(year, season, season.peak),
+                        end,
+                        ctaHref: season.ctaHref || ''
+                    };
+                }
             }
         }
         return null;
@@ -140,7 +183,7 @@
     /**
      * Whole local days from `date` to the season's peak; negative after it.
      */
-    function getDaysUntilPeak(season, date = new Date()) {
+    function getDaysUntilPeak(season, date = new Date(now())) {
         if (!season?.peak) return null;
         return Math.round((season.peak - startOfDay(date)) / DAY_MS);
     }
@@ -164,7 +207,7 @@
         }
     }
 
-    function getActiveDecor(date = new Date()) {
+    function getActiveDecor(date = new Date(now())) {
         return isEnabled() ? getActiveSeason(date) : null;
     }
 
@@ -175,10 +218,13 @@
     /**
      * Seasonal logo mark. It is always rendered next to the regular logo and
      * becomes visible only under an active `season-*` class.
+     * @param {string} [className]
+     * @param {string} [seasonId] - the season whose mark to draw
      */
-    function getLogoMarkup(className = '') {
+    function getLogoMarkup(className = '', seasonId = 'halloween') {
         // Each mounted logo needs its own mask id: ids are document-global.
         logoMaskCount += 1;
+        if (seasonId === 'newyear') return getNewYearLogoMarkup(className, logoMaskCount);
         const maskId = `seasonLogoHat${logoMaskCount}`;
         const hatSilhouette = `<path d="${LOGO_HAT_BRIM_PATH}"/><path d="${LOGO_HAT_CONE_PATH}"/>`;
         return svg('0 0 256 256', `season-logo ${className}`.trim(),
@@ -197,6 +243,26 @@
             + `<path class="season-logo__hat-buckle" fill-rule="evenodd" d="${LOGO_HAT_BUCKLE_PATH}"/>`
             + `<path class="season-logo__hat-star" d="${LOGO_HAT_STAR_PATH}"/>`
             + '</g></g>');
+    }
+
+    function getNewYearLogoMarkup(className, id) {
+        const snowFill = `seasonLogoSnow${id}`, iceFill = `seasonLogoIce${id}`, gap = `seasonLogoGap${id}`;
+        return svg('0 0 256 256', `season-logo ${className}`.trim(),
+            '<defs>'
+            + `<linearGradient id="${snowFill}" x1="0" y1="0" x2="0" y2="1">${gradientStop(0, 'logo-snow-a')}${gradientStop(0.6, 'logo-snow-b')}${gradientStop(1, 'logo-snow-c')}</linearGradient>`
+            + `<linearGradient id="${iceFill}" x1="0" y1="0" x2="0" y2="1">${gradientStop(0, 'logo-ice-a')}${gradientStop(1, 'logo-ice-b')}</linearGradient>`
+            + `<mask id="${gap}" maskUnits="userSpaceOnUse" x="-40" y="-70" width="300" height="140">`
+            + '<rect x="-40" y="-70" width="300" height="140" fill="white"/>'
+            + `<path fill="black" stroke="black" stroke-width="12" stroke-linejoin="round" d="${LOGO_SNOW_PATH}"/></mask></defs>`
+            + '<g transform="translate(13 22) scale(0.9)">'
+            + '<rect class="season-logo__warm" x="84" y="134" width="94" height="88" rx="8"/>'
+            + '<g class="season-logo__stick"><g transform="translate(28 112) rotate(-14) translate(0 -42)">'
+            + `<g mask="url(#${gap})"><path fill-rule="evenodd" d="${LOGO_CLAPPER_PATH}"/></g>`
+            + `<path class="season-logo__ice" fill="url(#${iceFill})" d="${LOGO_ICE_PATH}"/>`
+            + `<g class="season-logo__heap"><path class="season-logo__snow" fill="url(#${snowFill})" d="${LOGO_SNOW_PATH}"/></g>`
+            + '</g></g>'
+            + `<path fill-rule="evenodd" d="${LOGO_PLAY_BODY_PATH}"/>`
+            + '</g>');
     }
 
     function getBatsMarkup() {
@@ -493,15 +559,39 @@
         return true;
     }
 
+    const runtimeLoads = new Map();
+
+    /**
+     * Loads a season's own scripts, in order, on first need. Pages off-season
+     * never fetch them.
+     * @returns {Promise<void>}
+     */
+    function loadRuntime(seasonId) {
+        if (runtimeLoads.has(seasonId)) return runtimeLoads.get(seasonId);
+        const names = SEASONS.find(season => season.id === seasonId)?.runtime || [];
+        const load = names.reduce((previous, name) => previous.then(() => new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            const path = `src/shared/seasonal/${seasonId}/${name}.js`;
+            script.src = global.chrome?.runtime?.getURL ? global.chrome.runtime.getURL(path) : `/${path}`;
+            script.onload = resolve;
+            script.onerror = () => reject(new Error(`Could not load ${path}`));
+            document.head.appendChild(script);
+        })), Promise.resolve());
+        runtimeLoads.set(seasonId, load);
+        return load;
+    }
+
     function syncDecorLayer(season) {
         if (typeof document === 'undefined' || !document.body) return;
         const existing = document.getElementById(DECOR_ID);
 
         if (!season) {
+            if (existing?.dataset.season === 'newyear') global.NewYearDecor?.unmount();
             existing?.remove();
             return;
         }
         if (existing?.dataset.season === season.id) return;
+        if (existing?.dataset.season === 'newyear') global.NewYearDecor?.unmount();
         existing?.remove();
 
         // The popup is a small surface: glow and logo only.
@@ -511,6 +601,18 @@
         layer.className = `seasonal-decor seasonal-decor--${season.id}`;
         layer.dataset.season = season.id;
         layer.setAttribute('aria-hidden', 'true');
+        if (season.id === 'newyear') {
+            // Its own layers and animation loop; the popup keeps only the logo.
+            document.body.appendChild(layer);
+            if (!isPopup) {
+                loadRuntime(season.id)
+                    .then(() => {
+                        if (layer.isConnected) global.NewYearDecor?.mount(layer);
+                    })
+                    .catch(error => console.warn('SeasonalThemeService: season layer unavailable', error));
+            }
+            return;
+        }
         layer.innerHTML = isPopup
             ? ''
             : getSideArtMarkup() + getGarlandMarkup() + (shouldFlyBats() ? getBatsMarkup() : '');
@@ -524,11 +626,14 @@
         updateScrolledState();
     }
 
-    function mountDeclaredLogos() {
+    function mountDeclaredLogos(seasonId) {
         if (typeof document === 'undefined') return;
         document.querySelectorAll('[data-seasonal-logo]').forEach(host => {
-            if (host.querySelector('.season-logo')) return;
-            host.insertAdjacentHTML('beforeend', getLogoMarkup(host.dataset.seasonalLogo || ''));
+            const mounted = host.querySelector('.season-logo');
+            if (mounted && (!seasonId || host.dataset.seasonalLogoFor === seasonId)) return;
+            mounted?.remove();
+            if (seasonId) host.dataset.seasonalLogoFor = seasonId;
+            host.insertAdjacentHTML('beforeend', getLogoMarkup(host.dataset.seasonalLogo || '', seasonId || undefined));
         });
         document.querySelectorAll('[data-seasonal-scene]').forEach(host => {
             if (host.querySelector('.season-scene')) return;
@@ -547,7 +652,7 @@
     }
 
     function apply(options = {}) {
-        const date = options.date instanceof Date ? options.date : new Date();
+        const date = options.date instanceof Date ? options.date : new Date(now());
         const season = getActiveDecor(date);
         const root = getRoot();
 
@@ -563,7 +668,7 @@
 
         if (typeof document !== 'undefined' && document.body) {
             syncDecorLayer(season);
-            mountDeclaredLogos();
+            mountDeclaredLogos(season?.id);
         }
 
         const state = { season, enabled: isEnabled() };
@@ -649,10 +754,12 @@
         STORAGE_KEY,
         MIRROR_KEY,
         SEASONS,
+        now,
         getActiveSeason,
         getActiveDecor,
         getDaysUntilPeak,
         getLogoMarkup,
+        loadRuntime,
         getSceneMarkup,
         getSideArtMarkup,
         isEnabled,

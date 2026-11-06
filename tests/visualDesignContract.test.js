@@ -51,6 +51,7 @@ const exceptionScopedFiles = [
 // its only chromatic value is the pumpkin ember, scoped to `.season-*`.
 const seasonalFiles = [
     'src/shared/styles/seasonal.css',
+    'src/shared/styles/seasonal-newyear.css',
 ];
 
 const seasonalEmberHex = new Set(['#ff8a2a', '#d9620f']);
@@ -240,15 +241,22 @@ for (const [name, file] of Object.entries(files)) {
 const seasonal = read(seasonalFiles[0]);
 const seasonalRules = seasonal.replace(/\/\*[\s\S]*?\*\//g, '');
 const seasonRootSelector = /^\.season-[a-z]+(?:\.light-theme)?$/;
-for (const [, selector, body] of seasonalRules.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    if (seasonRootSelector.test(selector.trim())) continue;
-    const chromaticHexes = extractHexes(body).filter((hex) => !neutralHex.has(hex));
-    assert.deepStrictEqual(chromaticHexes, [], `Seasonal color outside a season root token: ${selector.trim()}`);
-    for (const [, channels] of body.matchAll(/rgba?\(\s*(\d+\s*,\s*\d+\s*,\s*\d+)/g)) {
-        const [r, g, b] = channels.split(',').map((value) => Number(value.trim()));
-        assert.ok(r === g && g === b, `Seasonal color outside a season root token: ${selector.trim()} uses rgb(${channels})`);
+for (const file of seasonalFiles) {
+    const rules = read(file).replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const [, selector, body] of rules.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+        if (seasonRootSelector.test(selector.trim())) continue;
+        const chromaticHexes = extractHexes(body).filter((hex) => !neutralHex.has(hex));
+        assert.deepStrictEqual(chromaticHexes, [], `Seasonal color outside a season root token in ${file}: ${selector.trim()}`);
+        for (const [, channels] of body.matchAll(/rgba?\(\s*(\d+\s*,\s*\d+\s*,\s*\d+)/g)) {
+            const [r, g, b] = channels.split(',').map((value) => Number(value.trim()));
+            assert.ok(r === g && g === b, `Seasonal color outside a season root token in ${file}: ${selector.trim()} uses rgb(${channels})`);
+        }
     }
+    assert.doesNotMatch(rules, /\.(?:btn|dropdown|nav-link|nav-menu)[\w-]*(?![\w-])(?![^{]*season-banner)[^{]*\{/,
+        `${file} must not restyle shared buttons, menus or navigation links`);
 }
+assert.match(read(seasonalFiles[1]), /@media \(prefers-reduced-motion: reduce\)/, 'The New Year season must honor reduced motion');
+assert.match(read(files.common), /@import url\('\.\/seasonal-newyear\.css'\);/);
 assert.match(seasonalRules, /\.season-halloween\s*\{[^}]*--season-ember:\s*#ff8a2a;/);
 assert.match(seasonalRules, /\.season-halloween\.light-theme\s*\{[^}]*--season-ember:\s*#d9620f;/);
 assert.doesNotMatch(seasonalRules, /\.(?:btn|dropdown|nav-link|nav-menu)[\w-]*(?![\w-])(?![^{]*season-banner)[^{]*\{/,

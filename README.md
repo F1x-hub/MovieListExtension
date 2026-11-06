@@ -270,6 +270,7 @@ settings and pairing. See the
 | `npm run vendor:three` | Rebuild the three.js subset in `libs/three.rubiks.min.js` used by the Rubik's Cube (after upgrading `three`) |
 | `npm run test:visual-design` | Verify the monochrome palette and shared UI token contract |
 | `npm run test:seasonal-theme` | Check seasonal decor dates, opt-out, Settings preview and the Home season banner |
+| `npm run test:new-year-browser` | Run the built extension with a pinned clock through the New Year season: sign, gifts, countdown, snow and reduced motion |
 | `npm run test:popup` | Verify popup interactions, request races, failure recovery, profile caches and shared surface contracts |
 | `npm run test:media-player` | Verify the local MediaPlayer client and torrent picker contract |
 | `npm run test:component-updates` | Verify signed component checks, opt-ins, migration and rendered Settings states |
@@ -448,6 +449,9 @@ keeps npm-compatible three-component semver metadata.
 
 ### Features
 
+- New Year season, 15 December – 14 January, with its peak on 1 January. Home gets «Новогодний сеанс», an Art Deco cinema sign with a neon title, running lamps and a flip-board countdown to midnight, a decorated tree breaking through its top edge and a pile of gifts. Any gift opens onto a New Year film. Santa's sleigh and reindeer cross the sky behind the content, and on 1 January the sign says «С Новым годом!» over fireworks. To look at a season out of its dates, set `movieExtensionSeasonPreviewDate` in the page's `localStorage` to a `YYYY-MM-DD` date and reload.
+- Every page gets the winter around it: northern lights and stars behind the content, falling snow that the cursor pushes aside and that settles on posters, a snowy forest in the margins on wide screens, and a snowed-in clapperboard logo. The Settings switch for seasonal decor turns all of it off, the player and hidden tabs pause it, and reduced motion leaves one still picture.
+- The catalogue accepts a `keyword` in its link, so the sign's «Новогодняя подборка» opens New Year films.
 - The torrent picker is now a side panel. «Торрент» opens it next to the player and moves the player aside, so the video stays fully visible; pressing it again closes the panel and restores the width. Below 900px wide the panel sits under the player.
 - Release rows lead with what differs between releases: quality, voice-over, size, tracker and seeders, with the full release name on a muted line. All releases are in one scrolling list, the filters offer only the qualities that were found, and «Рекомендуем» marks a top release only when it has enough seeders.
 - Releases and saved downloads are two tabs of the panel, and the current download stays pinned above them. A paused or finished download is managed with compact icon actions.

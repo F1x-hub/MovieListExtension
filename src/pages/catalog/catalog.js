@@ -4,6 +4,8 @@ const DEFAULT_CATALOG_SORT_OPTIONS = Object.freeze([
     Object.freeze({ value: 'primary_release_date.desc', label: 'Новые фильмы' })
 ]);
 
+const KEYWORD_COPY = Object.freeze({ 207317: 'home.season.newyear' });
+
 class CatalogPage {
     constructor() {
         this.elements = {
@@ -90,7 +92,9 @@ class CatalogPage {
             yearFrom: params.get('yearFrom') || '',
             yearTo: params.get('yearTo') || '',
             genre: params.get('genre') || '',
-            country: params.get('country') || ''
+            country: params.get('country') || '',
+            // Set by a link such as the New Year sign; it has no control of its own.
+            keyword: params.get('keyword') || ''
         };
     }
 
@@ -103,6 +107,15 @@ class CatalogPage {
         return this.getCategoryConfig().sortOptions || DEFAULT_CATALOG_SORT_OPTIONS;
     }
 
+    /* A keyword link names its own selection; without a known name the category's stays. */
+    getKeywordCopy() {
+        const section = this.state.keyword ? KEYWORD_COPY[this.state.keyword] : null;
+        if (!section) return null;
+        const title = window.i18n?.get?.(`${section}.catalog_title`);
+        const description = window.i18n?.get?.(`${section}.catalog_description`);
+        return title && description && title !== `${section}.catalog_title` ? { title, description } : null;
+    }
+
     getQuery(page = 1) {
         return {
             page,
@@ -111,7 +124,8 @@ class CatalogPage {
             yearFrom: this.state.yearFrom,
             yearTo: this.state.yearTo,
             genre: this.state.genre,
-            country: this.state.country
+            country: this.state.country,
+            keyword: this.state.keyword
         };
     }
 
@@ -136,9 +150,10 @@ class CatalogPage {
             this.state.sort = sortOptions[0]?.value || 'popularity.desc';
         }
         this.selectControls?.sort?.setOptions(sortOptions);
-        this.elements.title.textContent = config.title;
-        this.elements.description.textContent = config.description;
-        document.title = `${config.title} | Movie Rating Extension`;
+        const copy = this.getKeywordCopy() || config;
+        this.elements.title.textContent = copy.title;
+        this.elements.description.textContent = copy.description;
+        document.title = `${copy.title} | Movie Rating Extension`;
 
         document.querySelectorAll('[data-catalog-category]').forEach(link => {
             link.classList.toggle('is-active', link.dataset.catalogCategory === this.state.category);
@@ -205,7 +220,7 @@ class CatalogPage {
     writeStateToUrl() {
         const url = new URL(window.location.href);
         url.searchParams.set('category', this.state.category);
-        const optional = ['sort', 'yearFrom', 'yearTo', 'genre', 'country'];
+        const optional = ['sort', 'yearFrom', 'yearTo', 'genre', 'country', 'keyword'];
         optional.forEach(key => {
             const value = this.state[key];
             if (value && !(key === 'sort' && value === 'popularity.desc')) url.searchParams.set(key, value);
@@ -215,7 +230,7 @@ class CatalogPage {
     }
 
     resetFilters() {
-        this.state = { ...this.state, sort: 'popularity.desc', yearFrom: '', yearTo: '', genre: '', country: '' };
+        this.state = { ...this.state, sort: 'popularity.desc', yearFrom: '', yearTo: '', genre: '', country: '', keyword: '' };
         this.writeStateToUrl();
         this.syncControlsFromState();
         this.loadFirstPage();

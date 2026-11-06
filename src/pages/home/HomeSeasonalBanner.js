@@ -17,6 +17,9 @@
             this.message = root?.querySelector('.season-banner__message') || null;
             this.cta = root?.querySelector('.season-banner__cta') || null;
             this.closeButton = root?.querySelector('.season-banner__close') || null;
+            this.signHost = typeof document !== 'undefined' ? document.getElementById?.('season-marquee') || null : null;
+            this.sign = null;
+            this.signRequest = 0;
             this.season = null;
 
             this.closeButton?.addEventListener('click', () => this.dismiss());
@@ -47,6 +50,39 @@
 
         hide() {
             if (this.root) this.root.hidden = true;
+            this.hideSign();
+        }
+
+        hideSign() {
+            this.signRequest += 1;
+            this.sign?.destroy();
+            this.sign = null;
+            if (this.signHost) this.signHost.hidden = true;
+        }
+
+        /* The New Year sign is a scene of its own, loaded only while the season is on. */
+        showSign(season, service) {
+            if (this.root) this.root.hidden = true;
+            if (!this.signHost) return;
+            this.signHost.hidden = false;
+            if (this.sign) {
+                this.sign.update();
+                return;
+            }
+            const request = ++this.signRequest;
+            service.loadRuntime(season.id)
+                .then(() => {
+                    if (request !== this.signRequest || !global.NewYearBanner) return;
+                    this.sign = new global.NewYearBanner(this.signHost, {
+                        season,
+                        translate: key => this.translate(key),
+                        onDismiss: () => this.dismiss()
+                    });
+                })
+                .catch(error => {
+                    console.warn('HomeSeasonalBanner: the season sign is unavailable', error);
+                    this.hideSign();
+                });
         }
 
         translate(key) {
@@ -72,7 +108,7 @@
             return template.replace('{count}', String(days));
         }
 
-        render(date = new Date()) {
+        render(date) {
             const service = global.SeasonalThemeService;
             if (!this.root || !service) return;
 
@@ -82,6 +118,11 @@
                 this.hide();
                 return;
             }
+            if (service.SEASONS.find(item => item.id === season.id)?.runtime) {
+                this.showSign(season, service);
+                return;
+            }
+            this.hideSign();
 
             if (this.title) this.title.textContent = this.translate('title');
             if (this.message) this.message.textContent = this.getMessage(date);
