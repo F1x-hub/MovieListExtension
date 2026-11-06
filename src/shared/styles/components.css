@@ -835,7 +835,6 @@
     transition: transform 160ms ease-out;
 }
 
-.custom-dropdown.open .dropdown-arrow,
 .custom-dropdown.active .dropdown-arrow {
     transform: rotate(180deg);
 }
@@ -862,7 +861,6 @@
     padding: 4px 0;
 }
 
-.custom-dropdown.open .dropdown-list,
 .custom-dropdown.active .dropdown-list {
     opacity: 1;
     visibility: visible;
@@ -888,10 +886,6 @@
 .dropdown-option.selected {
     background: var(--theme-active-bg);
     color: var(--ui-color-content);
-}
-
-.filter-select-hidden {
-    display: none;
 }
 
 /* Shared Context Menu Items */

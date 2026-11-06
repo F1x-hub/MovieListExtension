@@ -506,30 +506,15 @@
     opacity: 1 !important;
 }
 
-.light-theme .search-input,
-.light-theme .collection-main .dropdown-trigger {
+.light-theme .search-input {
     background: var(--theme-bg-tertiary);
     border-color: var(--theme-border);
     color: var(--theme-text-primary);
 }
 
-.light-theme .search-input:focus,
-.light-theme .collection-main .dropdown-trigger:hover {
+.light-theme .search-input:focus {
     background: var(--theme-bg-primary);
     border-color: var(--theme-stat-color);
-}
-
-.light-theme .collection-main .dropdown-list {
-    background: var(--theme-bg-secondary);
-    border-color: var(--theme-border);
-}
-
-.light-theme .collection-main .dropdown-option {
-    color: var(--theme-text-primary);
-}
-
-.light-theme .collection-main .dropdown-option:hover {
-    background: var(--theme-hover-bg);
 }
 
 .light-theme .movie-title {
